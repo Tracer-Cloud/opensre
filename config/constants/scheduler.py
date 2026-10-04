@@ -25,11 +25,14 @@ OPENSRE_SCHEDULER_BUILD_ENV = "OPENSRE_SCHEDULER_BUILD"
 SCHEDULER_MISSED_FIRE_GRACE_SECONDS = 15 * 60
 
 # ``WorkOutcome.error_kind`` values that describe a repair target no retry can
-# fix (the PR is closed, or its branch cannot be pushed to). A blocked outcome
-# with one of these pauses the schedule instead of firing again. Shared here
-# so the producer (``integrations.github.repair_outcomes``) and the model that
-# restores legacy rows without ``retryable`` agree on the list.
-NON_RETRYABLE_WORK_ERROR_KINDS: frozenset[str] = frozenset({"unsupported_pr_branch", "pr_not_open"})
+# fix (the PR is closed, its branch cannot be pushed to, or its merge waits on
+# a person's decision until new commits land). A blocked outcome with one of
+# these pauses a loop bound to that target and is skipped by a sweep. Shared
+# here so the producer (``integrations.github.repair_outcomes``) and the model
+# that restores legacy rows without ``retryable`` agree on the list.
+NON_RETRYABLE_WORK_ERROR_KINDS: frozenset[str] = frozenset(
+    {"unsupported_pr_branch", "pr_not_open", "merge_decision_required"}
+)
 
 # ``WorkOutcome.error_kind`` of an agent run that replied but whose tools reported
 # no work outcome: its work may well be done, it is only unconfirmed. Shared so

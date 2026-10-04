@@ -12,7 +12,11 @@ from integrations.coding_agent import CodingResult, Progress
 from integrations.git import head_sha, merge_in_progress
 from integrations.github.tools.ci_fix.base_merge import base_has_new_commits, merge_base_into_head
 from integrations.github.tools.ci_fix.context import MERGE_STATE_DIRTY, CiFixContext
-from integrations.github.tools.ci_fix.errors import ERR_MERGE_CONFLICT, GitHubCiFixError
+from integrations.github.tools.ci_fix.errors import (
+    ERR_MERGE_CONFLICT,
+    ERR_MERGE_DECISION,
+    GitHubCiFixError,
+)
 
 _CTX = CiFixContext(
     owner="Tracer-Cloud",
@@ -129,7 +133,9 @@ def test_conflicts_resolved_by_agent_are_committed_and_reported(tmp_path: Path) 
     assert "pnpm install --lockfile-only" in task
 
 
-def test_unresolved_conflicts_abort_the_merge_and_name_the_blocked_files(tmp_path: Path) -> None:
+def test_conflicts_the_agent_left_abort_the_merge_as_a_decision_for_a_person(
+    tmp_path: Path,
+) -> None:
     # Arrange
     work = _repo(tmp_path, conflict=True)
     before = head_sha(str(work))
@@ -142,9 +148,9 @@ def test_unresolved_conflicts_abort_the_merge_and_name_the_blocked_files(tmp_pat
     with pytest.raises(GitHubCiFixError) as excinfo:
         merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=resolve)
 
-    # Assert
+    # Assert: the agent finished, so the conflict it left is a choice for a person
     error = excinfo.value
-    assert error.kind == ERR_MERGE_CONFLICT
+    assert error.kind == ERR_MERGE_DECISION
     assert "blocked on 1 file(s) a person must decide" in error.message
     assert "package.json (changed on both ci-fix and main)" in error.message
     assert "pnpm-lock.yaml" not in error.message.split("decide:")[1].split(".")[0]
@@ -167,7 +173,7 @@ def test_failed_agent_run_aborts_the_merge(tmp_path: Path) -> None:
     with pytest.raises(GitHubCiFixError) as excinfo:
         merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=resolve)
 
-    # Assert
+    # Assert: a failed run may succeed on a later attempt, so it is no decision
     assert excinfo.value.kind == ERR_MERGE_CONFLICT
     assert "Coding agent: agent timed out" in excinfo.value.message
     assert merge_in_progress(str(work)) is False

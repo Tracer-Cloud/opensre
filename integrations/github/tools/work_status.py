@@ -357,6 +357,13 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
             "state": {"type": "string", "enum": ["open", "closed", "all"]},
             "per_page": {"type": "integer"},
             "include_checks": {"type": "boolean"},
+            "conflicts_only": {
+                "type": "boolean",
+                "description": (
+                    "Judge only merge conflicts: skips check runs, and reports nothing to "
+                    "repair when no open same-repository PR conflicts with its base."
+                ),
+            },
             "github_token": {"type": "string"},
         },
         "required": ["owner", "repo"],
@@ -371,6 +378,7 @@ def summarize_github_pr_status(
     state: str = "open",
     per_page: int = 30,
     include_checks: bool = True,
+    conflicts_only: bool = False,
     github_token: str | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
@@ -387,7 +395,9 @@ def summarize_github_pr_status(
         )
     owner, repo = scope
     client = GitHubRestClient(github_token)
-    fully_inspected = state == "open" and include_checks
+    # A conflict scan needs only each PR's mergeability, not its check runs.
+    include_checks = include_checks and not conflicts_only
+    fully_inspected = state == "open" and (include_checks or conflicts_only)
     try:
         raw_prs = client.paginate(
             f"/repos/{owner}/{repo}/pulls",
@@ -428,7 +438,7 @@ def summarize_github_pr_status(
                         run for run in check_payload["check_runs"] if isinstance(run, dict)
                     ]
                     complete_checks = check_payload.get("total_count") == len(check_runs)
-            fully_inspected = fully_inspected and complete_checks
+            fully_inspected = fully_inspected and (complete_checks or conflicts_only)
             prs.append(_normalize_pull_request(detail_pr, check_runs).to_dict())
     except GitHubApiError as exc:
         return tool_unavailable(
@@ -443,7 +453,9 @@ def summarize_github_pr_status(
         "counts": _count_prs(prs),
         "side_effects": [],
     }
-    return attach_ci_scan_outcome(output, fully_inspected=fully_inspected)
+    return attach_ci_scan_outcome(
+        output, fully_inspected=fully_inspected, conflicts_only=conflicts_only
+    )
 
 
 def _normalize_security_alert(alert_type: str, item: dict[str, Any]) -> SecurityAlert:

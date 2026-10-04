@@ -163,7 +163,9 @@ new demo, and `/new` drop it. Never park skill-less prose or a slash command.
 Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`
 to `False` through `prepare_session`. This host-owned policy removes the skill
 index and `skill_view` while retaining execution tools; never infer it from
-prompt text or restore it from conversation history.
+prompt text or restore it from conversation history. A loop bound to a skill
+(`loop_skill`) still gets that one card: the runner appends its rendered body
+to the task through `resolve_loop_skill`, and a missing card fails the tick.
 
 **Repository instructions:** the action prompt's REPOSITORY INSTRUCTIONS block
 (`grounding/repository_instructions.py`, CONTEXT tier, right after REPOSITORY

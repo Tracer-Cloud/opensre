@@ -27,6 +27,9 @@ LOOP_REPORT_PARAM = "loop_report"
 LOOP_REPORT_ARGS_PARAM = "loop_report_args"
 """JSON object of string arguments handed to the report builder."""
 
+LOOP_SKILL_PARAM = "loop_skill"
+"""Workflow card an agent-mode loop follows; its body is added to each tick's task."""
+
 LOOP_SLACK_CHAT_ID_PARAM = "slack_chat_id"
 LOOP_SLUG_PARAM = "loop_slug"
 LOOP_SOURCE_PARAM = "loop_source"
@@ -47,6 +50,7 @@ __all__ = [
     "LOOP_PROMPT_PARAM",
     "LOOP_REPORT_ARGS_PARAM",
     "LOOP_REPORT_PARAM",
+    "LOOP_SKILL_PARAM",
     "LOOP_SLACK_CHAT_ID_PARAM",
     "LOOP_SLUG_PARAM",
     "LOOP_SOURCE_PARAM",

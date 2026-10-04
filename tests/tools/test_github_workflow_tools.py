@@ -266,6 +266,51 @@ def test_pr_scan_noop_ignores_prs_opensre_cannot_repair(
         assert "work_outcome" not in result
 
 
+@pytest.mark.parametrize(
+    "mergeable, mergeable_state, noop",
+    [
+        # Red checks are another loop's repair; a conflict scan is done with them.
+        (True, "unstable", True),
+        (False, "dirty", False),
+    ],
+)
+def test_conflict_scan_judges_conflicts_alone_and_reads_no_checks(
+    mergeable: bool, mergeable_state: str, noop: bool
+) -> None:
+    pr = {
+        "number": 12,
+        "title": "Some PR",
+        "state": "open",
+        "draft": False,
+        "html_url": "https://github.com/o/r/pull/12",
+        "user": {"login": "carol"},
+        "head": {"sha": "fed", "ref": "topic", "repo": _SAME_REPO},
+        "base": {"repo": _SAME_REPO},
+        "mergeable": mergeable,
+        "mergeable_state": mergeable_state,
+        "updated_at": "2026-10-04T01:00:00Z",
+    }
+
+    def fake_request(self: GitHubRestClient, method: str, path: str, **_kwargs: Any) -> Any:
+        if path == "/repos/o/r/pulls/12":
+            return pr
+        raise AssertionError((method, path))
+
+    with (
+        patch.object(GitHubRestClient, "paginate", return_value=[pr]),
+        patch.object(GitHubRestClient, "request", fake_request),
+    ):
+        result = summarize_github_pr_status(
+            owner="o", repo="r", conflicts_only=True, github_token="tok"
+        )
+
+    if noop:
+        assert result["work_outcome"]["status"] == "noop"
+        assert result["work_outcome"]["operation"] == "conflict-scan:o/r"
+    else:
+        assert "work_outcome" not in result
+
+
 def test_summarize_github_pr_status_reports_unknown_mergeability() -> None:
     pr = {
         "number": 11,

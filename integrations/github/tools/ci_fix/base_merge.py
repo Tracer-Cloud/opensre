@@ -29,7 +29,11 @@ from integrations.git import (
     unresolved_conflicts,
 )
 from integrations.github.tools.ci_fix.context import CiFixContext
-from integrations.github.tools.ci_fix.errors import ERR_MERGE_CONFLICT, GitHubCiFixError
+from integrations.github.tools.ci_fix.errors import (
+    ERR_MERGE_CONFLICT,
+    ERR_MERGE_DECISION,
+    GitHubCiFixError,
+)
 
 
 @dataclass(frozen=True)
@@ -175,8 +179,10 @@ def _blocked_error(
     decisions = "; ".join(f"{c.path} ({c.description})" for c in blocked)
     note = " ".join((result.error or result.summary or "").split()).rstrip(".")
     detail = f" Coding agent: {note}." if note else ""
+    # An agent that finished and still left conflicts named a choice for a person;
+    # one that failed or timed out may succeed on a later attempt.
     return GitHubCiFixError(
-        ERR_MERGE_CONFLICT,
+        ERR_MERGE_DECISION if result.success else ERR_MERGE_CONFLICT,
         (
             f"Merging {ctx.base_branch} into {ctx.head_branch} is blocked on "
             f"{len(blocked)} file(s) a person must decide: {decisions}.{detail} "

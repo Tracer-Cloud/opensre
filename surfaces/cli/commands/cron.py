@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from infrastructure.scheduling.scheduler.loops import LoopSummary
 
 from core.agent_harness import pin_recurring_skill, validate_skill_inputs
+from core.agent_harness.prompts.skills.scheduling import resolve_loop_skill
 from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
@@ -26,6 +27,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_PARAM,
     LOOP_MODES,
     LOOP_PROMPT_PARAM,
+    LOOP_SKILL_PARAM,
 )
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
@@ -164,7 +166,10 @@ def cron_command() -> None:
     type=str,
     default="",
     show_default=False,
-    help="Recurring action skill to run (required for recurring_skill kind).",
+    help=(
+        "Skill to run: required for --kind recurring_skill; with --kind manual_loop "
+        "--mode agent, the workflow card each tick follows (--prompt then optional)."
+    ),
 )
 @click.option("--owner", type=str, default="", help="GitHub repository owner.")
 @click.option("--repo", type=str, default="", help="GitHub repository name.")
@@ -204,6 +209,9 @@ def cron_add(
     if mode is not None and task_kind != TaskKind.MANUAL_LOOP:
         raise click.ClickException("--mode is only valid with --kind manual_loop.")
     normalized_prompt = prompt.strip()
+    loop_skill = _loop_skill(skill_name) if mode == LOOP_MODE_AGENT else ""
+    if loop_skill and not normalized_prompt:
+        normalized_prompt = f"Run the {loop_skill} skill."
     if task_kind == TaskKind.MANUAL_LOOP:
         if not normalized_prompt:
             raise click.ClickException("--prompt is required when --kind is manual_loop.")
@@ -218,13 +226,17 @@ def cron_add(
             pinned_name, pinned_revision = pin_recurring_skill(skill_name)
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
-    elif skill_name.strip():
-        raise click.ClickException("--skill is only valid with --kind recurring_skill.")
+    elif skill_name.strip() and not loop_skill:
+        raise click.ClickException(
+            "--skill is only valid with --kind recurring_skill or --kind manual_loop --mode agent."
+        )
     task_params = {LOOP_PROMPT_PARAM: normalized_prompt} if normalized_prompt else {}
     if description.strip():
         task_params[LOOP_DESCRIPTION_PARAM] = " ".join(description.split())
     if mode == LOOP_MODE_AGENT:
         task_params[LOOP_MODE_PARAM] = mode
+    if loop_skill:
+        task_params[LOOP_SKILL_PARAM] = loop_skill
     if task_kind is TaskKind.MANUAL_LOOP and mode == LOOP_MODE_AGENT:
         if city.strip():
             raise click.UsageError("--city is only valid for morning briefings.")
@@ -288,7 +300,19 @@ def cron_add(
         _console.print(f"  Mode: {added.params.get(LOOP_MODE_PARAM, 'report')}")
     if added.skill_name:
         _console.print(f"  Skill: {added.skill_name}  Revision: {added.skill_revision[:12]}…")
+    if added.params.get(LOOP_SKILL_PARAM):
+        _console.print(f"  Skill: {added.params[LOOP_SKILL_PARAM]}")
     _console.print(f"  Provider: {added.provider.value}  Chat: {added.chat_id}")
+
+
+def _loop_skill(skill_name: str) -> str:
+    """Canonical name of the card an agent loop follows, or "" when none was given."""
+    if not skill_name.strip():
+        return ""
+    try:
+        return resolve_loop_skill(skill_name).name
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _recurring_skill_inputs(

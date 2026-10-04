@@ -20,6 +20,7 @@ from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, T
     [
         ("unsupported_pr_branch", True),
         ("pr_not_open", True),
+        ("merge_decision_required", True),
         ("workspace_busy", False),
         ("execution", False),
         ("no_failing_checks", False),
@@ -97,6 +98,82 @@ def test_repair_schedule_pauses_only_for_an_unrepairable_bound_target(
     if skipped:
         assert run.work_status == "noop"
         assert run.work_outcome.evidence["skipped"][0]["error_kind"] == kind
+
+
+@pytest.mark.parametrize(
+    "tool_kind, delivered_count, status, work_error_kind",
+    [
+        # The tool verified there is nothing to do: the note-only reply is the report.
+        ("no_failing_checks", 0, "success", ""),
+        # No tool verified anything: an empty reply is still a missing report.
+        (None, 0, "failed", "report_missing"),
+    ],
+)
+def test_a_quiet_sweep_tick_delivers_nothing_only_when_tools_verified_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tool_kind: str | None,
+    delivered_count: int,
+    status: str,
+    work_error_kind: str,
+) -> None:
+    """A tick whose reply is only the note for its next run has an empty body."""
+    from types import SimpleNamespace
+
+    from core.llm.types import ToolCall
+    from core.tool.contracts import RegisteredTool
+    from core.tool.execution import ToolExecutionHooks, execute_tool_calls
+    from integrations.github.repair_outcomes import attach_repair_outcome
+    from integrations.scheduled_outcomes import ScheduledOutcomes
+
+    _isolate(tmp_path, monkeypatch)
+    task = add_task(
+        ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="4 * * * *",
+            provider=Provider.INTERACTIVE_SHELL,
+            params={"loop_prompt": "repair conflicts"},
+        )
+    )
+    delivered: list[str] = []
+
+    class Delivery:
+        def deliver(self, _task: ScheduledTask, message: str) -> tuple[bool, str, str]:
+            delivered.append(message)
+            return True, "", "test-message"
+
+    def tick(_payload: dict) -> TaskReport:
+        outcomes = ScheduledOutcomes(bound_target=False)
+        if tool_kind is not None:
+            output = attach_repair_outcome({"error_kind": tool_kind}, operation="ci:o/r:42")
+            execute_tool_calls(
+                [ToolCall(id="repair", name="fix_github_pr_ci", input={})],
+                [
+                    RegisteredTool(
+                        name="fix_github_pr_ci",
+                        description="Repair",
+                        input_schema={"type": "object", "properties": {}},
+                        source="github",
+                        run=lambda: output,
+                    )
+                ],
+                {},
+                hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
+            )
+        turn = SimpleNamespace(
+            primary_response_text="NOTE FOR NEXT RUN: nothing new",
+            cancelled=False,
+            action_result=SimpleNamespace(hit_iteration_cap=False),
+        )
+        return outcomes.report(turn, agent_mode=True, text="")
+
+    ScheduledDeliveryAdapters({Provider.INTERACTIVE_SHELL: Delivery()}).install()
+    execute_task(task, "2026-10-04T19:04Z", SchedulerRunners(agent=tick))
+
+    run = get_runs(task.id)[0]
+    assert len(delivered) == delivered_count
+    assert run.status.value == status
+    assert run.work_error_kind == work_error_kind
 
 
 def test_a_skipped_sweep_target_never_hides_unfinished_work() -> None:

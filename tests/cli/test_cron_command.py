@@ -867,6 +867,77 @@ def test_cron_add_rejects_non_recurring_skill() -> None:
     assert "not marked recurring" in result.output
 
 
+def test_cron_add_binds_an_agent_loop_to_a_skill_without_a_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_MODE_PARAM,
+        LOOP_PROMPT_PARAM,
+        LOOP_SKILL_PARAM,
+    )
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--mode",
+            "agent",
+            "--skill",
+            "repair-github-ci",
+            "--owner",
+            "o",
+            "--repo",
+            "r",
+            "--cron",
+            "4 * * * *",
+            "--provider",
+            "interactive_shell",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert list_tasks(store)[0].params == {
+        LOOP_PROMPT_PARAM: "Run the repair-github-ci skill.",
+        LOOP_MODE_PARAM: "agent",
+        LOOP_SKILL_PARAM: "repair-github-ci",
+        "owner": "o",
+        "repo": "r",
+    }
+
+
+@pytest.mark.parametrize(
+    "args, error",
+    [
+        (["--mode", "agent", "--skill", "no-such-card"], "'no-such-card' is not installed"),
+        (["--prompt", "Check CI.", "--skill", "repair-github-ci"], "--skill is only valid with"),
+    ],
+)
+def test_cron_add_rejects_a_loop_skill_it_cannot_run(args: list[str], error: str) -> None:
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--cron",
+            "4 * * * *",
+            "--provider",
+            "interactive_shell",
+            *args,
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert error in result.output
+
+
 def _partial_run(task_id: str) -> object:
     from infrastructure.scheduling.scheduler.types import DeliveryOutcome, TaskRun, TaskStatus
 

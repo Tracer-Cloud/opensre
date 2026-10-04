@@ -44,6 +44,7 @@ from integrations.github.tools.ci_fix.context import (
     gather_branch_ci_fix_context,
     gather_ci_fix_context,
 )
+from integrations.github.tools.ci_fix.decision_marker import report_decision, reported_decision
 from integrations.github.tools.ci_fix.errors import (
     ERR_CHECKS_FAILED,
     ERR_CHECKS_SUPERSEDED,
@@ -53,6 +54,7 @@ from integrations.github.tools.ci_fix.errors import (
     ERR_GITHUB_TOKEN,
     ERR_INVALID_INPUT,
     ERR_MERGE_CONFLICT,
+    ERR_MERGE_DECISION,
     ERR_NO_FAILING_CHECKS,
     ERR_TIMEOUT,
     GitHubCiFixError,
@@ -331,6 +333,15 @@ def error_output(kind: str, message: str, ctx: CiFixContext | None = None) -> di
     return output
 
 
+def _decision_already_reported(ctx: CiFixContext, request: str) -> dict[str, Any]:
+    """The merge decision this head still waits for, returned without a clone or retry."""
+    message = (
+        f"{ctx.target_label} still waits for a person to decide how to merge "
+        f"{ctx.base_branch}; asked on the PR for head {ctx.head_sha[:12]}: {request}"
+    )
+    return {**error_output(ERR_MERGE_DECISION, message, ctx), "already_reported": True}
+
+
 def _result_response_text(ctx: CiFixContext, result: CodingResult) -> str:
     if not result.success:
         return _single_line(result.error or "No CI fix was produced; no push was made.")
@@ -439,6 +450,10 @@ def run_ci_fix(
                     ERR_CHECKS_SUPERSEDED,
                     "The remote source head changed before repair; no push was made.",
                 )
+            if ctx.needs_base_merge:
+                reported = reported_decision(ctx, github_token=github_token)
+                if reported is not None:
+                    return _decision_already_reported(ctx, reported)
             with phases.phase("checkout"):
                 ws = str(
                     workspaces.enter_context(
@@ -508,6 +523,8 @@ def run_ci_fix(
                     recorded_through=merge.commit_sha if merge is not None else ctx.head_sha,
                 )
         except GitHubCiFixError as exc:
+            if exc.kind == ERR_MERGE_DECISION:
+                report_decision(ctx, exc.message, github_token=github_token)
             return push_error_output(output, exc)
         verified = _verify_repair(ctx, output, push, github_token, timer=phases, **check_wait)
         if verified.get("checks_state") != CheckState.CONFLICTED.value:
@@ -644,6 +661,8 @@ def _merge_after_conflicted_push(
                 recorded_through=merge.commit_sha,
             )
     except GitHubCiFixError as exc:
+        if exc.kind == ERR_MERGE_DECISION:
+            report_decision(ctx, exc.message, github_token=github_token)
         base_branch = ctx.base_branch or "the base branch"
         detail = _NO_PUSH_TAIL_RE.sub("", exc.message).rstrip(".")
         message = (

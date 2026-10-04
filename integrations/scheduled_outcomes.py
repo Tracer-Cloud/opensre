@@ -57,11 +57,16 @@ class ScheduledOutcomes:
         # tick fires at a target already known to be stuck.
         terminal_block = next((item for item in work if item.terminal_block), None)
         stop_schedule = terminal_block is not None
+        # A quiet agent tick replies with only its note: an empty body is the
+        # expected report once its tools verified there was nothing to do.
+        verified_noop = (
+            agent_mode and bool(outcomes) and all(item.status is WorkStatus.NOOP for item in work)
+        )
         if terminal_block is not None:
             outcome = terminal_block
         elif turn.cancelled or turn.action_result.hit_iteration_cap:
             outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="turn_interrupted")
-        elif not text:
+        elif not text and not verified_noop:
             outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="report_missing")
         elif not agent_mode:
             outcome = WorkOutcome(status=WorkStatus.SUCCEEDED)

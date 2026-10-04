@@ -129,6 +129,40 @@ def test_agent_mode_forbids_pasted_files_and_makes_quiet_ticks_deliver_nothing()
     assert "nothing eligible to act on delivers nothing" in message
 
 
+def test_an_agent_loop_bound_to_a_skill_runs_that_card_as_its_task() -> None:
+    """Agent ticks cannot discover skills, so the host adds the bound card's body."""
+    from core.agent_harness.prompts.skills import load_skill_body
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_SKILL_PARAM
+
+    message = manual_loop_runner.build_manual_loop_prompt(
+        {
+            "loop_prompt": "Run the repair-github-ci skill.",
+            "name": "CI repair",
+            LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+            LOOP_SKILL_PARAM: "repair-github-ci",
+            "owner": "o",
+            "repo": "r",
+        }
+    )
+
+    task = message.split("\n\nTask:\n", 1)[1]
+    assert task.startswith("Run the repair-github-ci skill.\n\nSkill recipe (repair-github-ci):\n")
+    assert task.endswith(load_skill_body("repair-github-ci"))
+
+
+def test_an_agent_loop_whose_skill_is_gone_fails_instead_of_running_without_it() -> None:
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_SKILL_PARAM
+
+    with pytest.raises(RuntimeError, match="'no-such-card' is not installed"):
+        manual_loop_runner.build_manual_loop_prompt(
+            {
+                "loop_prompt": "Run the no-such-card skill.",
+                LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+                LOOP_SKILL_PARAM: "no-such-card",
+            }
+        )
+
+
 @pytest.mark.parametrize("mode, recover", [("report", False), ("agent", False), ("agent", True)])
 def test_loop_mode_reaches_system_prompt_and_tool_catalog(
     monkeypatch: pytest.MonkeyPatch, mode: str, recover: bool

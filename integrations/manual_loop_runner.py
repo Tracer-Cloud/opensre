@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping
 
 from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
 from core.agent_harness import AgentSession, SessionCore
+from core.agent_harness.prompts.skills.scheduling import resolve_loop_skill
 from core.tool import ToolExecutionHooks
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from infrastructure.scheduling.scheduler.loop_constants import (
@@ -17,6 +18,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_PARAM,
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
+    LOOP_SKILL_PARAM,
 )
 from infrastructure.scheduling.scheduler.previous_runs import previous_runs_block
 from infrastructure.scheduling.scheduler.run_activity import (
@@ -108,8 +110,25 @@ def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") 
             if payload.get(key)
         }
         binding = f"\nStored repository target: {json.dumps(scope)}\n" if scope else ""
-        return f"{_AGENT_LOOP_INSTRUCTIONS}\nLoop name: {name}{binding}{history}\n\nTask:\n{prompt}"
+        recipe = _skill_recipe(payload)
+        return (
+            f"{_AGENT_LOOP_INSTRUCTIONS}\nLoop name: {name}{binding}{history}"
+            f"\n\nTask:\n{prompt}{recipe}"
+        )
     return f"{_MANUAL_LOOP_INSTRUCTIONS}\nLoop name: {name}{history}\n\nReport request:\n{prompt}"
+
+
+def _skill_recipe(payload: AgentPayload) -> str:
+    """The bound workflow card as part of the task, or "" for a loop without one.
+
+    The host adds it because agent ticks cannot discover skills themselves; a
+    card that is no longer installed fails the tick instead of running without it.
+    """
+    name = str(payload.get(LOOP_SKILL_PARAM) or "").strip()
+    if not name:
+        return ""
+    resolved = resolve_loop_skill(name)
+    return f"\n\nSkill recipe ({resolved.name}):\n{resolved.body}"
 
 
 def split_carry_note(reply: str) -> tuple[str, str]:

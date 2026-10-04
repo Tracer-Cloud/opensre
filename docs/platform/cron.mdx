@@ -85,8 +85,8 @@ Create a new scheduled delivery task.
 | `--provider` | Yes | Messaging provider: `telegram`, `slack`, `discord`, `rocketchat`, `interactive_shell` |
 | `--chat-id` | Cond. | Required for telegram/discord/rocketchat. Optional for slack when an incoming webhook or `SLACK_DEFAULT_CHAT_ID` is configured, and not needed for `interactive_shell`. |
 | `--window` | No | Lookback window in hours (default: `24`) |
-| `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` and rejected for other kinds |
-| `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute |
+| `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` (optional with `--mode agent --skill`) and rejected for other kinds |
+| `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute. With `--kind manual_loop --mode agent`, names the skill each run follows |
 | `--owner` | Cond. | GitHub repository owner; required for the `reporting-github-ci-failures` recurring skill |
 | `--repo` | Cond. | GitHub repository name; required for the `reporting-github-ci-failures` recurring skill |
 | `--branch` | No | Branch filter for `reporting-github-ci-failures`; cannot be combined with `--pr` |
@@ -151,9 +151,14 @@ and security repairs that open a PR create their own matching checkouts when
 no explicit workspace is supplied.
 
 With `--pr` or `--branch`, the loop pauses when its target can never be
-repaired, such as a fork PR or a closed PR. Without them, the loop sweeps the
-repository: it skips those targets, keeps its schedule, and records a run that
-verifiably found nothing to repair as a no-op.
+repaired, such as a fork PR, a closed PR, or a merge that waits on a person's
+decision. Without them, the loop sweeps the repository: it skips those targets,
+keeps its schedule, and records a run that verifiably found nothing to repair
+as a no-op. A no-op run that replies with only its note delivers nothing.
+
+Add `--skill <name>` to run a skill instead of writing the instructions in
+`--prompt`. Each run follows the skill as currently installed, so fixes to the
+skill reach the loop without recreating it.
 
 `opensre cron run <task_id>` prints the work result, delivery result, and report.
 A blocked or incomplete agent task exits unsuccessfully even if its report was

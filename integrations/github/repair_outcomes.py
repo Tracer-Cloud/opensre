@@ -19,19 +19,30 @@ def _needs_repair(pr: dict[str, Any]) -> bool:
     )
 
 
-def attach_ci_scan_outcome(output: dict[str, Any], *, fully_inspected: bool) -> dict[str, Any]:
+def _conflicts(pr: dict[str, Any]) -> bool:
+    """GitHub cannot merge the PR into its base; unknown mergeability is read next tick."""
+    return pr["mergeable"] is False or pr["mergeable_state"] == "dirty"
+
+
+def attach_ci_scan_outcome(
+    output: dict[str, Any], *, fully_inspected: bool, conflicts_only: bool = False
+) -> dict[str, Any]:
     """Record no repair needed only when a complete scan finds no repairable PR needing one.
 
     Fork, draft and closed PRs are never repairable, so they cannot hold the scan open.
+    A ``conflicts_only`` scan judges merge conflicts alone, so a PR whose checks fail
+    does not hold open a loop that only repairs conflicts.
     """
     prs = output["pull_requests"]
     repairable = [pr for pr in prs if pr["repairable"]]
-    if not fully_inspected or any(_needs_repair(pr) for pr in repairable):
+    needs_repair = _conflicts if conflicts_only else _needs_repair
+    if not fully_inspected or any(needs_repair(pr) for pr in repairable):
         return output
     owner, repo = output["owner"], output["repo"]
+    scan = "conflict-scan" if conflicts_only else "ci-scan"
     outcome = WorkOutcome(
         status=WorkStatus.NOOP,
-        operation=f"ci-scan:{owner.casefold()}/{repo.casefold()}",
+        operation=f"{scan}:{owner.casefold()}/{repo.casefold()}",
         evidence={
             "owner": owner,
             "repo": repo,
@@ -71,6 +82,7 @@ def attach_repair_outcome(output: dict[str, Any], *, operation: str) -> dict[str
         "cli_unavailable",
         "pr_not_open",
         "alert_not_found",
+        "merge_decision_required",
     }:
         status = WorkStatus.BLOCKED
     elif output.get("success") is True:
