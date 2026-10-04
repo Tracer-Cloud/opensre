@@ -459,12 +459,18 @@ def _rest_run_listing(
     return [_normalize_run(item) for item in raw_runs if isinstance(item, dict)]
 
 
-def _missing_from_page(
+def _page_mismatch(
     runs: list[dict[str, Any]], newest_on_github: list[dict[str, Any]]
-) -> list[Any]:
-    """Ids of GitHub's newest runs that the MCP page lacks; any means the page is not the newest."""
+) -> tuple[list[Any], list[Any]]:
+    """Ids GitHub's newest page has that the MCP page lacks, and ids only the MCP page has.
+
+    Either list being non-empty means the MCP page is not GitHub's newest page.
+    """
     on_page = {str(run.get("id")) for run in runs}
-    return [run.get("id") for run in newest_on_github if str(run.get("id")) not in on_page]
+    on_github = {str(run.get("id")) for run in newest_on_github}
+    missing = [run.get("id") for run in newest_on_github if str(run.get("id")) not in on_page]
+    extra = [run.get("id") for run in runs if str(run.get("id")) not in on_github]
+    return missing, extra
 
 
 def _commit_run_history_rest(
@@ -842,13 +848,14 @@ def list_github_actions_workflow_runs(
             if rest_runs is not None:
                 rest_runs = _newest_first(rest_runs, limit=per_page)
                 payload["listing_verified"] = True
-                missing = _missing_from_page(workflow_runs, rest_runs)
-                if missing:
+                missing, extra = _page_mismatch(workflow_runs, rest_runs)
+                if missing or extra:
                     workflow_runs = rest_runs
                     payload["listing_source"] = "rest"
                     payload["listing_note"] = (
-                        f"The GitHub MCP page lacked {len(missing)} of GitHub's {len(rest_runs)} "
-                        f"newest runs (e.g. {missing[0]}); these rows are the newest page "
+                        f"The GitHub MCP page did not match GitHub's {len(rest_runs)} newest "
+                        f"runs ({len(missing)} missing, {len(extra)} not listed by GitHub); "
+                        "these rows are the newest page "
                         "from the GitHub REST API instead."
                     )
 

@@ -1201,7 +1201,7 @@ def test_stale_mcp_listing_is_flagged_and_replaced_by_the_newest_rest_page() -> 
     assert [call["params"] for call in _RestListing.calls] == [{"branch": "main", "per_page": 2}]
     assert [row["id"] for row in result["workflow_runs"]] == [37229103087, 37228907189]
     assert result["listing_source"] == "rest"
-    assert "37229103087" in result["listing_note"]
+    assert "2 missing" in result["listing_note"]
 
 
 def test_mcp_page_with_the_newest_run_but_a_gap_is_replaced() -> None:
@@ -1258,3 +1258,29 @@ def test_fresh_mcp_listing_is_kept_after_the_rest_check() -> None:
     assert result["listing_source"] == "mcp"
     assert result["listing_verified"] is True
     assert "listing_note" not in result
+
+
+def test_mcp_page_with_runs_github_no_longer_lists_is_replaced() -> None:
+    """Extra MCP rows (e.g. a deleted run on a stale page) fail verification too."""
+    from integrations.github.tools import actions as actions_module
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    _RestListing.calls = []
+    _RestListing.runs = [_dated_run(30, "2026-10-04T19:30:00Z")]
+
+    def _respond(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return _runs_mcp_response(
+            arguments,
+            [_dated_run(30, "2026-10-04T19:30:00Z"), _dated_run(25, "2026-10-04T19:25:00Z")],
+        )
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
+        patch.object(actions_module, "GitHubRestClient", _RestListing),
+    ):
+        result = workflow_tool(owner="org", repo="repo", per_page=2, github_token="tok")
+
+    assert [row["id"] for row in result["workflow_runs"]] == [30]
+    assert result["listing_source"] == "rest"
+    assert "1 not listed by GitHub" in result["listing_note"]
