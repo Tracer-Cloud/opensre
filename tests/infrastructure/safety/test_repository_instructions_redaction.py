@@ -30,7 +30,7 @@ from infrastructure.safety.repository_instructions_redaction import omit_reposit
 _PRIVATE_RULE = "Deploy payments only from the release-7 branch."
 _BEFORE = "SYSTEM BASE\n\nREPOSITORY CONTEXT (this session):\n- github: active=acme/payments\n\n"
 _AFTER = "LONG-TERM MEMORY (durable facts):\n- payments deploys on Tuesdays\n\n"
-_UNCHECKED_GITLAB = "\n\nREPOSITORY INSTRUCTIONS: OpenSRE could not check AGENTS.md for group/infra"
+_UNCHECKED_GITLAB = "\n\nREPOSITORY INSTRUCTIONS: OpenSRE could not load AGENTS.md for group/infra"
 
 
 class _CheckoutSource:

@@ -47,6 +47,12 @@ logger = logging.getLogger(__name__)
 #: Precedence within one directory: the local override replaces the shared file.
 _FILENAMES = (REPOSITORY_INSTRUCTIONS_OVERRIDE_FILENAME, REPOSITORY_INSTRUCTIONS_FILENAME)
 _BUDGET = f"{REPOSITORY_INSTRUCTIONS_MAX_BYTES // 1024} KiB"
+#: The system prompt says AGENTS.md comes with the prompt; that holds only for
+#: what this block loaded, so every gap says so where the model reads it.
+_NOT_INCLUDED = (
+    "These instructions are not included in this prompt, whatever the AGENTS.md "
+    "section of the system prompt says;"
+)
 #: C0 and C1 controls except tab and newline; carriage returns become newlines first.
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 #: A file must not close the wrapper and go on speaking as OpenSRE.
@@ -112,8 +118,8 @@ def _repository_section(
     if directory is not None:
         root = _checkout_root(directory)
         if root is not None and checkout_matches_repository(vendor, repository, root):
-            candidates = _local_candidates(root, directory)
-            return _loaded_section(repository, str(root), candidates, remaining)
+            candidates, unreadable = _local_candidates(root, directory)
+            return _loaded_section(repository, str(root), candidates, remaining, unreadable)
     remote = fetch_repository_instructions(vendor, repository, resolved_integrations)
     if remote.status is RemoteInstructionsStatus.FOUND:
         candidate = _Candidate(repository, REPOSITORY_INSTRUCTIONS_FILENAME, remote.content)
@@ -139,8 +145,12 @@ def _checkout_root(directory: Path) -> Path | None:
     return None
 
 
-def _local_candidates(root: Path, directory: Path) -> list[_Candidate]:
-    """One file per directory from ``root`` down to ``directory``, or ``root``'s alone."""
+def _local_candidates(root: Path, directory: Path) -> tuple[list[_Candidate], list[str]]:
+    """One file per directory from ``root`` down to ``directory``, or ``root``'s alone.
+
+    Also returns the files that exist but could not be read, so the prompt can
+    say they were skipped instead of implying there are none.
+    """
     try:
         parts = directory.relative_to(root).parts
     except ValueError:
@@ -149,13 +159,18 @@ def _local_candidates(root: Path, directory: Path) -> list[_Candidate]:
     for part in parts:
         folders.append(folders[-1] / part)
     candidates: list[_Candidate] = []
+    unreadable: list[str] = []
     for folder in folders:
         # ``isfile`` follows links (as Codex does) and skips FIFOs, which would block a read.
         name = next((name for name in _FILENAMES if os.path.isfile(folder / name)), None)
-        content = _read_head(folder / name) if name is not None else None
-        if name is not None and content is not None:
+        if name is None:
+            continue
+        content = _read_head(folder / name)
+        if content is None:
+            unreadable.append(f"{name} in {_label(str(folder))}")
+        else:
             candidates.append(_Candidate(_label(str(folder)), name, content))
-    return candidates
+    return candidates, unreadable
 
 
 def _read_head(path: Path) -> bytes | None:
@@ -168,9 +183,17 @@ def _read_head(path: Path) -> bytes | None:
 
 
 def _loaded_section(
-    repository: str, origin: str, candidates: Sequence[_Candidate], remaining: int
+    repository: str,
+    origin: str,
+    candidates: Sequence[_Candidate],
+    remaining: int,
+    unreadable: Sequence[str] = (),
 ) -> tuple[str, int]:
-    """Render ``candidates`` within ``remaining`` bytes; the file that crosses it ends the budget."""
+    """Render ``candidates`` within ``remaining`` bytes; the file that crosses it ends the budget.
+
+    ``unreadable`` names files that exist but could not be read; they are listed
+    as skipped, never treated as absent.
+    """
     files: list[_InstructionFile] = []
     over_budget: list[str] = []
     used = 0
@@ -189,11 +212,18 @@ def _loaded_section(
             over_budget.append(f"{name} (left out)")
         if truncated:
             used = remaining
+    if not files and unreadable:
+        return _unchecked_line(repository, f"could not read {', '.join(unreadable)}"), used
     if not files and not over_budget:
         return _missing_line(repository), 0
     if not files:
         return _over_budget_line(repository, over_budget), used
-    return _render_loaded(repository, _label(origin), files, over_budget), used
+    notes = []
+    if over_budget:
+        notes.append(f"Over OpenSRE's {_BUDGET} AGENTS.md budget: {', '.join(over_budget)}")
+    if unreadable:
+        notes.append(f"OpenSRE could not read {', '.join(unreadable)}")
+    return _render_loaded(repository, _label(origin), files, notes), used
 
 
 def _prompt_text(content: bytes, limit: int) -> tuple[str, int, bool]:
@@ -215,9 +245,9 @@ def _prompt_text(content: bytes, limit: int) -> tuple[str, int, bool]:
 
 
 def _render_loaded(
-    repository: str, origin: str, files: Sequence[_InstructionFile], over_budget: Sequence[str]
+    repository: str, origin: str, files: Sequence[_InstructionFile], notes: Sequence[str]
 ) -> str:
-    """The header line, the budget note if any, then one wrapper per file.
+    """The header line, a note on what was left out if anything was, then one wrapper per file.
 
     The section ends at its last closing wrapper, which is how analytics exports
     find the text to leave out (``infrastructure.safety``); keep any note above
@@ -226,10 +256,9 @@ def _render_loaded(
     lines = [
         f"{REPOSITORY_INSTRUCTIONS_HEADER_PREFIX}{repository}, loaded by OpenSRE from {origin}):"
     ]
-    if over_budget:
+    if notes:
         lines.append(
-            f"[Over OpenSRE's {_BUDGET} AGENTS.md budget: {', '.join(over_budget)}. "
-            "Read them before changing files they cover.]"
+            f"[{'; '.join(notes)}. {_NOT_INCLUDED} read them before changing files they cover.]"
         )
     lines.append(
         "\n\n".join(
@@ -249,15 +278,15 @@ def _missing_line(repository: str) -> str:
 def _over_budget_line(repository: str, over_budget: Sequence[str]) -> str:
     return (
         f"REPOSITORY INSTRUCTIONS: AGENTS.md for {repository} did not fit OpenSRE's "
-        f"{_BUDGET} budget ({', '.join(over_budget)}). Read the repository's AGENTS.md "
-        "before changing its files."
+        f"{_BUDGET} budget ({', '.join(over_budget)}). {_NOT_INCLUDED} read the "
+        "repository's AGENTS.md before changing its files."
     )
 
 
 def _unchecked_line(repository: str, reason: str) -> str:
     return (
-        f"REPOSITORY INSTRUCTIONS: OpenSRE could not check AGENTS.md for {repository} "
-        f"({reason}). Read the repository's AGENTS.md before changing its files."
+        f"REPOSITORY INSTRUCTIONS: OpenSRE could not load AGENTS.md for {repository} "
+        f"({reason}). {_NOT_INCLUDED} read the repository's AGENTS.md before changing its files."
     )
 
 

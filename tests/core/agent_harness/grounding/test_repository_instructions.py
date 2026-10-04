@@ -16,7 +16,10 @@ from typing import Any
 import pytest
 
 from config.constants.repository_instructions import REPOSITORY_INSTRUCTIONS_MAX_BYTES
-from core.agent_harness.grounding.repository_instructions import repository_instructions_text
+from core.agent_harness.grounding.repository_instructions import (
+    _NOT_INCLUDED,
+    repository_instructions_text,
+)
 from infrastructure.harness_providers import (
     RemoteInstructions,
     RemoteInstructionsStatus,
@@ -151,8 +154,8 @@ def test_one_budget_cuts_the_crossing_file_and_names_the_files_left_out(tmp_path
     assert bodies == ["a" * 20_000, "b" * (REPOSITORY_INSTRUCTIONS_MAX_BYTES - 20_000)]
     assert text.splitlines()[1] == (
         f"[Over OpenSRE's 32 KiB AGENTS.md budget: AGENTS.md in {root / 'svc'} (cut), "
-        f"AGENTS.md in {root / 'svc' / 'api'} (left out). Read them before changing files "
-        "they cover.]"
+        f"AGENTS.md in {root / 'svc' / 'api'} (left out). {_NOT_INCLUDED} read them before "
+        "changing files they cover.]"
     )
     assert text.endswith("</INSTRUCTIONS>\n\n")
     assert "c" * 10 not in text
@@ -228,16 +231,16 @@ def test_a_checkout_whose_origin_is_another_repository_is_not_read(tmp_path: Pat
         (
             _FakeSource(local=False),
             {},
-            f"REPOSITORY INSTRUCTIONS: OpenSRE could not check AGENTS.md for {_REPOSITORY} "
-            "(no Fake connection). Read the repository's AGENTS.md before changing its "
-            "files.\n\n",
+            f"REPOSITORY INSTRUCTIONS: OpenSRE could not load AGENTS.md for {_REPOSITORY} "
+            f"(no Fake connection). {_NOT_INCLUDED} read the repository's AGENTS.md before "
+            "changing its files.\n\n",
         ),
         (
             _FakeSource(local=False, fails=True),
             {"token": "t"},
-            f"REPOSITORY INSTRUCTIONS: OpenSRE could not check AGENTS.md for {_REPOSITORY} "
-            "(the Fake read failed). Read the repository's AGENTS.md before changing its "
-            "files.\n\n",
+            f"REPOSITORY INSTRUCTIONS: OpenSRE could not load AGENTS.md for {_REPOSITORY} "
+            f"(the Fake read failed). {_NOT_INCLUDED} read the repository's AGENTS.md before "
+            "changing its files.\n\n",
         ),
     ],
     ids=["confirmed-absent", "no-connection", "read-failed"],
@@ -253,3 +256,36 @@ def test_one_line_says_when_there_is_no_file_or_it_could_not_be_checked(
 
     # Assert
     assert text == expected
+
+
+def _unreadable_overrides(path: Path) -> bytes | None:
+    if path.name == "AGENTS.override.md":
+        return None
+    return path.read_bytes()
+
+
+def test_a_file_that_exists_but_cannot_be_read_is_named_not_treated_as_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: the override in svc/ exists but cannot be read.
+    _install(_FakeSource(local=True))
+    root = _checkout(
+        tmp_path, {"AGENTS.md": "root rules", "svc/AGENTS.override.md": "svc override rules"}
+    )
+    monkeypatch.setattr(
+        "core.agent_harness.grounding.repository_instructions._read_head", _unreadable_overrides
+    )
+
+    # Act
+    loaded = _load(root / "svc")
+    alone = _load(_checkout(tmp_path / "only", {"AGENTS.override.md": "private rules"}))
+
+    # Assert: the model is told what it is missing, never that there is nothing.
+    assert _BODY.findall(loaded) == ["root rules"]
+    assert loaded.splitlines()[1] == (
+        f"[OpenSRE could not read AGENTS.override.md in {root / 'svc'}. {_NOT_INCLUDED} "
+        "read them before changing files they cover.]"
+    )
+    assert alone.startswith("REPOSITORY INSTRUCTIONS: OpenSRE could not load AGENTS.md for ")
+    assert "could not read AGENTS.override.md in" in alone
+    assert "no AGENTS.md found" not in alone
