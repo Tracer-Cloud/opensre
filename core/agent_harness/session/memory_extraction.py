@@ -12,6 +12,12 @@ pass replaces only its own unprocessed one, so concurrent sessions never drop
 each other's facts. Process-exit close waits for its pass to finish
 (interruptible by Ctrl+C) so durable facts always persist.
 
+A session's passes never overlap: the close pass first waits for the one the
+worker may already be running, so an older result never lands after the final
+one. Each pass also takes a snapshot of the session's turn record when it is
+queued, so it covers exactly the turns recorded by then with their demo
+markers, even after a later close pass drops the record.
+
 What is kept: user statements always (subject to the safety checks), facts
 shown by a tool only with evidence and ``verified: true``, and nothing about
 infrastructure, repositories or incidents that only the assistant said.
@@ -30,11 +36,12 @@ import logging
 import re
 import threading
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from core.agent_harness.session.memory_digest import build_session_digest
 from core.agent_harness.session.memory_turns import (
+    DemoTurns,
     demo_turns,
     forget_session,
     latest_user_text,
@@ -133,12 +140,14 @@ At most {max_memories} memories.
 
 @dataclass(frozen=True, slots=True)
 class ExtractionJob:
-    """One pass to run: the session, its transcript snapshot, and whether it closed."""
+    """One pass: the session, its transcript and turn record when queued, and whether it closed."""
 
     session_id: str
     messages: tuple[tuple[str, str], ...]
     #: A close or rotation pass; the session's turn record is dropped after it runs.
     final: bool = False
+    #: The session's demo turns and newest turn when the pass was queued.
+    demo: DemoTurns = DemoTurns()
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +172,8 @@ _worker_lock = threading.Lock()
 # replaces only its own session's entry and keeps that entry's place.
 _pending: dict[str, _PendingExtraction] = {}
 _worker: threading.Thread | None = None
+# The session whose pass the worker is running, and an event set when it ends.
+_in_flight: dict[str, threading.Event] = {}
 
 
 class _ChatSession(Protocol):
@@ -190,7 +201,9 @@ def record_turn_for_memory(session: Any) -> None:
         user_text=latest_user_text(messages),
     )
     if due:
-        _schedule_coalesced(ExtractionJob(session_id=session_id, messages=messages))
+        _schedule_coalesced(
+            ExtractionJob(session_id=session_id, messages=messages, demo=demo_turns(session_id))
+        )
 
 
 def schedule_memory_extraction(
@@ -204,25 +217,33 @@ def schedule_memory_extraction(
     ``session_id`` keys coalescing, so it is required: this pass replaces only
     the same session's unprocessed one, never another session's. When
     ``wait_for_completion`` is true (session ``close`` / process exit), run in
-    a dedicated thread and wait so durable facts land before the process ends.
-    Rotation paths leave it false and hand the pass to the shared worker.
+    a dedicated thread and wait so durable facts land before the process ends;
+    that thread first waits for a pass of the same session the shared worker
+    has already started. Rotation paths leave it false and hand the pass to
+    the shared worker, which runs a session's passes in order.
     """
     if not auto_extract_enabled():
         return
-    job = ExtractionJob(session_id=session_id, messages=tuple(messages), final=True)
+    job = ExtractionJob(
+        session_id=session_id,
+        messages=tuple(messages),
+        final=True,
+        demo=demo_turns(session_id),
+    )
     if not wait_for_completion:
         _schedule_coalesced(job)
         return
-    # This run supersedes only this session's queued job.
+    # This run supersedes only this session's queued job, and follows its running one.
     with _worker_lock:
         _pending.pop(session_id, None)
+        running = _in_flight.get(session_id)
     # Run extraction off the main thread and wait until it finishes so durable
     # facts always land before process exit. Poll the join so Ctrl+C during
     # shutdown stays interruptible without raising through the network read.
     ctx = contextvars.copy_context()
     worker = threading.Thread(
         target=ctx.run,
-        args=(_extract_memories_safe, job),
+        args=(_extract_after, running, job),
         name="opensre-memory-extraction-close",
         daemon=True,
     )
@@ -236,6 +257,13 @@ def schedule_memory_extraction(
             "final transcript facts may be incomplete"
         )
         raise
+
+
+def _extract_after(running: threading.Event | None, job: ExtractionJob) -> None:
+    """Run ``job`` once the session's pass already running on the worker has finished."""
+    if running is not None:
+        running.wait()
+    _extract_memories_safe(job)
 
 
 def _schedule_coalesced(job: ExtractionJob) -> None:
@@ -253,7 +281,7 @@ def _schedule_coalesced(job: ExtractionJob) -> None:
     with _worker_lock:
         previous = _pending.get(job.session_id)
         if previous is not None and previous.job.final and not job.final:
-            job = ExtractionJob(session_id=job.session_id, messages=job.messages, final=True)
+            job = replace(job, final=True)
         _pending[job.session_id] = _PendingExtraction(job=job, context=contextvars.copy_context())
         if _worker is not None and _worker.is_alive():
             return
@@ -278,18 +306,22 @@ def _coalesced_extract_worker() -> None:
                 _worker = None
                 return
             entry = _pending.pop(next(iter(_pending)))
-        entry.context.run(_extract_memories_safe, entry.job)
+            done = _in_flight[entry.job.session_id] = threading.Event()
+        try:
+            entry.context.run(_extract_memories_safe, entry.job)
+        finally:
+            with _worker_lock:
+                _in_flight.pop(entry.job.session_id, None)
+            done.set()
 
 
 def extract_memories_from_session(session: _ChatSession) -> None:
     """Run one extraction pass synchronously over the session; silent no-op when gated off."""
     messages = tuple(getattr(session, "cli_agent_messages", []) or [])
     session_id = getattr(session, "session_id", "")
+    session_id = session_id if isinstance(session_id, str) else ""
     _extract_memories_safe(
-        ExtractionJob(
-            session_id=session_id if isinstance(session_id, str) else "",
-            messages=messages,
-        )
+        ExtractionJob(session_id=session_id, messages=messages, demo=demo_turns(session_id))
     )
 
 
@@ -311,11 +343,7 @@ def _extract_memories_safe(job: ExtractionJob) -> None:
 def _run_extraction(job: ExtractionJob) -> None:
     if not auto_extract_enabled():
         return
-    digest = build_session_digest(
-        job.session_id,
-        demo=demo_turns(job.session_id),
-        fallback_messages=job.messages,
-    )
+    digest = build_session_digest(job.session_id, demo=job.demo, transcript=job.messages)
     if digest.empty:
         return
     ensure_memory_store()

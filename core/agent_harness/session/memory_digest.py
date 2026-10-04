@@ -6,10 +6,17 @@ facts shown by tool output can be remembered with provenance. A turn's tool
 records are written while it runs and its messages when it ends, so tool
 records belong to the user message that follows them.
 
-Sessions without a log (in-memory hosts, tests) fall back to the transcript
-text. Demo turns are dropped, every piece is passed through the memory
-redactor, each tool result is capped, and when the whole digest is over budget
-the newest turns are kept.
+A pass covers the session through the newest turn recorded when it was
+queued. That turn's messages may not be logged yet, so it comes from the
+in-memory transcript when the log lacks it; anything logged after it belongs
+to a later pass. Sessions without a log (in-memory hosts, tests) use the
+transcript text.
+
+Demo turns are dropped, and so are summaries of earlier turns (compaction
+records and session-summary messages): a summary blends many turns, so the
+demo fence cannot vouch for it, and the log keeps the turns it summarizes.
+Every piece is passed through the memory redactor, each tool result is
+capped, and when the whole digest is over budget the newest turns are kept.
 """
 
 from __future__ import annotations
@@ -22,9 +29,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.agent_harness.session.memory_turns import DemoTurns
+from core.agent_harness.session.memory_turns import DemoTurns, normalize_user_text
 from core.agent_harness.session.persistence.paths import session_path
 from core.domain.memory import redact_memory_unsafe_text
+from core.state.transcript_window import is_summary_message
 
 MAX_DIGEST_CHARS = 60_000
 MAX_TOOL_RESULT_CHARS = 1_500
@@ -56,8 +64,6 @@ class _Turn:
     turn_id: str | None = None
     assistant_text: str = ""
     tools: list[str] = field(default_factory=list)
-    #: Text of a compaction record standing in for turns that were summarized away.
-    summary: str = ""
 
 
 @dataclass(frozen=True)
@@ -151,15 +157,13 @@ def _turns_from_log(records: Sequence[dict[str, Any]]) -> list[_Turn]:
                 pending_tools.append(
                     _tool_line(tool, arguments, record.get("ok"), record.get("content", ""))
                 )
-        elif kind == "compaction":
-            summary = str(record.get("summary") or "").strip()
-            if summary:
-                turns.append(_Turn(summary=summary))
         elif kind == "message":
             role = record.get("role")
             content = str(record.get("content") or "")
             metadata = record.get("metadata")
             turn_id = metadata.get("turn_id") if isinstance(metadata, dict) else None
+            if is_summary_message((str(role), content)):
+                continue
             if role == "user":
                 if open_turn is not None:
                     turns.append(open_turn)
@@ -187,6 +191,8 @@ def _turns_from_log(records: Sequence[dict[str, Any]]) -> list[_Turn]:
 def _turns_from_transcript(messages: Sequence[tuple[str, str]]) -> list[_Turn]:
     turns: list[_Turn] = []
     for role, text in messages:
+        if is_summary_message((role, text)):
+            continue
         if role == "user":
             turns.append(_Turn(user_text=text))
         elif role == "assistant":
@@ -196,9 +202,53 @@ def _turns_from_transcript(messages: Sequence[tuple[str, str]]) -> list[_Turn]:
     return turns
 
 
+def _newest_turn(transcript: Sequence[tuple[str, str]], demo: DemoTurns) -> _Turn | None:
+    """The transcript's last exchange, the newest recorded turn; ``None`` without one."""
+    turns = _turns_from_transcript(transcript)
+    if not turns or not turns[-1].user_text:
+        return None
+    newest = turns[-1]
+    newest.turn_id = demo.latest_turn_id_for(newest.user_text)
+    return newest
+
+
+def _exchange(turn: _Turn) -> tuple[str, str]:
+    """A turn's request and reply, whitespace-insensitive."""
+    return normalize_user_text(turn.user_text), normalize_user_text(turn.assistant_text)
+
+
+def _same_turn(logged: _Turn, newest: _Turn) -> bool:
+    """Whether ``logged`` is ``newest``: by prompt turn id when known, else by its text."""
+    if newest.turn_id:
+        return logged.turn_id == newest.turn_id
+    return _exchange(logged) == _exchange(newest)
+
+
+def _in_flight(turn: _Turn) -> bool:
+    """A turn whose tools are logged but whose messages are not, because it is still ending."""
+    return not (turn.user_text or turn.turn_id or turn.assistant_text)
+
+
+def _through_newest(logged: list[_Turn], newest: _Turn | None) -> list[_Turn]:
+    """The logged turns up to and including ``newest``, taking it from the transcript if absent.
+
+    Anything logged after ``newest`` belongs to a turn recorded after this
+    pass was queued, which the demo fence of this pass knows nothing about.
+    When ``newest`` is not logged yet, the tools logged while it ran are the
+    trailing in-flight turn.
+    """
+    if newest is None:
+        return logged
+    for index in range(len(logged) - 1, -1, -1):
+        if _same_turn(logged[index], newest):
+            return logged[: index + 1]
+    if logged and _in_flight(logged[-1]):
+        newest.tools = logged[-1].tools
+        logged = logged[:-1]
+    return [*logged, newest]
+
+
 def _is_demo(turn: _Turn, demo: DemoTurns, *, newest: bool) -> bool:
-    if turn.summary:
-        return False
     if not turn.user_text and not turn.turn_id:
         # Only the in-flight turn has tools and no message yet.
         return newest and demo.latest_is_demo
@@ -217,29 +267,24 @@ def _render(turn: _Turn, budget: int, *, clip: bool) -> str:
     calls of a turn usually show what finally worked. With ``clip`` the
     request and the reply themselves are cut to fit.
     """
-    if turn.summary:
-        text = f"EARLIER CONVERSATION (summary): {_safe(turn.summary, MAX_MESSAGE_CHARS)}"
-    else:
-        head = f"USER: {_safe(turn.user_text, MAX_MESSAGE_CHARS)}" if turn.user_text else ""
-        tail = (
-            f"ASSISTANT: {_safe(turn.assistant_text, MAX_MESSAGE_CHARS)}"
-            if turn.assistant_text
-            else ""
-        )
-        fixed = sum(len(line) + 1 for line in (head, tail) if line)
-        tools = turn.tools
-        if fixed + sum(len(line) + 1 for line in tools) > budget:
-            kept: list[str] = []
-            used = fixed + _OMITTED_NOTE_RESERVE
-            for line in reversed(tools):
-                if used + len(line) + 1 > budget:
-                    break
-                kept.append(line)
-                used += len(line) + 1
-            kept.reverse()
-            omitted = len(tools) - len(kept)
-            tools = [_OMITTED_NOTE.format(count=omitted), *kept]
-        text = "\n".join(line for line in (head, *tools, tail) if line)
+    head = f"USER: {_safe(turn.user_text, MAX_MESSAGE_CHARS)}" if turn.user_text else ""
+    tail = (
+        f"ASSISTANT: {_safe(turn.assistant_text, MAX_MESSAGE_CHARS)}" if turn.assistant_text else ""
+    )
+    fixed = sum(len(line) + 1 for line in (head, tail) if line)
+    tools = turn.tools
+    if fixed + sum(len(line) + 1 for line in tools) > budget:
+        kept: list[str] = []
+        used = fixed + _OMITTED_NOTE_RESERVE
+        for line in reversed(tools):
+            if used + len(line) + 1 > budget:
+                break
+            kept.append(line)
+            used += len(line) + 1
+        kept.reverse()
+        omitted = len(tools) - len(kept)
+        tools = [_OMITTED_NOTE.format(count=omitted), *kept]
+    text = "\n".join(line for line in (head, *tools, tail) if line)
     if len(text) <= budget:
         return text
     return _clip(text, budget) if clip else ""
@@ -275,14 +320,16 @@ def build_session_digest(
     session_id: str,
     *,
     demo: DemoTurns,
-    fallback_messages: Sequence[tuple[str, str]] = (),
+    transcript: Sequence[tuple[str, str]] = (),
     max_chars: int = MAX_DIGEST_CHARS,
 ) -> SessionDigest:
-    """The digest of ``session_id``'s log, or of ``fallback_messages`` when there is no log.
+    """The digest of ``session_id`` through its newest recorded turn.
 
-    The log wins when it holds at least one user message, even if every one
-    of them was a demo turn; otherwise the in-memory transcript is used.
-    Never raises on a malformed or missing log.
+    ``transcript`` is the in-memory transcript when the pass was queued; its
+    last exchange is the newest recorded turn, which ``demo`` names. The log
+    wins when it holds at least one user
+    message, even if every one of them was a demo turn; otherwise the
+    transcript is used. Never raises on a malformed or missing log.
     """
     if session_id:
         records: list[dict[str, Any]] = []
@@ -290,8 +337,10 @@ def build_session_digest(
             records = _load_records(session_path(session_id))
         logged = _turns_from_log(records)
         if any(turn.user_text for turn in logged):
-            return replace(_assemble(logged, demo, max_chars), started_at=_session_started(records))
-    return _assemble(_turns_from_transcript(fallback_messages), demo, max_chars)
+            newest = _newest_turn(transcript, demo)
+            digest = _assemble(_through_newest(logged, newest), demo, max_chars)
+            return replace(digest, started_at=_session_started(records))
+    return _assemble(_turns_from_transcript(transcript), demo, max_chars)
 
 
 __all__ = [

@@ -17,6 +17,7 @@ from config.constants import (
     OPENSRE_MEMORY_DIR_ENV,
     OPENSRE_MEMORY_DISABLED_ENV,
 )
+from config.constants.skills import ONBOARDING_SKILL_NAME
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope, current_scope
 from core.agent_harness.session import memory_turns
@@ -495,6 +496,79 @@ class TestSchedule:
         _join_worker()
 
         assert [label for label, _size, _scope in gated.calls] == ["busy", "a-final", "from-b"]
+
+
+@pytest.mark.usefixtures("idle_worker")
+def test_close_waits_for_the_pass_the_worker_is_running_for_its_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An older pass finishing after the final one would overwrite the final pass's memories."""
+    order: list[str] = []
+    started = threading.Event()
+    release = threading.Event()
+
+    def _extract(job: extraction.ExtractionJob) -> None:
+        if not job.final:
+            started.set()
+            release.wait(_WAIT_SECONDS)
+        order.append("final" if job.final else "mid-session")
+
+    monkeypatch.setattr(extraction, "_extract_memories_safe", _extract)
+    extraction._schedule_coalesced(
+        extraction.ExtractionJob(session_id="s-a", messages=tuple(_transcript("mid")))
+    )
+    assert started.wait(_WAIT_SECONDS)
+
+    closer = threading.Thread(
+        target=extraction.schedule_memory_extraction,
+        args=(_transcript("final"),),
+        kwargs={"session_id": "s-a", "wait_for_completion": True},
+    )
+    closer.start()
+    closer.join(0.2)
+    release.set()
+    closer.join(_WAIT_SECONDS)
+
+    assert not closer.is_alive()
+    assert order == ["mid-session", "final"]
+
+
+@dataclass
+class _TurnSession:
+    session_id: str
+    cli_agent_messages: list[tuple[str, str]] = field(default_factory=list)
+    active_skill: str | None = None
+
+
+def test_a_queued_pass_keeps_its_demo_fence_after_the_session_record_is_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A close pass drops the session's turn record; an older pass still running must not
+    then read the session's demo turns as ordinary ones."""
+    queued: list[extraction.ExtractionJob] = []
+    monkeypatch.setattr(extraction, "_schedule_coalesced", queued.append)
+    session = _TurnSession(session_id="s-fence", active_skill=ONBOARDING_SKILL_NAME)
+    session.cli_agent_messages += [
+        ("user", "Run one repair in OpenSRE Cloud"),
+        ("assistant", "Repaired PR #1 in octocat/opensre-ci-repair-demo-ab12."),
+    ]
+    extraction.record_turn_for_memory(session)
+    session.active_skill = None
+    for index in range(memory_turns.EXTRACTION_TURN_INTERVAL):
+        session.cli_agent_messages += [
+            ("user", f"our prod cluster is eks-prod-{index}"),
+            ("assistant", "noted"),
+        ]
+        extraction.record_turn_for_memory(session)
+    [job] = queued
+
+    memory_turns.forget_session("s-fence")
+    prompts = _patch_llm(monkeypatch, _response())
+    extraction._extract_memories_safe(job)
+
+    [prompt] = prompts
+    assert "eks-prod-5" in prompt
+    assert "opensre-ci-repair-demo" not in prompt
 
 
 def test_scheduled_extraction_thread_inherits_storage_scope(

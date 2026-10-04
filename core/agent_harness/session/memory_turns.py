@@ -10,8 +10,10 @@ structured session state, never the wording of the request.
 Demo turns are remembered by their prompt turn id (matched against the
 session log) and their user text (matched against the in-memory transcript)
 so extraction can drop them. Only non-demo turns count toward the extraction
-interval. The record lives in this process, keyed by session id, because some
-hosts (the gateway) rebuild the session object for every turn.
+interval. The newest recorded turn is remembered too, so a pass can find where
+the session stood when it was queued. The record lives in this process, keyed
+by session id, because some hosts (the gateway) rebuild the session object for
+every turn; a pass takes a snapshot of it when it is queued.
 """
 
 from __future__ import annotations
@@ -57,12 +59,21 @@ def latest_user_text(messages: Sequence[tuple[str, str]]) -> str:
 
 @dataclass(frozen=True)
 class DemoTurns:
-    """The demo turns of one session, as extraction needs them."""
+    """The demo turns of one session, and its newest recorded turn, as extraction needs them."""
 
     turn_ids: frozenset[str] = frozenset()
     user_texts: frozenset[str] = frozenset()
     #: Whether the newest recorded turn was a demo turn (its log messages may not be written yet).
     latest_is_demo: bool = False
+    #: Prompt turn id and normalized user text of the newest recorded turn, when known.
+    latest_turn_id: str | None = None
+    latest_user_text: str = ""
+
+    def latest_turn_id_for(self, user_text: str) -> str | None:
+        """The newest turn's id when ``user_text`` is that turn's text, else ``None``."""
+        if self.latest_turn_id and normalize_user_text(user_text) == self.latest_user_text:
+            return self.latest_turn_id
+        return None
 
     def covers(self, *, turn_id: str | None, user_text: str) -> bool:
         """Whether a logged turn is one of these demo turns.
@@ -81,6 +92,8 @@ class _SessionTurns:
     demo_turn_ids: list[str] = field(default_factory=list)
     demo_user_texts: list[str] = field(default_factory=list)
     latest_is_demo: bool = False
+    latest_turn_id: str | None = None
+    latest_user_text: str = ""
 
 
 _lock = threading.Lock()
@@ -103,14 +116,16 @@ def note_recorded_turn(session_id: str, *, demo: bool, turn_id: str | None, user
 
     Demo turns are remembered for filtering and never complete an interval.
     """
+    key = normalize_user_text(user_text)
     with _lock:
         entry = _entry(session_id)
         entry.latest_is_demo = demo
+        entry.latest_turn_id = turn_id
+        entry.latest_user_text = key
         if demo:
             if turn_id:
                 entry.demo_turn_ids.append(turn_id)
                 del entry.demo_turn_ids[:-_MAX_DEMO_TURNS_PER_SESSION]
-            key = normalize_user_text(user_text)
             if key:
                 entry.demo_user_texts.append(key)
                 del entry.demo_user_texts[:-_MAX_DEMO_TURNS_PER_SESSION]
@@ -132,6 +147,8 @@ def demo_turns(session_id: str) -> DemoTurns:
             turn_ids=frozenset(entry.demo_turn_ids),
             user_texts=frozenset(entry.demo_user_texts),
             latest_is_demo=entry.latest_is_demo,
+            latest_turn_id=entry.latest_turn_id,
+            latest_user_text=entry.latest_user_text,
         )
 
 

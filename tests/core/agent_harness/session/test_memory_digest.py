@@ -19,6 +19,7 @@ from core.agent_harness.session.memory_digest import (
 from core.agent_harness.session.memory_turns import DemoTurns
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
 from core.agent_harness.session.session_core import SessionCore
+from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 
 _NO_DEMO = DemoTurns()
 
@@ -150,22 +151,92 @@ def test_the_turn_still_running_follows_the_latest_turns_demo_flag(
 def test_a_log_of_demo_turns_only_is_empty_and_not_replaced_by_the_transcript(
     log: tuple[JsonlSessionStore, str],
 ) -> None:
-    _turn(log, "Run one repair in OpenSRE Cloud", "Repaired PR #1.", "t-demo")
+    request = "Run one repair in OpenSRE Cloud"
+    _turn(log, request, "Repaired PR #1.", "t-demo")
 
     digest = build_session_digest(
         log[1],
-        demo=DemoTurns(turn_ids=frozenset({"t-demo"})),
-        fallback_messages=[("user", "Run one repair in OpenSRE Cloud"), ("assistant", "ok")],
+        demo=DemoTurns(
+            turn_ids=frozenset({"t-demo"}),
+            user_texts=frozenset({request}),
+            latest_is_demo=True,
+            latest_turn_id="t-demo",
+            latest_user_text=request,
+        ),
+        transcript=[("user", request), ("assistant", "Repaired PR #1.")],
     )
 
     assert digest.empty
+
+
+@pytest.mark.parametrize("logged", [False, True])
+def test_the_digest_ends_with_the_turn_that_queued_the_pass(
+    log: tuple[JsonlSessionStore, str], logged: bool
+) -> None:
+    """A pass is queued as its turn is recorded, before that turn's messages are logged.
+
+    Whether or not they are logged by the time the pass reads the log, the
+    digest holds that turn with its tools, and nothing from a later turn.
+    """
+    for index in range(5):
+        _turn(log, f"question {index}", f"answer {index}", f"t{index}")
+    _tool(log, "github_get_run", {"run_id": 18822}, '{"conclusion": "failure"}')
+    request, reply = "why did run 18822 fail?", "It failed on windows-latest."
+    if logged:
+        _turn(log, request, reply, "t5")
+        _tool(log, "seed_ci_repair_demo", {"owner": "octocat"}, "created a demo repository")
+
+    digest = build_session_digest(
+        log[1],
+        demo=DemoTurns(latest_turn_id="t5", latest_user_text=request),
+        transcript=[
+            ("user", "question 4"),
+            ("assistant", "answer 4"),
+            ("user", request),
+            ("assistant", reply),
+        ],
+    )
+
+    assert digest.turns == 6
+    assert digest.text.endswith(
+        f"USER: {request}\n"
+        'TOOL github_get_run {"run_id": 18822} → ok: {"conclusion": "failure"}\n'
+        f"ASSISTANT: {reply}"
+    )
+    assert "seed_ci_repair_demo" not in digest.text
+
+
+@pytest.mark.parametrize("source", ["compaction record", "session-summary message"])
+def test_a_summary_of_earlier_turns_never_reaches_the_digest(
+    log: tuple[JsonlSessionStore, str], source: str
+) -> None:
+    """A summary blends demo turns into prose the demo fence cannot attribute to them."""
+    store, session_id = log
+    summary = "Seeded octocat/opensre-ci-repair-demo-ab12 and repaired its PR #1."
+    _turn(log, "yes", "Demo repository ready.", "t-demo")
+    if source == "compaction record":
+        store.append_compaction(
+            session_id, summary=summary, first_kept_entry_id="", before_chars=1, after_chars=1
+        )
+    else:
+        store.append_message(session_id, role="assistant", content=SESSION_SUMMARY_PREFIX + summary)
+    _turn(log, "check the payments deploy", "The deploy is healthy.", "t-real")
+
+    digest = build_session_digest(
+        session_id,
+        demo=DemoTurns(turn_ids=frozenset({"t-demo"}), user_texts=frozenset({"yes"})),
+    )
+
+    assert "opensre-ci-repair-demo" not in digest.text
+    assert digest.text == "USER: check the payments deploy\nASSISTANT: The deploy is healthy."
 
 
 def test_sessions_without_a_log_use_the_transcript_minus_demo_turns() -> None:
     digest = build_session_digest(
         "no-such-session",
         demo=DemoTurns(user_texts=frozenset({"Analyze & improve a repo (recommended)"})),
-        fallback_messages=[
+        transcript=[
+            ("assistant", f"{SESSION_SUMMARY_PREFIX}Seeded opensre-ci-repair-demo-ab12."),
             ("user", "Analyze & improve a repo  (recommended)"),
             ("assistant", "main was red 30% of the month"),
             ("user", "our prod cluster is eks-prod-1"),
@@ -176,3 +247,4 @@ def test_sessions_without_a_log_use_the_transcript_minus_demo_turns() -> None:
     assert digest.turns == 1
     assert "eks-prod-1" in digest.text
     assert "red 30%" not in digest.text
+    assert "opensre-ci-repair-demo" not in digest.text
