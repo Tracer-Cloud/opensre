@@ -326,6 +326,48 @@ def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
     assert json.loads(snapshot.read_text())["executions"] == 0
 
 
+def _rate_limited(*_args: object, **_kwargs: object) -> Any:
+    from integrations.github.client import GitHubApiError, GitHubFailureKind
+
+    raise GitHubApiError(
+        "rate limited", kind=GitHubFailureKind.RATE_LIMITED, retry_after_seconds=1380
+    )
+
+
+def test_a_blocked_read_reaches_the_loops_channels_as_a_blocked_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: the read failure was raised, and the manual-loop runner swapped it for
+    "Manual loop failed … Check logs for details", so the scheduled user never learned what
+    blocked the read or when the rate limit lifts."""
+    import json
+
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_REPORT_ARGS_PARAM,
+        LOOP_REPORT_PARAM,
+    )
+    from infrastructure.scheduling.scheduler.outcomes import WorkStatus
+    from integrations import manual_loop_runner
+    from integrations.github import client as github_client
+    from integrations.github.tools.ci_analytics import analysis
+
+    monkeypatch.setattr(github_client, "resolve_github_token", lambda _t: "tok")
+    monkeypatch.setattr(analysis, "collect_runs", _rate_limited)
+
+    report = manual_loop_runner.run_manual_prompt_loop(
+        {
+            LOOP_REPORT_PARAM: ci_loop.REPORT_NAME,
+            LOOP_REPORT_ARGS_PARAM: json.dumps({"owner": "acme", "repo": "app"}),
+        }
+    )
+
+    assert re.search(r"can't be read until about \d\d:\d\d UTC \(in 23 minutes\)", report)
+    assert report.outcome.status is WorkStatus.BLOCKED
+    assert report.outcome.error_kind == "rate_limited"
+    assert not report.outcome.completed
+    assert not report.outcome.terminal_block
+
+
 def test_build_report_without_a_token_raises_a_generic_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

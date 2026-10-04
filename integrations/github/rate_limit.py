@@ -14,6 +14,11 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 PauseNotice = Callable[[float], None]
+# GitHub counts secondary limits per minute: sending one request at a time for
+# a minute past the pause keeps the next window clear, then full concurrency
+# resumes. A further limit pauses again, within the client's patience, so the
+# slowdown stays bounded.
+_SERIAL_WINDOW_SECONDS = 60.0
 
 
 class RateLimitPauseTooLong(Exception):
@@ -31,9 +36,9 @@ class RateLimitGate:
     lifetime. A pause that would exceed it is not waited at all: every request
     fails at once until it lifts, so a caller learns when to come back instead
     of stalling. A secondary limit means the client sent too much at once, so
-    after one the gate admits a single request at a time, as GitHub advises.
-    ``on_pause`` hears each pause the client waits out, from the thread that
-    hit the limit.
+    for ``serial_window_seconds`` past its pause the gate admits a single
+    request at a time, as GitHub advises. ``on_pause`` hears each pause the
+    client waits out, from the thread that hit the limit.
     """
 
     def __init__(
@@ -41,16 +46,18 @@ class RateLimitGate:
         *,
         patience_seconds: float,
         on_pause: PauseNotice | None = None,
+        serial_window_seconds: float = _SERIAL_WINDOW_SECONDS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._patience = patience_seconds
         self._on_pause = on_pause
+        self._serial_window = serial_window_seconds
         self._clock = clock
         self._cond = threading.Condition()
         self._resume_at = 0.0
         self._refused_until = 0.0
         self._waited = 0.0
-        self._serial = False
+        self._serial_until = 0.0
         self._in_flight = 0
 
     def admit(self) -> None:
@@ -67,8 +74,8 @@ class RateLimitGate:
                 if now < self._resume_at:
                     self._cond.wait(self._resume_at - now)
                     continue
-                if self._serial and self._in_flight:
-                    self._cond.wait()
+                if now < self._serial_until and self._in_flight:
+                    self._cond.wait(self._serial_until - now)
                     continue
                 self._in_flight += 1
                 return
@@ -96,7 +103,8 @@ class RateLimitGate:
         with self._cond:
             now = self._clock()
             resume_at = now + max(seconds, 0.0)
-            self._serial = self._serial or secondary
+            if secondary:
+                self._serial_until = max(self._serial_until, resume_at + self._serial_window)
             extension = resume_at - max(self._resume_at, now)
             if extension <= 0:
                 return True

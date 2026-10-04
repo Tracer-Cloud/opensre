@@ -95,7 +95,7 @@ and window: they are historical context, not a ranking. Do not call
 
 If a cell has no source in the analysis result, return to
 the call above: reread `coverage_notices` for the named gap, and if the analysis did
-not return success, do not run it again: its `response_text` names the blocker. A cell still without a source is
+not return success, run it again once. A cell still without a source is
 `n/a` with the gap stated under the table; never estimate it.
 
 Prepare the report below for delivery in step 4.

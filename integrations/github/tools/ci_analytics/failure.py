@@ -9,6 +9,7 @@ from typing import Any
 from config.constants.github import GITHUB_INTEGRATION_SETUP_CLI
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
+from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.github.client import GitHubApiError, GitHubFailureKind, github_failure_kind
 
 _SOURCE = "github"
@@ -145,4 +146,24 @@ def analysis_failure(exc: Exception, *, owner: str, repo: str, now: datetime) ->
     )
 
 
-__all__ = ["analysis_failure", "analysis_failure_line", "is_operational_failure"]
+def analysis_failure_report(exc: Exception, *, owner: str, repo: str, now: datetime) -> TaskReport:
+    """A scheduled run's report when GitHub could not be read: the user's line, not a crash.
+
+    Delivered like any report, so the loop's channels learn what blocked the
+    read and when a rate limit lifts, instead of a failure only the logs
+    explain. An operational failure is blocked, anything else failed; both
+    stay retryable, so the schedule keeps its next tick.
+    """
+    line = analysis_failure_line(exc, repository=f"{owner}/{repo}", now=now)
+    status = WorkStatus.BLOCKED if is_operational_failure(exc) else WorkStatus.FAILED
+    return TaskReport(
+        line, summary=line, work_status=status, error_kind=github_failure_kind(exc).value
+    )
+
+
+__all__ = [
+    "analysis_failure",
+    "analysis_failure_line",
+    "analysis_failure_report",
+    "is_operational_failure",
+]
