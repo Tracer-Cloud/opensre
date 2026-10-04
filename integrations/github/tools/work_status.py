@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import time
 from http import HTTPStatus
 from typing import Any, Literal, cast
 
@@ -286,6 +287,21 @@ def _normalize_pull_request(
     )
 
 
+#: Re-reads of a PR whose mergeability GitHub is still computing, and the wait between them.
+_MERGEABILITY_REREADS = 2
+_MERGEABILITY_WAIT_SECONDS = 2.0
+
+
+def _settled_mergeability(client: GitHubRestClient, path: str, detail_pr: Any) -> Any:
+    """Re-read a PR until GitHub reports its mergeability, a few seconds at most."""
+    for _ in range(_MERGEABILITY_REREADS):
+        if not isinstance(detail_pr, dict) or isinstance(detail_pr.get("mergeable"), bool):
+            return detail_pr
+        time.sleep(_MERGEABILITY_WAIT_SECONDS)
+        detail_pr = client.request("GET", path)
+    return detail_pr
+
+
 def _repository_name(ref: Any) -> str:
     """``owner/name`` of a PR head or base, or "" when GitHub reports no repository."""
     repository = ref.get("repo") if isinstance(ref, dict) else None
@@ -419,6 +435,10 @@ def summarize_github_pr_status(
                 fully_inspected = False
                 continue
             detail_pr = client.request("GET", f"/repos/{owner}/{repo}/pulls/{number}")
+            if conflicts_only:
+                detail_pr = _settled_mergeability(
+                    client, f"/repos/{owner}/{repo}/pulls/{number}", detail_pr
+                )
             if not isinstance(detail_pr, dict):
                 fully_inspected = False
                 detail_pr = list_pr

@@ -333,6 +333,25 @@ def error_output(kind: str, message: str, ctx: CiFixContext | None = None) -> di
     return output
 
 
+def _reported(
+    ctx: CiFixContext, exc: GitHubCiFixError, github_token: str | None
+) -> GitHubCiFixError:
+    """Comment a merge decision on the PR; one that could not be posted stays retryable.
+
+    The decision blocks this head only once a person can see it, so a failed
+    comment keeps it a plain conflict that the next call attempts again.
+    """
+    if exc.kind != ERR_MERGE_DECISION or report_decision(
+        ctx, exc.message, github_token=github_token
+    ):
+        return exc
+    return GitHubCiFixError(
+        ERR_MERGE_CONFLICT,
+        f"{exc.message} Asking on the pull request failed, so the next call tries again.",
+        branch_name=exc.branch_name,
+    )
+
+
 def _decision_already_reported(ctx: CiFixContext, request: str) -> dict[str, Any]:
     """The merge decision this head still waits for, returned without a clone or retry."""
     message = (
@@ -523,9 +542,7 @@ def run_ci_fix(
                     recorded_through=merge.commit_sha if merge is not None else ctx.head_sha,
                 )
         except GitHubCiFixError as exc:
-            if exc.kind == ERR_MERGE_DECISION:
-                report_decision(ctx, exc.message, github_token=github_token)
-            return push_error_output(output, exc)
+            return push_error_output(output, _reported(ctx, exc, github_token))
         verified = _verify_repair(ctx, output, push, github_token, timer=phases, **check_wait)
         if verified.get("checks_state") != CheckState.CONFLICTED.value:
             return verified
@@ -661,8 +678,7 @@ def _merge_after_conflicted_push(
                 recorded_through=merge.commit_sha,
             )
     except GitHubCiFixError as exc:
-        if exc.kind == ERR_MERGE_DECISION:
-            report_decision(ctx, exc.message, github_token=github_token)
+        exc = _reported(ctx, exc, github_token)
         base_branch = ctx.base_branch or "the base branch"
         detail = _NO_PUSH_TAIL_RE.sub("", exc.message).rstrip(".")
         message = (

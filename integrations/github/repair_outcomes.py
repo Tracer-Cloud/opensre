@@ -19,9 +19,9 @@ def _needs_repair(pr: dict[str, Any]) -> bool:
     )
 
 
-def _conflicts(pr: dict[str, Any]) -> bool:
-    """GitHub cannot merge the PR into its base; unknown mergeability is read next tick."""
-    return pr["mergeable"] is False or pr["mergeable_state"] == "dirty"
+def _may_conflict(pr: dict[str, Any]) -> bool:
+    """Not proven mergeable: a conflict, or mergeability GitHub has not computed yet."""
+    return pr["mergeable"] is not True
 
 
 def attach_ci_scan_outcome(
@@ -35,7 +35,7 @@ def attach_ci_scan_outcome(
     """
     prs = output["pull_requests"]
     repairable = [pr for pr in prs if pr["repairable"]]
-    needs_repair = _conflicts if conflicts_only else _needs_repair
+    needs_repair = _may_conflict if conflicts_only else _needs_repair
     if not fully_inspected or any(needs_repair(pr) for pr in repairable):
         return output
     owner, repo = output["owner"], output["repo"]

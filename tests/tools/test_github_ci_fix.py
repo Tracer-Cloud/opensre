@@ -1424,6 +1424,14 @@ def test_run_ci_fix_reports_blocked_merge_files_in_one_line(
     return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
 )
 @patch("integrations.github.tools.ci_fix.runner.base_has_new_commits", return_value=True)
+@pytest.mark.parametrize(
+    "posted, kind, status, retryable",
+    [
+        (True, "merge_decision_required", "blocked", False),
+        # Nobody was told, so the head must not stay blocked: the next call retries.
+        (False, "merge_conflict", "failed", True),
+    ],
+)
 def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
     _behind: MagicMock,
     _gather: MagicMock,
@@ -1433,6 +1441,10 @@ def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
     _pre: MagicMock,
     mock_merge: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
+    posted: bool,
+    kind: str,
+    status: str,
+    retryable: bool,
 ) -> None:
     # Arrange
     from integrations.github.repair_outcomes import attach_repair_outcome
@@ -1442,7 +1454,7 @@ def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
 
     def report(ctx: CiFixContext, message: str, **_kw: object) -> bool:
         asked.append((ctx.head_sha, message))
-        return True
+        return posted
 
     monkeypatch.setattr(runner, "report_decision", report)
     decision = (
@@ -1458,11 +1470,11 @@ def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
         owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
     )
 
-    # Assert: asked once, for the head that conflicts, and a sweep skips it
+    # Assert: asked once, for the head that conflicts; a sweep skips it only once asked
     assert asked == [("head-1", decision)]
-    assert result["error_kind"] == ERR_MERGE_DECISION
+    assert result["error_kind"] == kind
     outcome = attach_repair_outcome(result, operation="ci")["work_outcome"]
-    assert (outcome["status"], outcome["retryable"]) == ("blocked", False)
+    assert (outcome["status"], outcome["retryable"]) == (status, retryable)
 
 
 @patch("integrations.github.tools.ci_fix.runner.repair_workspace")

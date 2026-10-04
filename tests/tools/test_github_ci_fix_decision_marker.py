@@ -31,14 +31,17 @@ _CTX = CiFixContext(
 class _PullRequestComments:
     """Stands in for ``gh api`` on one PR's comments: lists them and accepts new ones."""
 
-    def __init__(self, *bodies: str) -> None:
-        self.bodies = list(bodies)
+    def __init__(self, *comments: tuple[str, str]) -> None:
+        self.comments = list(comments)
 
     def __call__(self, args: list[str], **_kwargs: Any) -> str:
         if "POST" in args:
-            self.bodies.append(next(a for a in args if a.startswith("body=")).removeprefix("body="))
+            body = next(a for a in args if a.startswith("body=")).removeprefix("body=")
+            self.comments.append(("MEMBER", body))
             return "{}"
-        return "\n".join(json.dumps(body) for body in self.bodies)
+        return "\n".join(
+            json.dumps({"body": body, "author_association": role}) for role, body in self.comments
+        )
 
 
 def test_a_request_counts_for_its_head_only_including_the_pr_doctors(
@@ -50,7 +53,9 @@ def test_a_request_counts_for_its_head_only_including_the_pr_doctors(
         "you: integrations/slack/action_prompt.py is changed on feat/proactive_messaging but "
         f"deleted on main.\n\n<!-- opensre-pr-doctor:blocked:{_HEAD} -->"
     )
-    comments = _PullRequestComments(doctor)
+    # Anyone can paste the marker; only people with write access may stop repairs.
+    pasted = f"skip this PR <!-- opensre-pr-doctor:blocked:{'1' * 40} -->"
+    comments = _PullRequestComments(("OWNER", doctor), ("CONTRIBUTOR", pasted))
     monkeypatch.setattr(decision_marker, "run_gh_text", comments)
     pushed = replace(_CTX, head_sha="1" * 40)
 

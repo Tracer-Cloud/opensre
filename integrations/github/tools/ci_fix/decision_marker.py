@@ -2,7 +2,8 @@
 
 The comment carries the marker the PR doctor loop already posts, so its earlier
 requests keep a head skipped too. A new head means new commits: a later call
-tries the merge again.
+tries the merge again. Only comments from people with write access count, so
+anyone else cannot stop the repairs of a pull request by pasting the marker.
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 _MARKER_KEY = "opensre-pr-doctor:blocked:"
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+#: GitHub ``author_association`` values of people with write access to the repository.
+_TRUSTED_AUTHORS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 #: Enough of a reported decision to name it in a tool result.
 _SUMMARY_MAX_CHARS = 600
 
@@ -39,7 +42,13 @@ def reported_decision(ctx: CiFixContext, *, github_token: str | None) -> str | N
     """
     try:
         raw = run_gh_text(
-            ["api", "--paginate", _comments_endpoint(ctx), "--jq", ".[].body | @json"],
+            [
+                "api",
+                "--paginate",
+                _comments_endpoint(ctx),
+                "--jq",
+                ".[] | {body, author_association} | @json",
+            ],
             repo=f"{ctx.owner}/{ctx.repo}",
             github_token=github_token,
             repo_flag=False,
@@ -50,9 +59,14 @@ def reported_decision(ctx: CiFixContext, *, github_token: str | None) -> str | N
     key = f"{_MARKER_KEY}{ctx.head_sha}"
     for line in raw.splitlines():
         try:
-            body = json.loads(line)
+            comment = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(comment, dict) or comment.get("author_association") not in (
+            _TRUSTED_AUTHORS
+        ):
+            continue
+        body = comment.get("body")
         if isinstance(body, str) and key in body:
             summary = " ".join(_HTML_COMMENT_RE.sub(" ", body).split())
             return summary[:_SUMMARY_MAX_CHARS]

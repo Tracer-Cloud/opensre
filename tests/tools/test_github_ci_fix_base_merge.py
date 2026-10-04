@@ -133,8 +133,17 @@ def test_conflicts_resolved_by_agent_are_committed_and_reported(tmp_path: Path) 
     assert "pnpm install --lockfile-only" in task
 
 
-def test_conflicts_the_agent_left_abort_the_merge_as_a_decision_for_a_person(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "edits_package_json, kind",
+    [
+        # Edited, yet markers kept: the agent's way to flag a choice for a person.
+        (True, ERR_MERGE_DECISION),
+        # Never touched: git's own markers prove nothing, so a later run may resolve it.
+        (False, ERR_MERGE_CONFLICT),
+    ],
+)
+def test_conflicts_the_agent_left_abort_the_merge_and_name_the_blocked_files(
+    tmp_path: Path, edits_package_json: bool, kind: str
 ) -> None:
     # Arrange
     work = _repo(tmp_path, conflict=True)
@@ -142,15 +151,20 @@ def test_conflicts_the_agent_left_abort_the_merge_as_a_decision_for_a_person(
 
     def resolve(_task: str, **_kw: object) -> CodingResult:
         (work / "pnpm-lock.yaml").write_text("dep: 2.0\n")
+        if edits_package_json:
+            (work / "package.json").write_text(
+                '<<<<<<< ci-fix\n{"dep": "1.1"}\n=======\n{"dep": "2.0", "pin": true}\n'
+                ">>>>>>> main\n"
+            )
         return CodingResult(success=True, summary="Regenerated the lockfile; package.json unclear.")
 
     # Act
     with pytest.raises(GitHubCiFixError) as excinfo:
         merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=resolve)
 
-    # Assert: the agent finished, so the conflict it left is a choice for a person
+    # Assert
     error = excinfo.value
-    assert error.kind == ERR_MERGE_DECISION
+    assert error.kind == kind
     assert "blocked on 1 file(s) a person must decide" in error.message
     assert "package.json (changed on both ci-fix and main)" in error.message
     assert "pnpm-lock.yaml" not in error.message.split("decide:")[1].split(".")[0]

@@ -49,13 +49,19 @@ def current_loop_description(params: Mapping[str, str]) -> str:
 def loop_skill_recipe(skill: str) -> tuple[str, str]:
     """Return the canonical name and rendered body of the card a loop follows.
 
-    Raises ``RuntimeError`` when the active catalog lacks it, so a tick fails
-    instead of running without its instructions.
+    Raises ``RuntimeError`` when the active catalog lacks it, or when the card
+    needs what a scheduled tick cannot give it (helper scripts, an entry menu),
+    so a tick fails instead of running without its instructions.
     """
     snapshot = active_skill_catalog().current()
     found = snapshot.find(skill)
     if found is None:
         raise RuntimeError(f"Loop skill {skill.strip()!r} is not installed.")
+    if found.script_tools or found.entry_menu is not None:
+        raise RuntimeError(
+            f"Loop skill {found.name!r} needs helper scripts or a menu, "
+            "which a scheduled agent loop cannot run."
+        )
     return found.name, snapshot.body(found.name)
 
 

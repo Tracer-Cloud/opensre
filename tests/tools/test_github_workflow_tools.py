@@ -267,37 +267,46 @@ def test_pr_scan_noop_ignores_prs_opensre_cannot_repair(
 
 
 @pytest.mark.parametrize(
-    "mergeable, mergeable_state, noop",
+    "reads, noop",
     [
         # Red checks are another loop's repair; a conflict scan is done with them.
-        (True, "unstable", True),
-        (False, "dirty", False),
+        ([(True, "unstable")], True),
+        ([(False, "dirty")], False),
+        # GitHub computes mergeability lazily: a re-read that settles counts.
+        ([(None, "unknown"), (True, "clean")], True),
+        # Still unknown after the re-reads: the scan cannot claim nothing conflicts.
+        ([(None, "unknown")] * 3, False),
     ],
 )
 def test_conflict_scan_judges_conflicts_alone_and_reads_no_checks(
-    mergeable: bool, mergeable_state: str, noop: bool
+    reads: list[tuple[bool | None, str]], noop: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pr = {
-        "number": 12,
-        "title": "Some PR",
-        "state": "open",
-        "draft": False,
-        "html_url": "https://github.com/o/r/pull/12",
-        "user": {"login": "carol"},
-        "head": {"sha": "fed", "ref": "topic", "repo": _SAME_REPO},
-        "base": {"repo": _SAME_REPO},
-        "mergeable": mergeable,
-        "mergeable_state": mergeable_state,
-        "updated_at": "2026-10-04T01:00:00Z",
-    }
+    monkeypatch.setattr("integrations.github.tools.work_status._MERGEABILITY_WAIT_SECONDS", 0)
+    replies = iter(reads)
+
+    def pull_request() -> dict[str, Any]:
+        mergeable, mergeable_state = next(replies)
+        return {
+            "number": 12,
+            "title": "Some PR",
+            "state": "open",
+            "draft": False,
+            "html_url": "https://github.com/o/r/pull/12",
+            "user": {"login": "carol"},
+            "head": {"sha": "fed", "ref": "topic", "repo": _SAME_REPO},
+            "base": {"repo": _SAME_REPO},
+            "mergeable": mergeable,
+            "mergeable_state": mergeable_state,
+            "updated_at": "2026-10-04T01:00:00Z",
+        }
 
     def fake_request(self: GitHubRestClient, method: str, path: str, **_kwargs: Any) -> Any:
         if path == "/repos/o/r/pulls/12":
-            return pr
+            return pull_request()
         raise AssertionError((method, path))
 
     with (
-        patch.object(GitHubRestClient, "paginate", return_value=[pr]),
+        patch.object(GitHubRestClient, "paginate", return_value=[{"number": 12}]),
         patch.object(GitHubRestClient, "request", fake_request),
     ):
         result = summarize_github_pr_status(

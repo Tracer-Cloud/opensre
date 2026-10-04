@@ -916,6 +916,8 @@ def test_cron_add_binds_an_agent_loop_to_a_skill_without_a_prompt(
     "args, error",
     [
         (["--mode", "agent", "--skill", "no-such-card"], "'no-such-card' is not installed"),
+        # Its helper scripts only load through skill_view, which a tick does not have.
+        (["--mode", "agent", "--skill", "scheduling-github-ci-repairs"], "cannot run"),
         (["--prompt", "Check CI.", "--skill", "repair-github-ci"], "--skill is only valid with"),
     ],
 )
