@@ -55,15 +55,31 @@ def _fetch_credentials() -> dict[str, str] | None:
 
     records = fetch_webapp_org_integrations() if webapp_vault_configured() else None
     if records is None:
-        from integrations.account_vault import fetch_signed_in_org_integrations
+        from integrations.account_integrations import load_account_integrations
 
-        records = fetch_signed_in_org_integrations()
+        records = load_account_integrations(refresh=True)
     if not records:
         return None
     for record in records:
         if str(record.get("service") or "").strip() != "pipedream":
             continue
-        credentials = record.get("credentials")
+        credentials = _record_credentials(record)
         if isinstance(credentials, dict) and credentials:
             return {str(key): str(value) for key, value in credentials.items()}
+    return None
+
+
+def _record_credentials(record: dict[str, Any]) -> dict[str, Any] | None:
+    credentials = record.get("credentials")
+    if isinstance(credentials, dict):
+        return credentials
+    instances = record.get("instances")
+    if not isinstance(instances, list):
+        return None
+    for instance in instances:
+        if not isinstance(instance, dict):
+            continue
+        credentials = instance.get("credentials")
+        if isinstance(credentials, dict):
+            return credentials
     return None
