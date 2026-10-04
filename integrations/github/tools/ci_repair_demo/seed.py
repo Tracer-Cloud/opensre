@@ -57,6 +57,11 @@ AGENTS = "Fix calculator.py so the unit test passes. Do not change the test or t
 GITIGNORE = "__pycache__/\n.pytest_cache/\n"
 PR_TITLE = "Demo: calculator subtracts instead of adding"
 PR_BODY = "This pull request is a demo. Do not merge.\n"
+#: What the failing commit changes and why the test fails, for the outcome report.
+SEEDED_FAULT = (
+    "changed `add()` in `calculator.py` from `return a + b` to `return a - b`, "
+    "so `add(2, 3)` returned -1 and `test_add`, which expects 5, failed."
+)
 _NOT_A_DEMO = "The repository is not an OpenSRE CI repair demo."
 _DEMO_REPO_PREFIX = "opensre-ci-repair-demo-"
 _SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"

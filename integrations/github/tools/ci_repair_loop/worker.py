@@ -168,7 +168,7 @@ def _write_attempt(
         phase_seconds,
     )
     record = {**output, "coding_agent": run.coding_agent, "phase_seconds": phase_seconds}
-    diagnostic = store.directory(run.id) / f"attempt-{run.attempts}.json"
+    diagnostic = store.attempt_path(run.id, run.attempts)
     diagnostic.write_text(json.dumps(record, indent=2), encoding="utf-8")
 
 
