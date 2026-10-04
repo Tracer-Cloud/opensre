@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 
 from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
+from config.runtime_metadata import capture_runtime_facts
 from core.agent_harness.prompts import (
     PromptBlock,
     PromptBlockId,
@@ -22,6 +23,13 @@ from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
     """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
     monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
+
+
+@pytest.fixture
+def pinned_runtime_facts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One reading of the clock for every build: two builds of a turn differ by the time between them."""
+    facts = capture_runtime_facts()
+    monkeypatch.setattr("config.runtime_metadata.capture_runtime_facts", lambda **_kw: dict(facts))
 
 
 def _ctx() -> TurnSnapshot:
@@ -62,6 +70,7 @@ def test_prompt_envelope_renders_ordered_blocks_with_optional_titles() -> None:
         envelope.require_block("missing")
 
 
+@pytest.mark.usefixtures("pinned_runtime_facts")
 def test_action_system_prompt_envelope_matches_legacy_rendering(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -84,6 +93,7 @@ def test_action_system_prompt_envelope_matches_legacy_rendering(
         PromptBlockId.ACTION_SKILLS,
         PromptBlockId.CONNECTED_INTEGRATIONS,
         PromptBlockId.ACTION_GOAL_KERNEL_CLOSER,
+        PromptBlockId.ACTION_LIVE_RUNTIME_FACTS,
         PromptBlockId.TURN_INTERACTION,
         PromptBlockId.RECENT_CONVERSATION,
     ]
@@ -210,6 +220,7 @@ def test_every_block_declares_which_tier_it_belongs_to(
         PromptBlockId.ACTION_SKILLS: PromptTier.STABLE,
         PromptBlockId.CONNECTED_INTEGRATIONS: PromptTier.CONTEXT,
         PromptBlockId.ACTION_GOAL_KERNEL_CLOSER: PromptTier.EPHEMERAL,
+        PromptBlockId.ACTION_LIVE_RUNTIME_FACTS: PromptTier.EPHEMERAL,
         PromptBlockId.TURN_INTERACTION: PromptTier.EPHEMERAL,
         PromptBlockId.RECENT_CONVERSATION: PromptTier.EPHEMERAL,
     }
@@ -235,6 +246,7 @@ def test_the_action_envelope_exposes_a_stable_half_the_provider_can_cache() -> N
     assert len(first_cached) > 20 * len(first_ephemeral)
 
 
+@pytest.mark.usefixtures("pinned_runtime_facts")
 def test_the_rendered_prompt_is_unchanged_by_the_split() -> None:
     """``render()`` must stay the join of the two halves.
 

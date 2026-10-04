@@ -26,7 +26,10 @@ from core.agent_harness.prompts.memory.conversation import (
     format_prior_action_facts,
     format_recent_conversation,
 )
-from core.agent_harness.prompts.runtime_facts import render_static_runtime_facts
+from core.agent_harness.prompts.runtime_facts import (
+    build_live_runtime_facts_block,
+    render_static_runtime_facts,
+)
 from core.agent_harness.prompts.skills import load_skills_index
 from core.agent_harness.task_plan.prompt import (
     ask_user_answered_block,
@@ -43,20 +46,22 @@ logger = logging.getLogger(__name__)
 _USER_TEMPLATE = "USER MESSAGE (literal): <<<{text}>>>"
 
 
-def _runtime_facts_block() -> str:
-    """The authoritative host/version facts, or ``""`` when they cannot be read.
+def _runtime_facts_blocks() -> tuple[str, str]:
+    """The ``(host, live)`` runtime facts, each ``""`` when they cannot be read.
 
-    Same producer as the assistant block: two speakers may answer the user, and
-    facts assembled twice drift. Never raises — a turn without facts is worse
-    than one with them, but far better than a turn that does not run.
+    One capture feeds both: host facts hold for the session and sit in the
+    cached half, live facts (time, uptime, disk, memory) change every turn.
+    Never raises — a turn without facts is worse than one with them, but far
+    better than a turn that does not run.
     """
     from config.runtime_metadata import capture_runtime_facts
 
     try:
-        return render_static_runtime_facts(capture_runtime_facts())
+        runtime = capture_runtime_facts()
+        return render_static_runtime_facts(runtime), build_live_runtime_facts_block(runtime)
     except Exception:  # noqa: BLE001 - prompt assembly must not fail a turn
         logger.debug("Runtime facts unavailable for the action prompt", exc_info=True)
-        return ""
+        return "", ""
 
 
 def build_action_system_prompt(turn_snapshot: TurnSnapshot) -> str:
@@ -121,13 +126,13 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             suffix="\n\n",
         )
     )
-    facts_block = _runtime_facts_block()
+    host_facts, live_facts = _runtime_facts_blocks()
     blocks.extend(
         _optional_block(
             id=PromptBlockId.ACTION_RUNTIME_FACTS,
             kind=PromptBlockKind.CONTEXT,
             tier=PromptTier.STABLE,
-            content=facts_block,
+            content=host_facts,
             provenance="config.runtime_metadata",
             suffix="\n\n",
         )
@@ -245,6 +250,16 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             tier=PromptTier.EPHEMERAL,
             content=ACTION_GOAL_KERNEL_CLOSER,
             provenance="core.agent_harness.prompts.action.goal_kernel",
+        )
+    )
+    # Ephemeral: the time changes every turn, and the cached half must stay byte-identical.
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.ACTION_LIVE_RUNTIME_FACTS,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=live_facts,
+            provenance="core.agent_harness.prompts.runtime_facts",
         )
     )
     blocks.append(

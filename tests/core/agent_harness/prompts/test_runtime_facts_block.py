@@ -1,8 +1,16 @@
-"""The runtime facts the action prompt quotes, and the live facts kept out of it."""
+"""The runtime facts the action prompt quotes: host facts in its cached half, live ones per turn."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
+import pytest
+
+from config.runtime_metadata import capture_runtime_facts
+from core.agent_harness.prompts import build_action_system_prompt_envelope
 from core.agent_harness.prompts.runtime_facts import render_static_runtime_facts
+from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
 
 def _static_facts(runtime: dict[str, object]) -> str:
@@ -233,3 +241,43 @@ def test_static_facts_stay_empty_without_runtime_facts() -> None:
     unknown host into a claim about it.
     """
     assert _static_facts({}) == ""
+
+
+def _capture_at(now_iso: str) -> Callable[..., dict[str, Any]]:
+    """The real runtime capture, with its clock reading ``now_iso``."""
+
+    def capture(**kwargs: Any) -> dict[str, Any]:
+        return {**capture_runtime_facts(**kwargs), "now_iso": now_iso}
+
+    return capture
+
+
+def test_each_turn_reads_the_current_time_and_the_cached_half_never_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The time rides with the turn; in the cached half it would void the cache every turn.
+
+    Without it the model answered "what failed in the last hour?" by guessing
+    today's date from its training data, or spent a tool call reading the clock.
+    """
+    snapshot = TurnSnapshot(
+        text="what failed in the last hour?",
+        conversation_messages=(),
+        configured_integrations=(),
+        configured_integrations_known=True,
+        reasoning_effort=None,
+    )
+
+    monkeypatch.setattr(
+        "config.runtime_metadata.capture_runtime_facts", _capture_at("2026-10-04T23:59:30+02:00")
+    )
+    first_cached, first_turn = build_action_system_prompt_envelope(snapshot).render_split()
+    monkeypatch.setattr(
+        "config.runtime_metadata.capture_runtime_facts", _capture_at("2026-10-05T00:00:30+02:00")
+    )
+    second_cached, second_turn = build_action_system_prompt_envelope(snapshot).render_split()
+
+    assert "current time is 2026-10-04T23:59:30+02:00 (Sunday)" in first_turn
+    assert "current time is 2026-10-05T00:00:30+02:00 (Monday)" in second_turn
+    assert "current time is" not in first_cached
+    assert first_cached == second_cached

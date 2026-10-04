@@ -13,6 +13,7 @@ turns.
 
 from __future__ import annotations
 
+import datetime as _dt
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -46,10 +47,14 @@ _LIVE_GUIDANCE = (
     ". When the user asks for the current date, time, day of the week, "
     "timezone offset embedded in the timestamp, uptime, disk or memory usage, "
     "answer from the strings above — do NOT guess a date/time from your "
-    "training data. Never run "
+    "training data. Resolve relative ranges such as 'the last hour', 'today' "
+    "or 'since yesterday' from the current time above. Never run "
     f"{_BLOCKED_COMMANDS}. Do NOT invent field names, values, or numbers not "
     "present above."
 )
+
+#: Day names by ``date.weekday()``; ``strftime("%A")`` would follow the locale.
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 FactProducer = Callable[[Mapping[str, Any]], str | None]
 
@@ -85,6 +90,18 @@ def _version_line(runtime: Mapping[str, Any]) -> str | None:
     build = _clean_str(runtime, "opensre_build")
     display = f"{version} ({build})" if build else version
     return f"OpenSRE version is {display}"
+
+
+def _now_line(runtime: Mapping[str, Any]) -> str | None:
+    """Local time with its UTC offset, then the day of the week, which models misjudge from a date."""
+    now = _clean_str(runtime, "now_iso")
+    if not now:
+        return None
+    try:
+        weekday = _WEEKDAYS[_dt.datetime.fromisoformat(now).weekday()]
+    except ValueError:
+        return f"current time is {now}"
+    return f"current time is {now} ({weekday})"
 
 
 def _uptime_line(runtime: Mapping[str, Any]) -> str | None:
@@ -216,7 +233,7 @@ _STATIC_FACT_PRODUCERS: tuple[FactProducer, ...] = (
 )
 
 _LIVE_FACT_PRODUCERS: tuple[FactProducer, ...] = (
-    _str_fact("now_iso", "current time is {}"),
+    _now_line,
     _uptime_line,
     _pair_line("disk_used_percent", "disk_free_gb", "root disk is {}% used with {} GB free"),
     _pair_line(
