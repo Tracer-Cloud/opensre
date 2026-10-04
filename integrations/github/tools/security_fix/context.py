@@ -307,6 +307,7 @@ def _select_first_alert_context(
     selected_types = auto_types if alert_type == "auto" else (alert_type,)
     candidates: list[tuple[int, bool, ResolvedAlertType, dict[str, Any]]] = []
     errors: list[str] = []
+    unavailable: list[str] = []
     for candidate in selected_types:
         if candidate == "secret_scanning":
             raise GitHubSecurityFixError(
@@ -320,7 +321,9 @@ def _select_first_alert_context(
                 api_version=_api_version(candidate),
             )
         except GitHubApiError as exc:
-            errors.append(f"{candidate}: {exc}")
+            (unavailable if _finding_type_unavailable(exc) else errors).append(
+                f"{candidate}: {exc}"
+            )
             continue
         candidates.extend(
             (
@@ -332,12 +335,17 @@ def _select_first_alert_context(
             for alert in alerts
             if isinstance(alert.get("number"), int)
         )
+    # A type that failed to load may hold the top-ranked finding: never choose among the rest.
+    if errors:
+        raise GitHubSecurityFixError(
+            ERR_GITHUB_UNAVAILABLE,
+            f"Could not read every GitHub finding type in {owner}/{repo}; no PR was created. Errors: {'; '.join(errors)}",
+        )
     if not candidates:
-        if errors:
-            detail = f" Errors: {'; '.join(errors)}"
+        if len(unavailable) == len(selected_types):
             raise GitHubSecurityFixError(
                 ERR_GITHUB_UNAVAILABLE,
-                f"Could not read GitHub security or quality findings in {owner}/{repo}; no PR was created.{detail}",
+                f"Could not read GitHub security or quality findings in {owner}/{repo}; no PR was created. Errors: {'; '.join(unavailable)}",
             )
         families = (
             "code-scanning or Code Quality"
@@ -362,12 +370,6 @@ def _select_first_alert_context(
             )
         ]
     if not candidates:
-        # A type that failed to load may hold the next finding: never call that a no-op.
-        if errors:
-            raise GitHubSecurityFixError(
-                ERR_GITHUB_UNAVAILABLE,
-                f"Could not read every GitHub finding type in {owner}/{repo}; no PR was created. Errors: {'; '.join(errors)}",
-            )
         excluded = " or are security findings that quality_only leaves out" if quality_only else ""
         raise GitHubSecurityFixError(
             ERR_NO_ELIGIBLE_ALERT,
@@ -659,6 +661,17 @@ def _alert_severity_rank(alert_type: ResolvedAlertType, alert: dict[str, Any]) -
     if isinstance(rule, dict):
         severity = str(rule.get("security_severity_level") or rule.get("severity") or "")
     return _SEVERITY_RANK.get(severity.lower(), 0)
+
+
+def _finding_type_unavailable(exc: GitHubApiError) -> bool:
+    """Whether a listing failure means the type is off for this repository or token.
+
+    Such a type holds nothing this token could fix. A rate limit or any other
+    failure is transient and may be hiding the highest-ranked finding.
+    """
+    if exc.status_code not in (HTTPStatus.FORBIDDEN, HTTPStatus.NOT_FOUND):
+        return False
+    return exc.rate_limit_remaining != "0" and "rate limit" not in exc.message.lower()
 
 
 def _is_security_finding(alert_type: ResolvedAlertType, alert: dict[str, Any]) -> bool:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from contextlib import nullcontext
+from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -17,7 +18,7 @@ from core.agent_harness.tools.tool_context import (
 )
 from core.tool.contracts import AgentToolContext, RegisteredTool
 from integrations.coding_agent import CodingResult
-from integrations.github.client import GitHubRestClient
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.pull_requests import PullRequest
 from integrations.github.tools.security_fix.context import (
     SecurityAlertContext,
@@ -26,6 +27,7 @@ from integrations.github.tools.security_fix.context import (
 )
 from integrations.github.tools.security_fix.errors import (
     ERR_CONFIRMATION_DENIED,
+    ERR_GITHUB_UNAVAILABLE,
     ERR_NO_AUTOFIXABLE_FINDING,
     ERR_NO_ELIGIBLE_ALERT,
     ERR_UNSUPPORTED_ALERT_TYPE,
@@ -580,6 +582,40 @@ def test_quality_only_refuses_an_explicit_security_alert() -> None:
         )
 
     assert raised.value.kind == ERR_UNSUPPORTED_ALERT_TYPE
+
+
+@pytest.mark.parametrize(
+    "failure, selected",
+    [
+        # A transient failure may hide the top-ranked finding, so nothing is chosen.
+        (GitHubApiError("Server Error", status_code=HTTPStatus.INTERNAL_SERVER_ERROR), None),
+        (GitHubApiError("API rate limit exceeded", status_code=HTTPStatus.FORBIDDEN), None),
+        # A type the repository has not enabled holds nothing to fix.
+        (GitHubApiError("Code Quality is not enabled", status_code=HTTPStatus.NOT_FOUND), 4),
+    ],
+)
+def test_auto_select_stops_when_a_finding_type_cannot_be_read(
+    failure: GitHubApiError, selected: int | None
+) -> None:
+    def fake_paginate(_self: GitHubRestClient, path: str, **_kwargs: Any) -> list[dict[str, Any]]:
+        if path.endswith("/code-quality/findings"):
+            raise failure
+        if path.endswith("/code-scanning/alerts"):
+            return [_code_scanning_alert(4, severity="note")]
+        return []
+
+    with patch.object(GitHubRestClient, "paginate", fake_paginate):
+        if selected is None:
+            with pytest.raises(GitHubSecurityFixError) as raised:
+                gather_security_alert_context(
+                    owner="acme", repo="app", github_token="tok", quality_only=True
+                )
+            assert raised.value.kind == ERR_GITHUB_UNAVAILABLE
+        else:
+            ctx = gather_security_alert_context(
+                owner="acme", repo="app", github_token="tok", quality_only=True
+            )
+            assert ctx.number == selected
 
 
 def test_secret_scanning_alerts_are_refused_without_fetching() -> None:
