@@ -210,6 +210,15 @@ def fetch_webapp_org_integrations() -> list[dict[str, Any]] | None:
         logger.warning("[webapp-vault] non-JSON response")
         return None
 
+    return records_from_vault_payload(payload)
+
+
+def records_from_vault_payload(payload: object) -> list[dict[str, Any]] | None:
+    """Parse a vault JSON body into integration records.
+
+    Shared by the silo client and the signed-in CLI client. ``None`` means the
+    body is not a successful vault response.
+    """
     if not isinstance(payload, dict) or not payload.get("success"):
         return None
     data = payload.get("data")

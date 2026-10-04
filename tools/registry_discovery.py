@@ -67,6 +67,7 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.opsgenie.tools",
     "integrations.pagerduty.tools",
     "integrations.pi.tools",
+    "integrations.pipedream.tools",
     "integrations.posthog_mcp.tools",
     "integrations.postgresql.tools",
     "integrations.prefect.tools",

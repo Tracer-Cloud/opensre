@@ -326,6 +326,7 @@ from integrations.openobserve import classify as _classify_openobserve
 from integrations.opensearch import classify as _classify_opensearch
 from integrations.opsgenie import classify as _classify_opsgenie
 from integrations.pagerduty import classify as _classify_pagerduty
+from integrations.pipedream import classify as _classify_pipedream
 from integrations.postgresql import build_postgresql_config
 from integrations.postgresql import classify as _classify_postgresql
 from integrations.posthog import posthog_config_from_env
@@ -511,6 +512,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "vercel": _classify_vercel,
     "opsgenie": _classify_opsgenie,
     "pagerduty": _classify_pagerduty,
+    "pipedream": _classify_pipedream,
     "incident_io": _classify_incident_io,
     "jira": _classify_jira,
     "servicenow": _classify_servicenow,
