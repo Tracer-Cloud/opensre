@@ -26,6 +26,7 @@ from integrations.github.tools.ci_repair_run.root_cause import (
     github_links,
     read_repair_evidence,
     render_analysis,
+    repair_verified,
     root_cause_analysis,
 )
 
@@ -306,6 +307,7 @@ def _finish_scheduled(
         passing_run_id=passing_run_id,
     )
     pr_url = _text(seeded.get("pr_url")) or _text(scheduled.get("pr_url"))
+    repair = read_repair_evidence(task_id)
     links = github_links(
         owner=seeded_owner,
         repo=seeded_repo,
@@ -315,7 +317,7 @@ def _finish_scheduled(
         failed_run_id=failed_run_id,
         fix_commit=fix_commit,
         passing_run_id=passing_run_id,
-        verified=outcome == _OUTCOME_SUCCESS,
+        verified=repair_verified(outcome, fix_commit, repair),
     )
     analysis = root_cause_analysis(
         pr_number=pr_number,
@@ -323,7 +325,7 @@ def _finish_scheduled(
         failing_commit=seed_head,
         fix_commit=fix_commit,
         seeded_here=seeded.get("reused") is False,
-        evidence=read_repair_evidence(task_id, fix_commit),
+        evidence=repair,
     )
     analysis_text = render_analysis(links, analysis)
     finished = finish_ci_repair_demo(

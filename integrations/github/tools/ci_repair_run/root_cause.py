@@ -1,10 +1,12 @@
 """GitHub links and a root cause analysis for one finished CI repair demo.
 
 Every statement comes from evidence the demo holds: the seed result, the pull
-request read, and the repair run's attempt records. The seeded fault is named
-only when this call committed it and the repair stayed on it; otherwise the
-fix and its diff carry the explanation. URLs are written out in full because a
-terminal shows Markdown link text without its URL.
+request read, and the repair run's record and attempt records. Claims are tied
+to the commits the run itself saw: the seeded fault is named only when this
+call committed it and the run first saw that commit failing, and a fix is
+reported only when the pull request head is the commit the run verified. URLs
+are written out in full because a terminal shows Markdown link text without
+its URL.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ _SHORT_SHA = 7
 _SUMMARY_MAX_CHARS = 240
 _DIFF_MAX_LINES = 20
 _DIFF_HEADERS = ("diff --git ", "index ")
-#: Two of these make the gateway hide tool text as a data blob; agent text never adds one.
+#: Two of these make the gateway hide tool text as a data blob; recorded text never adds one.
 _KEY_SEPARATOR = '":'
 _FENCE = "```"
 
@@ -43,8 +45,11 @@ _ANALYSIS_LABELS = (
 class RepairEvidence:
     """What one repair run recorded; empty when the store could not be read."""
 
+    #: The head the run first saw failing, and the repair commit it verified.
+    initial_sha: str = ""
+    fixed_sha: str = ""
     failing_checks: tuple[str, ...] = ()
-    #: Every head the run saw was the seeded commit or one it pushed itself.
+    #: Every head the run saw was the head it was scheduled at or one it pushed itself.
     on_seeded_fixture: bool = False
     reason: str = ""
     fix_files: tuple[str, ...] = ()
@@ -52,10 +57,8 @@ class RepairEvidence:
     fix_diff: str = ""
 
 
-def read_repair_evidence(
-    task_id: str, fix_commit: str, store: RepairStore | None = None
-) -> RepairEvidence:
-    """The run's first failure and the attempt whose push is ``fix_commit``."""
+def read_repair_evidence(task_id: str, store: RepairStore | None = None) -> RepairEvidence:
+    """The run's first failure and the attempt that pushed the commit it verified."""
     try:
         repairs = store or RepairStore()
         run = repairs.get(task_id)
@@ -67,18 +70,28 @@ def read_repair_evidence(
         (
             record
             for record in reversed(attempts)
-            if fix_commit and record.get("fix_head_sha") == fix_commit
+            if run.fixed_sha and record.get("fix_head_sha") == run.fixed_sha
         ),
         {},
     )
     return RepairEvidence(
+        initial_sha=run.initial_sha,
+        fixed_sha=run.fixed_sha,
         failing_checks=_names(first.get("failing_checks")),
         on_seeded_fixture=run.fast_checks,
-        reason=run.reason.strip(),
+        reason=_plain(run.reason),
         fix_files=_names(fix.get("changed_files")),
         fix_summary=_first_sentence(fix.get("summary")),
         fix_diff=_short_diff(fix),
     )
+
+
+def repair_verified(outcome: str, fix_commit: str, evidence: RepairEvidence) -> bool:
+    """True when the repair succeeded and the pull request head is the commit it verified.
+
+    A head someone pushed after the repair passed CI is never reported as its fix.
+    """
+    return outcome == _OUTCOME_SUCCESS and bool(fix_commit) and fix_commit == evidence.fixed_sha
 
 
 def github_links(
@@ -121,20 +134,20 @@ def root_cause_analysis(
 ) -> dict[str, str]:
     """What failed, why, what fixed it, and how that was verified.
 
-    ``seeded_here`` is true when this call committed the failing change, so
-    the seeded fault is a fact about ``failing_commit`` rather than a guess.
+    ``seeded_here`` is true when this call committed the failing change. The
+    run's check names and the seeded fault describe ``failing_commit`` only when
+    the run first saw that commit failing, so a head that moved before the repair
+    was scheduled is never blamed on the seed.
     """
     failing = failing_commit[:_SHORT_SHA]
+    observed = bool(failing) and evidence.initial_sha == failing_commit
     head = f"commit {failing}" if failing else "the head"
-    analysis = {
-        "failure": f"{_checks(evidence.failing_checks)} failed on {head} of PR #{pr_number}."
-    }
-    if seeded_here and evidence.on_seeded_fixture and failing:
+    checks = _checks(evidence.failing_checks if observed else ())
+    analysis = {"failure": f"{checks} failed on {head} of PR #{pr_number}."}
+    if seeded_here and observed and evidence.on_seeded_fixture:
         analysis["cause"] = f"Commit {failing} {SEEDED_FAULT}"
-    if outcome != _OUTCOME_SUCCESS or not fix_commit:
-        analysis["fix"] = (
-            f"No verified fix: {evidence.reason}" if evidence.reason else "No verified fix."
-        )
+    if not repair_verified(outcome, fix_commit, evidence):
+        analysis["fix"] = _unverified_fix(outcome, fix_commit, evidence)
         return analysis
     fix = fix_commit[:_SHORT_SHA]
     files = ", ".join(f"`{name}`" for name in evidence.fix_files)
@@ -165,10 +178,29 @@ def render_analysis(links: dict[str, str], analysis: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _unverified_fix(outcome: str, fix_commit: str, evidence: RepairEvidence) -> str:
+    """Why no fix is reported: the repair did not succeed, or the head is not its commit."""
+    if outcome != _OUTCOME_SUCCESS or not fix_commit:
+        return f"No verified fix: {evidence.reason}" if evidence.reason else "No verified fix."
+    if evidence.fixed_sha:
+        return (
+            f"Not attributed: the repair verified commit {evidence.fixed_sha[:_SHORT_SHA]}, "
+            f"but the pull request head is now {fix_commit[:_SHORT_SHA]}."
+        )
+    return "Not attributed: the repair record could not be read."
+
+
+def _plain(value: object) -> str:
+    """One line of recorded text with no ``"`` left to form a data-blob key separator."""
+    return " ".join(str(value or "").split()).replace('"', "'")
+
+
 def _names(value: object) -> tuple[str, ...]:
+    """Check or file names as plain text; a quote or backtick in one cannot break the report."""
     if not isinstance(value, list):
         return ()
-    return tuple(str(item).strip() for item in value if str(item).strip())
+    names = (_plain(item).replace("`", "'") for item in value)
+    return tuple(name for name in names if name)
 
 
 def _checks(names: tuple[str, ...]) -> str:
@@ -180,8 +212,7 @@ def _checks(names: tuple[str, ...]) -> str:
 
 def _first_sentence(value: object) -> str:
     """The summary's opening sentence on one line, with no data-blob key separator."""
-    paragraph = str(value or "").strip().split("\n\n", 1)[0]
-    text = " ".join(paragraph.split()).replace('"', "'")
+    text = _plain(str(value or "").strip().split("\n\n", 1)[0])
     sentence, separator, _rest = text.partition(". ")
     if separator:
         text = f"{sentence}."

@@ -17,6 +17,7 @@ from integrations.github.tools.ci_repair_run.root_cause import (
     github_links,
     read_repair_evidence,
     render_analysis,
+    repair_verified,
     root_cause_analysis,
 )
 
@@ -50,6 +51,8 @@ def _store(tmp_path: Path, *attempts: dict[str, Any]) -> RepairStore:
             deadline=now + 600,
             pr_number=1,
             fast_checks=True,
+            initial_sha=_FAILING,
+            fixed_sha=_FIX,
             status=RepairStatus.SUCCEEDED,
             attempts=len(attempts),
             reason="The repair commit passed CI.",
@@ -82,7 +85,7 @@ def test_the_fix_is_read_from_the_attempt_that_pushed_the_verified_commit(
     )
 
     # Act
-    evidence = read_repair_evidence(_RUN_ID, _FIX, store=store)
+    evidence = read_repair_evidence(_RUN_ID, store=store)
 
     # Assert
     assert evidence.failing_checks == ("test",)
@@ -94,16 +97,29 @@ def test_the_fix_is_read_from_the_attempt_that_pushed_the_verified_commit(
 
 
 def test_an_unknown_run_reads_as_no_evidence(tmp_path: Path) -> None:
-    assert read_repair_evidence(_RUN_ID, _FIX, store=RepairStore(tmp_path)) == RepairEvidence()
+    assert read_repair_evidence(_RUN_ID, store=RepairStore(tmp_path)) == RepairEvidence()
+
+
+_OTHER_HEAD = "c0ffee0c0ffee0c0ffee0c0ffee0c0ffee0c0ff"
 
 
 @pytest.mark.parametrize(
-    ("seeded_here", "on_seeded_fixture", "named"),
-    [(True, True, True), (False, True, False), (True, False, False)],
-    ids=["committed-and-kept", "reused-pull-request", "head-replaced-mid-repair"],
+    ("seeded_here", "on_seeded_fixture", "initial_sha", "named"),
+    [
+        (True, True, _FAILING, True),
+        (False, True, _FAILING, False),
+        (True, False, _FAILING, False),
+        (True, True, _OTHER_HEAD, False),
+    ],
+    ids=[
+        "committed-and-kept",
+        "reused-pull-request",
+        "head-replaced-mid-repair",
+        "head-moved-before-scheduling",
+    ],
 )
-def test_the_seeded_fault_is_named_only_for_a_commit_this_run_made_and_kept(
-    seeded_here: bool, on_seeded_fixture: bool, named: bool
+def test_the_seeded_fault_is_named_only_for_the_commit_the_run_saw_failing(
+    seeded_here: bool, on_seeded_fixture: bool, initial_sha: str, named: bool
 ) -> None:
     analysis = root_cause_analysis(
         pr_number=1,
@@ -111,17 +127,41 @@ def test_the_seeded_fault_is_named_only_for_a_commit_this_run_made_and_kept(
         failing_commit=_FAILING,
         fix_commit=_FIX,
         seeded_here=seeded_here,
-        evidence=RepairEvidence(failing_checks=("test",), on_seeded_fixture=on_seeded_fixture),
+        evidence=RepairEvidence(
+            initial_sha=initial_sha,
+            fixed_sha=_FIX,
+            failing_checks=("test",),
+            on_seeded_fixture=on_seeded_fixture,
+        ),
     )
 
     assert ("cause" in analysis) is named
     if named:
         assert analysis["cause"].startswith(f"Commit {_FAILING[:7]} changed `add()`")
+    # The run's check names describe the seed's commit only when the run saw it fail.
+    assert ("`test`" in analysis["failure"]) is (initial_sha == _FAILING)
 
 
-def test_a_failed_repair_claims_no_fix_in_its_links_or_its_analysis() -> None:
-    # Arrange: the pull request head moved to an unverified commit, and a check passed
-    unverified_head = "c0ffee0c0ffee0c0ffee0c0ffee0c0ffee0c0ff"
+@pytest.mark.parametrize(
+    ("outcome", "fix"),
+    [
+        ("failed", "No verified fix: Stopped after 3 failed repair attempts."),
+        (
+            "success",
+            f"Not attributed: the repair verified commit {_FIX[:7]}, "
+            f"but the pull request head is now {_OTHER_HEAD[:7]}.",
+        ),
+    ],
+    ids=["repair-failed", "head-pushed-after-the-repair"],
+)
+def test_a_head_the_run_did_not_verify_is_never_reported_as_the_fix(outcome: str, fix: str) -> None:
+    # Arrange: the pull request head is not the commit the run verified, and a check passed
+    evidence = RepairEvidence(
+        initial_sha=_FAILING,
+        fixed_sha=_FIX,
+        on_seeded_fixture=True,
+        reason="Stopped after 3 failed repair attempts.",
+    )
 
     # Act
     links = github_links(
@@ -131,42 +171,40 @@ def test_a_failed_repair_claims_no_fix_in_its_links_or_its_analysis() -> None:
         pr_url="",
         failing_commit=_FAILING,
         failed_run_id=11,
-        fix_commit=unverified_head,
+        fix_commit=_OTHER_HEAD,
         passing_run_id=22,
-        verified=False,
+        verified=repair_verified(outcome, _OTHER_HEAD, evidence),
     )
     analysis = root_cause_analysis(
         pr_number=1,
-        outcome="failed",
+        outcome=outcome,
         failing_commit=_FAILING,
-        fix_commit=unverified_head,
+        fix_commit=_OTHER_HEAD,
         seeded_here=True,
-        evidence=RepairEvidence(
-            on_seeded_fixture=True, reason="Stopped after 3 failed repair attempts."
-        ),
+        evidence=evidence,
     )
 
     # Assert
     assert set(links) == {"pull_request", "failing_commit", "failed_run"}
     assert links["pull_request"] == "https://github.com/alice/demo/pull/1"
-    assert analysis["fix"] == "No verified fix: Stopped after 3 failed repair attempts."
+    assert analysis["fix"] == fix
     assert "verification" not in analysis
 
 
-def test_agent_text_cannot_hide_the_analysis_as_a_data_blob(tmp_path: Path) -> None:
-    # Arrange: the coding agent's summary and diff both carry JSON key separators
+def test_recorded_text_cannot_hide_the_analysis_as_a_data_blob(tmp_path: Path) -> None:
+    # Arrange: check names, file names, summary, and diff all carry JSON key separators
     store = _store(
         tmp_path,
         {
-            "failing_checks": ["test"],
+            "failing_checks": ['lint": "strict', 'test": "unit'],
             "fix_head_sha": _FIX,
-            "changed_files": ["calculator.py"],
+            "changed_files": ['calc": "v2.py'],
             "summary": 'Set {"op": "add", "mode": "sum"} in calculator.py.',
             "diff": '+CONFIG = {"op": "add", "mode": "sum"}\n',
             "diff_truncated": False,
         },
     )
-    evidence = read_repair_evidence(_RUN_ID, _FIX, store=store)
+    evidence = read_repair_evidence(_RUN_ID, store=store)
     analysis = root_cause_analysis(
         pr_number=1,
         outcome="success",
@@ -179,7 +217,8 @@ def test_agent_text_cannot_hide_the_analysis_as_a_data_blob(tmp_path: Path) -> N
     # Act
     text = render_analysis({"pull_request": "https://github.com/alice/demo/pull/1"}, analysis)
 
-    # Assert: the gateway shows it, keeping the summary and dropping the diff
+    # Assert: the gateway shows it, keeping the names and summary and dropping the diff
     assert not is_data_blob(text)
+    assert "`lint': 'strict`" in text
     assert "Set {'op': 'add'" in text
     assert "```diff" not in text
