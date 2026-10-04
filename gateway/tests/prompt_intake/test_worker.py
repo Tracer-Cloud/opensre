@@ -103,6 +103,24 @@ def test_a_remote_turn_defers_questions_and_gets_the_context_as_facts() -> None:
     assert handler.seen_kwargs == {"slot_wait_seconds": PROMPT_SLOT_WAIT_SECONDS}
 
 
+def test_a_literal_command_reaches_the_turn_without_the_facts() -> None:
+    """Facts appended to ``/cron add …`` reached the command as extra arguments and failed it."""
+    # Arrange: the CLI client adds the bound GitHub connection to every prompt's context
+    handler = _Handler(answer="Task created.")
+    worker, queue = _worker(handler)
+    command = (
+        "/cron add --kind manual_loop --cron '0 9 * * *' --provider slack --prompt 'Check CI.'"
+    )
+    job = queue.submit(command, context={"github_connection_id": "42"}, actor="user_1")
+    assert job is not None
+
+    # Act
+    worker.run_one(job)
+
+    # Assert
+    assert handler.seen_text == command
+
+
 class _ToolCatalogHandler(_Handler):
     """Resolve the real prompt and scheduled-tick tool catalogs on each turn."""
 
