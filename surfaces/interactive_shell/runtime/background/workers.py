@@ -63,8 +63,10 @@ class BackgroundTaskPool:
         ]
         session = self.session
         thread_jobs: tuple[tuple[str, Callable[[], None]], ...] = (
-            ("GitHub connection snapshot", lambda: capture_github_connection_snapshot(session)),
+            # The scheduler check is cheap and finishes a deferred upgrade, so it
+            # runs first: an exit during the snapshot must not skip it.
             ("scheduler build check", _restart_stale_scheduler),
+            ("GitHub connection snapshot", lambda: capture_github_connection_snapshot(session)),
         )
         for label, job in thread_jobs:
             if self._defer_thread_job is not None:

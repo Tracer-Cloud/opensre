@@ -278,6 +278,10 @@ class InteractiveShellController:
         except Exception as exc:  # noqa: BLE001
             log.warning("Loop scheduler could not start: %s", exc)
         self._ci_fix_status_cleanup = bind_ci_fix_status(self.session.terminal)
+        if self.session.pending_user_choice is None:
+            # No startup menu will draw: the prompt is the first thing the user
+            # waits on. Released only now, so every job above is already held.
+            self.startup_work.release()
 
     async def _run_turn(self, text: str) -> None:
         try:

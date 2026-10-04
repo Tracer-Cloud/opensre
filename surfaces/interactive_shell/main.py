@@ -150,9 +150,6 @@ async def run_repl_async(
         elif offer_demo(session, out):
             # Entering the master skill queues its menu; the first model turn is the answer.
             startup_work.defer("first-turn warm-up", warm_first_turn)
-        if session.pending_user_choice is None:
-            # No startup menu will draw: the prompt is the first thing the user waits on.
-            startup_work.release()
 
         await InteractiveShellController(
             runtime_context,
