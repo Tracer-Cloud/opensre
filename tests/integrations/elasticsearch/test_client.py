@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -285,6 +286,7 @@ class TestSearchLogs:
 
         assert result["success"] is False
         assert "HTTP 400" in result["error"]
+        assert result["status_code"] == HTTPStatus.BAD_REQUEST
 
 
 # ── get_cluster_health ────────────────────────────────────────────────────────

@@ -12,7 +12,8 @@ from typing import IO
 from config.constants.terminal_host import (
     BASH_EXPORTED_FUNCTION_ENV_PREFIX,
 )
-from tools.interactive_shell.subprocess import watch_subprocess_until_exit
+from infrastructure.process.windows_job import WindowsJobProcess, spawn_windows_job
+from tools.interactive_shell.subprocess import OwnedProcessTree, watch_subprocess_until_exit
 
 
 @dataclass(frozen=True)
@@ -123,16 +124,45 @@ def execute_shell_command(
 
     exec_argv = _shell_argv(command)
 
-    proc = subprocess.Popen(
-        exec_argv,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        start_new_session=True,
-        env=_shell_environment(),
-    )
+    with contextlib.ExitStack() as process_scope:
+        owned_tree: OwnedProcessTree | None = None
+        proc: subprocess.Popen[str] | WindowsJobProcess
+        if os.name == "nt":
+            assert isinstance(exec_argv, str)
+            proc = process_scope.enter_context(
+                spawn_windows_job(exec_argv, environment=_shell_environment())
+            )
+            owned_tree = proc
+        else:
+            proc = subprocess.Popen(
+                exec_argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                start_new_session=True,
+                env=_shell_environment(),
+            )
+        return _collect_shell_result(
+            proc,
+            command=command,
+            watch_cancel=watch_cancel,
+            timeout_seconds=timeout_seconds,
+            max_output_chars=max_output_chars,
+            owned_tree=owned_tree,
+        )
+
+
+def _collect_shell_result(
+    proc: subprocess.Popen[str] | WindowsJobProcess,
+    *,
+    command: str,
+    watch_cancel: threading.Event,
+    timeout_seconds: int,
+    max_output_chars: int,
+    owned_tree: OwnedProcessTree | None,
+) -> ShellExecutionResult:
     out_buf: list[str] = []
     err_buf: list[str] = []
     readers = (
@@ -146,6 +176,7 @@ def execute_shell_command(
         proc,
         cancel_event=watch_cancel,
         timeout_seconds=timeout_seconds,
+        owned_tree=owned_tree,
     )
     for reader in readers:
         reader.join(timeout=2.0)

@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     env:
       INTEGRITY_EXPECT_CONTAINER: "0"
     steps:
@@ -60,7 +60,7 @@ jobs:
       - run: uv sync --frozen --extra dev
       - name: Exercise fresh processes, storage, auth transition, and delivery retry
         run: uv run python -m pytest tests/analytics/test_integrity_environments.py --junitxml=integrity-evidence/results.xml
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: telemetry-integrity-${{ matrix.os }}
@@ -68,7 +68,7 @@ jobs:
 
   container:
     name: Container runtime / persistent and fresh identity storage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: python:3.12-bookworm
     timeout-minutes: 20
     env:
@@ -81,7 +81,7 @@ jobs:
       - run: uv sync --frozen --extra dev
       - name: Exercise real Docker detection and persistent versus replaced storage
         run: uv run python -m pytest tests/analytics/test_integrity_environments.py --junitxml=integrity-evidence/results.xml
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: telemetry-integrity-container

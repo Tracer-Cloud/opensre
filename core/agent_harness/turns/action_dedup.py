@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from config.constants.tooling import ToolBlockedBy
 from core.llm.types import ToolCall
 from core.tool.execution import (
     BeforeToolCallResult,
@@ -67,9 +68,10 @@ def with_duplicate_action_call_guard(
     """Block replaying guarded action calls already covered by the success snapshot.
 
     Suppress ``slash_invoke`` / ``shell_run`` / ``cli_exec`` when the call's
-    fingerprint is in ``last_fully_succeeded_batch``. Two guarded calls in one
-    response never reach this hook: the executor rejects a response with more
-    than one action before any hook runs.
+    fingerprint is in ``last_fully_succeeded_batch`` *or* already succeeded
+    earlier in the current provider batch (same-batch duplicates). Guarded
+    tools run sequentially, so ``batch_succeeded`` is visible to the next
+    ``before()`` in the batch.
 
     Snapshot updates at the next batch boundary:
 
@@ -122,18 +124,20 @@ def with_duplicate_action_call_guard(
 
     def before(request: ToolExecutionRequest) -> BeforeToolCallResult | None:
         name = request.tool_call.name
-        # Interleaved A -> B -> A still runs, because a fully successful {B}
-        # replaces the snapshot.
+        # Membership across the prior success snapshot *and* earlier successes
+        # in this batch. Interleaved A -> B -> A still runs, because a fully
+        # successful {B} replaces the snapshot. Same-batch duplicates (two
+        # identical cli_exec in one provider response) hit batch_succeeded.
         if name in _DEDUPE_ACTION_TOOL_NAMES:
             key = _action_call_fingerprint(name, public_tool_input(request.arguments))
-            if key in last_fully_succeeded_batch:
+            if key in last_fully_succeeded_batch or key in batch_succeeded:
                 return BeforeToolCallResult(
                     blocked=True,
                     reason=(
                         f"Already ran {name} with identical arguments "
                         "this turn. Do not repeat it; finish with no further tool calls."
                     ),
-                    metadata={"suppressed_duplicate": True},
+                    metadata={ToolBlockedBy.DUPLICATE_ACTION: True},
                 )
         if base_before is not None:
             return base_before(request)

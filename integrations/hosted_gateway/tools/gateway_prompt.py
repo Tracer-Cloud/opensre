@@ -7,15 +7,20 @@ user's selection, never a model argument, is what goes back as the answer.
 from __future__ import annotations
 
 import json
+import re
 import time
+import uuid
+from http import HTTPStatus
 from typing import Any
 
+from config.constants.gateway import PROMPT_CONVERSATION_NEW
 from config.constants.github import GITHUB_TOKEN_CHECKLIST
 from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_INTEGRATIONS_PATH,
     HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
     HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
     HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS,
+    HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS,
 )
 from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
 from core.agent_harness.spi.session_state import (
@@ -28,6 +33,7 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.hosted_gateway.client import (
+    TRANSIENT_ERRORS,
     HostedGatewayClient,
     HostedGatewayError,
     PromptChoice,
@@ -35,6 +41,7 @@ from integrations.hosted_gateway.client import (
 )
 from integrations.hosted_gateway.tools.results import (
     SOURCE,
+    cause_sentence,
     failure_output,
     hosted_gateway_available,
 )
@@ -43,15 +50,15 @@ TOOL_NAME = "ask_hosted_gateway"
 _COMPONENT = "integrations.hosted_gateway.tools.gateway_prompt.ask_hosted_gateway"
 _CHOOSE_COMMAND = "/choose"
 _HOSTED_PROMPT_INTERACTION_PREFIX = "hosted_prompt:"
-#: Progress lines come from the gateway's own tools, whose labels say "this machine".
-_GATEWAY_PROGRESS_PREFIX = "on the gateway: "
 _QUEUED_NOTICE = "waiting for a free slot on the gateway (another conversation is using it)"
+_UNANSWERED_NOTICE = "the gateway is not answering right now; still waiting for it"
 #: The one vendor whose credential refusals have a known, ordered fix.
 _GITHUB_VENDOR = "github"
 _GITHUB_REFUSAL_LEAD = (
     "Only if GitHub refused the credential (HTTP 401 or 403; a rate limit or an unavailable "
     "repository needs no token change): "
 )
+_GITHUB_REFUSAL_CODES = (int(HTTPStatus.UNAUTHORIZED), int(HTTPStatus.FORBIDDEN))
 
 _STATE_TEXT = {
     "failed": "The hosted gateway could not run that prompt ({error}).",
@@ -74,8 +81,26 @@ _FAILURE_TEXT = {
         "That answer did not match the question's options. Ask again about the original "
         "prompt id to reopen its menu, then answer from the menu."
     ),
+    "interrupted": (
+        "The hosted gateway restarted before it finished that prompt, so it did not complete. "
+        "Send it again."
+    ),
+    "cancelled": "That prompt was cancelled before it finished.",
+    "unknown_conversation": (
+        "The hosted gateway has no such conversation for this user. Send the prompt without "
+        "a conversation, or with conversation=new."
+    ),
+    "conversation_waiting": (
+        "That conversation is waiting for the answer to its question. Answer the question "
+        "first, or send the prompt with conversation=new."
+    ),
 }
-_ANSWER_REJECTED = "That answer did not match the question's options; the question opens again. "
+#: A follow-up the gateway could not use; it reopened the question on the original prompt.
+_ANSWER_NOT_USED = {
+    "invalid_answer": "That answer did not match the question's options; the question opens again. ",
+    "interrupted": "The hosted gateway restarted before it used that answer; the question opens again. ",
+    "cancelled": "That answer was cancelled; the question opens again. ",
+}
 #: The prompt id stays in the user's line: it is all the resumed turn keeps of this result.
 _ASKING_IN_SHELL = (
     "The hosted gateway needs your decision; the menu opens now. Your selection goes back "
@@ -94,6 +119,25 @@ _ASKING_WITHOUT_SHELL = (
 _STILL_RUNNING = (
     "The hosted gateway is still working on prompt {prompt_id} after "
     "{waited} seconds. Ask again later with that id to read the result."
+)
+_LOST_CONTACT = (
+    "Lost contact with the hosted gateway while it worked on prompt {prompt_id}. Ask again "
+    "with that id in a minute; if the gateway restarted meanwhile, the prompt reads as "
+    "interrupted and has to be sent again."
+)
+#: A failed read or answer of a prompt the gateway already holds: the id is the way back.
+_ASK_AGAIN_ABOUT = (
+    "Ask about prompt {prompt_id} again in a minute: it shows the answer the gateway "
+    "already took, if any, so nothing runs twice."
+)
+#: A fresh prompt whose response was lost: resending under the same request id is safe.
+_SAFE_TO_RESEND = (
+    "The gateway may not have taken the prompt. Sending it again is safe: it will not run twice."
+)
+#: For the model only: how to resend so the gateway recognizes the same prompt.
+_RESEND_INSTRUCTIONS = (
+    "To send it again, call ask_hosted_gateway with the same prompt and facts and "
+    "request_id={request_id}; a new request_id could run the prompt twice."
 )
 _FAILED_INTEGRATIONS = (
     "The hosted gateway's {vendors} integration failed during this request. The gateway "
@@ -132,9 +176,10 @@ _FAILED_INTEGRATION_NEXT_STEP = {
         "or a tool there needs approval, the result is needs_input and the question opens as "
         "a menu in this shell; after the user answers, call this tool again with the same "
         "prompt_id and their selection is sent. Use it to run or check work there, for "
-        "example whether a scheduled CI repair task is running. The OpenSRE app finds the "
-        "gateway from the signed-in account; no organization or gateway id is passed. "
-        "Organization admins only."
+        "example whether a scheduled CI repair task is running. A prompt continues the "
+        "user's own gateway conversation, one prompt at a time; conversation=new starts a "
+        "separate one that runs beside it. The OpenSRE app finds the gateway from the "
+        "signed-in account; no organization or gateway id is passed."
     ),
     use_cases=[
         "Ask the hosted gateway which scheduled tasks it runs and whether the CI repair loop is active",
@@ -176,6 +221,22 @@ _FAILED_INTEGRATION_NEXT_STEP = {
                     "selection is sent along."
                 ),
             },
+            "request_id": {
+                "type": "string",
+                "description": (
+                    "Only when resending a prompt whose earlier send failed: the request_id "
+                    "that failure returned, so the gateway runs the prompt at most once."
+                ),
+            },
+            "conversation": {
+                "type": "string",
+                "description": (
+                    "Leave empty to continue the user's own gateway conversation. 'new' "
+                    "starts a separate conversation that runs at the same time as the "
+                    "user's others; use it for an unrelated investigation. A "
+                    "conversation_id from an earlier result continues that conversation."
+                ),
+            },
         },
         "additionalProperties": False,
     },
@@ -186,6 +247,8 @@ _FAILED_INTEGRATION_NEXT_STEP = {
         "question": "What the gateway asked when the state is needs_input",
         "choice": "The question as menu data (title, note, questions with options) when needs_input",
         "failed_integrations": "Integrations whose tools failed on the gateway, e.g. github",
+        "conversation_id": "The conversation the prompt ran on; pass it as conversation to continue it",
+        "cause_code": "The app's specific reason when a prompt was refused, empty otherwise",
         "response_text": "Plain-language result for the user",
         "instructions": "What to do next with a parked question or a failed integration; not for the user",
     },
@@ -194,36 +257,103 @@ def ask_hosted_gateway(
     prompt: str = "",
     facts: dict[str, str] | None = None,
     prompt_id: str = "",
+    request_id: str = "",
+    conversation: str = "",
     context: Any = None,
 ) -> dict[str, Any]:
     """Submit the prompt or continue an earlier one, then wait for the gateway to settle."""
     if not prompt.strip() and not prompt_id.strip():
         return _refusal("Give the hosted gateway a prompt, or a prompt id to read.")
+    conversation = conversation.strip()
+    if not _valid_conversation(conversation):
+        return _refusal(
+            "conversation must be empty, 'new', or a conversation_id from an earlier result."
+        )
     scope = _shell_scope(context)
+    in_flight = ""
+    # One id per logical submission, reused by a resend, so the gateway queues it once.
+    request_id = request_id.strip() or uuid.uuid4().hex
     try:
         with HostedGatewayClient.from_account() as client:
-            record, sent_at = _submit_or_continue(
-                client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
+            record, sent_at, skip_recorded = _submit_or_continue(
+                client,
+                prompt.strip(),
+                dict(facts or {}),
+                prompt_id.strip(),
+                scope,
+                request_id,
+                conversation,
             )
-            record, waited = _wait_until_settled(
-                client, record, _ProgressRelay(context), sent_at=sent_at
-            )
+            in_flight = record.prompt_id
+            relay = _ProgressRelay(context)
+            if skip_recorded:
+                relay.skip_recorded(record)
+            record, waited = _wait_until_settled(client, record, relay, sent_at=sent_at)
             parent_id = record.parent_prompt_id or prompt_id.strip()
-            rejected = _answer_was_rejected(record) and bool(parent_id)
-            if rejected:
+            is_follow_up = bool(parent_id) and parent_id != record.prompt_id
+            not_used = _answer_not_used(record) if is_follow_up else ""
+            if not_used:
                 # The gateway reopened the question on the original prompt; show it again.
                 record = client.prompt_result(parent_id)
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
-        return failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
+        return _failure(exc, in_flight, known=prompt_id.strip(), request_id=request_id)
     outcome = _outcome(record, waited, integrations_url, scope)
-    if rejected and record.state == "needs_input":
-        outcome["response_text"] = _ANSWER_REJECTED + outcome["response_text"]
+    if not_used and record.state == "needs_input":
+        outcome["response_text"] = not_used + outcome["response_text"]
     return outcome
 
 
-def _answer_was_rejected(record: PromptRecord) -> bool:
-    return record.state == "failed" and record.error == "invalid_answer"
+def _waiting_notice(exc: HostedGatewayError) -> str:
+    """A mid-wait poll failure: the accepted prompt is still being awaited.
+
+    The cause names why this read failed. It follows the waiting line so a
+    sentence that says to try again is not the only thing the user sees while
+    the tool keeps polling the prompt it already sent.
+    """
+    cause = cause_sentence(exc)
+    if not cause:
+        return _UNANSWERED_NOTICE
+    return f"{_UNANSWERED_NOTICE}. {cause}"
+
+
+def _failure(
+    exc: HostedGatewayError, in_flight: str, *, known: str, request_id: str
+) -> dict[str, Any]:
+    """A failed call's result; a transient failure says how to retry without running twice.
+
+    Once a prompt was accepted (``in_flight``) or the call named one (``known``),
+    the result keeps that id: reading it shows what the gateway already took. A
+    fresh prompt that got no id keeps its ``request_id`` instead: resent with
+    it, the gateway queues the prompt at most once.
+    """
+    out = failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
+    if exc.code not in TRANSIENT_ERRORS:
+        return out
+    prompt_id = in_flight or known
+    if in_flight:
+        text = _LOST_CONTACT.format(prompt_id=in_flight)
+        cause = cause_sentence(exc)
+        if cause:
+            text = f"{text} {cause}"
+    elif prompt_id:
+        text = f"{out['response_text']} {_ASK_AGAIN_ABOUT.format(prompt_id=prompt_id)}"
+    else:
+        text = f"{out['response_text']} {_SAFE_TO_RESEND}"
+    result = {**out, "error": text, "response_text": text}
+    if prompt_id:
+        result["prompt_id"] = prompt_id
+    else:
+        result["request_id"] = request_id
+        result["instructions"] = _RESEND_INSTRUCTIONS.format(request_id=request_id)
+    return result
+
+
+def _answer_not_used(record: PromptRecord) -> str:
+    """The lead line for a failed follow-up whose question takes an answer again, else empty."""
+    if record.state != "failed":
+        return ""
+    return _ANSWER_NOT_USED.get(record.error, "")
 
 
 def _submit_or_continue(
@@ -232,24 +362,36 @@ def _submit_or_continue(
     facts: dict[str, str],
     prompt_id: str,
     scope: ActionToolScope | None,
-) -> tuple[PromptRecord, float]:
+    request_id: str,
+    conversation: str = "",
+) -> tuple[PromptRecord, float, bool]:
     """Send a new prompt, or read an earlier one and pass the user's answer on if they gave one.
 
-    Also returns when the request that could queue the prompt left this machine,
-    taken right before that call, so queue time excludes any reads before it.
+    The timestamp is when the request that could queue the prompt left this
+    machine, taken right before that call. The bool is true when ``record`` is
+    a read of an existing prompt, so progress already on it must not be replayed.
+    A question that already took an answer leads to that answer's follow-up, so
+    an answer whose response was lost is followed rather than sent again.
     """
     if not prompt_id:
         sent_at = time.monotonic()
-        return client.send_prompt(prompt, context=facts), sent_at
+        record = client.send_prompt(
+            prompt, context=facts, request_id=request_id, conversation=conversation
+        )
+        return record, sent_at, False
     fetched_at = time.monotonic()
     record = client.prompt_result(prompt_id)
+    if record.state == "needs_input" and record.answered_by:
+        follow_up = client.prompt_result(record.answered_by)
+        if not _answer_not_used(follow_up):
+            return follow_up, fetched_at, True
     if record.state != "needs_input" or record.choice is None:
-        return record, fetched_at
+        return record, fetched_at, True
     answer = _answer_from_turn(scope, record.choice)
     if answer is None:
-        return record, fetched_at
+        return record, fetched_at, True
     sent_at = time.monotonic()
-    return client.answer_prompt(prompt_id, answer), sent_at
+    return client.answer_prompt(prompt_id, answer, request_id=request_id), sent_at, False
 
 
 def _answer_from_turn(scope: ActionToolScope | None, choice: PromptChoice) -> str | None:
@@ -283,13 +425,16 @@ def _wait_until_settled(
     """Poll the app until the gateway settles the prompt or the wait budget is spent.
 
     ``sent_at`` is when the prompt left this machine; the queue notice counts
-    from there, so a slow submission does not delay it.
+    from there, so a slow submission does not delay it. A read nobody answered
+    is polled again until the gateway has been silent for the grace period;
+    then that failure is raised.
     """
     started = time.monotonic()
     queued_since = started if sent_at is None else sent_at
     current = record
     relay.show(current)
     queue_noticed = False
+    silent_since: float | None = None
     while not current.settled:
         waited = time.monotonic() - started
         if waited >= HOSTED_GATEWAY_PROMPT_WAIT_SECONDS:
@@ -300,7 +445,19 @@ def _wait_until_settled(
             relay.note(_QUEUED_NOTICE)
             queue_noticed = True
         time.sleep(HOSTED_GATEWAY_PROMPT_POLL_SECONDS)
-        current = client.prompt_result(record.prompt_id)
+        try:
+            current = client.prompt_result(record.prompt_id)
+        except HostedGatewayError as exc:
+            if exc.code not in TRANSIENT_ERRORS:
+                raise
+            now = time.monotonic()
+            if silent_since is None:
+                silent_since = now
+                relay.note(_waiting_notice(exc))
+            elif now - silent_since >= HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS:
+                raise
+            continue
+        silent_since = None
         relay.show(current)
     return current, time.monotonic() - started
 
@@ -312,6 +469,14 @@ class _ProgressRelay:
         self._emit = getattr(context, "emit_update", None)
         self._last_index = -1
 
+    def skip_recorded(self, record: PromptRecord) -> None:
+        """Ignore progress lines already present on a fetched prompt."""
+        if not record.progress:
+            return
+        recorded = max(line.index for line in record.progress)
+        if recorded > self._last_index:
+            self._last_index = recorded
+
     def show(self, record: PromptRecord) -> None:
         if self._emit is None:
             return
@@ -319,7 +484,7 @@ class _ProgressRelay:
             if line.index <= self._last_index:
                 continue
             self._last_index = line.index
-            self._emit({"progress": _GATEWAY_PROGRESS_PREFIX + line.text})
+            self._emit({"progress": line.text, "kind": line.kind})
 
     def note(self, text: str) -> None:
         """A line about the wait itself, not relayed from the gateway."""
@@ -347,9 +512,9 @@ def _outcome(
         hint = _FAILED_INTEGRATIONS.format(
             vendors=vendors, url=integrations_url, next_step=next_step
         )
-        if _GITHUB_VENDOR in record.failed_integrations:
-            # The gateway reports the vendor, not the error kind; only a refusal
-            # (401 or 403) calls for token changes, so the checklist says so.
+        if _GITHUB_VENDOR in record.failed_integrations and _credential_was_refused(text):
+            # The gateway reports the vendor, not the error kind. The token
+            # checklist is only for an HTTP 401 or 403 named in the answer.
             hint = f"{hint.rstrip()} {_GITHUB_REFUSAL_LEAD}{GITHUB_TOKEN_CHECKLIST}\n\n"
         text = hint + text
         instructions.insert(0, _FAILED_INTEGRATIONS_INSTRUCTIONS.format(vendors=vendors))
@@ -360,9 +525,26 @@ def _outcome(
         "question": record.question,
         "choice": _choice_data(record),
         "failed_integrations": list(record.failed_integrations),
+        "conversation_id": record.conversation_id,
+        "cause_code": "",
         "response_text": text,
         "instructions": " ".join(instructions),
     }
+
+
+def _valid_conversation(conversation: str) -> bool:
+    """Empty, ``new``, or a conversation id in the canonical form the gateway hands out."""
+    if conversation in ("", PROMPT_CONVERSATION_NEW):
+        return True
+    try:
+        return str(uuid.UUID(conversation)) == conversation
+    except ValueError:
+        return False
+
+
+def _credential_was_refused(text: str) -> bool:
+    """True when the answer names an HTTP 401 or 403 credential refusal."""
+    return any(re.search(rf"\b{code}\b", text) for code in _GITHUB_REFUSAL_CODES)
 
 
 def _failure_text(error: str) -> str:
@@ -436,6 +618,7 @@ def _refusal(text: str) -> dict[str, Any]:
         "prompt_id": "",
         "state": "",
         "question": "",
+        "cause_code": "",
         "error": text,
         "response_text": text,
     }

@@ -7,9 +7,14 @@ messaging providers.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import click
 from rich.console import Console
 from rich.table import Table
+
+if TYPE_CHECKING:
+    from infrastructure.scheduling.scheduler.loops import LoopSummary
 
 from core.agent_harness import pin_recurring_skill, validate_skill_inputs
 from infrastructure.process.runtime_flags import is_json_output
@@ -316,6 +321,30 @@ def _recurring_skill_inputs(
     return validate_skill_inputs(params)
 
 
+def _print_cron_task(loop: LoopSummary) -> None:
+    """Print one scheduled task as a headed bullet with one field per line."""
+    from rich.markup import escape
+
+    title = escape(loop.name.strip() or loop.id[:12])
+    enabled = GLYPH_SUCCESS if loop.enabled else GLYPH_ERROR
+    fields = (
+        ("Kind", escape(loop.kind.value)),
+        ("Cron", escape(loop.cron)),
+        ("Timezone", escape(loop.timezone)),
+        ("Provider", escape(loop.provider.value)),
+        ("Channels", escape(", ".join(loop.channels)) or "—"),
+        ("Enabled", enabled),
+        ("Next run", format_repl_timestamp(loop.next_run, style="utc")),
+        ("Last run", format_repl_timestamp(loop.last_run, style="utc")),
+    )
+    _console.print(f"[bold]• {title}[/bold]")
+    _console.print(f"  • ID: [cyan]{escape(loop.id[:12])}[/cyan]")
+    for label, value in fields:
+        _console.print(f"  • {label}: {value}")
+    if loop.schedule_error:
+        _console.print(f"  [yellow]• Requires action: {escape(loop.schedule_error)}[/yellow]")
+
+
 @cron_command.command(name="list")
 def cron_list() -> None:
     """List all scheduled delivery tasks."""
@@ -326,42 +355,10 @@ def cron_list() -> None:
         _console.print("[dim]No scheduled tasks configured.[/dim]")
         return
 
-    table = Table(show_header=True, header_style="bold")
-    # The id is what `/cron remove <id>` and `/cron run <id>` chain on, so it is
-    # the one cell Rich may never ellipsize when the table is squeezed. Prose
-    # columns fold rather than truncate (`manual_lo…` loses the value); the
-    # short fixed-shape cells stay on one line.
-    table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("Name", overflow="fold")
-    table.add_column("Kind", overflow="fold")
-    table.add_column("Cron", no_wrap=True)
-    table.add_column("TZ", no_wrap=True)
-    table.add_column("Provider", overflow="fold")
-    table.add_column("Channels", overflow="fold")
-    table.add_column("Enabled", no_wrap=True)
-    table.add_column("Next Run", overflow="fold")
-    table.add_column("Last Run", overflow="fold")
-
-    for loop in loops:
-        table.add_row(
-            loop.id[:12],
-            loop.name,
-            loop.kind.value,
-            loop.cron,
-            loop.timezone,
-            loop.provider.value,
-            ", ".join(loop.channels),
-            GLYPH_SUCCESS if loop.enabled else GLYPH_ERROR,
-            format_repl_timestamp(loop.next_run, style="utc"),
-            format_repl_timestamp(loop.last_run, style="utc"),
-        )
-
-    _console.print(table)
-    for loop in loops:
-        if loop.schedule_error:
-            _console.print(
-                f"[yellow]Task {loop.id[:12]} requires action:[/yellow] {loop.schedule_error}"
-            )
+    for index, loop in enumerate(loops):
+        if index:
+            _console.print()
+        _print_cron_task(loop)
 
 
 def _unknown_backlog_status(as_json: bool, error: str) -> click.exceptions.Exit:

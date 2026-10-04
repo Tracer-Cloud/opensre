@@ -14,6 +14,7 @@ from typing import Any
 
 from rich.console import Console
 
+from config.constants.ask_user import AskUserReason
 from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
     ActionToolScope,
@@ -82,6 +83,7 @@ def test_interactive_repl_defers_menu_to_choose_turn() -> None:
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == _TITLE
     assert session.pending_user_choice.options == tuple(_OPTIONS)
+    assert session.pending_user_choice.reason_code == AskUserReason.CHOICE
     assert session.terminal.pending_prompt_default == "/choose"
     assert session.terminal.pending_prompt_autosubmit is True
 

@@ -2,15 +2,20 @@
 
 macOS gets a launchd LaunchAgent, Linux a systemd user unit; both run
 ``opensre cron start --service`` and restart it when it exits. Other
-platforms are reported as unsupported rather than guessed at.
+platforms are reported as unsupported rather than guessed at. The unit
+records the build it was installed from, so a service still running an older
+build can be told apart and restarted.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import plistlib
+import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -19,13 +24,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from config.constants.paths import OPENSRE_HOME_DIR, OPENSRE_HOME_ENV
+from config.constants.scheduler import OPENSRE_SCHEDULER_BUILD_ENV
+from config.version import get_build_stamp
 from infrastructure.process.entrypoint import opensre_command
+from infrastructure.scheduling.scheduler.operation_log import record_scheduler_service_operation
+from infrastructure.scheduling.scheduler.storage import has_live_claim
+
+logger = logging.getLogger(__name__)
 
 SERVICE_LABEL = "com.opensre.scheduler"
 _LOGS_DIRNAME = "logs"
 _COMMAND_TIMEOUT_SECONDS = 30
 _UNLOAD_WAIT_SECONDS = 15.0
 _UNLOAD_POLL_SECONDS = 0.5
+_SYSTEMD_BUILD_LINE = re.compile(
+    rf'^Environment="?{OPENSRE_SCHEDULER_BUILD_ENV}=(?P<build>[^"\n]*)"?$', re.MULTILINE
+)
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
@@ -76,20 +90,23 @@ def install_background_service(
     run: Runner = _run,
     command: Sequence[str] | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    build: str = "",
 ) -> BackgroundServiceState:
-    """Install and start the service; raises ``RuntimeError`` when the OS refuses.
+    """Install and (re)start the service; raises ``RuntimeError`` when the OS refuses.
 
-    A refused activation removes the unit again, so status never reports a
-    service the OS is not running.
+    A running service is replaced, so it runs the unit just written. A refused
+    activation removes the unit again, so status never reports a service the
+    OS is not running.
     """
     name = system or platform.system()
     argv = list(command or scheduler_command())
+    stamp = build or get_build_stamp()
     log_path = _log_path()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     if name == "Darwin":
         unit = _launchd_unit_path(home)
         unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_bytes(plistlib.dumps(_launchd_definition(argv, log_path)))
+        unit.write_bytes(plistlib.dumps(_launchd_definition(argv, log_path, stamp)))
         domain = f"gui/{os.getuid()}"
         target = f"{domain}/{SERVICE_LABEL}"
         run(["launchctl", "bootout", target])
@@ -106,13 +123,13 @@ def install_background_service(
     if name == "Linux":
         unit = _systemd_unit_path(home)
         unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text(_systemd_definition(argv, log_path), encoding="utf-8")
+        unit.write_text(_systemd_definition(argv, log_path, stamp), encoding="utf-8")
+        service = f"{SERVICE_LABEL}.service"
         _activate(unit, run(["systemctl", "--user", "daemon-reload"]), "systemctl daemon-reload")
-        _activate(
-            unit,
-            run(["systemctl", "--user", "enable", "--now", f"{SERVICE_LABEL}.service"]),
-            "systemctl enable",
-        )
+        _activate(unit, run(["systemctl", "--user", "enable", service]), "systemctl enable")
+        # ``enable --now`` would leave an already running service on its old
+        # process; restart starts a stopped one and replaces a running one.
+        _activate(unit, run(["systemctl", "--user", "restart", service]), "systemctl restart")
         return BackgroundServiceState("Linux", True, True, unit, log_path)
     return _unsupported(name)
 
@@ -212,7 +229,13 @@ def ensure_background_service(
     run: Runner = _run,
     deadline: float | None = None,
 ) -> BackgroundServiceState:
-    """Start this installation's scheduler and require an OS-confirmed live process."""
+    """Start this installation's scheduler and require an OS-confirmed live process.
+
+    A running service whose unit records another build is restarted so new
+    ticks run this code. While any scheduled execution holds a live lease that
+    restart is skipped: stopping the service would kill the execution, and a
+    repair worker's supervisor would mark it failed. A later call restarts it.
+    """
     original_run = run
 
     def bounded_run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -234,23 +257,87 @@ def ensure_background_service(
     if not state.supported:
         raise RuntimeError(state.summary)
     command = opensre_command("cron", "start", "--service")
-    matches = False
-    if state.unit_path is not None:
-        if state.platform == "Darwin":
-            definition = plistlib.loads(state.unit_path.read_bytes())
-            matches = definition.get("ProgramArguments") == command and definition.get(
-                "EnvironmentVariables", {}
-            ).get(OPENSRE_HOME_ENV) == str(OPENSRE_HOME_DIR)
-        else:
-            matches = state.unit_path.read_text() == _systemd_definition(command, _log_path())
-    if not state.running or not matches:
-        install_background_service(home=home, system=system, run=run, command=command)
+    build = get_build_stamp()
+    same_installation, installed_build = _installed_definition(state, command)
+    stale_build = same_installation and installed_build != build
+    if state.running and stale_build:
+        details = {"installed_build": installed_build or "unrecorded", "build": build}
+        if _scheduled_execution_in_flight():
+            logger.info(
+                "Scheduler service restart for build %s deferred: a run is in flight", build
+            )
+            record_scheduler_service_operation("scheduler_service_restart_deferred", extra=details)
+            return state
+        logger.info("Restarting the scheduler service on build %s", build)
+        record_scheduler_service_operation("scheduler_service_build_restart", extra=details)
+    if not state.running or not same_installation or stale_build:
+        install_background_service(home=home, system=system, run=run, command=command, build=build)
     for _attempt in range(10):
         state = check_background_service(home=home, system=system, run=run)
         if state.running:
             return state
         time.sleep(0.5)
     raise RuntimeError("The background scheduler did not become healthy; check its service log.")
+
+
+def restart_stale_background_service(
+    *,
+    home: Path | None = None,
+    system: str = "",
+    run: Runner = _run,
+) -> bool:
+    """Restart a running service left on another build, once no run is in flight.
+
+    ``ensure_background_service`` defers that restart while an execution holds
+    a lease and only runs again when a repair is scheduled, so the shell calls
+    this at startup to finish a deferred upgrade. True when it restarted.
+    """
+    state = check_background_service(home=home, system=system, run=run)
+    if not state.supported or not state.running:
+        return False
+    command = opensre_command("cron", "start", "--service")
+    build = get_build_stamp()
+    same_installation, installed_build = _installed_definition(state, command)
+    if not same_installation or installed_build == build or _scheduled_execution_in_flight():
+        return False
+    logger.info("Restarting the scheduler service on build %s", build)
+    record_scheduler_service_operation(
+        "scheduler_service_build_restart",
+        extra={"installed_build": installed_build or "unrecorded", "build": build},
+    )
+    install_background_service(home=home, system=system, run=run, command=command, build=build)
+    return True
+
+
+def _installed_definition(
+    state: BackgroundServiceState, command: Sequence[str]
+) -> tuple[bool, str]:
+    """Whether the unit runs ``command`` for this OpenSRE home, and the build it records.
+
+    A unit written before builds were recorded reports ``""`` as its build.
+    """
+    if state.unit_path is None:
+        return False, ""
+    if state.platform == "Darwin":
+        definition = plistlib.loads(state.unit_path.read_bytes())
+        environment = definition.get("EnvironmentVariables", {})
+        same = definition.get("ProgramArguments") == list(command) and environment.get(
+            OPENSRE_HOME_ENV
+        ) == str(OPENSRE_HOME_DIR)
+        return same, str(environment.get(OPENSRE_SCHEDULER_BUILD_ENV) or "")
+    unit = state.unit_path.read_text()
+    match = _SYSTEMD_BUILD_LINE.search(unit)
+    build = match.group("build") if match else ""
+    return unit == _systemd_definition(command, _log_path(), build), build
+
+
+def _scheduled_execution_in_flight() -> bool:
+    """Whether a scheduled execution holds a live lease; unreadable run state counts as one."""
+    try:
+        return has_live_claim()
+    except (OSError, sqlite3.Error):
+        logger.warning("Could not read scheduler run state; keeping the running service.")
+        return True
 
 
 def _wait_until_unloaded(
@@ -285,24 +372,31 @@ def _systemd_unit_path(home: Path | None) -> Path:
     return (home or Path.home()) / ".config" / "systemd" / "user" / f"{SERVICE_LABEL}.service"
 
 
-def _launchd_definition(argv: Sequence[str], log_path: Path) -> dict[str, object]:
+def _launchd_definition(argv: Sequence[str], log_path: Path, build: str) -> dict[str, object]:
+    environment = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        OPENSRE_HOME_ENV: str(OPENSRE_HOME_DIR),
+    }
+    if build:
+        environment[OPENSRE_SCHEDULER_BUILD_ENV] = build
     return {
         "Label": SERVICE_LABEL,
         "ProgramArguments": list(argv),
         "RunAtLoad": True,
         "KeepAlive": True,
         "ProcessType": "Background",
-        "EnvironmentVariables": {
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-            OPENSRE_HOME_ENV: str(OPENSRE_HOME_DIR),
-        },
+        "EnvironmentVariables": environment,
         "StandardOutPath": str(log_path),
         "StandardErrorPath": str(log_path),
     }
 
 
-def _systemd_definition(argv: Sequence[str], log_path: Path) -> str:
+def _systemd_definition(argv: Sequence[str], log_path: Path, build: str) -> str:
+    """The unit text; an empty ``build`` reproduces a unit written before builds were recorded."""
     exec_start = " ".join(_systemd_quote(part) for part in argv)
+    build_line = (
+        f"Environment={_systemd_quote(f'{OPENSRE_SCHEDULER_BUILD_ENV}={build}')}\n" if build else ""
+    )
     return (
         "[Unit]\n"
         "Description=OpenSRE scheduler\n"
@@ -310,6 +404,7 @@ def _systemd_definition(argv: Sequence[str], log_path: Path) -> str:
         "[Service]\n"
         f"ExecStart={exec_start}\n"
         f"Environment={_systemd_quote(f'{OPENSRE_HOME_ENV}={OPENSRE_HOME_DIR}')}\n"
+        f"{build_line}"
         "Restart=always\n"
         "RestartSec=10\n"
         f"StandardOutput=append:{log_path}\n"
@@ -331,5 +426,6 @@ __all__ = [
     "ensure_background_service",
     "install_background_service",
     "remove_background_service",
+    "restart_stale_background_service",
     "scheduler_command",
 ]

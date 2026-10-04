@@ -43,6 +43,7 @@ class Event(StrEnum):
     INTEGRATION_SETUP_COMPLETED = "integration_setup_completed"
     INTEGRATION_REMOVED = "integration_removed"
     INTEGRATION_VERIFIED = "integration_verified"
+    GITHUB_CONNECTION_SNAPSHOT = "github_connection_snapshot"
     INTEGRATIONS_LISTED = "integrations_listed"
 
     # Interactive terminal analytics
@@ -59,6 +60,9 @@ class Event(StrEnum):
     INTERACTIVE_SHELL_RENDERED = "interactive_shell_rendered"
     BROWSER_OPEN_REQUESTED = "browser_open_requested"
     SKILL_EXECUTED = "skill_executed"
+    SKILL_VALUE_DELIVERED = "skill_value_delivered"
+    SKILLS_RELEASE_ACTIVATED = "skills_release_activated"
+    SKILL_PREREQUISITE_MISSING = "skill_prerequisite_missing"
     OPENSRE_COMMIT_CREATED = "opensre_commit_created"
     OPENSRE_CI_EPOCH_RESOLVED = "opensre_ci_epoch_resolved"
 

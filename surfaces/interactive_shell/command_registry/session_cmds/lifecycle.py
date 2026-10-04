@@ -1,12 +1,13 @@
-"""Session lifecycle slash commands: /clear, /new, and /compact."""
+"""Session lifecycle slash commands."""
 
 from __future__ import annotations
 
 from rich.console import Console
+from rich.markup import escape
 
 from core.agent_harness import SessionManager
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui import DIM, HIGHLIGHT
+from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT
 
 
 def _cmd_clear(session: Session, console: Console, _args: list[str]) -> bool:
@@ -55,4 +56,25 @@ def _cmd_compact(session: Session, console: Console, _args: list[str]) -> bool:
         f"[{DIM}]({result.before_chars} chars -> {result.after_chars} chars)[/]"
     )
     session.record("slash", "/compact")
+    return True
+
+
+def _validate_rename_args(args: list[str]) -> str | None:
+    if args == ["--reset"]:
+        return None
+    name = " ".join(args).strip()
+    if not name or args[0] == "--reset":
+        return "usage: /rename <name>  or  /rename --reset"
+    return None
+
+
+def _cmd_rename(session: Session, console: Console, args: list[str]) -> bool:
+    name = "" if args == ["--reset"] else " ".join(args).strip()
+    if not session.store.append_session_name(session.session_id, name):
+        session.mark_latest(ok=False, kind="slash")
+        console.print(f"[{ERROR}]could not save the session name.[/]")
+        return True
+
+    message = f"session renamed to {escape(name)}" if name else "automatic session title restored"
+    console.print(f"[{HIGHLIGHT}]{message}[/]")
     return True

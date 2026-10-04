@@ -92,7 +92,7 @@ class JsonlSessionRepo:
                 "session_id": str(header.get("id") or target_path.stem),
                 "entry_id": target_entry,
                 "leaf_id": _resolve_entry_id(entries, None),
-                "name": storage_paths.derive_name(_records_to_lines([header, *entries])),
+                "name": _session_name(header, entries),
                 "started_at": header.get("created_at"),
                 RestoreContextKey.CLI_AGENT_MESSAGES: messages,
                 RestoreContextKey.ACCUMULATED_CONTEXT: context,
@@ -133,7 +133,7 @@ class JsonlSessionRepo:
         )
         return {
             "session_id": str(header.get("id") or path.stem),
-            "name": storage_paths.derive_name(_records_to_lines([header, *entries])),
+            "name": _session_name(header, entries),
             "started_at": header.get("created_at"),
             "conversation_title": conversation_title,
             "activity_at": activity_at,
@@ -369,5 +369,13 @@ def _count_chat_turns(entries: list[dict[str, Any]]) -> int:
     )
 
 
-def _records_to_lines(records: list[dict[str, Any]]) -> list[str]:
-    return [json.dumps(rec, ensure_ascii=False, default=str) for rec in records]
+def _session_name(header: dict[str, Any], entries: list[dict[str, Any]]) -> str:
+    for record in reversed(entries):
+        if record.get("type") == "custom_message" and record.get("custom_type") == "session_name":
+            name = record.get("name")
+            if isinstance(name, str) and name:
+                return name
+            break
+    return storage_paths.derive_name(
+        [json.dumps(record, ensure_ascii=False, default=str) for record in [header, *entries]]
+    )

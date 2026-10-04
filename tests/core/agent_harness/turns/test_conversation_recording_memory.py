@@ -12,15 +12,18 @@ from core.agent_harness.turns.conversation_recording import record_conversation_
 
 @dataclass
 class _FakeSession:
+    session_id: str = "s-turn"
     cli_agent_messages: list[tuple[str, str]] = field(default_factory=list)
     last_command_observation: Any = None
 
 
 def test_record_conversation_turn_schedules_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[list[tuple[str, str]], bool]] = []
+    calls: list[tuple[list[tuple[str, str]], str, bool]] = []
 
-    def _schedule(messages: list[tuple[str, str]], *, wait_for_completion: bool = False) -> None:
-        calls.append((list(messages), wait_for_completion))
+    def _schedule(
+        messages: list[tuple[str, str]], *, session_id: str, wait_for_completion: bool = False
+    ) -> None:
+        calls.append((list(messages), session_id, wait_for_completion))
 
     monkeypatch.setattr(
         "core.agent_harness.session.memory_extraction.schedule_memory_extraction",
@@ -32,6 +35,4 @@ def test_record_conversation_turn_schedules_extraction(monkeypatch: pytest.Monke
         ("user", "my name is Vaibhav"),
         ("assistant", "noted"),
     ]
-    assert len(calls) == 1
-    assert calls[0][0] == session.cli_agent_messages
-    assert calls[0][1] is False
+    assert calls == [(session.cli_agent_messages, "s-turn", False)]

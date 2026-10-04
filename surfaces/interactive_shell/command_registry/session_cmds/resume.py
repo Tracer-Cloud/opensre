@@ -58,7 +58,7 @@ def _interactive_resume_menu(session: Session, console: Console) -> bool:
         sid = entry["session_id"]
         if sid == session.session_id:
             continue
-        title = entry.get("conversation_title") or ""
+        title = entry.get("name") or entry.get("conversation_title") or ""
         if not title:
             continue
         items.append(
@@ -101,7 +101,17 @@ def _apply_resume_data_unlocked(
     short_id = sid[:8] if len(sid) >= 8 else sid
     name = data.get("name") or ""
 
-    if not messages and not context:
+    has_saved_state = any(
+        (
+            messages,
+            context,
+            history,
+            data.get("session_goal_state"),
+            data.get("task_plan_state"),
+            data.get("pending_user_choice_state"),
+        )
+    )
+    if not has_saved_state:
         console.print(
             f"[{DIM}]session {short_id} has no conversation to resume "
             "(no chat turns or context found).[/]"
@@ -131,9 +141,15 @@ def _apply_resume_data_unlocked(
 
     source = "snapshot" if has_snapshot else "turn records"
     name_str = f" · {escape(name)}" if name else ""
+    restored_summary = (
+        f"{len(messages)} messages in context from {source}"
+        if messages
+        else f"{len(history)} prior turns restored"
+        if history
+        else "saved state restored"
+    )
     console.print(
-        f"[{HIGHLIGHT}]resumed session {short_id}{name_str}[/] "
-        f"[{DIM}]({len(messages)} messages in context from {source})[/]"
+        f"[{HIGHLIGHT}]resumed session {short_id}{name_str}[/] [{DIM}]({restored_summary})[/]"
     )
 
     render_resumed_session_history(
@@ -230,13 +246,23 @@ def _lookup_resume_session_data(
 
     repo = default_session_repo()
     data = repo.load_session(prefix)
-    if data is None and len(prefix) >= 3:
-        candidates = [
-            e
-            for e in repo.load_recent(20)
-            if prefix.lower() in (e.get("name") or "").lower()
-            and e["session_id"] != session.session_id
-        ]
+    name_query = " ".join(prefix.lower().split())
+    if data is None and len(name_query) >= 3:
+        recent = repo.load_recent(20)
+        candidates = [e for e in recent if (e.get("name") or "").lower() == prefix.lower()]
+        current_exact = any(e["session_id"] == session.session_id for e in candidates)
+        candidates = [e for e in candidates if e["session_id"] != session.session_id]
+        if not candidates:
+            for entry in recent:
+                if entry["session_id"] == session.session_id:
+                    continue
+                name = " ".join((entry.get("name") or "").lower().split())
+                # An exact current name must not select a whitespace-only variant.
+                if name_query in name and (not current_exact or name != name_query):
+                    candidates.append(entry)
+        if not candidates and current_exact:
+            console.print(f"[{DIM}]'{escape(prefix)}' is the current session.[/]")
+            return None
         if len(candidates) == 1:
             data = repo.load_session(candidates[0]["session_id"])
         elif len(candidates) > 1:
@@ -301,7 +327,7 @@ def _cmd_resume(session: Session, console: Console, args: list[str]) -> bool:
         _record_resume_slash(session, args)
         return True
 
-    prefix = args[0].strip()
+    prefix = " ".join(args).strip()
     session_prefix = prefix.split(":", 1)[0]
 
     if session.session_id.startswith(session_prefix) and ":" not in prefix:

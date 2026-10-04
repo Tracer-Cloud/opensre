@@ -1,13 +1,14 @@
-"""Tool-execution wraps for task-plan evidence and the second-work-tool rule.
+"""Tool-execution wraps for task-plan evidence and the plan guard.
 
 Rules live in ``task_plan.evidence`` and ``task_plan.required``. This module
-only records returns and refuses the next work call.
+records returns and refuses the next work call when no plan is open.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from config.constants.tooling import ToolBlockedBy
 from core.agent_harness.task_plan.evidence import record_plan_evidence, reset_plan_evidence
 from core.agent_harness.task_plan.required import PLAN_REQUIRED_REASON, plan_required
 from core.domain.types.tools import ToolRole
@@ -22,7 +23,7 @@ from core.tool.execution import (
 
 
 def with_task_plan_hooks(base: ToolExecutionHooks | None, session: Any) -> ToolExecutionHooks:
-    """Wrap ``base`` so work returns count as evidence and a second work call needs a plan."""
+    """Wrap ``base`` so plan evidence is recorded and the plan guard can refuse a call."""
     reset_plan_evidence(session)
     base_before = base.before_tool_call if base is not None else None
     base_after = base.after_tool_call if base is not None else None
@@ -40,7 +41,9 @@ def with_task_plan_hooks(base: ToolExecutionHooks | None, session: Any) -> ToolE
             is_action=tool_role(request.tool) is ToolRole.ACTION,
         ):
             return BeforeToolCallResult(
-                blocked=True, reason=PLAN_REQUIRED_REASON, metadata={"plan_required": True}
+                blocked=True,
+                reason=PLAN_REQUIRED_REASON,
+                metadata={ToolBlockedBy.PLAN_REQUIRED: True},
             )
         return decision
 

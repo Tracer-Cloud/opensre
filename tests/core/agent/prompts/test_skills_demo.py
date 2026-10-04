@@ -8,12 +8,22 @@ from pathlib import Path
 import pytest
 
 import core.agent_harness.prompts.skills as skills
-from config.constants.skills import ONBOARDING_MENU_TITLE, ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
+from config.constants.skills import (
+    ANALYZE_REPO_OPTION,
+    AUTOMATION_GROUP_OPTION,
+    CLOUD_REPAIR_OPTION,
+    LOCAL_REPAIR_OPTION,
+    ONBOARDING_MENU_TITLE,
+    ONBOARDING_SKILL_NAME,
+    OUTCOME_MENU_OPTIONS,
+    SKIP_DEMO_OPTION,
+    SLACK_OPTION,
+)
 from core.agent_harness.prompts.action import build_action_system_prompt
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import (
     GETTING_STARTED_CUSTOM,
-    GETTING_STARTED_OPTIONS,
+    getting_started_options,
     getting_started_skills,
     load_getting_started_block,
 )
@@ -43,21 +53,37 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         "connecting-slack",
     ]
     assert [s.demo_order for s in children] == [1, 2, 3, 4]
-    assert GETTING_STARTED_OPTIONS == (
-        "Explore a repo and analyze its CI/CD performance (recommended)",
-        "Set up an agent that improves CI/CD reliability over time",
-        "Run CI/CD repairs remotely",
-        "Connect OpenSRE to Slack and hand off DevOps chores for your team",
+    assert getting_started_options() == (
+        ANALYZE_REPO_OPTION,
+        LOCAL_REPAIR_OPTION,
+        CLOUD_REPAIR_OPTION,
+        SLACK_OPTION,
     )
     master = skills.load_skill_body(ONBOARDING_SKILL_NAME)
     master_skill = next(s for s in skills.list_action_skills() if s.name == ONBOARDING_SKILL_NAME)
     # The menu is catalog data the host opens on entry, not frontmatter or prose
-    # the model replays; its options are the children's own labels so the two
-    # cannot drift apart.
+    # the model replays. The shipped children use the outcome rows; handoffs
+    # map the leaf labels to skill names.
     menu = master_skill.entry_menu
     assert menu is not None
-    assert menu.title == ONBOARDING_MENU_TITLE == "Which demo would you like me to run?"
-    assert menu.options == (*GETTING_STARTED_OPTIONS, SKIP_DEMO_OPTION)
+    assert menu.title == ONBOARDING_MENU_TITLE == "What would you like to do?"
+    assert (
+        menu.options
+        == OUTCOME_MENU_OPTIONS
+        == (
+            ANALYZE_REPO_OPTION,
+            AUTOMATION_GROUP_OPTION,
+            SKIP_DEMO_OPTION,
+        )
+    )
+    for label, name in (
+        (ANALYZE_REPO_OPTION, "analyzing-github-ci-performance"),
+        (LOCAL_REPAIR_OPTION, "scheduling-github-ci-repairs"),
+        (CLOUD_REPAIR_OPTION, "delegating-github-ci-repairs"),
+        (SLACK_OPTION, "connecting-slack"),
+    ):
+        assert f'- "{label}": call `skill_view(name="{name}")`.' in master
+    assert AUTOMATION_GROUP_OPTION not in master
     assert "Call `ask_user_choice`" not in master
     for skill in children:
         assert f'skill_view(name="{skill.name}")' in master
@@ -69,12 +95,16 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert analytics.entry_menu is None
     body = skills.load_skill_body("analyzing-github-ci-performance")
     assert "`Which repository should I analyze?`" in body
-    assert "`What would you like to do next?`" in body
-    for option in ("- Schedule local loops", "- Slack setup", "- Finish"):
+    assert "`See a failing check get fixed?`" in body
+    for option in (
+        "- Watch it fix a failing PR in a demo repo (under 5 min)",
+        "- Run the same fix in OpensRE managed service and close your laptop",
+        "- Not now",
+    ):
         assert option in body
     # Each next-step branch hands off to its sibling skill instead of inlining it.
     assert 'skill_view(name="scheduling-github-ci-repairs")' in body
-    assert 'skill_view(name="connecting-slack")' in body
+    assert 'skill_view(name="delegating-github-ci-repairs")' in body
     # The comparison is the tool's job, not a flag the model can forget; the
     # report shape is the skill's, so no flag on the tool picks one either.
     assert "include_benchmarks" not in body
@@ -86,7 +116,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     # The fix loop repairs red pull requests; it is not the analytics report
     # loop, so it never reaches for the analytics or report-scheduling tools.
     assert "schedule_ci_repair_loop" in fix_loop
-    assert '"/cron"' in fix_loop
+    assert "/cron list" in fix_loop
     assert "analyze_github_ci_reliability" not in fix_loop
     assert "schedule_ci_reliability_loop" not in fix_loop
     # Repository selection remains part of the child workflow.
@@ -150,7 +180,7 @@ def test_capability_answers_and_direct_requests_do_not_require_onboarding() -> N
     assert "stop onboarding without a replacement text menu" in prompt
     assert "Do not invent a separate getting-started menu" in prompt
     assert "are NOT a skill_view match" not in prompt
-    assert "Which demo would you like me to run?" not in load_getting_started_block()
+    assert "What would you like to do?" not in load_getting_started_block()
     assert "ask_user_choice menu: available" in prompt
 
 
@@ -250,13 +280,9 @@ def test_onboarding_children_load_shared_rules_once() -> None:
     reliability = skills.load_skill_body("scheduling-github-ci-repairs")
     analytics = skills.load_skill_body("analyzing-github-ci-performance")
     analytics_card = by_name["analyzing-github-ci-performance"].path.read_text(encoding="utf-8")
-    # Shared rules resolve from the skills-tree ``common/`` folder and are
-    # appended exactly once, never copied into the card body.
-    assert by_name["scheduling-github-ci-repairs"].includes == ("common/ask_once.md",)
-    assert reliability.count("Ask each question once.") == 1
-    assert "Ask each question once." not in by_name["scheduling-github-ci-repairs"].path.read_text(
-        encoding="utf-8"
-    )
+    # The scheduling card no longer includes a shared ask-once rule.
+    assert by_name["scheduling-github-ci-repairs"].includes == ()
+    assert "Ask each question once." not in reliability
     # The analytics card lists no shared rules; its plan carries its own wording.
     assert by_name["analyzing-github-ci-performance"].includes == ()
     assert "SHARED RULES from" not in analytics

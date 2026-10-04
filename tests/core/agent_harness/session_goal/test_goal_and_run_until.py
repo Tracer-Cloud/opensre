@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+from dataclasses import dataclass, field
 
 from core.agent_harness.session.session_core import SessionCore
+from core.agent_harness.session.terminal_access import set_auto_command
 from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import (
     SESSION_GOAL_CHECKPOINT_TURNS,
@@ -672,12 +673,35 @@ def test_pause_wins_when_it_arrives_with_the_cancel_signal() -> None:
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_BY_USER
 
 
+@dataclass
+class _ShellTerminal:
+    """An interactive terminal's auto-submit slot: the shell submits its command next."""
+
+    pending_prompt_default: str | None = None
+    pending_prompt_autosubmit: bool = False
+    pending_prompt_plain_turn: bool = False
+
+    def set_auto_command(self, command: str) -> None:
+        self.pending_prompt_default = command
+        self.pending_prompt_autosubmit = True
+        self.pending_prompt_plain_turn = False
+
+
+@dataclass
+class _ShellSession(SessionCore):
+    terminal: _ShellTerminal = field(default_factory=_ShellTerminal)
+
+
+_SETUP_WIZARD = "/integrations setup github"
+
+
 def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
-    session = SessionCore()
-    session.terminal = SimpleNamespace(
-        pending_prompt_default="keep going",
-        pending_prompt_autosubmit=True,
-        pending_prompt_plain_turn=True,
+    session = _ShellSession(
+        terminal=_ShellTerminal(
+            pending_prompt_default="keep going",
+            pending_prompt_autosubmit=True,
+            pending_prompt_plain_turn=True,
+        )
     )
     cancel = HostCancelEvent()
 
@@ -717,6 +741,80 @@ def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
     assert session.terminal.pending_prompt_default is None
     assert session.terminal.pending_prompt_autosubmit is False
     assert session.terminal.pending_prompt_plain_turn is False
+
+
+def test_a_command_queued_by_a_goal_turn_stops_the_loop_and_stays_queued() -> None:
+    """A setup wizard queued for the next turn must open before the goal goes on.
+
+    The loop ran more goal turns while the wizard waited in the auto-submit
+    slot, then cleared the slot when the goal ended, so the wizard never opened.
+    """
+    # Arrange: every goal turn ends with the wizard queued, as the slash tool does.
+    session = _ShellSession()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        set_auto_command(session, _SETUP_WIZARD)
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=2,
+                executed_count=2,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+        )
+
+    # Act
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "analyze CI reliability for acme/app",
+        goal=SessionGoal(condition="analyze CI reliability for acme/app", max_outer_turns=3),
+        evaluate=lambda *_args, **_kwargs: SessionGoalStatus.ACTIVE,
+    )
+
+    # Assert: one goal turn; the goal waits, still active, behind the wizard.
+    assert len(turns) == 1
+    assert outcome.goal.status == SessionGoalStatus.ACTIVE
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_USER_CHOICE
+    assert session.terminal.pending_prompt_default == _SETUP_WIZARD
+    assert session.terminal.pending_prompt_autosubmit is True
+
+
+def test_a_goal_paused_by_a_failed_turn_keeps_the_command_queued_to_recover() -> None:
+    """Ending the goal on its own must not drop what the turn queued for the user.
+
+    A rejected key queues ``/onboard`` and comes back ``not_run``; pausing the
+    goal used to clear the slot, so the onboarding wizard never opened.
+    """
+    # Arrange
+    session = _ShellSession()
+
+    def _chat(_message: str) -> TurnResult:
+        set_auto_command(session, "/onboard")
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                0, 0, 0, True, True, response_text="key rejected", accounting_status="not_run"
+            ),
+        )
+
+    # Act
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "count the open PRs",
+        goal=SessionGoal(condition="count the open PRs", max_outer_turns=4),
+    )
+
+    # Assert
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_TURN_FAILED
+    assert session.terminal.pending_prompt_default == "/onboard"
+    assert session.terminal.pending_prompt_autosubmit is True
 
 
 def test_headless_first_goal_turn_reads_pause_arriving_during_that_turn() -> None:

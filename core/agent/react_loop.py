@@ -67,6 +67,7 @@ from infrastructure.observability.trace.observations import (
 )
 from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.observability.trace.spans import (
+    is_session_trace_active,
     llm_span,
     loop_iteration_span,
     loop_span,
@@ -149,6 +150,16 @@ def _observation_fingerprint(
         if not result.is_error:
             _update_fingerprint(digest, result.provider_content())
     return digest.digest()
+
+
+def _traced_exception_message(exc: BaseException) -> str | None:
+    """Redacted, capped exception text for an error span; ``None`` when nothing is traced."""
+    if not is_session_trace_active():
+        return None
+    # Deferred: only a failed run that is being traced needs the analytics redactor.
+    from infrastructure.analytics.event_properties import bounded_error_message
+
+    return bounded_error_message(exc) or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,6 +326,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     "error",
                     error=True,
                     exception_type=type(exc).__name__,
+                    exception_message=_traced_exception_message(exc),
                     message_count=len(self._messages),
                     executed_count=len(self._executed),
                 )
@@ -608,15 +620,20 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
     def _observe(self, response: Any, assistant_message: Any, iteration: int) -> _IterationResult:
         """Execute the requested tools, record results, and emit events."""
         requested_tool_count = len(response.tool_calls)
-        for index, tc in enumerate(response.tool_calls):
+        index_by_call_id = {tc.id: index for index, tc in enumerate(response.tool_calls)}
+
+        def on_call_start(tc: Any, *, event_iteration: int = iteration) -> None:
+            # Emitted immediately before the call runs (not up front for the
+            # whole batch) so a durable intent record never covers a call a
+            # crash or an earlier turn-ending result kept from starting.
             self._host._emit_runtime(
                 ToolExecutionStartEvent(
                     tool_call_id=tc.id,
                     tool_name=tc.name,
                     args=public_tool_input(tc.input),
-                    iteration=iteration,
+                    iteration=event_iteration,
                     data={
-                        "tool_call_index": index,
+                        "tool_call_index": index_by_call_id.get(tc.id, 0),
                         "tool_call_count": requested_tool_count,
                     },
                 )
@@ -642,6 +659,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             self._resolved,
             hooks=hooks,
             tool_resources=self._tool_resources,
+            should_stop=self._cancel_requested,
+            on_call_start=on_call_start,
+            iteration=iteration,
         )
         provider_results = [result.provider_content() for result in results]
         tool_result_message = self._msg_formatter.to_tool_result_runtime_message(
@@ -653,7 +673,11 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         terminated_tool_count = sum(1 for result in results if result.terminate)
         for index, (tc, result) in enumerate(zip(response.tool_calls, results, strict=True)):
             compat_payload = result.compat_payload()
-            self._executed.append((tc, compat_payload))
+            # A call skipped after an earlier call ended the turn never ran:
+            # it answers the provider's tool-call id but is not evidence.
+            skipped = bool(result.metadata.get("skipped"))
+            if not skipped:
+                self._executed.append((tc, compat_payload))
             self._tool_results.append((tc, result))
             self._host._emit_runtime(
                 ToolExecutionEndEvent(
@@ -667,6 +691,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                         "terminate": result.terminate,
                         "tool_call_index": index,
                         "tool_call_count": requested_tool_count,
+                        **({"skipped": True} if skipped else {}),
                     },
                 )
             )
@@ -835,6 +860,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             terminated_by_tool=self._terminated_by_tool,
             cancelled=self._cancelled,
             hit_iteration_cap=self._hit_cap,
+            stop_reason=self._stop_reason,
             llm_iterations_used=self._iterations_used,
             final_system_prompt=self._final_system_prompt,
             input_tokens=self._input_tokens if self._iterations_used else None,
@@ -941,6 +967,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             error=True,
             stop_reason=self._stop_reason,
             exception_type=type(exc).__name__,
+            exception_message=_traced_exception_message(exc),
             iterations_used=self._iterations_used,
             max_iterations=self._max_iterations,
             message_count=len(self._messages),

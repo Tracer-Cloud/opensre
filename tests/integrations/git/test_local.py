@@ -17,7 +17,13 @@ import pytest
 
 from config.constants.git import OPENSRE_COMMIT_COAUTHOR_TRAILER
 from integrations.git import local as gitlocal
-from integrations.git.errors import BRANCH_FAILED, NOT_A_GIT_REPO, PROTECTED_BRANCH, GitCommandError
+from integrations.git.errors import (
+    BRANCH_FAILED,
+    HEAVY_WORK_BUSY,
+    NOT_A_GIT_REPO,
+    PROTECTED_BRANCH,
+    GitCommandError,
+)
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -404,3 +410,43 @@ def test_push_destination_names_the_fork_owner_for_every_remote_url_form(
 
     # Assert
     assert label == "contributor:feature"
+
+
+def test_a_clone_waits_for_a_heavy_work_slot_and_refuses_with_a_git_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent full clones can OOM a shared gateway task; a full gate must not start one."""
+    # Arrange: both heavy-work slots are held and the wait is short.
+    from config.constants.turn_concurrency import OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV
+    from infrastructure.process.turn_capacity import (
+        HEAVY_WORK_BUSY_MESSAGE,
+        process_heavy_work_gate,
+        reset_process_heavy_work_gate_for_tests,
+    )
+    from infrastructure.process.turn_capacity import heavy_work as heavy_work_module
+
+    monkeypatch.setenv(OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV, "2")
+    monkeypatch.setattr(heavy_work_module, "HEAVY_WORK_WAIT_SECONDS", 0.01)
+    reset_process_heavy_work_gate_for_tests()
+    gate = process_heavy_work_gate()
+    assert gate.try_acquire() and gate.try_acquire()
+    git_calls: list[tuple[str, ...]] = []
+
+    def _record_git(_workspace: str, *args: str, **_kwargs: Any) -> None:
+        git_calls.append(args)
+
+    monkeypatch.setattr(gitlocal, "_run_git", _record_git)
+
+    try:
+        # Act
+        with pytest.raises(GitCommandError) as excinfo:
+            gitlocal.clone_repository(
+                "https://github.com/acme/repo.git", str(tmp_path / "checkout")
+            )
+    finally:
+        reset_process_heavy_work_gate_for_tests()
+
+    # Assert: the typed error every caller maps to its tool result; git never ran.
+    assert excinfo.value.kind == HEAVY_WORK_BUSY
+    assert excinfo.value.message == HEAVY_WORK_BUSY_MESSAGE
+    assert git_calls == []

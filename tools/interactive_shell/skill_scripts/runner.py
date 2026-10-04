@@ -51,7 +51,8 @@ def run_skill_script(
         python = shutil.which("python3") or shutil.which("python") or ""
     if not python:
         return _failed(scope, tool_name, "Python is required to run this helper.")
-    argv = [python, script_path, json.dumps(arguments)]
+    # -B: never write __pycache__ beside a script in a shared release directory.
+    argv = [python, "-B", script_path, json.dumps(arguments)]
     try:
         with tempfile.SpooledTemporaryFile() as stdout, tempfile.SpooledTemporaryFile() as stderr:
             with subprocess.Popen(

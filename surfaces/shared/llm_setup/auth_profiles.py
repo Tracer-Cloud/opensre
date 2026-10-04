@@ -70,13 +70,20 @@ def iter_auth_profiles() -> tuple[ProviderAuthProfile, ...]:
     return _api_key_profiles()
 
 
+def _normalize_auth_name(name: str) -> str:
+    return name.strip().lower().replace("_", "-")
+
+
 def resolve_auth_profile(raw_name: str) -> ProviderAuthProfile:
-    """Resolve a user-supplied provider/auth alias to an auth profile."""
-    normalized = raw_name.strip().lower()
+    """Resolve a user-supplied provider/auth alias to an auth profile.
+
+    Case-insensitive, and ``_`` matches ``-`` (``custom_openai`` is ``custom-openai``).
+    """
+    normalized = _normalize_auth_name(raw_name)
     if not normalized:
         raise KeyError(raw_name)
     for profile in iter_auth_profiles():
-        if normalized in {name.lower() for name in profile.all_names}:
+        if normalized in {_normalize_auth_name(name) for name in profile.all_names}:
             return profile
     raise KeyError(raw_name)
 

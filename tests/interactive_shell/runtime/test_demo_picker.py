@@ -3,38 +3,84 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 from rich.console import Console
 
+import integrations.account_integrations as account_integrations
 import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
+import surfaces.interactive_shell.command_registry.integrations as integrations_cmds
+import surfaces.interactive_shell.command_registry.prerequisite_menu as prerequisite_menu
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
 import surfaces.interactive_shell.runtime.startup.onboarding_telemetry as onboarding_telemetry
+import tools.interactive_shell.actions.skill_prerequisite_gate as gate
 import tools.system.workspace_git_scan.tool as scan_tool
-from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
+from config.account import AccountRecord
+from config.constants import (
+    GH_TOKEN_ENV,
+    GITHUB_MCP_AUTH_TOKEN_ENV,
+    GITHUB_TOKEN_ENV,
+    INTEGRATIONS_STORE_PATH_ENV,
+)
+from config.constants.skills import (
+    ANALYZE_REPO_OPTION,
+    AUTOMATION_GROUP_OPTION,
+    AUTOMATION_MENU_OPTIONS,
+    AUTOMATION_MENU_TITLE,
+    CLOUD_REPAIR_OPTION,
+    CONNECTING_SLACK_SKILL_NAME,
+    DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME,
+    DEMO_REPO_DECLINE_OPTION,
+    DEMO_REPO_PERMISSION_TITLE,
+    LOCAL_REPAIR_OPTION,
+    ONBOARDING_MENU_TITLE,
+    ONBOARDING_SKILL_NAME,
+    OUTCOME_MENU_OPTIONS,
+    SKIP_DEMO_OPTION,
+    SLACK_OPTION,
+)
+from config.constants.slack import (
+    SLACK_APP_TOKEN_ENV,
+    SLACK_BOT_TOKEN_ENV,
+    SLACK_WEBHOOK_URL_ENV,
+)
+from config.constants.tracer import TRACER_JWT_TOKEN_ENV
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
-from core.agent_harness.prompts.getting_started import GETTING_STARTED_OPTIONS
+from core.agent_harness.prompts.getting_started import getting_started_options
 from core.agent_harness.session.pending_choice import (
+    AskUserQuestion,
     PendingUserChoice,
     format_ask_user_answers,
 )
+from core.agent_harness.spi.session_state import pending_setup_resume
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from integrations.store import resolve_store_path, upsert_integration
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.input_prompt.rendering import render_submitted_prompt
 from surfaces.shared.terminal.components import choice_menu, cpr_stdin
 from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
+    no_tool_response,
     tool_response,
 )
 from tools.system.workspace_git_scan.scan import WorkspaceSnapshot
 
-_TITLE = "Which demo would you like me to run?"
+_TITLE = ONBOARDING_MENU_TITLE
 _REPOSITORY_TITLE = "Which repository should I analyze?"
 _REPOSITORY = "acme/one"
 _REPOSITORY_OPTIONS = (_REPOSITORY, "Tracer-Cloud/opensre")
 _NOTE = ""
+#: Turn integrations with a Slack workspace already connected.
+_SLACK_CONNECTED = {"slack": {"bot_token": "xoxb-connected"}}
+_SLACK_SETUP_TITLE = "Connect Slack to continue"
+_SLACK_OPEN_APP = "Connect Slack in the OpenSRE app (recommended)"
+_SLACK_CONTINUE = "I've connected Slack — continue"
 
 
 def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,6 +115,20 @@ def test_explicit_demo_still_opens_when_startup_onboarding_is_disabled(
 def _take_prompt(session: Session) -> str:
     assert session.terminal.pop_pending_autosubmit()
     return session.terminal.pop_pending_prompt_default()
+
+
+def _no_github_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (GITHUB_TOKEN_ENV, GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV):
+        monkeypatch.delenv(name, raising=False)
+
+
+def _run_slash_turn(session: Session, console: Console, command: str) -> None:
+    """Run a literal slash command the way the controller does: with stdin reserved."""
+    session.terminal.exclusive_stdin_active = True
+    try:
+        run_action_tool_turn(command, session, console, is_tty=True)
+    finally:
+        session.terminal.exclusive_stdin_active = False
 
 
 @pytest.mark.parametrize("selection", [SKIP_DEMO_OPTION, None], ids=["skip", "escape"])
@@ -133,13 +193,15 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
 ) -> None:
     """Boot output contract: the skill's entry menu is the first paint and needs no model."""
     _offerable(monkeypatch)
+    # GitHub is ready, so the demo starts without the setup menu.
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
     session = Session()
     session.resolved_integrations_cache = {}
     buffer = io.StringIO()
     console = Console(file=buffer, highlight=False)
+    # The pick enters the chosen skill, so its first response is already step 1.
     llm = FakeActionLLM(
         [
-            tool_response("skill_view", {"name": "analyzing-github-ci-performance"}),
             tool_response("scan_local_git_workspace"),
             tool_response(
                 "ask_user_choice",
@@ -156,7 +218,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
 
     def pick(**kwargs: Any) -> str:
         picker_calls.append(kwargs)
-        return _REPOSITORY if kwargs["title"] == _REPOSITORY_TITLE else GETTING_STARTED_OPTIONS[0]
+        return _REPOSITORY if kwargs["title"] == _REPOSITORY_TITLE else ANALYZE_REPO_OPTION
 
     monkeypatch.setattr(scan_tool, "scan_workspace", scan)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
@@ -169,7 +231,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert (pending.title, pending.note, pending.options) == (
         _TITLE,
         _NOTE,
-        (*GETTING_STARTED_OPTIONS, SKIP_DEMO_OPTION),
+        OUTCOME_MENU_OPTIONS,
     )
     assert session.terminal.pending_prompt_default == "/choose"
     assert session.terminal.awaiting_handoff_answer
@@ -190,28 +252,30 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert len(picker_calls) == 1
     on_custom_answer = picker_calls[0].pop("on_custom_answer")
     on_answer = picker_calls[0].pop("on_answer")
+    on_dismiss = picker_calls[0].pop("on_dismiss")
     assert callable(on_custom_answer)
     assert callable(on_answer)
+    assert callable(on_dismiss)
     assert picker_calls[0] == {
         "title": _TITLE,
-        "choices": [
-            *((option, option) for option in GETTING_STARTED_OPTIONS),
-            (SKIP_DEMO_OPTION, SKIP_DEMO_OPTION),
-        ],
+        "choices": [(option, option) for option in OUTCOME_MENU_OPTIONS],
         "custom_label": None,
         "multi_select": False,
         "header": "Ask User",
         "letter_keys": True,
         "note": _NOTE,
     }
-    assert session.active_skill == ONBOARDING_SKILL_NAME
+    # The pick entered the chosen skill: its answer turn carries that skill's
+    # body, not the onboarding router's, and needs no skill_view round trip.
+    assert session.active_skill == "analyzing-github-ci-performance"
     answer = _take_prompt(session)
-    assert answer == format_ask_user_answers(pending.items(), (GETTING_STARTED_OPTIONS[0],))
+    assert answer == format_ask_user_answers(pending.items(), (ANALYZE_REPO_OPTION,))
     envelope = build_action_system_prompt_envelope(
         TurnSnapshot.from_session(answer, session, surface="interactive_shell")
     )
-    assert "## Follow the selected child" in envelope.render_ephemeral()
-    assert "## Follow the selected child" not in envelope.render_cached()
+    assert "ACTIVE SKILL: analyzing-github-ci-performance" in envelope.render_ephemeral()
+    assert "## Follow the selected child" not in envelope.render_ephemeral()
+    assert "ACTIVE SKILL:" not in envelope.render_cached()
 
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
     assert len(scans) == 1
@@ -219,7 +283,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert session.pending_user_choice is not None, buffer.getvalue()
     assert session.pending_user_choice.title == _REPOSITORY_TITLE
     assert session.pending_user_choice.options == _REPOSITORY_OPTIONS
-    assert llm.invocations == 3
+    assert llm.invocations == 2
     # Raw-data analysis retains the full catalog for model-selected collection.
     assert onboarding_outcomes == [("ci_analytics", False)]
 
@@ -234,7 +298,6 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     replay_answer = _take_prompt(session)
     replay_llm = FakeActionLLM(
         [
-            tool_response("skill_view", {"name": "analyzing-github-ci-performance"}),
             tool_response("scan_local_git_workspace"),
             tool_response(
                 "ask_user_choice",
@@ -251,6 +314,175 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert "deploy to production?" in session.questions_already_answered
 
 
+def test_a_demo_entered_at_the_pick_is_nudged_past_a_reply_that_runs_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    """Without a skill load to catch, a no-work reply on the pick's turn still stalls."""
+    del onboarding_outcomes
+    _offerable(monkeypatch)
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
+    session = Session()
+    session.resolved_integrations_cache = {}
+    console = Console(file=io.StringIO(), highlight=False)
+    scans: list[str] = []
+
+    def scan(root: Any, **_kwargs: Any) -> WorkspaceSnapshot:
+        scans.append(str(root))
+        return WorkspaceSnapshot(root=str(root), days=30, repos=())
+
+    monkeypatch.setattr(scan_tool, "scan_workspace", scan)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: ANALYZE_REPO_OPTION)
+    assert demo_picker.offer_demo(session, console)
+    session.terminal.exclusive_stdin_active = True
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: FakeActionLLM([])
+    )
+    session.terminal.exclusive_stdin_active = False
+    llm = FakeActionLLM(
+        [
+            no_tool_response("I'll scan your repositories next."),
+            tool_response("scan_local_git_workspace"),
+            tool_response(
+                "ask_user_choice",
+                {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
+            ),
+        ]
+    )
+
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
+    )
+
+    assert len(scans) == 1
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == _REPOSITORY_TITLE
+    assert llm.invocations == 3
+
+
+def test_without_github_the_demo_opens_setup_first_and_resumes_after_it(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+    tmp_path: Path,
+) -> None:
+    """No token: setup comes before any scan or repository question, then the demo resumes.
+
+    The demo used to scan, ask which repository to analyze, and only then fail
+    on the missing token; finishing setup never brought the user back.
+    """
+    # Arrange: no GitHub credential anywhere; the local store lives in tmp_path.
+    _offerable(monkeypatch)
+    _no_github_token(monkeypatch)
+    monkeypatch.setenv(INTEGRATIONS_STORE_PATH_ENV, str(tmp_path / "integrations.json"))
+    assert resolve_store_path().is_relative_to(tmp_path)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    buffer = io.StringIO()
+    console = Console(file=buffer, highlight=False)
+    load_demo = tool_response("skill_view", {"name": "analyzing-github-ci-performance"})
+    llm = FakeActionLLM(
+        [
+            load_demo,
+            load_demo,
+            tool_response("scan_local_git_workspace"),
+            tool_response(
+                "ask_user_choice",
+                {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
+            ),
+        ]
+    )
+    scans: list[str] = []
+    titles: list[str] = []
+    picks = iter([ANALYZE_REPO_OPTION, "Set up GitHub on this machine"])
+
+    def scan(root: Any, **_kwargs: Any) -> WorkspaceSnapshot:
+        scans.append(str(root))
+        return WorkspaceSnapshot(root=str(root), days=30, repos=())
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        return next(picks)
+
+    def local_wizard(_console: Console, args: list[str], **_kwargs: Any) -> bool:
+        assert args == ["integrations", "setup", "github"]
+        upsert_integration("github", {"credentials": {"auth_token": "ghp_local"}})
+        return True
+
+    monkeypatch.setattr(scan_tool, "scan_workspace", scan)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    monkeypatch.setattr(integrations_cmds, "run_cli_command", local_wizard)
+
+    # Act 1: startup, then the user picks the analysis demo.
+    assert demo_picker.offer_demo(session, console)
+    _run_slash_turn(session, console, _take_prompt(session))
+    answer = _take_prompt(session)
+    run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
+
+    # Assert: the setup menu is queued before any scan or repository question.
+    assert llm.invocations == 1
+    assert scans == []
+    pending = session.pending_user_choice
+    assert pending is not None
+    assert pending.title == "Connect GitHub to continue"
+    assert _REPOSITORY_TITLE not in buffer.getvalue()
+    assert session.active_skill == ONBOARDING_SKILL_NAME
+
+    # Act 2: the user sets GitHub up on this machine; the wizard saves a token.
+    _run_slash_turn(session, console, _take_prompt(session))
+    _run_slash_turn(session, console, _take_prompt(session))
+
+    # Assert: the menu answer is resubmitted exactly as it was first sent.
+    replay = _take_prompt(session)
+    assert replay == answer
+    assert session.terminal.awaiting_handoff_answer
+    assert pending_setup_resume(session) is None
+
+    # Act 3: the resubmitted answer runs the demo from its first step.
+    run_action_tool_turn(replay, session, console, is_tty=True, llm_factory=lambda: llm)
+
+    # Assert: the demo reached the repository question.
+    assert len(scans) == 1
+    assert session.active_skill == "analyzing-github-ci-performance"
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == _REPOSITORY_TITLE
+    assert llm.invocations == 4
+    assert titles == [_TITLE, "Connect GitHub to continue"]
+    assert onboarding_outcomes == [("ci_analytics", False)]
+
+
+def test_declining_github_setup_ends_the_demo_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    _no_github_token(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    buffer = io.StringIO()
+    console = Console(file=buffer, highlight=False)
+    llm = FakeActionLLM([tool_response("skill_view", {"name": "analyzing-github-ci-performance"})])
+    picks = iter([ANALYZE_REPO_OPTION, "Not now"])
+
+    def pick(**_kwargs: Any) -> str:
+        return next(picks)
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    assert demo_picker.offer_demo(session, console)
+    _run_slash_turn(session, console, _take_prompt(session))
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
+    )
+
+    _run_slash_turn(session, console, _take_prompt(session))
+
+    assert "Skipped GitHub setup" in buffer.getvalue()
+    assert "error" not in buffer.getvalue().lower()
+    assert session.active_skill is None
+    assert session.pending_user_choice is None
+    assert not session.terminal.pending_prompt_default
+    assert pending_setup_resume(session) is None
+    assert llm.invocations == 1
+
+
 @pytest.mark.parametrize("answer", [None, "Inspect the deployment logs", "/help"])
 def test_onboarding_cancel_custom_and_slash_do_not_reopen_the_menu(
     monkeypatch: pytest.MonkeyPatch,
@@ -260,7 +492,7 @@ def test_onboarding_cancel_custom_and_slash_do_not_reopen_the_menu(
     _offerable(monkeypatch)
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
-    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=getting_started_options())
     pending = session.pending_user_choice
     monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
     console = Console(file=io.StringIO())
@@ -292,11 +524,11 @@ def test_onboarding_outcomes_keep_stable_ids_and_exclude_child_menus(
 
     monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
     session = Session()
-    for option in GETTING_STARTED_OPTIONS:
+    for option in getting_started_options():
         answer = option
         session.active_skill = ONBOARDING_SKILL_NAME
         session.pending_user_choice = PendingUserChoice(
-            title=_TITLE, options=GETTING_STARTED_OPTIONS
+            title=_TITLE, options=getting_started_options()
         )
         choice_prompt._cmd_choose(session, console, [])
 
@@ -318,13 +550,13 @@ def test_onboarding_telemetry_failure_does_not_lose_the_answer(
     _offerable(monkeypatch)
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
-    pending = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    pending = PendingUserChoice(title=_TITLE, options=getting_started_options())
     session.pending_user_choice = pending
 
     def fail_capture(**_kwargs: Any) -> None:
         raise RuntimeError("Telemetry unavailable")
 
-    answer = GETTING_STARTED_OPTIONS[0]
+    answer = getting_started_options()[0]
     monkeypatch.setattr(onboarding_telemetry, "capture_onboarding_demo_selected", fail_capture)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
     choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
@@ -341,9 +573,9 @@ def test_typed_option_label_keeps_its_custom_source_through_the_picker(
     _offerable(monkeypatch)
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
-    pending = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    pending = PendingUserChoice(title=_TITLE, options=getting_started_options())
     session.pending_user_choice = pending
-    answer = GETTING_STARTED_OPTIONS[0]
+    answer = getting_started_options()[0]
 
     def pick(**_kwargs: Any) -> int | str:
         # The raw picker distinguishes a row index from text typed in the custom row.
@@ -358,6 +590,438 @@ def test_typed_option_label_keeps_its_custom_source_through_the_picker(
     choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
     assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
     assert onboarding_outcomes == [("custom", True) if typed else ("ci_analytics", False)]
+
+
+def test_automation_group_submits_the_follow_up_leaf_not_the_group(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    """The automation row opens a second picker, then demo-repository permission.
+
+    The transcript records all three questions. The model receives the leaf and
+    the permission, not the group row.
+    """
+    _offerable(monkeypatch)
+    # GitHub is ready, so the local repair demo needs no setup first.
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    calls: list[dict[str, Any]] = []
+    create = "Create acme/opensre-ci-repair-demo-ab12"
+    monkeypatch.setattr(choice_prompt, "_demo_create_option", lambda: create)
+
+    def pick(**kwargs: Any) -> str:
+        calls.append(kwargs)
+        if kwargs["title"] == DEMO_REPO_PERMISSION_TITLE:
+            return create
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return LOCAL_REPAIR_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    output = io.StringIO()
+    choice_prompt._cmd_choose(
+        session, Console(file=output, force_terminal=False, highlight=False, width=100), []
+    )
+
+    assert [call["title"] for call in calls] == [
+        _TITLE,
+        AUTOMATION_MENU_TITLE,
+        DEMO_REPO_PERMISSION_TITLE,
+    ]
+    assert calls[1]["choices"] == [(option, option) for option in AUTOMATION_MENU_OPTIONS]
+    assert calls[2]["choices"] == [
+        (create, create),
+        (DEMO_REPO_DECLINE_OPTION, DEMO_REPO_DECLINE_OPTION),
+    ]
+    permission = AskUserQuestion(
+        label="Demo repository", title=DEMO_REPO_PERMISSION_TITLE, options=(create,)
+    )
+    answer = _take_prompt(session)
+    assert answer == format_ask_user_answers(
+        (pending.items()[0], permission), (LOCAL_REPAIR_OPTION, create)
+    )
+    assert AUTOMATION_GROUP_OPTION not in answer
+    assert onboarding_outcomes == [("ci_agent", False)]
+    # The menus are erased, so the card is the only record of what was asked.
+    assert [line.rstrip() for line in output.getvalue().splitlines()] == [
+        "",
+        "Ask User",
+        "",
+        f"  1.  {_TITLE}",
+        f"      {AUTOMATION_GROUP_OPTION}",
+        "",
+        f"  2.  {AUTOMATION_MENU_TITLE}",
+        f"      {LOCAL_REPAIR_OPTION}",
+        "",
+        f"  3.  {DEMO_REPO_PERMISSION_TITLE}",
+        f"      {create}",
+    ]
+
+
+@pytest.mark.parametrize("leaf", [LOCAL_REPAIR_OPTION, CLOUD_REPAIR_OPTION])
+@pytest.mark.parametrize("create", [True, False])
+def test_a_repair_pick_with_permission_paints_one_ask_user_card(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+    leaf: str,
+    create: bool,
+) -> None:
+    """``/choose`` paints the recap; submitting that same answer must not paint another."""
+    del onboarding_outcomes
+    _offerable(monkeypatch)
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    create_option = "Create acme/opensre-ci-repair-demo-ab12"
+    monkeypatch.setattr(choice_prompt, "_demo_create_option", lambda: create_option)
+    picks = {
+        _TITLE: AUTOMATION_GROUP_OPTION,
+        AUTOMATION_MENU_TITLE: leaf,
+        DEMO_REPO_PERMISSION_TITLE: create_option if create else DEMO_REPO_DECLINE_OPTION,
+    }
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **kwargs: picks[kwargs["title"]])
+    output = io.StringIO()
+    console = Console(file=output, force_terminal=False, highlight=False, width=120)
+
+    choice_prompt._cmd_choose(session, console, [])
+    answer = _take_prompt(session)
+    # What the prompt loop does with the queued answer.
+    session.terminal.last_input_autosubmitted = True
+    render_submitted_prompt(console, session, answer)
+
+    lines = [line.strip() for line in output.getvalue().splitlines()]
+    assert lines.count("Ask User") == 1
+    assert session.terminal.handoff_recap_text is None
+
+
+def test_a_typed_ask_user_answer_still_paints_its_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only the exact answer ``/choose`` already recapped skips its card."""
+    del monkeypatch
+    session = Session()
+    session.terminal.awaiting_handoff_answer = True
+    session.terminal.handoff_recap_text = "an earlier, replaced answer"
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    permission = AskUserQuestion(
+        label="Demo repository", title=DEMO_REPO_PERMISSION_TITLE, options=("Create demo",)
+    )
+    answer = format_ask_user_answers(
+        (pending.items()[0], permission), (LOCAL_REPAIR_OPTION, "Create demo")
+    )
+    output = io.StringIO()
+
+    render_submitted_prompt(
+        Console(file=output, force_terminal=False, highlight=False, width=120), session, answer
+    )
+
+    assert [line.strip() for line in output.getvalue().splitlines()].count("Ask User") == 1
+
+
+def test_without_github_the_local_repair_demo_asks_for_setup_before_its_repository(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    """GitHub setup comes before the demo-repository question, not after it.
+
+    The question names a repository in the user's GitHub account, and the demo
+    behind it cannot start without a token; the leaf answer is parked so the
+    demo resumes once GitHub is connected.
+    """
+    _offerable(monkeypatch)
+    _no_github_token(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    titles: list[str] = []
+
+    def no_repository_question() -> str:
+        raise AssertionError("the demo-repository question must wait for GitHub setup")
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        if kwargs["title"] == "Connect GitHub to continue":
+            return "Set up GitHub on this machine"
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return LOCAL_REPAIR_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "_demo_create_option", no_repository_question)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    assert titles == [_TITLE, AUTOMATION_MENU_TITLE, "Connect GitHub to continue"]
+    assert _take_prompt(session) == "/integrations setup github"
+    parked = pending_setup_resume(session)
+    assert parked is not None
+    assert parked.text == format_ask_user_answers(pending.items(), (LOCAL_REPAIR_OPTION,))
+    assert parked.skill == "scheduling-github-ci-repairs"
+    assert onboarding_outcomes == [("ci_agent", False)]
+
+
+@pytest.mark.parametrize(
+    ("leaf", "child_skill"),
+    [
+        (CLOUD_REPAIR_OPTION, DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME),
+        (SLACK_OPTION, CONNECTING_SLACK_SKILL_NAME),
+    ],
+    ids=["cloud-repair", "slack"],
+)
+def test_automation_picker_leaf_hands_off_to_the_current_child(
+    monkeypatch: pytest.MonkeyPatch,
+    leaf: str,
+    child_skill: str,
+) -> None:
+    """The real picker submits each leaf and any demo-repository decision."""
+    _offerable(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = dict(_SLACK_CONNECTED)
+    console = Console(file=io.StringIO(), highlight=False)
+    llm = FakeActionLLM([tool_response("skill_view", {"name": child_skill})])
+    picked = [AUTOMATION_GROUP_OPTION, leaf]
+    if leaf == CLOUD_REPAIR_OPTION:
+        picked.append(DEMO_REPO_DECLINE_OPTION)
+    selections = iter(picked)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: next(selections))
+
+    assert demo_picker.offer_demo(session, console)
+    pending = session.pending_user_choice
+    assert pending is not None
+    session.terminal.exclusive_stdin_active = True
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
+    )
+    session.terminal.exclusive_stdin_active = False
+
+    answer = _take_prompt(session)
+    expected_questions = pending.items()
+    expected_answers: tuple[str, ...] = (leaf,)
+    if leaf == CLOUD_REPAIR_OPTION:
+        permission = AskUserQuestion(
+            label="Demo repository",
+            title=DEMO_REPO_PERMISSION_TITLE,
+            options=(DEMO_REPO_DECLINE_OPTION,),
+        )
+        expected_questions = (pending.items()[0], permission)
+        expected_answers = (leaf, DEMO_REPO_DECLINE_OPTION)
+    assert answer == format_ask_user_answers(expected_questions, expected_answers)
+    assert AUTOMATION_GROUP_OPTION not in answer
+    # The pick entered the child, so its answer turn starts in the child's body.
+    assert session.active_skill == child_skill
+    envelope = build_action_system_prompt_envelope(
+        TurnSnapshot.from_session(answer, session, surface="interactive_shell")
+    )
+    assert f"ACTIVE SKILL: {child_skill}" in envelope.render_ephemeral()
+
+    run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
+
+    assert session.active_skill == child_skill
+    assert not llm.responses
+
+
+def test_automation_follow_up_escape_cancels_without_an_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+
+    def pick(**kwargs: Any) -> str | None:
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return None
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    assert session.active_skill is None
+    assert session.terminal.pending_prompt_default in (None, "")
+    assert onboarding_outcomes == [("skipped", None)]
+
+
+def test_cloud_repair_can_decline_the_demo_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    monkeypatch.setattr(
+        choice_prompt, "_demo_create_option", lambda: "Create opensre-ci-repair-demo-zz99"
+    )
+
+    def pick(**kwargs: Any) -> str:
+        if kwargs["title"] == DEMO_REPO_PERMISSION_TITLE:
+            return DEMO_REPO_DECLINE_OPTION
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return CLOUD_REPAIR_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    answer = _take_prompt(session)
+    assert CLOUD_REPAIR_OPTION in answer
+    assert DEMO_REPO_DECLINE_OPTION in answer
+    assert DEMO_REPO_PERMISSION_TITLE in answer
+
+
+def test_slack_does_not_ask_to_create_a_demo_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = dict(_SLACK_CONNECTED)
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    titles: list[str] = []
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return SLACK_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    assert titles == [_TITLE, AUTOMATION_MENU_TITLE]
+    answer = _take_prompt(session)
+    assert answer == format_ask_user_answers(pending.items(), (SLACK_OPTION,))
+    assert DEMO_REPO_PERMISSION_TITLE not in answer
+
+
+def test_without_slack_the_slack_demo_connects_it_in_the_app_then_resumes(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    """Connect Slack opens the organization's app home, then picks up the parked answer.
+
+    The app stores its Slack install as ``slack_bot`` with a bot token alone;
+    once that record reaches this machine the Slack check passes and the leaf
+    answer is resubmitted exactly as it was first sent.
+    """
+    _offerable(monkeypatch)
+    # A Tracer JWT (set in CI) resolves integrations from Tracer, never the app.
+    for name in (
+        SLACK_BOT_TOKEN_ENV,
+        SLACK_APP_TOKEN_ENV,
+        SLACK_WEBHOOK_URL_ENV,
+        TRACER_JWT_TOKEN_ENV,
+    ):
+        monkeypatch.delenv(name, raising=False)
+    app_records: list[dict[str, Any]] = []
+    account = AccountRecord(
+        user_id="user-1",
+        organization_id="org_3K6",
+        email=None,
+        app_url="https://app.test",
+        signed_in_at="2026-01-01T00:00:00Z",
+        token_expires_at="2027-01-01T00:00:00Z",
+    )
+    for module in (account_integrations, gate):
+        monkeypatch.setattr(module, "load_account_record", lambda: account)
+        monkeypatch.setattr(module, "resolve_account_token", lambda: "osre_pat_test")
+
+    def app_get(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
+        _ = (url, headers, timeout)
+        return httpx.Response(200, json={"success": True, "data": app_records})
+
+    monkeypatch.setattr(
+        account_integrations, "httpx", SimpleNamespace(get=app_get, HTTPError=httpx.HTTPError)
+    )
+    account_integrations.reset_account_integrations_cache()
+    opened: list[str] = []
+
+    def browser_open(url: str) -> bool:
+        opened.append(url)
+        return True
+
+    monkeypatch.setattr(prerequisite_menu.webbrowser, "open", browser_open)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    titles: list[str] = []
+    setup_rows: list[list[str]] = []
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        if kwargs["title"] == _SLACK_SETUP_TITLE:
+            setup_rows.append([label for label, *_rest in kwargs["choices"]])
+            if not opened:
+                return _SLACK_OPEN_APP
+            if len(setup_rows) > 2:
+                return "Not now"  # Slack never resolved: stop instead of looping
+            # Connected in the browser while the menu was open.
+            app_records.append(
+                {
+                    "id": "slack-org",
+                    "service": "slack_bot",
+                    "status": "active",
+                    "name": "default",
+                    "credentials": {"bot_token": "xoxe.xoxb-app-install"},
+                }
+            )
+            return _SLACK_CONTINUE
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return SLACK_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    buffer = io.StringIO()
+
+    choice_prompt._cmd_choose(session, Console(file=buffer, width=200), [])
+
+    assert titles == [
+        _TITLE,
+        AUTOMATION_MENU_TITLE,
+        _SLACK_SETUP_TITLE,
+        _SLACK_SETUP_TITLE,
+    ]
+    assert setup_rows[0][0] == _SLACK_OPEN_APP
+    assert opened == ["https://app.test/home?org_id=org_3K6"]
+    assert "https://app.test/home?org_id=org_3K6" in buffer.getvalue()
+    assert _take_prompt(session) == format_ask_user_answers(pending.items(), (SLACK_OPTION,))
+    assert session.terminal.awaiting_handoff_answer
+    assert pending_setup_resume(session) is None
+    slack = session.resolved_integrations_cache["slack"]
+    assert slack["bot_token"] == "xoxe.xoxb-app-install"
+    assert onboarding_outcomes == [("slack", False)]
+    account_integrations.reset_account_integrations_cache()
+
+
+def test_demo_repository_escape_cancels_without_an_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+
+    def pick(**kwargs: Any) -> str | None:
+        if kwargs["title"] == DEMO_REPO_PERMISSION_TITLE:
+            return None
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return CLOUD_REPAIR_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    assert session.active_skill is None
+    assert session.terminal.pending_prompt_default in (None, "")
+    assert onboarding_outcomes == [("skipped", None)]
 
 
 def test_startup_and_demo_respect_tty_and_pending_input(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -431,7 +1095,7 @@ def test_onboarding_losing_its_terminal_ends_without_a_text_menu(
     choice_prompt._cmd_choose(session, console, [])
 
     assert "request a task directly" in output.getvalue()
-    assert all(option not in output.getvalue() for option in GETTING_STARTED_OPTIONS)
+    assert all(option not in output.getvalue() for option in OUTCOME_MENU_OPTIONS)
     assert session.active_skill is None
     assert session.pending_user_choice is None
     assert not session.terminal.awaiting_handoff_answer

@@ -243,3 +243,51 @@ def test_fetch_session_without_credits_is_not_a_zero_balance(
     assert status.credits is None
     assert "does not expose" not in status.detail
     assert "0" not in status.detail
+
+
+@pytest.mark.parametrize(("total", "reads"), [(100_000, 1), (0, 2)])
+def test_a_funded_balance_is_reused_longer_than_an_empty_one(
+    monkeypatch: pytest.MonkeyPatch, total: int, reads: int
+) -> None:
+    calls: list[str] = []
+    clock = iter((100.0, 130.0))
+
+    def fake_get(url: str, **_kwargs: object) -> httpx.Response:
+        calls.append(url)
+        return httpx.Response(HTTPStatus.OK, json=_balance_payload(total=total))
+
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(ledger.httpx, "get", fake_get)
+    monkeypatch.setattr(ledger.time, "monotonic", lambda: next(clock))
+
+    ledger.fetch_hosted_credits()
+    ledger.fetch_hosted_credits()
+
+    # 30 s apart: credits left are read once; an empty ledger is read again.
+    assert len(calls) == reads
+
+
+def test_a_proxy_refusal_drops_the_cached_funded_balance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError, maybe_raise_credit_exhausted
+
+    class _Refused(Exception):
+        code = "opensre_credits_exhausted"
+        body: dict[str, object] = {}
+
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(
+        ledger.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=_balance_payload()),
+    )
+    ledger.fetch_hosted_credits()
+    assert ledger.cached_hosted_credits() is not None
+
+    with pytest.raises(OpenSRECreditsExhaustedError):
+        maybe_raise_credit_exhausted("OpenSRE", _Refused())
+
+    assert ledger.cached_hosted_credits() is None

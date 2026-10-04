@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from core.agent_harness.spi.grounding import (
@@ -42,7 +43,12 @@ def _view_skill_reference(name: str, reference: str) -> dict[str, Any]:
     }
 
 
-def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
+def execute_skill_view_tool(
+    args: dict[str, Any],
+    ctx: ActionToolScope,
+    *,
+    resolved_integrations: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     name = str(args.get("name", "")).strip()
     if not name:
         available = [skill.name for skill in list_action_skills()]
@@ -58,7 +64,7 @@ def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[
         guided_tools = tool_guidance_tools(name)
         if guided_tools:
             return _already_loaded_guidance(name, guided_tools)
-    return enter_skill(name, ctx, from_model=True)
+    return enter_skill(name, ctx, from_model=True, resolved_integrations=resolved_integrations)
 
 
 def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[str, Any]:
@@ -78,9 +84,14 @@ def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[s
 
 
 def run_skill_view(*, name: str, reference: str = "", context: Any) -> dict[str, Any]:
-    return execute_with_action_context(
-        {"name": name, "reference": reference}, context, execute_skill_view_tool
-    )
+    # The prerequisite gate reads the integrations this turn's tools receive,
+    # so it agrees with the tools it protects.
+    resolved: Mapping[str, Any] | None = getattr(context, "resolved_integrations", None)
+
+    def execute(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
+        return execute_skill_view_tool(args, ctx, resolved_integrations=resolved)
+
+    return execute_with_action_context({"name": name, "reference": reference}, context, execute)
 
 
 skill_view_tool = RegisteredTool(

@@ -16,6 +16,7 @@ from core.agent_harness.spi.session_goal import (
     pause_active_session_goal,
     session_goal_is_active,
 )
+from core.agent_harness.spi.session_state import clear_setup_resume
 from core.agent_harness.spi.task_plan import discard_task_plan
 from core.domain.alerts import inbox as _alert_inbox
 from infrastructure.turn_host.session_lock import (
@@ -323,6 +324,8 @@ class InteractiveShellController:
                     # round counter so the two-round cap is per-request, not per-session.
                     self.session.ask_user_rounds = 0
                     self.session.terminal.pending_choice_response = None
+                    # The user moved on, so a turn parked behind setup is not replayed.
+                    clear_setup_resume(self.session)
                     # Clear a finished plan left pinned after the previous turn so
                     # it does not linger over this one. An unfinished plan stays:
                     # the operator may continue it or type ``go`` while idle.

@@ -145,8 +145,10 @@ def test_install_harness_providers_wires_soc_registries() -> None:
     assert seed_tool_sources_for_alert({"alert_source": "grafana"}) == ("grafana",)
     assert "knowledge" in secondary_tool_sources()
     assert "kube_namespace" in alert_detail_field_names()
-    assert "slack_send_message" in harness_providers.action_prompt_vendor_fragments()
-    assert "telegram_send_message" in harness_providers.action_prompt_vendor_fragments()
+    fragments = harness_providers.action_prompt_vendor_fragments()
+    assert "MESSAGING DELIVERY" in fragments
+    assert "slack_send_message" not in fragments
+    assert "telegram_send_message" not in fragments
     assert "colleague in Slack" in harness_providers.gateway_persona_fragments()
     prefix, remainder = harness_providers.strip_message_context_prefix("[Slack channel_id=C1]\nyes")
     assert prefix.startswith("[Slack")
@@ -172,7 +174,8 @@ def test_install_harness_providers_wires_soc_registries() -> None:
             reasoning_effort=None,
         )
     )
-    assert "slack_send_message" in action_prompt
+    assert "MESSAGING DELIVERY" in action_prompt
+    assert "slack_send_message" not in action_prompt
     assert "GITHUB CLI REQUESTS" in action_prompt
 
     harness_providers.reset_harness_providers()

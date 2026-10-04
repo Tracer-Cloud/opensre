@@ -33,6 +33,7 @@ from surfaces.shared.terminal.components.choice_menu import (
     write_menu_line,
 )
 from surfaces.shared.terminal.components.key_reader import (
+    OnDismiss,
     flush_pending_input,
     read_menu_or_char,
 )
@@ -250,13 +251,15 @@ def repl_ask_user(
     questions: tuple[AskUserQuestion, ...] | list[AskUserQuestion],
     *,
     on_answer: Callable[[int, tuple[int, ...], str | None], None] | None = None,
+    on_dismiss: OnDismiss | None = None,
 ) -> tuple[str, ...] | None:
     """Show the Ask User wizard; return selected labels or None on Esc.
 
     Only call when :func:`repl_tty_interactive` is True. The custom row is
     edited in place inside the option array (concrete strings only in the
     result — never the sentinel label). Multi-select answers are newline-joined.
-    ``on_answer`` receives the question index, listed indexes, and custom text.
+    ``on_answer`` receives the question index, listed indexes, and custom text;
+    ``on_dismiss`` receives the key class (Esc, Ctrl-C, …) that closed the wizard.
     """
     from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
@@ -267,7 +270,7 @@ def repl_ask_user(
     drain_stale_cpr_bytes()
     hide_terminal_cursor()
     try:
-        return _run_ask_user(items, on_answer=on_answer)
+        return _run_ask_user(items, on_answer=on_answer, on_dismiss=on_dismiss)
     finally:
         leave_inline_menu()
         # Arrow CSI (↑↓) and CPR bytes can arrive after Enter while the menu
@@ -281,6 +284,7 @@ def _run_ask_user(
     items: tuple[AskUserQuestion, ...],
     *,
     on_answer: Callable[[int, tuple[int, ...], str | None], None] | None = None,
+    on_dismiss: OnDismiss | None = None,
 ) -> tuple[str, ...] | None:
     flush_pending_input()
     answers: list[str | None] = [None] * len(items)
@@ -313,7 +317,9 @@ def _run_ask_user(
             flush_pending_input()
             first = False
         current_height = _menu_height(question)
-        action = read_menu_or_char(allow_chars=on_custom, alpha_keys=not on_custom)
+        action = read_menu_or_char(
+            allow_chars=on_custom, alpha_keys=not on_custom, on_dismiss=on_dismiss
+        )
         if action in ("tab", "right"):
             q_idx = min(q_idx + 1, len(items) - 1)
             opt_idx = 0

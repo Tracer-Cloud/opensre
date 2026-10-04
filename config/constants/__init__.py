@@ -24,6 +24,15 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS as OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_INTEGRATIONS_PATH as OPENSRE_ACCOUNT_INTEGRATIONS_PATH,
+    )
+    from config.constants.account import (
+        OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS as OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS,  # noqa: E501
+    )
+    from config.constants.account import (
+        OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS as OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_LLM_BASE_PATH as OPENSRE_ACCOUNT_LLM_BASE_PATH,
     )
     from config.constants.account import (
@@ -136,6 +145,9 @@ if TYPE_CHECKING:
     )
     from config.constants.analytics import (
         ANALYTICS_TIMESTAMP_HEADER as ANALYTICS_TIMESTAMP_HEADER,
+    )
+    from config.constants.ask_user import (
+        AskUserReason as AskUserReason,
     )
     from config.constants.aws import (
         AWS_ACCESS_KEY_ID_ENV as AWS_ACCESS_KEY_ID_ENV,
@@ -296,6 +308,10 @@ if TYPE_CHECKING:
     from config.constants.clerk import (
         CLERK_JWKS_URL_ENV as CLERK_JWKS_URL_ENV,
     )
+    from config.constants.coding_agent import CODEX_HOME_ENV as CODEX_HOME_ENV
+    from config.constants.coding_agent import (
+        CODEX_ISOLATED_HOME_PREFIX as CODEX_ISOLATED_HOME_PREFIX,
+    )
     from config.constants.coding_agent import (
         CODING_AGENT_SANDBOX_AGENT as CODING_AGENT_SANDBOX_AGENT,
     )
@@ -420,16 +436,40 @@ if TYPE_CHECKING:
         PROMPT_CONTEXT_VALUE_MAX_CHARS as PROMPT_CONTEXT_VALUE_MAX_CHARS,
     )
     from config.constants.gateway import (
+        PROMPT_CONVERSATION_NEW as PROMPT_CONVERSATION_NEW,
+    )
+    from config.constants.gateway import (
         PROMPT_DEFAULT_ACTOR as PROMPT_DEFAULT_ACTOR,
     )
     from config.constants.gateway import (
         PROMPT_MAX_CHARS as PROMPT_MAX_CHARS,
     )
     from config.constants.gateway import (
+        PROMPT_PROGRESS_KIND_NOTE as PROMPT_PROGRESS_KIND_NOTE,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_KIND_PLAN as PROMPT_PROGRESS_KIND_PLAN,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_KIND_PLAN_DONE as PROMPT_PROGRESS_KIND_PLAN_DONE,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_KIND_TOOL as PROMPT_PROGRESS_KIND_TOOL,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_KINDS as PROMPT_PROGRESS_KINDS,
+    )
+    from config.constants.gateway import (
         PROMPT_PROGRESS_LINE_MAX_CHARS as PROMPT_PROGRESS_LINE_MAX_CHARS,
     )
     from config.constants.gateway import (
         PROMPT_PROGRESS_MAX_LINES as PROMPT_PROGRESS_MAX_LINES,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_PLAN_MAX_CHARS as PROMPT_PROGRESS_PLAN_MAX_CHARS,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_PLAN_OMITTED as PROMPT_PROGRESS_PLAN_OMITTED,
     )
     from config.constants.gateway import (
         PROMPT_QUEUE_MAX as PROMPT_QUEUE_MAX,
@@ -468,6 +508,12 @@ if TYPE_CHECKING:
         WEB_STOP_TIMEOUT_SECONDS as WEB_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.git import (
+        GIT_OPTIONAL_LOCKS_ENV as GIT_OPTIONAL_LOCKS_ENV,
+    )
+    from config.constants.git import (
+        GIT_TERMINAL_PROMPT_ENV as GIT_TERMINAL_PROMPT_ENV,
+    )
+    from config.constants.git import (
         MERGE_RESOLUTION_TIMEOUT_SECONDS as MERGE_RESOLUTION_TIMEOUT_SECONDS,
     )
     from config.constants.git import (
@@ -485,7 +531,6 @@ if TYPE_CHECKING:
     from config.constants.github import (
         GITHUB_API_BASE_URL as GITHUB_API_BASE_URL,
     )
-    from config.constants.github import GITHUB_CI_DEMO_REPOSITORY as GITHUB_CI_DEMO_REPOSITORY
     from config.constants.github import (
         GITHUB_CLI_REQUIRED_SCOPES as GITHUB_CLI_REQUIRED_SCOPES,
     )
@@ -587,6 +632,9 @@ if TYPE_CHECKING:
         HONEYCOMB_DATASET_ENV as HONEYCOMB_DATASET_ENV,
     )
     from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS as HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_HEALTH_PATH as HOSTED_GATEWAY_HEALTH_PATH,
     )
     from config.constants.hosted_gateway import (
@@ -618,6 +666,9 @@ if TYPE_CHECKING:
     )
     from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_STOP_PATH as HOSTED_GATEWAY_STOP_PATH,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS as HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS,
     )
     from config.constants.http import (
         MAX_REQUEST_BODY_BYTES as MAX_REQUEST_BODY_BYTES,
@@ -803,6 +854,12 @@ if TYPE_CHECKING:
         OPENSEARCH_API_KEY_ENV as OPENSEARCH_API_KEY_ENV,
     )
     from config.constants.opensearch import (
+        OPENSEARCH_INTEGRATION_SETUP_CLI as OPENSEARCH_INTEGRATION_SETUP_CLI,
+    )
+    from config.constants.opensearch import (
+        OPENSEARCH_INTEGRATION_SETUP_SLASH as OPENSEARCH_INTEGRATION_SETUP_SLASH,
+    )
+    from config.constants.opensearch import (
         OPENSEARCH_PASSWORD_ENV as OPENSEARCH_PASSWORD_ENV,
     )
     from config.constants.opensearch import (
@@ -931,6 +988,9 @@ if TYPE_CHECKING:
     )
     from config.constants.posthog_mcp import (
         POSTHOG_MCP_URL_ENV as POSTHOG_MCP_URL_ENV,
+    )
+    from config.constants.product import (
+        OPENSRE_INTERACTIVE_ENV as OPENSRE_INTERACTIVE_ENV,
     )
     from config.constants.product import (
         OPENSRE_PARENT_INTERACTIVE_SHELL_ENV as OPENSRE_PARENT_INTERACTIVE_SHELL_ENV,
@@ -1089,6 +1149,9 @@ if TYPE_CHECKING:
         OPENSRE_GATEWAY_HOST_SCHEDULER_ENV as OPENSRE_GATEWAY_HOST_SCHEDULER_ENV,
     )
     from config.constants.scheduler import (
+        OPENSRE_SCHEDULER_BUILD_ENV as OPENSRE_SCHEDULER_BUILD_ENV,
+    )
+    from config.constants.scheduler import (
         WEEKDAY_CRON_FIELD as WEEKDAY_CRON_FIELD,
     )
     from config.constants.secrets import (
@@ -1167,7 +1230,49 @@ if TYPE_CHECKING:
         SKILL_REPORT_SUFFIX as SKILL_REPORT_SUFFIX,
     )
     from config.constants.skills import (
+        SKILLS_API_VERSION as SKILLS_API_VERSION,
+    )
+    from config.constants.skills import (
+        SKILLS_AUTO_UPDATE_ENV as SKILLS_AUTO_UPDATE_ENV,
+    )
+    from config.constants.skills import (
+        SKILLS_DIR_ENV as SKILLS_DIR_ENV,
+    )
+    from config.constants.skills import (
         SKILLS_HEADER as SKILLS_HEADER,
+    )
+    from config.constants.skills import (
+        SKILLS_HTTP_TIMEOUT_SECONDS as SKILLS_HTTP_TIMEOUT_SECONDS,
+    )
+    from config.constants.skills import (
+        SKILLS_PULL_INTERVAL_SECONDS as SKILLS_PULL_INTERVAL_SECONDS,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASE_MAX_BYTES as SKILLS_RELEASE_MAX_BYTES,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASE_MAX_FILES as SKILLS_RELEASE_MAX_FILES,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASE_PATH as SKILLS_RELEASE_PATH,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASE_PUBLIC_KEYS as SKILLS_RELEASE_PUBLIC_KEYS,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASES_KEPT as SKILLS_RELEASES_KEPT,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASES_PATH as SKILLS_RELEASES_PATH,
+    )
+    from config.constants.skills import (
+        SKILLS_ROLLBACK_PATH as SKILLS_ROLLBACK_PATH,
+    )
+    from config.constants.skills import (
+        SKILLS_SYNC_AUDIENCE as SKILLS_SYNC_AUDIENCE,
+    )
+    from config.constants.skills import (
+        SKILLS_TRUSTED_KEYS_FILE_ENV as SKILLS_TRUSTED_KEYS_FILE_ENV,
     )
     from config.constants.slack import (
         SLACK_ACCESS_TOKEN_ENV as SLACK_ACCESS_TOKEN_ENV,
@@ -1188,6 +1293,18 @@ if TYPE_CHECKING:
         SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS as SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS as SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS,
+    )
+    from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS as SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS,
+    )
+    from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS as SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS,
+    )
+    from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS as SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS,
+    )
+    from config.constants.slack import (
         SLACK_USER_TOKEN_PREFIXES as SLACK_USER_TOKEN_PREFIXES,
     )
     from config.constants.slack import (
@@ -1198,6 +1315,9 @@ if TYPE_CHECKING:
     )
     from config.constants.slash_commands import (
         INTEGRATIONS_SETUP_PREFIX as INTEGRATIONS_SETUP_PREFIX,
+    )
+    from config.constants.slash_commands import (
+        QUEUED_COMMAND_KEY as QUEUED_COMMAND_KEY,
     )
     from config.constants.smtp import (
         SMTP_DEFAULT_TO_ENV as SMTP_DEFAULT_TO_ENV,
@@ -1295,6 +1415,12 @@ if TYPE_CHECKING:
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
     )
+    from config.constants.tooling import (
+        ToolBlockedBy as ToolBlockedBy,
+    )
+    from config.constants.tooling import (
+        ToolSkippedBy as ToolSkippedBy,
+    )
     from config.constants.tracer import (
         TRACER_BASE_URL_DEV as TRACER_BASE_URL_DEV,
     )
@@ -1308,7 +1434,22 @@ if TYPE_CHECKING:
         TRACER_JWT_TOKEN_ENV as TRACER_JWT_TOKEN_ENV,
     )
     from config.constants.turn_concurrency import (
+        DEFAULT_HEAVY_WORK_CONCURRENCY as DEFAULT_HEAVY_WORK_CONCURRENCY,
+    )
+    from config.constants.turn_concurrency import (
+        DEFAULT_MAX_CACHED_SESSION_AGENTS as DEFAULT_MAX_CACHED_SESSION_AGENTS,
+    )
+    from config.constants.turn_concurrency import (
         DEFAULT_SCHEDULED_RUN_CONCURRENCY as DEFAULT_SCHEDULED_RUN_CONCURRENCY,
+    )
+    from config.constants.turn_concurrency import (
+        HEAVY_WORK_WAIT_SECONDS as HEAVY_WORK_WAIT_SECONDS,
+    )
+    from config.constants.turn_concurrency import (
+        OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV as OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV,
+    )
+    from config.constants.turn_concurrency import (
+        OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV as OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV,
     )
     from config.constants.turn_concurrency import (
         OPENSRE_MAX_CONCURRENT_TURNS_ENV as OPENSRE_MAX_CONCURRENT_TURNS_ENV,

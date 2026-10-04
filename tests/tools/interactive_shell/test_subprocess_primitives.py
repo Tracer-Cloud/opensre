@@ -166,3 +166,37 @@ def test_watch_subprocess_until_exit_on_cancel() -> None:
     )
     assert result.cancelled
     assert result.terminated_by_watcher
+
+
+@pytest.mark.parametrize("cancel_requested", [True, False], ids=["cancel", "timeout"])
+def test_watch_owned_descendants_after_root_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_requested: bool,
+) -> None:
+    proc = MagicMock(pid=123, returncode=0)
+    proc.poll.return_value = 0
+    tree = MagicMock()
+    tree.is_alive.return_value = True
+    clock_values = iter([0.0, 0.0 if cancel_requested else 2.0])
+
+    def _monotonic() -> float:
+        return next(clock_values)
+
+    monkeypatch.setattr(subprocess_tools, "time", SimpleNamespace(monotonic=_monotonic))
+    cancel = threading.Event()
+    if cancel_requested:
+        cancel.set()
+
+    result = subprocess_tools.watch_subprocess_until_exit(
+        proc,
+        cancel_event=cancel,
+        timeout_seconds=1,
+        owned_tree=tree,
+    )
+
+    tree.terminate_tree.assert_called_once_with()
+    assert result.terminated_by_watcher
+    assert result.cancelled is cancel_requested
+    assert result.timed_out is not cancel_requested
+    assert result.exit_code == 0
+    proc.kill.assert_not_called()

@@ -156,6 +156,20 @@ _LOCAL_MODEL_PRICES: dict[str, ModelPrice] = {
     "claude-3-5-sonnet-20241022": _price(
         3.00, 15.00, cache_read_usd_per_million=0.30, cache_write_usd_per_million=3.75
     ),
+    # Claude 5.x releases (September 2026) absent from litellm's bundled table.
+    # Per 1M tokens, from Anthropic pricing:
+    # Sonnet 5.5: 2.00 / 10.00, cache read 0.20, cache write 2.50.
+    # Opus 5.5: 4.00 / 20.00, cache read 0.40, cache write 5.00.
+    # Fable 5.1: 10.00 / 50.00, cache read 1.00, cache write 12.50.
+    "claude-sonnet-5-5": _price(
+        2.00, 10.00, cache_read_usd_per_million=0.20, cache_write_usd_per_million=2.50
+    ),
+    "claude-opus-5-5": _price(
+        4.00, 20.00, cache_read_usd_per_million=0.40, cache_write_usd_per_million=5.00
+    ),
+    "claude-fable-5-1": _price(
+        10.00, 50.00, cache_read_usd_per_million=1.00, cache_write_usd_per_million=12.50
+    ),
 }
 
 # Longest-prefix-first so more specific tiers (e.g. ``gpt-5.6-terra``) win
@@ -169,6 +183,9 @@ _LOCAL_FAMILY_FALLBACKS: tuple[tuple[str, str], ...] = tuple(
             ("gpt-5.6-luna", "gpt-5.6-luna"),
             # OpenAI routes the bare ``gpt-5.6`` alias to Sol server-side.
             ("gpt-5.6", "gpt-5.6-sol"),
+            ("claude-sonnet-5-5", "claude-sonnet-5-5"),
+            ("claude-opus-5-5", "claude-opus-5-5"),
+            ("claude-fable-5-1", "claude-fable-5-1"),
         ),
         key=lambda item: len(item[0]),
         reverse=True,

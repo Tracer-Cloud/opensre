@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from config.constants.skills import ONBOARDING_MENU_TITLE, ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
+from config.constants.skills import (
+    ONBOARDING_LEAF_CHOICES,
+    ONBOARDING_MENU_TITLE,
+    ONBOARDING_SKILL_NAME,
+    OUTCOME_MENU_OPTIONS,
+    SKIP_DEMO_OPTION,
+)
 from core.agent_harness.prompts.skills.catalog.contracts import (
     ActionSkill,
     SkillCatalog,
@@ -26,16 +32,28 @@ def demo_skills(skills: tuple[ActionSkill, ...]) -> tuple[ActionSkill, ...]:
     )
 
 
+def _outcome_menu(children: tuple[ActionSkill, ...]) -> bool:
+    """True when the shipped onboarding children are present, so the outcome menu applies."""
+    names = {skill.name for skill in children}
+    return all(name in names for name, _label in ONBOARDING_LEAF_CHOICES)
+
+
 def onboarding_entry_menu(skills: tuple[ActionSkill, ...]) -> SkillEntryMenu:
-    """Build the master menu from the children's labels; raise ``ValueError`` if unrenderable."""
-    labels = [skill.getting_started for skill in demo_skills(skills) if skill.getting_started]
+    """Build the master menu; raise ``ValueError`` if the child count is unrenderable.
+
+    The shipped onboarding children use the outcome rows (analyze, automation,
+    shell). Any other child set keeps each ``getting_started`` label plus Skip.
+    """
+    children = demo_skills(skills)
+    labels = [skill.getting_started for skill in children if skill.getting_started]
     if not _MIN_DEMO_CHILDREN <= len(labels) <= _MAX_DEMO_CHILDREN:
         raise ValueError(
             f"needs {_MIN_DEMO_CHILDREN}-{_MAX_DEMO_CHILDREN} demo children, found {len(labels)}"
         )
+    options = OUTCOME_MENU_OPTIONS if _outcome_menu(children) else (*labels, SKIP_DEMO_OPTION)
     return SkillEntryMenu(
         title=ONBOARDING_MENU_TITLE,
-        options=(*labels, SKIP_DEMO_OPTION),
+        options=options,
         allow_custom=False,
     )
 
@@ -57,10 +75,21 @@ def populate_demo_menu(skills: tuple[ActionSkill, ...]) -> SkillCatalog:
 
 
 def demo_handoffs(skills: tuple[ActionSkill, ...]) -> str:
-    """Render the selectable labels with their canonical skill names."""
-    rows = [
-        f'- "{skill.getting_started}": call `skill_view(name="{skill.name}")`.'
-        for skill in demo_skills(skills)
-    ]
+    """Render the leaf labels the model matches, with their canonical skill names.
+
+    The automation group row is not a handoff: the shell resolves it to a leaf
+    before the model sees an answer.
+    """
+    children = demo_skills(skills)
+    if _outcome_menu(children):
+        rows = [
+            f'- "{label}": call `skill_view(name="{name}")`.'
+            for name, label in ONBOARDING_LEAF_CHOICES
+        ]
+    else:
+        rows = [
+            f'- "{skill.getting_started}": call `skill_view(name="{skill.name}")`.'
+            for skill in children
+        ]
     rows.append(f'- "{SKIP_DEMO_OPTION}": finish onboarding.')
     return "\n\n## Current demo choices\n\n" + "\n".join(rows)

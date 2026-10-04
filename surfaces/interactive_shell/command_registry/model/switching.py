@@ -25,7 +25,7 @@ def _account_model_change_is_locked(console: Console) -> bool:
         f"openai ({escape(route.model)}, hosted by OpenSRE)."
     )
     console.print(
-        f"[{DIM}]Run[/] [bold]opensre account logout[/bold] "
+        f"[{DIM}]Run[/] [bold]/logout[/bold] "
         f"[{DIM}]before configuring a different provider or model.[/]"
     )
     return True

@@ -59,6 +59,7 @@ class Session(SessionCore):
         self.terminal.pending_prompt_plain_turn = False
         self.terminal.last_input_autosubmitted = False
         self.terminal.pending_choice_response = None
+        self.terminal.setup_resume = None
         self.terminal.dispatch_active = False
         self.terminal.exclusive_stdin_active = False
         # trust_mode and reasoning_effort are intentionally preserved across /new

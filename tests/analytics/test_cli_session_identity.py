@@ -24,6 +24,7 @@ from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns import action_driver
 from core.agent_harness.turns.headless_adapters import BufferOutputSink
+from core.llm.readiness import LLMReadiness
 from infrastructure.analytics import provider, usage_context
 from infrastructure.analytics.capture import capture_cli_invoked, capture_skill_executed
 from infrastructure.analytics.events import Event
@@ -57,6 +58,9 @@ class _Analytics:
 
     def session_ids(self, event: Event) -> list[object]:
         return [props.get("session_id") for name, props in self.events if name == event]
+
+
+_LLM_CONFIGURED = LLMReadiness(provider="openai")
 
 
 class _LLM:
@@ -103,6 +107,7 @@ def analytics(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Analytics:
     config = PromptLogConfig(log_path=tmp_path / "prompts.jsonl")
     monkeypatch.setattr(PromptLogConfig, "load", lambda: config)
     monkeypatch.setattr(action_driver, "_build_action_agent", _answering_plan)
+    monkeypatch.setattr(service, "llm_ready", lambda: _LLM_CONFIGURED)
     monkeypatch.setattr(
         "infrastructure.turn_host.session_lock.sessions_dir", lambda: tmp_path / "sessions"
     )

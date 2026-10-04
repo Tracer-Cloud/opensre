@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import shutil
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from infrastructure.terminal import theme as ui_theme
+from surfaces.interactive_shell.ui.scrollable_picker import choose_scrollable
 from surfaces.shared.terminal.components.choice_menu import (
-    enter_inline_menu,
     erase_menu_lines,
-    leave_inline_menu,
     menu_columns,
-    read_menu_action,
-    repl_tty_interactive,
     write_menu_line,
 )
 from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_text_width
@@ -31,14 +27,8 @@ class ResumeMenuItem:
     session_id: str
     title: str
     activity_at: str | datetime | int | float | None
-
-
-def _visible_row_count() -> int:
-    terminal_rows = shutil.get_terminal_size(fallback=(80, 24)).lines
-    # Leave one row below the menu for the cursor. The erase helper can only
-    # climb ``terminal_rows - 1`` rows without touching prior scrollback.
-    available = terminal_rows - _CHROME_ROWS - 1
-    return min(_MAX_VISIBLE_ROWS, max(1, available))
+    is_current: bool = False
+    detail: str = ""
 
 
 def _as_datetime(value: str | datetime | int | float | None) -> datetime | None:
@@ -81,7 +71,9 @@ def _row(item: ResumeMenuItem, *, selected: bool, index: int, width: int, now: d
     age = clip_prompt_text(_time_ago(item.activity_at, now), _AGE_WIDTH)
     prefix = clip_prompt_text(f"  {'›' if selected else ' '} {age:<{_AGE_WIDTH}}  ", width)
     title_width = max(0, width - prompt_text_width(prefix))
-    title = clip_prompt_text(item.title, title_width)
+    title = clip_prompt_text(
+        f"● current  {item.title}" if item.is_current else item.title, title_width
+    )
     padding = " " * max(0, width - prompt_text_width(prefix + title))
     if selected:
         return (
@@ -97,7 +89,8 @@ def _row(item: ResumeMenuItem, *, selected: bool, index: int, width: int, now: d
     background = ui_theme.INPUT_SURFACE_BG_ANSI if index % 2 else ui_theme.SURFACE_BG_ANSI
     return (
         f"{background}{ui_theme.DIM_COUNTER_ANSI}{prefix}"
-        f"{title_styles[index % len(title_styles)]}{title}{padding}{ui_theme.ANSI_RESET}"
+        f"{ui_theme.HIGHLIGHT_ANSI if item.is_current else title_styles[index % len(title_styles)]}"
+        f"{title}{padding}{ui_theme.ANSI_RESET}"
     )
 
 
@@ -109,6 +102,7 @@ def _draw(
     visible_rows: int,
     erase_lines: int,
     now: datetime,
+    heading: str = "Resume session",
 ) -> int:
     width = menu_columns()
     if erase_lines:
@@ -116,7 +110,7 @@ def _draw(
     write_menu_line()
     write_menu_line(
         f"{ui_theme.PROMPT_ACCENT_ANSI}"
-        f"{clip_prompt_text('  Resume session', width)}{ui_theme.ANSI_RESET}"
+        f"{clip_prompt_text(f'  {heading}', width)}{ui_theme.ANSI_RESET}"
     )
     write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{'─' * width}{ui_theme.ANSI_RESET}")
     end = min(len(items), top + visible_rows)
@@ -129,57 +123,42 @@ def _draw(
     more = "↑ earlier" if top else ""
     if end < len(items):
         more = f"{more}    ↓ more" if more else "↓ more"
+    if items[selected].detail and width < 64:
+        more = ("↑" if top else "") + ("↓" if end < len(items) else "")
     position = f"{selected + 1}/{len(items)}"
-    status = f"  {more}" if more else ""
+    status_detail = "  ".join(part for part in (more, items[selected].detail) if part)
+    status = clip_prompt_text(f"  {status_detail}", max(0, width - len(position) - 2))
     status += " " * max(0, width - prompt_text_width(status) - len(position) - 2)
     status += f"{position}  "
     write_menu_line(
         f"{ui_theme.DIM_COUNTER_ANSI}{clip_prompt_text(status, width)}{ui_theme.ANSI_RESET}"
     )
     write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{'─' * width}{ui_theme.ANSI_RESET}")
+    footer = (
+        "  Enter already here   ↑↓/j/k move   Esc exit" if items[selected].is_current else _FOOTER
+    )
     write_menu_line(
-        f"{ui_theme.DIM_COUNTER_ANSI}{clip_prompt_text(_FOOTER, width)}{ui_theme.ANSI_RESET}"
+        f"{ui_theme.DIM_COUNTER_ANSI}{clip_prompt_text(footer, width)}{ui_theme.ANSI_RESET}"
     )
     sys.stdout.flush()
     return visible_rows + _CHROME_ROWS
 
 
-def choose_resume_session(items: Sequence[ResumeMenuItem]) -> str | None:
+def choose_resume_session(
+    items: Sequence[ResumeMenuItem],
+    *,
+    heading: str = "Resume session",
+) -> str | None:
     """Select a conversation by scrolling a bounded terminal viewport."""
-    if not items or not repl_tty_interactive():
-        return None
     oldest = datetime.min.replace(tzinfo=UTC)
     ordered = sorted(items, key=lambda item: _as_datetime(item.activity_at) or oldest, reverse=True)
-    selected = 0
-    top = 0
-    drawn_height = 0
     now = datetime.now(UTC)
-    enter_inline_menu()
-    try:
-        while True:
-            visible_rows = _visible_row_count()
-            top = min(top, max(0, len(ordered) - visible_rows))
-            if selected < top:
-                top = selected
-            elif selected >= top + visible_rows:
-                top = selected - visible_rows + 1
-            drawn_height = _draw(
-                ordered,
-                selected=selected,
-                top=top,
-                visible_rows=visible_rows,
-                erase_lines=drawn_height,
-                now=now,
-            )
-            action = read_menu_action()
-            if action == "up":
-                selected = (selected - 1) % len(ordered)
-            elif action == "down":
-                selected = (selected + 1) % len(ordered)
-            elif action == "enter":
-                return ordered[selected].session_id
-            elif action in ("cancel", "eof"):
-                return None
-    finally:
-        erase_menu_lines(drawn_height, delete=True)
-        leave_inline_menu()
+    selected = next((index for index, item in enumerate(ordered) if not item.is_current), 0)
+    picked = choose_scrollable(
+        ordered,
+        draw=lambda rows, **kwargs: _draw(rows, now=now, heading=heading, **kwargs),
+        max_visible_rows=_MAX_VISIBLE_ROWS,
+        chrome_rows=_CHROME_ROWS,
+        selected=selected,
+    )
+    return picked.session_id if picked is not None else None

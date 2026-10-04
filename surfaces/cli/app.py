@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import sys
 from contextlib import suppress
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -223,6 +223,13 @@ def _run_without_subcommand(
     hidden=True,
     help="Record installer analytics and exit.",
 )
+@click.option(
+    "--github-connection-id",
+    type=click.UUID,
+    default=None,
+    metavar="UUID",
+    help="Use this workspace GitHub connection in the shell or cloud request.",
+)
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -237,9 +244,15 @@ def cli(
     layout: str | None,
     theme: str | None,
     record_install: bool,
+    github_connection_id: Any = None,
 ) -> None:
     """OpenSRE - open-source SRE agent."""
     ctx.ensure_object(dict)
+    from infrastructure.harness_providers.integration_selection import bound_github_connection
+
+    ctx.with_resource(
+        bound_github_connection(str(github_connection_id) if github_connection_id else None)
+    )
     ctx.obj["json"] = json_output
     ctx.obj["verbose"] = verbose
     ctx.obj["debug"] = debug

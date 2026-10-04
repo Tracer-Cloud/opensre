@@ -105,6 +105,12 @@ class BindableOutput:
         if callable(set_status):
             set_status(status)
 
+    def note_activity(self, text: str, *, kind: str) -> None:
+        """Forward compact hosted-prompt activity when the bound sink records it."""
+        note = getattr(self._require(), "note_activity", None)
+        if callable(note):
+            note(text, kind=kind)
+
     def __getattr__(self, name: str) -> Any:
         # Forward optional transport-specific attributes (e.g. tool_hooks readers).
         return getattr(self._require(), name)

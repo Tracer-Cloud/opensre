@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from rich.console import Console
 
 from config.constants.repl_autonomy import ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES
+from config.constants.tooling import ToolBlockedBy
 from core.tool import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
@@ -91,7 +92,9 @@ class _ShellApproval:
 
 def _declined(tool_name: str) -> BeforeToolCallResult:
     reason = f"The user declined {tool_name}. Do not retry; tell the user it was not run."
-    return BeforeToolCallResult(blocked=True, reason=reason)
+    return BeforeToolCallResult(
+        blocked=True, reason=reason, metadata={ToolBlockedBy.APPROVAL_DECLINED: True}
+    )
 
 
 __all__ = ["with_shell_approval"]

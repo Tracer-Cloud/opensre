@@ -81,15 +81,29 @@ complete a step that had no tool return while it was `in_progress`
 (`task_plan/completion.py`, fed by `turns/plan_hooks.py`); a step marked
 `verifies` is never exempt, and a text-only closing step is exempt only once
 such a step completed. The second work tool of a turn with no open plan is
-refused (`task_plan/required.py`). A step newly marked `blocked` is resolved
-with the user, not skipped: the conclusion is rejected until `ask_user_choice`
+refused (`task_plan/required.py`). A response whose only tool call is
+`update_plan` runs: the prompt asks for the write in the same response as the
+step's tool, but refusing it cost the same model call it meant to save and
+sent the model into retries and off-plan tools. A step newly marked
+`blocked` is resolved with the user, not skipped: the conclusion is rejected
+until `ask_user_choice`
 is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
 onboarding menu's answer turn that only loaded the chosen demo skill is
 rejected once, with a nudge to write the plan and run its first step (same
 files). A work tool that failed (`ok: false`, nonzero shell exit) is not
 completion: `turns/work_outcome.py` rejects stop until a later work tool
-succeeds (`goal_review.py`). Change the rule in the
-owning leaf, never by prompt text alone. Skills cannot override these gates.
+succeeds (`goal_review.py`), unless the failure is already the answer — a
+classified `work_outcome`, or a `tool_unavailable` envelope naming a
+`setup_command` the user must run first. The nudge follows the same gate
+order as the check, so a plan rejection gets the plan nudge. A
+`slash_invoke` that queues a picker or wizard as the user's next turn
+(`QUEUED_COMMAND_KEY` in its result) ends the turn like a queued menu
+(`turns/action_menu_end.py`); a `/goal` loop stops on that pending
+auto-submit and keeps it (`session_goal/run_until.py`). A slash command the
+execution gate declined returns `not_run` with no `error`: the duplicate
+guard still refuses the same call, and it is not plan evidence. Change the
+rule in the owning leaf, never by prompt text alone. Skills cannot override
+these gates.
 
 **Goal kernel (host-owned prompt, `prompts/action/goal_kernel.py`):** a
 short rule block that sits after the system prompt and again after any
@@ -123,6 +137,13 @@ changes; execution rechecks the active session. Settling the plan retires its
 helpers. A new user request clears active skill context, while menu answers
 and slash commands retain it. Full contract: `prompts/skills/AGENTS.md`.
 
+A turn held behind integration setup (a skill's prerequisite gate, or
+`/integrations setup <service>` deferred mid-skill) is parked as a
+`SetupResume` (`session/setup_resume.py`, via `spi.session_state`) on the
+shell's terminal facet only. The shell replays it at most once, after the
+prerequisite's registered check passes again; a typed turn, a closed menu, a
+new demo, and `/new` drop it. Never park skill-less prose or a slash command.
+
 Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`
 to `False` through `prepare_session`. This host-owned policy removes the skill
 index and `skill_view` while retaining execution tools; never infer it from
@@ -151,8 +172,12 @@ read that same Event. Scheduled ticks write it when the stored task is
 disabled or removed (`PredicateCancelConsole`). Do not invent a second
 cancel channel.
 
-**Cloud scale-out:** more Fargate tasks (fleet), not unbound in-process
-concurrency or a new `chat` API.
+**Cloud scale-out:** one gateway task per organization running a bounded
+in-process pool (the process gate, per-conversation ordering, a separate cap on
+heavy subprocess work). An organization that outgrows one task moves agent
+execution into separate worker containers. That means no unbounded in-process
+concurrency, no fleet of gateway tasks sharing one session store, and no new
+`chat` API.
 
 ## Hard boundary
 
@@ -396,8 +421,8 @@ There are two ways into an agent turn:
 
 **Scaling** is separate from the host API: local concurrency
 (`TurnConcurrencyGate` / transport pools / `OPENSRE_SIZE_PROFILE`) and cloud
-Fargate scale-out (spin more tasks; same API per task) sit *around*
-`chat`. Construct-once-per-session is the reuse story;
+scale-out (separate worker containers once one task is not enough; same API
+per worker) sit *around* `chat`. Construct-once-per-session is the reuse story;
 process/task scale-out is deploy. Do not redesign the host API to “enable
 scaling.”
 

@@ -65,6 +65,8 @@ _INPUT_SCHEMA: dict[str, Any] = {
 
 
 def _github_ci_fix_available(sources: dict[str, dict]) -> bool:
+    if sources.get("github", {}).get("connection_selection_error"):
+        return False
     gh = sources.get("github", {})
     return bool(
         github_source_available(sources)

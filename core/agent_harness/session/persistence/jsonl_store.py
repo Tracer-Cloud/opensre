@@ -178,6 +178,14 @@ class JsonlSessionStore:
             },
         )
 
+    def append_session_name(self, session_id: str, name: str) -> str:
+        return self._append_entry(
+            session_id,
+            "custom_message",
+            {"custom_type": "session_name", "name": name},
+            sidecar=True,
+        )
+
     def append_turn_detail(
         self,
         session_id: str,

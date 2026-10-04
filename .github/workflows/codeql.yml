@@ -18,7 +18,7 @@ on:
       runner_label:
         description: Standard or larger-runner label
         required: true
-        default: ubuntu-latest
+        default: ubuntu-24.04
         type: string
 
 permissions:
@@ -36,7 +36,7 @@ jobs:
       github.repository == 'Tracer-Cloud/opensre' &&
       (github.event_name != 'workflow_dispatch' || inputs.profile == 'full')
     name: Analyze full (${{ matrix.language }})
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_label || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_label || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:

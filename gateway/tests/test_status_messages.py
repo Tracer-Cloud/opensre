@@ -103,6 +103,22 @@ def test_tool_status_falls_back_to_humanized_name(monkeypatch) -> None:
     assert status_from_tool_start("list_open_pull_requests") == "⏳ list open pull requests…"
 
 
+def test_slash_invoke_status_does_not_claim_the_interactive_shell() -> None:
+    """Gateway progress must not say a slash command ran in the local shell."""
+    from tools.interactive_shell.shared.slash_catalog import slash_invoke_tool_description
+
+    status = status_from_tool_start(
+        "slash_invoke",
+        {"command": "/cron", "args": ["list"]},
+        describe=lambda _name: (slash_invoke_tool_description([]),),
+    )
+
+    label, argument = status.split("\n", 1)
+    assert label == "⏳ Run a slash command…"
+    assert "interactive shell" not in label
+    assert argument == "(/cron)"
+
+
 def test_tool_status_includes_first_input_hint(monkeypatch) -> None:
     tool = _make_tool("slash_invoke", "Run a registered interactive-shell slash command.")
     _register(monkeypatch, [tool])

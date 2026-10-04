@@ -52,8 +52,42 @@ Markdown resolution, body/reference loading, and index rendering belong in
 this package import its public facade or the `scheduling` facade.
 
 When moving a resource reader, preserve the skills root used for discovery and
-include containment. Clear both catalog and index caches through
-`clear_skills_caches()` when tests replace bundled resources.
+include containment. Clear the active catalog through `clear_skills_caches()`
+when tests replace bundled resources.
+
+`snapshot/` owns the catalog a process actually serves. A
+`SkillCatalogSnapshot` is built once from one root (validated cards, rendered
+bodies, references, index, per-skill digests) and never re-reads files.
+`active_skill_catalog()` picks the root, in this order:
+
+1. `OPENSRE_SKILLS_DIR` (exclusive; re-read when its files change).
+2. The newest stored release that verifies, declares a supported
+   `SKILLS_API_VERSION`, contains every bundled skill name and builds with
+   zero diagnostics. A release is accepted or rejected whole.
+3. The bundled tree.
+
+`run_turn` binds one snapshot per turn, so a newly pulled release or an
+authoring edit applies at the next turn, never mid-turn. Read the catalog
+once per operation (`active_skill_catalog().current()`) instead of calling
+several lookups that could straddle a swap.
+
+## Live releases
+
+Skills are published without a binary release:
+- `opensre skills push` (OpenSRE staff, or `.github/workflows/skills-sync.yml`
+  on merge) sends every skill package whose `metadata.version` is newer than
+  the live one to the OpenSRE app, which signs a new immutable release.
+- Every host pulls it in the background (`infrastructure/skills_registry/`,
+  every five minutes) into `~/.opensre/skills/`.
+- `opensre skills rollback` republishes an earlier release as the newest one.
+- Clients verify the ECDSA P-256 signature against
+  `SKILLS_RELEASE_PUBLIC_KEYS` in `config/constants/skills.py`. The signed
+  message is pinned by `test_signing_message_matches_the_server_contract` and
+  by the webapp's signer tests; change both or neither.
+
+Because the version gate decides what ships, an edit that does not bump
+`metadata.version` is not published. A release must keep every skill name
+the host code relies on; binaries reject releases that drop a bundled skill.
 
 ## Design references
 
@@ -134,16 +168,29 @@ through `skill_view(name=..., reference=...)`; they are not automatic includes.
 
 The onboarding master's entry menu is not declared in its card. The loader
 (`catalog/demo_menu.py`) builds it in code: the title is
-`config.constants.skills.ONBOARDING_MENU_TITLE`, the options are the children's
-`getting_started` labels in `demo_order` followed by the shell's Skip option,
-and free text is disabled. The matching skill handoffs are generated from the
-same metadata. Only implemented workflows belong in the demo menu or discovery
-catalog. The generated menu must contain one to seven child choices plus Skip;
-otherwise the master is excluded with a diagnostic. A child cannot reuse the
-reserved Skip label. The host opens the menu on skill entry
+`config.constants.skills.ONBOARDING_MENU_TITLE` and free text is disabled.
+When the four onboarding children are present, the first menu is the outcome
+rows in `OUTCOME_MENU_OPTIONS` (analyze a repo, keep CI/CD healthy, open the
+shell). The automation row is not a skill; the shell opens
+`AUTOMATION_MENU_OPTIONS` and submits only that leaf label. Handoffs map those
+leaf labels to skill names. Any other child set still uses each child's
+`getting_started` label in `demo_order`, followed by the shell's Skip option.
+The child count must be one to seven or the master is excluded with a
+diagnostic. A child cannot reuse the reserved Skip label. The host opens the
+menu on skill entry
 (`tools/interactive_shell/actions/skill_entry.py`) through the real
 `ask_user_choice` executor and reports `queued`, `suppressed`, or
 `unavailable` under the `entry_menu` key of the `skill_view` result.
+
+Before that, a skill that is not yet active passes its host-owned
+prerequisites (`SKILL_PREREQUISITES` in
+`config/constants/skill_prerequisites.py`, checks registered by id in
+`infrastructure/harness_providers/skill_prerequisites.py`). An unmet one
+withholds the body, queues a setup menu (`skill_prerequisite_gate.py`), and
+reports it under the `prerequisite` key; after setup the shell resubmits the
+blocked message. A demo picked in the onboarding menu is checked before the
+menu's own follow-up (the demo-repository question), so setup comes first
+there too. Every getting-started skill has a row, even an empty one.
 
 ## Narrow purpose
 
@@ -161,24 +208,31 @@ including delivering any user-facing output, before starting the next.
 Do not couple separate steps with wording such as "alongside", "at the same
 time", or "in the same response".
 
-The runtime enforces this per model response (`core.tool.execution`): a
-response may carry **one** tool call whose role is `ACTION`; a response with
-two or more executes none of them and returns the same error for each. Two
-roles relax that rule, and every tool declares its role on its contract
-(`ToolRole`, replacing the old `parallel_safe` flag):
+The runtime (`core.tool.execution`) runs a response's tool calls one after
+another, in the order the model listed them — never concurrently. A response
+may batch several independent calls; a call that depends on an earlier call's
+result belongs in the next response. Every tool declares its role on its
+contract (`ToolRole`, replacing the old `parallel_safe` flag):
 
-- `BOOKKEEPING` (`update_plan`, `memory_remember`, `session_goal_complete`)
-  may accompany the one action. Cards should say so — "mark the step
-  `in_progress` in the same response as its tool call" — rather than leave
-  the model to spend a solo turn on each plan write. A live run of
-  `scheduling-github-ci-repairs` once spent nine solo `update_plan` turns
-  (~90 s) on plan writes alone.
-- `TURN_ENDING` (`ask_user_choice`) hands the turn to the user and must be
-  the **only** call in its response; not even bookkeeping rides with it.
-  Mark plan steps before the menu response, not in it.
+- `ACTION` and `BOOKKEEPING` (`update_plan`, `memory_remember`,
+  `session_goal_complete`) calls may share a response. Cards should say so —
+  "mark the step `in_progress` in the same response as its tool call" —
+  rather than leave the model to spend a solo turn on each plan write. A
+  live run of `scheduling-github-ci-repairs` once spent nine solo
+  `update_plan` turns (~90 s) on plan writes alone.
+- `TURN_ENDING` (`ask_user_choice`) hands the turn to the user and is the
+  **only** action in its response. Bookkeeping may ride with it and runs
+  first, so the `update_plan` that marks the menu step belongs in the menu's
+  response rather than in a solo turn before it (the host refuses a solo
+  plan advance). A response that batches an action with a menu executes
+  nothing and returns the same error for each call.
+
+Once a call's result ends the turn (a queued menu, a pending approval, a
+host cancel), the calls after it in the batch are skipped with an error
+result saying they did not run.
 
 Independent read-only checks inside one step (identity plus scheduler, for
-example) are therefore separate responses, or one shell command that runs
+example) may therefore share one response, or one shell command that runs
 both.
 
 Report delivery and asking what to do next are separate actions: first

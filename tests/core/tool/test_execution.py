@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from core.agent import Agent
+from core.agent_harness.turns.action_dedup import with_duplicate_action_call_guard
+from core.agent_harness.turns.action_menu_end import with_menu_turn_end
 from core.domain.types.tools import ToolRole
 from core.llm.types import AgentLLMResponse, ToolCall
 from core.provider import ProviderHooks, ProviderRequest
@@ -21,6 +24,10 @@ from core.tool.execution import (
     execute_tools,
     response_batch_violation,
 )
+from core.tool_framework.utils import tool_unavailable
+from infrastructure.analytics import capture
+from infrastructure.analytics.events import Event
+from infrastructure.observability.trace.spans import bind_session_trace
 
 
 def _schema(required: list[str] | None = None) -> dict[str, Any]:
@@ -210,6 +217,7 @@ def test_tool_call_analytics_records_execution_outcome_without_payloads(
     assert captured[0]["role"] == "action"
     assert captured[0]["outcome"] == "ok"
     assert captured[0]["executed"] is True
+    assert not captured[0].get("error_message")
     assert "secret input" not in str(captured[0])
 
 
@@ -221,12 +229,13 @@ def test_tool_call_analytics_records_batch_rejection(
         "infrastructure.analytics.capture.capture_agent_tool_call_completed",
         lambda **properties: captured.append(properties),
     )
-    tools = [_tool("first"), _tool("second")]
+    tools = [_tool("first"), _tool("menu", role=ToolRole.TURN_ENDING)]
 
-    execute_tool_calls([_call("first"), _call("second")], tools, {})
+    execute_tool_calls([_call("first"), _call("menu")], tools, {})
 
     assert [event["outcome"] for event in captured] == ["batch_rejected", "batch_rejected"]
     assert all(event["executed"] is False for event in captured)
+    assert all(event["error_message"].startswith("Nothing ran") for event in captured)
 
 
 @pytest.mark.parametrize(
@@ -252,7 +261,9 @@ def test_tool_analytics_retains_only_categorical_work_status(
     execute_tool_calls([_call()], [_tool(execute=lambda _a, _c: payload)], {})
     assert captured[0]["work_status"] == ("" if status == "private result" else status)
     assert captured[0]["is_error"] is True
-    assert "private" not in str(captured[0])
+    assert captured[0]["error_message"] == "private error"
+    assert "private token" not in str(captured[0])
+    assert "private repository" not in str(captured[0])
 
 
 def test_after_hook_can_patch_result_and_terminate() -> None:
@@ -450,7 +461,7 @@ def test_bookkeeping_may_accompany_one_action_in_provider_order() -> None:
     assert not any(result.is_error for result in results)
 
 
-def test_two_actions_in_one_response_execute_nothing() -> None:
+def test_several_actions_in_one_response_run_in_provider_order() -> None:
     ran: list[str] = []
 
     def record(name: str) -> Any:
@@ -463,18 +474,104 @@ def test_two_actions_in_one_response_execute_nothing() -> None:
     tools = [_tool("first", execute=record("first")), _tool("second", execute=record("second"))]
     batch_seen: list[int] = []
     hooks = ToolExecutionHooks(before_tool_batch=lambda calls: batch_seen.append(len(calls)))
+    started: list[str] = []
 
-    results = execute_tool_calls([_call("first"), _call("second")], tools, {}, hooks=hooks)
+    results = execute_tool_calls(
+        [_call("first"), _call("second")],
+        tools,
+        {},
+        hooks=hooks,
+        on_call_start=lambda tc: started.append(tc.name),
+    )
+
+    assert ran == ["first", "second"]
+    assert started == ["first", "second"]
+    assert batch_seen == [2]
+    assert not any(result.is_error for result in results)
+
+
+def test_terminating_result_skips_the_rest_of_the_batch() -> None:
+    ran: list[str] = []
+
+    def terminating(_args: dict[str, Any], _ctx: AgentToolContext) -> ToolExecutionResult:
+        ran.append("first")
+        return ToolExecutionResult(content="menu queued", terminate=True)
+
+    def second(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("second")
+        return {"ok": True}
+
+    tools = [_tool("first", execute=terminating), _tool("second", execute=second)]
+    started: list[str] = []
+
+    results = execute_tool_calls(
+        [_call("first"), _call("second")],
+        tools,
+        {},
+        on_call_start=lambda tc: started.append(tc.name),
+    )
+
+    assert ran == ["first"]
+    # The skipped call never started, so no intent record is written for it.
+    assert started == ["first"]
+    assert results[0].terminate and not results[0].is_error
+    assert results[1].is_error and not results[1].terminate
+    assert results[1].metadata.get("skipped") is True
+    assert "Not run" in str(results[1].content)
+
+
+def test_host_cancel_skips_remaining_calls_mid_batch() -> None:
+    cancelled = False
+
+    def flip_cancel(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        nonlocal cancelled
+        cancelled = True
+        return {"ok": True}
+
+    ran: list[str] = []
+
+    def second(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("second")
+        return {"ok": True}
+
+    tools = [_tool("first", execute=flip_cancel), _tool("second", execute=second)]
+
+    results = execute_tool_calls(
+        [_call("first"), _call("second")], tools, {}, should_stop=lambda: cancelled
+    )
 
     assert ran == []
-    assert batch_seen == []
-    assert [result.is_error for result in results] == [True, True]
-    assert len({result.content for result in results}) == 1
-    assert "one action per response" in str(results[0].content)
-    assert "first, second" in str(results[0].content)
+    assert not results[0].is_error
+    assert results[1].is_error
+    assert results[1].metadata.get("skipped") is True
 
 
-def test_turn_ending_tool_must_be_alone_even_beside_bookkeeping() -> None:
+def test_bookkeeping_beside_a_turn_ending_call_runs_first() -> None:
+    """A plan write may ride with the menu; it lands before the menu ends the turn."""
+    ran: list[str] = []
+
+    def plan(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("plan")
+        return {"wrote": "plan"}
+
+    def menu(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("menu")
+        return {"wrote": "menu"}
+
+    tools = [
+        _tool("plan", role=ToolRole.BOOKKEEPING, execute=plan),
+        _tool("menu", role=ToolRole.TURN_ENDING, execute=menu),
+    ]
+
+    results = execute_tool_calls([_call("menu"), _call("plan")], tools, {})
+
+    assert ran == ["plan", "menu"]
+    assert not any(result.is_error for result in results)
+    # Results stay in provider order: one per tool-call id, as requested.
+    assert [result.details for result in results] == [{"wrote": "menu"}, {"wrote": "plan"}]
+
+
+def test_turn_ending_tool_beside_an_action_runs_nothing() -> None:
     ran: list[str] = []
 
     def execute(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
@@ -483,18 +580,19 @@ def test_turn_ending_tool_must_be_alone_even_beside_bookkeeping() -> None:
 
     tools = [
         _tool("plan", role=ToolRole.BOOKKEEPING, execute=execute),
+        _tool("work", execute=execute),
         _tool("menu", role=ToolRole.TURN_ENDING, execute=execute),
     ]
 
-    results = execute_tool_calls([_call("plan"), _call("menu")], tools, {})
+    results = execute_tool_calls([_call("plan"), _call("work"), _call("menu")], tools, {})
 
     assert ran == []
     assert all(result.is_error for result in results)
     assert "menu" in str(results[0].content)
-    assert "only" in str(results[0].content)
+    assert "update_plan" in str(results[0].content)
 
 
-def test_registered_tool_role_and_unknown_tool_count_as_actions() -> None:
+def test_only_turn_ending_batches_violate_the_response_rule() -> None:
     registered = RegisteredTool(
         name="registered_plan",
         description="test registered tool",
@@ -503,11 +601,19 @@ def test_registered_tool_role_and_unknown_tool_count_as_actions() -> None:
         run=lambda value: {"value": value},
         role=ToolRole.BOOKKEEPING,
     )
-    tool_map = {"registered_plan": registered, "work": _tool("work")}
+    tool_map = {
+        "registered_plan": registered,
+        "work": _tool("work"),
+        "menu": _tool("menu", role=ToolRole.TURN_ENDING),
+    }
 
     assert response_batch_violation([_call("registered_plan"), _call("work")], tool_map) is None
     assert response_batch_violation([_call("unknown_tool")], tool_map) is None
-    assert response_batch_violation([_call("unknown_tool"), _call("work")], tool_map) is not None
+    assert response_batch_violation([_call("unknown_tool"), _call("work")], tool_map) is None
+    assert response_batch_violation([_call("menu")], tool_map) is None
+    assert response_batch_violation([_call("menu"), _call("work")], tool_map) is not None
+    assert response_batch_violation([_call("registered_plan"), _call("menu")], tool_map) is None
+    assert response_batch_violation([_call("menu"), _call("menu")], tool_map) is not None
     assert response_batch_violation([], tool_map) is None
 
 
@@ -828,3 +934,184 @@ def test_execute_tool_calls_span_marks_tool_error_and_exception(
         assert by_name["hard"]["status"] == "error"
     finally:
         set_session_trace_store(NoopSessionTraceStore())
+
+
+class _RecordingAnalytics:
+    """Stands in for the analytics client and keeps every captured event."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, Any]]] = []
+
+    def capture(self, event: str, properties: dict[str, Any] | None = None) -> None:
+        self.events.append((event, dict(properties or {})))
+
+    def tool_calls(self) -> dict[str, dict[str, Any]]:
+        """``agent_tool_call_completed`` properties, keyed by tool-call id."""
+        return {
+            str(properties["tool_call_id"]): properties
+            for event, properties in self.events
+            if event == Event.AGENT_TOOL_CALL_COMPLETED
+        }
+
+
+@pytest.fixture
+def analytics(monkeypatch: pytest.MonkeyPatch) -> _RecordingAnalytics:
+    recorder = _RecordingAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: recorder)
+    return recorder
+
+
+def test_a_duplicate_guard_block_names_the_guard_on_the_event_and_the_trace_span(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch, analytics: _RecordingAnalytics
+) -> None:
+    # Arrange: one response replays a guarded call that already succeeded in it.
+    session_id = "sess-duplicate-block"
+    path = _activate_tool_trace(tmp_path, monkeypatch, session_id)
+    calls = [
+        ToolCall(id="first", name="cli_exec", input={"value": "opensre health"}),
+        ToolCall(id="replay", name="cli_exec", input={"value": "opensre health"}),
+    ]
+
+    # Act
+    with bind_session_trace(session_id):
+        results = execute_tool_calls(
+            calls, [_tool("cli_exec")], {}, hooks=with_duplicate_action_call_guard(), iteration=2
+        )
+
+    # Assert
+    assert [result.is_error for result in results] == [False, True]
+    events = analytics.tool_calls()
+    assert "blocked_by" not in events["first"]
+    assert events["replay"]["outcome"] == "blocked"
+    assert events["replay"]["blocked_by"] == "duplicate_action"
+    assert (events["replay"]["iteration"], events["replay"]["tool_call_index"]) == (2, 1)
+    span = next(s for s in _tool_spans_from(path) if s["attributes"]["tool_call_id"] == "replay")
+    assert span["attributes"]["blocked_by"] == "duplicate_action"
+    assert span["attributes"]["error_message"].startswith("Already ran cli_exec")
+
+
+def test_a_call_made_while_a_menu_is_queued_is_blocked_as_menu_pending(
+    analytics: _RecordingAnalytics,
+) -> None:
+    # Arrange: the session already holds a selection menu for the user.
+    session = SimpleNamespace(pending_user_choice=object())
+
+    # Act
+    execute_tool_calls([_call()], [_tool()], {}, hooks=with_menu_turn_end(None, session))
+
+    # Assert
+    event = analytics.tool_calls()["echo-1"]
+    assert event["outcome"] == "blocked"
+    assert event["blocked_by"] == "menu_pending"
+
+
+def test_a_raising_before_hook_is_recorded_as_hook_exception_with_its_type(
+    analytics: _RecordingAnalytics,
+) -> None:
+    # Arrange
+    def before(_request: ToolExecutionRequest) -> BeforeToolCallResult:
+        raise LookupError("approval store unreachable")
+
+    # Act
+    result = execute_tool_calls(
+        [_call()], [_tool()], {}, hooks=ToolExecutionHooks(before_tool_call=before)
+    )[0]
+
+    # Assert: the call fails closed and the event names the raising hook's error.
+    assert result.is_error is True
+    event = analytics.tool_calls()["echo-1"]
+    assert event["blocked_by"] == "hook_exception"
+    assert event["exception_type"] == "LookupError"
+
+
+def test_a_raising_tool_reports_its_exception_type_and_declared_kind(
+    analytics: _RecordingAnalytics,
+) -> None:
+    # Arrange: an expected tool failure carries a stable ``kind``.
+    class _PushRejected(RuntimeError):
+        kind = "push_rejected"
+
+    def execute(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        raise _PushRejected("remote rejected the push")
+
+    # Act
+    execute_tool_calls([_call()], [_tool(execute=execute)], {})
+
+    # Assert
+    event = analytics.tool_calls()["echo-1"]
+    assert event["outcome"] == "exception"
+    assert event["exception_type"] == "_PushRejected"
+    assert event["error_class"] == "push_rejected"
+
+
+def test_an_unavailable_integration_reports_its_source_and_setup_command(
+    analytics: _RecordingAnalytics,
+) -> None:
+    # Arrange: the tool answers with the shared tool_unavailable envelope.
+    def unavailable(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        return tool_unavailable(
+            "github",
+            "A GitHub token is required to scan repositories.",
+            setup_command="/integrations setup github",
+        )
+
+    # Act
+    execute_tool_calls([_call("scan")], [_tool("scan", execute=unavailable)], {})
+
+    # Assert
+    event = analytics.tool_calls()["scan-1"]
+    assert event["outcome"] == "tool_error"
+    assert event["unavailable"] is True
+    assert event["error_source"] == "github"
+    assert event["setup_command"] == "/integrations setup github"
+
+
+@pytest.mark.parametrize(
+    ("ends_turn", "skipped_by"),
+    [(True, "turn_terminated"), (False, "host_cancel")],
+)
+def test_a_skipped_call_says_what_skipped_it(
+    analytics: _RecordingAnalytics, ends_turn: bool, skipped_by: str
+) -> None:
+    # Arrange: the first call either ends the turn or the host cancels after it.
+    cancelled = False
+
+    def first(_args: dict[str, Any], _ctx: AgentToolContext) -> ToolExecutionResult:
+        nonlocal cancelled
+        cancelled = not ends_turn
+        return ToolExecutionResult(content="done", terminate=ends_turn)
+
+    tools = [_tool("first", execute=first), _tool("second")]
+
+    # Act
+    execute_tool_calls([_call("first"), _call("second")], tools, {}, should_stop=lambda: cancelled)
+
+    # Assert
+    event = analytics.tool_calls()["second-1"]
+    assert event["outcome"] == "skipped"
+    assert event["skipped_by"] == skipped_by
+
+
+def test_the_trace_span_error_message_is_redacted_and_capped(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: a long failure text that quotes a credential.
+    session_id = "sess-span-error"
+    path = _activate_tool_trace(tmp_path, monkeypatch, session_id)
+    token = "ghp_" + "a" * 36
+    failure = f"push rejected for {token}: " + "x" * 2000
+
+    def execute(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        return {"error": failure}
+
+    # Act
+    with bind_session_trace(session_id):
+        execute_tool_calls([_call()], [_tool(execute=execute)], {})
+
+    # Assert
+    (span,) = _tool_spans_from(path)
+    recorded = span["attributes"]["error_message"]
+    assert token not in recorded
+    assert "[REDACTED:github_pat]" in recorded
+    assert len(recorded) == 500
+    assert recorded.endswith("…")

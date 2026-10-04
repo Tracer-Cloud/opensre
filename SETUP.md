@@ -29,7 +29,7 @@ opensre
 
 The curl installer uses the rolling `main` build by default. The steps below are for contributors working from a source checkout.
 
-Main CI runs mostly on `ubuntu-latest`. Windows CI is optional and runs only when a PR has the `ci:windows` label, so it is useful signal rather than a guarantee that every platform is covered by default.
+Main CI runs mostly on `ubuntu-24.04`. Windows CI is optional and runs only when a PR has the `ci:windows` label, so it is useful signal rather than a guarantee that every platform is covered by default.
 
 ## Quick setup (all platforms)
 

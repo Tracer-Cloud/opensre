@@ -17,10 +17,14 @@ from integrations.github.client import GitHubApiError, GitHubRestClient, resolve
 _LAZY_EXPORTS: dict[str, str] = {
     "setup_github": "integrations.github.cli_setup",
     "run_ci_repair_worker": "integrations.github.tools.ci_repair_loop.worker",
+    "effective_github_token": "integrations.github.tools.ci_repair_loop.credentials",
     "count_ci_fixes": "integrations.github.tools.ci_fix.ledger",
     "get_ci_fix_counter": "integrations.github.tools.ci_fix.ledger",
     "github_creds": "integrations.github.helpers",
+    "github_rest_token": "integrations.github.rest_token",
+    "has_github_rest_token": "integrations.github.rest_token",
     "saved_github_username": "integrations.github.identity",
+    "fresh_demo_repo_name": "integrations.github.tools.ci_repair_demo.seed",
     "GitHubLoginResult": "integrations.github.login",
     "authenticate_and_configure_github": "integrations.github.login",
     "PullRequestCheckout": "integrations.github.pull_request_checkout",
@@ -111,6 +115,7 @@ if TYPE_CHECKING:
         open_pull_request,
         resolve_repo_scope,
     )
+    from integrations.github.rest_token import github_rest_token, has_github_rest_token
     from integrations.github.tools.ci_analytics.analysis import Analysis, analyze_repository
     from integrations.github.tools.ci_analytics.loop import (
         DEFAULT_LOOP_TIME,
@@ -123,6 +128,8 @@ if TYPE_CHECKING:
     )
     from integrations.github.tools.ci_analytics.render import ci_report_headline
     from integrations.github.tools.ci_fix.ledger import count_ci_fixes, get_ci_fix_counter
+    from integrations.github.tools.ci_repair_demo.seed import fresh_demo_repo_name
+    from integrations.github.tools.ci_repair_loop.credentials import effective_github_token
     from integrations.github.tools.ci_repair_loop.worker import run_ci_repair_worker
 
 
@@ -156,10 +163,14 @@ __all__ = [
     "ci_report_headline",
     "count_ci_fixes",
     "disconnect_personal_github",
+    "effective_github_token",
+    "fresh_demo_repo_name",
     "format_github_mcp_validation_cli_report",
     "get_ci_fix_counter",
     "github_creds",
     "github_integration_is_configured",
+    "github_rest_token",
+    "has_github_rest_token",
     "local_timezone",
     "loop_card",
     "open_pull_request",

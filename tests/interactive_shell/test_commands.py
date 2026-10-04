@@ -7,12 +7,14 @@ import json
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
+from config.account import AccountLLMRoute
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.command_registry.tasks_cmds import _validate_cancel_args
@@ -23,6 +25,18 @@ from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 def _capture() -> tuple[Console, io.StringIO]:
     buf = io.StringIO()
     return Console(file=buf, force_terminal=False, highlight=False), buf
+
+
+def _signed_out() -> None:
+    return None
+
+
+def _signed_in() -> AccountLLMRoute:
+    return AccountLLMRoute(base_url="https://app.opensre.test/api/llm", model="gpt-5.4-mini")
+
+
+def _menu_must_not_open(**_kwargs: object) -> str:
+    raise AssertionError("an account-managed shell must refuse before opening a menu")
 
 
 class TestDispatchSlash:
@@ -107,8 +121,9 @@ class TestDispatchSlash:
         assert "timed out" in buf.getvalue()
         assert session.history[-1]["ok"] is False
 
+    @pytest.mark.parametrize("command", ["/account logout", "/logout"])
     def test_account_logout_closes_shell_before_another_model_turn(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, command: str
     ) -> None:
         from surfaces.interactive_shell.command_registry import cli_parity as m
 
@@ -116,8 +131,24 @@ class TestDispatchSlash:
         monkeypatch.setattr("config.account.account_llm_route", lambda: None)
         console, output = _capture()
 
-        assert dispatch_slash("/account logout", Session(), console) is False
+        assert dispatch_slash(command, Session(), console) is False
         assert "Closing the interactive shell" in output.getvalue()
+
+    def test_logout_with_a_provider_does_not_sign_out(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        def _unexpected_cli(*_args: object, **_kwargs: object) -> bool:
+            raise AssertionError("provider arguments must not sign out of the account")
+
+        monkeypatch.setattr(m, "run_cli_command", _unexpected_cli)
+        console, output = _capture()
+
+        assert dispatch_slash("/logout deepseek", Session(), console) is True
+        text = output.getvalue()
+        assert "/auth logout deepseek" in text
+        assert "Closing the interactive shell" not in text
 
     def test_help_lists_all_commands(self) -> None:
         session = Session()
@@ -941,10 +972,65 @@ class TestModelCommand:
 
         assert os.environ.get("LLM_PROVIDER") == "gemini"
 
-    def test_set_missing_provider_prints_usage(self) -> None:
+    def test_set_without_provider_lists_valid_providers_when_not_interactive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Agent ``slash_invoke`` (no exclusive stdin) gets the ids to retry with."""
+        monkeypatch.setattr("config.account.account_llm_route", _signed_out)
         console, buf = _capture()
-        dispatch_slash("/model set", Session(), console)
-        assert "usage" in buf.getvalue()
+        session = Session()
+
+        dispatch_slash("/model set", session, console)
+
+        output = buf.getvalue()
+        assert "usage: /model set <provider> [model] [--toolcall-model <model>]" in output
+        assert "valid providers:" in output
+        assert "custom-openai" in output
+        assert session.history[-1]["ok"] is False
+
+    def test_set_without_provider_opens_the_provider_picker_when_typed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        self._patch_llm(monkeypatch)
+        import surfaces.shared.llm_setup.env_sync as env_sync
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        env_path = tmp_path / ".env"
+        self._redirect_wizard_store(monkeypatch, tmp_path)
+        monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
+        monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
+        monkeypatch.setattr("config.account.account_llm_route", _signed_out)
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        selections = iter([model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"])
+        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        console, buf = _capture()
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        dispatch_slash("/model set", session, console)
+
+        assert "switched LLM provider" in buf.getvalue()
+        assert "LLM_PROVIDER=anthropic" in env_path.read_text(encoding="utf-8")
+
+    def test_set_without_provider_refuses_before_the_picker_when_account_managed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        monkeypatch.setattr("config.account.account_llm_route", _signed_in)
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(model_cmd, "repl_choose_one", _menu_must_not_open)
+        console, buf = _capture()
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        dispatch_slash("/model set", session, console)
+
+        assert "LLM settings are managed by your OpenSRE account" in buf.getvalue()
+        assert session.history[-1]["ok"] is False
 
     def test_set_unknown_reasoning_model_is_rejected(
         self,
@@ -2130,6 +2216,47 @@ class TestRunCliCommand:
         console, _buf = _capture()
         assert m.run_cli_command(console, ["remote", "health"], session=session) is False
         assert session.history[-1]["ok"] is False
+
+    def test_headless_cron_run_keeps_its_tick_running_past_the_reply_window(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A gateway ``/cron run`` past the reply window must finish, not be killed.
+
+        Killing it took a CI repair's supervisor and worker down mid-verification
+        and left the tick's claim blocking the task's later ticks for its lease.
+        The child also writes more than a pipe buffer after the window, so it
+        only finishes if something keeps draining its output.
+        """
+        from core.agent_harness.session import SessionCore
+        from core.agent_harness.session.persistence.memory import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        finished = tmp_path / "finished"
+        child = (
+            "import pathlib, sys, time\n"
+            "time.sleep(0.5)\n"
+            "sys.stdout.write('x' * 200_000)\n"
+            f"pathlib.Path({str(finished)!r}).write_text('done')\n"
+        )
+        monkeypatch.setattr(
+            m, "build_opensre_cli_argv", lambda _args: [sys.executable, "-c", child]
+        )
+        monkeypatch.setattr(m, "_HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS", 0.1)
+        session = SessionCore(store=InMemorySessionStore())
+        session.record("slash", "/cron run abc123", ok=True)
+        console, buf = _capture()
+
+        assert m._cmd_cron(session, console, ["run", "abc123"]) is True
+        assert "/cron logs abc123" in buf.getvalue()
+        assert session.history[-1]["ok"] is False
+        assert session.history[-1]["slash_outcome"] == "still_running"
+        deadline = time.monotonic() + 15
+        while not finished.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert finished.read_text() == "done"
+        m.shutdown_kept_cli_commands()
 
     def test_captured_child_renders_to_terminal_width_minus_replay_gutter(
         self,

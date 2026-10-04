@@ -11,10 +11,10 @@ opensre
 ```
 
 Type `/` to open the command tray attached to the input. Browse with the arrow
-keys and press Enter to run the highlighted suggestion, or Tab to complete it
-and edit before running. Esc closes the tray
-without clearing your draft or stopping running work. On narrow terminals, the
-highlighted command's description appears below the list.
+keys and use Enter or Tab on a command with subcommands to add the separating
+space and open its subcommand tray. Enter runs a final command selection. Esc
+closes the tray without clearing your draft or stopping running work. On narrow
+terminals, the highlighted command's description appears below the list.
 
 <Info>
   Confirmation prompts come from **`/auto`** (tool-approval autonomy) and from
@@ -58,18 +58,21 @@ platform and prints that call's starting directory.
 | Key | Effect |
 | --- | --- |
 | **Up/Down** | Browse suggestions while the command tray is open; otherwise recall persisted command history (when enabled) |
-| **Tab** | Complete the highlighted suggestion |
-| **Enter** | Run the highlighted suggestion, or submit the draft when the tray is closed |
+| **Tab** | Complete the highlighted suggestion; for commands with subcommands, open their tray |
+| **Enter** | Open the highlighted command's subcommand tray, or run a final selection |
 | **Esc** | Close the command tray first; otherwise stop running work or clear the draft |
 | **Ctrl+C** once | Cancel in-flight streaming work or interrupt the current prompt |
 | **Ctrl+C** twice within 2s | Exit the REPL (prints `/resume` hint) |
-| **Ctrl+D** | Exit when the prompt is empty (same resume hint as `/exit`) |
+| **Ctrl+D** | Exit when the prompt is empty and nothing is running (same resume hint as `/exit`) |
 
-Every launch asks which demo to run: **A** repository CI/CD analysis
-(recommended), **B** a recurring CI/CD reliability agent, **C** remote CI/CD
-repairs, **D** Slack setup, **E** skip the demo and open the shell.
-Escape also skips it. Run `opensre --skip-onboarding` to open the shell without
-the picker. Type `/demo` to start it later. See
+Every launch asks what you want to do: analyze a repository, keep CI/CD healthy
+automatically, or open the shell. Keeping CI/CD healthy then asks for a local
+repair, one repair in OpenSRE Cloud, or Slack. A local or cloud repair asks
+next for permission to create one private demo repository
+(`owner/opensre-ci-repair-demo-` plus four characters when your GitHub login
+is saved). Declining leaves the later repository or pull-request picker.
+Escape skips the picker. Run `opensre --skip-onboarding` to open the shell
+without it. Type `/demo` to start it later. See
 [CI/CD analytics demo](/cicd/cicd-analytics-demo).
 
 The banner and prompt show **CI/CD fixes**: distinct GitHub repairs whose pushed
@@ -104,7 +107,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/verbose` | Toggle verbose logging |
 | `/clear` | Clear the screen and re-render the banner |
 | `/compact` | Summarize older context into a replayable compaction entry |
-| `/sessions` | List recent REPL sessions on disk |
+| `/sessions` | Browse recent sessions; select one with ↑/↓ and Enter in a terminal |
 | `/resume <id>` | Restore a past session's conversation context |
 | `/resume <id>:<entry>` | Restore a specific session branch point |
 | `/new` | Start a new session file while keeping LLM context |
@@ -158,7 +161,8 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | `/credits` | Remaining hosted credits for the signed-in account (same as `opensre credits`) |
 | `/setup` | First-run setup: account sign-in, hosted model, then the shell (same as `opensre setup`) |
 | `/auth` | Log in to LLM providers, show provider auth status, or clear credentials |
-| `/login` | Shortcut for `/auth login` (`/login openai`, `/login anthropic`, `/login deepseek`) |
+| `/login` | Shortcut for `/auth login` (`/login openai`, `/login anthropic`, `/login deepseek`). Signs in an LLM provider, not the OpenSRE account |
+| `/logout` | Sign out of the OpenSRE account and close the shell (same as `/account logout`) |
 | `/onboard` | Interactive onboarding wizard |
 | `/remote` | Connect to and operate remote deployed agents |
 | `/remote-sync` | Manage remote sync to your object store. Subcommands: `status`, `sync`, `setup`. See [Sync to your own object store](/install/remote-sync). |
@@ -195,7 +199,7 @@ Bare invocation opens a picker or submenu:
 | `/choose` | Reopen the selection menu the agent queued |
 | `/trust`, `/verbose` | on / off |
 | `/history` | show / clear / off / on / retention |
-| `/resume` | Numbered list of recent sessions |
+| `/resume` | Arrow-key picker of recent conversations |
 
 `/model` keeps its menu running: picking `show` prints the current models and
 hands you back to the menu, so leave it with **done** or Esc.
@@ -410,28 +414,15 @@ If there are not enough messages to compact, the command reports nothing to comp
 
 <Accordion title="/sessions">
 
-List up to **20** recent sessions stored on disk, newest first:
+Browse up to **20** recent sessions stored on disk, newest first:
 
 ```text
 /sessions
 ```
 
-```text
-  Recent sessions
+In a terminal, use **↑/↓** to highlight a session and **Enter** to resume it. **Esc** closes the picker. Rows show relative times, and the status line shows the selected session's ID, start time, duration, and turn count. The current session is marked; the most recent previous session is highlighted by default when one exists.
 
-   #  Session ID  Name                           Started            Duration  Turns
-   ───────────────────────────────────────────────────────────────────────────────
-   1  3f8a1c2d    (current)                      Jun 17 10:00       42m       8
-   2  9b2e4f7a    why is CPU spiking on prod-api Jun 16 14:30       1h 5m    15
-```
-
-| Column | Meaning |
-| --- | --- |
-| `Session ID` | First 8 characters of the UUID (enough for `/resume`) |
-| `Name` | Derived from the first user message or resumed session label |
-| `Turns` | Total chat + slash + alert turns recorded |
-
-The current row updates **duration** live. Sessions with no name show `(current)` or `↩ &lt;resumed-from&gt;` when applicable.
+When output is piped, `/sessions` prints a table instead. Use `/resume <id>` with the displayed 8-character ID. The current session's duration updates live.
 
 </Accordion>
 
@@ -451,7 +442,7 @@ Restore LLM conversation context and accumulated infra context from a previous s
 | ID prefix | Match session UUID by prefix (must be unique) |
 | ID + entry prefix | Replay the branch ending at the matching entry ID prefix |
 | Name substring | Match when ≥3 characters and exactly one session matches (e.g. `/resume redis`) |
-| Bare `/resume` | Interactive numbered picker of recent sessions (TTY) |
+| Bare `/resume` | Arrow-key picker of recent conversations (TTY) |
 
 **Current session:** If the ID prefix matches the session you are already in, `/resume` is a no-op — OpenSRE prints a hint to pick a previous session from `/sessions`.
 
@@ -918,7 +909,7 @@ These spawn `opensre …` subprocesses. Output is captured into the REPL buffer 
 /account logout
 ```
 
-Sign in to a personal OpenSRE account, inspect the local login, show remaining hosted credits (`/account credits` or `/credits`, same as `opensre credits`), open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+Sign in to a personal OpenSRE account, inspect the local login, show remaining hosted credits (`/account credits` or `/credits`, same as `opensre credits`), open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/logout` (same as `/account logout`) revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
 
 </Accordion>
 
@@ -967,7 +958,17 @@ Log in to LLM providers, show local auth status, or clear stored credentials. Sa
 /login deepseek
 ```
 
-Shortcut for `/auth login`. Same provider flows as `opensre auth login`.
+Shortcut for `/auth login`. Same provider flows as `opensre auth login`. This signs in an LLM provider. Sign in to an OpenSRE account with `/account login`, and sign out of that account with `/logout`.
+
+</Accordion>
+
+<Accordion title="/logout">
+
+```text
+/logout
+```
+
+Sign out of the OpenSRE account and close the shell. Same as `/account logout`: it revokes the saved session and drops the hosted-model route before another turn. It does not clear an LLM provider credential — use `/auth logout <provider>` for that.
 
 </Accordion>
 
@@ -1377,7 +1378,7 @@ Continue chatting, then optionally:
 | `/cost` shows zero | No LLM turns yet this session; chat once and retry |
 | `/resume` not found | Run `/sessions`; use longer ID prefix |
 | `/resume` ambiguous prefix | Add more characters from Session ID column |
-| `/model set` reports an account lock | The hosted model is working as designed; `/account logout` closes the shell rather than switching it to a local provider |
+| `/model set` reports an account lock | The hosted model is working as designed; `/logout` closes the shell rather than switching it to a local provider |
 | `/integrations show` not found | Run `/integrations list` for exact service slug |
 | History pause not working | Requires redacting backend — see `/privacy` |
 | Garbage in next prompt after table | Known TTY issue — upgrade OpenSRE; report if persistent |
@@ -1408,18 +1409,19 @@ See [CI/CD with OpenSRE](/cicd/overview).
 
 ## Scheduled CI repair demo
 
-Choose scheduled CI repair from `/demo` to try a tiny failure in the private
-`opensre-onboarding-ci-repair-demo` repository. OpenSRE creates that repository
-once and reuses it, with a fresh branch and PR for each completed demonstration.
-An existing unrelated repository with that name stops setup.
+Choose scheduled CI repair from `/demo` to try a tiny failure in a new private
+repository named `opensre-ci-repair-demo-` plus four letters or digits. OpenSRE
+creates it with a passing `main`, opens a pull request whose test fails, and
+schedules the repair of that pull request. A repository you name that is not an
+OpenSRE demo is left unchanged, and a new demo name is used instead.
 
-The demo starts on the next scheduled minute and has a ten-minute total limit.
-It uses the macOS or Linux background scheduler so it can finish after you close
-the terminal. Configure GitHub and authenticate your coding agent before starting.
-The initial run also needs permission to create a private repository and workflow.
+The repair has a ten-minute total limit. It uses the macOS or Linux background
+scheduler so it can finish after you close the terminal. Configure GitHub and
+authenticate your coding agent before starting. Creating the demo needs permission
+to create a private repository and workflow.
 
 - Read the complete outcome and evidence links with `/loops show <task-id>`.
 - Stop an active repair with `/loops stop <task-id>`.
-- Starting the demo again while it is active returns the same run and deadline.
-- Successful runs close the demo PR and remove its branch. Unsuccessful runs keep
-  the PR, branch, and diagnostics. The repository and stopped loop history remain.
+- The demo saves its evidence under `~/.opensre/demo-results/`. The repository,
+  its pull request, and the stopped loop history remain; delete the repository on
+  GitHub when you no longer need it.

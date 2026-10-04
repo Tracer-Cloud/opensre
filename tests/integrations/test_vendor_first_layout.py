@@ -21,6 +21,10 @@ INTEGRATIONS_DIR = Path(__file__).resolve().parents[2] / "integrations"
 # vendors.
 ALLOWED_FLAT_MODULES = frozenset(
     {
+        # Cross-cutting credential-resolution infra (fetches every vendor's org
+        # creds from the signed-in account's webapp route), not a vendor — the
+        # laptop peer of secrets_vault.py / webapp_vault.py.
+        "account_integrations.py",
         # Cross-vendor alert-source routing/alias catalog data (spans every
         # vendor's alert-source key), not one vendor's own integration.
         "alert_source_catalog.py",
@@ -39,6 +43,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         "mcp_streamable_http_compat.py",
         "mcp_transport.py",
         "messaging_security.py",
+        # Shared chat-delivery prompt for Slack, Telegram, Rocket.Chat, and Buzz.
+        # Routing for a connected channel lives on that vendor's tools.
+        "messaging_prompt.py",
         "models.py",
         "port.py",
         "probes.py",

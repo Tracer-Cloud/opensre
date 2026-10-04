@@ -89,6 +89,28 @@ def test_build_usage_enrichment_from_context_and_env(monkeypatch: pytest.MonkeyP
     assert props["surface"] == UsageSurface.SLACK
     assert props["session_id"] == "sess-1"
     assert props["user_id"] == "U123"
+    assert "slack_user_id" not in props
+
+
+def test_slack_signup_stamps_member_and_workspace_without_replacing_caller_values() -> None:
+    with bound_usage_context(
+        surface=UsageSurface.SLACK,
+        user_id="U094FN4AHME",
+        organization_id="enrian",
+        slack_user_id="U094FN4AHME",
+        slack_team_id="T123",
+    ):
+        props = build_usage_enrichment()
+        merged = merge_usage_enrichment(
+            {"slack_user_id": "U_CALLER", "organization_id": "org_caller"}
+        )
+    assert props["slack_user_id"] == "U094FN4AHME"
+    assert props["slack_team_id"] == "T123"
+    assert props["user_id"] == "U094FN4AHME"
+    assert props["organization_id"] == "enrian"
+    assert merged["slack_user_id"] == "U_CALLER"
+    assert merged["slack_team_id"] == "T123"
+    assert merged["organization_id"] == "org_caller"
 
 
 def test_session_id_falls_back_to_cli_session() -> None:

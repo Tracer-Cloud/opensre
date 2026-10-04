@@ -61,7 +61,7 @@ from infrastructure.turn_host.session_lock import (
     session_execution_lock,
 )
 from infrastructure.turn_host.status_messages import EMPTY_RESPONSE_MESSAGE
-from infrastructure.turn_host.turn_memory import log_turn_memory, resident_memory_bytes
+from infrastructure.turn_host.turn_memory import record_turn_memory, resident_memory_bytes
 from infrastructure.turn_host.turn_output import TurnOutput
 
 
@@ -158,11 +158,18 @@ class TurnRunner:
         slot = (
             turn_slot(self._gate)
             if slot_wait_seconds is None
-            else waiting_turn_slot(self._gate, timeout_seconds=slot_wait_seconds)
+            else waiting_turn_slot(
+                self._gate,
+                timeout_seconds=slot_wait_seconds,
+                stop=lambda: host_cancel_requested(output),
+            )
         )
         with lease, retained_session_execution_locks(), slot as running:
             if not running:
-                output.finalize(self._busy_message)
+                # A turn cancelled while it waited owes no busy message: its host
+                # owns what the caller hears.
+                if not host_cancel_requested(output):
+                    output.finalize(self._busy_message)
                 return None
             if host_cancel_requested(output):
                 return None
@@ -209,7 +216,7 @@ class TurnRunner:
             logger.warning("gateway_turn missing surface binding; started/completed omit surface")
             surface = None
         started = time.monotonic()
-        memory_before = resident_memory_bytes()
+        rss_before = resident_memory_bytes()
 
         cancel = ensure_turn_cancel(output)
         turn_console = CancelConsole(console or self._console, cancel)
@@ -262,7 +269,6 @@ class TurnRunner:
                     turn_result.answered,
                     len(outbound_text),
                 )
-                log_turn_memory(logger, memory_before)
                 # Host soft-timeout (or stop) already owns the output terminal
                 # message — do not overwrite it with empty/fallback finalize.
                 cancelled = isinstance(cancel, threading.Event) and cancel.is_set()
@@ -273,21 +279,31 @@ class TurnRunner:
                 # Resolve rebuilds SessionCore from disk next inbound message —
                 # persist session_goal (attach / progress / /goal pause) now.
                 SessionManager.for_session(session).flush(session)
+                memory = record_turn_memory(logger, rss_before)
                 if surface:
                     capture_gateway_turn_completed(
                         surface=surface,
                         duration_ms=(time.monotonic() - started) * 1000.0,
                         answered=bool(turn_result.answered),
                         final_intent=str(turn_result.final_intent or "") or None,
+                        container_memory_bytes=memory.container_bytes,
+                        container_memory_peak_bytes=memory.container_peak_bytes,
+                        process_rss_delta_bytes=memory.process_rss_delta_bytes,
                     )
                 return turn_result
             except Exception as exc:
                 # Always emit failure analytics (surface optional) so misconfigured
-                # transports remain visible in PostHog.
+                # transports remain visible in PostHog. Memory is recorded here too
+                # so failed turns can be sized against completed ones.
+                memory = record_turn_memory(logger, rss_before)
                 capture_gateway_turn_failed(
                     surface=surface,
                     duration_ms=(time.monotonic() - started) * 1000.0,
                     error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    container_memory_bytes=memory.container_bytes,
+                    container_memory_peak_bytes=memory.container_peak_bytes,
+                    process_rss_delta_bytes=memory.process_rss_delta_bytes,
                 )
                 raise
 

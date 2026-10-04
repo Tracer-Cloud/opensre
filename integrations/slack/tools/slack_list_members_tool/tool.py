@@ -44,7 +44,9 @@ class SlackListTeamMembersTool(BaseTool):
         "(id, username, real name, title, bot flag) via users.list. "
         "This is the ONLY tool for who is on the team / team roster / member IDs. "
         "Do NOT use slack_read_messages for these questions — channel history is "
-        "not a roster, even when a [Slack channel_id=…] context line is present."
+        "not a roster, even when a [Slack channel_id=…] context line is present. "
+        "Call it directly without asking which team, and call it again when the user "
+        "says yes to an offer of more roster detail (display names, titles)."
     )
     use_cases = [
         'Answering "who is on the team?", "who\'s on the team?", or "list team members"',

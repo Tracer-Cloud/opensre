@@ -11,7 +11,7 @@ from typing import Any
 
 from rich.console import Console
 
-from surfaces.interactive_shell.ui import resume_picker
+from surfaces.interactive_shell.ui import resume_picker, scrollable_picker
 
 
 def test_draw_starts_with_blank_line_and_counts_it(monkeypatch: Any, capsys: Any) -> None:
@@ -42,15 +42,15 @@ def test_picker_recalculates_viewport_after_terminal_resize(monkeypatch: Any) ->
     visible_rows: list[int] = []
 
     monkeypatch.setattr(
-        resume_picker,
+        scrollable_picker,
         "shutil",
         SimpleNamespace(get_terminal_size=lambda **_kwargs: next(sizes)),
     )
-    monkeypatch.setattr(resume_picker, "enter_inline_menu", lambda: None)
-    monkeypatch.setattr(resume_picker, "leave_inline_menu", lambda: None)
-    monkeypatch.setattr(resume_picker, "erase_menu_lines", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(resume_picker, "read_menu_action", lambda: next(actions))
-    monkeypatch.setattr(resume_picker, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(scrollable_picker, "enter_inline_menu", lambda: None)
+    monkeypatch.setattr(scrollable_picker, "leave_inline_menu", lambda: None)
+    monkeypatch.setattr(scrollable_picker, "erase_menu_lines", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scrollable_picker, "read_menu_action", lambda: next(actions))
+    monkeypatch.setattr(scrollable_picker, "repl_tty_interactive", lambda: True)
 
     def _draw(*_args: Any, **kwargs: Any) -> int:
         visible_rows.append(kwargs["visible_rows"])
@@ -74,9 +74,9 @@ def test_picker_recalculates_viewport_after_terminal_resize(monkeypatch: Any) ->
 
 def test_picker_does_not_enter_raw_mode_without_tty(monkeypatch: Any) -> None:
     entered_raw_mode: list[bool] = []
-    monkeypatch.setattr(resume_picker, "repl_tty_interactive", lambda: False)
+    monkeypatch.setattr(scrollable_picker, "repl_tty_interactive", lambda: False)
     monkeypatch.setattr(
-        resume_picker,
+        scrollable_picker,
         "enter_inline_menu",
         lambda: entered_raw_mode.append(True),
     )

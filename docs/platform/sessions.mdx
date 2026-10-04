@@ -7,7 +7,7 @@ description: "Browse recent sessions, resume a conversation, compact long contex
 
 | Command | What it does |
 | --- | --- |
-| `/sessions` | List recent REPL sessions (name, duration, turns) |
+| `/sessions` | Browse recent sessions and resume the highlighted one |
 | `/resume <id>` | Restore a past session so you can continue asking questions |
 | `/resume <id>:<entry>` | Restore a specific branch point by entry ID prefix |
 | `/compact` | Summarize older context into a replayable compaction entry |
@@ -21,17 +21,9 @@ description: "Browse recent sessions, resume a conversation, compact long contex
 /sessions
 ```
 
-```
-  Recent sessions
+In a terminal, **↑/↓** moves the highlight, **Enter** resumes that session, and **Esc** closes the picker. It shows up to 20 sessions with relative times. The status line shows the selected session's ID, start time, duration, and turn count. The current session is marked, and the most recent previous session is highlighted by default when one exists.
 
-   #  Session ID  Name                           Started            Duration  Turns
-   ───────────────────────────────────────────────────────────────────────────────────
-   1  3f8a1c2d    (current)                      2024-01-15 10:00   42m       8
-   2  9b2e4f7a    why is CPU spiking on prod-api  2024-01-14 14:30   1h 5m    15
-   3  c1d3e8f2    who restarted checkout-api      2024-01-13 09:10   12m       3
-```
-
-Up to 20 sessions are shown, newest first. The current session updates its elapsed time live. **Turns** is the total turn count.
+When output is piped, `/sessions` prints a table with IDs, start times, durations, and turn counts. Use the displayed ID with `/resume <id>`. The current session updates its elapsed time live.
 
 ---
 

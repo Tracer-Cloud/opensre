@@ -247,7 +247,7 @@ def test_capture_terminal_metrics_emit_expected_contract(monkeypatch: pytest.Mon
 
     for event, properties in stub.events:
         assert properties is not None
-        required = capture.EVAL_AND_TERMINAL_EVENT_CONTRACT.get(event)
+        required = capture.EVAL_AND_TERMINAL_EVENT_CONTRACT.get(Event(event))
         if required is None:
             continue
         assert required.issubset(properties.keys())
@@ -315,11 +315,38 @@ def test_capture_ask_user_answered_keeps_bounded_custom_text(
 
     answered = stub.events[0][1]
     assert answered is not None
-    detail = answered["answers"][0]
+    answers = answered["answers"]
+    assert isinstance(answers, list)
+    detail = answers[0]
     assert detail["custom"] is True
     assert detail["selected_option_indices"] == [1]
     assert "ghp_" not in str(detail["answer"])
     assert "[REDACTED:github_pat]" in str(detail["answer"])
+
+
+def test_capture_ask_user_dismissed_names_the_closing_key_only_when_known(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+
+    capture.capture_ask_user_prompt_dismissed(
+        interaction_id="prompt-3", reason="cancelled", skill_name=None, dismiss_key="esc"
+    )
+    capture.capture_ask_user_prompt_dismissed(
+        interaction_id="prompt-4", reason="cancelled", skill_name=None
+    )
+
+    assert [event for event, _properties in stub.events] == [
+        Event.ASK_USER_PROMPT_DISMISSED,
+        Event.ASK_USER_PROMPT_DISMISSED,
+    ]
+    assert stub.events[0][1] == {
+        "interaction_id": "prompt-3",
+        "reason": "cancelled",
+        "dismiss_key": "esc",
+    }
+    assert stub.events[1][1] == {"interaction_id": "prompt-4", "reason": "cancelled"}
 
 
 def test_remote_ci_repair_events_name_the_run_and_omit_an_unknown_pull_request(

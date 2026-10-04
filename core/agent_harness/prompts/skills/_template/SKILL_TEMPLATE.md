@@ -18,7 +18,7 @@ metadata:
 # demo_order: 1
 # Optional local instruction inclusion, distinct from on-demand references/ files.
 # includes:
-#   - common/ask_once.md
+#   - common/shared-rule.md
 ---
 
 # <Workflow title>

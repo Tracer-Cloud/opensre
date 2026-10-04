@@ -174,8 +174,8 @@ def _format_openai_connection_error(err: Exception, provider_label: str) -> str:
 
 
 def _uses_max_completion_tokens(model: str) -> bool:
-    """Reasoning models (o1, o3, o4, gpt-5 series) require max_completion_tokens."""
-    return model.startswith(("o1", "o3", "o4", "gpt-5"))
+    """Reasoning models (o1, o3, o4, gpt-5/gpt-6 series) require max_completion_tokens."""
+    return model.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6"))
 
 
 def _resolve_openai_reasoning_effort(*, model: str, api_key_env: str) -> str | None:

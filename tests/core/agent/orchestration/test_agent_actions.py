@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import subprocess
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -138,8 +140,8 @@ def _message_from_agent_prompt(messages: list[dict[str, object]]) -> str:
     return str(messages[-1].get("content", "")) if messages else ""
 
 
-# ``execute_shell_command`` drives ``subprocess.Popen`` (not ``run``) so ESC can
-# cancel a child; tests fake the process object instead of the finished result.
+# Both shell launchers expose a process so ESC can cancel it; tests fake the
+# process object and normalize their captured pipe/text options below.
 _EXPECTED_POPEN_KWARGS: dict[str, object] = {
     "stdout": subprocess.PIPE,
     "stderr": subprocess.PIPE,
@@ -178,6 +180,12 @@ class _FakeProcess:
         self.terminated = True
         self.returncode = -9
 
+    def is_alive(self) -> bool:
+        return self.returncode is None
+
+    def terminate_tree(self) -> None:
+        self.terminate()
+
 
 def _install_fake_popen(
     monkeypatch: object,
@@ -187,7 +195,7 @@ def _install_fake_popen(
     returncode: int = 0,
     hang: bool = False,
 ) -> list[tuple[str | list[str], dict[str, object]]]:
-    """Replace ``Popen`` in the executor and return the recorded ``(argv, kwargs)`` calls."""
+    """Replace both shell launchers and return equivalent ``(argv, kwargs)`` calls."""
     calls: list[tuple[str | list[str], dict[str, object]]] = []
 
     def _fake_popen(command: str | list[str], **kwargs: object) -> _FakeProcess:
@@ -199,7 +207,19 @@ def _install_fake_popen(
         calls.append((command, kwargs))
         return _FakeProcess(stdout=stdout, stderr=stderr, returncode=returncode, hang=hang)
 
+    @contextmanager
+    def _fake_windows_job(
+        command: str, *, environment: Mapping[str, str]
+    ) -> Iterator[_FakeProcess]:
+        proc = _fake_popen(command, env=dict(environment), **_EXPECTED_POPEN_KWARGS)
+        try:
+            yield proc
+        finally:
+            if proc.is_alive():
+                proc.terminate_tree()
+
     monkeypatch.setattr(shell_execution.subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
+    monkeypatch.setattr(shell_execution, "spawn_windows_job", _fake_windows_job)  # type: ignore[attr-defined]
     return calls
 
 
@@ -575,7 +595,9 @@ def test_execute_cli_actions_sets_bare_model_for_active_provider(
 def test_execute_cli_actions_runs_implementation_action(monkeypatch: object) -> None:
     calls: list[str] = []
 
-    def _fake_run_implementation(request: str, presenter: object) -> ImplementationLaunch:
+    def _fake_run_implementation(
+        request: str, presenter: object, **_kwargs: object
+    ) -> ImplementationLaunch:
         calls.append(request)
         presenter.session.record("implementation", request, ok=True)  # type: ignore[attr-defined]
         presenter.console.print(f"implemented {request}")  # type: ignore[attr-defined]
@@ -831,7 +853,7 @@ def test_execute_cli_actions_shell_command_times_out(monkeypatch: object) -> Non
         "type": "shell",
         "text": "true",
         "ok": False,
-        "response_text": "command timed out after 120 seconds",
+        "response_text": "command timed out after 240 seconds",
     }
     output = buf.getvalue().lower()
     assert "timed out" in output

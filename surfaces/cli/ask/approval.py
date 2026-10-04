@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterable
 
+from config.constants.tooling import ToolBlockedBy
 from core.agent_harness.tools import registered_single_turn_tool_names
 from core.tool import (
     BeforeToolCallResult,
@@ -84,7 +85,7 @@ def build_approval_hooks(
                 f"--allowed-tool {tool_name}, or use "
                 "--dangerously-bypass-approvals in a trusted environment."
             ),
-            metadata={"ask_approval": "denied"},
+            metadata={"ask_approval": "denied", ToolBlockedBy.APPROVAL_DECLINED: True},
         )
 
     return ToolExecutionHooks(before_tool_call=before_tool_call)

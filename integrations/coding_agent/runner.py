@@ -5,12 +5,17 @@ dispatches to it. ``auto`` picks the first *ready* backend in ``_AUTO_ORDER``
 (installed and not explicitly unauthenticated), so a machine with Claude Code,
 Codex, or Cursor — but not Pi — still gets a working coding agent without
 configuration. New backends register in ``_BACKENDS`` and every caller keeps using
-:func:`run_coding_task` / :func:`verify_coding_agent` unchanged.
+:func:`run_coding_task` / :func:`verify_coding_agent` unchanged. Inside
+:func:`reuse_coding_agent_choice` the readiness probes run once and the ready
+backend they found is reused.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 
 from config.account import account_llm_route
 from integrations.coding_agent.claude_code_backend import run as _claude_code_run
@@ -110,20 +115,74 @@ def _select_auto_backend() -> tuple[str, _Backend, str] | tuple[None, None, str]
     return None, None, f"No coding agent is ready (checked {supported}). {'; '.join(details)}"
 
 
-def verify_coding_agent(provider: str | None = None) -> tuple[bool, str]:
-    """Whether the configured coding agent is installed/ready (never raises)."""
+@dataclass
+class _ReadyChoice:
+    """The ready backend one :func:`reuse_coding_agent_choice` block resolved."""
+
+    requested: str = ""
+    name: str = ""
+    detail: str = ""
+
+
+_CHOICE: ContextVar[_ReadyChoice | None] = ContextVar("coding_agent_choice", default=None)
+
+
+@contextmanager
+def reuse_coding_agent_choice() -> Iterator[None]:
+    """Probe for a ready backend at most once inside this block, then reuse it.
+
+    Each readiness check runs the agent CLIs (``pi --version`` alone takes
+    seconds) and one CI repair attempt asks several times. Only a ready backend
+    is kept, so a check that found none probes again. A nested block shares the
+    outer block's choice. A backend that breaks mid-block is not swapped out;
+    its run fails and reports why.
+    """
+    if _CHOICE.get() is not None:
+        yield
+        return
+    token = _CHOICE.set(_ReadyChoice())
+    try:
+        yield
+    finally:
+        _CHOICE.reset(token)
+
+
+def select_coding_agent(provider: str | None = None) -> tuple[str | None, str]:
+    """The ready backend a run would use (``auto`` resolved) and its detail (never raises).
+
+    ``(None, detail)`` when it is not ready; the detail says what to install or log into.
+    """
     name = _normalize(provider)
+    choice = _CHOICE.get()
+    if choice is not None and choice.name and choice.requested == name:
+        return choice.name, choice.detail
+    selected, detail = _probe(name)
+    if choice is not None and selected is not None:
+        choice.requested, choice.name, choice.detail = name, selected, detail
+    return selected, detail
+
+
+def _probe(name: str) -> tuple[str | None, str]:
+    """Run the readiness probes for ``name`` (``auto`` sweeps in order)."""
     if name == AUTO_PROVIDER:
         selected, _backend, detail = _select_auto_backend()
-        if selected is None:
-            return False, detail
-        return True, f"{selected}: {detail}"
+        return selected, detail
     backend = _BACKENDS.get(name)
     if backend is None:
         supported = ", ".join((*sorted(_BACKENDS), AUTO_PROVIDER))
-        return False, f"Unsupported coding agent '{name}'. Set CODING_AGENT to one of: {supported}."
+        return None, f"Unsupported coding agent '{name}'. Set CODING_AGENT to one of: {supported}."
     _run, verify = backend
-    return verify()
+    ready, detail = verify()
+    return (name if ready else None), detail
+
+
+def verify_coding_agent(provider: str | None = None) -> tuple[bool, str]:
+    """Whether the configured coding agent is installed/ready (never raises)."""
+    auto = _normalize(provider) == AUTO_PROVIDER
+    selected, detail = select_coding_agent(provider)
+    if selected is None:
+        return False, detail
+    return True, f"{selected}: {detail}" if auto else detail
 
 
 def run_coding_task(
@@ -143,16 +202,13 @@ def run_coding_task(
     name = _normalize(provider)
     selected_name = name
     if name == AUTO_PROVIDER:
-        selected, backend, detail = _select_auto_backend()
-        if selected is None or backend is None:
+        selected, detail = select_coding_agent(name)
+        if selected is None:
             return CodingResult(success=False, summary="", error=detail)
         selected_name = selected
-    else:
-        backend = _BACKENDS.get(name)
-        if backend is None:
-            return CodingResult(
-                success=False, summary="", error=f"Unsupported coding agent '{name}'."
-            )
+    backend = _BACKENDS.get(selected_name)
+    if backend is None:
+        return CodingResult(success=False, summary="", error=f"Unsupported coding agent '{name}'.")
     run, _verify = backend
     resolved_model = model
     if selected_name == "codex" and hosted_openai_subprocess_env() is not None:

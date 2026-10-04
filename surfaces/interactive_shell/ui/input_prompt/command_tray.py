@@ -13,6 +13,22 @@ _MAX_VISIBLE_ITEMS = 6
 _INLINE_DESCRIPTION_MIN_WIDTH = 60
 
 
+def _tray_title(buffer: Buffer) -> str:
+    state = buffer.complete_state
+    if state is None:
+        return "Completions"
+    parent = (
+        state.original_document.text.split(maxsplit=1)[0] if state.original_document.text else ""
+    )
+    if (
+        parent.startswith("/")
+        and state.completions
+        and all(not completion.text.startswith("/") for completion in state.completions)
+    ):
+        return f"Subcommands · {parent}"
+    return "Commands" if state.original_document.text == "/" else "Completions"
+
+
 class CommandTrayControl(UIControl):
     """Render the current completion window without covering live status or input."""
 
@@ -63,7 +79,7 @@ class CommandTrayControl(UIControl):
         lines: list[StyleAndTextTuples] = []
         if show_chrome:
             counter = f"{selected + 1} / {len(state.completions)}"
-            title = "Commands" if state.original_document.text == "/" else "Completions"
+            title = _tray_title(self.buffer)
             header = title + " " * max(1, width - len(title) - len(counter) - 2) + counter
             lines.append(self._line(header, width, "class:command-tray.hint"))
 

@@ -306,6 +306,37 @@ class TestKnownModelCoverage:
         for model in ("gpt-5", "gpt-5-codex", "gpt-4o"):
             assert usd_per_token_blended(model) is not None
 
+    @pytest.mark.parametrize(
+        ("model_id", "input_per_million", "output_per_million", "cache_read", "cache_write"),
+        (
+            ("claude-sonnet-5-5", 2.00, 10.00, 0.20, 2.50),
+            ("claude-opus-5-5", 4.00, 20.00, 0.40, 5.00),
+            ("claude-fable-5-1", 10.00, 50.00, 1.00, 12.50),
+        ),
+    )
+    def test_new_claude_models_have_prices(
+        self,
+        model_id: str,
+        input_per_million: float,
+        output_per_million: float,
+        cache_read: float,
+        cache_write: float,
+    ) -> None:
+        usage = TokenUsage(
+            input_tokens=100,
+            cache_read_input_tokens=2000,
+            cache_creation_input_tokens=500,
+            output_tokens=50,
+        )
+        cost = usd_for_usage(usage, model_id)
+        expected = (
+            (100 * input_per_million)
+            + (2000 * cache_read)
+            + (500 * cache_write)
+            + (50 * output_per_million)
+        ) * 1e-6
+        assert cost == pytest.approx(expected)
+
 
 class TestConfiguredProviderCompatibility:
     """Coverage sweep across every provider in config/llm_auth/provider_catalog.py.

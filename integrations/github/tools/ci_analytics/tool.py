@@ -12,7 +12,6 @@ from rich.markup import escape
 
 from config.constants.github import (
     GITHUB_INTEGRATION_SETUP_CLI,
-    GITHUB_INTEGRATION_SETUP_SLASH,
     GITHUB_SETUP_SLASH_INVOKE,
 )
 from core.agent_harness.tools import action_context_from_agent_context
@@ -21,12 +20,14 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, resolve_github_token
+from integrations.github.client import GitHubApiError
+from integrations.github.envelope import missing_token_envelope
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
+from integrations.github.rest_token import github_rest_token, github_selection_failed
 from integrations.github.tools.ci_analytics.analysis import analyze_repository
 from integrations.github.tools.ci_analytics.benchmarks import MEASURED_ON
 from integrations.github.tools.ci_analytics.loop import LOOP_WINDOW_DAYS
@@ -58,14 +59,15 @@ _MIN_WINDOW_DAYS = 1
 _MAX_WINDOW_DAYS = 90
 
 
-def _available(_sources: dict[str, dict]) -> bool:
+def _available(sources: dict[str, dict]) -> bool:
     """Stay listed when GitHub is not connected yet.
 
     A fresh onboarding session has no token. Hiding this tool removes the
     result that tells the agent to open setup, so the demo cannot finish.
-    The call itself returns that setup handoff when no token resolves.
+    The call itself returns that setup handoff when no token resolves. A
+    chosen connection that is missing or unusable withdraws the tool.
     """
-    return True
+    return not github_selection_failed(sources)
 
 
 def _missing_token_message(repository: str) -> str:
@@ -323,14 +325,12 @@ def analyze_github_ci_reliability(
         )
     now = datetime.now(UTC)
     console = _console(context)
-    token = resolve_github_token(github_token)
+    token = github_rest_token(explicit=github_token)
     if not token:
-        message = _missing_token_message(f"{repo_owner}/{repo_name}")
-        return tool_unavailable(
-            _SOURCE,
-            message,
-            response_text=message,
-            setup_command=GITHUB_INTEGRATION_SETUP_SLASH,
+        repository = f"{repo_owner}/{repo_name}"
+        return missing_token_envelope(
+            _missing_token_message(repository),
+            blocked=f"the Actions history of {repository} can't be read",
         )
     if console is not None:
         # Two-column lead matches the shell's reply gutter so the tool's lines

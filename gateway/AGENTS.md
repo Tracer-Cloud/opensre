@@ -189,10 +189,12 @@ cannot inherit that session.
 
 ## Capacity (process gate vs transport pools)
 
-**Cloud scale-out** (“infinite” via new Fargate tasks) is a **third** layer
-above these two: each task is one gateway process with its own gate; raise
-fleet size / workers when saturated — do not unbound the in-process gate or
-redesign `AgentSession.chat`.
+**Cloud scale-out** is a **third** layer above these two. Each organization has
+one gateway task with its own gate. When that task saturates (measure with the
+`container_memory_*` properties on `gateway_turn_completed`), move agent
+execution into separate worker containers. Do not unbound the in-process gate,
+and do not redesign `AgentSession.chat`. `PromptQueue` (submit / take / settle /
+heartbeat) is the seam a worker queue replaces.
 
 Two different **in-process** limits — do not conflate them:
 
@@ -200,6 +202,8 @@ Two different **in-process** limits — do not conflate them:
 |-------|-----------|-------------------|
 | **Process** | `TurnConcurrencyGate` / `process_turn_gate()` from `OPENSRE_SIZE_PROFILE` (SMALL=1, MEDIUM=2, LARGE=4) | Chat: non-blocking `try_acquire` (busy drop). Scheduler runners: **blocking** `acquire` (already-claimed work waits). |
 | **Per-transport** | `max_concurrent_turns` (defaults to the same profile limit via `turn_limit_for_profile`; override with `*_GATEWAY_MAX_CONCURRENT`) | Caps how many inbound messages that transport may process in parallel *before* they hit the shared turn runner. Does not replace the process gate. |
+| **Remote prompts** | `PromptWorker` runs one thread per process-gate slot. `PromptQueue.take` hands out a prompt only while no other running prompt holds its conversation (the actor's own, a `new` one, or a named session id). | Waits up to `PROMPT_SLOT_WAIT_SECONDS` for a slot, then `not_admitted`. A prompt whose conversation is busy stays queued in order. |
+| **Heavy work** | `heavy_work_slot` (`infrastructure/process/turn_capacity/heavy_work.py`, `OPENSRE_MAX_CONCURRENT_HEAVY_WORK`, default 2) around clones, coding-agent processes and the CI-repair worker | Waits up to `HEAVY_WORK_WAIT_SECONDS`, then the tool returns a busy error. Independent of the turn gate. |
 
 ```text
 Telegram/Slack/Discord ──► TurnRunner.try_acquire ──► process_turn_gate()

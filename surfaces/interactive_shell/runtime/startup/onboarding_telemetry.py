@@ -9,6 +9,7 @@ from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     CONNECTING_SLACK_SKILL_NAME,
     DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME,
+    ONBOARDING_LEAF_CHOICES,
     ONBOARDING_SKILL_NAME,
     SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
 )
@@ -19,6 +20,9 @@ from infrastructure.analytics.capture import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Outcome-menu labels map to the same skill ids as the children's getting_started text.
+_SKILL_BY_LEAF_LABEL = MappingProxyType({label: name for name, label in ONBOARDING_LEAF_CHOICES})
 
 # Telemetry option ids are stable across skill renames (dashboards key on them).
 _OPTION_BY_SKILL = MappingProxyType(
@@ -43,6 +47,11 @@ def capture_onboarding_choice(
             return
         if custom:
             capture_onboarding_demo_selected(option="custom", custom=True)
+            return
+        leaf_skill = _SKILL_BY_LEAF_LABEL.get(selected)
+        if leaf_skill is not None:
+            option = _OPTION_BY_SKILL.get(leaf_skill, leaf_skill.replace("-", "_"))
+            capture_onboarding_demo_selected(option=option, custom=False)
             return
         option = next(
             (

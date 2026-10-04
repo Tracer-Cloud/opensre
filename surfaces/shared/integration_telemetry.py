@@ -5,8 +5,17 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from core.domain.alerts.alert_source import secondary_tool_sources
+from infrastructure.analytics.capture import capture_connection_snapshot
+from infrastructure.analytics.provider import analytics_opted_out
 from integrations.registry import family_key
 from tools.registry import get_registered_tools
+
+
+def capture_github_connection_snapshot(session: _IntegrationSession | None = None) -> None:
+    """Report existing integration state even before the first LLM turn."""
+    if analytics_opted_out():
+        return
+    capture_connection_snapshot(build_turn_integration_snapshot(session))
 
 
 class _IntegrationSession(Protocol):

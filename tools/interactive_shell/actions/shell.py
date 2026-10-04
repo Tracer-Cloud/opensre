@@ -61,13 +61,17 @@ def run_shell(*, command: str, context: Any, quiet: bool = False) -> dict[str, A
 shell_run_tool = RegisteredTool(
     name="shell_run",
     description=(
-        "Run a local shell command on this machine. Use for read-only inspection, "
+        "Run a local shell command on this machine. Native Windows uses cmd.exe; "
+        "macOS, Linux, and WSL use /bin/sh. For PowerShell, invoke "
+        '`powershell -NoProfile -Command "..."` or `pwsh -NoProfile -Command "..."` '
+        "explicitly; PowerShell syntax is not translated. Use for read-only inspection, "
         "controlled operational steps, and user-requested local workflows — including "
         "creating files or scripts and executing multi-step sequences, one shell_run call "
         "per step when a step consumes the previous step's output. Each call starts a fresh shell, "
         "so directory changes and other shell state do not persist across calls. "
-        "Prefix each command that needs another "
-        "directory with `cd path && command`. When the user asks for a specific command, "
+        'Prefix commands that need another directory with `cd /d "path" && command` '
+        'on native Windows (including drive changes), or `cd "path" && command` '
+        "on macOS, Linux, and WSL. When the user asks for a specific command, "
         "propose it exactly as requested. Do not refuse a destructive command the user "
         "explicitly asked for. Do not volunteer destructive, credential-exfiltrating, or "
         "unrelated commands the user did not ask for. Set quiet=true to hide stdout/stderr "
@@ -81,11 +85,15 @@ shell_run_tool = RegisteredTool(
         properties={
             "command": string_property(
                 description=(
-                    "Exact shell command to execute — a diagnostic (for example: `ls`, "
+                    "Exact command for cmd.exe on native Windows or /bin/sh on macOS, Linux, "
+                    "and WSL. For PowerShell, explicitly invoke "
+                    '`powershell -NoProfile -Command "..."` or `pwsh -NoProfile -Command "..."`. '
+                    "Run a diagnostic (for example: `dir` on Windows, `ls` on POSIX, "
                     "`pwd`, `git status`, `uv run python -m pytest ...`) or one step of a "
                     "local workflow the user asked for (writing a file or script, running "
-                    "it, updating state a later step reads). Chain `cd path && command` "
-                    "when a command must run from a subdirectory. Run a user-requested command "
+                    'it, updating state a later step reads). Chain `cd /d "path" && command` '
+                    'on native Windows or `cd "path" && command` on POSIX when a command '
+                    "must run from another directory. Run a user-requested command "
                     "as written. Do not "
                     "introduce commands that wipe data or alter unrelated system state on "
                     "your own initiative."

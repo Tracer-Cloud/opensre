@@ -40,6 +40,14 @@ class InMemorySessionStore:
             {"custom_type": "turn_stub", "kind": kind, "text": text, "display": False},
         )
 
+    def append_session_name(self, session_id: str, name: str) -> str:
+        return self._append(
+            session_id,
+            "custom_message",
+            {"custom_type": "session_name", "name": name},
+            sidecar=True,
+        )
+
     def append_turn_detail(
         self,
         session_id: str,

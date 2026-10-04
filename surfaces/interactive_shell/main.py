@@ -26,6 +26,10 @@ from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
 from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
+from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
+    join_first_turn_warmup,
+    warm_first_turn,
+)
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
@@ -131,7 +135,8 @@ async def run_repl_async(
                 return 1
         else:
             # Entering the master skill queues its menu; the first model turn is the answer.
-            offer_demo(session, out)
+            if offer_demo(session, out):
+                warm_first_turn()
 
         await InteractiveShellController(
             runtime_context,
@@ -140,6 +145,7 @@ async def run_repl_async(
         ).start_interactive_shell()
         return 0
     finally:
+        join_first_turn_warmup()
         # True end-of-run teardown: persist and release the session's resources.
         _close_repl_session(session, runtime_context.state)
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+import sys
 
+import pytest
 from rich.console import Console
 
 from config.constants import SIGN_IN_PROMPT, WELCOME_DESCRIPTION, WELCOME_TITLE
@@ -13,6 +15,7 @@ from surfaces.interactive_shell.ui.sign_in import (
     render_sign_in_screen,
     run_sign_in_gate,
 )
+from tests.shared.terminal.pty_keyboard import TtyStringIO, pty_stdin
 
 
 def _console() -> tuple[Console, io.StringIO]:
@@ -28,7 +31,7 @@ def test_screen_shows_welcome_box_and_sign_in_prompt() -> None:
     # Assert: product copy is present; the banner logo/status renders alongside it.
     out = buf.getvalue()
     assert WELCOME_TITLE in out
-    assert WELCOME_DESCRIPTION.split(" that ")[0] in out  # description body reached the screen
+    assert WELCOME_DESCRIPTION in out
     assert SIGN_IN_PROMPT in out
     assert "Skills" in out and "CI/CD fixes" in out
 
@@ -116,3 +119,32 @@ def test_gate_retries_after_a_failed_login_then_exits(monkeypatch) -> None:
     result = run_sign_in_gate(console, is_signed_in=lambda: False, login=lambda: False)
 
     assert result is False
+
+
+def test_application_cursor_arrows_move_the_selection_instead_of_exiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: terminals in application-cursor mode send ESC O B / ESC O A for
+    # down / up. Each used to read as Esc, and dismissing the gate exits the shell.
+    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
+    monkeypatch.setattr(sys, "stdout", TtyStringIO())
+    console, _ = _console()
+    choices: list[SignInChoice | None] = []
+    logins: list[bool] = []
+
+    def _login() -> bool:
+        logins.append(True)
+        return True
+
+    with pty_stdin(monkeypatch) as keyboard:
+        keyboard.queue(b"\x1bOB", b"\x1bOA", b"\r")
+
+        # Act
+        result = run_sign_in_gate(
+            console, is_signed_in=lambda: False, login=_login, on_choice=choices.append
+        )
+
+    # Assert: down, up, Enter lands back on sign-in.
+    assert result is True
+    assert choices == [SignInChoice.LOGIN]
+    assert logins == [True]

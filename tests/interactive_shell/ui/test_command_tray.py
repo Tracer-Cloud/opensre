@@ -136,17 +136,73 @@ async def test_tray_is_attached_bounded_and_keeps_selected_result_visible() -> N
 
 
 @pytest.mark.asyncio
-async def test_enter_submits_the_visibly_highlighted_automatic_completion() -> None:
+async def test_enter_submits_a_command_without_subcommands() -> None:
     async with _running_prompt() as prompt:
-        _complete(prompt, "/")
+        _complete(prompt, "/ex")
         state = prompt.default_buffer.complete_state
         assert state is not None and state.complete_index is None
-        assert any("› /integrations" in line for line in _screen_lines(prompt))
+        assert any("› /exit" in line for line in _screen_lines(prompt))
 
         _press(prompt, Keys.ControlM)
 
         assert prompt.app.future is not None
-        assert prompt.app.future.result() == "/integrations"
+        assert prompt.app.future.result() == "/exit"
+
+
+@pytest.mark.asyncio
+async def test_tab_on_slash_command_opens_its_subcommand_tray() -> None:
+    async with _running_prompt() as prompt:
+        _complete(prompt, "/")
+
+        _press(prompt, Keys.Tab)
+
+        state = prompt.default_buffer.complete_state
+        assert prompt.default_buffer.text == "/integrations "
+        assert state is not None
+        assert [completion.text for completion in state.completions] == [
+            "setup",
+            "remove",
+            "list",
+            "ls",
+            "verify",
+            "show",
+        ]
+        lines = _screen_lines(prompt)
+        assert any("› setup" in line for line in lines)
+        assert any("Subcommands · /integrations" in line for line in lines)
+
+
+@pytest.mark.asyncio
+async def test_enter_on_a_root_command_opens_its_subcommand_tray() -> None:
+    async with _running_prompt() as prompt:
+        prompt.default_buffer.document = Document("/model", len("/model"))
+        prompt.default_buffer.complete_state = None
+
+        _press(prompt, Keys.ControlM)
+
+        state = prompt.default_buffer.complete_state
+        assert not prompt.app.is_done
+        assert prompt.default_buffer.text == "/model "
+        assert state is not None
+        assert [completion.text for completion in state.completions] == [
+            "show",
+            "set",
+            "restore",
+            "toolcall",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_enter_submits_the_selected_subcommand_from_the_continuation_tray() -> None:
+    async with _running_prompt() as prompt:
+        _complete(prompt, "/")
+        _press(prompt, Keys.Tab)
+        _press(prompt, Keys.Down)
+
+        _press(prompt, Keys.ControlM)
+
+        assert prompt.app.future is not None
+        assert prompt.app.future.result() == "/integrations remove"
 
 
 @pytest.mark.asyncio
@@ -294,13 +350,15 @@ async def test_escape_closes_completions_before_clearing_or_cancelling(
         state = Mock()
         state.is_dispatch_running.return_value = dispatch_running
         install_session_key_bindings(prompt, build_cancel_key_bindings(state))
-        _complete(prompt, "/m")
-        prompt.default_buffer.go_to_completion(0)
+        _complete(prompt, "/mod")
+        _press(prompt, Keys.Tab)
+        assert prompt.default_buffer.text == "/model "
+        assert prompt.default_buffer.complete_state is not None
 
         _press(prompt, Keys.Escape)
 
         assert prompt.default_buffer.complete_state is None
-        assert prompt.default_buffer.text == "/m"
+        assert prompt.default_buffer.text == "/model "
         state.cancel_current_dispatch.assert_not_called()
 
         _press(prompt, Keys.Escape)

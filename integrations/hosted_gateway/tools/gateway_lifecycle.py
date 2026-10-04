@@ -21,6 +21,7 @@ from integrations.hosted_gateway.tools.results import (
     STATE_OUTPUTS,
     failure_output,
     gateway_name,
+    gateway_settings_url,
     hosted_gateway_available,
     state_output,
 )
@@ -30,8 +31,8 @@ STOP_TOOL_NAME = "stop_hosted_gateway"
 
 _NO_INPUT = {"type": "object", "properties": {}, "additionalProperties": False}
 _WHOSE = (
-    "The OpenSRE app finds the gateway from the account the user signed in with and allows "
-    "this to organization admins only; no organization or gateway id is passed."
+    "The OpenSRE app finds the gateway from the account the user signed in with; no "
+    "organization or gateway id is passed."
 )
 
 
@@ -58,12 +59,14 @@ _WHOSE = (
 def start_hosted_gateway() -> dict[str, Any]:
     """Ask the OpenSRE app to start the signed-in organization's gateway.
 
-    The start is always requested, so the app's admin check and its refusals
-    apply. A health read beforehand only shapes the reply: a gateway that was
-    already running is told so. That read is best effort and never blocks the start.
+    The start is always requested, so the app's refusals apply. A health read
+    beforehand only shapes the reply: a gateway that was already running is told
+    so. That read is best effort and never blocks the start.
     """
+    settings_url = ""
     try:
         with HostedGatewayClient.from_account() as client:
+            settings_url = gateway_settings_url(client.app_url)
             was_running = _was_running(client)
             health = client.start()
     except HostedGatewayError as exc:
@@ -71,6 +74,7 @@ def start_hosted_gateway() -> dict[str, Any]:
             exc,
             tool_name=START_TOOL_NAME,
             component="integrations.hosted_gateway.tools.gateway_lifecycle.start_hosted_gateway",
+            settings_url=settings_url,
         )
     already_running = was_running and health.healthy
     capture_hosted_gateway_started(
@@ -115,14 +119,17 @@ def _was_running(client: HostedGatewayClient) -> bool:
 )
 def stop_hosted_gateway() -> dict[str, Any]:
     """Ask the OpenSRE app to stop the signed-in organization's gateway."""
+    settings_url = ""
     try:
         with HostedGatewayClient.from_account() as client:
+            settings_url = gateway_settings_url(client.app_url)
             health = client.stop()
     except HostedGatewayError as exc:
         return failure_output(
             exc,
             tool_name=STOP_TOOL_NAME,
             component="integrations.hosted_gateway.tools.gateway_lifecycle.stop_hosted_gateway",
+            settings_url=settings_url,
         )
     return state_output(health, _stopped(health))
 

@@ -59,6 +59,9 @@ class SessionStore(Protocol):
     def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> None:
         raise NotImplementedError
 
+    def append_session_name(self, session_id: str, name: str) -> str:
+        """Append a session-name override; an empty name restores the derived title."""
+
     def append_turn_detail(
         self,
         session_id: str,

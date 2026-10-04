@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -35,6 +36,36 @@ def _fetch_webapp_vault() -> list[dict[str, Any]] | None:
     return fetch_signed_in_org_integrations()
 
 
+def _fetch_account_integrations() -> list[dict[str, Any]]:
+    """The signed-in account's org integrations; the client imports on first use."""
+    import integrations.account_integrations as account_integrations
+
+    return account_integrations.load_account_integrations()
+
+
+def _account_integrations_generation() -> int:
+    import integrations.account_integrations as account_integrations
+
+    return account_integrations.account_integrations_generation()
+
+
+def _github_rest_token_resolves(resolved_integrations: Mapping[str, Any]) -> bool:
+    """The analyzer's own token predicate; the GitHub client imports on first use."""
+    from integrations.github import has_github_rest_token
+
+    return has_github_rest_token(resolved_integrations)
+
+
+def _slack_connection_resolves(resolved_integrations: Mapping[str, Any]) -> bool:
+    """Slack resolves with a bot token or a webhook, as the Slack tools read it."""
+    from core.tool import availability_view
+
+    slack = availability_view(dict(resolved_integrations)).get("slack")
+    if not isinstance(slack, Mapping):
+        return False
+    return any(str(slack.get(field) or "").strip() for field in ("bot_token", "webhook_url"))
+
+
 def register_harness_adapters() -> None:
     from infrastructure.harness_providers import IntegrationResolutionAdapters
     from integrations.catalog import (
@@ -44,9 +75,11 @@ def register_harness_adapters() -> None:
         merge_integrations_by_service,
         merge_local_integrations,
     )
+    from integrations.github.connections import select_github_connection
     from integrations.store import load_integrations, resolve_store_path
 
     IntegrationResolutionAdapters(
+        select_github_connection=select_github_connection,
         load_integrations=load_integrations,
         integration_store_path=lambda: str(resolve_store_path()),
         load_env_integrations=load_env_integrations,
@@ -56,6 +89,8 @@ def register_harness_adapters() -> None:
         configured_services=lambda: tuple(configured_integration_services()),
         setupable_services=_setupable_services,
         fetch_webapp_vault=_fetch_webapp_vault,
+        fetch_account_integrations=_fetch_account_integrations,
+        account_integrations_generation=_account_integrations_generation,
     ).install()
 
     _register_vcs_repo_scope_providers()
@@ -70,6 +105,23 @@ def register_harness_adapters() -> None:
     _register_secondary_tool_sources()
     _register_gateway_persona()
     _register_preferred_evidence_sources()
+    _register_skill_prerequisite_checks()
+
+
+def _register_skill_prerequisite_checks() -> None:
+    """Answer the skill prerequisite checks the host gate looks up by id."""
+    from config.constants.skill_prerequisites import (
+        GITHUB_REST_TOKEN_CHECK,
+        SLACK_CONNECTED_CHECK,
+    )
+    from infrastructure.harness_providers import (
+        clear_skill_prerequisite_checks,
+        register_skill_prerequisite_check,
+    )
+
+    clear_skill_prerequisite_checks()
+    register_skill_prerequisite_check(GITHUB_REST_TOKEN_CHECK, _github_rest_token_resolves)
+    register_skill_prerequisite_check(SLACK_CONNECTED_CHECK, _slack_connection_resolves)
 
 
 def _register_vcs_repo_scope_providers() -> None:
@@ -144,21 +196,15 @@ def _register_prompt_fragments() -> None:
         register_action_prompt_fragment,
         register_assistant_prompt_fragment,
     )
-    from integrations.buzz.action_prompt import buzz_action_prompt_fragment
     from integrations.github.action_prompt import github_action_prompt_fragment
+    from integrations.messaging_prompt import messaging_action_prompt_fragment
     from integrations.posthog.assistant_prompt import posthog_assistant_prompt_fragment
-    from integrations.rocketchat.action_prompt import rocketchat_action_prompt_fragment
     from integrations.sentry.assistant_prompt import sentry_assistant_prompt_fragment
-    from integrations.slack.action_prompt import slack_action_prompt_fragment
     from integrations.slack.assistant_prompt import slack_assistant_prompt_fragment
-    from integrations.telegram.action_prompt import telegram_action_prompt_fragment
 
     clear_action_prompt_fragments()
-    register_action_prompt_fragment(slack_action_prompt_fragment)
     register_action_prompt_fragment(github_action_prompt_fragment)
-    register_action_prompt_fragment(telegram_action_prompt_fragment)
-    register_action_prompt_fragment(rocketchat_action_prompt_fragment)
-    register_action_prompt_fragment(buzz_action_prompt_fragment)
+    register_action_prompt_fragment(messaging_action_prompt_fragment)
 
     clear_assistant_prompt_fragments()
     register_assistant_prompt_fragment(sentry_assistant_prompt_fragment)

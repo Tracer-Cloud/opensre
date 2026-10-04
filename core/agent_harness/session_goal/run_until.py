@@ -16,6 +16,7 @@ from typing import Any
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.session.terminal_access import (
     clear_pending_autosubmit,
+    pending_autosubmit,
     session_terminal,
     set_auto_command,
 )
@@ -107,13 +108,17 @@ def _end(
     on_progress: ProgressFn | None,
     *,
     reason: str | None = None,
+    drop_queued: bool = False,
 ) -> SessionGoal:
-    """Leave the continuation loop: store the state, drop queued work, then tell the host.
+    """Leave the continuation loop: store the state, then tell the host.
 
     ``reason`` keeps a verdict the host should show (achieved, impossible, a
     failed turn); without one the reason is derived from ``status``. State is
     stored before the paint so a failing host paint can neither leave the goal
-    running nor mask an error the caller is about to re-raise.
+    running nor mask an error the caller is about to re-raise. A command queued
+    as the next turn (a setup wizard, a menu) is kept for the shell to run;
+    ``drop_queued`` discards it for a pause or cancel the host asked for, so
+    that stop also stops the next turn.
     """
     ended = goal.with_status(status)
     if reason is not None:
@@ -121,7 +126,8 @@ def _end(
     else:
         ended = refresh_session_goal_reason(ended)
     attach_session_goal(session, ended)
-    clear_pending_autosubmit(session)
+    if drop_queued:
+        clear_pending_autosubmit(session)
     try:
         _paint(session, ended, on_progress, rederive=False)
     except Exception:
@@ -269,6 +275,7 @@ def _pause_by_user(
         SessionGoalStatus.PAUSED,
         on_progress,
         reason=SessionGoalReason.PAUSED_BY_USER,
+        drop_queued=True,
     )
 
 
@@ -408,14 +415,19 @@ def _finish_outer_turn(
     if last.cancelled and not (pause_requested and turn_evidence):
         if pause_requested:
             return _pause_by_user(session, active, on_progress), last, True
-        return _end(session, active, SessionGoalStatus.CANCELLED, on_progress), last, True
+        cancelled = _end(
+            session, active, SessionGoalStatus.CANCELLED, on_progress, drop_queued=True
+        )
+        return cancelled, last, True
 
     if _turn_did_not_run(last):
         if pause_requested:
             return _pause_by_user(session, active, on_progress), last, True
         return _pause_failed_turn(session, active, on_progress), last, True
 
-    if getattr(session, "pending_user_choice", None) is not None:
+    # The user owns the next turn: a menu to answer, or a command the shell
+    # submits next (a setup wizard). Another goal turn now would run ahead of it.
+    if getattr(session, "pending_user_choice", None) is not None or pending_autosubmit(session):
         if pause_requested:
             return _pause_by_user(session, active, on_progress), last, True
         active = active.with_reason(SessionGoalReason.PAUSED_USER_CHOICE)
@@ -644,6 +656,7 @@ def run_until_session_goal(
                 active,
                 SessionGoalStatus.CANCELLED,
                 on_progress,
+                drop_queued=True,
             )
             break
 

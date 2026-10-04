@@ -8,7 +8,11 @@ from typing import Any
 
 import pytest
 
-from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
+from config.constants import (
+    GITHUB_TOKEN_ENV,
+    OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
+    OPENSRE_MEMORY_DIR_ENV,
+)
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     ONBOARDING_SKILL_NAME,
@@ -69,6 +73,8 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
 ) -> None:
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
+    # GitHub is ready, so the chosen child passes its prerequisite gate.
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
     skill = next(s for s in list_action_skills() if s.path == Path(__file__).with_name("SKILL.md"))
     session = _Session(configured_integrations_known=True, resolved_integrations_cache={})
     work: list[str] = []
@@ -86,8 +92,8 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
     )
     load_parent = tool_response("skill_view", {"name": skill.name})
     premature_scan = tool_response(scan_tool.name)
-    # Invocations 1 (rejected batch) and 2 (lone skill_view) precede the load.
-    router_loaded_after = 2
+    # Invocation 1 (the batched skill_view + scan) precedes the load.
+    router_loaded_after = 1
 
     class SkillLLM(FakeActionLLM):
         def invoke(
@@ -105,14 +111,14 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
 
     llm = SkillLLM(
         [
-            # Two actions in one response run nothing; the router is loaded
-            # only once the model re-issues it alone.
+            # skill_view and a premature scan share one response: the router
+            # loads, its queued entry menu ends the turn, and the scan after
+            # it is skipped without running.
             AgentLLMResponse(
                 content="",
                 tool_calls=[*load_parent.tool_calls, *premature_scan.tool_calls],
                 raw_content=None,
             ),
-            load_parent,
             tool_response("skill_view", {"name": ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME}),
             tool_response(scan_tool.name),
             tool_response(
@@ -150,7 +156,7 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
     assert pending.title == skill.entry_menu.title
     assert session.active_skill == ONBOARDING_SKILL_NAME
     assert work == []
-    assert llm.invocations == 2
+    assert llm.invocations == 1
     session.pending_user_choice = None
     session.terminal.pending_prompt_default = None
     session.terminal.awaiting_handoff_answer = False
@@ -162,5 +168,5 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
     assert work == ["scan"]
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == "Which repository should I analyze?"
-    assert llm.invocations == 5
+    assert llm.invocations == 4
     assert not llm.responses

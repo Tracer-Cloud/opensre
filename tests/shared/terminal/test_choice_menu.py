@@ -156,6 +156,24 @@ def test_pick_letter_key_selects_matching_option(monkeypatch) -> None:
     assert result == 1
 
 
+def test_pick_letter_mode_stays_open_through_stray_input(monkeypatch) -> None:
+    # A terminal reply reads as "ignore"; the Ask User menu must wait for the pick.
+    out = io.StringIO()
+    actions = iter(["ignore", "ignore", "b"])
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
+    monkeypatch.setattr(choice_menu, "_read_action", lambda **_kwargs: next(actions))
+
+    result = choice_menu._pick(
+        title="Q",
+        crumb="",
+        labels=["Local", "GitHub", "Other"],
+        letter_keys=True,
+    )
+
+    assert result == 1
+
+
 def test_pick_letter_keys_still_navigates_with_arrows(monkeypatch) -> None:
     # Requirement: letter menus stay navigable by up/down arrows, not only keys.
     out = io.StringIO()
@@ -394,7 +412,7 @@ def test_pick_ignores_unmapped_keys(monkeypatch) -> None:
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
     monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 24)
-    monkeypatch.setattr(choice_menu, "_read_action", lambda: next(actions))
+    monkeypatch.setattr(choice_menu, "_read_action", lambda **_kwargs: next(actions))
 
     assert choice_menu._pick(title="test", crumb="", labels=["one"]) == 0
 
@@ -430,7 +448,7 @@ def test_repl_choose_one_starts_at_initial_value(monkeypatch) -> None:
     )
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
-    monkeypatch.setattr(choice_menu, "_read_action", lambda: next(actions))
+    monkeypatch.setattr(choice_menu, "_read_action", lambda **_kwargs: next(actions))
 
     result = choice_menu.repl_choose_one(
         title="theme",
@@ -492,7 +510,7 @@ def test_repl_choose_one_restores_terminal_once_on_success(monkeypatch) -> None:
     )
     monkeypatch.setattr(sys, "stdout", io.StringIO())
     monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
-    monkeypatch.setattr(choice_menu, "_read_action", lambda: "enter")
+    monkeypatch.setattr(choice_menu, "_read_action", lambda **_kwargs: "enter")
 
     result = choice_menu.repl_choose_one(
         title="theme",

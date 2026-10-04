@@ -147,10 +147,12 @@ def test_rotate_restores_outgoing_transcript_for_memory_extraction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     storage = InMemorySessionStore()
-    scheduled: list[tuple[list[tuple[str, str]], bool]] = []
+    scheduled: list[tuple[list[tuple[str, str]], str, bool]] = []
 
-    def _schedule(messages: list[tuple[str, str]], *, wait_for_completion: bool = False) -> None:
-        scheduled.append((list(messages), wait_for_completion))
+    def _schedule(
+        messages: list[tuple[str, str]], *, session_id: str, wait_for_completion: bool = False
+    ) -> None:
+        scheduled.append((list(messages), session_id, wait_for_completion))
 
     monkeypatch.setattr(
         "core.agent_harness.session.memory_extraction.schedule_memory_extraction",
@@ -170,7 +172,8 @@ def test_rotate_restores_outgoing_transcript_for_memory_extraction(
 
     assert len(scheduled) == 1
     assert scheduled[0][0] == [("user", "prod cluster is eks-prod-1"), ("assistant", "got it")]
-    assert scheduled[0][1] is False  # rotate must not block on extraction
+    assert scheduled[0][1] == "old-1"  # keyed to the outgoing session, not its replacement
+    assert scheduled[0][2] is False  # rotate must not block on extraction
 
 
 def test_rotate_without_old_id_skips_close() -> None:
@@ -238,8 +241,10 @@ def test_close_releases_resources_before_memory_extraction(
         events.append("release")
         session.terminal.prompt_refresh_fn = None
 
-    def _schedule(messages: list[tuple[str, str]], *, wait_for_completion: bool = False) -> None:
-        events.append(f"extract:{len(messages)}:{wait_for_completion}")
+    def _schedule(
+        messages: list[tuple[str, str]], *, session_id: str, wait_for_completion: bool = False
+    ) -> None:
+        events.append(f"extract:{session_id}:{len(messages)}:{wait_for_completion}")
 
     monkeypatch.setattr(session, "release_resources", _release)
     monkeypatch.setattr(
@@ -249,7 +254,7 @@ def test_close_releases_resources_before_memory_extraction(
 
     manager.close(session)
 
-    assert events == ["release", "extract:2:True"]
+    assert events == ["release", "extract:s-close-order:2:True"]
     assert session.terminal.prompt_refresh_fn is None
 
 
@@ -306,10 +311,12 @@ def test_rotate_in_place_schedules_extraction_before_clear(
     session.store = storage
     session.agent.messages = [("user", "my name is Ada"), ("assistant", "noted")]
 
-    scheduled: list[tuple[list[tuple[str, str]], bool]] = []
+    scheduled: list[tuple[list[tuple[str, str]], str, bool]] = []
 
-    def _schedule(messages: list[tuple[str, str]], *, wait_for_completion: bool = False) -> None:
-        scheduled.append((list(messages), wait_for_completion))
+    def _schedule(
+        messages: list[tuple[str, str]], *, session_id: str, wait_for_completion: bool = False
+    ) -> None:
+        scheduled.append((list(messages), session_id, wait_for_completion))
 
     monkeypatch.setattr(
         "core.agent_harness.session.memory_extraction.schedule_memory_extraction",
@@ -318,8 +325,9 @@ def test_rotate_in_place_schedules_extraction_before_clear(
 
     manager.rotate_in_place(session)
 
+    # Keyed to the outgoing id: ``clear()`` rotates identity right after.
     assert scheduled == [
-        ([("user", "my name is Ada"), ("assistant", "noted")], False),
+        ([("user", "my name is Ada"), ("assistant", "noted")], "old-id", False),
     ]
     assert session.agent.messages == []
 

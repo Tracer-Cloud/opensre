@@ -68,6 +68,16 @@ PORTS = frozenset(
 )
 
 SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
+    "activity": frozenset(
+        {
+            "HostedActivity",
+            "bounded_activity_preview",
+            "format_hosted_activity",
+            "generic_tool_activity",
+            "github_cli_activity",
+            "is_sensitive_activity_key",
+        }
+    ),
     "session_goal": frozenset(
         {
             "MAX_GOAL_CONDITION_CHARS",
@@ -80,6 +90,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "build_session_goal",
             "clear_session_goal",
             "derive_session_goal_checklist",
+            "edit_session_goal",
             "format_session_goal_progress",
             "format_session_goal_status_line",
             "goal_paint_signature",
@@ -95,15 +106,20 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
         {
             "PendingScheduleOffer",
             "PendingUserChoice",
+            "SetupResume",
+            "arm_setup_resume",
             "clear_competing_pending_offers",
             "clear_pending_autosubmit",
+            "clear_setup_resume",
             "compact_session_branch",
             "exclusive_stdin_active",
             "format_recovery_note",
+            "pending_setup_resume",
             "pop_turn_outcome_hint",
             "session_terminal",
             "set_auto_command",
             "set_turn_outcome_hint",
+            "take_setup_resume",
             "trust_mode_enabled",
             "withhold_capabilities",
         }
@@ -134,6 +150,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "COHORT_IDENTITY_UNVERIFIED_MARK",
             "WANT_ME_TO_MARKER",
             "closer_tail_from",
+            "is_outcome_report",
             "normalize_three_tier_spacing",
             "reply_reports_cohort_unverified",
             "strip_shell_prompt_chrome",
@@ -145,6 +162,30 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "merge_resolved_integrations",
             "resolve_and_cache_integrations",
             "resolve_integrations",
+        }
+    ),
+    "skill_releases": frozenset(
+        {
+            "ReleaseError",
+            "SkillCardError",
+            "SkillCatalogSnapshot",
+            "SkillSource",
+            "SkillsRelease",
+            "active_skill_catalog",
+            "auto_update_enabled",
+            "build_snapshot",
+            "claim_announcement",
+            "is_release_path",
+            "latest_stored_seq",
+            "parse_frontmatter",
+            "read_skill_catalog",
+            "read_state",
+            "skills_dir",
+            "store_dir",
+            "trusted_release_keys",
+            "verify_release",
+            "write_release",
+            "write_state",
         }
     ),
     "grounding": frozenset(
@@ -207,6 +248,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "record_task_plan_work",
             "step_label",
             "take_completed_plan_breakdown",
+            "task_plan_from_checklist",
             "task_plan_to_payload",
         }
     ),

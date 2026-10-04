@@ -17,9 +17,9 @@ from integrations.github.helpers import (
     github_source_available,
 )
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
-from integrations.github.tools.ci_repair_loop.fixture import object_response
 from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun
 from integrations.github.tools.ci_repair_loop.report import render_report
+from integrations.github.tools.ci_repair_loop.responses import object_response
 from integrations.github.tools.ci_repair_loop.schedule import schedule_repair
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
@@ -60,21 +60,26 @@ def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
 _REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused."
 
 
+def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float) -> bool:
+    """Whether this read should return instead of sleeping."""
+    if run.terminal:
+        return True
+    if wait_until_terminal:
+        return time.time() >= run.deadline
+    return time.monotonic() >= until
+
+
 @tool(
     name="schedule_ci_repair_loop",
     source="github",
     display_name="Schedule bounded CI repair",
-    use_cases=[
-        "Run the scheduled CI repair onboarding demo",
-        "Repair one selected PR in the background",
-    ],
+    use_cases=["Repair one selected PR in the background"],
     description=(
-        "Schedule repair of one GitHub PR, or demo=true for a tiny CI repair demonstration "
-        "in a fixed reusable private repository. On a hosted gateway, registers with its "
-        "existing scheduler; on a laptop, starts and checks the local background scheduler. "
-        "Uses a real 30-second trigger, stops after three failed attempts or "
-        "within ten minutes, and retains a linked outcome report. Reuses the active run "
-        "without extending its deadline."
+        "Schedule repair of one open GitHub PR whose branch is in the same repository. "
+        "On a hosted gateway, registers with its existing scheduler; on a laptop, starts "
+        "and checks the local background scheduler. Uses a real 30-second trigger, stops "
+        "after three failed attempts or within ten minutes, and retains a linked outcome "
+        "report. Reuses the active run without extending its deadline."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -85,49 +90,44 @@ _REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused."
     input_schema={
         "type": "object",
         "properties": {
-            "demo": {
-                "type": "boolean",
-                "default": False,
-                "description": "Use the reusable private demo repository; default false.",
-            },
             "owner": {
                 "type": "string",
                 "description": "GitHub user or organization that owns the repository.",
             },
             "repo": {
                 "type": "string",
-                "description": "Repository for an existing PR; omitted in demo mode.",
+                "description": "Repository that holds the pull request.",
             },
             "pr_number": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Existing PR to repair; omitted in demo mode.",
+                "description": "Existing PR to repair.",
             },
         },
-        "required": ["owner"],
+        "required": ["owner", "repo", "pr_number"],
         "additionalProperties": False,
     },
 )
 def schedule_ci_repair_loop(
-    demo: bool = False,
-    owner: str = "",
-    repo: str = "",
-    pr_number: int = 0,
+    owner: str,
+    repo: str,
+    pr_number: int,
     github_token: str | None = None,
     context: Any = None,
+    fast_checks: bool = False,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Authorize exactly one bounded repair scope and return its durable identity."""
     try:
         store = RepairStore()
         run, reused, next_run = schedule_repair(
-            demo=demo,
             owner=owner,
             repo=repo,
             pr_number=pr_number,
             github_token=github_token,
             store=store,
             scheduler_in_process=_scheduler_in_process(context),
+            fast_checks=fast_checks,
         )
     except RepairRefused as exc:
         return {
@@ -162,8 +162,9 @@ def schedule_ci_repair_loop(
     ],
     description=(
         "Read the linked summary of a CI repair run: what it did, how it ended and why. "
-        "Omit task_id for this account's most recent run. Optionally wait up to sixty seconds "
-        "for completion; never starts another repair."
+        "Omit task_id for this account's most recent run. "
+        "wait_until_terminal waits until the run is terminal or its deadline has passed. "
+        "wait_seconds waits at most sixty seconds. Never starts another repair."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -185,6 +186,14 @@ def schedule_ci_repair_loop(
                 "maximum": 60,
                 "description": "Seconds to wait for a terminal result; default zero.",
             },
+            "wait_until_terminal": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Wait until the run is terminal or its repair deadline has passed. "
+                    "One call. Ignores the sixty-second wait_seconds cap."
+                ),
+            },
         },
         "additionalProperties": False,
     },
@@ -192,6 +201,7 @@ def schedule_ci_repair_loop(
 def get_ci_repair_loop(
     task_id: str = "",
     wait_seconds: int = 0,
+    wait_until_terminal: bool = False,
     github_token: str | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
@@ -212,9 +222,12 @@ def get_ci_repair_loop(
             run = store.get(run_id)
             if not run.actor_id or run.actor_id != actor_id:
                 return {"ok": False, "error": "This repair belongs to a different GitHub account."}
-            if run.terminal or time.monotonic() >= until:
+            if _inspection_done(run, wait_until_terminal=wait_until_terminal, until=until):
                 return _result(run, store)
-            time.sleep(min(1, max(0, until - time.monotonic())))
+            remaining = (
+                run.deadline - time.time() if wait_until_terminal else until - time.monotonic()
+            )
+            time.sleep(min(1, max(0.0, remaining)))
     except (ValueError, OSError, RuntimeError, GitHubApiError) as exc:
         report_run_error(
             exc,

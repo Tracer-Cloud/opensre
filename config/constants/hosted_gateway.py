@@ -13,13 +13,20 @@ HOSTED_GATEWAY_PROMPT_WAIT_SECONDS = 600.0
 HOSTED_GATEWAY_PROMPT_POLL_SECONDS = 3.0
 #: After this long in the gateway's queue the user is told they are waiting for a free slot.
 HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS = 10.0
+#: How long a prompt's wait rides out a gateway that stopped answering before handing back
+#: the prompt id. Covers a relay blip; a restart takes longer and drops the prompt anyway.
+HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS = 60.0
 # Where an organization admin provisions and inspects the gateway in the app.
 HOSTED_GATEWAY_SETTINGS_PATH = "/settings/agent-backend"
 HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS = 30.0
+#: A TCP + TLS handshake to the app takes well under a second; past this it is stuck, and
+#: the client tries one fresh connection rather than waiting out the full timeout.
+HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS = 10.0
 # Hosts the account token may be sent to over plain http (local development only).
 HOSTED_GATEWAY_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 __all__ = [
+    "HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS",
     "HOSTED_GATEWAY_HEALTH_PATH",
     "HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS",
     "HOSTED_GATEWAY_LOOPBACK_HOSTS",
@@ -31,4 +38,5 @@ __all__ = [
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS",
     "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS",
     "HOSTED_GATEWAY_STOP_PATH",
+    "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS",
 ]

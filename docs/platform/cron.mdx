@@ -95,7 +95,7 @@ Create a new scheduled delivery task.
 
 ### `opensre cron list`
 
-Display all configured scheduled tasks in a table, including the loop name, enabled state, next cron fire time, and last run.
+Display each configured scheduled task as a bullet list: name, id, kind, schedule, provider, channels, enabled state, next cron fire time, and last run.
 
 ### `opensre cron remove <task_id>`
 
@@ -223,12 +223,14 @@ Cron expressions are validated at `cron add` time using APScheduler's
 ## Dedup Semantics
 
 The scheduler uses a SQLite-backed claim store with a unique task, fire-time,
-and attempt key. Each attempt has a 30-minute lease and a random owner token:
+and attempt key. Each attempt has a 2-minute lease and a random owner token.
+The worker renews that lease while it runs; two minutes is how long a worker
+that died mid-tick keeps the next tick from starting.
 
 1. When a cron tick fires, `EVENT_JOB_SUBMITTED` captures
    `scheduled_run_times[0]` and the job uses that UTC-normalized `fire_time`
    for the claim key
-2. The executor creates an attempt with a 30-minute lease and owner token
+2. The executor creates an attempt with a 2-minute lease and owner token
 3. If the current attempt is still leased, another instance skips the tick
 4. If the lease expired, the old attempt is marked `abandoned` and one new
    worker creates the next attempt

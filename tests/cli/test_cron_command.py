@@ -325,14 +325,13 @@ def test_cron_list_surfaces_legacy_task_migration_status(
     assert "opensre cron add --kind" in output
 
 
-def test_cron_list_keeps_task_id_whole_when_squeezed(
+def test_cron_list_prints_structured_bullets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The id must never ellipsize: ``/cron remove <id>`` chains on it.
+    """List tasks as bullets so a narrow terminal never splits a table cell.
 
-    At the REPL replay width (terminal minus gutter) ten columns compete for
-    space; the long name and the microsecond timestamps used to take it and
-    the id came back as ``ecf7c2580b…``.
+    ``/cron remove <id>`` chains on the id, which a squeezed table used to
+    return as ``ecf7c2580b…``.
     """
     from infrastructure.scheduling.scheduler.loops import LoopSummary
 
@@ -356,18 +355,20 @@ def test_cron_list_keeps_task_id_whole_when_squeezed(
     monkeypatch.setattr(
         "infrastructure.scheduling.scheduler.loops.list_loop_summaries", lambda: [summary]
     )
-    # ``file=None`` resolves to ``sys.stdout`` at print time, so CliRunner still
-    # captures the table; ``width`` pins the squeeze independent of the pytest TTY.
     monkeypatch.setattr(cron_module, "_console", Console(width=95, force_terminal=False))
-    squeezed = CliRunner().invoke(cron_module.cron_command, ["list"])
-    assert squeezed.exit_code == 0
-    assert "ecf7c2580b83" in squeezed.output
-    assert "…" not in squeezed.output  # every other cell folds instead of truncating
-
-    monkeypatch.setattr(cron_module, "_console", Console(width=200, force_terminal=False))
-    wide = CliRunner().invoke(cron_module.cron_command, ["list"])
-    assert "2026-09-16 11:54:47 UTC" in wide.output
-    assert "347779" not in wide.output  # microseconds are noise that cost a column
+    result = CliRunner().invoke(cron_module.cron_command, ["list"])
+    assert result.exit_code == 0
+    assert "┏" not in result.output
+    assert "• CI repair: davincios/opensre-ci-fix-demo-9YaBJ" in result.output
+    assert "• ID: ecf7c2580b83" in result.output
+    assert "• Kind: manual_loop" in result.output
+    assert "• Cron: */30 * * * * *" in result.output
+    assert "• Timezone: UTC" in result.output
+    assert "• Provider: interactive_shell" in result.output
+    assert "• Channels: interactive_shell" in result.output
+    assert "• Next run: 2026-09-16 12:17:30 UTC" in result.output
+    assert "• Last run: 2026-09-16 11:54:47 UTC" in result.output
+    assert "347779" not in result.output
 
 
 def test_cron_add_manual_loop_requires_prompt() -> None:

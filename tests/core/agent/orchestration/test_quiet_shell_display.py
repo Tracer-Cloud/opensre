@@ -12,7 +12,9 @@ import json
 from typing import Any
 
 from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+from core.agent_harness.turns.display_text import is_outcome_report
 from core.llm.types import ToolCall
+from core.messages import AssistantRuntimeMessage
 
 
 class _ToolResult:
@@ -28,11 +30,13 @@ class _Result:
         *,
         tool_results: list[tuple[ToolCall, _ToolResult]],
         final_text: str = "",
+        messages: list[Any] | None = None,
     ) -> None:
         self.tool_results = tool_results
         self.executed = list(tool_results)
         self.final_text = final_text
         self.planned = [call for call, _ in tool_results]
+        self.messages = messages or []
 
 
 class _Session:
@@ -570,6 +574,481 @@ def test_plan_snapshots_are_stripped_from_the_reply() -> None:
     assert "Repository: /Users/x/opensre" in shown
     assert "Plan ·" not in shown
     assert "✓ Inspect path" not in shown
+
+
+def _outcome(status: str) -> str:
+    return f"- **Outcome:** {status}\n- **Repository:** example/demo"
+
+
+def test_repair_snapshots_collapse_to_the_latest_outcome() -> None:
+    """A queued snapshot must not be reprinted next to the terminal report."""
+    queued = _outcome("queued. Waiting for the scheduled tick.")
+    succeeded = _outcome("succeeded. The repair commit passed CI.")
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(queued)),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(succeeded)),
+            ),
+            (
+                ToolCall(id="3", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True
+
+    _response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" in shown
+    assert cleanup in shown
+    assert shown.count("**Outcome:**") == 1
+    assert use_final_text is False
+
+
+def test_model_outcome_report_is_not_repeated_from_tool_snapshots() -> None:
+    """The model's report is the reply; schedule and inspect snapshots stay off screen."""
+    report = (
+        "Repair Report\n\n"
+        "- **Outcome:** Scheduled repair succeeded in one attempt on PR #1.\n"
+        "- **Repair:** Loop 858332343cdc pushed ce4efbc."
+    )
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="3", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload("Saved demo evidence and removed the scheduled repair.")),
+            ),
+        ],
+        messages=[AssistantRuntimeMessage(content=report, tool_calls=())],
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True
+
+    _response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert shown.count("Repair Report") == 1
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" not in shown
+    assert "Saved demo evidence" not in shown
+    assert use_final_text is True
+
+
+def test_a_later_outcome_closing_replaces_the_earlier_report() -> None:
+    """The closing report wins when an earlier tool-step report used other words."""
+    earlier = "Repair Report\n\n- **Outcome:** queued. Waiting for the scheduled tick."
+    later = "Repair Report\n\n- **Outcome:** succeeded. The repair commit passed CI."
+    result = _Result(
+        tool_results=[],
+        final_text=later,
+        messages=[AssistantRuntimeMessage(content=earlier, tool_calls=())],
+    )
+
+    response_text, display_chunks, use_final_text = _compose_response(
+        result, _Session(), _counts(0)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert "Waiting for the scheduled tick" not in shown
+    assert "Waiting for the scheduled tick" not in response_text
+    assert "The repair commit passed CI" in shown
+    assert shown.count("**Outcome:**") == 1
+    assert use_final_text is True
+
+
+def test_collapsing_repair_snapshots_keeps_another_tools_summary() -> None:
+    """Dropping an earlier snapshot must not drop a tool that has no response text."""
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="3", name="github_cli", input={}),
+                _ToolResult({"ok": True, "summary": "PR #1 is open."}),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" in shown
+    assert "PR #1 is open." in shown
+
+
+def test_a_short_answer_does_not_reprint_results_already_shown_inline() -> None:
+    """The action log already printed the snapshots; the closing stays the answer."""
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="3", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+        ],
+        final_text="The repository remains.",
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert shown == "The repository remains."
+    assert use_final_text is True
+
+
+def test_a_long_result_before_the_snapshot_does_not_hide_the_outcome() -> None:
+    """The display cap keeps the report when a long result is ahead of it.
+
+    Quiet mode stashes the action log, so this fallback is the only copy.
+    """
+    long_summary = "\n".join(f"log line {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult({"ok": True, "stdout": long_summary}),
+            ),
+            (
+                ToolCall(id="2", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="3", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "Waiting for the scheduled tick" not in shown
+    assert "log line 39" not in shown
+    assert shown.count("**Outcome:**") == 1
+
+
+def test_cleanup_stays_visible_when_a_long_log_precedes_it() -> None:
+    """A long log must not consume the preview that the cleanup confirmation needs.
+
+    Quiet mode stashes the action log, so this fallback is the only copy.
+    """
+    long_summary = "\n".join(f"log line {index}" for index in range(40))
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult({"ok": True, "stdout": long_summary}),
+            ),
+            (
+                ToolCall(id="2", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="3", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="4", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(4))
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert cleanup in shown
+    assert "Waiting for the scheduled tick" not in shown
+    assert "log line 39" not in shown
+    assert shown.count("**Outcome:**") == 1
+
+
+def test_a_long_outcome_report_is_capped() -> None:
+    """A long reason list previews; it does not fill the terminal."""
+    lines = ["- **Outcome:** succeeded. The repair commit passed CI."]
+    lines.extend(f"- **Attempt {index}:** the check failed" for index in range(20))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload("\n".join(lines))),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(2))
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "Attempt 19" not in shown
+    assert "Ctrl+O to view" in shown
+
+
+def test_a_folded_report_and_log_share_one_expand_marker() -> None:
+    """Two folded sections leave one Ctrl+O cue, and it stays outside the fence."""
+    lines = ["- **Outcome:** succeeded. The repair commit passed CI."]
+    lines.extend(f"- **Attempt {index}:** the check failed" for index in range(20))
+    long_log = "\n".join(f"log line {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult({"ok": True, "stdout": long_log}),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload("\n".join(lines))),
+            ),
+        ]
+    )
+
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        result, _Session(), _counts(2)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "Attempt 19" not in shown
+    assert "log line 39" not in shown
+    fence_end = shown.index("```", shown.index("```text") + 1)
+    after = shown[fence_end:]
+    inside = shown[:fence_end]
+    assert after.count("Ctrl+O to view") == 1
+    assert "Ctrl+O to view" not in inside
+
+
+def test_several_tool_previews_stay_within_one_cap() -> None:
+    """Separate per-result previews must not stack into an uncapped wall."""
+    tool_results = [
+        (
+            ToolCall(id=str(index), name="github_cli", input={}),
+            _ToolResult(
+                {
+                    "ok": True,
+                    "stdout": "\n".join(f"block {index} line {line}" for line in range(10)),
+                }
+            ),
+        )
+        for index in range(4)
+    ]
+    tool_results.append(
+        (
+            ToolCall(id="report", name="get_ci_repair_loop", input={}),
+            _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+        )
+    )
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        _Result(tool_results=tool_results), _Session(), _counts(5)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "block 3 line 9" not in shown
+    assert shown.count("Ctrl+O to view") == 1
+
+
+def test_a_brief_cleanup_survives_earlier_short_results() -> None:
+    """Quiet mode's one cap must not cut off the trailing cleanup line."""
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    tool_results: list[tuple[ToolCall, _ToolResult]] = [
+        (
+            ToolCall(id=str(index), name="github_cli", input={}),
+            _ToolResult(_payload(f"status {index}")),
+        )
+        for index in range(20)
+    ]
+    tool_results.extend(
+        [
+            (
+                ToolCall(id="done", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+            (
+                ToolCall(id="report", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        _Result(tool_results=tool_results), session, _counts(22)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert cleanup in shown
+    assert "The repair commit passed CI" in shown
+    assert "status 19" not in shown
+
+
+def test_a_long_trailing_line_is_still_capped() -> None:
+    """A one-line tail still has to honor the character cap."""
+    huge = "x" * 2000
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult(_payload(huge)),
+            )
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(1))
+    shown = "\n".join(display_chunks)
+
+    assert huge not in shown
+    assert "Ctrl+O to view" in shown
+    assert shown.count("Ctrl+O to view") == 1
+
+
+def test_one_outcome_stays_visible_after_a_long_response() -> None:
+    """A single snapshot still survives when the cap would otherwise eat the tail."""
+    long_text = "\n".join(f"note {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult(_payload(long_text)),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(2))
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "note 39" not in shown
+    assert shown.count("**Outcome:**") == 1
+
+
+def test_one_outcome_stays_visible_when_the_composer_is_the_only_display() -> None:
+    """With no action log, the capped preview is the reply and must keep the report."""
+    long_text = "\n".join(f"note {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult(_payload(long_text)),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+        ]
+    )
+
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        result, _Session(), _counts(2)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "note 39" not in shown
+    assert shown.count("**Outcome:**") == 1
+
+
+def test_a_short_answer_keeps_one_capped_outcome_when_results_were_not_inline() -> None:
+    """Without an action log, the closing keeps the latest snapshot and caps the rest."""
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    long_summary = "\n".join(f"log line {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="3", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+            (
+                ToolCall(id="4", name="github_cli", input={}),
+                _ToolResult({"ok": True, "stdout": long_summary}),
+            ),
+        ],
+        final_text="The repository remains.",
+    )
+
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        result, _Session(), _counts(4)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert "The repository remains." in shown
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" in shown
+    assert cleanup in shown
+    assert "log line 0" in shown
+    assert "log line 39" not in shown
+    assert "Ctrl+O to view" in shown
+    assert shown.count("**Outcome:**") == 1
+
+
+def test_a_bullet_that_mentions_outcome_is_not_a_repair_report() -> None:
+    assert is_outcome_report("- The outcome of the deploy is green.") is False
+    assert is_outcome_report("- **Outcome:** succeeded.") is True
 
 
 def test_tool_reply_text_is_shown_when_the_model_has_no_closing() -> None:

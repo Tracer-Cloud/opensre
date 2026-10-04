@@ -69,6 +69,9 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/integrations", "remove"),
         ("/mcp", "connect"),
         ("/mcp", "disconnect"),
+        # Bare ``/model set`` opens the provider picker; with a provider it may
+        # prompt for a missing key and prints the models table.
+        ("/model", "set"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),
@@ -89,6 +92,7 @@ _WAIT_FOR_COMPLETION_COMMANDS: frozenset[str] = frozenset(
         "/credits",
         "/auth",
         "/login",
+        "/logout",
         # ``/goal set|resume`` queues the condition as the next prompt turn.
         # Wait for the slash turn to finish so the work prompt renders as its
         # own ``[N] ❯`` line (not buried under the set paint / ``$`` echo).

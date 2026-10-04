@@ -282,6 +282,14 @@ class SessionManager:
         context = data.get(RestoreContextKey.ACCUMULATED_CONTEXT)
         if isinstance(context, dict):
             session.accumulated_context = dict(context)
+            integrations = getattr(session, "integrations", None)
+            saved_connection = context.get("_github_connection_id")
+            if (
+                integrations is not None
+                and integrations.github_connection_id is None
+                and isinstance(saved_connection, str)
+            ):
+                integrations.github_connection_id = saved_connection
         goal_state = data.get(RestoreContextKey.SESSION_GOAL_STATE)
         if isinstance(goal_state, dict):
             from core.agent_harness.session_goal.persist import (
@@ -350,13 +358,15 @@ class SessionManager:
         # Snapshot messages before release/clear; the background extractor must
         # not retain a reference to the live session object.
         messages = list(getattr(session, "cli_agent_messages", []) or [])
+        session_id = session.session_id
         from infrastructure.observability.trace.spans import emit_thread_boundary
 
-        emit_thread_boundary(session.session_id, name="session_end", phase="session_end")
+        emit_thread_boundary(session_id, name="session_end", phase="session_end")
         session.release_resources()
         if extract_memory:
             self._schedule_memory_extraction_from_messages(
                 messages,
+                session_id=session_id,
                 wait_for_completion=wait_for_memory_extraction,
             )
 
@@ -388,18 +398,22 @@ class SessionManager:
     @staticmethod
     def _schedule_memory_extraction(session: SessionCore) -> None:
         messages = list(getattr(session, "cli_agent_messages", []) or [])
-        SessionManager._schedule_memory_extraction_from_messages(messages)
+        SessionManager._schedule_memory_extraction_from_messages(
+            messages, session_id=session.session_id
+        )
 
     @staticmethod
     def _schedule_memory_extraction_from_messages(
         messages: list[tuple[str, str]],
         *,
+        session_id: str,
         wait_for_completion: bool = False,
     ) -> None:
         from core.agent_harness.session.memory_extraction import schedule_memory_extraction
 
         schedule_memory_extraction(
             messages,
+            session_id=session_id,
             wait_for_completion=wait_for_completion,
         )
 

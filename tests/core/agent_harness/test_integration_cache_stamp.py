@@ -12,17 +12,17 @@ from core.agent_harness.session.integration_resolution import resolve_and_cache_
 
 
 def _store_versions(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """The store as the resolver sees it: a stamp and the credentials it resolves to."""
+    """The sources as the resolver sees them: a stamp and the credentials they resolve to."""
     state: dict[str, Any] = {"stamp": 1, "token": "token-one", "resolutions": 0}
 
-    def stamp() -> int:
-        return int(state["stamp"])
+    def stamp() -> tuple[int, int]:
+        return (int(state["stamp"]), 0)
 
     def resolve() -> dict[str, Any]:
         state["resolutions"] += 1
         return {"github": {"auth_token": state["token"]}}
 
-    monkeypatch.setattr(integration_resolution, "integrations_store_stamp", stamp)
+    monkeypatch.setattr(integration_resolution, "integration_sources_stamp", stamp)
     monkeypatch.setattr(integration_resolution, "resolve_integrations", resolve)
     return state
 
@@ -93,6 +93,44 @@ def test_a_store_rewritten_during_resolution_is_re_resolved_next_turn(
 
     # Assert: the in-flight result was stamped with the old store, so the next turn re-resolves
     assert after_rewrite["github"]["auth_token"] == "token-two"
+    assert state["resolutions"] == 2
+
+
+def test_a_changed_account_integration_set_reaches_a_session_that_already_resolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real sources stamp: a remote-set generation bump re-resolves, local store untouched."""
+    # Arrange: a fixed local store; the signed-in account's remote set changes mid-session
+    from dataclasses import replace
+
+    from infrastructure.harness_providers import integration_resolution as harness_providers
+
+    state: dict[str, Any] = {"generation": 0, "token": "remote-one", "resolutions": 0}
+
+    def generation() -> int:
+        return int(state["generation"])
+
+    def resolve() -> dict[str, Any]:
+        state["resolutions"] += 1
+        return {"github": {"auth_token": state["token"]}}
+
+    monkeypatch.setattr(harness_providers, "integrations_store_stamp", lambda: 7)
+    monkeypatch.setattr(
+        harness_providers,
+        "_installed_adapters",
+        replace(harness_providers._adapters(), account_integrations_generation=generation),
+    )
+    monkeypatch.setattr(integration_resolution, "resolve_integrations", resolve)
+    session = SessionCore()
+    first = resolve_and_cache_integrations(session)
+    state.update(generation=1, token="remote-two")
+
+    # Act
+    second = resolve_and_cache_integrations(session)
+
+    # Assert
+    assert first["github"]["auth_token"] == "remote-one"
+    assert second["github"]["auth_token"] == "remote-two"
     assert state["resolutions"] == 2
 
 

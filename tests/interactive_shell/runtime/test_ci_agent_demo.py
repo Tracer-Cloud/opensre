@@ -96,7 +96,7 @@ def _agent_demo_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[d
     from infrastructure.scheduling.scheduler.local_delivery import LocalLoopMessage
 
     monkeypatch.setattr(ci_agent_demo, "scan_workspace", lambda *_a, **_kw: _SNAPSHOT)
-    monkeypatch.setattr(ci_agent_demo, "resolve_github_token", lambda _token: "tok")
+    monkeypatch.setattr(ci_agent_demo, "effective_github_token", lambda: "tok")
     monkeypatch.setattr(ci_agent_demo, "marker_path", lambda: tmp_path / "onboarding_demo.json")
     calls: list[dict[str, object]] = []
 
@@ -256,7 +256,7 @@ def test_agent_demo_stops_with_setup_hint_when_no_github_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls = _agent_demo_ready(monkeypatch, tmp_path)
-    monkeypatch.setattr(ci_agent_demo, "resolve_github_token", lambda _token: "")
+    monkeypatch.setattr(ci_agent_demo, "effective_github_token", lambda: "")
     _answers(monkeypatch)
     session = Session()
     console, buf = _capture()

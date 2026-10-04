@@ -20,17 +20,26 @@ def _display_safe(text: str) -> str:
     return "\n".join(strip_terminal_controls(line) for line in text.splitlines())
 
 
-def render_choice_selection(console: Console, title: str, answer: str) -> None:
-    """Persist a single pick after its menu closes, as a one-question Ask User card.
+def render_choice_selections(console: Console, pairs: list[tuple[str, str]]) -> None:
+    """Persist every pick after its menu closes, as one Ask User card.
 
-    The menu itself is erased, so this is the transcript's only record of the
-    choice. It uses the same card as the batched wizard (header, numbered bold
-    question, answer beneath) so every hand-off answer reads alike. Must not use
-    the plan-step ``✓`` glyph. The leading blank replaces the section gap the
-    erased menu took with it.
+    The menus themselves are erased, so this is the transcript's only record.
+    A follow-up menu passes each question the user answered, in order. The card
+    matches the batched wizard (header, numbered bold questions, answers
+    beneath) so every hand-off answer reads alike. Must not use the plan-step
+    ``✓`` glyph. The leading blank replaces the section gap the erased menu
+    took with it.
     """
     console.print()
-    render_ask_user_qa(console, [(title.strip(), answer.strip())])
+    render_ask_user_qa(
+        console,
+        [(title.strip(), answer.strip()) for title, answer in pairs],
+    )
+
+
+def render_choice_selection(console: Console, title: str, answer: str) -> None:
+    """Persist a single pick after its menu closes, as a one-question Ask User card."""
+    render_choice_selections(console, [(title, answer)])
 
 
 def render_ask_user_qa(console: Console, pairs: list[tuple[str, str]]) -> None:
@@ -72,5 +81,6 @@ def try_render_ask_user_submission(console: Console, text: str) -> bool:
 __all__ = [
     "render_ask_user_qa",
     "render_choice_selection",
+    "render_choice_selections",
     "try_render_ask_user_submission",
 ]

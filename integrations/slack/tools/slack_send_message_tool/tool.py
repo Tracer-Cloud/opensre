@@ -32,7 +32,9 @@ class SlackSendMessageTool(BaseTool):
         "Send a plain-text message to Slack. Uses the configured incoming webhook "
         "when one exists, otherwise posts to channel_id with the bot token. Use this "
         "for explicit user-requested Slack notifications, status updates, or on-demand "
-        "alerts. Credentials are resolved internally and never returned."
+        "alerts. Credentials are resolved internally and never returned. Put the real "
+        "content in `message`: run any lookup first and send its actual result. When "
+        "the user names a channel or thread, prefer slack_reply_message."
     )
     use_cases = [
         "Sending a user-requested notification to the configured Slack channel",

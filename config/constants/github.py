@@ -13,7 +13,6 @@ GITHUB_MCP_TOOLSETS_ENV = "GITHUB_MCP_TOOLSETS"
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 GH_TOKEN_ENV = "GH_TOKEN"
 GITHUB_CLI_REQUIRED_SCOPES = frozenset({"read:org", "repo", "security_events", "workflow"})
-GITHUB_CI_DEMO_REPOSITORY = "opensre-onboarding-ci-repair-demo"
 #: Shell command that opens the GitHub setup wizard.
 GITHUB_INTEGRATION_SETUP_SLASH = "/integrations setup github"
 #: Same wizard from a terminal that is not already inside the interactive shell.
@@ -42,7 +41,6 @@ __all__ = [
     "GH_TOKEN_ENV",
     "GITHUB_API_BASE_URL",
     "GITHUB_CLI_REQUIRED_SCOPES",
-    "GITHUB_CI_DEMO_REPOSITORY",
     "GITHUB_INTEGRATION_SETUP_CLI",
     "GITHUB_INTEGRATION_SETUP_SLASH",
     "GITHUB_SETUP_SLASH_INVOKE",

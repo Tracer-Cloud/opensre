@@ -39,31 +39,34 @@ Choose **Sign in or create account** in the welcome screen.
 
 The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. Signing in activates the OpenSRE-hosted model, so you need no LLM key. Back in the terminal, OpenSRE confirms the session with the web app and opens the shell. If the sign-in screen comes back instead, see [troubleshooting](#troubleshooting).
 
-## Step 3: Pick a demo, or skip it
+## Step 3: Pick what to do
 
-The first shell prompt asks which demo to run:
+The first shell prompt asks what you want to do:
 
 ```text
-Which demo would you like me to run?
-  (A) Explore a repo and analyze its CI/CD performance (recommended)
-  (B) Set up an agent that improves CI/CD reliability over time
-  (C) Run CI/CD repairs remotely
-  (D) Connect OpenSRE to Slack and hand off DevOps chores for your team
-  (E) Skip the demo and open the shell
+What would you like to do?
+  (A) Analyze & improve a repo (recommended)
+  (B) Keep my CI/CD healthy automatically
+  (C) Open the shell
 ```
 
-<Frame>
-  ![The startup demo picker with its five options](/images/onboarding-demo-picker.png)
-</Frame>
+Choosing **B** asks how that should run:
 
-Choose **A** to see what OpenSRE does with a real repository on your machine: it
+```text
+Keep my CI/CD healthy automatically
+  (A) Run continuously on this machine (recommended)
+  (B) Run one repair in OpenSRE Cloud
+  (C) Connect Slack
+```
+
+Choose **A** to see what OpenSRE does with a repository on your machine: it
 reads the last 30 days of GitHub Actions history and reports how reliable your
 CI is and how much developer time it costs. It needs GitHub access: connect it
 first with `opensre integrations setup github` (authorize in the browser, or
-paste a token). Without it the demo stops and names that command. See
+paste a token). Without it the flow stops and names that command. See
 [CI/CD analytics demo](/cicd/cicd-analytics-demo).
 
-Choose **E** to go straight to the prompt. Type `/demo` to open the menu again at
+Choose **C** to go straight to the prompt. Type `/demo` to open the menu again at
 any time, or start with `opensre --skip-onboarding` to skip it.
 
 ## Step 4: Ask your first question

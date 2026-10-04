@@ -10,6 +10,8 @@ import pytest
 from integrations.github.tools.ci_fix.context import CiFixContext, FailingCheck
 from integrations.github.tools.ci_fix.verification import (
     DEFAULT_POLL_INTERVAL_SECONDS,
+    DEFAULT_REGISTRATION_SECONDS,
+    DEFAULT_SETTLE_SECONDS,
     CheckState,
     _workflow_runs_state,
     wait_for_branch_checks,
@@ -1024,3 +1026,42 @@ def test_wait_for_pr_checks_stops_at_once_when_pushed_head_is_conflicted() -> No
     # Assert
     assert result.state is CheckState.CONFLICTED
     assert sleeps == [1]
+
+
+class _AdvancingClock:
+    """Monotonic clock that moves only when verification sleeps."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def test_wait_for_pr_checks_holds_the_default_registration_window() -> None:
+    """A check that is already successful still waits out registration and settle."""
+    payload = _rollup(sha="new-sha", name="quality", conclusion="SUCCESS", status="COMPLETED")
+    clock = _AdvancingClock()
+
+    with patch(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        return_value=payload,
+    ):
+        result = wait_for_pr_checks(
+            _CONTEXT,
+            github_token="tok",
+            expected_head_sha="new-sha",
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        )
+
+    assert result.state is CheckState.PASSED
+    assert result.check_names == ("quality",)
+    assert clock.now == DEFAULT_REGISTRATION_SECONDS + DEFAULT_SETTLE_SECONDS
+    assert clock.sleeps
+    assert all(seconds == DEFAULT_POLL_INTERVAL_SECONDS for seconds in clock.sleeps)

@@ -17,10 +17,7 @@ PRODUCT_DISPLAY_NAME: Final[str] = "OpenSRE"
 
 #: Sign-in / welcome screen copy, shown when the shell requires login.
 WELCOME_TITLE: Final[str] = "Welcome to OpenSRE CLI"
-WELCOME_DESCRIPTION: Final[str] = (
-    "OpenSRE is an AI-powered DevOps agent that diagnoses, fixes and "
-    "optimizes your production software."
-)
+WELCOME_DESCRIPTION: Final[str] = "OpenSRE finds, fixes, and prevents CI/CD failures."
 SIGN_IN_PROMPT: Final[str] = "Sign in or create an OpenSRE account to use the interactive shell."
 
 #: Release maturity, as users see it. Keep in step with the README badge.
@@ -41,7 +38,11 @@ UV_RUN_RECURSION_DEPTH_ENV: Final[str] = "UV_RUN_RECURSION_DEPTH"
 #: Prevent a CLI wizard opened inside the REPL from launching a nested shell.
 OPENSRE_PARENT_INTERACTIVE_SHELL_ENV: Final[str] = "OPENSRE_PARENT_INTERACTIVE_SHELL"
 
+#: Turns the interactive shell on or off for a bare ``opensre`` run.
+OPENSRE_INTERACTIVE_ENV: Final[str] = "OPENSRE_INTERACTIVE"
+
 __all__ = [
+    "OPENSRE_INTERACTIVE_ENV",
     "OPENSRE_PARENT_INTERACTIVE_SHELL_ENV",
     "PRODUCT_DISPLAY_NAME",
     "PRODUCT_NAME",

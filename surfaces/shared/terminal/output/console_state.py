@@ -11,6 +11,7 @@ _active_display: Any | None = None
 _completed_footer_snapshot: tuple[str, float, str, str] | None = None
 _tracker_toggle_stop_fn: Callable[[], None] | None = None
 _turn_spinner: Any | None = None
+_repl_state: Any | None = None
 
 
 def set_tracker_toggle_stop_fn(fn: Callable[[], None] | None) -> None:
@@ -31,6 +32,16 @@ def set_turn_spinner(spinner: Any | None) -> None:
 
 def get_turn_spinner() -> Any | None:
     return _turn_spinner
+
+
+def set_repl_state(state: Any | None) -> None:
+    """Register the live ``ReplState`` so a tool update can pin the gateway plan."""
+    global _repl_state
+    _repl_state = state
+
+
+def get_repl_state() -> Any | None:
+    return _repl_state
 
 
 def _capture_footer_snapshot(display: Any) -> None:

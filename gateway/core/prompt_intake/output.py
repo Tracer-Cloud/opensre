@@ -6,6 +6,7 @@ import logging
 import threading
 from collections.abc import Callable, Iterable
 
+from config.constants.gateway import PROMPT_PROGRESS_KIND_NOTE, PROMPT_PROGRESS_KIND_PLAN_DONE
 from core.tool import ToolExecutionHooks
 from infrastructure.turn_host.status_messages import EMPTY_RESPONSE_MESSAGE
 
@@ -13,11 +14,18 @@ logger = logging.getLogger("gateway")
 
 
 class CollectingTurnOutput:
-    """The ``TurnOutput`` surface with no chat behind it: text is collected, not sent."""
+    """The ``TurnOutput`` surface with no chat behind it: text is collected, not sent.
 
-    def __init__(self, on_status: Callable[[str], None] | None = None) -> None:
+    ``records_hosted_activity`` opts this sink into compact shell activity
+    (``note_activity``) instead of the chat status line.
+    """
+
+    records_hosted_activity = True
+
+    def __init__(self, on_status: Callable[..., None] | None = None) -> None:
         self.tool_hooks: ToolExecutionHooks | None = None
-        self.turn_cancel: threading.Event | None = None
+        #: The turn's one cancel signal; the queue sets it when the caller cancels.
+        self.turn_cancel = threading.Event()
         self.answer = ""
         self.failed = False
         self.status = ""
@@ -38,11 +46,19 @@ class CollectingTurnOutput:
     def set_tool_status(self, status: str) -> None:
         self._note(status)
 
-    def _note(self, status: str) -> None:
+    def note_activity(self, text: str, *, kind: str) -> None:
+        """Record one compact activity line (tool, plan) for the shell feed."""
+        self._note(text, kind=kind)
+
+    def render_plan_breakdown(self, breakdown: str) -> None:
+        """Record the settled checklist so the shell themes it once."""
+        self._note(breakdown, kind=PROMPT_PROGRESS_KIND_PLAN_DONE)
+
+    def _note(self, status: str, *, kind: str = PROMPT_PROGRESS_KIND_NOTE) -> None:
         """Keep the latest status and hand it to whoever records progress."""
         self.status = status
         if self._on_status is not None:
-            self._on_status(status)
+            self._on_status(status, kind=kind)
 
     def finish_streamed_response(self, answer: str) -> None:
         self.answer = answer or EMPTY_RESPONSE_MESSAGE

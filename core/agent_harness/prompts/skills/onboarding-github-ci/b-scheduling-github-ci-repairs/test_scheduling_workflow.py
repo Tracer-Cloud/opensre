@@ -7,8 +7,8 @@ through three tools, and the tick prompt described "invoke the
 repair-github-ci workflow" instead of naming ``fix_github_pr_ci``. This suite
 pins the corrected card: the loop is created by one spelled-out
 ``schedule_ci_repair_loop`` call (the tool owns cadence and the tick), the
-first tick is forced with ``/cron run``, verification is a single read, and
-nothing is created before the repository question.
+scheduler fires that tick (a forced ``/cron run`` is forbidden), verification
+is a single read, and nothing is created before the repository question.
 """
 
 from __future__ import annotations
@@ -116,10 +116,10 @@ def _recording_tool(name: str, calls: list[tuple[str, dict[str, Any]]]) -> Regis
     )
 
 
-def test_skill_card_spells_out_the_loop_call_and_forced_first_tick() -> None:
+def test_skill_card_spells_out_the_loop_call_and_waits_for_the_scheduler() -> None:
     frontmatter, _ = parse_frontmatter(_SKILL_PATH.read_text(encoding="utf-8"))
     assert frontmatter["name"] == SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME
-    assert frontmatter["includes"] == ["common/ask_once.md"]
+    assert "includes" not in frontmatter
     body = load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
 
     # The loop is created by one spelled-out tool call that owns the cadence;
@@ -129,15 +129,27 @@ def test_skill_card_spells_out_the_loop_call_and_forced_first_tick() -> None:
     assert body.count("schedule_ci_repair_loop(") == 1
     assert '"--cron"' not in body and "/cron add" not in body
     assert "--timezone" not in body and "Poll every" not in body
-    # The first tick is forced, not awaited; verification is a single read.
-    assert '"args": ["run", "<id>"]' in body
+    # The scheduler owns the first tick. Forcing ``/cron run`` is forbidden:
+    # on the hosted gateway a slash command is stopped after 90 seconds and
+    # takes the repair with it. Verification stays a single read.
+    assert '"args": ["run", "<id>"]' not in body
+    assert "Do not run `/cron run <id>`." in body
+    assert 'get_ci_repair_loop(task_id="<id>", wait_until_terminal=true)' in body
+    assert "terminal: true" in body
     assert "headRefOid,commits,statusCheckRollup" in body
     assert "Do not run the tests locally" in body
-    # The demo loop is removed after the evidence is saved; the repository is
-    # kept, so the token never needs delete_repo scope.
-    assert '"args": ["remove", "<id>"]' in body
+    # One cleanup call removes the scheduled task and keeps the repository,
+    # so the token never needs delete_repo scope and the card does not spell
+    # a separate `/cron remove`.
+    assert "finish_ci_repair_demo(" in body
+    assert '"args": ["remove", "<id>"]' not in body
     assert '["repo", "delete"' not in body
     assert "report that the repository remains" in body
+    assert "Create <owner>/<repo>" in body
+    # The private demo runs seed, schedule, wait, read and finish in one call,
+    # with the demo's fast checks, and is never retried within the plan.
+    assert 'Call `run_ci_repair_demo(owner="<owner>", repo="<repo>")` once.' in body
+    assert "Do not call it again in this plan." in body
     assert skill_reference_names(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME) == ("script-tools",)
 
 
@@ -169,8 +181,9 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
         resolved_integrations_cache={},
     )
     calls: list[tuple[str, dict[str, Any]]] = []
-    plan = [{"step": step, "status": "pending"} for step in steps]
-    plan[0]["status"] = "in_progress"
+    checklist = [{"step": step, "status": "pending"} for step in steps]
+    started = [dict(item) for item in checklist]
+    started[0]["status"] = "in_progress"
     repository_menu = tool_response(
         "ask_user_choice",
         {"title": _REPOSITORY_QUESTION, "options": [_DEMO_OPTION, "acme/widget"]},
@@ -179,13 +192,14 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
         [
             # Plan write, the repository question and eager repo creation in one
             # response: the menu must stand alone, so the runtime runs none of
-            # it and the model re-issues the plan write and then the menu.
+            # it. The re-issue records every step pending; the host then
+            # marks the first step in_progress. The menu follows on its own.
             _batch(
-                tool_response("update_plan", {"plan": plan}),
+                tool_response("update_plan", {"plan": started}),
                 repository_menu,
                 tool_response("github_cli", {"args": ["repo", "create", "demo", "--private"]}),
             ),
-            tool_response("update_plan", {"plan": plan}),
+            tool_response("update_plan", {"plan": checklist}),
             repository_menu,
         ]
     )

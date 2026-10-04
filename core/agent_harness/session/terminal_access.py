@@ -75,18 +75,38 @@ def execute_cli_onboard_on_missing_key(
     *,
     provider: str | None = None,
 ) -> str | None:
-    """Queue ``/onboard`` when *message* is a missing-key failure.
+    """Setup guidance for a missing-key or missing-endpoint *message*, else ``None``.
 
-    Returns the same guidance as :func:`remediate_missing_llm_credentials`,
-    or ``None`` when this is not a missing-key error.
+    The interactive shell (a session with a terminal facet) gets slash commands
+    and ``/onboard`` queued for its next prompt. Every other session — ``opensre
+    ask``, the gateway — gets ``opensre`` commands, plus account sign-in when the
+    process is signed out; nothing is queued, since it has no prompt to run it.
     """
-    from core.llm_invoke_errors import remediate_missing_llm_credentials
+    from core.llm_invoke_errors import CommandSurface, remediate_llm_setup_failure
 
-    text = remediate_missing_llm_credentials(message, provider=provider)
-    if text is None or session is None or exclusive_stdin_active(session):
+    if session is None or session_terminal(session) is None:
+        from config.account import account_llm_route
+
+        return remediate_llm_setup_failure(
+            message,
+            surface=CommandSurface.CLI,
+            provider=provider,
+            offer_account_login=account_llm_route() is None,
+        )
+    text = remediate_llm_setup_failure(message, surface=CommandSurface.SHELL, provider=provider)
+    if text is None or exclusive_stdin_active(session):
         return text
     set_auto_command(session, _ONBOARD_SLASH)
     return text
+
+
+def pending_autosubmit(session: Any) -> str:
+    """The command queued to submit itself as the next turn; empty when none or headless."""
+    terminal = session_terminal(session)
+    if terminal is None or not getattr(terminal, "pending_prompt_autosubmit", False):
+        return ""
+    pending = getattr(terminal, "pending_prompt_default", None)
+    return pending.strip() if isinstance(pending, str) else ""
 
 
 def clear_pending_autosubmit(session: Any) -> None:
@@ -111,6 +131,7 @@ __all__ = [
     "clear_pending_autosubmit",
     "exclusive_stdin_active",
     "execute_cli_onboard_on_missing_key",
+    "pending_autosubmit",
     "pop_turn_outcome_hint",
     "session_terminal",
     "set_auto_command",

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.spi.grounding import getting_started_skills
+from core.agent_harness.spi.session_state import clear_setup_resume
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_onboarding_demo_prompted
 from infrastructure.analytics.source import is_test_run
@@ -68,6 +69,8 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
         return False
     if session.pending_user_choice is not None or session.terminal.pending_prompt_default:
         return False
+    # A new demo starts over: a turn the previous one parked behind setup is dropped.
+    clear_setup_resume(session)
     scope = ActionToolScope(
         session=session,
         console=console,

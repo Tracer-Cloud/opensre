@@ -114,10 +114,13 @@ def test_only_chat_api_module_defines_dispatch_chat_turn() -> None:
     import ast
     from pathlib import Path
 
+    from tests.shared.product_sources import product_python_files
+
     root = Path(__file__).resolve().parents[3]
     definers: list[str] = []
-    for path in root.rglob("*.py"):
-        if "tests" in path.parts or ".venv" in path.parts:
+    # Skips dot-directories, so a git worktree under ``.claude/`` is never ours.
+    for path in product_python_files(root):
+        if "tests" in path.relative_to(root).parts:
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

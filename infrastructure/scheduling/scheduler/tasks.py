@@ -231,7 +231,9 @@ def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> st
         raise RuntimeError(f"Recurring skill task {task.id} is missing skill_name.")
     if is_legacy_skill_name(skill_name):
         _migrate_renamed_skill(task)
-    resolve_scheduled_skill(task.skill_name, task.skill_revision)
+    resolved = resolve_scheduled_skill(task.skill_name, task.skill_revision)
+    if resolved.repinned:
+        _record_followed_revision(task, resolved.revision)
     return runners.agent(
         {
             "source": SCHEDULED_RECURRING_SKILL,
@@ -240,6 +242,23 @@ def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> st
             "skill_revision": task.skill_revision,
             "skill_inputs": dict(task.skill_inputs),
         }
+    )
+
+
+def _record_followed_revision(task: ScheduledTask, revision: str) -> None:
+    """Store the pin of a skill edit the schedule followed, and report the change."""
+    previous = task.skill_revision
+    task.skill_revision = revision
+    if not update_task(task):
+        logger.warning(
+            "Recurring skill task %s is not in the task store; running with an unsaved pin.",
+            task.id,
+        )
+        return
+    record_scheduler_task_operation(
+        "scheduled_skill_revision_changed",
+        task,
+        extra={"from_revision": previous[:24], "to_revision": revision[:24]},
     )
 
 

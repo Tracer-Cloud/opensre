@@ -73,6 +73,7 @@ def merge_integrations_by_service(
 def resolve_effective_integrations(
     store_integrations: list[dict[str, Any]] | None = None,
     env_integrations: list[dict[str, Any]] | None = None,
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     _sync_overrides()
     return cast(
@@ -80,6 +81,7 @@ def resolve_effective_integrations(
         _load_catalog_impl().resolve_effective_integrations(
             store_integrations=store_integrations,
             env_integrations=env_integrations,
+            remote_integrations=remote_integrations,
         ),
     )
 
@@ -212,23 +214,34 @@ def load_env_integration_services() -> list[str]:
 
 
 def configured_integration_services() -> list[str]:
-    """Return lowercase service keys for integrations configured via env or the local store.
+    """Return lowercase service keys for configured integrations, from any source.
 
     Single source of truth shared by the welcome banner and the REPL session so
-    they never disagree about which integrations are connected. Covers both
-    environment-variable configuration and integrations saved to ``~/.opensre``
-    (e.g. via ``opensre integrations setup ...``). Never raises; returns an
+    they never disagree about which integrations are connected. Covers
+    environment-variable configuration, integrations saved to ``~/.opensre``
+    (e.g. via ``opensre integrations setup ...``), and the signed-in account's
+    organization integrations from the OpenSRE app. Never raises; returns an
     empty list on any failure so callers can treat it as best-effort.
     """
     try:
         store_records = load_integrations()
     except Exception:
         store_records = []
-    return _configured_service_names(store_records=store_records)
+    try:
+        from integrations.account_integrations import load_account_integrations
+
+        remote_records = load_account_integrations()
+    except Exception:
+        remote_records = []
+    return _configured_service_names(store_records=store_records, remote_records=remote_records)
 
 
-def _configured_service_names(*, store_records: list[dict[str, Any]]) -> list[str]:
-    """Merge env-visible and active store services into one deduplicated list."""
+def _configured_service_names(
+    *,
+    store_records: list[dict[str, Any]],
+    remote_records: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Merge env-visible, active store, and active remote services into one list."""
     services: list[str] = []
 
     try:
@@ -240,7 +253,7 @@ def _configured_service_names(*, store_records: list[dict[str, Any]]) -> list[st
         if service:
             services.append(service)
 
-    for record in store_records:
+    for record in [*store_records, *(remote_records or [])]:
         if str(record.get("status", "active")).strip().lower() != "active":
             continue
         service = str(record.get("service", "")).strip().lower()

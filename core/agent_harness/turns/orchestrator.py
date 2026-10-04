@@ -14,6 +14,7 @@ from core.agent_harness.ports import (
     TurnAccounting,
 )
 from core.agent_harness.prompts.memory.conversation import expand_affirmative_follow_up
+from core.agent_harness.prompts.skills import active_skill_catalog
 from core.agent_harness.session.pending_offer import (
     clear_unconfirmed_pending_offers,
     consume_confirmed_pending_offer,
@@ -123,9 +124,12 @@ def run_turn(
     input, the assistant reply the output, ``session_id`` groups the turns of a
     conversation and ``user_id`` names who took the turn. The outermost turn
     owns the session id; a turn nested inside it (a loop run from a command, a
-    tool driving a headless turn) inherits it rather than stamping its own.
+    tool driving a headless turn) inherits it rather than stamping its own. It
+    also binds the turn's skill catalog, which nested turns reuse.
     """
     with (
+        # One skill catalog per turn: a release pulled mid-turn applies to the next.
+        active_skill_catalog().bind_turn(),
         record_prompt_turn(text, session, surface=surface) as recorder,
         inherit_trace_session(getattr(session, "session_id", None)) as trace_session,
         observe_span(

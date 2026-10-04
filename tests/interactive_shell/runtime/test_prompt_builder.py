@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from prompt_toolkit.application import create_app_session
+from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
@@ -30,9 +31,9 @@ async def _wait_until_running(builder: PromptBuilder) -> asyncio.Task[str]:
     raise AssertionError("prompt application did not start")
 
 
-def _terminal_output() -> Vt100_Output:
+def _terminal_output(stream: io.StringIO | None = None) -> Vt100_Output:
     return Vt100_Output(
-        io.StringIO(),
+        stream if stream is not None else io.StringIO(),
         get_size=lambda: Size(rows=30, columns=80),
         term="xterm-256color",
         enable_cpr=False,
@@ -69,8 +70,8 @@ def test_empty_shell_builds_banner_repaint_without_writing_stdout(
 ) -> None:
     session = Session()
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    output = _terminal_output()
-    builder.pt_app = SimpleNamespace(output=output)  # type: ignore[assignment]
+    stdout = io.StringIO()
+    builder.pt_app = SimpleNamespace(output=_terminal_output(stdout))  # type: ignore[assignment]
     monkeypatch.setattr(
         prompt_builder_module,
         "repl_clear_screen",
@@ -88,7 +89,7 @@ def test_empty_shell_builds_banner_repaint_without_writing_stdout(
 
     assert rendered is not None
     assert "banner" in rendered
-    assert output.stdout.getvalue() == ""
+    assert stdout.getvalue() == ""
 
 
 def test_pre_turn_alert_blocks_idle_banner_repaint() -> None:
@@ -128,11 +129,50 @@ def test_idle_banner_repaint_does_not_drain_active_prompt_input(
 
 
 @pytest.mark.asyncio
+async def test_reading_from_the_live_prompt_does_not_drain_its_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The persistent prompt app reads stdin between turns. Draining under it
+    # split escape sequences it was parsing, and a lone ESC then cancelled a turn.
+    monkeypatch.setenv("TERM", "xterm-256color")
+    drains: list[bool] = []
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "drain_stale_cpr_bytes",
+        lambda: drains.append(True),
+    )
+    with (
+        create_pipe_input() as pipe_input,
+        create_app_session(input=pipe_input, output=_terminal_output()),
+    ):
+        session = Session()
+        pt_session = build_prompt_session(session)
+        pt_session.history = InMemoryHistory()
+        pt_session.default_buffer.history = pt_session.history
+        builder = PromptBuilder(session, ReplState(), SpinnerState(), pt_session)
+        builder.setup()
+        try:
+            first_read = asyncio.create_task(builder.read_prompt_text())
+            await _wait_until_running(builder)
+            pipe_input.send_text("first\r")
+            assert await asyncio.wait_for(first_read, timeout=2) == "first"
+            assert drains == [True]  # once, before the prompt app started
+
+            second_read = asyncio.create_task(builder.read_prompt_text())
+            pipe_input.send_text("second\r")
+            assert await asyncio.wait_for(second_read, timeout=2) == "second"
+        finally:
+            await builder.close()
+
+    assert drains == [True]
+
+
+@pytest.mark.asyncio
 async def test_close_restores_autowrap_after_prompt_cancellation() -> None:
     builder = PromptBuilder(Session(), ReplState(), SpinnerState())
     output = MagicMock()
     builder.pt_app = SimpleNamespace(output=output)  # type: ignore[assignment]
-    builder._prompt_task = asyncio.create_task(asyncio.sleep(60))
+    builder._prompt_task = asyncio.create_task(asyncio.sleep(60, result=""))
 
     await builder.close()
 

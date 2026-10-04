@@ -98,6 +98,24 @@ def _slash_completion(cmd: SlashCommand, start_position: int, *, cols: int) -> C
     )
 
 
+def subcommand_completions(command_name: str, prefix: str = "") -> tuple[Completion, ...]:
+    """Return first-argument completions for a registered slash command."""
+    entry = SLASH_COMMANDS.get(command_name)
+    if entry is None:
+        return ()
+    sub_prefix = prefix.lower()
+    return tuple(
+        Completion(
+            subcommand,
+            start_position=-len(prefix),
+            display=subcommand,
+            display_meta=metadata,
+        )
+        for subcommand, metadata in entry.first_arg_completions
+        if subcommand.startswith(sub_prefix)
+    )
+
+
 class ShellCompleter(Completer):
     """Tab-completion for slash commands, subcommands, and file paths."""
 
@@ -140,17 +158,7 @@ class ShellCompleter(Completer):
             if _suppress_empty_arg_completions_for_inline_picker(cmd_name, raw_arg):
                 return
 
-            entry = SLASH_COMMANDS.get(cmd_name)
-            hints = entry.first_arg_completions if entry is not None else ()
-            sub_prefix = raw_arg.lower()
-            for sub, meta in hints:
-                if sub.startswith(sub_prefix):
-                    yield Completion(
-                        sub,
-                        start_position=-len(raw_arg),
-                        display=sub,
-                        display_meta=meta,
-                    )
+            yield from subcommand_completions(cmd_name, raw_arg)
 
 
 # Commands where bare invocation opens an inline picker in TTY mode.

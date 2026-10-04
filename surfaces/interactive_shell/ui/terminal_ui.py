@@ -27,7 +27,10 @@ from surfaces.interactive_shell.ui.prompt_visibility import (
     hidden_typing_box_pad,
     typing_box_hidden,
 )
-from surfaces.interactive_shell.ui.task_plan import task_plan_overlay_ansi
+from surfaces.interactive_shell.ui.task_plan import (
+    gateway_plan_overlay_ansi,
+    task_plan_overlay_ansi,
+)
 from surfaces.shared.terminal.banner import render_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import strip_cpr_sequences
 from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_line_width
@@ -80,12 +83,20 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
         base = hidden_typing_box_pad()
     else:
         base = prompt_rendering._prompt_message(session).value
+    gateway_plan = state.gateway_plan
     plan = session.task_plan
     if plan is None or not plan.steps or _plan_already_in_transcript(session, plan, state):
         # Drop expand so the next plan opens collapsed rather than inheriting
-        # a sticky Ctrl+P from a previous checklist.
-        state.plan_expanded = False
-        state.plan_step_texts = None
+        # a sticky Ctrl+P from a previous checklist. A live gateway checklist
+        # still uses the flag, keyed by its own step texts.
+        if gateway_plan is None or not gateway_plan.steps:
+            state.plan_expanded = False
+            state.plan_step_texts = None
+        else:
+            gateway_steps = tuple(item.step for item in gateway_plan.steps)
+            if state.plan_step_texts is not None and state.plan_step_texts != gateway_steps:
+                state.plan_expanded = False
+            state.plan_step_texts = gateway_steps
         plan_overlay = ""
     else:
         # Status-only updates keep expand; a different checklist must not.
@@ -96,9 +107,23 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
         plan_overlay = strip_cpr_sequences(
             task_plan_overlay_ansi(plan, expanded=state.plan_expanded)
         )
+    # Paint after the expand decision so a replaced checklist opens collapsed.
+    gateway_overlay = ""
+    if gateway_plan is not None and gateway_plan.steps:
+        gateway_overlay = strip_cpr_sequences(
+            gateway_plan_overlay_ansi(gateway_plan, expanded=state.plan_expanded)
+        )
     # Droid block rhythm: blank row above the checklist (separates scrollback
     # notes from the pinned plan) and one blank beneath before status chrome.
-    plan_prefix = f"\n{plan_overlay}\n\n" if plan_overlay else ""
+    # The gateway checklist sits above the local one, with the same gap.
+    if gateway_overlay and plan_overlay:
+        plan_prefix = f"\n{gateway_overlay}\n\n{plan_overlay}\n\n"
+    elif gateway_overlay:
+        plan_prefix = f"\n{gateway_overlay}\n\n"
+    elif plan_overlay:
+        plan_prefix = f"\n{plan_overlay}\n\n"
+    else:
+        plan_prefix = ""
 
     # A pending confirmation renders a stacked, arrow-navigable Yes/No choice
     # (box hidden). Density matches the streaming stack: status → Auto → composer.

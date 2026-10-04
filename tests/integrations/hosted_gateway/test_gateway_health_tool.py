@@ -159,7 +159,10 @@ def test_an_unreachable_app_is_reported_once_and_named_by_code_only(
 
     # Assert
     assert out["success"] is False and out["error_kind"] == "unreachable"
-    assert out["response_text"] == "The OpenSRE app could not do that (unreachable)."
+    assert out["response_text"] == (
+        "The OpenSRE app did not answer (the connection failed or timed out). Check this "
+        "machine's network connection."
+    )
     assert len(reported) == 1
 
 

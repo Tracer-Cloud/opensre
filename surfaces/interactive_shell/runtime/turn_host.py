@@ -61,7 +61,7 @@ from surfaces.interactive_shell.runtime.input_policy import (
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.shared.error_handling.exception_reporting import report_exception
-from surfaces.shared.terminal.output.console_state import set_turn_spinner
+from surfaces.shared.terminal.output.console_state import set_repl_state, set_turn_spinner
 from surfaces.shared.terminal.output.repl_progress import repl_safe_progress_scope
 
 _logger = logging.getLogger(__name__)
@@ -193,8 +193,10 @@ async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
     runtime.session.terminal.exclusive_stdin_active = exclusive_stdin
     # Blocks nested validate_and_handle from set_auto_command (e.g. /goal set).
     runtime.session.terminal.dispatch_active = True
-    # Expose this turn's spinner so rendering helpers can animate phase labels.
+    # Expose this turn's spinner and repl state so rendering helpers can animate
+    # phase labels and pin the hosted-gateway checklist.
     set_turn_spinner(runtime.spinner)
+    set_repl_state(runtime.state)
     emit_thread_boundary(
         runtime.session.session_id,
         name="turn_boundary",
@@ -215,6 +217,8 @@ async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
             )
     finally:
         set_turn_spinner(None)
+        set_repl_state(None)
+        runtime.state.gateway_plan = None
         runtime.session.terminal.exclusive_stdin_active = False
         runtime.session.terminal.dispatch_active = False
         # ``set_auto_command`` deliberately avoids submitting while a turn is

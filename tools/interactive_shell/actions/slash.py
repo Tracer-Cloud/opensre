@@ -7,7 +7,9 @@ from typing import Any
 
 from rich.markup import escape
 
+from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.spi.session_state import (
+    arm_setup_resume,
     exclusive_stdin_active,
     session_terminal,
     set_auto_command,
@@ -19,6 +21,7 @@ from core.agent_harness.tools import (
 )
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
+from tools.interactive_shell.actions.skill_prerequisite_gate import resumable_setup
 from tools.interactive_shell.shared import plan_foreground_tool
 from tools.interactive_shell.shared.slash_catalog import (
     slash_invoke_input_schema,
@@ -34,7 +37,7 @@ from tools.interactive_shell.shared.slash_catalog import (
 # literal keystrokes. Defer them through ``set_auto_command`` so the loop
 # re-dispatches the command as a deterministic turn it runs with exclusive stdin.
 _INTERACTIVE_PICKER_MENUS: frozenset[str] = frozenset(
-    {"/auth", "/choose", "/login", "/integrations", "/mcp"}
+    {"/auth", "/choose", "/login", "/integrations", "/mcp", "/sessions"}
 )
 _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
@@ -76,12 +79,36 @@ def _slash_drives_interactive_picker(
     )
 
 
+def _park_turn_for_setup(ctx: ActionToolScope, name: str, slash_args: list[str]) -> None:
+    """Park this turn's message when the agent queues ``/integrations setup <service>`` mid-skill.
+
+    The shell resubmits it once setup makes the service's prerequisite hold
+    (``arm_setup_resume``), so the skill continues from the same step. Only a
+    turn inside a skill whose prerequisite check can confirm that setup is
+    parked; a slash-command turn never is.
+    """
+    if name != "/integrations" or len(slash_args) < 2 or slash_args[0].lower() != "setup":
+        return
+    skill = getattr(ctx.session, "active_skill", None)
+    service = slash_args[1].lower()
+    if not skill or not resumable_setup(skill, service):
+        return
+    arm_setup_resume(ctx.session, ctx.turn_user_message, skill=skill, service=service)
+
+
 # Cap the failure excerpt fed back to the model: enough for a usage/typo
 # message, small enough to never bloat the observation.
 _MAX_OBSERVED_ERROR_CHARS = 700
 # Success output gets more room: tables (e.g. ``/cron list`` task ids) must
 # survive so the model can chain a data-dependent follow-up call.
 _MAX_OBSERVED_OUTPUT_CHARS = 2000
+
+# Model-facing instruction when the execution gate refused a command: it never
+# ran, so the reply must say so instead of reporting it done or asking again.
+_DECLINED_INSTRUCTION = (
+    "Not run: this command was declined at confirmation or by the execution policy. "
+    "Do not retry it; tell the user it did not run."
+)
 
 
 def _dispatch_and_translate_exit(
@@ -219,8 +246,16 @@ def execute_slash_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dic
         # Nothing is printed: set_auto_command prefills the prompt and submits it,
         # so the command is already echoed on the input line. Announcing it here
         # as well showed the same command twice before it had even run.
+        #
+        # The queued-command key ends the action turn (``with_menu_turn_end``):
+        # the command only runs once this turn is over.
         set_auto_command(ctx.session, stripped)
-        return True
+        _park_turn_for_setup(ctx, name, slash_args)
+        return {
+            "ok": True,
+            QUEUED_COMMAND_KEY: stripped,
+            "summary": f"Queued {stripped}; it opens for the user when this turn ends.",
+        }
 
     # Control commands (exit/quit) never mutate state, so they run without the
     # execution gate — a standing plan-only request must not trap the user in
@@ -244,7 +279,15 @@ def execute_slash_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dic
             ok=False,
             response_text=ctx.slash_ports.format_turn_outcome(stripped, ok=False),
         )
-        return True
+        # No ``error`` key: the call itself completed, so the duplicate guard
+        # still refuses an identical re-ask, and ``ok: false`` keeps it from
+        # counting as plan evidence.
+        return {
+            "ok": False,
+            "not_run": True,
+            "command": stripped,
+            "instruction": _DECLINED_INSTRUCTION,
+        }
 
     # Announce the command unless the input line already did. Exclusive stdin is
     # only reserved for a *literally typed* slash command (see

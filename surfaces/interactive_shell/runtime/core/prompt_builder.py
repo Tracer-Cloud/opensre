@@ -45,6 +45,13 @@ from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 _CPR_SETTLE_SECONDS = 0.05
 
 
+def _plan_overlay_visible(session: Session, state: ReplState) -> bool:
+    """True when Ctrl+P should expand a pinned checklist (local or gateway)."""
+    local = session.task_plan
+    gateway = state.gateway_plan
+    return bool((local is not None and local.steps) or (gateway is not None and gateway.steps))
+
+
 class PromptBuilder:
     """Own prompt-toolkit setup, prompt rendering, and prompt redraw hooks."""
 
@@ -106,7 +113,7 @@ class PromptBuilder:
         # is on screen.
         plan_kb = install_plan_expand_key_bindings(
             self.state,
-            lambda: self.session.task_plan is not None and bool(self.session.task_plan.steps),
+            lambda: _plan_overlay_visible(self.session, self.state),
             self._invalidate_prompt,
         )
         install_session_key_bindings(self.pt_session, plan_kb)
@@ -259,8 +266,11 @@ class PromptBuilder:
         if self.session.terminal.pending_theme_refresh:
             self.session.terminal.pending_theme_refresh = False
             refresh_prompt_theme(self.session)
-        await asyncio.sleep(_CPR_SETTLE_SECONDS)
-        drain_stale_cpr_bytes()
+        if self._prompt_task is None or self._prompt_task.done():
+            # Only before (re)starting the prompt: a live prompt app is reading
+            # stdin, and draining under it splits the sequences it is parsing.
+            await asyncio.sleep(_CPR_SETTLE_SECONDS)
+            drain_stale_cpr_bytes()
 
         prefilled = self.session.terminal.pop_pending_prompt_default()
         if prefilled and self.session.terminal.pop_pending_autosubmit():

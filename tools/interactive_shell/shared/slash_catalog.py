@@ -175,8 +175,8 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks to switch provider or model name (use /model)",),
     ),
     "/demo": _mcp(
-        "Open the guided demo picker that runs on real repositories from this machine "
-        "(CI/CD analytics, CI reliability agent, Slack handoff).",
+        "Open the guided outcome picker for repository analysis, a local or hosted "
+        "CI repair, Slack setup, or the plain shell.",
         "User asks to run a demo, see what OpenSRE can do, or replay the first-run demo menu",
         anti_examples=(
             "User names a specific repository to analyze (call the analytics tool directly)",
@@ -242,7 +242,22 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "Shortcut for /auth login. Supports subscription aliases chatgpt and claude, "
         "and API-key providers such as deepseek.",
         "User asks to log in to ChatGPT, Claude, DeepSeek, or another LLM provider",
-        anti_examples=("User asks to log in to a non-LLM integration (use /integrations or /mcp)",),
+        anti_examples=(
+            "User asks to log in to a non-LLM integration (use /integrations or /mcp)",
+            "User asks to sign in to their OpenSRE account (use /account login)",
+            "User asks to sign out of their OpenSRE account (use /logout)",
+        ),
+    ),
+    "/logout": _mcp(
+        "Sign out of the OpenSRE account and close the interactive shell. "
+        "Shortcut for /account logout. Does not clear an LLM provider credential.",
+        "User types /logout or asks to sign out of their OpenSRE account",
+        "User asks to leave the signed-in account before switching LLM providers",
+        anti_examples=(
+            "User asks to clear one LLM provider credential (use /auth logout <provider>)",
+            "User asks to leave the shell without signing out (use /exit)",
+            "User asks to log in to an LLM provider (use /login)",
+        ),
     ),
     "/loops": _mcp(
         "List, create, stop, start, delete, run once, and debug recurring prompt loops, "
@@ -294,6 +309,17 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
             "User says switch to local llama without a concrete provider (clarify the provider)",
         ),
     ),
+    "/new": _mcp(
+        "Start a new session while preserving the current LLM conversation context and "
+        "accumulated infra context. Rotates the session ID and resets all session state "
+        "while keeping the conversation thread so you can continue seamlessly in a fresh session file.",
+        "User wants to continue a conversation in a new session after /resume",
+        "User asks to start a new session without losing their current conversation",
+        anti_examples=(
+            "User wants to clear the screen (use /clear)",
+            "User asks to list sessions (use /sessions)",
+        ),
+    ),
     "/onboard": _mcp(
         "Launch the interactive LLM onboarding wizard (handoff if run inside the REPL).",
         "User asks to run onboarding or reconfigure the LLM provider",
@@ -314,16 +340,11 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks about remote deployment status, health, or operations",
         anti_examples=("Vague connect to X without remote/hosted context (clarify the target)",),
     ),
-    "/new": _mcp(
-        "Start a new session while preserving the current LLM conversation context and "
-        "accumulated infra context. Rotates the session ID and resets all session state "
-        "while keeping the conversation thread so you can continue seamlessly in a fresh session file.",
-        "User wants to continue a conversation in a new session after /resume",
-        "User asks to start a new session without losing their current conversation",
-        anti_examples=(
-            "User wants to clear the screen (use /clear)",
-            "User asks to list sessions (use /sessions)",
-        ),
+    "/rename": _mcp(
+        "Rename the current session with /rename <name>; "
+        "/rename --reset restores its automatic title.",
+        "User explicitly asks to rename the current session or reset its name",
+        anti_examples=("User asks to rename a different saved session",),
     ),
     "/resume": _mcp(
         "Restore the conversation context from a previous session. "
@@ -384,6 +405,16 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=(
             "User asks to investigate an incident with a runbook (use runbook guidance tooling)",
             "User asks how runbook-guided investigations work (answer from docs)",
+        ),
+    ),
+    "/skills": _mcp(
+        "Show the live skills release this machine runs, pull the newest one, or "
+        "publish and roll back skills (OpenSRE staff). Subcommands: status, update, "
+        "push, rollback, history, pull.",
+        "User asks which skills version is active, to refresh skills, or to publish a skill edit",
+        anti_examples=(
+            "User asks to run or use a skill (load it with skill_view)",
+            "User asks what skills can do (answer from the skills index)",
         ),
     ),
     "/tasks": _mcp(
@@ -552,7 +583,7 @@ def format_slash_catalog_text(
 def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -> str:
     entries = specs if specs is not None else build_slash_command_specs()
     header = (
-        "Run a slash command in the OpenSRE interactive shell. "
+        "Run a slash command. "
         "Use this only for explicit slash-command operations: literal /command "
         "text, requests that explicitly ask to run a slash command, requests to configure "
         "or connect an integration, or "

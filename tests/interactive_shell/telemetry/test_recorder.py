@@ -7,8 +7,15 @@ from core.agent_harness.accounting.token_accounting import LlmRunInfo
 from core.agent_harness.session.pending_choice import AskUserQuestion, PendingUserChoice
 from infrastructure.analytics.prompt_log.lifecycle import record_prompt_turn, recorded_prompt_text
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder
+from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry import integration_snapshot
+from surfaces.shared import integration_telemetry as integration_snapshot
+from tests.core.agent.orchestration.action_execution_test_harness import (
+    ActionExecutionHarness,
+    FakeActionLLM,
+    no_tool_response,
+    tool_response,
+)
 
 
 def test_prompt_recorder_start_respects_supported_turns(monkeypatch, tmp_path: Path) -> None:
@@ -116,7 +123,7 @@ def test_prompt_recorder_sends_ai_generation(monkeypatch, tmp_path: Path) -> Non
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {
             "connected_integrations": [],
             "connected_integrations_count": 0,
@@ -166,7 +173,7 @@ def test_prompt_recorder_sends_connected_integrations(monkeypatch, tmp_path: Pat
         lambda payload: captured.append(payload),
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {
             "connected_integrations": ["github"],
             "connected_integrations_count": 1,
@@ -212,7 +219,7 @@ def test_prompt_recorder_still_captures_when_tool_resolution_fails(
         raise RuntimeError("tool registry blew up")
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.get_registered_tools",
+        "surfaces.shared.integration_telemetry.get_registered_tools",
         _boom,
     )
 
@@ -252,7 +259,7 @@ def test_prompt_recorder_uses_no_conversational_agent_for_explicit_static_dispat
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -289,7 +296,7 @@ def test_prompt_recorder_uses_prompt_fallback_when_response_empty(
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     captured: list[dict[str, object]] = []
@@ -321,7 +328,7 @@ def test_prompt_recorder_set_error_adds_structured_properties(monkeypatch, tmp_p
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -360,7 +367,7 @@ def test_prompt_recorder_omits_error_properties_by_default(monkeypatch, tmp_path
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -397,7 +404,7 @@ def _posthog_recorder(
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -489,7 +496,7 @@ def test_prompt_recorder_uses_only_latest_slash_outcome(monkeypatch, tmp_path: P
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -573,3 +580,60 @@ def test_choose_turn_sends_the_question_as_the_prompt(monkeypatch, tmp_path: Pat
     assert captured[0]["$ai_input"] == [
         {"role": "user", "content": "Which demo would you like me to run?"}
     ]
+
+
+def test_a_turn_that_stopped_short_records_why_the_loop_stopped(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Arrange: a work call fails, then the model tries to conclude three times.
+    # The goal review refuses each attempt until the loop stops on its own limit.
+    captured: list[dict[str, object]] = []
+    cfg = PromptLogConfig(
+        enabled=True,
+        local_enabled=False,
+        posthog_enabled=True,
+        redact=True,
+        max_chars=4000,
+        log_path=tmp_path / "prompt_log.jsonl",
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.capture_ai_generation",
+        lambda payload: captured.append(payload),
+    )
+    harness = ActionExecutionHarness(
+        llm=FakeActionLLM(
+            [
+                tool_response("skill_view", {"name": "missing-skill", "reference": "metrics"}),
+                no_tool_response("Done."),
+                no_tool_response("Done."),
+                no_tool_response("Done."),
+                no_tool_response("I could not load the metrics reference."),
+            ]
+        )
+    )
+    session = Session()
+
+    # Act
+    with record_prompt_turn("show the CI metrics", session, surface="interactive_shell"):
+        result = run_action_tool_turn(
+            "show the CI metrics", session, harness.console, llm_factory=harness.llm_factory
+        )
+
+    # Assert: the turn result and $ai_generation both name the real stop.
+    assert result.hit_iteration_cap is True
+    assert result.stop_reason == "goal_unverified"
+    generation = captured[0]
+    assert generation["stop_reason"] == "goal_unverified"
+    assert generation["goal_review_reason"] == "work_tool_failed"
+    assert generation["last_failed_tool"] == "skill_view"
+    assert generation["last_tool_error"] == "unknown reference 'metrics' for skill 'missing-skill'"
+    assert (generation["tool_error_count"], generation["blocked_tool_calls"]) == (1, 0)
+    assert generation["error_kind"] == "iteration_limit"
+    assert generation["$ai_error"] == (
+        "Agent stopped before producing a final answer. stop_reason=goal_unverified; "
+        "goal_review_reason=work_tool_failed; last_failed_tool=skill_view; "
+        "last_tool_error=unknown reference 'metrics' for skill 'missing-skill'"
+    )
