@@ -11,8 +11,9 @@ from core.agent_harness.tools import (
     execute_with_action_context,
 )
 from core.domain.types.tools import ToolSurface
-from core.tool import RegisteredTool, SideEffectLevel
+from core.tool import CALL_SIDE_EFFECT_LEVEL_KEY, RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
+from tools.interactive_shell.shell.effects import shell_command_only_reads
 from tools.interactive_shell.shell.merge_guard import (
     git_refusal_during_merge,
     pull_request_checkout_refusal,
@@ -42,12 +43,15 @@ def execute_shell_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, 
     refusal = git_refusal_during_merge(command) or pull_request_checkout_refusal(command)
     if refusal is not None:
         return {"ok": False, "command": command, "response_text": refusal}
-    return run_shell_command(
+    payload = run_shell_command(
         command,
         require_subprocess_presenter(ctx),
         quiet=quiet,
         cancel_event=_turn_cancel_event(ctx.console),
     )
+    if shell_command_only_reads(command):
+        payload = {**payload, CALL_SIDE_EFFECT_LEVEL_KEY: SideEffectLevel.READ_ONLY.value}
+    return payload
 
 
 def run_shell(*, command: str, context: Any, quiet: bool = False) -> dict[str, Any]:

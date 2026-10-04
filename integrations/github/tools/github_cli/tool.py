@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool import SideEffectLevel
+from core.tool import CALL_SIDE_EFFECT_LEVEL_KEY, SideEffectLevel
 from core.tool_framework import tool
 from integrations.github.tools.github_cli.credentials import (
     GITHUB_CLI_INJECTED_PARAMS,
@@ -13,6 +13,7 @@ from integrations.github.tools.github_cli.credentials import (
     github_source_available,
     resolve_github_token,
 )
+from integrations.github.tools.github_cli.effects import gh_call_only_reads
 from integrations.github.tools.github_cli.runner import MAX_GH_OUTPUT_CHARS, run_gh
 from integrations.github.tools.github_cli.summary import attach_summary
 
@@ -133,10 +134,13 @@ def github_cli(
 ) -> dict[str, Any]:
     """Run an authenticated ``gh`` command (read or write; no approval gate)."""
     normalized = _normalize_args(args)
-    return attach_summary(
+    payload = attach_summary(
         run_gh(args=normalized, repo=repo, github_token=github_token, timeout=timeout),
         args=normalized,
     )
+    if gh_call_only_reads(normalized):
+        payload[CALL_SIDE_EFFECT_LEVEL_KEY] = SideEffectLevel.READ_ONLY.value
+    return payload
 
 
 __all__ = ["github_cli"]
