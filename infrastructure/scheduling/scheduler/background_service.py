@@ -280,6 +280,35 @@ def ensure_background_service(
     raise RuntimeError("The background scheduler did not become healthy; check its service log.")
 
 
+def restart_stale_background_service(
+    *,
+    home: Path | None = None,
+    system: str = "",
+    run: Runner = _run,
+) -> bool:
+    """Restart a running service left on another build, once no run is in flight.
+
+    ``ensure_background_service`` defers that restart while an execution holds
+    a lease and only runs again when a repair is scheduled, so the shell calls
+    this at startup to finish a deferred upgrade. True when it restarted.
+    """
+    state = check_background_service(home=home, system=system, run=run)
+    if not state.supported or not state.running:
+        return False
+    command = opensre_command("cron", "start", "--service")
+    build = get_build_stamp()
+    same_installation, installed_build = _installed_definition(state, command)
+    if not same_installation or installed_build == build or _scheduled_execution_in_flight():
+        return False
+    logger.info("Restarting the scheduler service on build %s", build)
+    record_scheduler_service_operation(
+        "scheduler_service_build_restart",
+        extra={"installed_build": installed_build or "unrecorded", "build": build},
+    )
+    install_background_service(home=home, system=system, run=run, command=command, build=build)
+    return True
+
+
 def _installed_definition(
     state: BackgroundServiceState, command: Sequence[str]
 ) -> tuple[bool, str]:
@@ -397,5 +426,6 @@ __all__ = [
     "ensure_background_service",
     "install_background_service",
     "remove_background_service",
+    "restart_stale_background_service",
     "scheduler_command",
 ]

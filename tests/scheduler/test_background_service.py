@@ -327,3 +327,39 @@ def test_a_build_restart_waits_until_no_scheduled_run_is_in_flight(
     assert service.restarts == 1
     environment = plistlib.loads(unit.read_bytes())["EnvironmentVariables"]
     assert environment[OPENSRE_SCHEDULER_BUILD_ENV] == _BUILD
+
+
+def test_shell_startup_finishes_a_deferred_build_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: a pre-stamp service whose restart was deferred by an in-flight run.
+    monkeypatch.setattr(svc, "OPENSRE_HOME_DIR", tmp_path / ".opensre")
+    unit = _write_unstamped_launch_agent(tmp_path)
+    in_flight = {"value": True}
+    monkeypatch.setattr(svc, "has_live_claim", lambda: in_flight["value"])
+    service = _LiveService()
+
+    # Act / Assert: still busy, so nothing restarts; once idle, one restart.
+    assert not svc.restart_stale_background_service(home=tmp_path, system="Darwin", run=service)
+    in_flight["value"] = False
+    assert svc.restart_stale_background_service(home=tmp_path, system="Darwin", run=service)
+    assert not svc.restart_stale_background_service(home=tmp_path, system="Darwin", run=service)
+
+    assert service.restarts == 1
+    environment = plistlib.loads(unit.read_bytes())["EnvironmentVariables"]
+    assert environment[OPENSRE_SCHEDULER_BUILD_ENV] == _BUILD
+
+
+def test_shell_startup_leaves_a_stopped_service_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(svc, "OPENSRE_HOME_DIR", tmp_path / ".opensre")
+    _write_unstamped_launch_agent(tmp_path)
+    monkeypatch.setattr(svc, "has_live_claim", lambda: False)
+    monkeypatch.setattr(
+        svc,
+        "check_background_service",
+        lambda **_kw: svc.BackgroundServiceState("Darwin", True, True, None, None, running=False),
+    )
+
+    assert not svc.restart_stale_background_service(home=tmp_path, system="Darwin")

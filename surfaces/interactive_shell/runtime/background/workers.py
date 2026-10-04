@@ -10,6 +10,9 @@ from typing import Any
 from rich.console import Console
 
 from core.domain.alerts import inbox as _alert_inbox
+from infrastructure.scheduling.scheduler.background_service import (
+    restart_stale_background_service,
+)
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.alerts import drain_and_render_incoming
@@ -55,6 +58,10 @@ class BackgroundTaskPool:
                 asyncio.create_task(
                     asyncio.to_thread(capture_github_connection_snapshot, self.session)
                 ),
+            ),
+            (
+                "scheduler build check",
+                asyncio.create_task(asyncio.to_thread(_restart_stale_scheduler)),
             ),
         ]
         return self.tasks
@@ -127,3 +134,11 @@ class BackgroundTaskPool:
             if streaming or was_streaming:
                 self.prompt_invalidator()
             was_streaming = streaming
+
+
+def _restart_stale_scheduler() -> None:
+    """Finish a scheduler upgrade that was deferred while a run was in flight."""
+    try:
+        restart_stale_background_service()
+    except Exception:
+        log.debug("Scheduler build check failed", exc_info=True)
