@@ -111,7 +111,7 @@ def demote_unevidenced_completions(
     if not demoted:
         return CompletionCheck(plan, newly_blocked=blocked_now)
     return CompletionCheck(
-        TaskPlan(steps=tuple(steps), explanation=plan.explanation),
+        replace(plan, steps=tuple(steps)),
         tuple(demoted),
         closed_unverified,
         blocked_now,

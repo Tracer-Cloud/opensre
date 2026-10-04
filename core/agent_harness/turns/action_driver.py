@@ -56,6 +56,7 @@ from core.agent_harness.task_plan.evidence import (
     plan_advanced_this_turn,
     record_deliverable_shown,
 )
+from core.agent_harness.task_plan.ownership import session_answer_continues_plan
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
@@ -1275,6 +1276,13 @@ def _run_action_turn(
     # AgentConfig are built from the same view (single source, no re-resolve).
     resolved_integrations = _turn_resolved_integrations(session, turn_plan)
     history_start = len(session.history)
+    # Once per turn, before any tool runs: does this answer continue the
+    # open plan's own workflow (host advances it, the prompt says so)?
+    plan_answer_continues = (
+        turn_snapshot.plan_answer_continues
+        if turn_snapshot is not None
+        else session_answer_continues_plan(session, message)
+    )
 
     prepare_active_skill(session, message)
     agent_tools = args.tools.action_tools(
@@ -1310,6 +1318,7 @@ def _run_action_turn(
                     with_duplicate_action_call_guard(args.tool_hooks),
                     session,
                     turn_user_message=message,
+                    answer_continues=plan_answer_continues,
                 ),
                 session,
             ),

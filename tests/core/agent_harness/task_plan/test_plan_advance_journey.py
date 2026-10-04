@@ -2,7 +2,8 @@
 
 The live analysis run spent 6 of 11 model calls on responses whose only call
 was ``update_plan`` (mark done, start next). Here the model never writes the
-plan after creating it; the host moves it as each next step's tool is called.
+plan after creating it; the host moves it as each next step's tool is called,
+on the turn that wrote it and on the answer to the owning skill's own menu.
 """
 
 from __future__ import annotations
@@ -15,7 +16,11 @@ import pytest
 
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
 from core.agent_harness.ports import TurnBinding
-from core.agent_harness.session.pending_choice import PendingUserChoice, format_ask_user_answers
+from core.agent_harness.session.pending_choice import (
+    AskUserQuestion,
+    PendingUserChoice,
+    format_ask_user_answers,
+)
 from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
 from core.agent_harness.tools.action_tools import get_action_tool
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
@@ -36,6 +41,7 @@ _C = PlanStepStatus.COMPLETED
 _IP = PlanStepStatus.IN_PROGRESS
 _P = PlanStepStatus.PENDING
 
+_SKILL = "test-ci-analysis-demo"
 _REPOSITORY_QUESTION = "Which repository should I analyze?"
 _NEXT_QUESTION = "What would you like to do next?"
 _REPORT = "| Metric | acme/widget |\n|---|---:|\n| PR failure rate | 31% |"
@@ -66,6 +72,7 @@ class _Session(InMemorySessionState):
     pending_user_choice: PendingUserChoice | None = None
     task_plan: TaskPlan | None = None
     questions_already_answered: set[str] = field(default_factory=set)
+    skill_question_keys: dict[str, set[str]] = field(default_factory=dict)
     terminal: _Terminal = field(default_factory=_Terminal)
 
 
@@ -93,7 +100,10 @@ def test_host_advances_scan_menu_analyze_report_menu_without_plan_writes(
 ) -> None:
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
-    session = _Session(configured_integrations_known=True, resolved_integrations_cache={})
+    # The skill was entered from a menu, so its answer turns keep it active.
+    session = _Session(
+        active_skill=_SKILL, configured_integrations_known=True, resolved_integrations_cache={}
+    )
     # The plan as each work tool saw it while it ran.
     seen: dict[str, list[PlanStepStatus]] = {}
 
@@ -155,8 +165,14 @@ def test_host_advances_scan_menu_analyze_report_menu_without_plan_writes(
     )
     binding = TurnBinding(is_tty=True)
 
-    agent.handle("Analyze the CI of a local repository", binding)
+    entry = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Which demo?", options=("CI analysis",)),),
+        ("CI analysis",),
+    )
+    agent.handle(entry, binding)
 
+    # The plan belongs to the skill that wrote it.
+    assert session.task_plan is not None and session.task_plan.owner == _SKILL
     # The scan ran under step 1; calling the menu completed it and started step 2.
     assert seen[scan.name] == [_IP, _P, _P, _P, _P, _P]
     assert _statuses(session) == [_C, _IP, _P, _P, _P, _P]
@@ -166,10 +182,11 @@ def test_host_advances_scan_menu_analyze_report_menu_without_plan_writes(
 
     # The answer settled step 2, so the analysis ran under step 3.
     assert seen[analyze.name] == [_C, _C, _IP, _P, _P, _P]
-    # The report was shown once (deliverable next), and the menu after it
-    # completed step 3 and both report steps, starting the menu's step.
+    # The report was shown once (deliverable next). The menu after it completed
+    # step 3 on its own tool and the first report step on the shown reply; the
+    # second report step needs its own reply, so it is the one in progress.
     assert output.streamed.count(_REPORT) == 1
-    assert _statuses(session) == [_C, _C, _C, _C, _C, _IP]
+    assert _statuses(session) == [_C, _C, _C, _C, _IP, _P]
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == _NEXT_QUESTION
     assert llm.invocations == 5

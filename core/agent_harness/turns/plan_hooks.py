@@ -37,6 +37,7 @@ def with_task_plan_hooks(
     session: Any,
     *,
     turn_user_message: str = "",
+    answer_continues: bool = False,
 ) -> ToolExecutionHooks:
     """Wrap ``base`` so plan evidence is recorded, the plan guard can refuse a call,
     and the plan advances when the next step's tool is called.
@@ -46,6 +47,8 @@ def with_task_plan_hooks(
     a batch that never reaches execution moves nothing. A batch carrying
     ``update_plan`` is the model's own write and is never advanced.
     ``turn_user_message`` lets an Ask User answer earn the step it settles.
+    ``answer_continues`` (computed once at turn start) says the turn answers
+    the plan owner's question; without it only a plan written this turn moves.
     """
     reset_plan_evidence(session)
     base_before = base.before_tool_call if base is not None else None
@@ -83,7 +86,11 @@ def with_task_plan_hooks(
             and is_plan_work_name(request.tool_call.name, request.arguments)
         ):
             advance_armed = False
-            auto_advance_task_plan(session, turn_user_message=turn_user_message)
+            auto_advance_task_plan(
+                session,
+                turn_user_message=turn_user_message,
+                answer_continues=answer_continues,
+            )
         return decision
 
     def after(

@@ -3,12 +3,26 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from typing import Any
 
 from rich.console import Console
 
-from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
-from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan, parse_task_plan
+from core.agent_harness.session.pending_choice import (
+    AskUserQuestion,
+    format_ask_user_answers,
+    question_key,
+)
+from core.agent_harness.task_plan.advance import advance_task_plan
+from core.agent_harness.task_plan.ownership import session_answer_continues_plan
+from core.agent_harness.task_plan.plan import (
+    PlanStep,
+    PlanStepStatus,
+    TaskPlan,
+    parse_task_plan,
+    task_plan_from_payload,
+    task_plan_to_payload,
+)
 from core.agent_harness.tools.tool_context import ActionToolScope
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.domain.types.tools import ToolRole
@@ -23,6 +37,8 @@ _IP = PlanStepStatus.IN_PROGRESS
 _P = PlanStepStatus.PENDING
 _B = PlanStepStatus.BLOCKED
 _STEPS = ("Read the workflow files", "Count the jobs in each", "Report the totals")
+_SKILL = "counting-ci-jobs"
+_QUESTION = "Run the check?"
 
 
 def _work_tool(name: str, role: ToolRole = ToolRole.ACTION) -> AgentTool:
@@ -40,8 +56,12 @@ class _Turn:
 
     def __init__(self, session: Session, message: str = "Count the CI jobs") -> None:
         self.session = session
+        # As the action driver does: decided once, before any tool runs.
         self.hooks: ToolExecutionHooks = with_task_plan_hooks(
-            None, session, turn_user_message=message
+            None,
+            session,
+            turn_user_message=message,
+            answer_continues=session_answer_continues_plan(session, message),
         )
         scope = ActionToolScope(
             session=session, console=Console(file=io.StringIO()), turn_user_message=message
@@ -125,23 +145,67 @@ def test_a_settling_completion_is_left_to_the_model_and_blocked_steps_stay() -> 
     assert turn.statuses() == [_C, _B, _IP]
 
 
-def test_a_verifies_step_needs_its_own_tool_not_the_users_answer() -> None:
-    answer = format_ask_user_answers(
-        (AskUserQuestion(label="Go", title="Run the check?", options=("Yes", "No")),), ("Yes",)
-    )
-    session = Session()
+def _stored(*statuses: str, owner: str | None = _SKILL, **flags: dict[str, bool]) -> TaskPlan:
     plan, error = parse_task_plan(
         {
             "plan": [
-                {"step": _STEPS[0], "status": "completed"},
-                {"step": _STEPS[1], "status": "in_progress", "verifies": True},
-                {"step": _STEPS[2], "status": "pending"},
-            ]
+                {"step": step, "status": status, **flags.get(f"s{index}", {})}
+                for index, (step, status) in enumerate(zip(_STEPS, statuses, strict=True))
+            ],
+            "explanation": "x",
         }
     )
-    assert error is None and isinstance(plan, TaskPlan)
+    assert error is None and plan is not None
+    return replace(plan, owner=owner)
+
+
+def _answer(title: str = _QUESTION) -> str:
+    question = AskUserQuestion(label="Go", title=title, options=("Yes", "No"))
+    return format_ask_user_answers((question,), ("Yes",))
+
+
+def _skill_session(plan: TaskPlan, *, asked_by: str = _SKILL) -> Session:
+    session = Session()
     session.task_plan = plan
-    turn = _Turn(session, message=answer)
+    session.active_skill = _SKILL
+    session.skill_question_keys = {asked_by: {question_key(_QUESTION)}}
+    return session
+
+
+def test_a_write_records_the_active_skill_as_owner_and_it_survives_resume() -> None:
+    session = Session()
+    session.active_skill = _SKILL
+    _Turn(session).write("in_progress", "pending", "pending")
+
+    assert session.task_plan is not None and session.task_plan.owner == _SKILL
+    restored = task_plan_from_payload(task_plan_to_payload(session.task_plan))
+    assert restored is not None and restored.owner == _SKILL
+
+
+def test_the_owner_skills_answer_advances_but_another_workflows_answer_does_not() -> None:
+    # The plan's own skill asked: its answer settles step 1 on the next tool.
+    own = _skill_session(_stored("in_progress", "pending", "pending"))
+    _Turn(own, message=_answer()).batch(_RUN)
+    assert [item.status for item in own.task_plan.steps] == [_C, _IP, _P]  # type: ignore[union-attr]
+
+    # Another workflow asked the question: the plan stays where the model left it.
+    other = _skill_session(_stored("in_progress", "pending", "pending"), asked_by="other-skill")
+    turn = _Turn(other, message=_answer())
+    turn.batch(_RUN)
+    turn.batch(_RUN)
+    assert turn.statuses() == [_IP, _P, _P]
+
+    # A skill-less plan is never continued by an answer.
+    loose = _skill_session(_stored("in_progress", "pending", "pending", owner=None))
+    turn = _Turn(loose, message=_answer())
+    turn.batch(_RUN)
+    turn.batch(_RUN)
+    assert turn.statuses() == [_IP, _P, _P]
+
+
+def test_a_verifies_step_needs_its_own_tool_not_the_users_answer() -> None:
+    session = _skill_session(_stored("completed", "in_progress", "pending", s1={"verifies": True}))
+    turn = _Turn(session, message=_answer())
 
     turn.batch(_RUN)
     assert turn.statuses() == [_C, _IP, _P]
@@ -150,19 +214,61 @@ def test_a_verifies_step_needs_its_own_tool_not_the_users_answer() -> None:
 
 
 def test_a_leftover_plan_under_a_new_request_is_not_advanced() -> None:
-    session = Session()
-    plan, error = parse_task_plan(
-        {
-            "plan": [
-                {"step": s, "status": "in_progress" if i == 0 else "pending"}
-                for i, s in enumerate(_STEPS)
-            ]
-        }
-    )
-    assert error is None and isinstance(plan, TaskPlan)
-    session.task_plan = plan
+    session = _skill_session(_stored("in_progress", "pending", "pending"))
     turn = _Turn(session, message="What time is it in UTC?")
 
     turn.batch(_RUN)
     turn.batch(_RUN)
     assert turn.statuses() == [_IP, _P, _P]
+
+
+def test_the_next_step_is_after_the_active_one_never_behind_it() -> None:
+    # A pending step behind the active one is not where the work goes next.
+    stranded = TaskPlan(
+        steps=(
+            PlanStep(_STEPS[0], _P),
+            PlanStep(_STEPS[1], _IP),
+            PlanStep(_STEPS[2], _B),
+        ),
+        explanation="step 3 is blocked",
+    )
+    assert (
+        advance_task_plan(stranded, tool_evidence=True, answer_evidence=False, reply_shown=False)
+        is None
+    )
+    # With nothing in progress, the first pending step starts.
+    idle = _stored("completed", "pending", "pending")
+    started = advance_task_plan(idle, tool_evidence=False, answer_evidence=False, reply_shown=False)
+    assert started is not None
+    assert [item.status for item in started.steps] == [_C, _IP, _P]
+
+
+def test_a_shown_reply_earns_exactly_one_deliverable_step() -> None:
+    four = ("Compute", "Prepare the table", "Show the table", "Offer next steps")
+    plan, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": four[0], "status": "in_progress"},
+                {"step": four[1], "status": "pending", "deliverable": True},
+                {"step": four[2], "status": "pending", "deliverable": True},
+                {"step": four[3], "status": "pending"},
+            ]
+        }
+    )
+    assert error is None and plan is not None
+
+    # The active step earned its own completion; the reply earns the next deliverable only.
+    moved = advance_task_plan(plan, tool_evidence=True, answer_evidence=False, reply_shown=True)
+    assert moved is not None
+    assert [item.status for item in moved.steps] == [_C, _C, _IP, _P]
+
+    # The second deliverable is active: a fresh reply earns it, and only it.
+    again = advance_task_plan(moved, tool_evidence=False, answer_evidence=False, reply_shown=True)
+    assert again is not None
+    assert [item.status for item in again.steps] == [_C, _C, _C, _IP]
+
+    # Without its own reply, the active deliverable stays.
+    assert (
+        advance_task_plan(moved, tool_evidence=False, answer_evidence=False, reply_shown=False)
+        is None
+    )

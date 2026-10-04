@@ -88,13 +88,19 @@ sent the model into retries and off-plan tools. The host advances the plan
 so the model need not write it to move on (`task_plan/advance.py`, armed per
 batch in `turns/plan_hooks.py`): before the first work call of a batch with
 no `update_plan` (`ask_user_choice` counts; bookkeeping and `slash_invoke` do
-not), the earned `in_progress` step completes and the next pending step
-starts. Earned is the completion rule above (a tool return, or the Ask User
-answer for the step that asked); a shown `deliverable` reply earns the
-deliverable steps; a `verifies` step needs its own tool return. Only a plan
-written this turn or continued by an Ask User answer moves; the host never
-settles a plan or touches `blocked` steps, and a host advance counts as the
-turn working the plan for the stop gates (`goal_review.py`). A step newly marked
+not), the earned `in_progress` step completes and the first pending step
+after it starts (never one behind it). Earned is the completion rule above (a
+tool return, or the Ask User answer for the step that asked); a shown
+`deliverable` reply earns exactly one deliverable step; a `verifies` step
+needs its own tool return. A plan records the skill that wrote it
+(`TaskPlan.owner`). Only a plan written this turn moves, or one whose owner is
+still the active skill on a turn answering that skill's own question
+(`task_plan/ownership.py`, decided once at turn start as
+`TurnSnapshot.plan_answer_continues`); the CURRENT PLAN, ACTIVE SKILL and
+answered-guidance blocks say the host advances only on such a turn and keep
+asking for paired status writes otherwise. The host never settles a plan or
+touches `blocked` steps, and a host advance counts as the turn working the
+plan for the stop gates (`goal_review.py`). A step newly marked
 `blocked` is resolved with the user, not skipped: the conclusion is rejected
 until `ask_user_choice`
 is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
