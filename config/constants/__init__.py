@@ -1403,6 +1403,12 @@ if TYPE_CHECKING:
     from config.constants.tenancy import (
         INTEGRATIONS_STORE_PATH_ENV as INTEGRATIONS_STORE_PATH_ENV,
     )
+    from config.constants.tenancy import (
+        TURN_ACTOR_ID_ENV as TURN_ACTOR_ID_ENV,
+    )
+    from config.constants.tenancy import (
+        TURN_ORGANIZATION_ID_ENV as TURN_ORGANIZATION_ID_ENV,
+    )
     from config.constants.terminal_host import (
         APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,
     )

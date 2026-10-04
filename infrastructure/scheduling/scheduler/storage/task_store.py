@@ -22,6 +22,7 @@ from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from config.principal import PrincipalKind
 from config.scope_context import current_scope
 from infrastructure.scheduling.scheduler import reload_signal
+from infrastructure.scheduling.scheduler.loop_constants import LOOP_CREATED_BY_PARAM
 from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
@@ -223,11 +224,17 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
 
     Full configuration, not just the slot: two rows differing in destination or
     params are separate reports, and merging them would drop one the user asked
-    for. Identity deliberately excludes ``id``, ``name``, skill revision, and the
-    run bookkeeping (``created_at``, ``last_run``, ``next_run``), which differ
-    between two confirmations of the same schedule. The owning organization is
-    part of it: two organizations with the same schedule hold two rows.
+    for. Identity deliberately excludes ``id``, ``name``, skill revision, who
+    created it, and the run bookkeeping (``created_at``, ``last_run``,
+    ``next_run``), which differ between two confirmations of the same schedule.
+    The owning organization is part of it: two organizations with the same
+    schedule hold two rows.
     """
+    params = {
+        key: value
+        for key, value in (entry.get("params") or {}).items()
+        if key != LOOP_CREATED_BY_PARAM
+    }
     return (
         _owner_of(entry),
         entry.get("kind"),
@@ -238,7 +245,7 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
         entry.get("window_hours"),
         entry.get("skill_name") or "",
         tuple(sorted((entry.get("skill_inputs") or {}).items())),
-        tuple(sorted((entry.get("params") or {}).items())),
+        tuple(sorted(params.items())),
     )
 
 

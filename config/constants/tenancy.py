@@ -23,6 +23,10 @@ it serves. Two questions, two answers:
   credential hydration once the secret says this is a silo) goes through
   :func:`config.constants.organization.organization_id`, which reads
   ``ORGANIZATION_ID``.
+
+The gateway sets the ``OPENSRE_TURN_*`` names itself, on the CLI child process a
+turn's slash command starts, to say which member of that organization acted
+(:mod:`config.scope_handoff`).
 """
 
 from __future__ import annotations
@@ -43,9 +47,15 @@ INTEGRATIONS_SECRET_ARN_ENV: Final[str] = "OPENSRE_INTEGRATIONS_SECRET_ARN"
 #: land on the tenant's persistent workspace mount.
 INTEGRATIONS_STORE_PATH_ENV: Final[str] = "OPENSRE_INTEGRATIONS_STORE_PATH"
 
+#: The organization and member whose turn started this CLI child process.
+TURN_ORGANIZATION_ID_ENV: Final[str] = "OPENSRE_TURN_ORGANIZATION_ID"
+TURN_ACTOR_ID_ENV: Final[str] = "OPENSRE_TURN_ACTOR_ID"
+
 __all__ = [
     "CREDENTIALS_API_URL_ENV",
     "CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV",
     "INTEGRATIONS_SECRET_ARN_ENV",
     "INTEGRATIONS_STORE_PATH_ENV",
+    "TURN_ACTOR_ID_ENV",
+    "TURN_ORGANIZATION_ID_ENV",
 ]

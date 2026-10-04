@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import io
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -16,13 +20,74 @@ from rich.console import Console
 
 import infrastructure.process.runtime_flags as runtime_flags
 import surfaces.cli.commands.cron as cron_module
+from config.constants.billing import ORGANIZATION_ID_ENV
+from config.constants.tenancy import TURN_ACTOR_ID_ENV, TURN_ORGANIZATION_ID_ENV
+from config.principal import Actor, Principal, StorageScope
+from config.scope_context import bound_storage_scope
+from core.agent_harness.session import SessionCore
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
+from infrastructure.scheduling.scheduler.loop_constants import LOOP_CREATED_BY_PARAM
 from infrastructure.scheduling.scheduler.storage import BacklogSnapshot, TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
+from surfaces.interactive_shell.command_registry import cli_parity
+
+_ALICE_IN_ORG_A = StorageScope(principal=Principal.org("org_A"), actor=Actor(id="U_ALICE"))
 
 
 @pytest.fixture(autouse=True)
 def _isolate_runtime_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags())
+
+
+def _run_cli_child(
+    cmd: list[str], *, env: dict[str, str], **_kwargs: object
+) -> subprocess.CompletedProcess[str]:
+    """Stand in for the child process: the CLI sees ``env`` and none of the turn's context."""
+    child_env = {key: env.get(key) for key in {*os.environ, *env}}
+    result = contextvars.Context().run(
+        CliRunner().invoke,
+        cron_module.cron_command,
+        cmd[cmd.index("cron") + 1 :],
+        env=child_env,
+    )
+    return subprocess.CompletedProcess(cmd, result.exit_code, stdout=result.output, stderr="")
+
+
+@pytest.mark.parametrize(
+    ("scope", "created_by", "organization"),
+    [(_ALICE_IN_ORG_A, "U_ALICE", "org_A"), (None, None, "")],
+    ids=["hosted-turn", "no-turn"],
+)
+def test_cron_add_from_a_slash_command_records_the_turn_that_created_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scope: StorageScope | None,
+    created_by: str | None,
+    organization: str,
+) -> None:
+    """The child learns the turn only from the env its parent built, never from a stale one."""
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_A")
+    # A claim already in the gateway's own environment must never reach the child.
+    monkeypatch.setenv(TURN_ORGANIZATION_ID_ENV, "org_A")
+    monkeypatch.setenv(TURN_ACTOR_ID_ENV, "U_MALLORY")
+    monkeypatch.setattr(cli_parity.subprocess, "run", _run_cli_child)
+    args = ["cron", "add", "--kind", "manual_loop", "--cron", "0 9 * * *"]
+    args += ["--provider", "interactive_shell", "--prompt", "Check incidents."]
+
+    with bound_storage_scope(scope) if scope is not None else contextlib.nullcontext():
+        added = cli_parity.run_cli_command(
+            Console(file=io.StringIO()), args, session=SessionCore(store=InMemorySessionStore())
+        )
+
+    assert added is True
+    (task,) = list_tasks(store)
+    assert task.params.get(LOOP_CREATED_BY_PARAM) == created_by
+    assert task.organization == organization
 
 
 def test_cron_add_provider_choices_match_full_provider_enum() -> None:

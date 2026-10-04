@@ -8,6 +8,10 @@ import pytest
 
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CREATED_BY_PARAM,
+    LOOP_PROMPT_PARAM,
+)
 from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
@@ -80,3 +84,22 @@ def test_on_a_declared_deployment_an_unstamped_row_is_the_deployments_own(
 
     # Assert: no second row; the existing schedule is the organization's own
     assert len(list_tasks(store)) == 1 and folded.organization == ""
+
+
+def test_a_schedule_confirmed_again_with_its_creator_stays_one_row(tmp_path: Path) -> None:
+    """Who created a loop is not part of its identity, so a re-add never doubles its delivery."""
+    # Arrange: a row stored before creators were recorded
+    store = tmp_path / "tasks.json"
+    prompt = {LOOP_PROMPT_PARAM: "Check incidents."}
+    legacy = add_task(
+        _task("Nightly report", "0 9 * * *").model_copy(update={"params": prompt}), store
+    )
+    confirmed = _task("Nightly report", "0 9 * * *").model_copy(
+        update={"params": {**prompt, LOOP_CREATED_BY_PARAM: "U_ALICE"}}
+    )
+
+    # Act
+    folded = add_task(confirmed, store)
+
+    # Assert: the existing schedule is reused, not duplicated
+    assert folded.id == legacy.id and len(list_tasks(store)) == 1
