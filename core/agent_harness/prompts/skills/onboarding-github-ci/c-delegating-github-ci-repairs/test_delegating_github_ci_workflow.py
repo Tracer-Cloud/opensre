@@ -1,17 +1,19 @@
 """The shell delegates once and observes the same remote repair after target selection."""
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
+from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.llm.types import AgentLLMResponse, ToolCall
 from tests.core.agent.orchestration.action_execution_test_harness import (
     no_tool_response,
     tool_response,
 )
-from tests.utils.skill_workflow import BINDING, SkillWorkflow, batch
+from tests.utils.skill_workflow import BINDING, SkillWorkflow, action_tool, batch
 
 _SKILL = "delegating-github-ci-repairs"
 
@@ -27,6 +29,15 @@ def test_the_report_writes_urls_in_full_and_explains_the_root_cause() -> None:
     body = Path(__file__).with_name("SKILL.md").read_text(encoding="utf-8")
     assert "not as Markdown link text" in body
     assert "Add a `Root cause analysis` section from the delegated record" in body
+
+
+def test_the_gateway_prompt_loads_no_skill_and_asks_only_about_a_blocker() -> None:
+    # Naming scheduling-github-ci-repairs in the prompt made the gateway load that card
+    # and close a blocked run with its success-path hand-off menu.
+    body = Path(__file__).with_name("SKILL.md").read_text(encoding="utf-8")
+    assert "Do not load a skill; this prompt is the whole task." in body
+    assert "Ask the user only about a blocked step." in body
+    assert "Do not walk `scheduling-github-ci-repairs`" not in body
 
 
 _DEMO = "Use a disposable demo repository"
@@ -235,4 +246,63 @@ def test_missing_gateway_skill_reports_blocker_before_recovery_menu(
     assert workflow.output.streamed.count(report) == 1
     assert workflow.session.pending_user_choice is not None
     assert workflow.session.pending_user_choice.title == "Remote Demo Blocked"
+    workflow.assert_finished()
+
+
+def test_a_gateway_question_about_a_blocked_step_waits_for_the_user(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The gateway may ask about a blocked step; the shell parks it and does not answer itself."""
+    monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
+    monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
+    question = "Resolve Blocked Demo Step"
+    workflow = SkillWorkflow(
+        Path(__file__).with_name("SKILL.md"),
+        [
+            tool_response("skill_view", {"name": _SKILL}),
+            batch(
+                tool_response("update_plan", _plan(0, 0, known_target=True)),
+                tool_response("check_hosted_gateway"),
+            ),
+            batch(
+                tool_response("update_plan", _plan(1, 1, known_target=True)),
+                tool_response("ask_hosted_gateway", _REQUEST),
+            ),
+        ],
+    )
+
+    def relay(**kwargs: Any) -> dict[str, Any]:
+        # As ask_hosted_gateway does: park the gateway's question on this shell's menu.
+        kwargs.pop("context", None)
+        workflow.calls.append(("ask_hosted_gateway", kwargs))
+        workflow.session.pending_user_choice = PendingUserChoice(
+            title=question,
+            options=("Leave the step blocked", "Allow one replacement demo repository"),
+            interaction_id="hosted_prompt:p_blocked",
+        )
+        return {
+            "success": True,
+            "state": "needs_input",
+            "prompt_id": "p_blocked",
+            "question": question,
+            "response_text": (
+                "The hosted gateway reported:\n> Outcome: blocked\n\nThe hosted gateway needs "
+                "your decision; the menu opens now. Your selection goes back to its prompt "
+                "p_blocked."
+            ),
+        }
+
+    agent = workflow.build(
+        [
+            workflow.external("check_hosted_gateway", [{"success": True, "state": "running"}]),
+            replace(action_tool("ask_hosted_gateway"), run=relay),
+        ]
+    )
+
+    agent.handle("Run the private demo remotely", BINDING)
+
+    assert workflow.calls == [("check_hosted_gateway", {}), ("ask_hosted_gateway", _REQUEST)]
+    parked = workflow.session.pending_user_choice
+    assert parked is not None and parked.title == question
+    assert parked.interaction_id == "hosted_prompt:p_blocked"
     workflow.assert_finished()
