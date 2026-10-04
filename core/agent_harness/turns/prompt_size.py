@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from core.agent_harness.prompts.kernel.envelope import PromptEnvelope, PromptTier
@@ -20,6 +20,7 @@ from core.agent_harness.turns.structured_history import (
     history_chars,
     history_messages,
 )
+from core.agent_harness.turns.transcript_compaction import preview_compaction
 from core.state import TurnEvidence, match_turn_evidence
 from core.state.history_settings import structured_history_enabled
 from core.state.transcript_window import is_summary_message
@@ -63,6 +64,9 @@ class HistorySize:
     tool_turns: int = 0
     #: A compacted session summary opens the replay.
     summarized: bool = False
+    #: Messages a compaction before the call folds into a summary that is not
+    #: written yet; the summary's length is not counted.
+    compacted_messages: int = 0
 
     @property
     def tokens(self) -> int:
@@ -77,11 +81,13 @@ class PromptSize:
     history: HistorySize
     #: Tool schemas sent with the call; ``None`` when they could not be counted.
     tool_schema_count: int | None = None
+    #: The user's own message, sent ahead of the ephemeral blocks; 0 in a preview.
+    request_chars: int = 0
 
     @property
     def chars(self) -> int:
-        """Characters of every block and of the history; tool schemas are not counted."""
-        return sum(block.chars for block in self.blocks) + self.history.chars
+        """Characters of every block, the history and the request; tool schemas are not counted."""
+        return sum(block.chars for block in self.blocks) + self.history.chars + self.request_chars
 
     @property
     def tokens(self) -> int:
@@ -101,6 +107,7 @@ class PromptSize:
                 "turns": self.history.turns,
                 "tool_turns": self.history.tool_turns,
             },
+            "request": {"chars": self.request_chars, "tokens": _tokens(self.request_chars)},
             "total": {"chars": self.chars, "tokens": self.tokens},
         }
         if self.tool_schema_count is not None:
@@ -136,6 +143,7 @@ def measure_prompt(
     *,
     history: HistorySize,
     tool_schema_count: int | None = None,
+    request_chars: int = 0,
 ) -> PromptSize:
     """Size every block of ``envelope`` the model reads, in the order it reads them."""
     ordered = sorted(envelope.blocks, key=lambda block: _TIER_RANK[block.tier])
@@ -144,7 +152,12 @@ def measure_prompt(
         for block in ordered
         if (text := block.render())
     )
-    return PromptSize(blocks=blocks, history=history, tool_schema_count=tool_schema_count)
+    return PromptSize(
+        blocks=blocks,
+        history=history,
+        tool_schema_count=tool_schema_count,
+        request_chars=request_chars,
+    )
 
 
 def measure_next_prompt(session: SessionState, *, surface: str) -> PromptSize:
@@ -152,20 +165,25 @@ def measure_next_prompt(session: SessionState, *, surface: str) -> PromptSize:
 
     The snapshot and envelope are built as a turn builds them, for an empty
     message, and the session is left as it was: a pending ``/resume`` recovery
-    note is read, not consumed.
+    note is read, not consumed. When the next turn compacts first, the history
+    is what compaction keeps; the summary it writes is not counted.
     """
     from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
     from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
     snapshot = TurnSnapshot.from_session("", session, surface=surface, consume_recovery_note=False)
-    replayed = (
-        history_messages(snapshot.conversation_messages, snapshot.turn_evidence)
-        if structured_history_enabled()
-        else []
-    )
+    messages: Sequence[tuple[str, str]] = snapshot.conversation_messages
+    evidence: Sequence[TurnEvidence] = snapshot.turn_evidence
+    preview = preview_compaction(session)
+    if preview is not None:
+        messages, evidence = preview.kept_messages, preview.kept_evidence
+    replayed = history_messages(messages, evidence) if structured_history_enabled() else []
+    history = measure_history(replayed, messages, evidence)
+    if preview is not None:
+        history = replace(history, compacted_messages=preview.summarized_messages)
     return measure_prompt(
         build_action_system_prompt_envelope(snapshot),
-        history=measure_history(replayed, snapshot.conversation_messages, snapshot.turn_evidence),
+        history=history,
         tool_schema_count=_default_tool_count(session),
     )
 

@@ -826,19 +826,21 @@ def _build_action_agent(
             history = tuple(
                 history_messages(snapshot.conversation_messages, snapshot.turn_evidence)
             )
+        # Cached half stays byte-identical across turns; ephemeral (plan, turn
+        # facts) rides with the user message so Anthropic's system
+        # cache_control breakpoint is not invalidated every turn.
+        system = envelope.render_cached()
+        prompt_skill, prompt_context = action_prompt_skill_and_context(envelope)
+        ephemeral = envelope.render_ephemeral()
+        user_message = build_action_user_message(message, prefix=ephemeral)
         prompt_size = measure_prompt(
             envelope,
             history=measure_history(
                 history, snapshot.conversation_messages, snapshot.turn_evidence
             ),
             tool_schema_count=len(agent_tools),
+            request_chars=len(user_message) - len(ephemeral),
         )
-        # Cached half stays byte-identical across turns; ephemeral (plan, turn
-        # facts) rides with the user message so Anthropic's system
-        # cache_control breakpoint is not invalidated every turn.
-        system = envelope.render_cached()
-        prompt_skill, prompt_context = action_prompt_skill_and_context(envelope)
-        user_message = build_action_user_message(message, prefix=envelope.render_ephemeral())
         # ReAct goal: host gates (unfinished plan) reject stop. Same-LLM
         # review is opt-in. The verifier reads executed tool names from the
         # shared list the event tap below fills, so it can stand down on

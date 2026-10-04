@@ -115,9 +115,10 @@ output, not just what you typed) and is used for two purposes:
    `auth`, or `provider_error`).
 
 A turn that calls the model also records `model_blocks` in both places: the
-characters and estimated tokens of each prompt block, the size of the replayed
-history, and the number of tool schemas. It holds sizes and block names only,
-never prompt text. `/context` shows the same breakdown for your next message.
+characters and estimated tokens of each prompt block, of the replayed history
+and of your message, and the number of tool schemas. It holds sizes and block
+names only, never prompt text. `/context` shows the same breakdown for your next
+message.
 
 ### Defaults
 

@@ -167,6 +167,53 @@ def compact_session_branch(
     )
 
 
+@dataclass(frozen=True)
+class CompactionPreview:
+    """What automatic compaction keeps verbatim; its summary exists only once it runs."""
+
+    kept_messages: tuple[tuple[str, str], ...]
+    kept_evidence: tuple[TurnEvidence, ...]
+    #: Messages the summary replaces, an earlier session summary included.
+    summarized_messages: int
+
+
+def preview_compaction(session: Any) -> CompactionPreview | None:
+    """What :func:`auto_compact_if_needed` would keep, without compacting; ``None`` if it would not run."""
+    if not should_compact(session):
+        return None
+    messages = list(session.agent.messages)
+    if not structured_history_enabled():
+        if len(messages) <= _KEEP_RECENT_MESSAGES:
+            return None
+        kept = messages[-_KEEP_RECENT_MESSAGES:]
+        return CompactionPreview(tuple(kept), (), len(messages) - len(kept))
+    evidence = list(getattr(session.agent, "turn_evidence", None) or ())
+    _prior, compacted, kept, kept_evidence = _structured_split(
+        messages, evidence, keep_budget_tokens=HISTORY_KEEP_RECENT_TOKENS
+    )
+    if not compacted:
+        return None
+    return CompactionPreview(tuple(kept), tuple(kept_evidence), len(messages) - len(kept))
+
+
+def _structured_split(
+    messages: list[tuple[str, str]],
+    evidence: Sequence[TurnEvidence],
+    *,
+    keep_budget_tokens: int,
+) -> tuple[str, list[tuple[str, str]], list[tuple[str, str]], list[TurnEvidence]]:
+    """The earlier summary's text, the turns to summarize, the turns kept and their evidence."""
+    prior = ""
+    body = messages
+    if body and is_summary_message(body[0]):
+        prior = summary_text(body[0])
+        body = body[1:]
+    split = _keep_from(body, evidence, budget_tokens=keep_budget_tokens)
+    kept = body[split:]
+    matched = match_turn_evidence(kept, evidence)
+    return prior, body[:split], kept, [matched[index] for index in sorted(matched)]
+
+
 def _compact_structured(
     session: Any,
     *,
@@ -178,19 +225,13 @@ def _compact_structured(
     agent = session.agent
     messages = list(agent.messages)
     evidence = list(getattr(agent, "turn_evidence", None) or ())
-    prior = ""
-    body = messages
-    if body and is_summary_message(body[0]):
-        prior = summary_text(body[0])
-        body = body[1:]
-    split = _keep_from(body, evidence, budget_tokens=keep_budget_tokens)
-    compacted, kept = body[:split], body[split:]
+    prior, compacted, kept, kept_evidence = _structured_split(
+        messages, evidence, keep_budget_tokens=keep_budget_tokens
+    )
     if not compacted:
         return None
 
     before_chars = history_chars(messages, evidence)
-    matched = match_turn_evidence(kept, evidence)
-    kept_evidence = [matched[index] for index in sorted(matched)]
     if summary:
         final_summary = merge_summary_texts(
             prior, summary.strip(), max_chars=HISTORY_SUMMARY_MAX_CHARS
@@ -408,10 +449,12 @@ def _auto_threshold() -> int:
 
 __all__ = [
     "COMPACTION_PROMPT",
+    "CompactionPreview",
     "CompactionResult",
     "DEFAULT_AUTO_COMPACTION_CHARS",
     "auto_compact_if_needed",
     "compact_session_branch",
     "deterministic_summary",
+    "preview_compaction",
     "should_compact",
 ]

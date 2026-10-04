@@ -88,6 +88,13 @@ def test_a_model_turn_records_the_size_of_each_prompt_part(captured) -> None:
     # The second call replays the first turn ahead of the new message.
     assert second["history"]["messages"] == 2
     assert second["tool_schema_count"] == 0
+    # The message itself is part of the call: a long request shows in the total.
+    assert second["request"]["chars"] >= len("And then?")
+    assert second["total"]["chars"] == (
+        sum(block["chars"] for block in second["blocks"].values())
+        + second["history"]["chars"]
+        + second["request"]["chars"]
+    )
     # Sizes and block ids only: no prompt or reply text leaves through this field.
     assert "Hello" not in json.dumps(second)
     assert "First answer" not in json.dumps(second)

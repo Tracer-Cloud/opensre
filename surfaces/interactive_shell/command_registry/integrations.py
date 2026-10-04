@@ -277,7 +277,7 @@ def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bo
         prepare_repl_output_line()
         with console.status(f"[{DIM}]Verifying integrations…[/]", spinner="dots"):
             results = repl_data.load_verified_integrations()
-            render_integrations_table(console, results)
+        render_integrations_table(console, results)
         return True
 
     if sub == "verify":

@@ -315,8 +315,8 @@ Shows what the model will receive with your next message, without calling a mode
 | Row | Meaning |
 | --- | --- |
 | one row per prompt block | The system prompt, rules, runtime facts, skills, connected integrations, memory, and the per-turn blocks, each with its tier, characters, and estimated tokens |
-| `history` | Earlier turns replayed to the model, including their tool calls and results |
-| `total` | Blocks plus history (tool schemas are counted separately) |
+| `history` | Earlier turns replayed to the model, including their tool calls and results. Shown as `history after compaction` when the next turn compacts first: only the turns compaction keeps, without the summary it writes then |
+| `total` | Blocks plus history; the message you type next and the tool schemas are not included |
 
 Below the table: how many messages and turns the history holds and how many of those turns carry tool results, whether a session summary opens it, how many tool schemas go with every call, and how close the history is to compaction (`OPENSRE_HISTORY_TOKEN_BUDGET` tokens or 60 turns). Past either, older turns are summarized before the next turn; `/compact` does that now.
 

@@ -16,7 +16,8 @@ if TYPE_CHECKING:
 
 _CAPTION = (
     "Stable, context and volatile blocks are the cached system prompt; ephemeral "
-    "blocks go with your next message, after the history. Tokens are estimates."
+    "blocks go with your next message, after the history. The total leaves out the "
+    "message you type next. Tokens are estimates."
 )
 
 
@@ -34,7 +35,12 @@ def _history_line(size: PromptSize, *, replayed: bool) -> str:
         f"{_counted(history.messages, 'message')} from {_counted(history.turns, 'turn')}, "
         f"{history.tool_turns:,} with tool results"
     ]
-    if history.summarized:
+    if history.compacted_messages:
+        parts.append(
+            f"after compaction folds {_counted(history.compacted_messages, 'older message')} "
+            "into a summary, written then and not counted here"
+        )
+    elif history.summarized:
         parts.append("opens with a session summary")
     return " · ".join(parts)
 
@@ -80,7 +86,8 @@ def render_next_model_call(
     for block in size.blocks:
         table.add_row(escape(block.id), block.tier, f"{block.chars:,}", f"{block.tokens:,}")
     history = size.history
-    table.add_row("history", "", f"{history.chars:,}", f"{history.tokens:,}")
+    label = "history after compaction" if history.compacted_messages else "history"
+    table.add_row(label, "", f"{history.chars:,}", f"{history.tokens:,}")
     table.add_row("[bold]total[/]", "", f"[bold]{size.chars:,}[/]", f"[bold]{size.tokens:,}[/]")
     print_repl_table(console, table)
 

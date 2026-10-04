@@ -17,6 +17,7 @@ from rich.console import Console
 from config.account import AccountLLMRoute
 from config.constants.conversation_history import (
     HISTORY_COMPACT_AFTER_TURNS,
+    HISTORY_KEEP_MAX_TURNS,
     OPENSRE_HISTORY_TOKEN_BUDGET_ENV,
     OPENSRE_LLM_COMPACTION_ENV,
     OPENSRE_STRUCTURED_HISTORY_ENV,
@@ -1860,7 +1861,14 @@ class TestContextCommand:
             session.agent.record_turn(f"question {index}", f"answer {index}")
         console, buf = _capture()
         dispatch_slash("/context", session, console)
-        assert "older turns are summarized before the next turn" in buf.getvalue()
+        output = buf.getvalue()
+        assert "older turns are summarized before the next turn" in output
+        # The breakdown is the call the model gets: the turns compaction keeps,
+        # not the transcript it is about to fold away.
+        assert "history after compaction" in output
+        assert f"from {HISTORY_KEEP_MAX_TURNS} turns" in output
+        kept = HISTORY_KEEP_MAX_TURNS * 2
+        assert f"folds {(HISTORY_COMPACT_AFTER_TURNS + 1) * 2 - kept} older messages" in output
 
     def test_leaves_a_pending_recovery_note_for_the_next_turn(self) -> None:
         session = Session()
