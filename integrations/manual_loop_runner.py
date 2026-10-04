@@ -10,7 +10,6 @@ from collections.abc import Callable, Mapping
 
 from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
 from core.agent_harness import AgentSession, SessionCore
-from core.agent_harness.prompts.skills.scheduling import resolve_loop_skill
 from core.tool import ToolExecutionHooks
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from infrastructure.scheduling.scheduler.loop_constants import (
@@ -20,6 +19,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_REPORT_PARAM,
     LOOP_SKILL_PARAM,
 )
+from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_recipe
 from infrastructure.scheduling.scheduler.previous_runs import previous_runs_block
 from infrastructure.scheduling.scheduler.run_activity import (
     CARRY_NOTE_MAX_CHARS,
@@ -127,8 +127,8 @@ def _skill_recipe(payload: AgentPayload) -> str:
     name = str(payload.get(LOOP_SKILL_PARAM) or "").strip()
     if not name:
         return ""
-    resolved = resolve_loop_skill(name)
-    return f"\n\nSkill recipe ({resolved.name}):\n{resolved.body}"
+    skill, body = loop_skill_recipe(name)
+    return f"\n\nSkill recipe ({skill}):\n{body}"
 
 
 def split_carry_note(reply: str) -> tuple[str, str]:

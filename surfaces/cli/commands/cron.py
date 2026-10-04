@@ -22,7 +22,6 @@ from core.agent_harness import (
     pin_recurring_skill,
     validate_skill_inputs,
 )
-from core.agent_harness.prompts.skills.scheduling import resolve_loop_skill
 from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
@@ -35,6 +34,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_SKILL_PARAM,
     LOOP_TEMPLATE_PARAM,
 )
+from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_recipe
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import validate_cron_and_timezone
@@ -345,7 +345,7 @@ def _loop_skill(skill_name: str) -> str:
     if not skill_name.strip():
         return ""
     try:
-        return resolve_loop_skill(skill_name).name
+        return loop_skill_recipe(skill_name)[0]
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
 

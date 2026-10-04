@@ -1,4 +1,8 @@
-"""What a manual loop runs and shows: its shipped template's text, else its stored copy."""
+"""What a manual loop runs and shows: its shipped template's text, else its stored copy.
+
+An agent loop bound to a skill also runs that workflow card, read from the
+active catalog at each tick.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ import logging
 from collections.abc import Mapping
 
 from core.agent_harness import LoopTemplate, load_loop_template
+from core.agent_harness.spi.skill_releases import active_skill_catalog
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_DESCRIPTION_PARAM,
     LOOP_PROMPT_PARAM,
@@ -41,4 +46,17 @@ def current_loop_description(params: Mapping[str, str]) -> str:
     return shipped.description if shipped else ""
 
 
-__all__ = ["current_loop_description", "current_loop_prompt"]
+def loop_skill_recipe(skill: str) -> tuple[str, str]:
+    """Return the canonical name and rendered body of the card a loop follows.
+
+    Raises ``RuntimeError`` when the active catalog lacks it, so a tick fails
+    instead of running without its instructions.
+    """
+    snapshot = active_skill_catalog().current()
+    found = snapshot.find(skill)
+    if found is None:
+        raise RuntimeError(f"Loop skill {skill.strip()!r} is not installed.")
+    return found.name, snapshot.body(found.name)
+
+
+__all__ = ["current_loop_description", "current_loop_prompt", "loop_skill_recipe"]

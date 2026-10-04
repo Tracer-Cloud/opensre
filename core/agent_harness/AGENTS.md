@@ -165,7 +165,8 @@ to `False` through `prepare_session`. This host-owned policy removes the skill
 index and `skill_view` while retaining execution tools; never infer it from
 prompt text or restore it from conversation history. A loop bound to a skill
 (`loop_skill`) still gets that one card: the runner appends its rendered body
-to the task through `resolve_loop_skill`, and a missing card fails the tick.
+to the task (`infrastructure/scheduling/scheduler/loop_prompt.py`), and a missing
+card fails the tick.
 
 **Repository AGENTS.md files are for local coding agents.** Never load a
 repository's `AGENTS.md` (or `AGENTS.override.md`) into the OpenSRE agent's

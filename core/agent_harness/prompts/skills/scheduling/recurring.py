@@ -24,7 +24,6 @@ __all__ = (
     "ScheduledSkillResolution",
     "is_recurring_skill",
     "pin_recurring_skill",
-    "resolve_loop_skill",
     "resolve_scheduled_skill",
     "skill_revision",
     "validate_skill_inputs",
@@ -119,21 +118,6 @@ def resolve_scheduled_skill(name: str, pinned_revision: str) -> ScheduledSkillRe
         body=body,
         revision=current,
         previous_revision=wanted,
-    )
-
-
-def resolve_loop_skill(name: str) -> ScheduledSkillResolution:
-    """Load the workflow card an agent loop follows; fail when it is not installed.
-
-    Unlike a recurring skill, the card needs no ``recurring`` flag or pin: an agent
-    loop already runs with its tools, and each tick follows the active catalog.
-    """
-    snapshot = active_skill_catalog().current()
-    skill = snapshot.find(name)
-    if skill is None:
-        raise RuntimeError(f"Loop skill {normalize_skill_name(name)!r} is not installed.")
-    return ScheduledSkillResolution(
-        skill=skill, body=snapshot.body(skill.name), revision=_revision(skill, snapshot)
     )
 
 
