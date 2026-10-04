@@ -444,6 +444,9 @@ def test_a_verify_reread_of_the_same_record_is_shown_once() -> None:
 def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
     """Polls and retried failures before the repair must not head the closing.
 
+    A read whose later answer names a different record (``task_id``) is a
+    separate report and stays.
+
     Live QA on 50d8fc7 (session c7273771): the gateway was starting, so the
     turn polled ``check_hosted_gateway`` eight times and its probe failed twice
     before it succeeded. The closing above the handoff menu printed all of it.
@@ -460,10 +463,8 @@ def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
     report = "- **Outcome:** acme/demo#1 success: task t1, failed run 11, fix abc, passing run 12."
 
     class _ToolResult:
-        def __init__(self, text: str, *, ok: bool = True, prompt_id: str = "") -> None:
-            self.details: dict[str, Any] = {"response_text": text, "ok": ok}
-            if prompt_id:
-                self.details["prompt_id"] = prompt_id
+        def __init__(self, text: str, *, ok: bool = True, **ids: str) -> None:
+            self.details: dict[str, Any] = {"response_text": text, "ok": ok, **ids}
             self.content = text
             self.is_error = not ok
 
@@ -486,15 +487,18 @@ def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
     def label(text: str) -> ToolCall:
         return call("github_cli", {"args": ["label", "create", "repair", text]})
 
+    def latest_repair() -> ToolCall:
+        return call("get_ci_repair_loop", {})
+
     class _Result:
         final_text = ""
         tool_results = [
             *((check(), _ToolResult(starting)) for _ in range(4)),
-            (check(), _ToolResult(unhealthy)),
+            (check(), _ToolResult(unhealthy, gateway_id="g1")),
             (probe(), _ToolResult(refused, ok=False)),
-            (check(), _ToolResult(unhealthy)),
+            (check(), _ToolResult(unhealthy, gateway_id="g1")),
             (probe(), _ToolResult(refused, ok=False)),
-            (check(), _ToolResult(running)),
+            (check(), _ToolResult(running, gateway_id="g1")),
             (probe(), _ToolResult(probed, prompt_id="p_probe")),
             (
                 call("ask_hosted_gateway", {"conversation": "new", "prompt": "repair"}),
@@ -503,6 +507,9 @@ def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
             # A mutating call that ran twice did two things; both stay.
             (label("x"), _ToolResult("Created label repair.")),
             (label("x"), _ToolResult("Created label repair.")),
+            # "The most recent run" moved to a new repair between two reads.
+            (latest_repair(), _ToolResult("Repair t1 succeeded.", task_id="t1")),
+            (latest_repair(), _ToolResult("Repair t2 is running.", task_id="t2")),
         ]
         executed = tool_results
         planned = [tool_call for tool_call, _ in tool_results]
@@ -512,6 +519,7 @@ def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
         "check_hosted_gateway": _Tool("check_hosted_gateway", SideEffectLevel.READ_ONLY),
         "ask_hosted_gateway": _Tool("ask_hosted_gateway", SideEffectLevel.EXTERNAL),
         "github_cli": _Tool("github_cli", SideEffectLevel.MUTATING),
+        "get_ci_repair_loop": _Tool("get_ci_repair_loop", SideEffectLevel.READ_ONLY),
     }
     counts = _TurnCounts(
         executed_entries=[],
@@ -535,4 +543,6 @@ def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
         assert text.count(running) == 1
         assert text.count(probed) == 1
     assert shown.count("Created label repair.") == 2
+    assert "Repair t1 succeeded." in shown
+    assert "Repair t2 is running." in shown
     assert shown.index(running) < shown.index(probed)

@@ -45,6 +45,9 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_SESSION_PATH as OPENSRE_ACCOUNT_SESSION_PATH,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS as OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS,  # noqa: E501
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS as OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS,  # noqa: E501
     )
     from config.constants.account import (

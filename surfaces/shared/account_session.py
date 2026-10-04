@@ -22,6 +22,7 @@ from config.account_credits import AccountCredits, parse_credit_balance_payload
 from config.constants.account import (
     OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
     OPENSRE_ACCOUNT_SESSION_PATH,
+    OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS,
     OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS,
 )
 
@@ -106,23 +107,27 @@ def _refreshed_record(payload: object, record: AccountRecord) -> AccountRecord |
 def _get_session(url: str, token: str) -> httpx.Response:
     """GET the session, retrying a timeout, a dropped connection or a 429/5xx.
 
-    Raises the last transport error when every attempt failed to connect.
+    Every attempt and pause fits in one overall budget, so an app that never
+    answers is reported in that time rather than after every full timeout.
+    Raises the last transport error when no attempt connected.
     """
+    deadline = time.monotonic() + OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS
     delays = iter(OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS)
     while True:
+        remaining = deadline - time.monotonic()
         try:
             response = httpx.get(
                 url,
                 headers={"Authorization": f"Bearer {token}"},
-                timeout=OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
+                timeout=min(OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS, remaining),
             )
         except httpx.TransportError:
             delay = next(delays, None)
-            if delay is None:
+            if delay is None or time.monotonic() + delay >= deadline:
                 raise
         else:
             delay = next(delays, None) if response.status_code in _TRANSIENT_STATUSES else None
-            if delay is None:
+            if delay is None or time.monotonic() + delay >= deadline:
                 return response
         time.sleep(delay)
 

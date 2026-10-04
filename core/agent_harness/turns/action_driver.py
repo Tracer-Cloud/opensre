@@ -287,6 +287,23 @@ def _tool_failed(tool_result: Any) -> bool:
     return bool(getattr(tool_result, "is_error", False))
 
 
+def _names_another_record(earlier: Any, later: Any) -> bool:
+    """True when the two results carry a different value for the same ``*_id`` field.
+
+    A read with no id in its input ("the most recent run") can land on a new
+    record between two calls; each is then its own report.
+    """
+    earlier_details = getattr(earlier, "details", None)
+    later_details = getattr(later, "details", None)
+    if not isinstance(earlier_details, dict) or not isinstance(later_details, dict):
+        return False
+    return any(
+        key.endswith("_id") and isinstance(value, str) and value and value != later_details[key]
+        for key, value in earlier_details.items()
+        if isinstance(later_details.get(key), str) and later_details[key]
+    )
+
+
 def _current_generic_results(
     result: Any, tools_by_name: Mapping[str, Any] | None = None
 ) -> list[tuple[ToolCall, Any]]:
@@ -294,8 +311,9 @@ def _current_generic_results(
 
     A status poll (``check_hosted_gateway`` while a gateway starts) and a failed
     call that was sent again report a state that no longer holds. The closing
-    shows the latest. A mutating call that succeeded twice did two things, so
-    both stay.
+    shows the latest. A mutating call that succeeded twice did two things, and
+    a read that reached a different record reported something else, so both
+    stay.
     """
     results = _generic_tool_results(result)
     tools = tools_by_name or {}
@@ -303,9 +321,14 @@ def _current_generic_results(
     latest = {identity: index for index, identity in enumerate(identities)}
     current: list[tuple[ToolCall, Any]] = []
     for index, (tool_call, tool_result) in enumerate(results):
-        if latest[identities[index]] != index:
+        last = latest[identities[index]]
+        if last != index:
+            if _tool_failed(tool_result):
+                continue
             level = getattr(tools.get(tool_call.name), "side_effect_level", None)
-            if level in _OBSERVING_LEVELS or _tool_failed(tool_result):
+            if level in _OBSERVING_LEVELS and not _names_another_record(
+                tool_result, results[last][1]
+            ):
                 continue
         current.append((tool_call, tool_result))
     return current
