@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from config.constants.scheduler import WORK_UNVERIFIED_ERROR_KIND
 from core.agent_harness import TurnResult
 from core.tool import ToolExecutionRequest, ToolExecutionResult
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
@@ -36,9 +37,13 @@ class ScheduledOutcomes:
         with self._lock:
             self._outcomes[key] = outcome
 
-    def report(self, turn: TurnResult, *, agent_mode: bool) -> TaskReport:
-        """Require work evidence for agent tasks and a complete response for report tasks."""
-        text = turn.primary_response_text
+    def report(self, turn: TurnResult, *, agent_mode: bool, text: str | None = None) -> TaskReport:
+        """Require work evidence for agent tasks and a complete response for report tasks.
+
+        ``text`` is the reply to deliver when the runner kept part of the turn's
+        reply back; it defaults to the whole reply.
+        """
+        text = turn.primary_response_text if text is None else text
         with self._lock:
             outcomes = tuple(self._outcomes.values())
         # A sweep picks its targets each tick, so a fork or closed PR it reached
@@ -77,7 +82,9 @@ class ScheduledOutcomes:
                     evidence=evidence,
                 )
             else:
-                outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="work_unverified")
+                outcome = WorkOutcome(
+                    status=WorkStatus.INCOMPLETE, error_kind=WORK_UNVERIFIED_ERROR_KIND
+                )
         if stop_schedule:
             text += "\n\nSchedule paused: the repair target requires attention before retrying."
         return TaskReport(text, outcome=outcome, stop_schedule=stop_schedule)

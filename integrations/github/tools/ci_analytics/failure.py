@@ -43,8 +43,10 @@ _NEXT_STEP = {
     GitHubFailureKind.NOT_FOUND: (
         "The same owner/repo fails the same way: confirm the repository with the user."
     ),
+    # Not "stop": the skill that ran the analysis may go on without GitHub.
     GitHubFailureKind.TLS_UNTRUSTED: (
-        "Retrying cannot help until the certificate problem is fixed: report it and stop."
+        "Retrying cannot help until the certificate problem is fixed: report it in one line, "
+        "then continue with the next step instead of retrying."
     ),
     GitHubFailureKind.UNREACHABLE: (
         "The read was already retried: report the blocker and offer the user a retry later."

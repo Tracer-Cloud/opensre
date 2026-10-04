@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,9 +17,11 @@ from core.agent_harness.prompts.kernel.envelope import (
 )
 from infrastructure.analytics.prompt_log.model_prompt import (
     record_action_model_prompt,
+    record_model_blocks,
     skill_prompt_from_tool_results,
 )
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder, current_recorder
+from infrastructure.analytics.provider import JsonValue
 from surfaces.interactive_shell.session import Session
 
 
@@ -146,3 +149,44 @@ def test_recorder_truncates_an_oversized_system_prompt(monkeypatch, tmp_path: Pa
     system = str(captured[0]["model_system_prompt"])
     assert system.endswith("[truncated]")
     assert len(system) < 90_000
+
+
+def test_recorder_writes_model_blocks_to_the_local_log_and_the_event(
+    monkeypatch, tmp_path: Path
+) -> None:
+    captured: list[dict[str, object]] = []
+    log_path = tmp_path / "prompt_log.jsonl"
+    cfg = PromptLogConfig(
+        enabled=True,
+        local_enabled=True,
+        posthog_enabled=True,
+        redact=True,
+        max_chars=1000,
+        log_path=log_path,
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.capture_ai_generation",
+        lambda payload: captured.append(payload),
+    )
+    blocks: dict[str, JsonValue] = {
+        "blocks": {"action-agent-system-base": {"tier": "stable", "chars": 400, "tokens": 100}},
+        "history": {"messages": 4, "chars": 80, "tokens": 20, "tool_turns": 1},
+        "total": {"chars": 480, "tokens": 120},
+        "tool_schema_count": 12,
+    }
+    recorder = PromptRecorder.start(session=Session(), text="fix ci", turn_kind="agent")
+    assert recorder is not None
+    token = current_recorder.set(recorder)
+    try:
+        record_model_blocks(blocks)
+    finally:
+        current_recorder.reset(token)
+    recorder.set_response("done")
+    recorder.flush()
+
+    local = json.loads(log_path.read_text(encoding="utf-8").splitlines()[-1])
+    assert local["model_blocks"] == blocks
+    assert captured[0]["model_blocks"] == blocks

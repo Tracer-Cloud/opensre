@@ -165,6 +165,22 @@ to `False` through `prepare_session`. This host-owned policy removes the skill
 index and `skill_view` while retaining execution tools; never infer it from
 prompt text or restore it from conversation history.
 
+**Repository instructions:** the action prompt's REPOSITORY INSTRUCTIONS block
+(`grounding/repository_instructions.py`, CONTEXT tier, right after REPOSITORY
+CONTEXT) carries each active repository's AGENTS.md: a verified local
+checkout's chain (git root down to the working directory, `AGENTS.override.md`
+before `AGENTS.md`), else the default branch's root file read through
+`infrastructure.harness_providers.repository_instructions` (vendor sources
+register from `integrations/harness_adapters.py`). One 32 KiB budget; text is
+redacted. The system prompt's AGENTS.md sentence relies on this block, so never
+gate it by surface or skill discovery. Analytics and trace exports of the
+system prompt replace each section's body with a placeholder
+(`infrastructure/safety/repository_instructions_redaction.py`), found by the
+header line and the last closing wrapper: keep the layout constants in
+`config/constants/repository_instructions.py` shared and any note above the
+wrappers. Tests keep the sources unregistered
+(`tests/harness_providers_plugin.py`) and register fakes.
+
 Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.
 Expand `AgentBuildConfig` through `resolve_agent_ports` — do not re-copy the
 `build_tools` / `build_prompts` branch in each host. Gateway
@@ -261,9 +277,9 @@ subpackage. Default port implementations live with the concern they serve, not i
   `TurnAccounting` (`turn_accounting.py`).
 - `prompts/` — the single agent's prompt assembly. Layout: `kernel/`
   (envelope + surface Strategy), `action/` (assembler), `grounding/`
-  (prompt providers), plus leaves `memory/` / `runtime_facts/` / `skills/`.
-- `grounding/` — reusable grounding cache and rendering contracts; surfaces
-  inject surface-owned command registries instead of being imported here.
+  (the provider that names a session's surface), plus leaves `memory/` /
+  `runtime_facts/` / `skills/`.
+- `grounding/` — grounding sources the action assembler reads.
 - `session/` — reusable agent session state (`SessionCore`), JSONL storage, prompt
   history, task registry, session-scoped background records, integration resolution
   (:mod:`session.integration_resolution`), and `SessionManager` (the lifecycle owner).
@@ -281,8 +297,8 @@ to it instead of re-implementing bootstrap + persistence:
 
 - **shell** — `SessionBootstrapSpec` calls `SessionManager().bootstrap(...)` for
   the core startup mutations (persistent task registry + integration
-  hydration), then layers shell-only UI concerns (theme, grounding providers,
-  prompt history) on top. Interactive REPL entry calls
+  hydration), then layers shell-only UI concerns (theme, prompt history) on
+  top. Interactive REPL entry calls
   :meth:`SessionManager.open_storage` once the run is confirmed interactive;
   ``/new`` calls :meth:`SessionManager.rotate_in_place`; ``/resume`` calls
   :meth:`SessionManager.rebind_for_resume` then :meth:`SessionManager.restore_context`.
@@ -302,6 +318,13 @@ to it instead of re-implementing bootstrap + persistence:
   :meth:`AgentSession.run_headless_turn` (or ``start`` + ``chat``).
   That is the same ``run_turn`` engine as the shell; do not reassemble
   ``BufferOutputSink`` + ``DefaultHeadlessBuild`` in integrations.
+  Inside a scheduler run attempt, ``run_headless_turn`` records the message
+  it submits and adds an ``after_tool_call`` hook that records each call of a
+  tool declaring a mutating or external ``side_effect_level``
+  (``infrastructure/scheduling/scheduler/tool_actions.py``). The attempt's run
+  record keeps them, and the loop's next tick reads them back as its PREVIOUS
+  RUNS block: a loop's continuity across ticks comes from those records, not
+  from a long-lived agent.
   Ephemeral in-memory sessions (``headless_adapters.InMemorySessionState``)
   bypass ``SessionManager`` by design when tests need no JSONL.
 
@@ -350,6 +373,30 @@ construct a persistent ``core.agent.Agent`` — gateway chat reuses one
 
 Turn assembly starts in ``turns/orchestrator.py`` with
 ``TurnSnapshot.from_session``.
+
+**Conversation history is replayed, not quoted.** Earlier turns go to the model
+as typed messages ahead of the new user message (``turns/structured_history.py``):
+each user message, every assistant tool-call batch with its results (bounded at
+record time, head and tail kept), and the reply. ``record_conversation_turn``
+stores a turn's ``TurnEvidence`` beside its ``(user, assistant)`` text pair and
+appends it to the session log as a ``turn_evidence`` record; ``restore_context``
+brings it back. Evidence is matched to transcript pairs by reply text, so a
+transcript rewritten elsewhere (thread seeding, compaction) replays as text
+instead of the wrong turn. Compaction (``turns/transcript_compaction.py``) is
+token-based: past ``OPENSRE_HISTORY_TOKEN_BUDGET`` a model writes a handoff
+summary of the older turns, the newest stay verbatim with their evidence, and
+the compaction record keeps both so resume restarts from the same state.
+``OPENSRE_STRUCTURED_HISTORY=0`` restores the text block (``RECENT
+CONVERSATION``) as a kill switch. Code that scans a run's ``result.messages``
+for this turn's output must skip the replayed prefix (``history_count``), or an
+earlier turn's message is mistaken for this one's.
+
+**The model's context is measured in one place.** ``turns/prompt_size.py``
+sizes each envelope block, the replayed history and the tool schemas of a model
+call; the prompt log records that per turn (``model_blocks``) and ``/context``
+shows it for the next turn without calling a model. A new block or context
+source is assembled in ``prompts/action/assemble.py`` and is measured from
+there; do not compute prompt sizes anywhere else.
 
 **Do NOT** reintroduce per-surface `Agent` subclasses that override
 `build_llm` / `build_system_prompt` / `build_tools` / `resolved_integrations`

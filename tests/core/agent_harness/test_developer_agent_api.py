@@ -1,12 +1,11 @@
 """Developer journey: create and drive your own agent on the Python API.
 
 Pins the documented ladder in ``docs/guides/python-api.mdx`` — two-line start, custom
-sink, custom grounding, multi-turn reuse — without a live LLM provider.
+sink, custom prompt-context provider, multi-turn reuse — without a live LLM provider.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -22,32 +21,8 @@ from core.agent_harness.turns.headless_build import DefaultHeadlessBuild, InMemo
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
 
-class _RecordingPrompts(EmptyPromptContextProvider):
-    """Caller's grounding: records which corpora the answer path asked for."""
-
-    def __init__(self) -> None:
-        self.calls: list[str] = []
-
-    def agents_md(self) -> str:
-        self.calls.append("agents_md")
-        return "CUSTOM PERSONA"
-
-    def cli_reference(self) -> str:
-        self.calls.append("cli_reference")
-        return ""
-
-    def docs(self, query: str) -> str:
-        self.calls.append(f"docs:{query}")
-        return ""
-
-    def runtime_facts(self) -> Mapping[str, Any]:
-        self.calls.append("runtime_facts")
-        return {}
-
-    def environment_block(self, runtime: Mapping[str, Any] | None = None) -> str:
-        _ = runtime
-        self.calls.append("environment_block")
-        return ""
+class _CallerPrompts(EmptyPromptContextProvider):
+    """A caller's own prompt-context provider; the agent must keep it."""
 
 
 def _headless_config(**overrides: Any) -> SessionConfig:
@@ -152,10 +127,10 @@ def test_documented_custom_sink_path_captures_streamed_answer(
     assert any("echo:" in chunk for chunk in sink.streamed)
 
 
-def test_start_honours_caller_grounding_provider(stub_action_planner: None) -> None:
+def test_start_honours_caller_prompt_provider(stub_action_planner: None) -> None:
     """``SessionConfig.prompts`` remains bound to the agent."""
     # Arrange
-    prompts = _RecordingPrompts()
+    prompts = _CallerPrompts()
     harness = AgentSession.start(_headless_config(prompts=prompts))
     assert harness.agent is not None
     harness.agent._tools = NullToolProvider()  # noqa: SLF001
@@ -169,12 +144,12 @@ def test_start_honours_caller_grounding_provider(stub_action_planner: None) -> N
     assert "echo:ok" in (result.primary_response_text or "")
 
 
-def test_builder_accepts_caller_grounding_on_the_second_path() -> None:
+def test_builder_accepts_caller_prompt_provider_on_the_second_path() -> None:
     """The explicit ``DefaultHeadlessBuild.agent`` path must take ``prompts=``."""
     # Arrange
     harness = AgentSession(_headless_config())
     startup = harness.startup()
-    prompts = _RecordingPrompts()
+    prompts = _CallerPrompts()
     sink = BufferOutputSink()
 
     # Act
@@ -228,8 +203,8 @@ def test_custom_output_sink_protocol_is_enough(stub_action_planner: None) -> Non
     assert sink.streamed
 
 
-def test_start_without_prompts_keeps_default_grounding() -> None:
-    """Omitting ``prompts`` must not leave the agent ungrounded."""
+def test_start_without_prompts_keeps_the_default_provider() -> None:
+    """Omitting ``prompts`` binds the default provider, not none."""
     # Arrange / Act
     harness = AgentSession.start(_headless_config())
 

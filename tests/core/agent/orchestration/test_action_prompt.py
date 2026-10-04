@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.prompts import (
     build_action_system_prompt,
@@ -25,6 +26,12 @@ from core.agent_harness.prompts.skills import (
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from tests.utils.skill_cards import skill_card
+
+
+@pytest.fixture(autouse=True)
+def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
 
 
 def _skill_instruction_text(name: str) -> str:
@@ -305,9 +312,11 @@ def test_action_system_prompt_includes_skills_block() -> None:
     )
 
 
-def test_action_prompt_includes_long_term_memory_bodies(
+def test_action_prompt_lists_memories_and_includes_bodies_relevant_to_the_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from dataclasses import replace
+
     from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
     from core.domain.memory import save_memory
 
@@ -319,10 +328,15 @@ def test_action_prompt_includes_long_term_memory_bodies(
         description="Name is Vaibhav",
         body="The user's name is Vaibhav on the platform team.",
     )
-    prompt = build_action_system_prompt(_ctx())
-    assert "LONG-TERM MEMORY" in prompt
-    assert "user-profile" in prompt
-    assert "platform team" in prompt
+
+    idle = build_action_system_prompt(_ctx())
+    asked = build_action_system_prompt(replace(_ctx(), text="which team is Vaibhav on?"))
+
+    assert "LONG-TERM MEMORY" in idle
+    assert "- [user] user-profile — Name is Vaibhav" in idle
+    assert "platform team" not in idle
+    assert "RELEVANT MEMORIES" in asked
+    assert "platform team" in asked
 
 
 def test_scheduling_guidance_survives_prompt_assembly() -> None:

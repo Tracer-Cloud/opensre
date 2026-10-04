@@ -39,8 +39,6 @@ surfaces/interactive_shell/runtime/task_cancel_adapter.py|class|TaskCancelPorts
 # context
 config/constants/paths.py|class|ContextRootOwnerMismatchError
 config/scope_context.py|module|scope_context
-core/agent_harness/grounding/context.py|class|GroundingContext
-core/agent_harness/grounding/context.py|module|context
 core/agent_harness/ports.py|class|PromptContextProvider
 core/agent_harness/prompts/grounding/provider.py|class|DefaultPromptContextProvider
 core/agent_harness/tools/tool_context.py|module|tool_context
@@ -59,7 +57,6 @@ integrations/github/tools/ci_fix/context.py|module|context
 integrations/github/tools/security_fix/context.py|class|SecurityAlertContext
 integrations/github/tools/security_fix/context.py|module|context
 integrations/slack/message_context.py|module|message_context
-surfaces/interactive_shell/grounding/cli_reference.py|class|ShellPromptContextProvider
 surfaces/interactive_shell/runtime/context.py|module|context
 tools/cross_vendor/fix_sentry_issue/context.py|class|IssueContext
 tools/cross_vendor/fix_sentry_issue/context.py|module|context

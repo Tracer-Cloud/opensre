@@ -28,10 +28,12 @@ class PromptBlockId(StrEnum):
     ASK_USER_ANSWERED = "ask-user-answered"
     CURRENT_TASK_PLAN = "current-task-plan"
     TURN_INTERACTION = "turn-interaction"
+    RELEVANT_MEMORIES = "relevant-memories"
 
     # Shared across envelopes.
     CONNECTED_INTEGRATIONS = "connected-integrations"
     REPOSITORY_CONTEXT = "repository-context"
+    REPOSITORY_INSTRUCTIONS = "repository-instructions"
     LONG_TERM_MEMORY = "long-term-memory"
     RECENT_CONVERSATION = "recent-conversation"
     PRIOR_ACTION_FACTS = "prior-action-facts"

@@ -41,6 +41,21 @@ class HostCancelReason(enum.StrEnum):
 
     STOP = "stop"
     GOAL_PAUSE = "goal_pause"
+    GOAL_CLEAR = "goal_clear"
+
+
+def _goal_control_priority(reason: HostCancelReason | None) -> int:
+    """Return goal-control precedence, or zero for ordinary cancellation."""
+    if reason is HostCancelReason.GOAL_PAUSE:
+        return 1
+    if reason is HostCancelReason.GOAL_CLEAR:
+        return 2
+    return 0
+
+
+def is_goal_control_reason(reason: HostCancelReason | None) -> bool:
+    """Return whether ``reason`` requires a safe session-goal boundary."""
+    return _goal_control_priority(reason) > 0
 
 
 class HostCancelEvent(threading.Event):
@@ -60,10 +75,12 @@ class HostCancelEvent(threading.Event):
     def request(self, reason: HostCancelReason, *, interrupt: bool = True) -> None:
         """Record ``reason`` and optionally wake cooperative cancel readers."""
         with self._reason_lock:
-            # A pause controls post-turn state as well as interruption. Once
-            # requested, a later generic stop (for example during shutdown)
-            # must not erase that boundary action.
-            if self._reason is not HostCancelReason.GOAL_PAUSE:
+            # Goal controls mutate post-turn state as well as interrupting the
+            # current turn. Preserve them across a later generic stop, and let
+            # a destructive clear supersede an earlier pause.
+            current_priority = _goal_control_priority(self._reason)
+            requested_priority = _goal_control_priority(reason)
+            if requested_priority >= current_priority:
                 self._reason = reason
             if interrupt:
                 super().set()
@@ -203,5 +220,6 @@ __all__ = [
     "cancel_tool_resources",
     "ensure_turn_cancel",
     "host_cancel_requested",
+    "is_goal_control_reason",
     "turn_cancel_reason",
 ]

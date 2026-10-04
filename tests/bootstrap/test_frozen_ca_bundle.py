@@ -75,6 +75,22 @@ def test_a_ca_bundle_set_in_the_env_file_is_kept(
 
 
 @pytest.mark.usefixtures("_frozen_without_ca_env")
+def test_a_compiled_in_ca_file_missing_on_this_machine_gets_the_bundled_certificates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: Homebrew's libssl reports ``/opt/homebrew/etc/openssl@3/cert.pem`` even
+    on a Mac where that file was never installed. The path is non-empty, so boot left
+    ``urllib`` (the GitHub REST client) with an empty trust store and GitHub Actions
+    reads failed ``CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate``."""
+    missing = tmp_path / "openssl@3" / "cert.pem"
+    monkeypatch.setattr(ssl, "get_default_verify_paths", _verify_paths(str(missing), None))
+
+    assert use_bundled_ca_certificates() == certifi.where()
+    assert os.environ[SSL_CERT_FILE_ENV] == certifi.where()
+    assert ssl.create_default_context().cert_store_stats()["x509_ca"] > 0
+
+
+@pytest.mark.usefixtures("_frozen_without_ca_env")
 def test_a_default_ca_file_that_exists_here_is_kept(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

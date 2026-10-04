@@ -7,21 +7,18 @@ import sys
 import threading
 from collections.abc import Callable
 
-import click
 from rich.console import Console
 
 from config.repl_config import ReplConfig
 from core.agent_harness import SessionManager
-from core.agent_harness.spi.session_goal import pause_active_session_goal
 from infrastructure.analytics.capture import capture_interactive_shell_rendered
 from infrastructure.analytics.github_identity import identify_saved_github_username
 from infrastructure.analytics.usage_context import claim_process_session_id
 from infrastructure.logging import install_shell_log_handler, quiet_noisy_third_party_loggers
 from infrastructure.terminal.theme import set_active_theme
-from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.interactive_shell.controller import InteractiveShellController
 from surfaces.interactive_shell.runtime.context import create_repl_runtime
-from surfaces.interactive_shell.runtime.core.state import ReplState
+from surfaces.interactive_shell.runtime.session_shutdown import close_repl_session
 from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
@@ -57,31 +54,17 @@ def _new_shell_session() -> Session:
     return Session(session_id=session_id) if session_id else Session()
 
 
-def _close_repl_session(session: Session, state: ReplState) -> None:
-    """Persist final session state, including an interrupted goal-pause boundary."""
-    pause_requested = state.is_goal_pause_requested()
-    manager = SessionManager.for_session(session)
-    with session_execution_lock(session.session_id):
-        manager.refresh_from_storage(session)
-        if pause_requested:
-            pause_active_session_goal(session)
-        manager.close(session)
-
-
 async def run_repl_async(
     initial_input: str | None = None,
     config: ReplConfig | None = None,
     resume_session_id: str | None = None,
     console: Console | None = None,
-    cli_command_group: click.Command | None = None,
     finish_banner: Callable[[], None] | None = None,
     after_banner: Callable[[], None] | None = None,
     tools_ready: Callable[[], None] | None = None,
 ) -> int:
     """Run the shell on an existing event loop and return its exit code.
 
-    ``cli_command_group`` is the ``opensre`` Click group the shell documents to
-    the model; the process entrypoint passes it, embedders may leave it out.
     ``after_banner`` is launch work the CLI held back until the banner is on
     screen (error-reporting start); it runs once the runtime is booted.
     ``tools_ready`` waits for a tool-registry load started before the runtime
@@ -103,7 +86,6 @@ async def run_repl_async(
     # composer-hide (needs the session + REPL state, which do not exist yet).
     runtime_context = create_repl_runtime(session=_new_shell_session())
     session = runtime_context.session
-    session.terminal.cli_command_group = cli_command_group
 
     if initial_input:
         if after_banner is not None:
@@ -162,7 +144,7 @@ async def run_repl_async(
         startup_work.close()
         join_first_turn_warmup()
         # True end-of-run teardown: persist and release the session's resources.
-        _close_repl_session(session, runtime_context.state)
+        close_repl_session(session, runtime_context.state)
 
 
 def _start_launch_banner(
@@ -200,7 +182,6 @@ def run_repl(
     *,
     resume_session_id: str | None = None,
     console: Console | None = None,
-    cli_command_group: click.Command | None = None,
     after_banner: Callable[[], None] | None = None,
     capture_shell_rendered: bool = True,
 ) -> int:
@@ -252,7 +233,6 @@ def run_repl(
                 config=cfg,
                 resume_session_id=resume_session_id,
                 console=out,
-                cli_command_group=cli_command_group,
                 finish_banner=finish_banner,
                 after_banner=after_banner,
                 tools_ready=tools_ready,

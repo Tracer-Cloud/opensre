@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import logging
+import re
 from collections.abc import Callable, Mapping
 
 from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
@@ -16,6 +17,12 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_PARAM,
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
+)
+from infrastructure.scheduling.scheduler.previous_runs import previous_runs_block
+from infrastructure.scheduling.scheduler.run_activity import (
+    CARRY_NOTE_MAX_CHARS,
+    compact_text,
+    keep_carry_note,
 )
 from infrastructure.scheduling.scheduler.schedule_cancel import cancel_requested_for_payload
 from infrastructure.scheduling.scheduler.types import TaskReport
@@ -32,7 +39,22 @@ REPORT_BUILDERS: dict[str, str] = {
 #: Stored params that bind a loop to one repair target (``cron add --pr`` / ``--branch``).
 _TARGET_PARAMS = ("pr_number", "branch")
 
-_MANUAL_LOOP_INSTRUCTIONS = """Scheduled report loop.
+#: A loop's reply may end with this line to leave a note for the loop's next run.
+CARRY_NOTE_MARKER = "NOTE FOR NEXT RUN:"
+#: A line starting with the marker in any case, allowing Markdown emphasis or list marks.
+#: A block quote (``>``) is quoted text, never the loop's own note.
+_CARRY_NOTE_LINE = re.compile(
+    rf"^[ \t*_`#-]*{re.escape(CARRY_NOTE_MARKER.rstrip(':'))}[ \t*_`]*:[ \t*_`]*(?P<note>.*)$",
+    re.IGNORECASE,
+)
+
+_CARRY_NOTE_INSTRUCTION = (
+    "To leave yourself a note for this loop's next run, end your reply with one line "
+    f"`{CARRY_NOTE_MARKER} <text>` (at most {CARRY_NOTE_MAX_CHARS} characters); the "
+    "scheduler stores it with this run and removes it from the delivered reply."
+)
+
+_MANUAL_LOOP_INSTRUCTIONS = f"""Scheduled report loop.
 
 Produce only the report body requested below.
 Do not start an RCA, incident investigation, alert triage, diagnosis, or remediation workflow.
@@ -42,9 +64,11 @@ Do not send, post, notify, or message any channel from inside this turn; the sch
 will deliver the final report body to the configured channels after this runner returns.
 Use read-only tools when data is required. For GitHub star history, call
 get_github_star_history and compute "Stars Gained" from the returned daily rows.
+Earlier runs, when listed, are context only: still report everything the request asks for.
+{_CARRY_NOTE_INSTRUCTION}
 """
 
-_AGENT_LOOP_INSTRUCTIONS = """Scheduled agent loop.
+_AGENT_LOOP_INSTRUCTIONS = f"""Scheduled agent loop.
 
 Do the work the task below names, using the tools it names.
 Do not load skill_view or follow a report-only skill; the task text below is the complete instruction.
@@ -53,11 +77,16 @@ identifier must come from a tool result.
 Do not send, post, notify, or message any channel from inside this turn; the
 scheduler will deliver your reply to the configured channels after this
 runner returns.
+{_CARRY_NOTE_INSTRUCTION}
 """
 
 
-def build_manual_loop_prompt(payload: AgentPayload) -> str:
-    """Build the headless prompt for a manual loop payload."""
+def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") -> str:
+    """Build the headless prompt for a manual loop payload.
+
+    ``previous_runs`` is the loop's PREVIOUS RUNS block; it goes right before the
+    stored task so the tick reads its history before the work.
+    """
     prompt = str(
         payload.get("loop_prompt") or payload.get("prompt") or payload.get("description") or ""
     ).strip()
@@ -65,6 +94,7 @@ def build_manual_loop_prompt(payload: AgentPayload) -> str:
         raise RuntimeError("Manual loop prompt is empty.")
 
     name = str(payload.get("name") or payload.get("task_name") or "manual loop").strip()
+    history = f"\n\n{previous_runs}" if previous_runs else ""
     if str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT:
         scope = {
             key: payload[key]
@@ -72,8 +102,30 @@ def build_manual_loop_prompt(payload: AgentPayload) -> str:
             if payload.get(key)
         }
         binding = f"\nStored repository target: {json.dumps(scope)}\n" if scope else ""
-        return f"{_AGENT_LOOP_INSTRUCTIONS}\nLoop name: {name}{binding}\n\nTask:\n{prompt}"
-    return f"{_MANUAL_LOOP_INSTRUCTIONS}\nLoop name: {name}\n\nReport request:\n{prompt}"
+        return f"{_AGENT_LOOP_INSTRUCTIONS}\nLoop name: {name}{binding}{history}\n\nTask:\n{prompt}"
+    return f"{_MANUAL_LOOP_INSTRUCTIONS}\nLoop name: {name}{history}\n\nReport request:\n{prompt}"
+
+
+def split_carry_note(reply: str) -> tuple[str, str]:
+    """Split a loop's reply into the text to deliver and its note for the next run.
+
+    The note is the marker line and every line below it, when no blank line
+    separates them from the end of the reply. A marker anywhere else (in a block
+    quote, or followed by more of the report) is report content: the reply is
+    delivered unchanged and the note is empty.
+    """
+    lines = reply.rstrip().splitlines()
+    start = len(lines)
+    while start > 0 and lines[start - 1].strip():
+        start -= 1
+        if _CARRY_NOTE_LINE.match(lines[start]):
+            break
+    else:
+        return reply, ""
+    match = _CARRY_NOTE_LINE.match(lines[start])
+    first = match.group("note") if match is not None else ""
+    note = compact_text(" ".join([first, *lines[start + 1 :]]), CARRY_NOTE_MAX_CHARS)
+    return "\n".join(lines[:start]).strip(), note.strip(" *_`")
 
 
 def report_builder(payload: AgentPayload) -> Callable[[Mapping[str, str]], str] | None:
@@ -106,12 +158,17 @@ def _bound_to_one_target(payload: AgentPayload) -> bool:
 
 
 def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
-    """Run the deterministic report builder or one model turn in the stored mode."""
+    """Run the deterministic report builder or one model turn in the stored mode.
+
+    A model turn reads the loop's previous runs first; the note its reply leaves
+    for the next run is kept with this attempt instead of being delivered.
+    """
     builder = report_builder(payload)
     if builder is not None:
         built = builder(_report_args(payload))
         return built if isinstance(built, TaskReport) else TaskReport(built)
-    message = build_manual_loop_prompt(payload)
+    history = previous_runs_block(str(payload.get("task_id") or ""))
+    message = build_manual_loop_prompt(payload, previous_runs=history)
     agent_mode = str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
     outcomes = ScheduledOutcomes(bound_target=_bound_to_one_target(payload))
     result = AgentSession.run_headless_turn(
@@ -125,12 +182,17 @@ def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
     report = result.primary_response_text
     if not result.answered or not report:
         raise RuntimeError("Manual loop failed: the reasoning client did not produce a report.")
-    return outcomes.report(result, agent_mode=agent_mode)
+    body, note = split_carry_note(report)
+    if note:
+        keep_carry_note(note)
+    return outcomes.report(result, agent_mode=agent_mode, text=body)
 
 
 __all__ = [
+    "CARRY_NOTE_MARKER",
     "REPORT_BUILDERS",
     "build_manual_loop_prompt",
     "report_builder",
     "run_manual_prompt_loop",
+    "split_carry_note",
 ]

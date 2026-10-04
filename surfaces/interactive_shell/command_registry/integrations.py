@@ -41,49 +41,6 @@ from surfaces.shared.terminal.components.rendering import (
 _ROOT_INTEGRATIONS = "/integrations"
 _ROOT_MCP = "/mcp"
 
-_MAX_OBSERVATION_DETAIL_CHARS = 160
-
-
-def _record_integrations_observation(session: Session, results: list[dict[str, str]]) -> None:
-    """Stash a compact text view of verification results for agent summarization.
-
-    Lets the agent answer questions like "is sentry installed?" by summarizing
-    what ``/integrations`` actually found, instead of leaving the user with only
-    a raw table. Kept plain-text and bounded so it is cheap to feed back to the
-    assistant.
-    """
-    lines: list[str] = []
-    for record in results:
-        service = str(record.get("service", "")).strip()
-        if not service:
-            continue
-        status = str(record.get("status", "")).strip() or "unknown"
-        detail = str(record.get("detail", "")).strip()
-        if len(detail) > _MAX_OBSERVATION_DETAIL_CHARS:
-            detail = f"{detail[: _MAX_OBSERVATION_DETAIL_CHARS - 1]}…"
-        line = f"- {service}: {status}"
-        if detail:
-            line += f" ({detail})"
-        lines.append(line)
-    if lines:
-        session.agent.last_observation = "Integration status from `/integrations`:\n" + "\n".join(
-            lines
-        )
-
-
-def _record_integration_show_observation(session: Session, match: dict[str, str]) -> None:
-    """Stash a compact text view of a single integration's verified details."""
-    lines: list[str] = []
-    for key, value in match.items():
-        text = str(value).strip()
-        if len(text) > _MAX_OBSERVATION_DETAIL_CHARS:
-            text = f"{text[: _MAX_OBSERVATION_DETAIL_CHARS - 1]}…"
-        lines.append(f"- {key}: {text}")
-    if lines:
-        session.agent.last_observation = (
-            "Integration detail from `/integrations show`:\n" + "\n".join(lines)
-        )
-
 
 def _configured_service_choices() -> list[tuple[str, str]]:
     """Build picker choices from configured integrations (no live verification)."""
@@ -221,7 +178,6 @@ def _run_verify(session: Session, console: Console, service: str | None = None) 
         else:
             results = repl_data.load_verified_integrations()
 
-    _record_integrations_observation(session, results)
     render_integrations_table(console, results)
     _print_verify_summary(console, results, single_service=service is not None)
     return True
@@ -231,7 +187,7 @@ def _cmd_verify(session: Session, console: Console, args: list[str]) -> bool:
     return _cmd_integrations(session, console, ["verify", *args])
 
 
-def _render_integration_show(session: Session, console: Console, service: str) -> bool:
+def _render_integration_show(console: Console, service: str) -> bool:
     """Verify and print one integration. Returns False when the service is unknown."""
     from integrations.registry import resolve_management_service
 
@@ -250,8 +206,6 @@ def _render_integration_show(session: Session, console: Console, service: str) -
     if match is None:
         repl_print(console, f"[{ERROR}]service not found:[/] {escape(normalized)}")
         return False
-
-    _record_integration_show_observation(session, match)
 
     width = _repl_table_width(console)
     table = repl_table(
@@ -323,7 +277,6 @@ def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bo
         prepare_repl_output_line()
         with console.status(f"[{DIM}]Verifying integrations…[/]", spinner="dots"):
             results = repl_data.load_verified_integrations()
-        _record_integrations_observation(session, results)
         render_integrations_table(console, results)
         return True
 
@@ -349,7 +302,7 @@ def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bo
             repl_print(console, f"[{DIM}]usage:[/] /integrations show <service>")
             session.mark_latest(ok=False, kind="slash")
             return True
-        if not _render_integration_show(session, console, args[1]):
+        if not _render_integration_show(console, args[1]):
             session.mark_latest(ok=False, kind="slash")
         return True
 
@@ -401,7 +354,7 @@ def _interactive_integrations_menu(session: Session, console: Console) -> bool:
                     breadcrumb=f"{root}{CRUMB_SEP}show",
                     choices=choices,
                 )
-                if svc and _render_integration_show(session, console, svc):
+                if svc and _render_integration_show(console, svc):
                     show_section_break = True
         elif sub == "remove":
             _handle_remove(session, console, None)

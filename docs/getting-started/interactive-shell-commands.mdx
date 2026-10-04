@@ -100,7 +100,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | --- | --- |
 | `/status` | Session summary — interactions, alerts, provider, effort, trust mode |
 | `/cost` | Token usage and LLM call count for the current session |
-| `/context` | Infra metadata accumulated during the session |
+| `/context` | What the next model call will contain, and how big each part is |
 | `/effort` | Set or show reasoning effort (`low` … `max`) |
 | `/auto` | Tool-approval autonomy (`off` / `low` / `med` / `high`; default `high`) |
 | `/trust` | Enable or disable trust mode (skip confirmation prompts) |
@@ -258,7 +258,6 @@ Typical fields:
 | `trust mode` | `on` / `off` |
 | `reasoning effort` | Current `/effort` level (OpenAI/Codex only) |
 | `provider` | Active `LLM_PROVIDER` |
-| `grounding … cache` | Doc/source cache stats used for help answers |
 | `accumulated context` | Comma-separated keys from prior turns (e.g. `service`, `cluster`) |
 
 Use `/status` for **session** state. Use `/health` for **integration connectivity**.
@@ -307,13 +306,19 @@ Token totals reset on `/new` or when session identity is rotated. They do **not*
 
 <Accordion title="/context">
 
-Displays key/value infra metadata collected during chat — typically `service`, `cluster`, `region`, or similar fields extracted from alert text and tool results.
+Shows what the model will receive with your next message, without calling a model:
 
 ```text
 /context
 ```
 
-Context is **inherited** across turns in the same session (and restored by `/resume`), so the agent does not re-ask for environment details you already established.
+| Row | Meaning |
+| --- | --- |
+| one row per prompt block | The system prompt, rules, runtime facts, skills, connected integrations, memory, and the per-turn blocks, each with its tier, characters, and estimated tokens |
+| `history` | Earlier turns replayed to the model, including their tool calls and results. Shown as `history after compaction` when the next turn compacts first: only the turns compaction keeps, without the summary it writes then |
+| `total` | Blocks plus history; the message you type next and the tool schemas are not included |
+
+Below the table: how many messages and turns the history holds and how many of those turns carry tool results, whether a session summary opens it, how many tool schemas go with every call, and how close the history is to compaction (`OPENSRE_HISTORY_TOKEN_BUDGET` tokens or 60 turns). Past either, older turns are summarized before the next turn; `/compact` does that now.
 
 </Accordion>
 

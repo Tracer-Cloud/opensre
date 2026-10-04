@@ -26,6 +26,7 @@ from core.domain.memory import (
     memory_enabled,
     memory_path,
     render_prompt_index,
+    render_relevant_memories,
     save_memory,
     search_memories,
     slugify,
@@ -137,8 +138,11 @@ class TestListDeleteSearch:
             "repo-acme-payments",
         }
         rendered = render_prompt_index()
-        assert "Tracer-Cloud/opensre" in rendered
-        assert "acme/payments" in rendered
+        assert "repo-tracer-cloud-opensre" in rendered
+        assert "repo-acme-payments" in rendered
+        relevant = render_relevant_memories("which branch do the repositories deploy from?")
+        assert "Tracer-Cloud/opensre" in relevant
+        assert "acme/payments" in relevant
 
     def test_list_orders_by_updated_desc(self, monkeypatch: pytest.MonkeyPatch) -> None:
         stamps = iter(["2026-07-01T00:00:00+00:00", "2026-07-02T00:00:00+00:00"])
@@ -180,20 +184,19 @@ class TestIndex:
     def test_render_prompt_index_empty_and_populated(self) -> None:
         assert render_prompt_index() == ""
         _save()
-        rendered = render_prompt_index()
-        assert "[infrastructure] prod-cluster" in rendered
-        assert "details" in rendered or "Prod" in rendered  # body or description
+        assert render_prompt_index() == "- [infrastructure] prod-cluster — Facts about prod-cluster"
 
-    def test_render_prompt_index_includes_body(self) -> None:
+    def test_render_prompt_index_lists_descriptions_not_bodies(self) -> None:
         _save(body="The flaky service is checkout-api.")
         rendered = render_prompt_index()
-        assert "checkout-api" in rendered
+        assert "prod-cluster" in rendered
+        assert "checkout-api" not in rendered
 
     def test_render_prompt_index_respects_char_cap(self) -> None:
         for i in range(10):
             _save(f"mem-{i}", body=f"body-{i}-" + ("x" * 80))
         rendered = render_prompt_index(max_chars=120)
-        assert "more memories (use memory_recall)" in rendered
+        assert rendered.endswith("… and 8 more (memory_recall)")
 
     def test_ensure_memory_store_creates_dir_and_index(self) -> None:
         from core.domain.memory import ensure_memory_store
@@ -222,6 +225,54 @@ class TestFrontmatter:
     )
     def test_malformed_returns_none(self, text: str) -> None:
         assert parse_memory_file(text) is None
+
+    def test_file_written_before_provenance_still_parses(self) -> None:
+        legacy = (
+            "---\n"
+            "name: repository-opensre\n"
+            "type: repository\n"
+            "description: Tracer-Cloud/opensre deploys from main\n"
+            "created: 2026-09-07T21:01:13+00:00\n"
+            "updated: 2026-09-13T00:52:29+00:00\n"
+            "---\n"
+            "### Tracer-Cloud/opensre\n"
+        )
+        record = parse_memory_file(legacy)
+        assert record is not None
+        assert (record.source, record.evidence, record.verified) == (None, "", None)
+        # Without provenance the file is written exactly as before, so older
+        # versions keep reading memories this version saves.
+        assert serialize_memory(record) == legacy
+
+    def test_provenance_round_trips(self) -> None:
+        result = save_memory(
+            slug="flaky-windows-job",
+            memory_type="repository",
+            description="windows-latest test job is flaky",
+            body="Retried run passed without changes.",
+            source="tool",
+            evidence="gh run view 18822 --log-failed\nsecond line",
+            verified=True,
+        )
+        assert result is not None
+        loaded = load_memory("flaky-windows-job")
+        assert loaded == result[0]
+        assert loaded is not None
+        assert loaded.source == "tool"
+        assert loaded.evidence == "gh run view 18822 --log-failed second line"
+        assert loaded.verified is True
+
+    def test_secret_in_evidence_is_rejected(self) -> None:
+        fake_token = "ghp_" + ("a" * 36)
+        with pytest.raises(ValueError, match="safety checks"):
+            save_memory(
+                slug="leaky-evidence",
+                memory_type="repository",
+                description="CI token works",
+                body="CI can push.",
+                source="tool",
+                evidence=f"echo {fake_token}",
+            )
 
     def test_serialize_parse_identity(self) -> None:
         record = MemoryRecord(

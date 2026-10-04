@@ -233,21 +233,26 @@ turn must attach a goal; otherwise `chat_until_goal` returns after that one
 turn. Use `cancel_requested` to stop between turns and `on_progress` to receive
 checklist updates.
 
-## Custom grounding context
+## Prompt surface
 
-By default, the agent builds prompts from the session. To supply a custom system
-prompt or retrieved context, pass a provider:
+The agent assembles its prompt from the session — the system prompt, connected
+integrations, memory, the task plan, and earlier turns — so there is no prompt
+text to pass in. What you choose is the surface the turns run on:
+`interactive_shell` (the default), `headless_cli`, or `gateway`. The surface
+decides the surface-specific parts of the prompt, such as setup facts and
+whether the agent may open a menu.
 
 ```python
 from core.agent_harness import AgentSession, SessionConfig
 
-session = AgentSession.start(SessionConfig(prompts=my_provider))
+session = AgentSession.start(SessionConfig(), surface="headless_cli")
 ```
 
-If omitted, `core.agent_harness.spi.defaults.DefaultPromptContextProvider` is
-used. A custom provider must implement
-`core.agent_harness.ports.PromptContextProvider`. The same `prompts=` argument
-is accepted by `DefaultHeadlessBuild.agent()` on the custom-ports path below.
+A `prompts=` provider — `SessionConfig(prompts=…)`, or
+`DefaultHeadlessBuild.agent(prompts=…)` on the custom-ports path below — names
+the surface instead. It implements `core.agent_harness.ports.PromptContextProvider`,
+whose one method is `surface()`. If omitted,
+`core.agent_harness.spi.defaults.DefaultPromptContextProvider` is used.
 
 ## Custom output and ports
 

@@ -17,7 +17,7 @@ _ANSWER_SETTLES = (
     "are already answered (see the Q&A above), do NOT ask again — "
 )
 _ANSWER_KEEPS_REQUEST = (
-    "Treat RECENT CONVERSATION as authoritative: preserve the original target "
+    "Treat the earlier conversation as authoritative: preserve the original target "
     "repository and every requested output or metric. The Q&A answers refine "
     "that request; they never replace it. "
     "Answering is the go-ahead to continue the original request. "
@@ -76,7 +76,7 @@ ASK_USER_ANSWERED_PLAN_ONLY_GUIDANCE = (
     "If this is implementation or plan-only coding work: why this sequence, "
     "what you will verify, Biggest risk — do not invent telemetry or a "
     "hypothesis table. "
-    "Treat RECENT CONVERSATION as authoritative: preserve the original target "
+    "Treat the earlier conversation as authoritative: preserve the original target "
     "repository and every requested output or metric. The Q&A answers refine "
     "that request; they never replace it. "
     "Do not pass plan_only=false; the host keeps the plan-only latch until the user "

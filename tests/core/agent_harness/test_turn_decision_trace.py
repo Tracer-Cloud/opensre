@@ -136,7 +136,7 @@ def test_trace_keeps_suppressed_closing_and_pending_question_with_secrets_redact
         + "Additional evidence. " * 100
         + secret
     )
-    counts = _TurnCounts([], 1, 1, 1, 1, True)
+    counts = _TurnCounts([], 1, 1, 1, True)
 
     response, chunks, use_final = _compose_response(
         _painted_result(final_text=closing),

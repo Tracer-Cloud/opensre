@@ -15,6 +15,7 @@ from core.agent_harness.ports import (
 )
 from core.agent_harness.prompts.memory.conversation import expand_affirmative_follow_up
 from core.agent_harness.prompts.skills import active_skill_catalog
+from core.agent_harness.session.memory_consolidation import start_memory_consolidation
 from core.agent_harness.session.pending_offer import (
     clear_unconfirmed_pending_offers,
     consume_confirmed_pending_offer,
@@ -195,8 +196,12 @@ def _run_turn(
     from core.llm.hosted_credits import prefetch_hosted_credits
 
     prefetch_hosted_credits()
+    # Here, not at session start: a gateway transport binds its surface (and so
+    # the member's memory opt-in) only around the turn.
+    start_memory_consolidation()
     auto_compact_if_needed(session)
     prior_messages = getattr(session, "cli_agent_messages", None) or ()
+    typed_text = text
     expanded = expand_affirmative_follow_up(
         text,
         prior_messages,
@@ -211,7 +216,6 @@ def _run_turn(
         TurnSnapshot.from_session(text, session, surface=surface),
         session,
     )
-    session.last_command_observation = None
     action_result = execute_actions(
         text,
         confirm_fn=confirm_fn,
@@ -230,7 +234,13 @@ def _run_turn(
     if action_result.hit_iteration_cap and not action_result.response_streamed:
         response_text = "\n\n".join(filter(None, (response_text, _ITERATION_CAP_MESSAGE)))
     if response_text:
-        record_conversation_turn(session, text, response_text)
+        record_conversation_turn(
+            session,
+            text,
+            response_text,
+            tool_items=action_result.history_items,
+            typed_text=typed_text,
+        )
     return accounting.finalize(
         TurnResult(
             final_intent=(

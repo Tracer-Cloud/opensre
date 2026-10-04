@@ -20,12 +20,22 @@ OpenSRE keeps durable knowledge across sessions so you never repeat yourself:
 
 - **Who you are** — your name, role, and how you like to work
 - **Your infrastructure** — cluster names, naming conventions, known-flaky services
-- **Your repositories** — owner/name, purpose, default branch, and repo-specific conventions
+- **Your repositories** — owner/name, purpose, default branch, CI behavior, and repo-specific conventions
 - **Your preferences** — report formats, notification choices, defaults
-- **Operational learnings** — causes and lessons worth keeping
+- **Operational learnings** — failures, their causes, and the fix that worked
 
-The memory index is shown to the agent at the start of every conversation, so
-facts saved last week ground answers today.
+Every conversation sees two things:
+
+- **An index of every memory** — one line each (name and summary), with your
+  profile and preferences first.
+- **The full text of the memories that match your request** — up to five,
+  picked by matching the words of your message, plus the active repository and
+  your connected integrations.
+
+So a memory about `acme/payments` shows up in full when you ask about the
+checkout deploy, even if you saved ten other notes since. Any other memory is
+one `memory_recall` away; ask "what do you remember about the payments repo?"
+and the agent searches every memory for the words you used.
 
 ### Multiple repositories
 
@@ -42,7 +52,7 @@ checkout, while the other repository memories stay available for recall.
 Talk normally — no special phrasing:
 
 ```
-our prod cluster is eks-prod-eu-1
+our prod cluster is eks-prod-1
 ```
 
 ```
@@ -50,18 +60,30 @@ Tracer-Cloud/opensre is our SRE assistant repo; its default branch is main
 ```
 
 ```
-acme/payments owns the checkout API and deploys from release
-```
-
-```
 my name is Vaibhav, I'm on the platform team
 ```
 
 When the agent judges a fact useful for future sessions, it stores it (and
-updates an existing entry instead of duplicating). After **every chat turn**, a
-background pass also scans for durable facts so knowledge lands even if the
-agent did not call a memory tool mid-turn. On shell exit that pass runs to
-completion so nothing is dropped mid-quit.
+updates an existing entry instead of duplicating). Facts the agent verified
+with a tool — a CI job that fails only on Windows, the fix that made a run
+pass — can be remembered too, and the memory file records where each fact came
+from:
+
+```
+source: tool
+evidence: gh run view 18822 failed on windows-latest; retry passed
+verified: true
+```
+
+A background pass also reviews the conversation every six turns and once more
+when you exit the shell, so knowledge lands even if the agent did not save it
+mid-turn. That pass saves at most five memories, and it only keeps facts you
+stated or a tool showed — never something only the agent claimed about your
+systems.
+
+The background review skips demo and onboarding runs (`/demo` and the
+first-run picker), and memories about demo, sample, or synthetic repositories
+and runs are hidden from the agent and archived.
 
 ## Viewing and deleting memories
 
@@ -79,14 +101,45 @@ completion so nothing is dropped mid-quit.
 ```
 
 Delete one with `/memory forget prod-cluster-conventions`, or ask the agent:
-"forget what you know about the prod cluster".
+"forget what you know about the prod cluster". Forgetting a memory also
+removes the consolidated summary, which is rewritten without it in the
+background as you keep chatting. Summaries of conversations that had started
+before you forgot it are not used to write the new one.
+
+## Upkeep
+
+When you send a message, at most once every six hours, OpenSRE tidies the
+store in the background:
+
+- **Archives** demo, sample, and synthetic memories, and memories neither
+  updated nor used for 120 days. Your profile and preferences never expire.
+- **Merges duplicates** — two repository memories about the same `owner/repo`
+  become one: the most recently updated is kept, the other's notes are added
+  to it under a "Merged from" heading (lines it already has are not repeated),
+  and the other's file is archived. When the notes would not fit in one
+  memory, both memories stay as they are.
+- **Writes `memory_summary.md`** — a short summary of who you are, your
+  preferences, your repositories, and recurring failures and fixes, shown to
+  the agent above the index. It is skipped when no LLM is configured.
+
+Nothing is deleted. To bring an archived memory back, move its file from
+`.archive/` into the memory folder.
 
 ## Where memories live
 
-On a laptop, memories are plain markdown files under `~/.opensre/memory/` — one
-file per memory plus a generated `MEMORY.md` index. OpenSRE creates that folder
-(and an empty index) the first time memory is used in a chat or via `/memory`.
-They are stored **locally and unencrypted**.
+On a laptop, memories are plain markdown files under `~/.opensre/memory/`:
+
+| Path | What it holds |
+| --- | --- |
+| `<name>.md` | One memory per file |
+| `MEMORY.md` | Generated list of every memory |
+| `memory_summary.md` | The consolidated summary |
+| `.archive/` | Archived memories, never shown to the agent |
+| `sessions/` | Short summaries of recent sessions (the last 30), read only by upkeep |
+| `.usage.json` | How often each memory was shown to the agent |
+
+OpenSRE creates the folder (and an empty index) the first time memory is used
+in a chat or via `/memory`. Files are stored **locally and unencrypted**.
 
 Override the directory with `OPENSRE_MEMORY_DIR` when you need a custom path.
 
@@ -96,27 +149,25 @@ organization's mounted context volume
 turns are unbound and stay **host-global** under the flat `~/.opensre/memory/`
 layout.
 
-Every chat and action turn includes the stored facts (summaries plus bodies,
-within a size budget) in prompts sent to your configured LLM provider. You can
-open, edit, or delete the files directly at any time; the index rebuilds on the
-next write.
+The index, the matching memories, and the summary are sent to your configured
+LLM provider with each turn. You can open, edit, or delete the files directly
+at any time; the index rebuilds on the next write.
 
 ## Turning memory off
 
 | Environment variable | Effect |
 | --- | --- |
 | `OPENSRE_MEMORY_DISABLED=1` | Disable long-term memory entirely |
-| `OPENSRE_MEMORY_AUTOEXTRACT_DISABLED=1` | Keep memory, but skip the automatic per-turn extraction |
+| `OPENSRE_MEMORY_AUTOEXTRACT_DISABLED=1` | Keep memory, but skip the background review and the upkeep |
 | `OPENSRE_MEMORY_GATEWAY_ENABLED=1` | Opt in on Slack/Telegram gateway (off by default — see below) |
 | `OPENSRE_MEMORY_DIR` | Override the memory storage directory |
 
-The per-turn extraction makes one lightweight LLM call when durable facts may
-have appeared (coalesced across rapid turns) and saves at most five memories
-per pass. On shell exit that pass runs to completion after resources are
-released so durable facts are not dropped. Never share secrets or credentials
-expecting them to be remembered — the memory ingestion path blocks obvious
-tokens, passwords, private keys, and credential-shaped values, and redacts
-matching spans before the extraction LLM call.
+The background review makes one lightweight LLM call every six turns and one
+on exit; the upkeep makes at most one call every six hours. On shell exit the
+review runs to completion so durable facts are not dropped. Never share
+secrets or credentials expecting them to be remembered — the memory ingestion
+path blocks obvious tokens, passwords, private keys, and credential-shaped
+values, and redacts matching spans before anything is sent to the LLM.
 
 ## Gateway (Slack / Telegram / Discord / Buzz)
 

@@ -83,6 +83,7 @@ def register_harness_adapters() -> None:
     ).install()
 
     _register_vcs_repo_scope_providers()
+    _register_repository_instructions_sources()
     _register_runbook_source_providers()
     _register_cli_llm_adapters()
     _register_alert_source_detectors()
@@ -124,6 +125,20 @@ def _register_vcs_repo_scope_providers() -> None:
     clear_vcs_repo_scope_providers()
     register_vcs_repo_scope_provider(GITHUB_VCS_REPO_SCOPE_PROVIDER)
     register_vcs_repo_scope_provider(GITLAB_VCS_REPO_SCOPE_PROVIDER)
+
+
+def _register_repository_instructions_sources() -> None:
+    """Let the action prompt read an active GitHub repository's AGENTS.md."""
+    from infrastructure.harness_providers import (
+        clear_repository_instructions_sources,
+        register_repository_instructions_source,
+    )
+    from integrations.github.repository_instructions import (
+        GITHUB_REPOSITORY_INSTRUCTIONS_SOURCE,
+    )
+
+    clear_repository_instructions_sources()
+    register_repository_instructions_source(GITHUB_REPOSITORY_INSTRUCTIONS_SOURCE)
 
 
 def _register_runbook_source_providers() -> None:

@@ -1,13 +1,16 @@
-"""Tests for the manual loop runner's deterministic report builders."""
+"""Tests for the manual loop runner: report builders, model turns, and loop memory."""
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+import infrastructure.scheduling.scheduler.delivery_bundle as delivery_bundle
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV
 from core.agent_harness import AgentSession, SessionCore
 from core.agent_harness.harness import SessionStartupResult
@@ -16,7 +19,14 @@ from core.agent_harness.turns.headless_adapters import EmptyPromptContextProvide
 from core.llm.types import AgentLLMResponse, ToolCall
 from core.tool import RegisteredTool, SideEffectLevel, ToolExecutionHooks
 from core.tool.execution import execute_tool_calls
+from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_AGENT, LOOP_MODE_PARAM
+from infrastructure.scheduling.scheduler.previous_runs import PREVIOUS_RUNS_HEADER
+from infrastructure.scheduling.scheduler.run_activity import CARRY_NOTE_MAX_CHARS
+from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.storage import task_store
+from infrastructure.scheduling.scheduler.storage.run_record_store import read_run_records
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations import manual_loop_runner
 from integrations.github.repair_outcomes import attach_repair_outcome
 from integrations.github.tools.ci_analytics import loop as ci_loop
@@ -292,3 +302,144 @@ def test_only_a_loop_with_a_report_builder_runs_without_a_model_turn() -> None:
     assert runs_model_turn(prompted) is True
     assert runs_model_turn(digest) is True
     assert runs_model_turn(skill_with_stray_report) is True
+
+
+@pytest.mark.parametrize(
+    "reply, body, note",
+    [
+        (
+            "Commented on PR #6555.\n\nNOTE FOR NEXT RUN: skip #6555 until head 1a2b3c4 changes",
+            "Commented on PR #6555.",
+            "skip #6555 until head 1a2b3c4 changes",
+        ),
+        (
+            "Two PRs need review.\n**Note for next run:** wait for CI\non PR 12",
+            "Two PRs need review.",
+            "wait for CI on PR 12",
+        ),
+        # A marker the report quotes, or one more of the report follows, is
+        # report content: nothing leaves the delivered reply.
+        ("Two PRs need review.\nNOTE FOR NEXT RUN: wait for CI\n\nAll else is green.", None, ""),
+        ("The last run said:\n> NOTE FOR NEXT RUN: wait for CI", None, ""),
+        ("I will leave a note for next run: nothing new.", None, ""),
+        (f"Done.\nNOTE FOR NEXT RUN: {'x' * 400}", "Done.", None),
+    ],
+)
+def test_the_note_for_the_next_run_leaves_the_delivered_reply(
+    reply: str, body: str | None, note: str | None
+) -> None:
+    delivered, kept = manual_loop_runner.split_carry_note(reply)
+
+    assert delivered == (reply if body is None else body)
+    assert len(kept) <= CARRY_NOTE_MAX_CHARS
+    if note is not None:
+        assert kept == note
+
+
+class _TurnResult:
+    cancelled = False
+    action_result = type("Action", (), {"hit_iteration_cap": False})()
+
+    def __init__(self, reply: str) -> None:
+        self.answered = True
+        self.primary_response_text = reply
+
+
+def _comment_on_pr(args: list[str], **_kwargs: Any) -> dict[str, Any]:
+    url = "https://github.com/o/r/pull/6555#issuecomment-99"
+    return {"ok": True, "stdout": url, "summary": f"Commented on PR #6555: {url}"}
+
+
+_GITHUB_CLI = RegisteredTool(
+    name="github_cli",
+    description="gh",
+    input_schema={"type": "object", "properties": {}},
+    source="github",
+    run=_comment_on_pr,
+    side_effect_level=SideEffectLevel.MUTATING,
+)
+
+
+class _Slack:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def deliver(self, _task: ScheduledTask, message: str) -> tuple[bool, str, str]:
+        self.messages.append(message)
+        return True, "", "msg-1"
+
+
+def test_a_loop_tick_sees_what_its_previous_run_did_and_the_note_it_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two ticks through the scheduler: only the agent itself is faked."""
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.database.default_run_database_path",
+        lambda: tmp_path / "scheduler.db",
+    )
+    monkeypatch.setattr(task_store, "default_task_store_path", lambda: tmp_path / "tasks.json")
+    slack = _Slack()
+    delivery_bundle.ScheduledDeliveryAdapters({Provider.SLACK: slack}).install()
+    prompts: list[str] = []
+    replies = iter(
+        [
+            "Commented on PR #6555.\n\nNOTE FOR NEXT RUN: PR #6555 waits on a human; "
+            "skip it until head 1a2b3c4 changes.",
+            "Nothing new to do.",
+        ]
+    )
+
+    class _Agent:
+        def __init__(self, tool_hooks: ToolExecutionHooks | None) -> None:
+            self._tool_hooks = tool_hooks
+
+        def chat(self, message: str) -> _TurnResult:
+            prompts.append(message)
+            args = {"args": ["pr", "comment", "6555", "--body", "Needs a decision."]}
+            call = ToolCall(id="comment", name="github_cli", input=args)
+            execute_tool_calls([call], [_GITHUB_CLI], {}, hooks=self._tool_hooks)
+            return _TurnResult(next(replies))
+
+    def start(
+        *_args: object, tool_hooks: ToolExecutionHooks | None = None, **_kw: object
+    ) -> _Agent:
+        return _Agent(tool_hooks)
+
+    monkeypatch.setattr(AgentSession, "start", start)
+    task = ScheduledTask(
+        id="pr_doctor",
+        name="PR doctor",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="29 * * * *",
+        provider=Provider.SLACK,
+        chat_id="C123",
+        params={"loop_prompt": "Comment on PRs that need a human.", LOOP_MODE_PARAM: "agent"},
+    )
+    runners = SchedulerRunners(agent=manual_loop_runner.run_manual_prompt_loop)
+    try:
+        execute_task(task, "2026-10-04T12:29:00Z", runners)
+        execute_task(task, "2026-10-04T13:29:00Z", runners)
+    finally:
+        delivery_bundle._installed = None
+
+    assert PREVIOUS_RUNS_HEADER not in prompts[0]
+    assert slack.messages[0] == "Commented on PR #6555."
+    first = read_run_records(task.id)[-1]
+    assert first["carry_note"] == "PR #6555 waits on a human; skip it until head 1a2b3c4 changes."
+    assert first["actions"] == [
+        "github_cli pr comment 6555 … → Commented on PR #6555: "
+        "https://github.com/o/r/pull/6555#issuecomment-99"
+    ]
+    history, task_text = prompts[1].split("\n\nTask:\n")
+    assert task_text == "Comment on PRs that need a human."
+    block = history[history.index(PREVIOUS_RUNS_HEADER) :]
+    # No tool reported a work outcome: the run is unconfirmed, which must not read as unfinished.
+    assert re.search(
+        r"\n- \d{4}-\d\d-\d\d \d\d:\d\d UTC · outcome: unverified \(no tool confirmed "
+        r"the work\) · delivered: ok \(1 destination\)",
+        block,
+    )
+    assert "actions: github_cli pr comment 6555" in block
+    assert "note: PR #6555 waits on a human; skip it until head 1a2b3c4 changes." in block
+    assert "report: Commented on PR #6555." in block
+    assert block.count("\n- ") == 1

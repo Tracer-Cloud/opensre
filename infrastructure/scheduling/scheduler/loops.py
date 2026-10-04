@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
 from config.constants.scheduler import WEEKDAY_CRON_FIELD
 from config.scope_handoff import acting_scope
 from core.agent_harness import pin_recurring_skill
@@ -19,6 +20,7 @@ from infrastructure.scheduling.scheduler.credentials import (
     resolve_telegram_credentials,
     resolve_telegram_default_chat_id,
 )
+from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CHANNELS_PARAM,
     LOOP_CREATED_BY_PARAM,
@@ -350,6 +352,8 @@ def create_manual_loop(
         if not time_text.strip():
             raise ValueError("time is required unless --cron is provided")
         cron_expr = cron_for_time(time_text, weekdays=weekdays)
+    if report.strip() != CI_REPAIR_REPORT_BUILDER:
+        cron_expr = cap_cron_at_most_hourly(cron_expr, timezone.strip() or "UTC")
 
     channel_providers = normalize_loop_channels(
         channels,

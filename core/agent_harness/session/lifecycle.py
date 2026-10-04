@@ -23,9 +23,9 @@ re-implementing bootstrap + persistence wiring:
   resources (cancel warm task, drop background references).
 
 Surface-specific concerns stay with the surface: the shell layers terminal UI
-state (theme, grounding providers, prompt history) on top of a manager-created
-session; the gateway injects per-chat metadata. Neither re-implements the core
-bootstrap, and neither reaches across surfaces to do it.
+state (theme, prompt history) on top of a manager-created session; the gateway
+injects per-chat metadata. Neither re-implements the core bootstrap, and
+neither reaches across surfaces to do it.
 """
 
 from __future__ import annotations
@@ -36,6 +36,8 @@ from datetime import datetime
 from typing import Any, TypeVar
 
 from core.agent_harness.session.persistence.contracts import (
+    CARRIED_MESSAGE_METADATA_KEY,
+    TURN_EVIDENCE_CUSTOM_TYPE,
     RestoreContextKey,
     SessionRepo,
     SessionStore,
@@ -230,6 +232,42 @@ class SessionManager:
         self._store.open_session(session)
         return session
 
+    def carry_forward(
+        self,
+        session: _S,
+        *,
+        messages: list[tuple[str, str]],
+        evidence: list[Any],
+    ) -> _S:
+        """Restore the conversation into a rotated session and record it in its new file.
+
+        ``/new`` keeps the conversation going in a fresh session file. Writing
+        the carried transcript and turn evidence there means resuming the new
+        session later restores what the live one had, not only the turns taken
+        after the rotation. Carried messages are flagged
+        (``CARRIED_MESSAGE_METADATA_KEY``): the old session owns those turns.
+        """
+        session.agent.messages = messages
+        session.agent.turn_evidence = evidence
+        append_message = getattr(session.store, "append_message", None)
+        append_custom = getattr(session.store, "append_custom_message", None)
+        with contextlib.suppress(Exception):
+            if callable(append_message):
+                metadata = {"kind": "chat", CARRIED_MESSAGE_METADATA_KEY: True}
+                for role, content in session.agent.messages:
+                    append_message(
+                        session.session_id, role=role, content=content, metadata=metadata
+                    )
+            if callable(append_custom):
+                for record in session.agent.turn_evidence:
+                    append_custom(
+                        session.session_id,
+                        custom_type=TURN_EVIDENCE_CUSTOM_TYPE,
+                        content=record.to_json(),
+                        display=False,
+                    )
+        return session
+
     def rebind_for_resume(
         self,
         session: _S,
@@ -279,6 +317,12 @@ class SessionManager:
                 if role in {"user", "assistant"} and isinstance(content, str) and content:
                     restored.append((role, content))
             session.cli_agent_messages = restored
+        evidence = data.get(RestoreContextKey.TURN_EVIDENCE)
+        if isinstance(evidence, list) and hasattr(session, "turn_evidence"):
+            from core.state import TurnEvidence
+
+            records = (TurnEvidence.from_json(item) for item in evidence)
+            session.turn_evidence = [record for record in records if record is not None]
         context = data.get(RestoreContextKey.ACCUMULATED_CONTEXT)
         if isinstance(context, dict):
             session.accumulated_context = dict(context)
@@ -309,6 +353,9 @@ class SessionManager:
             )
 
             apply_pending_user_choice_state(session, choice_state)
+        goal_controls = data.get(RestoreContextKey.SESSION_GOAL_CONTROLS)
+        if isinstance(goal_controls, list):
+            self._restore_session_goal_controls(session, goal_controls)
         history = data.get(RestoreContextKey.HISTORY)
         if isinstance(history, list):
             session.history = [dict(item) for item in history if isinstance(item, dict)]
@@ -347,12 +394,13 @@ class SessionManager:
 
         Persisting is best-effort (a failed flush must not crash teardown);
         the session releases its own resources (:meth:`SessionCore.release_resources`)
-        to prevent per-session leaks. Long-term memory extraction also runs after
-        every recorded turn; this close path runs it again after release when
-        ``extract_memory`` is true. Process exit (default) waits for extraction
-        to finish so durable facts are not dropped; gateway rotation passes
-        ``wait_for_memory_extraction=False`` so inbound handling stays
-        responsive, and skips extraction entirely unless gateway memory is opted in.
+        to prevent per-session leaks. Long-term memory extraction also runs in
+        the background every few recorded turns; this close path runs a final
+        pass after release when ``extract_memory`` is true. Process exit
+        (default) waits for extraction to finish so durable facts are not
+        dropped; gateway rotation passes ``wait_for_memory_extraction=False`` so
+        inbound handling stays responsive, and skips extraction entirely unless
+        gateway memory is opted in.
         """
         self._flush(session)
         # Snapshot messages before release/clear; the background extractor must
@@ -381,6 +429,40 @@ class SessionManager:
         Failures are logged, never raised.
         """
         self._flush(session)
+
+    def persist_session_goal_control(self, session: SessionCore, reason: str) -> str:
+        """Durably preserve goal intent while another owner finishes the turn."""
+        return session.store.append_session_goal_control(session.session_id, reason)
+
+    @staticmethod
+    def _restore_session_goal_controls(
+        session: SessionCore,
+        controls: list[Any],
+    ) -> None:
+        """Apply and acknowledge durable controls left by a forced host exit."""
+        from core.agent_harness.session_goal.control import apply_session_goal_control
+        from core.agent_harness.turns.host_cancel import HostCancelReason
+
+        for control in controls:
+            if not isinstance(control, dict):
+                continue
+            control_id = control.get("control_id")
+            raw_reason = control.get("reason")
+            if not isinstance(control_id, str) or not isinstance(raw_reason, str):
+                continue
+            try:
+                reason = HostCancelReason(raw_reason)
+            except ValueError:
+                logger.warning("Ignoring unknown persisted session-goal control")
+                continue
+            try:
+                apply_session_goal_control(session, reason)
+                session.store.flush_session_goal_control_state(session)
+                session.store.complete_session_goal_control(session.session_id, control_id)
+            except Exception:
+                # Leave the request unacknowledged so a later resume retries it.
+                logger.warning("Could not finalize persisted session-goal control", exc_info=True)
+                break
 
     @staticmethod
     def _flush(session: SessionCore) -> None:

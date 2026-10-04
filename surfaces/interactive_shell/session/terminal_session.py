@@ -67,12 +67,6 @@ class TerminalSession:
     """Shell-surface session state, composed onto ``Session`` for the interactive shell."""
 
     active_theme_name: str = "green"
-
-    cli_command_group: Any = field(default=None, repr=False, compare=False)
-    """The ``opensre`` Click command group the shell documents to the model.
-
-    Handed in by the process entrypoint; ``None`` when the shell runs on its
-    own, in which case grounding covers slash commands only."""
     """Interactive shell palette name for this REPL session (``/theme``, prompts)."""
 
     pending_theme_refresh: bool = False
@@ -171,8 +165,8 @@ class TerminalSession:
     goal_paint_signature: GoalPaintSignature | None = None
     """What the last session-goal block showed; unchanged goals repaint as one line."""
 
-    pending_inflight_goal_pauses: int = 0
-    """Queued ``/goal pause`` controls whose boundary handling may already be painted."""
+    pending_inflight_goal_controls: dict[str, int] = field(default_factory=dict)
+    """Queued goal controls whose safe-boundary mutations were already applied."""
 
     """Selected label while its synthetic answer turn awaits a response.
 

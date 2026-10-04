@@ -188,7 +188,7 @@ async def test_queued_literal_quit_requests_runtime_exit(
     # Match ``test_commands.py``: real ``/quit`` can flush PostHog; under xdist +
     # coverage that network drain has hung CI workers for the full job timeout.
     monkeypatch.setattr(
-        "surfaces.interactive_shell.command_registry.system._flush_analytics_on_exit",
+        "surfaces.interactive_shell.runtime.exit_control._flush_analytics_on_exit",
         lambda _console: None,
     )
     from surfaces.interactive_shell.runtime.core.state import ReplState
@@ -262,6 +262,185 @@ def test_turn_end_retries_auto_command_deferred_during_dispatch(
         assert refresh_dispatch_states == [True, False]
 
     asyncio.run(_scenario())
+
+
+def test_cancelled_turn_does_not_block_asyncio_runner_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forced exit must not leave work that ``asyncio.run`` waits to join."""
+    import threading
+
+    from infrastructure.analytics.usage_context import get_session_id, get_surface
+    from surfaces.interactive_shell.runtime import shell_turn_execution
+
+    started = threading.Event()
+    release = threading.Event()
+    worker_context: dict[str, object] = {}
+    runner_errors: list[BaseException] = []
+
+    def _hold_turn(*_args: object, **_kwargs: object) -> None:
+        worker_context.update(
+            daemon=threading.current_thread().daemon,
+            session_id=get_session_id(),
+            surface=get_surface(),
+        )
+        started.set()
+        release.wait()
+
+    monkeypatch.setattr(shell_turn_execution, "execute_shell_turn", _hold_turn)
+    session = Session()
+
+    async def _scenario() -> None:
+        runtime = AgentTurnResources(
+            session=session,
+            state=ReplState(),
+            spinner=SpinnerState(),
+            invalidate_prompt=lambda: None,
+            console=Console(file=io.StringIO(), force_terminal=False, highlight=False),
+        )
+        task = asyncio.create_task(run_agent_turn(runtime, "blocking turn"))
+        deadline = asyncio.get_running_loop().time() + 1
+        while not started.is_set():
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError("turn worker did not start")
+            await asyncio.sleep(0.001)
+        task.cancel()
+        result = await asyncio.gather(task, return_exceptions=True)
+        assert isinstance(result[0], asyncio.CancelledError)
+
+    def _run_scenario() -> None:
+        try:
+            asyncio.run(_scenario())
+        except Exception as exc:
+            runner_errors.append(exc)
+
+    runner = threading.Thread(target=_run_scenario, name="test-asyncio-run", daemon=True)
+    runner.start()
+    try:
+        runner.join(timeout=2)
+
+        assert not runner.is_alive(), "asyncio.run waited for the blocked turn worker"
+        assert runner_errors == []
+        assert worker_context == {
+            "daemon": True,
+            "session_id": session.session_id,
+            "surface": "cli",
+        }
+    finally:
+        release.set()
+        runner.join(timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_turn_does_not_spawn_another_worker_until_it_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated cancellation cannot accumulate raw threads behind a stuck turn."""
+    import threading
+
+    from surfaces.interactive_shell.runtime import shell_turn_execution
+
+    first_started = threading.Event()
+    second_started = threading.Event()
+    release_first = threading.Event()
+    calls = 0
+
+    def _execute(*_args: object, **_kwargs: object) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_started.set()
+            release_first.wait()
+        else:
+            second_started.set()
+
+    monkeypatch.setattr(shell_turn_execution, "execute_shell_turn", _execute)
+    runtime = AgentTurnResources(
+        session=Session(),
+        state=ReplState(),
+        spinner=SpinnerState(),
+        invalidate_prompt=lambda: None,
+        console=Console(file=io.StringIO(), force_terminal=False, highlight=False),
+    )
+    first = asyncio.create_task(run_agent_turn(runtime, "first"))
+    second: asyncio.Task[None] | None = None
+    try:
+        while not first_started.is_set():
+            await asyncio.sleep(0.001)
+        assert runtime.has_live_turn_worker()
+        first.cancel()
+        _ = await asyncio.gather(first, return_exceptions=True)
+        assert runtime.has_live_turn_worker()
+
+        second = asyncio.create_task(run_agent_turn(runtime, "second"))
+        await asyncio.sleep(0.1)
+        assert calls == 1
+        assert not second_started.is_set()
+
+        release_first.set()
+        await asyncio.wait_for(second, timeout=1)
+        assert calls == 2
+        assert second_started.is_set()
+        assert not runtime.has_live_turn_worker()
+    finally:
+        release_first.set()
+        first.cancel()
+        if second is not None:
+            second.cancel()
+        _ = await asyncio.gather(
+            *(task for task in (first, second) if task is not None),
+            return_exceptions=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_cancelled_turn_runs_deferred_cleanup_after_its_worker_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import contextvars
+    import threading
+
+    from surfaces.interactive_shell.runtime import shell_turn_execution
+
+    started = threading.Event()
+    release = threading.Event()
+    cleaned_up = threading.Event()
+    callback_context = contextvars.ContextVar("callback_context", default="missing")
+    observed_context: list[str] = []
+
+    def _execute(*_args: object, **_kwargs: object) -> None:
+        started.set()
+        release.wait()
+
+    def _cleanup() -> None:
+        observed_context.append(callback_context.get())
+        cleaned_up.set()
+
+    monkeypatch.setattr(shell_turn_execution, "execute_shell_turn", _execute)
+    runtime = AgentTurnResources(
+        session=Session(),
+        state=ReplState(),
+        spinner=SpinnerState(),
+        invalidate_prompt=lambda: None,
+        console=Console(file=io.StringIO(), force_terminal=False, highlight=False),
+    )
+    task = asyncio.create_task(run_agent_turn(runtime, "blocked"))
+    try:
+        assert await asyncio.to_thread(started.wait, 1)
+        task.cancel()
+        _ = await asyncio.gather(task, return_exceptions=True)
+
+        callback_context.set("registration")
+        runtime.run_after_turn_worker(_cleanup)
+        assert not cleaned_up.is_set()
+
+        release.set()
+        assert await asyncio.to_thread(cleaned_up.wait, 1)
+        assert observed_context == ["registration"]
+    finally:
+        release.set()
+        task.cancel()
+        _ = await asyncio.gather(task, return_exceptions=True)
 
 
 def test_run_harness_turn_nitro_prompt_uses_cli_agent_actions(

@@ -33,9 +33,9 @@ step instead.
 | Package | Role |
 |---------|------|
 | `kernel/` | `PromptEnvelope` / tiers / `SurfaceProfile` — no agent-path knowledge |
-| `grounding/` | Prompt-side grounding providers (`DefaultPromptContextProvider`) that feed assemblers — distinct from harness `grounding/` caches |
+| `grounding/` | `DefaultPromptContextProvider`, which names the surface a session's turns run on; the assembler reads the turn snapshot, not the provider |
 | `action/` | Tool-calling agent prompt assembly and policies (`goal_kernel.py` is the host-owned goal rule; skills cannot override it) |
-| `memory/` | Conversation window + prior-investigation recall |
+| `memory/` | Text-history fallback rendering (RECENT CONVERSATION, PRIOR ACTION FACTS when structured history is off) and affirmative follow-up expansion |
 | `runtime_facts/` | Runtime-metadata fact lines for prompts |
 | `skills/` | Progressive skill index + markdown bodies (`catalog/` + `content/` + workflow Markdown) |
 | `rules.py` | Shared rule fragments (leaf) |

@@ -67,7 +67,6 @@ def _counts(
         executed_entries=executed_entries or [],
         executed_count=steps,
         executed_success_count=steps,
-        generic_success_count=0,
         planned_count=steps,
         handled=True,
     )

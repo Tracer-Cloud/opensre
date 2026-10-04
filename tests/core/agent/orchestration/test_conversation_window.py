@@ -8,6 +8,9 @@ renders from.
 
 from __future__ import annotations
 
+import pytest
+
+from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
 from core.agent_harness.prompts.memory.conversation import format_recent_conversation
 from core.agent_harness.turns.action_driver import _persist_tool_calling_error
 from core.agent_harness.turns.conversation_recording import (
@@ -15,6 +18,13 @@ from core.agent_harness.turns.conversation_recording import (
 )
 from core.state import MAX_CONVERSATION_MESSAGES, MutableAgentState
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
+
+
+@pytest.fixture(autouse=True)
+def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
+
 
 _FACT = "prod-eu-42"
 

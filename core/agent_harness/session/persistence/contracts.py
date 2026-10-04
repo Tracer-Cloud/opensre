@@ -29,15 +29,29 @@ class RestoreContextKey(StrEnum):
     CLI_AGENT_MESSAGES = "cli_agent_messages"
     ACCUMULATED_CONTEXT = "accumulated_context"
     SESSION_GOAL_STATE = "session_goal_state"
+    SESSION_GOAL_CONTROLS = "session_goal_controls"
     TASK_PLAN_STATE = "task_plan_state"
     PENDING_USER_CHOICE_STATE = "pending_user_choice_state"
     HISTORY = "history"
+    TURN_EVIDENCE = "turn_evidence"
 
+
+#: ``custom_message`` type of the per-turn evidence record (tool calls and
+#: bounded results) that structured history replays on resume.
+TURN_EVIDENCE_CUSTOM_TYPE = "turn_evidence"
+#: Message ``metadata`` flag on a message ``/new`` copied in from the session it
+#: rotated out of. That session already owns the turn, so memory extraction,
+#: whose demo fence knows only this session's turns, skips it.
+CARRIED_MESSAGE_METADATA_KEY = "carried"
 
 # Turn kinds that represent user-initiated chat messages. Session.record()
 # is called with the turn kind, not a normalized "chat" label, so this set must
 # cover all kinds that produce conversational turns.
 CHAT_KINDS: frozenset[str] = frozenset({"chat", "cli_agent", "follow_up"})
+
+# A single JSONL entry carrying the goal and task-plan snapshots changed by a
+# durable goal control.  Restore treats it as an atomic pair.
+SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE = "session_goal_control_state"
 
 
 class SessionPersistenceSource(Protocol):
@@ -123,11 +137,22 @@ class SessionStore(Protocol):
         after_chars: int,
         before_tokens: int | None = None,
         after_tokens: int | None = None,
+        replacement_messages: list[list[str]] | None = None,
+        replacement_evidence: list[dict[str, Any]] | None = None,
     ) -> str:
-        raise NotImplementedError
+        """Record a compaction; with replacements, it restarts the transcript on resume."""
 
     def flush(self, session: SessionPersistenceSource) -> None:
         raise NotImplementedError
+
+    def flush_session_goal_control_state(self, session: SessionPersistenceSource) -> None:
+        """Persist every resumable state field changed by a goal control."""
+
+    def append_session_goal_control(self, session_id: str, reason: str) -> str:
+        """Durably record a goal control and return its acknowledgement id."""
+
+    def complete_session_goal_control(self, session_id: str, control_id: str) -> None:
+        """Durably mark one recorded goal control as applied."""
 
     def reopen_session(self, session_id: str) -> None:
         raise NotImplementedError

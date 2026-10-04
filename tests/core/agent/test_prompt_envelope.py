@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
 from core.agent_harness.prompts import (
     PromptBlock,
     PromptBlockId,
@@ -15,6 +16,12 @@ from core.agent_harness.prompts import (
     build_action_user_message,
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+
+
+@pytest.fixture(autouse=True)
+def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
 
 
 def _ctx() -> TurnSnapshot:
@@ -359,6 +366,43 @@ def test_split_reassembles_when_long_term_memory_is_present(
     assert "RECENT CONVERSATION" in ephemeral
     assert marker in ephemeral
     assert marker not in cached
+
+
+def test_relevant_memories_ride_the_turn_while_the_index_stays_cached(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Memory bodies change with every request, so they must never enter the cached half."""
+    from dataclasses import replace
+
+    from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
+    from core.domain.memory import save_memory
+
+    monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
+    monkeypatch.delenv(OPENSRE_MEMORY_DISABLED_ENV, raising=False)
+    save_memory(
+        slug="redis-eviction",
+        memory_type="infrastructure",
+        description="Redis eviction policy",
+        body="zzmarker-redis-body: allkeys-lru on the session cache.",
+    )
+    save_memory(
+        slug="kafka-topics",
+        memory_type="infrastructure",
+        description="Kafka topic naming",
+        body="zzmarker-kafka-body: team.domain.event",
+    )
+
+    redis = build_action_system_prompt_envelope(replace(_turn([]), text="is redis eviction safe?"))
+    kafka = build_action_system_prompt_envelope(replace(_turn([]), text="name the kafka topic"))
+
+    assert redis.render_cached() == kafka.render_cached()
+    redis_cached, redis_turn = redis.render_split()
+    assert "zzmarker-redis-body" in redis_turn and "zzmarker-redis-body" not in redis_cached
+    assert "zzmarker-kafka-body" not in redis_turn
+    ids = [block.id for block in redis.blocks]
+    assert (
+        ids.index(PromptBlockId.RELEVANT_MEMORIES) == ids.index(PromptBlockId.TURN_INTERACTION) + 1
+    )
 
 
 def test_every_tier_lands_in_exactly_one_half() -> None:

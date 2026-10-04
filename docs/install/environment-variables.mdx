@@ -386,13 +386,22 @@ Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_
 | `OPENSRE_INTEGRATIONS_STORE_PATH` |  | Override integrations store path |
 
 
+## Conversation history
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_HISTORY_TOKEN_BUDGET` | `48000` | Estimated tokens of conversation history before it is compacted |
+| `OPENSRE_HISTORY_TOOL_RESULT_CHARS` | `8000` | Characters of each tool result kept in conversation history |
+| `OPENSRE_LLM_COMPACTION` | `1` | Set to `0` to compact history without a model-written summary |
+| `OPENSRE_STRUCTURED_HISTORY` | `1` | Set to `0` to send earlier turns as one text block instead of replaying them |
+
 ## Memory
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OPENSRE_MEMORY_DISABLED` | `0` | Disable long-term memory |
 | `OPENSRE_MEMORY_DIR` |  | Override memory storage directory |
-| `OPENSRE_MEMORY_AUTOEXTRACT_DISABLED` | `0` | Disable automatic memory extraction |
+| `OPENSRE_MEMORY_AUTOEXTRACT_DISABLED` | `0` | Disable automatic memory extraction and background upkeep |
 | `OPENSRE_MEMORY_GATEWAY_ENABLED` | `0` | Opt-in memory on shared gateway hosts |
 
 ## Remote sync

@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
+import functools
 import logging
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
@@ -23,7 +25,11 @@ from rich.console import Console
 if TYPE_CHECKING:
     from infrastructure.turn_host.turn_runner import TurnRunner
 
-from core.agent_harness.spi.cancel import HostCancelReason, turn_cancel_reason
+from core.agent_harness.spi.cancel import (
+    HostCancelReason,
+    is_goal_control_reason,
+    turn_cancel_reason,
+)
 from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.observability.trace.spans import (
@@ -65,6 +71,112 @@ from surfaces.shared.terminal.output.console_state import set_repl_state, set_tu
 from surfaces.shared.terminal.output.repl_progress import repl_safe_progress_scope
 
 _logger = logging.getLogger(__name__)
+_TURN_SLOT_POLL_SECONDS = 0.05
+
+
+class _DaemonTurnSlot:
+    """Allow at most one live blocking worker per interactive runtime."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._available = True
+        self._release_callbacks: list[Callable[[], None]] = []
+
+    async def claim(self) -> None:
+        """Wait interruptibly until no earlier worker remains alive."""
+        while True:
+            with self._lock:
+                if self._available:
+                    self._available = False
+                    return
+            await asyncio.sleep(_TURN_SLOT_POLL_SECONDS)
+
+    def release(self) -> None:
+        """Allow the next queued turn to create its worker."""
+        with self._lock:
+            self._available = True
+            callbacks = tuple(self._release_callbacks)
+            self._release_callbacks.clear()
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                _logger.warning("Deferred turn cleanup failed", exc_info=True)
+
+    def run_when_available(self, callback: Callable[[], None]) -> None:
+        """Run ``callback`` now or after the current blocking worker exits."""
+        callback_context = contextvars.copy_context()
+
+        def _run_in_registration_context() -> None:
+            callback_context.run(callback)
+
+        with self._lock:
+            run_now = self._available
+            if not run_now:
+                self._release_callbacks.append(_run_in_registration_context)
+        if run_now:
+            try:
+                _run_in_registration_context()
+            except Exception:
+                _logger.warning("Immediate turn cleanup failed", exc_info=True)
+
+    def is_occupied(self) -> bool:
+        """Return whether a blocking worker currently owns the slot."""
+        with self._lock:
+            return not self._available
+
+
+def _complete_daemon_turn(
+    future: asyncio.Future[None],
+    error: Exception | None,
+) -> None:
+    """Complete ``future`` unless its awaiting task was already cancelled."""
+    if future.done():
+        return
+    if error is not None:
+        future.set_exception(error)
+    else:
+        future.set_result(None)
+
+
+async def _run_daemon_turn(
+    work: Callable[[], object],
+    slot: _DaemonTurnSlot,
+) -> None:
+    """Run blocking turn work without making event-loop shutdown wait for it."""
+    await slot.claim()
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[None] = loop.create_future()
+    context = contextvars.copy_context()
+
+    def _worker() -> None:
+        completed = False
+        error: Exception | None = None
+        try:
+            context.run(work)
+            completed = True
+        except Exception as exc:
+            error = exc
+        finally:
+            slot.release()
+            if not completed and error is None:
+                error = RuntimeError("Interactive turn worker stopped unexpectedly")
+            # A forced shell exit may close the event loop while detached work
+            # is still unwinding. There is no waiter left to notify in that case.
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(_complete_daemon_turn, future, error)
+
+    worker = threading.Thread(
+        target=_worker,
+        name="opensre-interactive-turn",
+        daemon=True,
+    )
+    try:
+        worker.start()
+    except Exception:
+        slot.release()
+        raise
+    await future
 
 
 @dataclass(frozen=True)
@@ -82,6 +194,19 @@ class AgentTurnResources:
     console: Console | None = None
     #: Session-scoped turn host; each turn binds its own streaming console.
     turn_handler: TurnRunner | None = None
+    _turn_slot: _DaemonTurnSlot = field(
+        default_factory=_DaemonTurnSlot,
+        repr=False,
+        compare=False,
+    )
+
+    def run_after_turn_worker(self, callback: Callable[[], None]) -> None:
+        """Run cleanup once the blocking worker no longer owns turn state."""
+        self._turn_slot.run_when_available(callback)
+
+    def has_live_turn_worker(self) -> bool:
+        """Return whether blocking turn work remains alive outside asyncio."""
+        return self._turn_slot.is_occupied()
 
 
 def _confirm_via_prompt(runtime: AgentTurnResources, prompt: str) -> str:
@@ -267,15 +392,18 @@ async def _run_agent_turn_loop(
                 session_id=runtime.session.session_id,
             ),
         ):
-            await asyncio.to_thread(
-                execute_shell_turn,
-                text,
-                runtime.session,
-                output,
-                confirm_fn=confirm,
-                is_tty=None,
-                request_exit=runtime.request_exit,
-                handler=runtime.turn_handler,
+            await _run_daemon_turn(
+                functools.partial(
+                    execute_shell_turn,
+                    text,
+                    runtime.session,
+                    output,
+                    confirm_fn=confirm,
+                    is_tty=None,
+                    request_exit=runtime.request_exit,
+                    handler=runtime.turn_handler,
+                ),
+                runtime._turn_slot,
             )
     except asyncio.CancelledError:
         await emit(AgentEvent(type="turn_interrupted"))
@@ -300,6 +428,7 @@ async def run_input_loop(
     input_reader: PromptInputReader,
     echo_console: Console,
     handle_input_action: Callable[[InputAction], Awaitable[bool]],
+    has_live_turn_worker: Callable[[], bool] | None = None,
 ) -> None:
     """Run the interactive session's main input loop until exit or close.
 
@@ -324,6 +453,9 @@ async def run_input_loop(
                 exit_requested=state.exit_requested,
                 dispatch_running=state.is_dispatch_running(),
                 awaiting_confirmation=state.is_awaiting_confirmation(),
+                worker_running=(
+                    has_live_turn_worker() if has_live_turn_worker is not None else False
+                ),
             ),
             needs_exclusive_stdin=lambda text: turn_needs_exclusive_stdin(
                 text,
@@ -339,7 +471,7 @@ async def run_agent_turn_queue(
     *,
     state: ReplState,
     run_turn: Callable[[str], Coroutine[Any, Any, None]],
-    on_goal_pause: Callable[[], Awaitable[None]] | None = None,
+    on_goal_control: Callable[[HostCancelReason], Awaitable[None]] | None = None,
 ) -> None:
     """Consume queued turns and run each one until exit."""
     while not state.exit_requested:
@@ -361,22 +493,34 @@ async def run_agent_turn_queue(
         except Exception as exc:
             _logger.debug("Queued turn task ended with exception: %s", exc)
         finally:
-            pause_cancel = None
+            goal_control_cancel = None
             try:
                 current_cancel = state.current_cancel_event
-                pause_cancel = next(
+                candidates = tuple(
+                    cancel
+                    for cancel in (turn_cancel, current_cancel)
+                    if is_goal_control_reason(turn_cancel_reason(cancel))
+                )
+                reason = next(
                     (
-                        cancel
-                        for cancel in (turn_cancel, current_cancel)
-                        if turn_cancel_reason(cancel) is HostCancelReason.GOAL_PAUSE
+                        candidate
+                        for candidate in (
+                            HostCancelReason.GOAL_CLEAR,
+                            HostCancelReason.GOAL_PAUSE,
+                        )
+                        if any(turn_cancel_reason(cancel) is candidate for cancel in candidates)
                     ),
                     None,
                 )
-                if pause_cancel is not None and on_goal_pause is not None:
-                    await on_goal_pause()
+                goal_control_cancel = next(
+                    (cancel for cancel in candidates if turn_cancel_reason(cancel) is reason),
+                    None,
+                )
+                if reason is not None and on_goal_control is not None:
+                    await on_goal_control(reason)
             finally:
-                if state.exit_requested and pause_cancel is not None:
-                    state.attach_cancel_event(pause_cancel)
+                if state.exit_requested and goal_control_cancel is not None:
+                    state.attach_cancel_event(goal_control_cancel)
                 state.clear_current_task()
                 state.queue.task_done()
 

@@ -22,6 +22,7 @@ from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
 from infrastructure.analytics.prompt_log.sinks.posthog_ai import capture_ai_generation
 from infrastructure.analytics.provider import JsonValue
 from infrastructure.analytics.scheduled_task_attribution import current_scheduled_task_id
+from infrastructure.safety.repository_instructions_redaction import omit_repository_instructions
 from infrastructure.safety.secret_redaction import redact_text
 
 _SUPPORTED_TURN_KINDS = frozenset({"agent", "follow_up", "new_alert", "background_task"})
@@ -135,8 +136,10 @@ class PromptRecorder:
         self._output_tokens: int | None = None
         self._llm_attempted: bool | None = None
         self._model_system = ""
+        self._analytics_system = ""
         self._model_skill = ""
         self._model_context = ""
+        self._model_blocks: dict[str, JsonValue] = {}
         self._loop_outcome: dict[str, JsonValue] = {}
         self._start = time.monotonic()
         self._flushed = False
@@ -157,10 +160,17 @@ class PromptRecorder:
         the action turn added around it: the cached system prompt, skill bodies
         loaded for the turn, and the ephemeral context (conversation, plan, facts).
         Each is redacted and capped so the analytics event still fits the payload
-        limit. Empty values are omitted at flush.
+        limit. Empty values are omitted at flush. The analytics event's system
+        prompt also leaves out repository AGENTS.md text, which the local log keeps.
         """
         self._model_system = _bound_model_text(
             system, config=self._config, limit=_SYSTEM_PROMPT_MAX_CHARS
+        )
+        # Omitted before the cap, so a cut cannot hide where a section ends.
+        self._analytics_system = _bound_model_text(
+            omit_repository_instructions(system),
+            config=self._config,
+            limit=_SYSTEM_PROMPT_MAX_CHARS,
         )
         self._model_skill = _bound_model_text(
             skill, config=self._config, limit=_SKILL_PROMPT_MAX_CHARS
@@ -168,6 +178,14 @@ class PromptRecorder:
         self._model_context = _bound_model_text(
             context, config=self._config, limit=_CONTEXT_MAX_CHARS
         )
+
+    def set_model_blocks(self, blocks: dict[str, JsonValue]) -> None:
+        """Attach the size of each prompt block, the replayed history, and the tool count.
+
+        Block ids and numbers only, never prompt text, so both sinks receive it
+        whole: no redaction, no cap.
+        """
+        self._model_blocks = dict(blocks)
 
     def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""
@@ -361,6 +379,8 @@ class PromptRecorder:
             record["model_skill_prompt"] = self._model_skill
         if self._model_context:
             record["model_context"] = self._model_context
+        if self._model_blocks:
+            record["model_blocks"] = self._model_blocks
         if self._config.local_enabled:
             with contextlib.suppress(OSError):
                 append_prompt_log_record(path=self._config.log_path, record=record)
@@ -463,12 +483,14 @@ class PromptRecorder:
                         )
                     if self._ai_error_reason:
                         posthog_properties["ai_error_reason"] = self._ai_error_reason
-                if self._model_system:
-                    posthog_properties["model_system_prompt"] = self._model_system
+                if self._analytics_system:
+                    posthog_properties["model_system_prompt"] = self._analytics_system
                 if self._model_skill:
                     posthog_properties["model_skill_prompt"] = self._model_skill
                 if self._model_context:
                     posthog_properties["model_context"] = self._model_context
+                if self._model_blocks:
+                    posthog_properties["model_blocks"] = self._model_blocks
                 _fit_model_prompt(posthog_properties)
                 capture_ai_generation(posthog_properties)
 

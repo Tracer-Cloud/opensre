@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from core.agent_harness.session.session_core import SessionCore
 from core.agent_harness.session.terminal_access import set_auto_command
 from core.agent_harness.session_goal.evaluate import evaluate_session_goal
@@ -695,7 +697,13 @@ class _ShellSession(SessionCore):
 _SETUP_WIZARD = "/integrations setup github"
 
 
-def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
+@pytest.mark.parametrize(
+    "reason",
+    [HostCancelReason.GOAL_PAUSE, HostCancelReason.GOAL_CLEAR],
+)
+def test_goal_control_retained_during_turn_stops_a_new_shell_goal(
+    reason: HostCancelReason,
+) -> None:
     session = _ShellSession(
         terminal=_ShellTerminal(
             pending_prompt_default="keep going",
@@ -704,6 +712,7 @@ def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
         )
     )
     cancel = HostCancelEvent()
+    painted: list[str] = []
 
     def _chat(_message: str) -> TurnResult:
         attach_session_goal(
@@ -714,7 +723,7 @@ def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
                 host_owned=True,
             ),
         )
-        cancel.request(HostCancelReason.GOAL_PAUSE, interrupt=False)
+        cancel.request(reason, interrupt=False)
         return TurnResult(
             final_intent="cli_agent_handled",
             action_result=ToolCallingTurnResult(
@@ -732,6 +741,7 @@ def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
         "/goal set keep going",
         cancel_requested=cancel.is_set,
         cancel_reason=lambda: cancel.reason,
+        on_progress=lambda goal: painted.append(goal.last_reason),
     )
 
     assert cancel.is_set() is False
@@ -741,6 +751,10 @@ def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
     assert session.terminal.pending_prompt_default is None
     assert session.terminal.pending_prompt_autosubmit is False
     assert session.terminal.pending_prompt_plain_turn is False
+    if reason is HostCancelReason.GOAL_CLEAR:
+        assert SessionGoalReason.PAUSED_BY_USER not in painted
+    else:
+        assert SessionGoalReason.PAUSED_BY_USER in painted
 
 
 def test_a_command_queued_by_a_goal_turn_stops_the_loop_and_stays_queued() -> None:

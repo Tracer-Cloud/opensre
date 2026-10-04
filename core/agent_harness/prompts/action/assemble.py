@@ -6,6 +6,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from core.agent_harness.grounding.repository_instructions import repository_instructions_text
 from core.agent_harness.prompts.action.active_skill import active_skill_block
 from core.agent_harness.prompts.action.goal_kernel import (
     ACTION_GOAL_KERNEL,
@@ -31,6 +32,7 @@ from core.agent_harness.task_plan.prompt import (
     ask_user_answered_block,
     current_task_plan_block,
 )
+from core.state.history_settings import structured_history_enabled
 from infrastructure.harness_providers import action_prompt_vendor_fragments
 
 if TYPE_CHECKING:
@@ -182,6 +184,15 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.agent_harness.turns.turn_snapshot",
         )
     )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.REPOSITORY_INSTRUCTIONS,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.CONTEXT,
+            content=repository_instructions_block(turn_snapshot),
+            provenance="core.agent_harness.grounding.repository_instructions",
+        )
+    )
     # Volatile before ephemeral so render_cached + render_ephemeral reassemble
     # into render() and the cache breakpoint can sit after memory.
     memory_block = long_term_memory_block()
@@ -245,25 +256,37 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.agent_harness.prompts.action.turn_interaction",
         )
     )
-    blocks.append(
-        PromptBlock(
-            id=PromptBlockId.RECENT_CONVERSATION,
-            kind=PromptBlockKind.CONVERSATION,
-            tier=PromptTier.EPHEMERAL,
-            content=recent_conversation_block(turn_snapshot),
-            provenance="core.agent_harness.turns.turn_snapshot",
-        )
-    )
-    action_facts = prior_action_facts_block(turn_snapshot)
     blocks.extend(
         _optional_block(
-            id=PromptBlockId.PRIOR_ACTION_FACTS,
+            id=PromptBlockId.RELEVANT_MEMORIES,
             kind=PromptBlockKind.CONTEXT,
             tier=PromptTier.EPHEMERAL,
-            content=action_facts,
-            provenance="core.agent_harness.turns.turn_snapshot",
+            content=relevant_memories_block(turn_snapshot),
+            provenance="core.domain.memory",
         )
     )
+    # With structured history the earlier turns precede the user message as
+    # typed messages (``turns.structured_history``); the text block and the facts
+    # scraped from it remain only as the fallback when that is switched off.
+    if not structured_history_enabled():
+        blocks.append(
+            PromptBlock(
+                id=PromptBlockId.RECENT_CONVERSATION,
+                kind=PromptBlockKind.CONVERSATION,
+                tier=PromptTier.EPHEMERAL,
+                content=recent_conversation_block(turn_snapshot),
+                provenance="core.agent_harness.turns.turn_snapshot",
+            )
+        )
+        blocks.extend(
+            _optional_block(
+                id=PromptBlockId.PRIOR_ACTION_FACTS,
+                kind=PromptBlockKind.CONTEXT,
+                tier=PromptTier.EPHEMERAL,
+                content=prior_action_facts_block(turn_snapshot),
+                provenance="core.agent_harness.turns.turn_snapshot",
+            )
+        )
     recovery = interrupted_turn_recovery_block(turn_snapshot)
     if recovery:
         # Ephemeral: the note rides exactly one turn (popped from the session
@@ -340,6 +363,21 @@ def repository_context_block(turn_snapshot: TurnSnapshot) -> str:
     )
 
 
+def repository_instructions_block(turn_snapshot: TurnSnapshot) -> str:
+    """The active repositories' AGENTS.md, or one line on why it is absent.
+
+    The system prompt promises these instructions; this block keeps that
+    promise. Every surface gets it, scheduled ticks without skill discovery and
+    shared chats that hide setup state included: AGENTS.md is repository
+    content, not install state.
+    """
+    return repository_instructions_text(
+        turn_snapshot.active_vcs_repositories,
+        resolved_integrations=turn_snapshot.resolved_integrations,
+        working_directory=turn_snapshot.working_directory,
+    )
+
+
 def recent_conversation_block(turn_snapshot: TurnSnapshot) -> str:
     # Newest-first: this block rides after the literal user message, and
     # context_budget shrinks with text[:keep]. Chronological (oldest-first)
@@ -384,7 +422,7 @@ def interrupted_turn_recovery_block(turn_snapshot: TurnSnapshot) -> str:
 
 
 def long_term_memory_block() -> str:
-    """Inject stored memory facts into every action-agent turn when available."""
+    """The stable memory index (summary plus one line per memory) for the cached prompt half."""
     from core.domain.memory import (
         ensure_memory_store,
         memory_available_here,
@@ -398,13 +436,42 @@ def long_term_memory_block() -> str:
     if not rendered:
         return ""
     return (
-        "LONG-TERM MEMORY (durable facts from ~/.opensre/memory — injected into "
-        "every turn). Use listed facts when planning; when the USER MESSAGE "
-        "contains a new useful durable fact, call memory_remember in this turn "
-        "even if they never said remember/save — do not wait for special phrasing. "
-        "Prefer updating an existing name over near-duplicates. Repository memories "
-        "are a collection: keep one stable memory per repository and never overwrite "
-        "one repository's facts merely because another repository became active:\n"
+        "LONG-TERM MEMORY (durable facts from earlier sessions; the index lists "
+        "stored memories one per line, most useful first). The full text of "
+        "memories that match this request appears under RELEVANT MEMORIES; read "
+        "any other with memory_recall. When the USER MESSAGE contains a new useful "
+        "durable fact, call memory_remember in this turn even if they never said "
+        "remember/save — do not wait for special phrasing. Prefer updating an "
+        "existing name over near-duplicates. Repository memories are a collection: "
+        "keep one stable memory per repository and never overwrite one repository's "
+        "facts merely because another repository became active:\n"
+        f"{rendered}\n\n"
+    )
+
+
+def relevant_memories_block(turn_snapshot: TurnSnapshot) -> str:
+    """Full text of the stored memories that match this turn's request.
+
+    Ranked against the user's message, with the active repositories and the
+    connected integrations as lower-weight context.
+    """
+    from core.domain.memory import memory_available_here, render_relevant_memories
+
+    if not memory_available_here():
+        return ""
+    rendered = render_relevant_memories(
+        turn_snapshot.text,
+        context=(
+            *turn_snapshot.active_vcs_repositories.values(),
+            *turn_snapshot.configured_integrations,
+        ),
+    )
+    if not rendered:
+        return ""
+    return (
+        "RELEVANT MEMORIES (stored memories that match this request, most relevant "
+        "first; they may be out of date, so re-check anything that could have "
+        "changed before acting on it):\n"
         f"{rendered}\n\n"
     )
 
@@ -462,6 +529,7 @@ __all__ = [
     "long_term_memory_block",
     "prior_action_facts_block",
     "recent_conversation_block",
+    "relevant_memories_block",
     "repository_context_block",
     "sanitize_action_text",
 ]

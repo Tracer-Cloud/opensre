@@ -24,6 +24,7 @@ from infrastructure.scheduling.scheduler.fanout import FanOutResult, deliver_pla
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_CHANNELS_PARAM
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_execution_operation
 from infrastructure.scheduling.scheduler.outcomes import WorkStatus
+from infrastructure.scheduling.scheduler.run_activity import RunActivity, collect_run_activity
 from infrastructure.scheduling.scheduler.run_history import (
     record_run_finished,
     record_run_started,
@@ -97,14 +98,16 @@ def execute_task(
 
     record_run_started(task, claim)
     submitted: SubmittedMessages | None = None
+    activity: RunActivity | None = None
     try:
         with (
             collect_submitted_messages() as submitted,
+            collect_run_activity() as activity,
             default_claim_lease_renewer.hold(claim) as ownership,
         ):
             completed = _execute_claimed_task(claim, ownership, task, fire_time, runners)
     finally:
-        record_run_finished(task, claim, submitted)
+        record_run_finished(task, claim, submitted, activity)
     if on_result is not None:
         run = get_claim_run(claim)
         if run is not None:

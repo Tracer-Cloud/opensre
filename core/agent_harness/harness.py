@@ -76,7 +76,8 @@ class SessionConfig:
 
     Every field is optional so a surface only opts into the behavior it
     needs: a fresh gateway turn has nothing to resume (``session_id=None``);
-    a headless action-only turn has no grounded context (``prompts=None``).
+    a turn without its own prompt-context provider gets the default one
+    (``prompts=None``).
     """
 
     session_id: str | None = None
@@ -232,12 +233,22 @@ class AgentSession:
         :meth:`chat` per turn instead — this rebuilds the session, re-hydrates
         integrations, and discards every warm cache on each call.
         ``cancel_requested`` stops the turn (same host Event as chat ``/stop``)
-        when a scheduled task is disabled or removed mid-tick.
+        when a scheduled task is disabled or removed mid-tick. Inside a
+        scheduled run attempt, the turn's tool calls that changed something
+        are recorded for the attempt's run record beside ``tool_hooks``.
         """
+        from core.tool.execution import ToolExecutionHooks, compose_tool_execution_hooks
         from infrastructure.observability.trace.submitted_messages import note_submitted_message
+        from infrastructure.scheduling.scheduler.tool_actions import bound_action_hook
 
-        # A scheduled run keeps the exact message its turn was given.
+        # A scheduled run keeps the exact message its turn was given and the
+        # calls that changed something.
         note_submitted_message(message)
+        record_action = bound_action_hook()
+        if record_action is not None:
+            tool_hooks = compose_tool_execution_hooks(
+                tool_hooks, ToolExecutionHooks(after_tool_call=record_action)
+            )
         return cls.start(
             config or SCHEDULED_RUN_CONFIG,
             output=output,
@@ -432,7 +443,7 @@ class AgentSession:
         return manager.create(**create_args)
 
     def _load_context(self) -> PromptContextProvider | None:
-        """Return the surface's grounding-context provider, if any."""
+        """Return the caller's prompt-context provider, if any."""
         return self._config.prompts
 
 

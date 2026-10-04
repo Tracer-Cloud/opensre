@@ -31,7 +31,11 @@ def use_bundled_ca_certificates() -> str | None:
         return None
     if os.environ.get(SSL_CERT_FILE_ENV) or os.environ.get(SSL_CERT_DIR_ENV):
         return None
-    if ssl.get_default_verify_paths().cafile:
+    # The path OpenSSL was compiled with is set even when that file was never
+    # installed here (Homebrew's ``cert.pem`` on a Mac without it). A non-empty
+    # path is not a bundle this process can load.
+    cafile = ssl.get_default_verify_paths().cafile
+    if cafile and os.path.isfile(cafile):
         return None
     import certifi
 

@@ -29,9 +29,6 @@ class SurfaceProfile:
     cli_rules: bool
     #: Vendor-owned persona fragments join the prompt in place of the CLI rules.
     vendor_persona: bool
-    #: The memory store is host-global, so a shared chat surface only injects it
-    #: when a deployment opts in.
-    long_term_memory_by_default: bool
     #: The operator's connected integrations and schedules. Scoped to one
     #: installation, so a shared chat surface does not report it to every member.
     setup_state: bool
@@ -42,21 +39,18 @@ _PROFILES: dict[PromptSurface, SurfaceProfile] = {
         surface=PromptSurface.INTERACTIVE_SHELL,
         cli_rules=True,
         vendor_persona=False,
-        long_term_memory_by_default=True,
         setup_state=True,
     ),
     PromptSurface.HEADLESS_CLI: SurfaceProfile(
         surface=PromptSurface.HEADLESS_CLI,
         cli_rules=True,
         vendor_persona=False,
-        long_term_memory_by_default=True,
         setup_state=True,
     ),
     PromptSurface.GATEWAY: SurfaceProfile(
         surface=PromptSurface.GATEWAY,
         cli_rules=False,
         vendor_persona=True,
-        long_term_memory_by_default=False,
         setup_state=False,
     ),
 }
