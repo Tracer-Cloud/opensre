@@ -9,8 +9,17 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from bootstrap.frozen_ca_bundle import use_bundled_ca_certificates
 from surfaces.cli.app import cli
 from tools.registry_index import BAKED_INDEX_RELATIVE_PATH
+
+
+def _boot_frozen_ca(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What a frozen binary's boot does before any command: fall back to certifi if needed."""
+    for name in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+    use_bundled_ca_certificates()
 
 
 def test_package_smoke_finds_essential_tools_and_skills() -> None:
@@ -58,6 +67,7 @@ def test_package_smoke_reports_baked_index_on_frozen_bundle(
     dump_descriptor_index(tmp_path / BAKED_INDEX_RELATIVE_PATH)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    _boot_frozen_ca(monkeypatch)
     clear_descriptor_index_cache()
     try:
         result = CliRunner().invoke(cli, ["_package-smoke"])
@@ -84,7 +94,8 @@ def test_package_smoke_fails_when_a_frozen_bundle_trusts_no_ca(
     dump_descriptor_index(tmp_path / BAKED_INDEX_RELATIVE_PATH)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
-    # What the bundled libcrypto sees on a user's machine: CA locations that do not exist.
+    # What the bundled libcrypto sees on a user's Mac without the boot fallback: CA
+    # locations that do not exist.
     monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "missing" / "cert.pem"))
     monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path / "missing" / "certs"))
     clear_descriptor_index_cache()
