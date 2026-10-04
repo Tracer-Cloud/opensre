@@ -49,6 +49,7 @@ from config.constants.slack import (
     SLACK_BOT_TOKEN_ENV,
     SLACK_WEBHOOK_URL_ENV,
 )
+from config.constants.tracer import TRACER_JWT_TOKEN_ENV
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import getting_started_options
 from core.agent_harness.session.pending_choice import (
@@ -910,7 +911,13 @@ def test_without_slack_the_slack_demo_connects_it_in_the_app_then_resumes(
     answer is resubmitted exactly as it was first sent.
     """
     _offerable(monkeypatch)
-    for name in (SLACK_BOT_TOKEN_ENV, SLACK_APP_TOKEN_ENV, SLACK_WEBHOOK_URL_ENV):
+    # A Tracer JWT (set in CI) resolves integrations from Tracer, never the app.
+    for name in (
+        SLACK_BOT_TOKEN_ENV,
+        SLACK_APP_TOKEN_ENV,
+        SLACK_WEBHOOK_URL_ENV,
+        TRACER_JWT_TOKEN_ENV,
+    ):
         monkeypatch.delenv(name, raising=False)
     app_records: list[dict[str, Any]] = []
     account = AccountRecord(
