@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import re
 import sys
 from typing import TYPE_CHECKING
 
@@ -16,8 +15,6 @@ from config.constants import SSL_CERT_DIR_ENV
 if TYPE_CHECKING:
     from core.tool import RegisteredTool
 
-# OpenSSL names each certificate in a CA directory by its subject hash: ``<8 hex>.<n>``.
-_HASHED_CERTIFICATE = re.compile(r"[0-9a-f]{8}\.\d+")
 _REQUIRED_TOOL_NAMES = frozenset(
     {
         "call_x_tool",
@@ -69,26 +66,21 @@ def _load_required_tools() -> tuple[dict[str, RegisteredTool], int]:
     return tools_by_name, len(index)
 
 
-def _holds_hashed_certificates(directory: str) -> bool:
-    try:
-        return any(_HASHED_CERTIFICATE.fullmatch(entry.name) for entry in os.scandir(directory))
-    except OSError:
-        return False
-
-
 def _ca_certificates_found() -> bool:
-    """Whether the default TLS context trusts a CA: one it loaded, or a hashed CA directory.
+    """Whether the artifact's default TLS context trusts a CA it found on its own.
 
-    OpenSSL reads a hashed directory only while verifying, so its certificates
-    never show in the loaded count; an empty directory trusts nothing. A frozen
-    build that finds neither fails every ``urllib`` HTTPS call.
+    After boot every frozen build has loaded one: the system CA file, Windows'
+    store, or certifi's bundle. A CA directory in ``SSL_CERT_DIR`` is the
+    user's own choice, which OpenSSL reads only while verifying, so it is
+    taken as configured rather than inspected; this smoke checks the
+    artifact, not the user's CA setup. Without a CA, every ``urllib`` HTTPS
+    call fails verification.
     """
     import ssl
 
-    if ssl.create_default_context().cert_store_stats().get("x509_ca"):
+    if os.environ.get(SSL_CERT_DIR_ENV):
         return True
-    directories = os.environ.get(SSL_CERT_DIR_ENV) or ssl.get_default_verify_paths().openssl_capath
-    return any(_holds_hashed_certificates(path) for path in directories.split(os.pathsep) if path)
+    return bool(ssl.create_default_context().cert_store_stats().get("x509_ca"))
 
 
 @click.command(name="_package-smoke", hidden=True)

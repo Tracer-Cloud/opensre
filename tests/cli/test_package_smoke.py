@@ -82,39 +82,32 @@ def test_package_smoke_reports_baked_index_on_frozen_bundle(
         clear_descriptor_index_cache()
 
 
-def _first_certificate() -> str:
-    import certifi
-
-    marker = "-----END CERTIFICATE-----"
-    return Path(certifi.where()).read_text(encoding="utf-8").split(marker, 1)[0] + marker + "\n"
-
-
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Windows loads its system store whatever OpenSSL's paths say"
 )
 @pytest.mark.parametrize(
-    ("ca_directory", "trusted"),
-    [("missing", False), ("empty", False), ("hashed", True)],
+    ("users_ca_directory", "trusted"),
+    [(False, False), (True, True)],
+    ids=["no-ca-found", "users-own-ca-directory"],
 )
-def test_frozen_smoke_requires_a_ca_the_tls_context_can_use(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ca_directory: str, trusted: bool
+def test_frozen_smoke_requires_a_ca_unless_the_user_chose_a_ca_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, users_ca_directory: bool, trusted: bool
 ) -> None:
-    """Release smoke must fail an artifact whose OpenSSL trusts no CA (every ``urllib`` HTTPS
-    call fails), yet pass one that trusts a hashed CA directory, which OpenSSL reads only
-    while verifying, so it never shows in the loaded count."""
+    """Release smoke must fail an artifact whose OpenSSL found no CA (every ``urllib`` HTTPS
+    call fails). A CA directory the user set is theirs: OpenSSL reads it only while
+    verifying, so the smoke takes it as configured instead of guessing from file names."""
     from tools.registry_index import clear_descriptor_index_cache, dump_descriptor_index
 
     dump_descriptor_index(tmp_path / BAKED_INDEX_RELATIVE_PATH)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
-    # What the bundled libcrypto sees: no CA file, and the directory under test.
-    directory = tmp_path / "certs"
-    if ca_directory != "missing":
-        directory.mkdir()
-    if ca_directory == "hashed":
-        (directory / "00000000.0").write_text(_first_certificate(), encoding="utf-8")
+    # What the bundled libcrypto sees on a user's Mac without the boot fallback: no CA file.
     monkeypatch.setenv(SSL_CERT_FILE_ENV, str(tmp_path / "missing" / "cert.pem"))
-    monkeypatch.setenv(SSL_CERT_DIR_ENV, str(directory))
+    if users_ca_directory:
+        monkeypatch.setenv(SSL_CERT_DIR_ENV, str(tmp_path / "corporate-certs"))
+    else:
+        monkeypatch.setenv(SSL_CERT_DIR_ENV, "")
+        monkeypatch.delenv(SSL_CERT_DIR_ENV)
     clear_descriptor_index_cache()
     try:
         result = CliRunner().invoke(cli, ["_package-smoke"])
