@@ -165,21 +165,9 @@ to `False` through `prepare_session`. This host-owned policy removes the skill
 index and `skill_view` while retaining execution tools; never infer it from
 prompt text or restore it from conversation history.
 
-**Repository instructions:** the action prompt's REPOSITORY INSTRUCTIONS block
-(`grounding/repository_instructions.py`, CONTEXT tier, right after REPOSITORY
-CONTEXT) carries each active repository's AGENTS.md: a verified local
-checkout's chain (git root down to the working directory, `AGENTS.override.md`
-before `AGENTS.md`), else the default branch's root file read through
-`infrastructure.harness_providers.repository_instructions` (vendor sources
-register from `integrations/harness_adapters.py`). One 32 KiB budget; text is
-redacted. The system prompt's AGENTS.md sentence relies on this block, so never
-gate it by surface or skill discovery. Analytics and trace exports of the
-system prompt replace each section's body with a placeholder
-(`infrastructure/safety/repository_instructions_redaction.py`), found by the
-header line and the last closing wrapper: keep the layout constants in
-`config/constants/repository_instructions.py` shared and any note above the
-wrappers. Tests keep the sources unregistered
-(`tests/harness_providers_plugin.py`) and register fakes.
+**Repository AGENTS.md files are for local coding agents.** Never load a
+repository's `AGENTS.md` (or `AGENTS.override.md`) into the OpenSRE agent's
+prompt, from a checkout or through an integration.
 
 Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.
 Expand `AgentBuildConfig` through `resolve_agent_ports` — do not re-copy the

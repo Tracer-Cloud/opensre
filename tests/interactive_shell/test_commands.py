@@ -1884,7 +1884,8 @@ class TestContextCommand:
         console, buf = _capture()
         dispatch_slash("/context", session, console)
         output = buf.getvalue()
-        assert "repository-instructions" in output
+        assert "repository-context" in output
+        assert "AGENTS.md" not in output
         assert "none active yet" not in output
         assert session.active_vcs_repositories == {}
 

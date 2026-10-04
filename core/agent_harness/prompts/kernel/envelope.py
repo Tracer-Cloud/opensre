@@ -34,7 +34,6 @@ class PromptBlockId(StrEnum):
     # Shared across envelopes.
     CONNECTED_INTEGRATIONS = "connected-integrations"
     REPOSITORY_CONTEXT = "repository-context"
-    REPOSITORY_INSTRUCTIONS = "repository-instructions"
     LONG_TERM_MEMORY = "long-term-memory"
     RECENT_CONVERSATION = "recent-conversation"
     PRIOR_ACTION_FACTS = "prior-action-facts"
