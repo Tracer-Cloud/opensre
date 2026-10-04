@@ -10,7 +10,12 @@ import pytest
 
 from infrastructure.analytics import provider
 from infrastructure.analytics.events import Event
-from infrastructure.scheduling.scheduler import registry_telemetry, runner
+from infrastructure.scheduling.scheduler import (
+    local_delivery,
+    loop_report_telemetry,
+    registry_telemetry,
+    runner,
+)
 from infrastructure.scheduling.scheduler.registry_telemetry import (
     build_registry_properties,
     registry_entry,
@@ -36,6 +41,9 @@ class _Recorder:
 def recorder(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Recorder:
     store_path = tmp_path / "scheduler_tasks.json"
     monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store_path)
+    # Registration passes also resend recent inbox reports; keep them off the real home.
+    monkeypatch.setattr(local_delivery, "_default_inbox_path", lambda: tmp_path / "inbox.jsonl")
+    loop_report_telemetry.reset_loop_report_resend()
     for name in ("OPENSRE_NO_TELEMETRY", "OPENSRE_ANALYTICS_DISABLED", "DO_NOT_TRACK"):
         monkeypatch.delenv(name, raising=False)
     recording = _Recorder()

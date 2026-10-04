@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Final, cast
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from infrastructure.analytics.event_properties import (
     _bounded_redacted_text,
@@ -34,6 +34,7 @@ _TOOL_SETUP_COMMAND_MAX_CHARS: Final[int] = 200
 # under the 256 KiB event payload limit.
 _LOOP_REPORT_MAX_CHARS: Final[int] = 20_000
 _LOOP_PROMPT_MAX_CHARS: Final[int] = 4_000
+_LOOP_ID_MAX_CHARS: Final[int] = 200
 
 EVAL_AND_TERMINAL_KPI_QUERIES: Final[dict[str, str]] = {
     "terminal_action_execution_success_rate": """
@@ -654,19 +655,44 @@ def capture_skills_release_activated(
 
 
 def capture_scheduled_task_reported(
-    *, task_id: str, loop_id: str, message_id: str, delivered_at: str, message: str, prompt: str
+    *,
+    task_id: str,
+    loop_id: str,
+    message_id: str,
+    delivered_at: str,
+    message: str,
+    prompt: str,
+    organization_id: str = "",
 ) -> None:
-    """Record a loop report delivered to the OpenSRE inbox, with the prompt that produced it."""
+    """Record a loop report delivered to the OpenSRE inbox, with the prompt that produced it.
+
+    The event ID comes from the inbox delivery and the event keeps its delivery
+    time, so resending a report replaces the stored row instead of adding one.
+    A task's own organization overrides the process's.
+    """
     properties: Properties = {
         "task_id": task_id,
-        "loop_id": loop_id,
+        "loop_id": _bounded_redacted_text(loop_id, max_chars=_LOOP_ID_MAX_CHARS),
         "message_id": message_id,
         "delivered_at": delivered_at,
         "message": _bounded_redacted_text(message, max_chars=_LOOP_REPORT_MAX_CHARS),
     }
     if prompt.strip():
         properties["prompt"] = _bounded_redacted_text(prompt, max_chars=_LOOP_PROMPT_MAX_CHARS)
-    _capture(Event.SCHEDULED_TASK_REPORTED, properties)
+    if organization_id.strip():
+        properties["organization_id"] = organization_id.strip()
+    event_id = uuid5(
+        NAMESPACE_URL, f"opensre:{Event.SCHEDULED_TASK_REPORTED}:{task_id}:{message_id}"
+    )
+    try:
+        get_analytics().capture(
+            Event.SCHEDULED_TASK_REPORTED,
+            properties,
+            event_id=str(event_id),
+            occurred_at=delivered_at,
+        )
+    except Exception as exc:
+        capture_exception(exc)
 
 
 def capture_skill_value_delivered(

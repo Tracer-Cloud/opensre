@@ -641,7 +641,6 @@ class TestExecutor:
         ]
 
     def test_crash_before_build_is_recovered_by_a_new_attempt(self, tmp_path: Path) -> None:
-
         task = ScheduledTask(
             id="test_build_crash",
             kind=TaskKind.MANUAL_LOOP,
@@ -668,7 +667,6 @@ class TestExecutor:
         assert len(adapters[Provider.SLACK].calls) == 1
 
     def test_crash_during_delivery_is_recovered_by_a_new_attempt(self, tmp_path: Path) -> None:
-
         adapter = _CrashOnceAdapter()
         _install_bundle({Provider.SLACK: adapter})
         task = ScheduledTask(
@@ -706,7 +704,6 @@ class TestExecutor:
     def test_scheduler_recovery_sweep_resubmits_the_original_fire_time(
         self, tmp_path: Path
     ) -> None:
-
         task = ScheduledTask(
             id="test_sweep_recovery",
             kind=TaskKind.MANUAL_LOOP,
@@ -1312,7 +1309,6 @@ class TestDeliveryFanOutConcurrency:
     """Fan-out overlaps destinations and reports them in a stable order."""
 
     def test_destinations_are_delivered_to_concurrently(self) -> None:
-
         barrier = threading.Barrier(3, timeout=_SYNC_TIMEOUT_SECONDS)
         adapters: dict[Provider, Any] = {
             provider: _BlockingAdapter(barrier, (True, "", f"{provider.value}_id"))
@@ -1361,7 +1357,6 @@ class TestDeliveryFanOutConcurrency:
         ]
 
     def test_retry_targets_only_the_failed_destination(self) -> None:
-
         flaky = _FlakyAdapter(failures=2)
         healthy = _FakeAdapter()
         healthy.result = (True, "", "local:1")
@@ -1382,7 +1377,6 @@ class TestDeliveryFanOutConcurrency:
         assert [outcome.attempts for outcome in runs[0].targets] == [1, 3]
 
     def test_all_destinations_failing_fails_the_run(self) -> None:
-
         adapters = _install_fake_bundle()
         adapters[Provider.INTERACTIVE_SHELL].result = (False, "inbox unwritable", "")
         adapters[Provider.SLACK].result = (False, "webhook missing", "")
@@ -1401,7 +1395,6 @@ class TestDeliveryFanOutConcurrency:
         assert [outcome.ok for outcome in runs[0].targets] == [False, False]
 
     def test_unsupported_loop_channel_records_the_parse_error(self) -> None:
-
         _install_fake_bundle()
         task = _fanout_task("test_bad_channel", "interactive_shell,carrier_pigeon")
 

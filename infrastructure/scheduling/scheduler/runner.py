@@ -27,6 +27,7 @@ from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_REPORT_PARAM
+from infrastructure.scheduling.scheduler.loop_report_telemetry import resend_recent_loop_reports
 from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_execution_operation,
     record_scheduler_service_operation,
@@ -438,8 +439,9 @@ def _register_jobs(
         )
     if task_filter is None:
         # Only a host that runs the whole store can report it; a filtered shell
-        # scheduler registers a subset.
+        # scheduler registers a subset. Its passes also recover dropped reports.
         report_task_registry()
+        resend_recent_loop_reports()
     return enabled_count
 
 
