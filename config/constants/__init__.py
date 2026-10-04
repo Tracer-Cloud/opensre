@@ -308,6 +308,10 @@ if TYPE_CHECKING:
     from config.constants.clerk import (
         CLERK_JWKS_URL_ENV as CLERK_JWKS_URL_ENV,
     )
+    from config.constants.coding_agent import CODEX_HOME_ENV as CODEX_HOME_ENV
+    from config.constants.coding_agent import (
+        CODEX_ISOLATED_HOME_PREFIX as CODEX_ISOLATED_HOME_PREFIX,
+    )
     from config.constants.coding_agent import (
         CODING_AGENT_SANDBOX_AGENT as CODING_AGENT_SANDBOX_AGENT,
     )

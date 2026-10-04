@@ -8,21 +8,28 @@ default). The guarded task prompt forbids commits/pushes; branch/commit/PR
 mechanics stay with the caller.
 
 Env vars: ``CODEX_BIN`` (optional explicit binary path). A signed-in OpenSRE
-account supplies hosted OpenAI credentials through the child environment;
-otherwise OpenAI Platform auth env keys are forwarded to the subprocess.
+account supplies hosted OpenAI credentials through the child environment and,
+under Codex's own sandbox, a per-run minimal ``CODEX_HOME``; otherwise OpenAI
+Platform auth env keys are forwarded and the user's Codex home applies.
 """
 
 from __future__ import annotations
 
 from contextlib import ExitStack
 
-from config.constants import CODING_AGENT_SANDBOX_HOST, OPENAI_API_KEY_ENV, OPENAI_BASE_URL_ENV
+from config.constants import (
+    CODEX_HOME_ENV,
+    CODING_AGENT_SANDBOX_HOST,
+    OPENAI_API_KEY_ENV,
+    OPENAI_BASE_URL_ENV,
+)
 from integrations.coding_agent.backend_exec import (
     failure,
     resolve_workspace_dir,
     run_agentic_cli,
     workspace_error,
 )
+from integrations.coding_agent.codex_home import isolated_codex_home
 from integrations.coding_agent.config import coding_agent_sandbox
 from integrations.coding_agent.hosted_credentials import hosted_openai_subprocess_env
 from integrations.coding_agent.hosted_relay import HostedRouteRelay
@@ -59,7 +66,9 @@ def _resolve_binary() -> str | None:
     )
 
 
-def _subprocess_env(hosted: dict[str, str] | None) -> dict[str, str]:
+def _subprocess_env(
+    hosted: dict[str, str] | None, *, codex_home: str | None = None
+) -> dict[str, str]:
     env: dict[str, str] = {"NO_COLOR": "1"}
     if hosted is not None:
         # Hosted credentials replace local OpenAI keys so a signed-in session
@@ -67,7 +76,14 @@ def _subprocess_env(hosted: dict[str, str] | None) -> dict[str, str]:
         env.update(hosted)
     else:
         env.update(nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS))
+    if codex_home is not None:
+        env[CODEX_HOME_ENV] = codex_home
     return build_cli_subprocess_env(env)
+
+
+def _isolates_codex_home(hosted: dict[str, str] | None) -> bool:
+    """The hosted route needs nothing from the user's Codex home; the gateway's is already clean."""
+    return hosted is not None and _sandbox_mode() != _HOST_SANDBOX
 
 
 def _hosted_route_via(relay: HostedRouteRelay | None) -> tuple[dict[str, str] | None, str | None]:
@@ -119,11 +135,14 @@ def run(
         if relay is not None:
             stack.enter_context(relay)
         hosted, base_url = _hosted_route_via(relay)
+        codex_home = (
+            stack.enter_context(isolated_codex_home()) if _isolates_codex_home(hosted) else None
+        )
         argv = _argv(binary, ws, model, task, hosted_base_url=base_url)
         return run_agentic_cli(
             argv,
             workspace=ws,
-            env=_subprocess_env(hosted),
+            env=_subprocess_env(hosted, codex_home=codex_home),
             timeout_sec=timeout_sec,
             agent_name="codex",
         )
