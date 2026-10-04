@@ -52,15 +52,40 @@ _WATCH = "Which of these should OpenSRE keep an eye on?"
 _NEXT = "What next?"
 _CONNECT = "Connect GitHub and get the CI report"
 _FOLLOW_UP_SUMMARY = "10% of own commits (66 of 650) fixed files changed less than an hour earlier"
+# What the analyzer returns; the report must repeat every figure unchanged.
+_ANALYSIS: dict[str, Any] = {
+    "success": True,
+    "reason": "github_not_connected",
+    "days": 30,
+    "repositories": 4,
+    "own_commits": 650,
+    "insights": [
+        {
+            "kind": "follow_up_fixes",
+            "label": "Follow-up fixes",
+            "fact": (
+                "66 of your 650 commits (10%) fixed files you had changed less than an hour "
+                "earlier, 59 of them in acme/payments."
+            ),
+        },
+        {
+            "kind": "ai_pairing",
+            "label": "AI pairing",
+            "fact": "418 of your 650 commits (64%) were co-authored by an AI agent (Claude 418).",
+        },
+    ],
+    "github_only_metrics": ["CI waiting time", "PR failure rate", "Red time on main"],
+}
 _REPORT = (
     "GitHub isn't connected yet, so here's what your local history shows instead.\n\n"
     "4 repositories · 650 commits by you in the last 30 days. Read from git on this machine; "
     "no code or commit messages left it.\n\n"
     "### What stands out\n"
-    "- **Follow-up fixes:** 66 of your 650 commits (10%) fixed files you had changed less than "
-    "an hour earlier, 59 of them in acme/payments. Quick re-fixes usually mean a problem "
-    "surfaced after the commit, often in CI; OpenSRE fixes failing checks on your pull requests.\n"
-    "- **AI pairing:** 418 of your 650 commits (64%) were co-authored by an AI agent.\n\n"
+    f"- **Follow-up fixes:** {_ANALYSIS['insights'][0]['fact']} Quick re-fixes usually mean a "
+    "problem surfaced after the commit, often in CI; OpenSRE fixes failing checks on your pull "
+    "requests.\n"
+    f"- **AI pairing:** {_ANALYSIS['insights'][1]['fact']} Agents write code faster than CI can "
+    "keep up with; OpenSRE keeps CI green at that pace.\n\n"
     "Connect GitHub to add: CI waiting time · PR failure rate · Red time on main"
 )
 _PLAN_STEPS = (
@@ -166,10 +191,7 @@ def test_report_then_menu_then_connect_github_reopens_the_ci_analysis_gate(
             run=run,
         )
 
-    analyze = tool(
-        "analyze_local_repositories",
-        {"success": True, "reason": "github_not_connected", "repositories": 4, "insights": []},
-    )
+    analyze = tool("analyze_local_repositories", _ANALYSIS)
     remember = tool("memory_remember", {"ok": True})
     ask_user_choice = _real_action_tool("ask_user_choice")
     skill_view = _real_action_tool("skill_view")
@@ -251,6 +273,15 @@ def test_report_then_menu_then_connect_github_reopens_the_ci_analysis_gate(
     assert calls == [("analyze_local_repositories", {"reason": "github_not_connected"})]
     # The report was shown once, before the menu, and recorded without repository names.
     assert output.streamed.count(_REPORT) == 1
+    # Every fact and header figure in the report is the analyzer's, unchanged.
+    for insight in _ANALYSIS["insights"]:
+        assert f"**{insight['label']}:** {insight['fact']}" in _REPORT
+    header = (
+        f"{_ANALYSIS['repositories']} repositories · {_ANALYSIS['own_commits']} commits by you "
+        f"in the last {_ANALYSIS['days']} days"
+    )
+    assert header in _REPORT
+    assert " · ".join(_ANALYSIS["github_only_metrics"]) in _REPORT
     value.assert_called_once()
     assert value.call_args.kwargs["insight_kind"] == "follow_up_fixes"
     assert value.call_args.kwargs["insight"] == f"Follow-up fixes: {_FOLLOW_UP_SUMMARY}"

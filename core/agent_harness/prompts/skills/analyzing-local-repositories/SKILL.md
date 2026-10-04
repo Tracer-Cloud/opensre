@@ -58,12 +58,14 @@ Call `analyze_local_repositories` with:
 - `repository`: the repository the user picked earlier in this session, as
   `owner/repo` or its local path, if any.
 - `paths`: the `path` of each repository in this session's
-  `scan_local_git_workspace` result, most active first, when a scan ran. Omit it
-  otherwise; the tool scans.
+  `scan_local_git_workspace` result, the picked repository's own path first,
+  then the most active ones, when a scan ran. Omit it otherwise; the tool scans.
 
 Complete when `analyze_local_repositories` has returned in this turn. If it
-returned `cancelled`, stop. If this build has no `analyze_local_repositories`
-tool, say in one line that `opensre update` adds this report, and stop.
+returned `cancelled`, stop. If it returned `success: false` with an `error`,
+say in one line that the local repositories could not be read, and stop. If
+this build has no `analyze_local_repositories` tool, say in one line that
+`opensre update` adds this report, and stop.
 
 ### 2. Show the report
 
@@ -115,8 +117,8 @@ Complete when the reply containing the report has been shown.
 Call `ask_user_choice` once with two `questions`:
 
 1. `label` `Watch`, `title` `Which of these should OpenSRE keep an eye on?`,
-   `multi_select` true, options: the labels of the insights shown in step 2,
-   then `None of these`.
+   `multi_select` true, options: the labels of the insights shown under
+   `What stands out` in step 2, then `None of these`.
 2. `label` `Next`, `title` `What next?`, options from the first row that
    applies, then `Not now`:
 
@@ -130,8 +132,9 @@ Call `ask_user_choice` once with two `questions`:
 | `reason` is `no_github_actions` | `Watch OpenSRE fix a failing check in a demo repo (under 5 min)` |
 | otherwise | `Get the CI report for one of these repositories` |
 
-When `repositories` is 0, ask only the `Next` question, as `title` and
-`options`. End the turn after the call. If the result says the menu is
+When step 2 showed nothing under `What stands out` (for example `repositories`
+is 0), ask only the `Next` question, as `title` and `options`. End the turn
+after the call. If the result says the menu is
 unavailable, list the questions with numbered options as text and wait.
 
 Complete when the `ask_user_choice` call has returned in this turn. The
