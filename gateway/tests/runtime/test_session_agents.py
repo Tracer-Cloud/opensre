@@ -152,7 +152,7 @@ def test_hosted_prompt_records_compact_activity_and_chat_keeps_its_status(
 
     assert recorded[0] == (
         "tool",
-        "GitHub CLI · gh api user --include",
+        "GitHub CLI · gh api request",
     )
     assert recorded[1][0] == "plan"
     assert "✓ Inspect authenticated user" in recorded[1][1]
