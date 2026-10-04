@@ -6,6 +6,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from core.agent_harness.grounding.repository_instructions import repository_instructions_text
 from core.agent_harness.prompts.action.active_skill import active_skill_block
 from core.agent_harness.prompts.action.goal_kernel import (
     ACTION_GOAL_KERNEL,
@@ -183,6 +184,15 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.agent_harness.turns.turn_snapshot",
         )
     )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.REPOSITORY_INSTRUCTIONS,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.CONTEXT,
+            content=repository_instructions_block(turn_snapshot),
+            provenance="core.agent_harness.grounding.repository_instructions",
+        )
+    )
     # Volatile before ephemeral so render_cached + render_ephemeral reassemble
     # into render() and the cache breakpoint can sit after memory.
     memory_block = long_term_memory_block()
@@ -341,6 +351,21 @@ def repository_context_block(turn_snapshot: TurnSnapshot) -> str:
         "Use the active target for an unqualified repository request. A user-named "
         "repository becomes active without deleting the others. Do not describe the "
         "active repository as the only repository OpenSRE remembers.\n\n"
+    )
+
+
+def repository_instructions_block(turn_snapshot: TurnSnapshot) -> str:
+    """The active repositories' AGENTS.md, or one line on why it is absent.
+
+    The system prompt promises these instructions; this block keeps that
+    promise. Every surface gets it, scheduled ticks without skill discovery and
+    shared chats that hide setup state included: AGENTS.md is repository
+    content, not install state.
+    """
+    return repository_instructions_text(
+        turn_snapshot.active_vcs_repositories,
+        resolved_integrations=turn_snapshot.resolved_integrations,
+        working_directory=turn_snapshot.working_directory,
     )
 
 

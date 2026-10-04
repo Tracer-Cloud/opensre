@@ -17,12 +17,22 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _harness_providers_per_test() -> Iterator[None]:
-    """Wire harness ports before each test; reset after to avoid session leakage."""
+    """Wire harness ports before each test; reset after to avoid session leakage.
+
+    Repository-instruction sources stay unregistered: every action prompt reads
+    the active repository's AGENTS.md, which would put this checkout's files in
+    unrelated prompts and send a token from ``.env`` to GitHub. Tests of that
+    read register a fake source, or re-install the real ones.
+    """
     from bootstrap.adapters import install_cli_auth_checker
-    from infrastructure.harness_providers import reset_harness_providers
+    from infrastructure.harness_providers import (
+        clear_repository_instructions_sources,
+        reset_harness_providers,
+    )
     from surfaces.shared.terminal.output.boundary import install_harness_providers
 
     install_harness_providers()
     install_cli_auth_checker()
+    clear_repository_instructions_sources()
     yield
     reset_harness_providers()

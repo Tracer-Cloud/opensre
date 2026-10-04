@@ -1148,6 +1148,30 @@ if TYPE_CHECKING:
     from config.constants.repl_theme import (
         Theme as Theme,
     )
+    from config.constants.repository_instructions import (
+        REPOSITORY_INSTRUCTIONS_CACHE_TTL_SECONDS as REPOSITORY_INSTRUCTIONS_CACHE_TTL_SECONDS,
+    )
+    from config.constants.repository_instructions import (
+        REPOSITORY_INSTRUCTIONS_CHECKOUT_TTL_SECONDS as REPOSITORY_INSTRUCTIONS_CHECKOUT_TTL_SECONDS,  # noqa: E501
+    )
+    from config.constants.repository_instructions import (
+        REPOSITORY_INSTRUCTIONS_FETCH_TIMEOUT_SECONDS as REPOSITORY_INSTRUCTIONS_FETCH_TIMEOUT_SECONDS,  # noqa: E501
+    )
+    from config.constants.repository_instructions import (
+        REPOSITORY_INSTRUCTIONS_FILENAME as REPOSITORY_INSTRUCTIONS_FILENAME,
+    )
+    from config.constants.repository_instructions import (
+        REPOSITORY_INSTRUCTIONS_MAX_BYTES as REPOSITORY_INSTRUCTIONS_MAX_BYTES,
+    )
+    from config.constants.repository_instructions import (
+        REPOSITORY_INSTRUCTIONS_OVERRIDE_FILENAME as REPOSITORY_INSTRUCTIONS_OVERRIDE_FILENAME,
+    )
+    from config.constants.repository_instructions import (
+        REPOSITORY_INSTRUCTIONS_READ_BYTES as REPOSITORY_INSTRUCTIONS_READ_BYTES,
+    )
+    from config.constants.repository_instructions import (
+        REPOSITORY_INSTRUCTIONS_RETRY_SECONDS as REPOSITORY_INSTRUCTIONS_RETRY_SECONDS,
+    )
     from config.constants.runbooks import (
         RUNBOOK_CONTENT_MAX_CHARS as RUNBOOK_CONTENT_MAX_CHARS,
     )
