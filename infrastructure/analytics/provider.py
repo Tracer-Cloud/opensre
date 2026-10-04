@@ -882,7 +882,15 @@ class Analytics:
             _install_delivery_path(self._anonymous_id, self._destination)
         )
 
-    def capture(self, event: str, properties: Properties | None = None) -> None:
+    def capture(
+        self,
+        event: str,
+        properties: Properties | None = None,
+        *,
+        event_id: str | None = None,
+        occurred_at: str | None = None,
+    ) -> None:
+        """Queue ``event``; a fixed ``event_id`` and ``occurred_at`` make a resend idempotent."""
         if self._disabled or self._shutdown:
             return
         destination = self._current_destination()
@@ -917,6 +925,10 @@ class Analytics:
             properties=merged,
             destination=destination,
         )
+        if event_id is not None:
+            envelope = replace(envelope, event_id=event_id)
+        if occurred_at is not None:
+            envelope = replace(envelope, occurred_at=occurred_at)
         if event == Event.INSTALL_DETECTED:
             body = self._serialize(self._payload(envelope))
             try:

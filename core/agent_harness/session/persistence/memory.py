@@ -158,6 +158,20 @@ class InMemorySessionStore:
             sidecar=True,
         )
 
+    def append_custom_message(
+        self,
+        session_id: str,
+        *,
+        custom_type: str,
+        content: Any,
+        display: bool = True,
+    ) -> str:
+        return self._append(
+            session_id,
+            "custom_message",
+            {"custom_type": custom_type, "content": content, "display": display},
+        )
+
     def append_tool_update(
         self,
         session_id: str,
@@ -182,6 +196,8 @@ class InMemorySessionStore:
         after_chars: int,
         before_tokens: int | None = None,
         after_tokens: int | None = None,
+        replacement_messages: list[list[str]] | None = None,
+        replacement_evidence: list[dict[str, Any]] | None = None,
     ) -> str:
         return self._append(
             session_id,
@@ -193,6 +209,18 @@ class InMemorySessionStore:
                 "after_chars": after_chars,
                 "before_tokens": before_tokens,
                 "after_tokens": after_tokens,
+                # What the compaction kept verbatim. Present means the record
+                # replaces everything before it when the session is restored.
+                **(
+                    {"replacement_messages": replacement_messages}
+                    if replacement_messages is not None
+                    else {}
+                ),
+                **(
+                    {"replacement_evidence": replacement_evidence}
+                    if replacement_evidence is not None
+                    else {}
+                ),
             },
         )
 

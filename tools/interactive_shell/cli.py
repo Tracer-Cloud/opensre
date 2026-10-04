@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from config.scope_handoff import hand_off_scope
 from infrastructure.scheduling.task_types import TaskKind
 from tools.interactive_shell.shared import (
     ExecutionPolicyResult,
@@ -323,6 +324,13 @@ def _print_wizard_handoff(presenter: SubprocessPresenter, command_str: str) -> N
     )
 
 
+def _child_env(presenter: SubprocessPresenter) -> dict[str, str]:
+    """The presenter's child environment plus the turn's organization scope."""
+    env = presenter.subprocess_env()
+    hand_off_scope(env)
+    return env
+
+
 def _run_foreground_via_presenter(
     presenter: SubprocessPresenter,
     *,
@@ -333,7 +341,7 @@ def _run_foreground_via_presenter(
     result = run_foreground_cli(
         argv_list,
         timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS,
-        env=presenter.subprocess_env(),
+        env=_child_env(presenter),
     )
     if result.start_failed:
         if result.start_error:
@@ -368,7 +376,7 @@ def _run_streaming_via_presenter(
 ) -> None:
     presenter.print_bold_command(display_command)
     try:
-        proc = spawn_streaming_cli(argv_list, env=presenter.subprocess_env())
+        proc = spawn_streaming_cli(argv_list, env=_child_env(presenter))
     except Exception as exc:  # noqa: BLE001
         presenter.report_exception(
             exc,

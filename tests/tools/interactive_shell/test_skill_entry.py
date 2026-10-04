@@ -221,9 +221,11 @@ def test_a_skill_without_its_github_token_queues_setup_instead_of_starting(
     pending = session.pending_user_choice
     assert pending is not None
     assert pending.title == "Connect GitHub to continue"
+    # The analysis demo can also go on without GitHub, on the user's local repositories.
     assert pending.options == (
         "Set up GitHub on this machine",
         "I've connected GitHub — continue",
+        "Use my local repos instead (no GitHub needed)",
         "Not now",
     )
     assert pending.commands["Set up GitHub on this machine"] == "/integrations setup github"

@@ -36,6 +36,7 @@ from datetime import datetime
 from typing import Any, TypeVar
 
 from core.agent_harness.session.persistence.contracts import (
+    TURN_EVIDENCE_CUSTOM_TYPE,
     RestoreContextKey,
     SessionRepo,
     SessionStore,
@@ -230,6 +231,40 @@ class SessionManager:
         self._store.open_session(session)
         return session
 
+    def carry_forward(
+        self,
+        session: _S,
+        *,
+        messages: list[tuple[str, str]],
+        evidence: list[Any],
+    ) -> _S:
+        """Restore the conversation into a rotated session and record it in its new file.
+
+        ``/new`` keeps the conversation going in a fresh session file. Writing
+        the carried transcript and turn evidence there means resuming the new
+        session later restores what the live one had, not only the turns taken
+        after the rotation.
+        """
+        session.agent.messages = messages
+        session.agent.turn_evidence = evidence
+        append_message = getattr(session.store, "append_message", None)
+        append_custom = getattr(session.store, "append_custom_message", None)
+        with contextlib.suppress(Exception):
+            if callable(append_message):
+                for role, content in session.agent.messages:
+                    append_message(
+                        session.session_id, role=role, content=content, metadata={"kind": "chat"}
+                    )
+            if callable(append_custom):
+                for record in session.agent.turn_evidence:
+                    append_custom(
+                        session.session_id,
+                        custom_type=TURN_EVIDENCE_CUSTOM_TYPE,
+                        content=record.to_json(),
+                        display=False,
+                    )
+        return session
+
     def rebind_for_resume(
         self,
         session: _S,
@@ -279,6 +314,12 @@ class SessionManager:
                 if role in {"user", "assistant"} and isinstance(content, str) and content:
                     restored.append((role, content))
             session.cli_agent_messages = restored
+        evidence = data.get(RestoreContextKey.TURN_EVIDENCE)
+        if isinstance(evidence, list) and hasattr(session, "turn_evidence"):
+            from core.state import TurnEvidence
+
+            records = (TurnEvidence.from_json(item) for item in evidence)
+            session.turn_evidence = [record for record in records if record is not None]
         context = data.get(RestoreContextKey.ACCUMULATED_CONTEXT)
         if isinstance(context, dict):
             session.accumulated_context = dict(context)

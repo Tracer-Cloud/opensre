@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -33,6 +34,8 @@ from integrations.github.tools.ci_analytics.working_hours import (
     local_timezone,
     local_working_hours,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_LOOP_TIME = "08:00"
 LOOP_WINDOW_DAYS = 7
@@ -144,10 +147,20 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
 
     No model is involved, so every delivery carries the analytics header and
     the numbers can be traced back to the JSON snapshot named at the end.
-    Raises ``RuntimeError`` with a generic message when GitHub cannot be read.
+    When GitHub cannot be read, returns a blocked report naming what stopped
+    the read, never exception detail, so the loop's channels hear it.
+    Raises ``RuntimeError`` only for a loop without a repository or a token.
     """
-    from integrations.github.client import GitHubApiError, resolve_github_token
+    from integrations.github.client import (
+        GitHubApiError,
+        github_failure_kind,
+        resolve_github_token,
+    )
     from integrations.github.tools.ci_analytics.analysis import analyze_repository
+    from integrations.github.tools.ci_analytics.failure import (
+        analysis_failure_report,
+        is_operational_failure,
+    )
     from integrations.github.tools.ci_analytics.payload import report_payload
     from integrations.github.tools.ci_analytics.render import headline, render_markdown
 
@@ -167,7 +180,14 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
             owner, repo, token=token, days=days, working_hours=local_working_hours(), now=now
         )
     except (GitHubApiError, ValueError) as exc:
-        raise RuntimeError(f"Could not read the GitHub Actions history of {owner}/{repo}.") from exc
+        # Same split as the tool: GitHub, the network or the token is a
+        # warning without a stack; anything else is a fault worth one.
+        if is_operational_failure(exc):
+            kind = github_failure_kind(exc).value
+            logger.warning("CI reliability loop could not read %s/%s: %s", owner, repo, kind)
+        else:
+            logger.error("CI reliability loop could not read %s/%s", owner, repo, exc_info=exc)
+        return analysis_failure_report(exc, owner=owner, repo=repo, now=datetime.now(UTC))
     report = analysis.report
     snapshot = write_snapshot(
         snapshot_root(snapshot_dir),

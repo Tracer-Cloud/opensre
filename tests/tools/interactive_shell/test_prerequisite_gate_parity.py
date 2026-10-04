@@ -165,7 +165,7 @@ def test_the_gate_passes_exactly_when_the_analyzer_runs_with_the_chosen_grant(
     arrange(monkeypatch)
     clients: list[str | None] = []
 
-    def client(github_token: str | None = None) -> object:
+    def client(github_token: str | None = None, **_options: object) -> object:
         clients.append(github_token)
         return object()
 

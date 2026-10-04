@@ -19,6 +19,7 @@ from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
 )
 from infrastructure.analytics.prompt_log.sinks.posthog_ai import capture_ai_generation
 from infrastructure.analytics.provider import JsonValue
+from infrastructure.analytics.scheduled_task_attribution import current_scheduled_task_id
 from infrastructure.safety.secret_redaction import redact_text
 
 _SUPPORTED_TURN_KINDS = frozenset({"agent", "follow_up", "new_alert", "background_task"})
@@ -118,6 +119,9 @@ class PromptRecorder:
         self._history_start = len(history) if isinstance(history, list) else 0
         self._surface = surface
         self._properties: dict[str, JsonValue] = {}
+        # Read at start: a background task's recorder flushes later, outside the tick.
+        if scheduled_task_id := current_scheduled_task_id():
+            self._properties["scheduled_task_id"] = scheduled_task_id
         self._response: str = ""
         self._error_kind: str = ""
         self._error_message: str = ""

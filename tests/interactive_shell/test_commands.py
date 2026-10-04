@@ -15,6 +15,10 @@ from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
 from config.account import AccountLLMRoute
+from config.constants.conversation_history import (
+    OPENSRE_LLM_COMPACTION_ENV,
+    OPENSRE_STRUCTURED_HISTORY_ENV,
+)
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.command_registry.tasks_cmds import _validate_cancel_args
@@ -1916,7 +1920,12 @@ class TestVerboseCommand:
 
 
 class TestCompactCommand:
-    def test_nothing_to_compact_when_small(self) -> None:
+    @pytest.fixture(autouse=True)
+    def _no_model_summary(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(OPENSRE_LLM_COMPACTION_ENV, "0")
+
+    def test_nothing_to_compact_when_small(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
         session = Session()
         session.agent.messages = [("user", f"m{i}") for i in range(4)]
         console, buf = _capture()
@@ -1924,7 +1933,10 @@ class TestCompactCommand:
         assert "Nothing to compact yet." in buf.getvalue()
         assert len(session.agent.messages) == 4
 
-    def test_compacts_conversation_branch_when_over_keep_limit(self) -> None:
+    def test_compacts_conversation_branch_when_over_keep_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
         session = Session()
         session.agent.messages = [("user", f"message number {i}") for i in range(20)]
         console, buf = _capture()
@@ -1939,6 +1951,21 @@ class TestCompactCommand:
             entry.get("type") == "slash" and entry.get("text") == "/compact"
             for entry in session.history
         )
+
+    def test_compact_keeps_only_the_newest_turn_with_structured_history(self) -> None:
+        session = Session()
+        session.agent.messages = [
+            message
+            for index in range(5)
+            for message in (("user", f"question {index}"), ("assistant", f"answer {index}"))
+        ]
+        console, buf = _capture()
+
+        dispatch_slash("/compact", session, console)
+
+        assert session.agent.messages[0][1].startswith("Session summary:")
+        assert session.agent.messages[1:] == [("user", "question 4"), ("assistant", "answer 4")]
+        assert "compacted session context" in buf.getvalue()
 
 
 class TestCancelCommand:

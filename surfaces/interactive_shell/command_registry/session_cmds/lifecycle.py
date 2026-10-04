@@ -27,12 +27,14 @@ def _cmd_new(session: Session, console: Console, _args: list[str]) -> bool:
     seamlessly in a fresh session file.
     """
     saved_messages = list(session.agent.messages)
+    saved_evidence = list(session.agent.turn_evidence)
     saved_context = dict(session.accumulated_context)
     saved_resumed_name = session.resumed_from_name
 
-    SessionManager.for_session(session).rotate_in_place(session)
+    manager = SessionManager.for_session(session)
+    manager.rotate_in_place(session)
+    manager.carry_forward(session, messages=saved_messages, evidence=saved_evidence)
 
-    session.agent.messages = saved_messages
     session.accumulated_context = saved_context
     session.resumed_from_name = saved_resumed_name
     console.print(
@@ -47,7 +49,7 @@ def _cmd_compact(session: Session, console: Console, _args: list[str]) -> bool:
     """Compact the live session branch and persist a compaction entry."""
     from core.agent_harness.spi.session_state import compact_session_branch
 
-    result = compact_session_branch(session)
+    result = compact_session_branch(session, manual=True)
     if result is None:
         console.print(f"[{DIM}]Nothing to compact yet.[/]")
         return True

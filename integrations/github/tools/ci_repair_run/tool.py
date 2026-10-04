@@ -22,6 +22,13 @@ from integrations.github.tools.ci_repair_loop.tool import (
     get_ci_repair_loop,
     schedule_ci_repair_loop,
 )
+from integrations.github.tools.ci_repair_run.root_cause import (
+    github_links,
+    read_repair_evidence,
+    render_analysis,
+    repair_verified,
+    root_cause_analysis,
+)
 
 _USER_PATH = "user"
 _PR_VIEW_FIELDS = "headRefOid,commits,statusCheckRollup"
@@ -289,7 +296,8 @@ def _finish_scheduled(
     pull = _pull(seeded_owner, seeded_repo, pr_number, github_token)
     rows = _rollup(pull)
     failed_run_id = _run_id(seeded.get("failed_run_id"))
-    fix_commit = _fix_commit(_text(seeded.get("head_sha")), pull)
+    seed_head = _text(seeded.get("head_sha"))
+    fix_commit = _fix_commit(seed_head, pull)
     passing_run_id = _passing_run_id(rows)
     outcome = _outcome(
         _text(observed.get("status")),
@@ -298,6 +306,28 @@ def _finish_scheduled(
         fix_commit=fix_commit,
         passing_run_id=passing_run_id,
     )
+    pr_url = _text(seeded.get("pr_url")) or _text(scheduled.get("pr_url"))
+    repair = read_repair_evidence(task_id)
+    links = github_links(
+        owner=seeded_owner,
+        repo=seeded_repo,
+        pr_number=pr_number,
+        pr_url=pr_url,
+        failing_commit=seed_head,
+        failed_run_id=failed_run_id,
+        fix_commit=fix_commit,
+        passing_run_id=passing_run_id,
+        verified=repair_verified(outcome, fix_commit, repair),
+    )
+    analysis = root_cause_analysis(
+        pr_number=pr_number,
+        outcome=outcome,
+        failing_commit=seed_head,
+        fix_commit=fix_commit,
+        seeded_here=seeded.get("reused") is False,
+        evidence=repair,
+    )
+    analysis_text = render_analysis(links, analysis)
     finished = finish_ci_repair_demo(
         repo=f"{seeded_owner}/{seeded_repo}",
         pr_number=pr_number,
@@ -307,10 +337,22 @@ def _finish_scheduled(
         fix_commit=fix_commit,
         passing_run_id=passing_run_id,
         github_token=github_token,
+        analysis=analysis_text,
     )
     evidence = _text(finished.get("evidence"))
     loop_removed = finished.get("loop_removed") is True
-    pr_url = _text(seeded.get("pr_url")) or _text(scheduled.get("pr_url"))
+    summary = _response_text(
+        owner=seeded_owner,
+        repo=seeded_repo,
+        pr_number=pr_number,
+        outcome=outcome,
+        task_id=task_id,
+        failed_run_id=failed_run_id,
+        fix_commit=fix_commit,
+        passing_run_id=passing_run_id,
+        evidence=evidence,
+        loop_removed=loop_removed,
+    )
     result = {
         "ok": finished.get("ok") is True,
         "owner": seeded_owner,
@@ -325,18 +367,9 @@ def _finish_scheduled(
         "evidence": evidence,
         "loop_removed": loop_removed,
         "repository_retained": True,
-        "response_text": _response_text(
-            owner=seeded_owner,
-            repo=seeded_repo,
-            pr_number=pr_number,
-            outcome=outcome,
-            task_id=task_id,
-            failed_run_id=failed_run_id,
-            fix_commit=fix_commit,
-            passing_run_id=passing_run_id,
-            evidence=evidence,
-            loop_removed=loop_removed,
-        ),
+        "links": links,
+        "root_cause_analysis": analysis,
+        "response_text": f"{summary}\n\n{analysis_text}",
     }
     if finished.get("ok") is not True and finished.get("error"):
         result["ok"] = False
@@ -352,7 +385,9 @@ def _finish_scheduled(
     description=(
         "Seed one private CI repair demo, schedule repair of the pull request it returns, "
         "wait until that repair is terminal, read the pull request head and checks once, "
-        "and save evidence. One failed seed or schedule is returned and no second loop is "
+        "and save evidence. A finished repair returns full GitHub URLs for the pull request, "
+        "commits, and runs, and a root cause analysis: what failed, why, the fix, and its "
+        "verification. One failed seed or schedule is returned and no second loop is "
         "scheduled. A report that is still running leaves the schedule in place. A failed "
         "read after scheduling removes that schedule and includes the task id. An empty "
         "owner uses the token's login. Does not delete the GitHub repository."

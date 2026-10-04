@@ -19,9 +19,9 @@ from filelock import FileLock
 from config.constants import OPENSRE_HOME_DIR
 from config.constants.organization import organization_id
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
-from config.principal import PrincipalKind
-from config.scope_context import current_scope
+from config.scope_handoff import acting_scope
 from infrastructure.scheduling.scheduler import reload_signal
+from infrastructure.scheduling.scheduler.loop_constants import LOOP_CREATED_BY_PARAM
 from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
@@ -223,11 +223,17 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
 
     Full configuration, not just the slot: two rows differing in destination or
     params are separate reports, and merging them would drop one the user asked
-    for. Identity deliberately excludes ``id``, ``name``, skill revision, and the
-    run bookkeeping (``created_at``, ``last_run``, ``next_run``), which differ
-    between two confirmations of the same schedule. The owning organization is
-    part of it: two organizations with the same schedule hold two rows.
+    for. Identity deliberately excludes ``id``, ``name``, skill revision, who
+    created it, and the run bookkeeping (``created_at``, ``last_run``,
+    ``next_run``), which differ between two confirmations of the same schedule.
+    The owning organization is part of it: two organizations with the same
+    schedule hold two rows.
     """
+    params = {
+        key: value
+        for key, value in (entry.get("params") or {}).items()
+        if key != LOOP_CREATED_BY_PARAM
+    }
     return (
         _owner_of(entry),
         entry.get("kind"),
@@ -238,7 +244,7 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
         entry.get("window_hours"),
         entry.get("skill_name") or "",
         tuple(sorted((entry.get("skill_inputs") or {}).items())),
-        tuple(sorted((entry.get("params") or {}).items())),
+        tuple(sorted(params.items())),
     )
 
 
@@ -254,18 +260,22 @@ def _owner_of(entry: Mapping[str, Any]) -> str:
     return organization_id()
 
 
-def _owned_by_bound_organization(task: ScheduledTask) -> ScheduledTask:
-    """Stamp the bound organization on a task created inside an org-scoped turn.
+def _owned_by_acting_scope(task: ScheduledTask) -> ScheduledTask:
+    """Stamp the organization and member of the turn that created ``task``.
 
-    The store is process-wide; the stamp is what lets a reader show one
-    organization only its own loops. A task that already names its owner keeps it.
+    The store is process-wide; the organization stamp is what lets a reader show
+    one organization only its own loops. A CLI child of a turn acts in the scope
+    its parent handed it. A task that already names its owner or creator keeps it.
     """
-    if task.organization:
+    scope = acting_scope()
+    if scope is None:
         return task
-    scope = current_scope()
-    if scope is None or scope.principal.kind != PrincipalKind.ORG:
-        return task
-    return task.model_copy(update={"organization": scope.principal.id})
+    update: dict[str, Any] = {}
+    if not task.organization:
+        update["organization"] = scope.principal.id
+    if not task.params.get(LOOP_CREATED_BY_PARAM):
+        update["params"] = {**task.params, LOOP_CREATED_BY_PARAM: scope.actor.id}
+    return task.model_copy(update=update) if update else task
 
 
 def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
@@ -276,7 +286,7 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
     ``daily_summary`` entries, none of which could deliver.
     """
     path = store_path or default_task_store_path()
-    task = _owned_by_bound_organization(task)
+    task = _owned_by_acting_scope(task)
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_for_write(path)

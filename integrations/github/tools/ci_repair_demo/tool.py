@@ -192,9 +192,14 @@ def finish_ci_repair_demo(
     fix_commit: str = "",
     passing_run_id: int = 0,
     github_token: str | None = None,
+    analysis: str = "",
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Save evidence, remove the demo schedule, and leave the repository in place."""
+    """Save evidence, remove the demo schedule, and leave the repository in place.
+
+    ``analysis`` (links and root cause, from ``run_ci_repair_demo``) is not in the
+    model's schema; it is appended to the evidence file.
+    """
     del github_token
     try:
         full_name = "/".join(split_repo(repo))
@@ -216,6 +221,7 @@ def finish_ci_repair_demo(
         failed_run_id=failed_run_id,
         fix_commit=fix_commit,
         passing_run_id=passing_run_id,
+        analysis=analysis,
     )
     try:
         remove_task(loop_id.strip())

@@ -234,6 +234,10 @@ class AgentSession:
         ``cancel_requested`` stops the turn (same host Event as chat ``/stop``)
         when a scheduled task is disabled or removed mid-tick.
         """
+        from infrastructure.observability.trace.submitted_messages import note_submitted_message
+
+        # A scheduled run keeps the exact message its turn was given.
+        note_submitted_message(message)
         return cls.start(
             config or SCHEDULED_RUN_CONFIG,
             output=output,

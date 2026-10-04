@@ -36,6 +36,7 @@ from infrastructure.analytics.repl_context import (
     get_cli_turn_kind,
     get_prompt_turn_id,
 )
+from infrastructure.analytics.scheduled_task_attribution import current_scheduled_task_id
 
 ReactPhase = Literal["action", "gather"]
 ReactStopReason = Literal["completed", "iteration_cap", "error", "cancelled", "no_tools_needed"]
@@ -144,6 +145,7 @@ def emit_react_turn_completed(
         loop_stop_reason=loop_stop_reason,
         error_type=type(raised).__name__ if raised is not None else "",
         error_message=str(raised) if raised is not None else "",
+        scheduled_task_id=current_scheduled_task_id(),
     )
 
 

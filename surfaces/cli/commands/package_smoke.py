@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import sys
 from typing import TYPE_CHECKING
 
 import click
+
+from config.constants import SSL_CERT_DIR_ENV
 
 if TYPE_CHECKING:
     from core.tool import RegisteredTool
@@ -63,6 +66,23 @@ def _load_required_tools() -> tuple[dict[str, RegisteredTool], int]:
     return tools_by_name, len(index)
 
 
+def _ca_certificates_found() -> bool:
+    """Whether the artifact's default TLS context trusts a CA it found on its own.
+
+    After boot every frozen build has loaded one: the system CA file, Windows'
+    store, or certifi's bundle. A CA directory in ``SSL_CERT_DIR`` is the
+    user's own choice, which OpenSSL reads only while verifying, so it is
+    taken as configured rather than inspected; this smoke checks the
+    artifact, not the user's CA setup. Without a CA, every ``urllib`` HTTPS
+    call fails verification.
+    """
+    import ssl
+
+    if os.environ.get(SSL_CERT_DIR_ENV):
+        return True
+    return bool(ssl.create_default_context().cert_store_stats().get("x509_ca"))
+
+
 @click.command(name="_package-smoke", hidden=True)
 def package_smoke_command() -> None:
     """Fail unless essential dynamically bundled code and data are available."""
@@ -103,6 +123,9 @@ def package_smoke_command() -> None:
         if name not in tool_map or not tool_map[name].skill_guidance
     )
     failures = {
+        "missing_ca_certificates": ["default TLS context"]
+        if frozen and not _ca_certificates_found()
+        else [],
         "missing_tools": missing_tools,
         "missing_action_skills": missing_action_skills,
         "missing_action_skill_data": missing_action_skill_data,

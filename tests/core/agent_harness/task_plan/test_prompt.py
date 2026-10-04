@@ -8,6 +8,7 @@ from core.agent_harness.prompts import (
     build_action_system_prompt_envelope,
 )
 from core.agent_harness.task_plan.plan import parse_task_plan
+from core.agent_harness.turns.structured_history import history_messages
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
 
@@ -130,8 +131,10 @@ def test_ask_user_answers_preserve_original_repo_and_all_requested_metrics() -> 
     )
 
     rendered = build_action_system_prompt_envelope(snapshot).render()
+    history = history_messages(snapshot.conversation_messages, snapshot.turn_evidence)
 
-    assert original in rendered
+    # The original request reaches the model as an earlier user message.
+    assert [message.content for message in history] == [original]
     assert "preserve the original target repository" in rendered
     assert "every requested output or metric" in rendered
     assert "Q&A answers refine that request; they never replace it" in rendered

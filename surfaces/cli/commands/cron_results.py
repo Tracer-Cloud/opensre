@@ -1,10 +1,10 @@
 """CLI rendering of a retained scheduler attempt."""
 
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.text import Text
 
 from infrastructure.scheduling.scheduler.types import TaskRun
+from infrastructure.terminal.markdown import ReplyMarkdown
 
 
 def print_run_result(console: Console, run: TaskRun) -> None:
@@ -17,7 +17,9 @@ def print_run_result(console: Console, run: TaskRun) -> None:
     )
     console.print(Text(f"Delivery: {delivery}"))
     if run.report is not None:
-        console.print(Markdown(run.report) if run.report else Text("Quiet run; no report body."))
+        console.print(
+            ReplyMarkdown(run.report) if run.report else Text("Quiet run; no report body.")
+        )
     else:
         console.print(Text("Report not retained."))
     if run.error:

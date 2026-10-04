@@ -35,6 +35,7 @@ EXPORTS: dict[str, str] = {
     "SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "CONNECTING_SLACK_SKILL_NAME": "skills",
+    "ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME": "skills",
     "SKILLS_API_VERSION": "skills",
     "SKILLS_AUTO_UPDATE_ENV": "skills",
     "SKILLS_DIR_ENV": "skills",
@@ -333,6 +334,11 @@ EXPORTS: dict[str, str] = {
     "MCP_NO_COLOR_ENV": "mcp",
     "MCP_TERMINAL_ENV": "mcp",
     "MCP_TERMINAL_DUMB_VALUE": "mcp",
+    # conversation history
+    "OPENSRE_HISTORY_TOKEN_BUDGET_ENV": "conversation_history",
+    "OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV": "conversation_history",
+    "OPENSRE_LLM_COMPACTION_ENV": "conversation_history",
+    "OPENSRE_STRUCTURED_HISTORY_ENV": "conversation_history",
     # memory
     "OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV": "memory",
     "OPENSRE_MEMORY_DIR_ENV": "memory",
@@ -488,6 +494,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV": "scheduler",
     "OPENSRE_SCHEDULER_BUILD_ENV": "scheduler",
     "SCHEDULER_MISSED_FIRE_GRACE_SECONDS": "scheduler",
+    "SCHEDULED_TASK_TRACE_KEY": "scheduler",
     # secrets
     "CREDENTIAL_FALLBACK_FILENAME": "secrets",
     "OPENSRE_DISABLE_KEYRING_ENV": "secrets",
@@ -559,6 +566,11 @@ EXPORTS: dict[str, str] = {
     "CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_STORE_PATH_ENV": "tenancy",
+    # tls
+    "SSL_CERT_DIR_ENV": "tls",
+    "SSL_CERT_FILE_ENV": "tls",
+    "TURN_ACTOR_ID_ENV": "tenancy",
+    "TURN_ORGANIZATION_ID_ENV": "tenancy",
     # tooling
     "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",

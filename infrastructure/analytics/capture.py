@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Final, cast
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from infrastructure.analytics.event_properties import (
     _bounded_redacted_text,
@@ -30,6 +30,11 @@ _ASK_USER_OPTION_MAX_CHARS: Final[int] = 300
 # Category-like tool facts: an exception type, an error kind, a source id.
 _TOOL_FACT_MAX_CHARS: Final[int] = 80
 _TOOL_SETUP_COMMAND_MAX_CHARS: Final[int] = 200
+# A loop report and its prompt: even escaped as non-ASCII JSON they stay well
+# under the 256 KiB event payload limit.
+_LOOP_REPORT_MAX_CHARS: Final[int] = 20_000
+_LOOP_PROMPT_MAX_CHARS: Final[int] = 4_000
+_LOOP_ID_MAX_CHARS: Final[int] = 200
 
 EVAL_AND_TERMINAL_KPI_QUERIES: Final[dict[str, str]] = {
     "terminal_action_execution_success_rate": """
@@ -330,13 +335,15 @@ def capture_react_turn_completed(
     loop_stop_reason: str = "",
     error_type: str = "",
     error_message: str = "",
+    scheduled_task_id: str = "",
 ) -> None:
     """Record one finished ReAct run.
 
     ``stop_reason`` is the collapsed dashboard value; ``loop_stop_reason`` is the
     loop's own reason, which tells ``goal_unverified`` and ``stagnation_limit``
     apart from a real ``iteration_cap``. A run that raised also carries its
-    exception type and a redacted, capped ``error_message``.
+    exception type and a redacted, capped ``error_message``. A run inside a
+    scheduled tick names the task as ``scheduled_task_id``.
     """
     properties: Properties = {
         "phase": phase,
@@ -359,6 +366,8 @@ def capture_react_turn_completed(
         properties["error_type"] = error_type
     if recorded_error := bounded_error_message(error_message):
         properties["error_message"] = recorded_error
+    if scheduled_task_id:
+        properties["scheduled_task_id"] = scheduled_task_id
     _capture(Event.REACT_TURN_COMPLETED, properties)
 
 
@@ -649,8 +658,53 @@ def capture_skills_release_activated(
     _capture(Event.SKILLS_RELEASE_ACTIVATED, properties)
 
 
+def capture_scheduled_task_reported(
+    *,
+    task_id: str,
+    loop_id: str,
+    message_id: str,
+    delivered_at: str,
+    message: str,
+    prompt: str,
+    organization_id: str = "",
+) -> None:
+    """Record a loop report delivered to the OpenSRE inbox, with the prompt that produced it.
+
+    The event ID comes from the inbox delivery and the event keeps its delivery
+    time, so resending a report replaces the stored row instead of adding one.
+    A task's own organization overrides the process's.
+    """
+    properties: Properties = {
+        "task_id": task_id,
+        "loop_id": _bounded_redacted_text(loop_id, max_chars=_LOOP_ID_MAX_CHARS),
+        "message_id": message_id,
+        "delivered_at": delivered_at,
+        "message": _bounded_redacted_text(message, max_chars=_LOOP_REPORT_MAX_CHARS),
+    }
+    if prompt.strip():
+        properties["prompt"] = _bounded_redacted_text(prompt, max_chars=_LOOP_PROMPT_MAX_CHARS)
+    if organization_id.strip():
+        properties["organization_id"] = organization_id.strip()
+    event_id = uuid5(
+        NAMESPACE_URL, f"opensre:{Event.SCHEDULED_TASK_REPORTED}:{task_id}:{message_id}"
+    )
+    try:
+        get_analytics().capture(
+            Event.SCHEDULED_TASK_REPORTED,
+            properties,
+            event_id=str(event_id),
+            occurred_at=delivered_at,
+        )
+    except Exception as exc:
+        capture_exception(exc)
+
+
 def capture_skill_value_delivered(
-    *, skill_name: str, insight: str, prompt_turn_id: str | None = None
+    *,
+    skill_name: str,
+    insight: str,
+    prompt_turn_id: str | None = None,
+    insight_kind: str = "",
 ) -> None:
     """Record the business insight that successfully reached a skill's output sink."""
     properties: Properties = {
@@ -659,7 +713,87 @@ def capture_skill_value_delivered(
     }
     if prompt_turn_id:
         properties["prompt_turn_id"] = prompt_turn_id
+    if insight_kind:
+        properties["insight_kind"] = insight_kind[:_TOOL_FACT_MAX_CHARS]
     _capture(Event.SKILL_VALUE_DELIVERED, properties)
+
+
+def capture_workspace_scanned(
+    *,
+    repositories: int,
+    repos_with_workflows: int,
+    repos_on_github: int,
+    commits: int,
+    own_commits: int,
+    uncommitted: int,
+    days: int,
+    stop_reason: str | None,
+    truncated: bool,
+    skipped_protected: int,
+    prefetched: bool,
+    via: str,
+) -> None:
+    """Record what one local workspace scan found, as counts: no repository names or paths.
+
+    ``via`` names what asked for the scan: the scan tool, or the local insights analysis.
+    """
+    _capture(
+        Event.WORKSPACE_SCANNED,
+        {
+            "repositories": repositories,
+            "repos_with_workflows": repos_with_workflows,
+            "repos_on_github": repos_on_github,
+            "commits": commits,
+            "own_commits": own_commits,
+            "uncommitted": uncommitted,
+            "days": days,
+            "stop_reason": stop_reason or "",
+            "truncated": truncated,
+            "skipped_protected": skipped_protected,
+            "prefetched": prefetched,
+            "via": via,
+        },
+    )
+
+
+def capture_local_repositories_analyzed(
+    *,
+    reason: str,
+    github_error: str,
+    outcome: str,
+    repositories: int,
+    commits: int,
+    own_commits: int,
+    ai_coauthored_share: int | None,
+    insight_kinds: Sequence[str],
+    ci_providers: Mapping[str, int],
+    hosts: Mapping[str, int],
+    repos_without_ci: int,
+    days: int,
+    duration_ms: int,
+) -> None:
+    """Record one local repository analysis as counts and kinds: no names, paths or commit text.
+
+    ``ai_coauthored_share`` is the rounded percentage of the user's commits an AI
+    agent co-authored, None when there were too few to tell.
+    """
+    properties: Properties = {
+        "reason": reason[:_TOOL_FACT_MAX_CHARS],
+        "github_error": github_error[:_TOOL_FACT_MAX_CHARS],
+        "outcome": outcome,
+        "repositories": repositories,
+        "commits": commits,
+        "own_commits": own_commits,
+        "insight_kinds": list(insight_kinds),
+        "ci_providers": dict(ci_providers),
+        "hosts": dict(hosts),
+        "repos_without_ci": repos_without_ci,
+        "days": days,
+        "duration_ms": duration_ms,
+    }
+    if ai_coauthored_share is not None:
+        properties["ai_coauthored_share"] = ai_coauthored_share
+    _capture(Event.LOCAL_REPOSITORIES_ANALYZED, properties)
 
 
 def capture_skill_prerequisite_missing(*, skill: str, check: str, reason_code: str) -> None:

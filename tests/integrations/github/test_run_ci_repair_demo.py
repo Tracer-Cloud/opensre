@@ -2,18 +2,30 @@
 
 from __future__ import annotations
 
+import json
+import time
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from core.agent_harness.turns.display_text import is_outcome_report
+from infrastructure.text.data_blob import is_data_blob
+from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
+from integrations.github.tools.ci_repair_loop.storage import RepairStore
 from integrations.github.tools.ci_repair_run import tool as run_tool
+from integrations.github.tools.ci_repair_run.root_cause import (
+    RepairEvidence,
+    read_repair_evidence,
+)
 
 _OWNER = "octocat"
 _REQUESTED_REPO = "opensre-ci-repair-demo"
 _SEEDED_REPO = "opensre-ci-repair-demo-ab12"
 _PR_NUMBER = 7
 _PR_URL = f"https://github.com/{_OWNER}/{_SEEDED_REPO}/pull/{_PR_NUMBER}"
-_TASK_ID = "task-1"
+_TASK_ID = "f50fd5579ff9"
+_SEED_HEAD = "aaa111"
 _FAILED_RUN = 11
 _FIX = "bbb222"
 _PASSING_RUN = 99
@@ -41,7 +53,7 @@ def _seed_ok(
         "repo": _SEEDED_REPO,
         "pr_number": _PR_NUMBER,
         "pr_url": _PR_URL,
-        "head_sha": "aaa111",
+        "head_sha": _SEED_HEAD,
         "failed_run_id": _FAILED_RUN,
     }
 
@@ -74,6 +86,7 @@ def _install(
     seed_result: dict[str, Any] | None = None,
     schedule_result: dict[str, Any] | None = None,
     observe_result: dict[str, Any] | None = None,
+    store: RepairStore | None = None,
 ) -> None:
     def _seed(
         owner: str,
@@ -146,7 +159,14 @@ def _install(
         record.views.append(args)
         return _view(args, repo=repo, github_token=github_token, timeout=timeout)
 
+    def _evidence(task_id: str) -> RepairEvidence:
+        # Without a store the run reads as unrecorded; never the developer's own store.
+        if store is None:
+            return RepairEvidence()
+        return read_repair_evidence(task_id, store=store)
+
     monkeypatch.setattr(run_tool, "seed_ci_repair_demo", _seed)
+    monkeypatch.setattr(run_tool, "read_repair_evidence", _evidence)
     monkeypatch.setattr(run_tool, "schedule_ci_repair_loop", _schedule)
     monkeypatch.setattr(run_tool, "get_ci_repair_loop", _get)
     monkeypatch.setattr(run_tool, "finish_ci_repair_demo", _finish)
@@ -195,6 +215,113 @@ def test_run_schedules_the_seeded_pr_once_then_waits_and_finishes(
     assert result["outcome"] == "success"
     assert result["evidence"] == "/tmp/ci-repair-demo.md"
     assert result["response_text"]
+
+
+def _repair_store(tmp_path: Path) -> RepairStore:
+    """The finished run of ``_TASK_ID`` with the one attempt that pushed ``_FIX``."""
+    store = RepairStore(tmp_path)
+    now = time.time()
+    store.save(
+        RepairRun(
+            id=_TASK_ID,
+            owner=_OWNER,
+            repo=_SEEDED_REPO,
+            actor=_OWNER,
+            actor_id=1,
+            started_at=now,
+            deadline=now + 600,
+            pr_number=_PR_NUMBER,
+            fast_checks=True,
+            initial_sha=_SEED_HEAD,
+            fixed_sha=_FIX,
+            status=RepairStatus.SUCCEEDED,
+            attempts=1,
+        )
+    )
+    store.directory(_TASK_ID).mkdir(parents=True, exist_ok=True)
+    attempt = {
+        "failing_checks": ["test"],
+        "fix_head_sha": _FIX,
+        "changed_files": ["calculator.py"],
+        "summary": "Updated `calculator.py` so `add()` performs addition.",
+        "diff": "--- a/calculator.py\n+++ b/calculator.py\n-    return a - b\n+    return a + b\n",
+        "diff_truncated": False,
+    }
+    store.attempt_path(_TASK_ID, 1).write_text(json.dumps(attempt), encoding="utf-8")
+    return store
+
+
+def test_a_repaired_demo_reports_full_github_urls_and_its_root_cause(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange: this seed committed the failing change, and the store holds the repair
+    record = _Record()
+    seeded = {**_seed_ok(_OWNER, _REQUESTED_REPO), "reused": False}
+    _install(monkeypatch, record, seed_result=seeded, store=_repair_store(tmp_path))
+
+    # Act
+    result = run_tool.run_ci_repair_demo(_OWNER, _REQUESTED_REPO)
+
+    # Assert: every URL is written out, since a terminal shows link text without its URL
+    base = f"https://github.com/{_OWNER}/{_SEEDED_REPO}"
+    assert result["links"] == {
+        "pull_request": _PR_URL,
+        "failing_commit": f"{base}/commit/{_SEED_HEAD}",
+        "failed_run": f"{base}/actions/runs/{_FAILED_RUN}",
+        "fix_commit": f"{base}/commit/{_FIX}",
+        "passing_run": f"{base}/actions/runs/{_PASSING_RUN}",
+    }
+    text = result["response_text"]
+    for url in result["links"].values():
+        assert f": {url}\n" in text
+    analysis = result["root_cause_analysis"]
+    assert analysis["failure"] == f"Check `test` failed on commit {_SEED_HEAD} of PR #{_PR_NUMBER}."
+    assert analysis["cause"].startswith(f"Commit {_SEED_HEAD} changed `add()` in `calculator.py`")
+    assert analysis["fix"] == f"Commit {_FIX} changed `calculator.py`."
+    assert "**Root cause analysis**" in text
+    assert "-    return a - b\n+    return a + b" in text
+    # The gateway appends a tool's text to its answer unless it reads as data or
+    # as a second outcome report; either would drop the links and the analysis.
+    assert not is_data_blob(text)
+    assert not is_outcome_report(text)
+    assert record.finishes[0]["analysis"] in text
+
+
+def test_a_green_head_pushed_after_the_repair_is_not_reported_as_its_fix(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange: the run verified _FIX, then someone else pushed a green head
+    record = _Record()
+    seeded = {**_seed_ok(_OWNER, _REQUESTED_REPO), "reused": False}
+    _install(monkeypatch, record, seed_result=seeded, store=_repair_store(tmp_path))
+    other_head = "ccc333"
+
+    def _pull(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        return {
+            "headRefOid": other_head,
+            "statusCheckRollup": [
+                {
+                    "conclusion": "SUCCESS",
+                    "detailsUrl": (
+                        f"https://github.com/{_OWNER}/{_SEEDED_REPO}/actions/runs/{_PASSING_RUN}"
+                    ),
+                }
+            ],
+        }
+
+    monkeypatch.setattr(run_tool, "run_gh_json", _pull)
+
+    # Act
+    result = run_tool.run_ci_repair_demo(_OWNER, _REQUESTED_REPO)
+
+    # Assert: neither the other head nor its passing run is linked or credited
+    assert set(result["links"]) == {"pull_request", "failing_commit", "failed_run"}
+    analysis = result["root_cause_analysis"]
+    assert analysis["fix"] == (
+        f"Not attributed: the repair verified commit {_FIX}, "
+        f"but the pull request head is now {other_head}."
+    )
+    assert "verification" not in analysis
 
 
 def test_seed_failure_does_not_schedule_or_finish(monkeypatch: pytest.MonkeyPatch) -> None:

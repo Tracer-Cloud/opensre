@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.prompts import (
     build_action_system_prompt,
@@ -25,6 +26,12 @@ from core.agent_harness.prompts.skills import (
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from tests.utils.skill_cards import skill_card
+
+
+@pytest.fixture(autouse=True)
+def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
 
 
 def _skill_instruction_text(name: str) -> str:

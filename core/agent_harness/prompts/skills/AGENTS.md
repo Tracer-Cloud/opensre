@@ -490,6 +490,7 @@ Current collection:
 | `scheduling-github-ci-repairs` | workflow (demo B) | `skills/onboarding-github-ci/b-…/` | — |
 | `delegating-github-ci-repairs` | workflow (demo C) | `skills/onboarding-github-ci/c-…/` | — |
 | `connecting-slack` | workflow (demo D) | `skills/onboarding-github-ci/d-…/` | — |
+| `analyzing-local-repositories` | workflow (demo A's no-GitHub fallback) | `skills/` | — |
 | `operating-github-cli` | tool usage | `integrations/github/tools/github_cli/` | `github_cli` |
 | `operating-github-ci-fixer` | tool usage | `integrations/github/tools/ci_fix/` | `fix_github_pr_ci` |
 | `operating-github-security-fixer` | tool usage | `integrations/github/tools/security_fix/` | `fix_github_security_alert` |

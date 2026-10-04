@@ -327,6 +327,18 @@ if TYPE_CHECKING:
     from config.constants.coding_agent import (
         CODING_AGENT_SANDBOX_HOST as CODING_AGENT_SANDBOX_HOST,
     )
+    from config.constants.conversation_history import (
+        OPENSRE_HISTORY_TOKEN_BUDGET_ENV as OPENSRE_HISTORY_TOKEN_BUDGET_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV as OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_LLM_COMPACTION_ENV as OPENSRE_LLM_COMPACTION_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_STRUCTURED_HISTORY_ENV as OPENSRE_STRUCTURED_HISTORY_ENV,
+    )
     from config.constants.coralogix import (
         CORALOGIX_API_KEY_ENV as CORALOGIX_API_KEY_ENV,
     )
@@ -1167,6 +1179,9 @@ if TYPE_CHECKING:
         OPENSRE_SCHEDULER_BUILD_ENV as OPENSRE_SCHEDULER_BUILD_ENV,
     )
     from config.constants.scheduler import (
+        SCHEDULED_TASK_TRACE_KEY as SCHEDULED_TASK_TRACE_KEY,
+    )
+    from config.constants.scheduler import (
         SCHEDULER_MISSED_FIRE_GRACE_SECONDS as SCHEDULER_MISSED_FIRE_GRACE_SECONDS,
     )
     from config.constants.scheduler import (
@@ -1400,6 +1415,12 @@ if TYPE_CHECKING:
     from config.constants.tenancy import (
         INTEGRATIONS_STORE_PATH_ENV as INTEGRATIONS_STORE_PATH_ENV,
     )
+    from config.constants.tenancy import (
+        TURN_ACTOR_ID_ENV as TURN_ACTOR_ID_ENV,
+    )
+    from config.constants.tenancy import (
+        TURN_ORGANIZATION_ID_ENV as TURN_ORGANIZATION_ID_ENV,
+    )
     from config.constants.terminal_host import (
         APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,
     )
@@ -1429,6 +1450,12 @@ if TYPE_CHECKING:
     )
     from config.constants.terminal_host import (
         WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
+    )
+    from config.constants.tls import (
+        SSL_CERT_DIR_ENV as SSL_CERT_DIR_ENV,
+    )
+    from config.constants.tls import (
+        SSL_CERT_FILE_ENV as SSL_CERT_FILE_ENV,
     )
     from config.constants.tooling import (
         CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS as CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS,

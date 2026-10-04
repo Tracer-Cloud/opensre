@@ -98,8 +98,12 @@ class MessageMapper:
         if isinstance(message, AssistantRuntimeMessage):
             if message.provider_payload is not None:
                 return [dict(message.provider_payload)]
+            content = message.content
+            text = content if isinstance(content, str) else json.dumps(content, default=str)
             return [
-                self._llm.build_assistant_message(message.content or "", list(message.tool_calls))
+                self._adapter.to_replayed_assistant_provider_message(
+                    text if content is not None else "", list(message.tool_calls)
+                )
             ]
         if isinstance(message, ToolResultRuntimeMessage):
             if message.provider_payloads:

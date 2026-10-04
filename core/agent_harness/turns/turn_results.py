@@ -8,8 +8,9 @@ session, or analytics coupling. The interactive shell's accounting layer
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 # Distinguishes the two zero-count outcomes that need different analytics:
 # a normal tool-calling run that completed without planning actions ("completed"),
@@ -44,6 +45,9 @@ class ToolCallingTurnResult:
     tool_evidence: str = ""
     #: Qualifying successes; None for hosts that only supply aggregate counts.
     evidence_success_count: int | None = None
+    #: The turn's tool-call batches and bounded results, recorded with the
+    #: transcript so later turns replay them (``turns.structured_history``).
+    history_items: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)

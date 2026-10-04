@@ -8,7 +8,7 @@ getting_started: Analyze & improve a repo (recommended)
 demo_order: 1
 metadata:
   owner: Vincent
-  last_changed_by: Jan
+  last_changed_by: Vincent
   last_changed_at: 2026-10-04
   usecases:
   - For repository maintainers analyzing CI reliability over the previous 30 days.
@@ -18,7 +18,7 @@ metadata:
   - GitHub authentication with read access to the repository's Actions history.
   - The analyze_github_ci_reliability and scan_local_git_workspace tools.
   - For local discovery, a local Git checkout; the example repository does not require one.
-  version: '1.23'
+  version: '1.24'
 ---
 
 # CI/CD analytics
@@ -61,13 +61,17 @@ Call `ask_user_choice` with the title `Which repository should I analyze?`.
 Offer up to 5 scanned repositories that have GitHub Actions workflows
 as `<owner/repo>`, then `Tracer-Cloud/opensre` as an example option.
 Offer the picker even when only one repository was found; a single scan
-result is not a selection.
+result is not a selection. When no scanned repository has GitHub Actions
+workflows, offer up to 3 of the most active ones as `<name> (local insights)`
+before the example option.
 
 End the turn after calling `ask_user_choice`; the answer arrives as the
 next user message.
 
 Complete when the user's answer to `ask_user_choice` has arrived as a
-message. Resume at step 3 with that repository.
+message. Resume at step 3 with that repository. A `(local insights)` answer is
+not a GitHub repository: call `skill_view(name="analyzing-local-repositories")`
+and follow that skill for it instead of steps 3 to 5.
 
 ### 3. Collect and compute the metrics
 
@@ -81,6 +85,8 @@ is yours to write. Do not paginate the REST API or run `execute_python_code`
 yourself.
 
 If the tool reports a missing token, tell the user to run `opensre integrations setup github` and carry that blocker into the table as a coverage gap.
+
+If GitHub could not be read for any other reason, so the analysis returned no `key_results`, do not show an empty table: say its blocker in one line, then call `skill_view(name="analyzing-local-repositories")` and follow that skill for the same repository instead of steps 4 and 5.
 
 Metric definitions live in [Metrics](references/metrics.md)
 (`skill_view(name="analyzing-github-ci-performance", reference="metrics")`); read it only

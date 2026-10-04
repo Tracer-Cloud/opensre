@@ -13,6 +13,7 @@ from typing import Any
 
 from core.agent_harness import SessionCore, SessionManager
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers, question_key
+from core.agent_harness.spi.prompt_chrome import is_literal_command
 from core.agent_harness.spi.session_state import PendingUserChoice
 
 APPROVE_OPTION = "Approve"
@@ -107,6 +108,18 @@ def _remember_hosted_conversation(session_id: str) -> None:
 def prepare_unattended_session(session: SessionCore) -> None:
     """A question ends the turn as a pending choice instead of waiting for an answer."""
     session.available_capabilities["ask_user_choice"] = ("deferred",)
+
+
+def prompt_with_facts(prompt: str, facts: Mapping[str, str]) -> str:
+    """A remote prompt plus the facts its caller resolved up front, so nothing is left to ask.
+
+    A prompt the turn runs verbatim as a command is left as sent: appended facts
+    would reach the command as extra arguments.
+    """
+    if not facts or is_literal_command(prompt):
+        return prompt
+    lines = "\n".join(f"- {key}: {value}" for key, value in sorted(facts.items()))
+    return f"{prompt}\n\nKnown context:\n{lines}"
 
 
 def invocation_key(
@@ -272,4 +285,5 @@ __all__ = [
     "choice_view",
     "invocation_key",
     "prepare_unattended_session",
+    "prompt_with_facts",
 ]

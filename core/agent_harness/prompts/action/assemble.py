@@ -31,6 +31,7 @@ from core.agent_harness.task_plan.prompt import (
     ask_user_answered_block,
     current_task_plan_block,
 )
+from core.state.history_settings import structured_history_enabled
 from infrastructure.harness_providers import action_prompt_vendor_fragments
 
 if TYPE_CHECKING:
@@ -245,25 +246,28 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.agent_harness.prompts.action.turn_interaction",
         )
     )
-    blocks.append(
-        PromptBlock(
-            id=PromptBlockId.RECENT_CONVERSATION,
-            kind=PromptBlockKind.CONVERSATION,
-            tier=PromptTier.EPHEMERAL,
-            content=recent_conversation_block(turn_snapshot),
-            provenance="core.agent_harness.turns.turn_snapshot",
+    # With structured history the earlier turns precede the user message as
+    # typed messages (``turns.structured_history``); the text block and the facts
+    # scraped from it remain only as the fallback when that is switched off.
+    if not structured_history_enabled():
+        blocks.append(
+            PromptBlock(
+                id=PromptBlockId.RECENT_CONVERSATION,
+                kind=PromptBlockKind.CONVERSATION,
+                tier=PromptTier.EPHEMERAL,
+                content=recent_conversation_block(turn_snapshot),
+                provenance="core.agent_harness.turns.turn_snapshot",
+            )
         )
-    )
-    action_facts = prior_action_facts_block(turn_snapshot)
-    blocks.extend(
-        _optional_block(
-            id=PromptBlockId.PRIOR_ACTION_FACTS,
-            kind=PromptBlockKind.CONTEXT,
-            tier=PromptTier.EPHEMERAL,
-            content=action_facts,
-            provenance="core.agent_harness.turns.turn_snapshot",
+        blocks.extend(
+            _optional_block(
+                id=PromptBlockId.PRIOR_ACTION_FACTS,
+                kind=PromptBlockKind.CONTEXT,
+                tier=PromptTier.EPHEMERAL,
+                content=prior_action_facts_block(turn_snapshot),
+                provenance="core.agent_harness.turns.turn_snapshot",
+            )
         )
-    )
     recovery = interrupted_turn_recovery_block(turn_snapshot)
     if recovery:
         # Ephemeral: the note rides exactly one turn (popped from the session

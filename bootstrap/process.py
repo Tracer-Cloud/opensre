@@ -28,6 +28,7 @@ from bootstrap.adapters import (
     install_harness_adapters,
     install_scheduled_delivery_adapters,
 )
+from bootstrap.frozen_ca_bundle import use_bundled_ca_certificates
 from config.local_env import bootstrap_opensre_env_once
 
 _LOG = logging.getLogger(__name__)
@@ -140,6 +141,8 @@ EMBEDDED_PROFILE: Final = ProcessProfile(
 
 def _run_env(_profile: ProcessProfile, _log: logging.Logger) -> None:
     bootstrap_opensre_env_once(override=False)
+    # After the env files, so a CA bundle configured in one is kept.
+    use_bundled_ca_certificates()
 
 
 def _run_sentry(profile: ProcessProfile, _log: logging.Logger) -> None:

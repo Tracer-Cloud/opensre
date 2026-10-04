@@ -34,7 +34,7 @@ from core.agent_harness.session.persistence.contracts import SessionStore
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.task_plan.plan import TaskPlan
-from core.state import MutableAgentState
+from core.state import MutableAgentState, TurnEvidence
 from infrastructure.harness_providers import integration_sources_stamp
 from infrastructure.scheduling.task_registry import TaskRegistry
 
@@ -184,6 +184,13 @@ class SessionCore:
     again.
     """
 
+    skill_value_notes: dict[str, tuple[str, str]] = field(default_factory=dict)
+    """``label -> (kind, summary)`` a tool left for the skill-value recorder.
+
+    A report bullet names its insight by label; the recorder records the summary
+    stored under that label, which names no repository, instead of the reply text.
+    """
+
     task_plan: TaskPlan | None = None
     """Live execution checklist for the current workload, rendered above the
     prompt and persisted so it survives transcript compaction."""
@@ -221,6 +228,15 @@ class SessionCore:
     @cli_agent_messages.setter
     def cli_agent_messages(self, value: list[tuple[str, str]]) -> None:
         self.agent.messages = value
+
+    @property
+    def turn_evidence(self) -> list[TurnEvidence]:
+        """Structured records of recent turns (tool calls and bounded results)."""
+        return self.agent.turn_evidence
+
+    @turn_evidence.setter
+    def turn_evidence(self, value: list[TurnEvidence]) -> None:
+        self.agent.turn_evidence = value
 
     @property
     def last_command_observation(self) -> str | None:
@@ -438,6 +454,7 @@ class SessionCore:
         self.questions_already_answered.clear()
         self.skill_question_keys.clear()
         self.skills_already_prompted.clear()
+        self.skill_value_notes.clear()
         if rotate_identity:
             # Rotate session identity so the new post-reset session gets its own ID and file.
             self.session_id = str(uuid.uuid4())

@@ -351,6 +351,23 @@ construct a persistent ``core.agent.Agent`` — gateway chat reuses one
 Turn assembly starts in ``turns/orchestrator.py`` with
 ``TurnSnapshot.from_session``.
 
+**Conversation history is replayed, not quoted.** Earlier turns go to the model
+as typed messages ahead of the new user message (``turns/structured_history.py``):
+each user message, every assistant tool-call batch with its results (bounded at
+record time, head and tail kept), and the reply. ``record_conversation_turn``
+stores a turn's ``TurnEvidence`` beside its ``(user, assistant)`` text pair and
+appends it to the session log as a ``turn_evidence`` record; ``restore_context``
+brings it back. Evidence is matched to transcript pairs by reply text, so a
+transcript rewritten elsewhere (thread seeding, compaction) replays as text
+instead of the wrong turn. Compaction (``turns/transcript_compaction.py``) is
+token-based: past ``OPENSRE_HISTORY_TOKEN_BUDGET`` a model writes a handoff
+summary of the older turns, the newest stay verbatim with their evidence, and
+the compaction record keeps both so resume restarts from the same state.
+``OPENSRE_STRUCTURED_HISTORY=0`` restores the text block (``RECENT
+CONVERSATION``) as a kill switch. Code that scans a run's ``result.messages``
+for this turn's output must skip the replayed prefix (``history_count``), or an
+earlier turn's message is mistaken for this one's.
+
 **Do NOT** reintroduce per-surface `Agent` subclasses that override
 `build_llm` / `build_system_prompt` / `build_tools` / `resolved_integrations`
 hooks. Those hooks were removed because they let each surface hide per-turn

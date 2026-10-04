@@ -31,6 +31,7 @@ _CORE_FIELDS = (
     "questions_already_answered",
     "skill_question_keys",
     "skills_already_prompted",
+    "skill_value_notes",
     "task_plan",
     "task_plan_work",
     "task_plan_work_step_texts",

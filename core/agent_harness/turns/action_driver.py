@@ -79,9 +79,15 @@ from core.agent_harness.turns.goal_review import (
     last_goal_rejection_reason,
     tap_executed_tool_names,
 )
+from core.agent_harness.turns.literal_command import (
+    bang_shell_command,
+    is_literal_command,
+    literal_slash_text,
+)
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.skill_value import record_skill_value
+from core.agent_harness.turns.structured_history import history_messages, tool_items_from_run
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
@@ -93,6 +99,7 @@ from core.agent_harness.turns.work_outcome import (
 )
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.state.history_settings import structured_history_enabled
 from core.tool import SideEffectLevel
 from core.tool.execution import (
     ToolExecutionHooks,
@@ -141,6 +148,9 @@ class ActionTurnPlan:
     # Active skill body and the other ephemeral context sent with the user message.
     prompt_skill: str = ""
     prompt_context: str = ""
+    # Earlier turns replayed as typed messages ahead of ``user_message``
+    # (``turns.structured_history``); empty for explicit ``!``/``/`` commands.
+    history: tuple[Any, ...] = ()
     value_insights: set[str] = field(default_factory=set)
     # The reviewed goal of an LLM-selected turn; it remembers why it refused stop.
     goal: Goal | None = None
@@ -387,15 +397,20 @@ def _latest_unshown_outcome_report(
     result: Any,
     final_text: str,
     deferred_replies: Sequence[str],
+    *,
+    history_count: int = 0,
 ) -> str:
     """The model's outcome report, when it is not already the closing reply.
 
     A report written beside a tool call is not ``final_text``. The shell used
     to print that prose as a working note and then append every tool snapshot.
+    Only this turn's messages count: the first ``history_count`` are earlier
+    turns replayed as context, whose reports were already delivered.
     """
     shown = {final_text.strip(), *(text.strip() for text in deferred_replies if text.strip())}
     latest = ""
-    for message in getattr(result, "messages", ()) or ():
+    messages = list(getattr(result, "messages", ()) or ())
+    for message in messages[history_count:]:
         role, content = _message_text(message)
         if role != "assistant" or not content or content in shown:
             continue
@@ -689,27 +704,13 @@ def _stage_action_llm_failure(
     route, so the turn must be reported as a failed LLM call — not a terminal
     turn tagged ``no_conversational_agent``.
     """
-    if _bang_shell_command(message) is not None or message.strip().startswith("/"):
+    if is_literal_command(message):
         return
     from core.agent_harness.turns.orchestrator import stage_turn_error, stage_turn_llm_failure
     from core.llm_invoke_errors import ACTION_AGENT_ERROR
 
     stage_turn_error(session, ACTION_AGENT_ERROR, error_text)
     stage_turn_llm_failure(session, client=client)
-
-
-def _bang_shell_command(message: str) -> str | None:
-    # Explicit `!cmd` shell escape: a deterministic bypass for input the user
-    # typed verbatim as a shell command. This is NOT natural-language intent
-    # inference — do NOT copy this pattern for bare aliases, regex/keyword
-    # matches, or "obvious" natural-language intents. Those must go through the
-    # action-agent LLM selecting first-class AgentTools. Engineers have been
-    # fired before for reintroducing regex/keyword intent shortcuts here.
-    stripped = message.strip()
-    if not stripped.startswith("!") or len(stripped) <= 1:
-        return None
-    cmd = " ".join(stripped[1:].split())
-    return f"!{cmd}" if cmd else None
 
 
 def _slash_tokens(stripped: str) -> tuple[str, list[str]]:
@@ -748,11 +749,8 @@ def _literal_slash_tool_call(message: str, agent_tools: list[Any]) -> ToolCall |
     Returns ``None`` (so the normal LLM path runs) when the input is not literal
     slash text or when ``slash_invoke`` is not an available tool this turn.
     """
-    from infrastructure.harness_providers import strip_message_context_prefix
-
-    _, remainder = strip_message_context_prefix(message)
-    stripped = remainder.strip()
-    if not stripped.startswith("/"):
+    stripped = literal_slash_text(message)
+    if stripped is None:
         return None
     if not any(getattr(tool, "name", None) == "slash_invoke" for tool in agent_tools):
         return None
@@ -788,7 +786,7 @@ def _build_action_agent(
     factory), system prompt, and user-message envelope. The caller only has to
     invoke ``.run()`` and shape the result.
     """
-    bang_command = _bang_shell_command(message)
+    bang_command = bang_shell_command(message)
     slash_call = (
         None if bang_command is not None else _literal_slash_tool_call(message, agent_tools)
     )
@@ -802,6 +800,7 @@ def _build_action_agent(
     value_insights: set[str] = set()
     prompt_skill = ""
     prompt_context = ""
+    history: tuple[Any, ...] = ()
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -825,13 +824,19 @@ def _build_action_agent(
         user_message = message
     else:
         llm = llm_factory()
-        envelope = build_action_system_prompt_envelope(
-            # No turn plan means no surface is known here; setup facts are
-            # omitted rather than guessed (see _setup_state_for_surface).
-            turn_snapshot or TurnSnapshot.from_session(message, session, surface=None)
-        )
-        # Cached half stays byte-identical across turns; ephemeral (conversation,
-        # prior-action-facts) rides with the user message so Anthropic's system
+        # No turn plan means no surface is known here; setup facts are omitted
+        # rather than guessed (see _setup_state_for_surface).
+        snapshot = turn_snapshot or TurnSnapshot.from_session(message, session, surface=None)
+        envelope = build_action_system_prompt_envelope(snapshot)
+        # Earlier turns go ahead of the new message as typed messages, oldest
+        # first, so their tool calls and results reach the model verbatim and the
+        # prefix (system, tools, history) stays the same from turn to turn.
+        if structured_history_enabled():
+            history = tuple(
+                history_messages(snapshot.conversation_messages, snapshot.turn_evidence)
+            )
+        # Cached half stays byte-identical across turns; ephemeral (plan, turn
+        # facts) rides with the user message so Anthropic's system
         # cache_control breakpoint is not invalidated every turn.
         system = envelope.render_cached()
         prompt_skill, prompt_context = action_prompt_skill_and_context(envelope)
@@ -903,6 +908,7 @@ def _build_action_agent(
     return ActionTurnPlan(
         agent=build_agent(config),
         user_message=user_message,
+        history=history,
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
         deferred_replies=deferred_replies,
@@ -1019,6 +1025,7 @@ def _compose_response(
     counts: _TurnCounts,
     deferred_replies: Sequence[str] = (),
     tools_by_name: Mapping[str, Any] | None = None,
+    history_count: int = 0,
 ) -> tuple[str, list[str], bool]:
     """Build the turn's response text and what to show on screen.
 
@@ -1077,7 +1084,9 @@ def _compose_response(
     # Console display uses final_text + generic results + hints only so users see
     # github_cli / other registry tools without double-printing shell output.
     # response_text still includes history for persistence / non-TTY surfaces.
-    assistant_report = _latest_unshown_outcome_report(result, final_text_chunk, deferred_replies)
+    assistant_report = _latest_unshown_outcome_report(
+        result, final_text_chunk, deferred_replies, history_count=history_count
+    )
     closing_already_has_report = is_outcome_report(final_text_chunk) or any(
         is_outcome_report(text) for text in deferred_replies
     )
@@ -1404,7 +1413,7 @@ def _run_action_turn(
         ):
             result = run_react_agent_with_telemetry(
                 built.agent,
-                [{"role": "user", "content": built.user_message}],
+                [*built.history, {"role": "user", "content": built.user_message}],
                 phase="action",
                 iteration_cap=built.max_iterations,
                 llm=None if isinstance(built.llm, _StaticToolCallLLM) else built.llm,
@@ -1464,8 +1473,17 @@ def _run_action_turn(
 
     counts = _count_turn(result, session, history_start)
     tools_by_name = {getattr(t, "name", ""): t for t in agent_tools}
+    history_count = len(built.history)
     response_text, display_chunks, use_final_text = _compose_response(
-        result, session, counts, built.deferred_replies, tools_by_name
+        result, session, counts, built.deferred_replies, tools_by_name, history_count
+    )
+    # Bounded tool batches recorded with the transcript for later turns.
+    history_items = (
+        tool_items_from_run(
+            list(getattr(result, "messages", ()) or ()), history_count=history_count
+        )
+        if structured_history_enabled()
+        else ()
     )
     cancelled = tool_resources_cancel_requested(tool_resources) or bool(
         getattr(result, "cancelled", False)
@@ -1541,6 +1559,7 @@ def _run_action_turn(
         output_tokens=getattr(result, "output_tokens", None),
         tool_evidence=tool_evidence,
         evidence_success_count=evidence_success_count,
+        history_items=history_items,
     )
 
 
