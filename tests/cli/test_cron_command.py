@@ -1061,6 +1061,7 @@ def test_cron_add_template_fills_the_loop_and_stores_its_name(
     ("extra", "message"),
     [
         (["--kind", "manual_loop", "--template", "pr-ci", "--prompt", "x"], "not both"),
+        (["--kind", "manual_loop", "--template", "pr-ci"], "requires --owner and --repo"),
         (["--kind", "recurring_skill", "--template", "pr-ci"], "--template is only valid"),
         (["--kind", "manual_loop", "--prompt", "x"], "Missing option '--cron'"),
     ],

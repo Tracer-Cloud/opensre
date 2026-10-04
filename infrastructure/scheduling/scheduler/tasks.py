@@ -14,16 +14,12 @@ import logging
 from config.constants.scheduler import SCHEDULED_TASK_TRACE_KEY
 from core.agent_harness import (
     is_legacy_skill_name,
-    load_loop_template,
     normalize_skill_name,
     pin_recurring_skill,
     resolve_scheduled_skill,
 )
 from infrastructure.observability.trace.trace_session import inherit_trace_session
-from infrastructure.scheduling.scheduler.loop_constants import (
-    LOOP_PROMPT_PARAM,
-    LOOP_TEMPLATE_PARAM,
-)
+from infrastructure.scheduling.scheduler.loop_prompt import current_loop_prompt
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.sources import (
@@ -205,17 +201,6 @@ def _build_work_item_checkin(task: ScheduledTask, _runners: SchedulerRunners) ->
     return build_work_item_checkin_message(active_items, project=project, limit=limit)
 
 
-def _template_prompt(template: str) -> str:
-    """Return the shipped text of a loop's template, or "" to fall back to its stored copy."""
-    if not template.strip():
-        return ""
-    try:
-        return load_loop_template(template.strip()).prompt
-    except KeyError:
-        logger.warning("Loop template %r is not shipped; running the stored prompt.", template)
-        return ""
-
-
 def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Build a manual prompt-loop report via the headless assistant path.
 
@@ -224,9 +209,7 @@ def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """
     try:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        prompt = _template_prompt(safe_params.get(LOOP_TEMPLATE_PARAM, "")) or (
-            safe_params.get(LOOP_PROMPT_PARAM, "").strip()
-        )
+        prompt = current_loop_prompt(safe_params)
         if not prompt:
             return f"⚠️ Manual loop task {task.id} has no prompt configured."
         payload = {

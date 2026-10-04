@@ -35,6 +35,8 @@ ROOT_API = frozenset(
         "TurnResult",
         "is_legacy_skill_name",
         "is_recurring_skill",
+        "load_loop_template",
+        "loop_template_names",
         "normalize_skill_name",
         "pin_recurring_skill",
         "resolve_scheduled_skill",

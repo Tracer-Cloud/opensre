@@ -219,6 +219,8 @@ def cron_add(
             raise click.ClickException("--template is only valid with --kind manual_loop.")
         if prompt.strip():
             raise click.ClickException("Use either --template or --prompt, not both.")
+        if not (owner.strip() and repo.strip()):
+            raise click.UsageError("--template requires --owner and --repo.")
         loop_template = load_loop_template(template)
         prompt = loop_template.prompt
         name = name.strip() or loop_template.name

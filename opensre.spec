@@ -22,7 +22,7 @@ infrastructure_data_entries = manifest["infrastructure_data_entries"]
 datas = list(infrastructure_data_entries(ROOT))
 datas += collect_data_files(
     "core.agent_harness.prompts",
-    includes=["opensre_system_prompt.md", "loop_templates/*.md"],
+    includes=["opensre_system_prompt.md"],
 )
 datas += collect_data_files("surfaces.cli")
 datas += collect_data_files("config")

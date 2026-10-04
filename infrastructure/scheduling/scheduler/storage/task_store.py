@@ -21,7 +21,12 @@ from config.constants.organization import organization_id
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from config.scope_handoff import acting_scope
 from infrastructure.scheduling.scheduler import reload_signal
-from infrastructure.scheduling.scheduler.loop_constants import LOOP_CREATED_BY_PARAM
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CREATED_BY_PARAM,
+    LOOP_DESCRIPTION_PARAM,
+    LOOP_PROMPT_PARAM,
+    LOOP_TEMPLATE_PARAM,
+)
 from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
@@ -227,13 +232,14 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     created it, and the run bookkeeping (``created_at``, ``last_run``,
     ``next_run``), which differ between two confirmations of the same schedule.
     The owning organization is part of it: two organizations with the same
-    schedule hold two rows.
+    schedule hold two rows. A template loop is identified by its template name:
+    the prompt and description copied from it change with releases.
     """
-    params = {
-        key: value
-        for key, value in (entry.get("params") or {}).items()
-        if key != LOOP_CREATED_BY_PARAM
-    }
+    raw_params = entry.get("params") or {}
+    ignored = {LOOP_CREATED_BY_PARAM}
+    if raw_params.get(LOOP_TEMPLATE_PARAM):
+        ignored |= {LOOP_PROMPT_PARAM, LOOP_DESCRIPTION_PARAM}
+    params = {key: value for key, value in raw_params.items() if key not in ignored}
     return (
         _owner_of(entry),
         entry.get("kind"),

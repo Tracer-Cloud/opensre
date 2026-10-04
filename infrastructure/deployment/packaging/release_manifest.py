@@ -14,6 +14,7 @@ _RUNTIME_PACKAGE_NAMES = (
     "tools",
 )
 _ACTION_SKILLS_DIR = Path("core/agent_harness/prompts/skills")
+_LOOP_TEMPLATES_DIR = Path("core/agent_harness/prompts/loop_templates")
 _SKILL_DATA_ROOTS = (Path("integrations"), Path("tools"))
 #: Data files read at runtime that are not skill documents. Without an entry
 #: here a file can be absent from both the wheel and the frozen binary.
@@ -59,8 +60,9 @@ def runtime_hidden_imports(repo_root: Path) -> tuple[str, ...]:
 
 
 def required_skill_files(repo_root: Path) -> tuple[Path, ...]:
-    """Return built-in action skills, workflow guidance, and tool data files."""
+    """Return built-in action skills, loop templates, workflow guidance, and tool data files."""
     files = set((repo_root / _ACTION_SKILLS_DIR).rglob("*.md"))
+    files.update((repo_root / _LOOP_TEMPLATES_DIR).glob("*.md"))
     files.update((repo_root / _ACTION_SKILLS_DIR).glob("**/scripts/*.py"))
     for relative_root in _SKILL_DATA_ROOTS:
         files.update((repo_root / relative_root).rglob("SKILL.md"))

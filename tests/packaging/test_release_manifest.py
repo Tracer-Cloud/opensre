@@ -106,6 +106,7 @@ def test_required_data_covers_runtime_files_that_are_not_skill_documents() -> No
     }
 
     assert "integrations/yandex_cloud/api_index.json" in relative_paths
+    assert "core/agent_harness/prompts/loop_templates/pr-ci.md" in relative_paths
     assert "core/agent_harness/task_plan/planning_instructions.md" not in relative_paths
 
 
