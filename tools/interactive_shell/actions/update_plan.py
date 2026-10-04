@@ -87,23 +87,29 @@ def run_update_plan(
 update_plan_tool = RegisteredTool(
     name=ActionToolName.UPDATE_PLAN,
     description=(
-        "Create or revise the live execution plan for this workload, and mark "
-        "steps pending, in_progress, completed, or blocked. "
+        "Create or revise the live execution plan for this workload, mark a "
+        "step blocked, or settle the plan when the work is done. "
+        "The host moves the plan forward: when you call the next step's tool, "
+        "ask_user_choice included, the in_progress step that did its work is "
+        "marked completed and the next pending step in_progress. Do not send "
+        "update_plan just to mark progress. "
         "Mark a step blocked (with the blocker in explanation) when the runtime cannot "
         "perform it; never mark undone work completed. "
         "At most one step may be in_progress. Send it in the same response as "
-        "the step's tool call, ask_user_choice included; a response whose only "
-        "call is update_plan spends a model call without progress. Not for "
+        "a step's tool call; a response whose only call is update_plan spends "
+        "a model call without progress. Not for "
         "durable human todos (use work_task_*) and not for /goal keep-going."
     ),
     use_cases=[
         "A multi-step investigation, fix, and verify workload is about to start",
-        "A step just finished and the next step is starting",
         "The plan changed and the checklist must be revised",
+        "A step cannot be performed and must be marked blocked",
+        "The last step is done and the plan is settled",
         "The user asked for a plan only, with no execution yet",
     ],
     anti_examples=[
         "A single obvious lookup or one slash command",
+        "Only marking a step done and the next started (the host does it on the next tool)",
         "Durable human todos / reminders (use work_task_add)",
         "Session-goal keep-going checklists (use session_goal_set)",
     ],

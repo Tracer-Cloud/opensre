@@ -128,9 +128,10 @@ def current_task_plan_block(
         )
         if not plan_only:
             lines.append(
-                "Send the status update in the same response as the step's tool. "
-                "A response that only updates the plan spends a model call "
-                "without progress."
+                "The host completes this step and starts the next when you call "
+                "the next step's tool; do not send update_plan just to mark "
+                "progress. A response that only updates the plan spends a model "
+                "call without progress."
             )
     elif not plan.is_settled and not plan_only:
         lines.append(
