@@ -95,7 +95,7 @@ def test_ask_user_answered_guidance_defaults_to_execute_not_pause() -> None:
     assert "do not invent a plan-only pause" in text
     assert "plan_only_after=true" in text
     assert "same response as its tool" in text
-    assert "status-only update_plan is refused" in text
+    assert "only updates the plan spends a model call" in text
 
 
 def test_ask_user_answered_guidance_scopes_diagnosis_shape_to_incidents() -> None:
@@ -163,7 +163,7 @@ def test_ask_user_answered_plan_only_guidance_does_not_authorize_execute() -> No
     block = envelope.require_block(PromptBlockId.ASK_USER_ANSWERED)
     assert ASK_USER_ANSWERED_PLAN_ONLY_GUIDANCE in block.content
     assert "do not pass plan_only=false" in block.content.lower()
-    assert "status-only update_plan is refused" not in block.content.lower()
+    assert "only updates the plan spends a model call" not in block.content.lower()
     assert "in_progress and execute it now" not in block.content.lower()
 
 
@@ -193,7 +193,7 @@ def test_current_task_plan_block_plan_only_does_not_authorize_execution() -> Non
     assert "CURRENT PLAN (ready, nothing executed" in block
     assert "explanation: do not run yet" in block
     assert "Execution is authorized" not in block
-    assert "status-only update_plan is refused" not in block
+    assert "only updates the plan spends a model call" not in block
 
 
 def test_current_task_plan_block_all_pending_without_latch_authorizes() -> None:
@@ -211,7 +211,7 @@ def test_current_task_plan_block_all_pending_without_latch_authorizes() -> None:
     block = current_task_plan_block(plan, plan_only=False)
     assert "Execution is authorized" in block
     assert "same response as its tool" in block
-    assert "status-only update_plan is refused" in block
+    assert "only updates the plan spends a model call" in block
 
 
 def test_current_task_plan_block_completed_status() -> None:

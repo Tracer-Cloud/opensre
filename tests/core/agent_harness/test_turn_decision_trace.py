@@ -68,8 +68,8 @@ def test_stop_trace_records_rejection_then_question_bypass_and_saved_answer(
 ) -> None:
     session, path = traced_session
     # No tool runs before the write, so no step may already be completed.
-    # A solo write that starts a step is refused; an all-pending checklist is
-    # recorded and the host marks the first step in_progress.
+    # An all-pending checklist is recorded and the host marks the first step
+    # in_progress.
     requested = [
         {"step": "Collect evidence", "status": "pending"},
         {"step": "Display report", "status": "pending"},

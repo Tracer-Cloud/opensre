@@ -19,7 +19,6 @@ class ToolBlockedBy(StrEnum):
 
     DUPLICATE_ACTION = "duplicate_action"
     PLAN_REQUIRED = "plan_required"
-    SOLO_PLAN_ADVANCE = "solo_plan_advance"
     MENU_PENDING = "menu_pending"
     APPROVAL_DECLINED = "approval_declined"
     APPROVAL_PENDING = "approval_pending"

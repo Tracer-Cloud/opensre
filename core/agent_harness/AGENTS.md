@@ -82,10 +82,9 @@ complete a step that had no tool return while it was `in_progress`
 `verifies` is never exempt, and a text-only closing step is exempt only once
 such a step completed. The second work tool of a turn with no open plan is
 refused (`task_plan/required.py`). A response whose only tool call is
-`update_plan` is refused when that write sets a step `in_progress` or marks
-one `completed` (`task_plan/solo_advance.py`, hook in `turns/plan_hooks.py`);
-`plan_only`, an all-pending checklist, and a write that newly marks a step
-`blocked` still run, and a refused write is not stored. A step newly marked
+`update_plan` runs: the prompt asks for the write in the same response as the
+step's tool, but refusing it cost the same model call it meant to save and
+sent the model into retries and off-plan tools. A step newly marked
 `blocked` is resolved with the user, not skipped: the conclusion is rejected
 until `ask_user_choice`
 is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The

@@ -192,9 +192,8 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
         [
             # Plan write, the repository question and eager repo creation in one
             # response: the menu must stand alone, so the runtime runs none of
-            # it. A solo update_plan that starts a step is refused, so the
-            # re-issue records every step pending; the host then marks the
-            # first step in_progress. The menu follows on its own.
+            # it. The re-issue records every step pending; the host then
+            # marks the first step in_progress. The menu follows on its own.
             _batch(
                 tool_response("update_plan", {"plan": started}),
                 repository_menu,

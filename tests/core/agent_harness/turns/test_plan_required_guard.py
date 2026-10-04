@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 from core.agent_harness.task_plan.plan import parse_task_plan
 from core.agent_harness.task_plan.required import PLAN_REQUIRED_REASON
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
+from core.tool.contracts import AgentTool, AgentToolContext
 from core.tool.execution import (
     BeforeToolCallResult,
     ToolExecutionHooks,
     ToolExecutionRequest,
     ToolExecutionResult,
+    execute_tool_calls,
 )
 from surfaces.interactive_shell.session import Session
 
@@ -129,3 +132,40 @@ def test_a_base_refusal_wins_over_the_plan_rule() -> None:
 
     # Assert
     assert decision is not None and decision.reason == "duplicate"
+
+
+def test_a_lone_plan_write_that_starts_a_step_runs() -> None:
+    # Arrange: the model opens a plan with its first step in_progress and sends
+    # no action beside it. Refusing that write cost the same model call it was
+    # meant to save, so the hooks let it through.
+    ran: list[dict[str, Any]] = []
+
+    def write_plan(args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append(args)
+        return {"ok": True}
+
+    session = Session()
+    hooks = with_task_plan_hooks(None, session)
+    tool = AgentTool(
+        name="update_plan",
+        description="Record the plan",
+        input_schema={"type": "object", "additionalProperties": True},
+        execute=write_plan,
+        role=ToolRole.BOOKKEEPING,
+    )
+    plan = [
+        {"step": "List the workflow files", "status": "in_progress"},
+        {"step": "Count the jobs in each", "status": "pending"},
+    ]
+
+    # Act
+    results = execute_tool_calls(
+        [ToolCall(id="call-plan", name="update_plan", input={"plan": plan})],
+        [tool],
+        {},
+        hooks=hooks,
+    )
+
+    # Assert
+    assert ran == [{"plan": plan}]
+    assert results[0].is_error is False

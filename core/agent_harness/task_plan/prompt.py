@@ -36,7 +36,8 @@ ASK_USER_ANSWERED_GUIDANCE = (
     "only when the original request asked not to run yet; then after answers "
     "call update_plan(plan_only=true) and leave every step pending and STOP. "
     "Otherwise set the first step in_progress in the same response as its tool "
-    "and run that tool. A status-only update_plan is refused."
+    "and run that tool. A response that only updates the plan spends a model "
+    "call without progress."
 )
 
 ASK_USER_ANSWERED_PLAN_ONLY_GUIDANCE = (
@@ -110,8 +111,9 @@ def current_task_plan_block(
     if plan.all_pending and not plan_only:
         lines.append(
             "Execution is authorized: set the first step in_progress in the "
-            "same response as its tool and run that tool. A status-only "
-            "update_plan is refused. Do not wait for the user to say go."
+            "same response as its tool and run that tool. A response that only "
+            "updates the plan spends a model call without progress. Do not wait "
+            "for the user to say go."
         )
     in_progress = next(
         (item.step for item in plan.steps if item.status is PlanStepStatus.IN_PROGRESS),
@@ -127,14 +129,15 @@ def current_task_plan_block(
         if not plan_only:
             lines.append(
                 "Send the status update in the same response as the step's tool. "
-                "A status-only update_plan is refused."
+                "A response that only updates the plan spends a model call "
+                "without progress."
             )
     elif not plan.is_settled and not plan_only:
         lines.append(
             "When this turn continues the plan: Work remains on this plan and "
             "no step is in_progress. Set the next pending step in_progress in "
-            "the same response as its tool and run that tool. A status-only "
-            "update_plan is refused."
+            "the same response as its tool and run that tool. A response that "
+            "only updates the plan spends a model call without progress."
         )
     if plan.blocked_count:
         lines.append(
