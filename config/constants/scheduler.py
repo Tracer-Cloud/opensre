@@ -15,6 +15,11 @@ OPENSRE_GATEWAY_HOST_SCHEDULER_ENV = "OPENSRE_GATEWAY_HOST_SCHEDULER"
 # means the service still runs an older build and is restarted.
 OPENSRE_SCHEDULER_BUILD_ENV = "OPENSRE_SCHEDULER_BUILD"
 
+# How far back a starting scheduler looks for a fire that no scheduler ran. A
+# replaced hosted gateway runs none for minutes while its successor installs;
+# the latest fire in this window runs once at startup, older ones stay missed.
+SCHEDULER_MISSED_FIRE_GRACE_SECONDS = 15 * 60
+
 # ``WorkOutcome.error_kind`` values that describe a repair target no retry can
 # fix (the PR is closed, or its branch cannot be pushed to). A blocked outcome
 # with one of these pauses the schedule instead of firing again. Shared here
@@ -26,5 +31,6 @@ __all__ = [
     "NON_RETRYABLE_WORK_ERROR_KINDS",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV",
     "OPENSRE_SCHEDULER_BUILD_ENV",
+    "SCHEDULER_MISSED_FIRE_GRACE_SECONDS",
     "WEEKDAY_CRON_FIELD",
 ]

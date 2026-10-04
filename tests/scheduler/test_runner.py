@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from config.constants.scheduler import SCHEDULER_MISSED_FIRE_GRACE_SECONDS
 from config.constants.turn_concurrency import OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV
 from infrastructure.scheduling.scheduler import runner as scheduler_runner
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
@@ -712,6 +715,133 @@ class TestRegisterJobs:
         assert count == 2
 
 
+# 2026-10-04: a gateway replacement left no scheduler running from 02:21:35 to
+# 02:25:29, and a loop due at 02:23 never ran.
+_GAP_MISSED_FIRE = datetime(2026, 10, 4, 2, 23, tzinfo=UTC)
+_GAP_SCHEDULER_STARTED = datetime(2026, 10, 4, 2, 25, 29, tzinfo=UTC)
+
+
+def _register_after_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    next_run: datetime,
+    now: datetime = _GAP_SCHEDULER_STARTED,
+    cron: str = "23 2 * * *",
+    catch_up: bool = True,
+    queued: tuple[str, ...] = (),
+) -> tuple[dict[str, object], ScheduledTask | None]:
+    """Register one loop as a scheduler at ``now`` would; return its job and stored row."""
+    from infrastructure.scheduling.scheduler.storage import database, try_queue_run
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import add_task, get_task
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            _ = tz
+            return now
+
+    class _RecordingScheduler:
+        def __init__(self) -> None:
+            self.jobs: dict[str, dict[str, object]] = {}
+
+        def add_job(self, *args: object, **kwargs: object) -> None:
+            _ = args
+            self.jobs[str(kwargs["id"])] = kwargs
+
+    store_path = tmp_path / "tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store_path)
+    monkeypatch.setattr(database, "default_run_database_path", lambda: tmp_path / "runs.db")
+    monkeypatch.setattr(scheduler_runner, "datetime", _FrozenDateTime)
+    add_task(
+        ScheduledTask(
+            id="codeql-loop",
+            kind=TaskKind.MANUAL_LOOP,
+            cron=cron,
+            timezone="UTC",
+            provider=Provider.INTERACTIVE_SHELL,
+            next_run=next_run.isoformat(),
+            params={LOOP_PROMPT_PARAM: "Triage new CodeQL alerts"},
+        ),
+        store_path,
+    )
+    for fire_time in queued:
+        assert try_queue_run("codeql-loop", fire_time)
+    scheduler = _RecordingScheduler()
+    assert _register_jobs(scheduler, real_runners(), catch_up=catch_up) == 1
+    return scheduler.jobs["codeql-loop"], get_task("codeql-loop")
+
+
+class TestMissedFireCatchUp:
+    """A starting scheduler fires, once, the latest tick that no scheduler ran."""
+
+    def test_the_tick_due_while_no_scheduler_ran_fires_at_start(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The stopped scheduler had stored 02:23 as the loop's next run.
+        job, stored = _register_after_gap(tmp_path, monkeypatch, next_run=_GAP_MISSED_FIRE)
+
+        assert job["next_run_time"] == _GAP_MISSED_FIRE
+        assert job["misfire_grace_time"] is None
+        assert stored is not None
+        assert stored.next_run == _GAP_MISSED_FIRE.isoformat()
+
+    def test_a_tick_a_scheduler_already_queued_is_not_fired_again(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        job, _stored = _register_after_gap(
+            tmp_path, monkeypatch, next_run=_GAP_MISSED_FIRE, queued=("2026-10-04T02:23:00Z",)
+        )
+
+        assert "next_run_time" not in job
+
+    def test_a_tick_older_than_the_grace_window_stays_missed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        late = _GAP_MISSED_FIRE + timedelta(seconds=SCHEDULER_MISSED_FIRE_GRACE_SECONDS + 1)
+
+        job, _stored = _register_after_gap(
+            tmp_path, monkeypatch, next_run=_GAP_MISSED_FIRE, now=late
+        )
+
+        assert "next_run_time" not in job
+
+    def test_a_slot_before_the_stored_next_run_is_not_fired(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Enabled at 02:24, so its first run is tomorrow's 02:23, not today's.
+        job, _stored = _register_after_gap(
+            tmp_path, monkeypatch, next_run=_GAP_MISSED_FIRE + timedelta(days=1)
+        )
+
+        assert "next_run_time" not in job
+
+    def test_several_missed_ticks_fire_once_as_the_latest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        job, _stored = _register_after_gap(
+            tmp_path,
+            monkeypatch,
+            cron="*/5 * * * *",
+            next_run=datetime(2026, 10, 4, 2, 10, tzinfo=UTC),
+            now=datetime(2026, 10, 4, 2, 26, tzinfo=UTC),
+        )
+
+        assert job["next_run_time"] == datetime(2026, 10, 4, 2, 25, tzinfo=UTC)
+
+    def test_a_live_resync_never_fires_a_past_slot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        job, stored = _register_after_gap(
+            tmp_path, monkeypatch, next_run=_GAP_MISSED_FIRE, catch_up=False
+        )
+
+        assert "next_run_time" not in job
+        assert stored is not None
+        assert stored.next_run == (_GAP_MISSED_FIRE + timedelta(days=1)).isoformat()
+
+
 class TestRunTaskNow:
     def test_nonexistent_task(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
@@ -986,3 +1116,45 @@ def test_skipped_callback_cannot_finalize_another_owner(
     monkeypatch.setattr(runner, "get_task", lambda _id: None if missing else task)
     _scheduled_job(task.id, real_runners(), scheduled_run_time=run_at)
     assert get_runs(task.id)[0].status is TaskStatus.RUNNING
+
+
+def test_real_scheduler_runs_a_missed_tick_under_its_own_fire_time(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from infrastructure.scheduling.scheduler import executor, runner
+    from infrastructure.scheduling.scheduler.storage import database, get_runs
+
+    monkeypatch.setattr(database, "default_run_database_path", lambda: tmp_path / "runs.db")
+    # A daily slot two minutes ago that the stopped scheduler had stored as its next run.
+    missed = (datetime.now(UTC) - timedelta(minutes=2)).replace(second=0, microsecond=0)
+    task = ScheduledTask(
+        id="missed-task",
+        kind=TaskKind.MANUAL_LOOP,
+        cron=f"{missed.minute} {missed.hour} * * *",
+        timezone="UTC",
+        provider=Provider.TELEGRAM,
+        next_run=missed.isoformat(),
+    )
+    monkeypatch.setattr(runner, "list_tasks", lambda: [task])
+    monkeypatch.setattr(runner, "get_task", lambda _id: task)
+    monkeypatch.setattr(runner, "update_task", lambda _task: None)
+    monkeypatch.setattr(runner, "record_task_success", lambda _task_id: None)
+    built = threading.Event()
+
+    def build(_task, _runners) -> str:
+        built.set()
+        return ""
+
+    monkeypatch.setattr(executor, "build_message", build)
+    scheduler, count = runner.start_background_scheduler(real_runners())
+    try:
+        assert count == 1
+        assert built.wait(timeout=10)
+    finally:
+        scheduler.shutdown(wait=True)
+    runs = get_runs(task.id)
+    assert [(run.fire_time, run.attempt, run.status) for run in runs] == [
+        (_compute_fire_time(missed), 1, TaskStatus.SUCCESS)
+    ]

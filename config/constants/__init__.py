@@ -1161,6 +1161,9 @@ if TYPE_CHECKING:
         OPENSRE_SCHEDULER_BUILD_ENV as OPENSRE_SCHEDULER_BUILD_ENV,
     )
     from config.constants.scheduler import (
+        SCHEDULER_MISSED_FIRE_GRACE_SECONDS as SCHEDULER_MISSED_FIRE_GRACE_SECONDS,
+    )
+    from config.constants.scheduler import (
         WEEKDAY_CRON_FIELD as WEEKDAY_CRON_FIELD,
     )
     from config.constants.secrets import (

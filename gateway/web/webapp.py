@@ -26,6 +26,7 @@ from gateway.core.process.state_counts import read_state_counts
 from gateway.web.prompt_routes import router as prompt_router
 from infrastructure.alert_intake import router as alert_router
 from infrastructure.request_body_limit import RequestBodyLimitMiddleware
+from infrastructure.scheduling.scheduler.claim_lease import default_claim_lease_renewer
 
 configure_process(WEB_PROFILE)  # env → sentry → adapters
 
@@ -43,6 +44,9 @@ class HealthResponse(BaseModel):
     scheduled_tasks: int
     #: How the previous gateway process ended; empty outside a gateway process.
     previous_shutdown: str
+    #: Scheduled executions this process is running. Stopping it now kills them,
+    #: so the hosted refresh waits for a later run while this is above zero.
+    scheduled_runs_in_flight: int
 
 
 app = FastAPI()
@@ -74,6 +78,7 @@ def get_health_response() -> HealthResponse:
         memory_notes=counts.memory_notes,
         scheduled_tasks=counts.scheduled_tasks,
         previous_shutdown=previous_shutdown,
+        scheduled_runs_in_flight=default_claim_lease_renewer.in_flight(),
     )
 
 
