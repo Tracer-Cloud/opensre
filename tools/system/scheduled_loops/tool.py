@@ -14,7 +14,7 @@ from core.tool_framework.utils import tool_unavailable
 from infrastructure.scheduling.scheduler.loop_results import latest_loop_runs
 from infrastructure.scheduling.scheduler.loops import LoopSummary, summarize_loops
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
-from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskRun
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskRun, TaskStatus
 
 TOOL_NAME = "list_scheduled_loops"
 _SOURCE = "system"
@@ -50,10 +50,106 @@ def _visible_to_this_turn(task: ScheduledTask) -> bool:
     return owner == scope.principal.id
 
 
+_PURPOSE_CHARS = 160
+_REASON_CHARS = 140
+_WEEKDAY_NAMES = {
+    "0": "Sundays",
+    "1": "Mondays",
+    "2": "Tuesdays",
+    "3": "Wednesdays",
+    "4": "Thursdays",
+    "5": "Fridays",
+    "6": "Saturdays",
+    "7": "Sundays",
+    "sun": "Sundays",
+    "mon": "Mondays",
+    "tue": "Tuesdays",
+    "wed": "Wednesdays",
+    "thu": "Thursdays",
+    "fri": "Fridays",
+    "sat": "Saturdays",
+}
+_WEEKDAYS = {"1-5", "mon-fri"}
+
+
+def _clip(text: str, limit: int) -> str:
+    """One line of ``text``, cut at a word boundary so it reads as a sentence."""
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit].rsplit(" ", 1)[0].rstrip(" ,;:-") + "…"
+
+
+def _purpose(loop: LoopSummary) -> str:
+    """What the loop does for the reader: its description, else its prompt's opening sentence."""
+    if loop.description:
+        return _clip(loop.description, _PURPOSE_CHARS)
+    first_sentence = " ".join(loop.prompt.split()).split(". ", 1)[0]
+    return _clip(first_sentence, _PURPOSE_CHARS)
+
+
+def _cadence(cron: str, timezone: str) -> str:
+    """How often the loop runs, in words; the exact minute is noise for the reader."""
+    parts = cron.split()
+    if len(parts) != 5:
+        return "on a custom schedule"
+    minute, hour, day_of_month, month, day_of_week = parts
+    if (day_of_month, month) != ("*", "*"):
+        return "on a custom schedule"
+    every_day = day_of_week == "*"
+    if minute.startswith("*/") and hour == "*" and every_day:
+        return f"every {minute[2:]} minutes"
+    if minute == "*" and hour == "*" and every_day:
+        return "every minute"
+    if not minute.isdigit():
+        return "on a custom schedule"
+    if hour == "*" and every_day:
+        return "every hour"
+    if hour.startswith("*/") and every_day:
+        return f"every {hour[2:]} hours"
+    hours = hour.split(",")
+    if not all(part.isdigit() for part in hours):
+        return "on a custom schedule"
+    times = " and ".join(f"{int(part):02d}:{int(minute):02d}" for part in hours)
+    zone = f" {timezone}" if timezone else ""
+    if every_day:
+        return f"daily at {times}{zone}"
+    if day_of_week.lower() in _WEEKDAYS:
+        return f"weekdays at {times}{zone}"
+    days = _WEEKDAY_NAMES.get(day_of_week.lower())
+    if days:
+        return f"{days} at {times}{zone}"
+    return "on a custom schedule"
+
+
+def _health(loop: LoopSummary, run: TaskRun | None) -> str:
+    """Whether the loop is doing its job, with the reason when it is not."""
+    if not loop.enabled:
+        return "paused" if loop.last_run else "not switched on yet"
+    if loop.schedule_error:
+        return f"not running: {_clip(loop.schedule_error, _REASON_CHARS)}"
+    if run is None:
+        return "has not run yet"
+    if run.status == TaskStatus.SUCCESS:
+        return "last run went fine"
+    if run.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+        return "running now"
+    if run.status == TaskStatus.SKIPPED:
+        return "last run was skipped"
+    reason = (
+        run.error.strip().splitlines()[0].rstrip(" .") if run.error and run.error.strip() else ""
+    )
+    verb = "stopped early" if run.status == TaskStatus.ABANDONED else "failed"
+    return f"last run {verb}: {_clip(reason, _REASON_CHARS)}" if reason else f"last run {verb}"
+
+
 def _loop_row(loop: LoopSummary, run: TaskRun | None) -> dict[str, Any]:
     row: dict[str, Any] = {
         "id": loop.id,
         "name": loop.name,
+        "purpose": _purpose(loop),
+        "cadence": _cadence(loop.cron, loop.timezone),
+        "health": _health(loop, run),
         "kind": str(loop.kind),
         "prompt": loop.prompt,
         "cron": loop.cron,
@@ -81,14 +177,15 @@ def _summary(rows: list[dict[str, Any]], *, store_missing: bool) -> str:
             return "No scheduler task store exists here yet, so no loops are configured."
         return "No scheduled loops are configured."
     active = sum(1 for row in rows if row["enabled"])
-    lines = [f"{len(rows)} scheduled loops, {active} active."]
+    needs_attention = sum(1 for row in rows if row["enabled"] and "fail" in row["health"])
+    noun = "loop" if len(rows) == 1 else "loops"
+    headline = f"{len(rows)} scheduled {noun}, {active} active"
+    if needs_attention:
+        headline += f", {needs_attention} need attention"
+    lines = [headline + "."]
     for row in rows:
-        latest = row.get("latest_run")
-        outcome = f"; last run {latest['status']}" if latest else ""
-        when = f"; next {row['next_run']}" if row["enabled"] and row["next_run"] else ""
-        lines.append(
-            f"- {row['name']} ({row['status']}, {row['cron']} {row['timezone']}{outcome}{when})"
-        )
+        lines.append(f"- {row['name']}: {row['purpose']}")
+        lines.append(f"  Runs {row['cadence']}; {row['health']}.")
     return "\n".join(lines)
 
 
@@ -100,7 +197,12 @@ def _summary(rows: list[dict[str, Any]], *, store_missing: bool) -> str:
         "List every scheduled loop this process's scheduler knows: CI repair loops, "
         "reliability loops, reminders and other recurring tasks, each with its schedule, "
         "whether it is enabled, and its newest run's outcome. Use this to answer which "
-        "scheduled tasks exist or run here; it reads the task store directly. Read-only."
+        "scheduled tasks exist or run here; it reads the task store directly. Read-only. "
+        "When answering, lead with what each loop does for the user: turn its purpose "
+        "into one plain sentence about the outcome, then say how often it runs and "
+        "whether it is healthy (with the reason when it is not). Write ordinary prose "
+        "or bullets, never a code block, and leave out cron expressions, timezones and "
+        "timestamps unless the user asks when a loop runs."
     ),
     use_cases=[
         "Which scheduled tasks does this gateway run?",
@@ -112,10 +214,13 @@ def _summary(rows: list[dict[str, Any]], *, store_missing: bool) -> str:
         "Reading one repair run's full report (open its result file)",
     ],
     outputs={
-        "loops": "One row per loop: id, name, kind, cron, enabled, status, next_run, latest_run",
+        "loops": (
+            "One row per loop: id, name, purpose, cadence, health, kind, cron, enabled, "
+            "status, next_run, latest_run"
+        ),
         "count": "How many loops were listed",
         "store_missing": "True when no task store file exists yet (nothing was ever scheduled)",
-        "response_text": "One line per loop with its status, schedule and last outcome",
+        "response_text": "Per loop: what it does, how often it runs, and whether it is healthy",
     },
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,

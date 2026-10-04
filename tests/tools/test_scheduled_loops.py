@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -97,7 +98,7 @@ def test_every_loop_is_listed_with_its_schedule_and_newest_run(
     everything = list_scheduled_loops()
     active_only = list_scheduled_loops(include_disabled=False)
 
-    # Assert: both loops appear with status and schedule; the failed run's error reaches the reader
+    # Assert: each loop leads with what it does, then cadence and health; no cron or timestamps
     assert everything["count"] == 2 and [row["name"] for row in everything["loops"]] == [
         "CI repair: o/r",
         "Standup reminder",
@@ -107,11 +108,13 @@ def test_every_loop_is_listed_with_its_schedule_and_newest_run(
     assert repair_row["latest_run"]["status"] == "failed"
     assert repair_row["latest_run"]["error"] == "Stopped after 3 failed repair attempts."
     assert "latest_run" not in everything["loops"][1]
-    assert everything["response_text"].startswith("2 scheduled loops, 1 active.")
-    assert (
-        "CI repair: o/r (active, */5 * * * * UTC; last run failed; next"
-        in everything["response_text"]
-    )
+    assert everything["response_text"].splitlines() == [
+        "2 scheduled loops, 1 active, 1 need attention.",
+        "- CI repair: o/r: Repair only CI repair: o/r.",
+        "  Runs every 5 minutes; last run failed: Stopped after 3 failed repair attempts.",
+        "- Standup reminder: Repair only Standup reminder.",
+        "  Runs every 5 minutes; not switched on yet.",
+    ]
     assert active_only["count"] == 1
 
 
@@ -129,6 +132,39 @@ def test_an_unreadable_store_is_reported_not_shown_as_empty(
     assert out["available"] is False
     assert "could not be read completely" in out["error"]
     assert "loops" not in out
+
+
+@pytest.mark.parametrize(
+    ("cron", "cadence"),
+    [
+        ("8 * * * *", "every hour"),
+        ("*/15 * * * *", "every 15 minutes"),
+        ("59 */2 * * *", "every 2 hours"),
+        ("30 9 * * *", "daily at 09:30 Europe/Warsaw"),
+        ("59 3,15 * * *", "daily at 03:59 and 15:59 Europe/Warsaw"),
+        ("0 8 * * mon-fri", "weekdays at 08:00 Europe/Warsaw"),
+        ("0 10 * * 1", "Mondays at 10:00 Europe/Warsaw"),
+        ("0 0 1 * *", "on a custom schedule"),
+    ],
+)
+def test_cadence_reads_as_words_not_cron(cron: str, cadence: str) -> None:
+    assert loops_tool._cadence(cron, "Europe/Warsaw") == cadence
+
+
+def test_a_described_loop_leads_with_its_description_not_its_prompt() -> None:
+    # Arrange
+    loop = replace(
+        _loop("a8e1", "PR CI", enabled=True),
+        description="Keeps open pull requests green by fixing failing checks.",
+        prompt="Existing PR CI repair Inspect completed failing checks on current heads",
+    )
+
+    # Act
+    row = loops_tool._loop_row(loop, None)
+
+    # Assert
+    assert row["purpose"] == "Keeps open pull requests green by fixing failing checks."
+    assert row["health"] == "has not run yet"
 
 
 def test_no_store_yet_and_an_empty_store_read_differently(monkeypatch: pytest.MonkeyPatch) -> None:
