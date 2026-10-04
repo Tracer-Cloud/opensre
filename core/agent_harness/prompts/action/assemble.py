@@ -246,6 +246,15 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.agent_harness.prompts.action.turn_interaction",
         )
     )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.RELEVANT_MEMORIES,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=relevant_memories_block(turn_snapshot),
+            provenance="core.domain.memory",
+        )
+    )
     # With structured history the earlier turns precede the user message as
     # typed messages (``turns.structured_history``); the text block and the facts
     # scraped from it remain only as the fallback when that is switched off.
@@ -388,7 +397,7 @@ def interrupted_turn_recovery_block(turn_snapshot: TurnSnapshot) -> str:
 
 
 def long_term_memory_block() -> str:
-    """Inject stored memory facts into every action-agent turn when available."""
+    """The stable memory index (summary plus one line per memory) for the cached prompt half."""
     from core.domain.memory import (
         ensure_memory_store,
         memory_available_here,
@@ -402,13 +411,42 @@ def long_term_memory_block() -> str:
     if not rendered:
         return ""
     return (
-        "LONG-TERM MEMORY (durable facts from ~/.opensre/memory — injected into "
-        "every turn). Use listed facts when planning; when the USER MESSAGE "
-        "contains a new useful durable fact, call memory_remember in this turn "
-        "even if they never said remember/save — do not wait for special phrasing. "
-        "Prefer updating an existing name over near-duplicates. Repository memories "
-        "are a collection: keep one stable memory per repository and never overwrite "
-        "one repository's facts merely because another repository became active:\n"
+        "LONG-TERM MEMORY (durable facts from earlier sessions; the index lists "
+        "stored memories one per line, most useful first). The full text of "
+        "memories that match this request appears under RELEVANT MEMORIES; read "
+        "any other with memory_recall. When the USER MESSAGE contains a new useful "
+        "durable fact, call memory_remember in this turn even if they never said "
+        "remember/save — do not wait for special phrasing. Prefer updating an "
+        "existing name over near-duplicates. Repository memories are a collection: "
+        "keep one stable memory per repository and never overwrite one repository's "
+        "facts merely because another repository became active:\n"
+        f"{rendered}\n\n"
+    )
+
+
+def relevant_memories_block(turn_snapshot: TurnSnapshot) -> str:
+    """Full text of the stored memories that match this turn's request.
+
+    Ranked against the user's message, with the active repositories and the
+    connected integrations as lower-weight context.
+    """
+    from core.domain.memory import memory_available_here, render_relevant_memories
+
+    if not memory_available_here():
+        return ""
+    rendered = render_relevant_memories(
+        turn_snapshot.text,
+        context=(
+            *turn_snapshot.active_vcs_repositories.values(),
+            *turn_snapshot.configured_integrations,
+        ),
+    )
+    if not rendered:
+        return ""
+    return (
+        "RELEVANT MEMORIES (stored memories that match this request, most relevant "
+        "first; they may be out of date, so re-check anything that could have "
+        "changed before acting on it):\n"
         f"{rendered}\n\n"
     )
 
@@ -466,6 +504,7 @@ __all__ = [
     "long_term_memory_block",
     "prior_action_facts_block",
     "recent_conversation_block",
+    "relevant_memories_block",
     "repository_context_block",
     "sanitize_action_text",
 ]

@@ -35,6 +35,7 @@ import logging
 from datetime import datetime
 from typing import Any, TypeVar
 
+from core.agent_harness.session.memory_consolidation import start_memory_consolidation
 from core.agent_harness.session.persistence.contracts import (
     TURN_EVIDENCE_CUSTOM_TYPE,
     RestoreContextKey,
@@ -105,7 +106,8 @@ class SessionManager:
 
         This is the single definition of "a booted session": a persistent task
         registry and hydrated (optionally warmed) integration state. Surface UI
-        wiring is layered by the surface after this returns.
+        wiring is layered by the surface after this returns. It also starts
+        background memory consolidation, which never blocks or raises.
         """
         if persistent_tasks:
             session.task_registry = TaskRegistry.persistent()
@@ -116,6 +118,7 @@ class SessionManager:
             session.hydrate_configured_integrations()
         if warm_integrations:
             session.warm_resolved_integrations()
+        start_memory_consolidation()
         return session
 
     # ─── Lifecycle ───────────────────────────────────────────────────────
@@ -391,12 +394,13 @@ class SessionManager:
 
         Persisting is best-effort (a failed flush must not crash teardown);
         the session releases its own resources (:meth:`SessionCore.release_resources`)
-        to prevent per-session leaks. Long-term memory extraction also runs after
-        every recorded turn; this close path runs it again after release when
-        ``extract_memory`` is true. Process exit (default) waits for extraction
-        to finish so durable facts are not dropped; gateway rotation passes
-        ``wait_for_memory_extraction=False`` so inbound handling stays
-        responsive, and skips extraction entirely unless gateway memory is opted in.
+        to prevent per-session leaks. Long-term memory extraction also runs in
+        the background every few recorded turns; this close path runs a final
+        pass after release when ``extract_memory`` is true. Process exit
+        (default) waits for extraction to finish so durable facts are not
+        dropped; gateway rotation passes ``wait_for_memory_extraction=False`` so
+        inbound handling stays responsive, and skips extraction entirely unless
+        gateway memory is opted in.
         """
         self._flush(session)
         # Snapshot messages before release/clear; the background extractor must

@@ -79,15 +79,11 @@ def _record_turn_evidence(
 
 
 def _schedule_turn_memory_extraction(session: SessionState) -> None:
+    """Note the turn for memory extraction, which runs every few non-demo turns."""
     try:
-        from core.agent_harness.session.memory_extraction import schedule_memory_extraction
+        from core.agent_harness.session.memory_extraction import record_turn_for_memory
 
-        messages = list(getattr(session, "cli_agent_messages", []) or [])
-        schedule_memory_extraction(
-            messages,
-            session_id=session.session_id,
-            wait_for_completion=False,
-        )
+        record_turn_for_memory(session)
     except Exception:
         # Never let memory bookkeeping break turn recording.
         return
