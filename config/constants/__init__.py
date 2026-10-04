@@ -472,6 +472,9 @@ if TYPE_CHECKING:
         PROMPT_PROGRESS_PLAN_OMITTED as PROMPT_PROGRESS_PLAN_OMITTED,
     )
     from config.constants.gateway import (
+        PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS as PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+    )
+    from config.constants.gateway import (
         PROMPT_QUEUE_MAX as PROMPT_QUEUE_MAX,
     )
     from config.constants.gateway import (
@@ -735,6 +738,12 @@ if TYPE_CHECKING:
     )
     from config.constants.llm import (
         OPENAI_BASE_URL_ENV as OPENAI_BASE_URL_ENV,
+    )
+    from config.constants.llm import (
+        OPENAI_PROMPT_CACHE_KEY_HASH_CHARS as OPENAI_PROMPT_CACHE_KEY_HASH_CHARS,
+    )
+    from config.constants.llm import (
+        OPENAI_PROMPT_CACHE_KEY_PREFIX as OPENAI_PROMPT_CACHE_KEY_PREFIX,
     )
     from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
@@ -1413,7 +1422,16 @@ if TYPE_CHECKING:
         WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
     )
     from config.constants.tooling import (
+        CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS as CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS,
+    )
+    from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
+    )
+    from config.constants.tooling import (
+        TOOL_PREFETCH_MAX_ENTRIES as TOOL_PREFETCH_MAX_ENTRIES,
+    )
+    from config.constants.tooling import (
+        WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS as WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS,
     )
     from config.constants.tooling import (
         ToolBlockedBy as ToolBlockedBy,

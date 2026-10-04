@@ -11,16 +11,30 @@ write capability.
 
 from __future__ import annotations
 
+import math
 import re
 
 from config.constants.new_relic import (
     NEW_RELIC_DEFAULT_INCIDENT_LIMIT,
     NEW_RELIC_DEFAULT_WINDOW_MINUTES,
     NEW_RELIC_NRQL_LIMIT_MAX,
+    NEW_RELIC_TIMESERIES_MAX_BUCKETS,
 )
 
 _SINCE_PATTERN = re.compile(r"\bSINCE\b", re.IGNORECASE)
 _LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
+_UNIT_SECONDS: dict[str, int] = {
+    "second": 1,
+    "minute": 60,
+    "hour": 3_600,
+    "day": 86_400,
+    "week": 604_800,
+    "month": 2_592_000,
+}
+_UNIT = r"(second|minute|hour|day|week|month)s?"
+_TIMESERIES_SIZE_PATTERN = re.compile(rf"\bTIMESERIES\s+(\d+)\s+{_UNIT}\b", re.IGNORECASE)
+_SINCE_AGO_PATTERN = re.compile(rf"\bSINCE\s+(\d+)\s+{_UNIT}\s+AGO\b", re.IGNORECASE)
+_UNTIL_AGO_PATTERN = re.compile(rf"\bUNTIL\s+(\d+)\s+{_UNIT}\s+AGO\b", re.IGNORECASE)
 #: NRQL string literals — single-quoted, with ``\'`` escapes (mirrors the
 #: quoting `_nrql_string_literal` in client.py produces). Stripped before the
 #: forbidden-keyword scan so a filter value like ``'%mutation%'`` isn't
@@ -118,3 +132,37 @@ def extract_limit(nrql: str) -> int | None:
     """Return the numeric ``LIMIT`` clause in *nrql*, or ``None`` if absent."""
     match = _LIMIT_PATTERN.search(_mask_string_literals(nrql))
     return None if match is None else int(match.group(1))
+
+
+def _relative_seconds(match: re.Match[str] | None) -> int | None:
+    if match is None:
+        return None
+    return int(match.group(1)) * _UNIT_SECONDS[match.group(2).lower()]
+
+
+def clamp_timeseries_buckets(nrql: str) -> str:
+    """Widen an explicit ``TIMESERIES <n> <unit>`` bucket that would exceed NRQL's cap.
+
+    NRQL rejects a ``TIMESERIES`` query producing more than
+    ``NEW_RELIC_TIMESERIES_MAX_BUCKETS`` buckets (e.g. ``TIMESERIES 10 minutes``
+    over ``SINCE 7 days ago`` is 1008). When the window is a relative
+    ``SINCE <n> <unit> ago`` (optionally ``UNTIL <n> <unit> ago``), the bucket
+    is rewritten to the finest size that fits; absolute windows are left as-is.
+    """
+    masked = _mask_string_literals(nrql)
+    bucket_match = _TIMESERIES_SIZE_PATTERN.search(masked)
+    since_seconds = _relative_seconds(_SINCE_AGO_PATTERN.search(masked))
+    bucket_seconds = _relative_seconds(bucket_match)
+    if bucket_match is None or since_seconds is None or not bucket_seconds:
+        return nrql
+    window_seconds = since_seconds - (_relative_seconds(_UNTIL_AGO_PATTERN.search(masked)) or 0)
+    if math.ceil(window_seconds / bucket_seconds) <= NEW_RELIC_TIMESERIES_MAX_BUCKETS:
+        return nrql
+    min_seconds = math.ceil(window_seconds / NEW_RELIC_TIMESERIES_MAX_BUCKETS)
+    bucket = (
+        f"{min_seconds} seconds"
+        if min_seconds < _UNIT_SECONDS["minute"]
+        else f"{math.ceil(min_seconds / _UNIT_SECONDS['minute'])} minutes"
+    )
+    start, end = bucket_match.span()
+    return f"{nrql[:start]}TIMESERIES {bucket}{nrql[end:]}"

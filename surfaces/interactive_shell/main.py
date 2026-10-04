@@ -25,12 +25,16 @@ from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
+from surfaces.interactive_shell.runtime.startup.deferred_work import DeferredStartupWork
 from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
 from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
     join_first_turn_warmup,
     warm_first_turn,
 )
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
+from surfaces.interactive_shell.runtime.startup.tool_registry_prewarm import (
+    start_tool_registry_prewarm,
+)
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
 from surfaces.shared.terminal.banner import animate_launch_wordmark
@@ -72,6 +76,7 @@ async def run_repl_async(
     cli_command_group: click.Command | None = None,
     finish_banner: Callable[[], None] | None = None,
     after_banner: Callable[[], None] | None = None,
+    tools_ready: Callable[[], None] | None = None,
 ) -> int:
     """Run the shell on an existing event loop and return its exit code.
 
@@ -79,6 +84,8 @@ async def run_repl_async(
     the model; the process entrypoint passes it, embedders may leave it out.
     ``after_banner`` is launch work the CLI held back until the banner is on
     screen (error-reporting start); it runs once the runtime is booted.
+    ``tools_ready`` waits for a tool-registry load started before the runtime
+    booted; it returns before the first turn can start.
     """
     # Keep MCP schema-cache warnings / httpx chatter off the transcript —
     # progress is soft status lines, not library WARNINGs.
@@ -108,6 +115,11 @@ async def run_repl_async(
     # where it interleaves with the launch-banner paint. This coroutine is the
     # shell body only; embedders driving it directly manage their own auth.
 
+    # Warm-ups and snapshots wait until the first menu draws (``/choose``
+    # releases them) so they do not compete with the launch for the interpreter.
+    startup_work = DeferredStartupWork()
+    session.terminal.startup_work_release = startup_work.release
+
     # Open the session file now that we know this is an interactive REPL run.
     SessionManager.for_session(session).open_store(session)
     # The runtime is booted; nothing has printed yet. Stop the launch spin and
@@ -118,6 +130,8 @@ async def run_repl_async(
     # with it for the interpreter.
     if after_banner is not None:
         after_banner()
+    if tools_ready is not None:
+        tools_ready()
 
     try:
         if resume_session_id:
@@ -133,18 +147,19 @@ async def run_repl_async(
                 slash_command=slash_command,
             ):
                 return 1
-        else:
+        elif offer_demo(session, out):
             # Entering the master skill queues its menu; the first model turn is the answer.
-            if offer_demo(session, out):
-                warm_first_turn()
+            startup_work.defer("first-turn warm-up", warm_first_turn)
 
         await InteractiveShellController(
             runtime_context,
             config=cfg,
             console=out,
+            startup_work=startup_work,
         ).start_interactive_shell()
         return 0
     finally:
+        startup_work.close()
         join_first_turn_warmup()
         # True end-of-run teardown: persist and release the session's resources.
         _close_repl_session(session, runtime_context.state)
@@ -214,8 +229,12 @@ def run_repl(
         capture_interactive_shell_rendered(entrypoint="opensre_binary")
 
     finish_banner: Callable[[], None] | None = None
+    tools_ready: Callable[[], None] | None = None
     try:
         if not initial_input:
+            # The sign-in check and runtime boot mostly wait on the network;
+            # the first turn's tool registry loads in that time instead of after.
+            tools_ready = start_tool_registry_prewarm()
             if not pass_sign_in_gate(
                 out, on_screen=record_shell_rendered if record_shell else None
             ):
@@ -236,6 +255,7 @@ def run_repl(
                 cli_command_group=cli_command_group,
                 finish_banner=finish_banner,
                 after_banner=after_banner,
+                tools_ready=tools_ready,
             )
         )
     except (EOFError, KeyboardInterrupt):

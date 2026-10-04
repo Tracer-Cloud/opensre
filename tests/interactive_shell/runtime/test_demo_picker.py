@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -12,10 +13,13 @@ import pytest
 from rich.console import Console
 
 import integrations.account_integrations as account_integrations
+import integrations.github.tools.ci_analytics.analysis as ci_analysis
+import integrations.github.tools.ci_analytics.tool as ci_tool
 import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
 import surfaces.interactive_shell.command_registry.integrations as integrations_cmds
 import surfaces.interactive_shell.command_registry.prerequisite_menu as prerequisite_menu
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
+import surfaces.interactive_shell.runtime.startup.analysis_prefetch as analysis_prefetch
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
 import surfaces.interactive_shell.runtime.startup.onboarding_telemetry as onboarding_telemetry
 import tools.interactive_shell.actions.skill_prerequisite_gate as gate
@@ -29,6 +33,7 @@ from config.constants import (
 )
 from config.constants.skills import (
     ANALYZE_REPO_OPTION,
+    ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     AUTOMATION_GROUP_OPTION,
     AUTOMATION_MENU_OPTIONS,
     AUTOMATION_MENU_TITLE,
@@ -59,6 +64,7 @@ from core.agent_harness.session.pending_choice import (
 )
 from core.agent_harness.spi.session_state import pending_setup_resume
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from integrations.github.tools.ci_analytics.collector import CollectedRuns
 from integrations.store import resolve_store_path, upsert_integration
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
@@ -1115,3 +1121,72 @@ def test_a_merge_in_progress_here_skips_the_demo_unless_forced(
     assert session.active_skill is None
     assert demo_picker.offer_demo(session, force=True)
     assert session.active_skill == ONBOARDING_SKILL_NAME
+
+
+def test_the_analysis_demo_reads_while_its_menus_are_answered(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+    tmp_path: Path,
+) -> None:
+    """The scan starts with the menu and the analysis at the repository pick; each runs once."""
+    del onboarding_outcomes
+    # Arrange: GitHub is ready, and both slow reads are faked and counted.
+    _offerable(monkeypatch)
+    monkeypatch.setattr(analysis_prefetch, "is_test_run", lambda: False)
+    _no_github_token(monkeypatch)
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
+    monkeypatch.setattr(ci_tool, "snapshot_root", lambda _root=None: tmp_path)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    console = Console(file=io.StringIO(), highlight=False)
+    scans: list[str] = []
+    reads: list[str] = []
+
+    # Each read records the thread it ran on: a prefetch's, or the tool call's.
+    def scan(root: Any, **_kwargs: Any) -> WorkspaceSnapshot:
+        scans.append(threading.current_thread().name)
+        return WorkspaceSnapshot(root=str(root), days=30, repos=())
+
+    def collect(_client: Any, *, owner: str, repo: str, **_kwargs: Any) -> CollectedRuns:
+        reads.append(f"{owner}/{repo} on {threading.current_thread().name}")
+        return CollectedRuns(
+            default_branch="main", branch_runs=[], pr_runs=[], merged_prs=(), coverage_notices=[]
+        )
+
+    def pick(**kwargs: Any) -> str:
+        return _REPOSITORY if kwargs["title"] == _REPOSITORY_TITLE else ANALYZE_REPO_OPTION
+
+    monkeypatch.setattr(scan_tool, "scan_workspace", scan)
+    monkeypatch.setattr(ci_analysis, "collect_runs", collect)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    owner, repo = _REPOSITORY.split("/")
+    llm = FakeActionLLM(
+        [
+            tool_response("scan_local_git_workspace"),
+            tool_response(
+                "ask_user_choice",
+                {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
+            ),
+            tool_response(
+                "analyze_github_ci_reliability", {"owner": owner, "repo": repo, "days": 30}
+            ),
+            no_tool_response("Here is the report."),
+        ]
+    )
+
+    # Act: the menu, the demo pick, the model's scan, the repository pick, its analysis.
+    assert demo_picker.offer_demo(session, console)
+    _run_slash_turn(session, console, _take_prompt(session))
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
+    )
+    _run_slash_turn(session, console, _take_prompt(session))
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
+    )
+
+    # Assert: the tool calls took the reads started at the menus instead of repeating them.
+    assert session.active_skill == ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME
+    assert scans == ["workspace-scan-prefetch"]
+    assert reads == [f"{_REPOSITORY} on github-ci-analysis-prefetch"]
+    assert llm.invocations == 4

@@ -238,6 +238,25 @@ def test_tool_call_analytics_records_batch_rejection(
     assert all(event["error_message"].startswith("Nothing ran") for event in captured)
 
 
+def test_tool_call_analytics_names_a_failure_that_carried_no_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An error result with blank content must not reach analytics as an empty message."""
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+
+    def blank_failure(_args: dict[str, Any], _ctx: AgentToolContext) -> ToolExecutionResult:
+        return ToolExecutionResult(content="", details=None, is_error=True)
+
+    execute_tool_calls([_call()], [_tool(execute=blank_failure)], {})
+
+    assert captured[0]["outcome"] == "tool_error"
+    assert captured[0]["error_message"] == "echo failed (tool_error) without an error message."
+
+
 @pytest.mark.parametrize(
     "status", ["blocked", "failed", "incomplete", "succeeded", "private result"]
 )

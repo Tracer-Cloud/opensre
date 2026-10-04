@@ -96,6 +96,30 @@ def extract_cache_tokens(usage: Any) -> tuple[int | None, int | None]:
     return _to_int(read), _to_int(write)
 
 
+def extract_reasoning_tokens(usage: Any) -> int | None:
+    """Hidden reasoning tokens (part of the output count) from an OpenAI usage payload.
+
+    Responses nests them under ``output_tokens_details``, Chat Completions under
+    ``completion_tokens_details``. ``None`` when the provider sent neither.
+    """
+    if usage is None:
+        return None
+    for details_key in ("output_tokens_details", "completion_tokens_details"):
+        details = (
+            usage.get(details_key) if isinstance(usage, dict) else getattr(usage, details_key, None)
+        )
+        if details is None:
+            continue
+        value = (
+            details.get("reasoning_tokens")
+            if isinstance(details, dict)
+            else getattr(details, "reasoning_tokens", None)
+        )
+        if isinstance(value, (int, float)):
+            return int(value)
+    return None
+
+
 def _log_usage(
     model: str,
     inp: int | None,

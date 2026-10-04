@@ -21,6 +21,7 @@ from integrations.hosted_gateway import (
     ERR_ALREADY_SETTLED,
     ERR_GATEWAY_UNAVAILABLE,
     ERR_NOT_RUNNING,
+    ERR_TOO_MANY_PROMPTS,
     ERR_UNKNOWN_PROMPT,
     HostedGatewayClient,
     HostedGatewayError,
@@ -36,6 +37,12 @@ from tools.registry import clear_tool_registry_cache, get_registered_tool_map
 
 _TOKEN = "osre_pat_test_token_value"
 _ID = "p_" + "a" * 32
+
+
+@pytest.fixture(autouse=True)
+def _no_submit_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One attempt per call unless a test opts into the restart backoff."""
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", ())
 
 
 def _client(transport: httpx.MockTransport) -> HostedGatewayClient:
@@ -405,7 +412,7 @@ def test_a_full_prompt_queue_is_not_described_as_a_restart(monkeypatch: pytest.M
     out = ask_hosted_gateway(prompt="delegate the demo")
 
     # Assert
-    assert out["cause_code"] == "too_many_prompts"
+    assert out["error_kind"] == ERR_TOO_MANY_PROMPTS
     assert "queue is full" in out["response_text"]
     assert "may still be starting" not in out["response_text"]
 
@@ -431,6 +438,68 @@ def test_a_lost_submission_is_resent_under_its_request_id_and_a_known_prompt_by_
     assert resent["response_text"] == "ran once"
     assert f"Ask about prompt {_ID} again" in known["response_text"]
     assert known["prompt_id"] == _ID and "request_id" not in known
+
+
+def test_a_restarting_gateway_is_retried_under_one_request_id_before_failing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production: most failures were a send that hit a gateway mid-restart, surfaced at once."""
+    # Arrange: two sends hit a restarting gateway, the third is taken; a second call never is
+    restarting = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    taken = PromptRecord(_ID, "done", answer="ran once")
+    app = _App([restarting, restarting, taken, restarting, restarting, restarting])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo", context=context)
+    given_up = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert: the retries reuse one request id, the user hears once, and the backoff is bounded
+    assert out["response_text"] == "ran once"
+    assert len(set(app.sent_request_ids[:3])) == 1
+    assert [u["progress"] for u in updates][0].startswith(gateway_prompt._UNANSWERED_NOTICE)
+    assert len(updates) == 1
+    assert given_up["success"] is False and given_up["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert len(app.sent) == 6
+
+
+def test_no_retry_starts_once_the_retry_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each send can wait out HTTP timeouts, so the retries are bounded by elapsed time."""
+    # Arrange: the gateway keeps failing and the budget is already spent
+    restarting = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    app = _App([restarting, restarting, restarting])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS", 0.0)
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["success"] is False and out["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert len(app.sent) == 1
+
+
+def test_a_refusal_that_is_not_transient_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    app = _App([HostedGatewayError(ERR_NOT_RUNNING, HTTPStatus.CONFLICT)])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["error_kind"] == ERR_NOT_RUNNING and len(app.sent) == 1
 
 
 def test_an_answer_whose_response_was_lost_is_followed_not_sent_again(

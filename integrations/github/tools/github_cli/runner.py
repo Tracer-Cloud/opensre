@@ -299,6 +299,7 @@ def run_gh(
 
 __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
+    "MAX_GH_OUTPUT_CHARS",
     "MAX_TIMEOUT_SECONDS",
     "build_gh_argv",
     "denied_gh_command",

@@ -60,6 +60,8 @@ cli_exec_tool = RegisteredTool(
     description=(
         "Run an `opensre` CLI subcommand the user asked for (payload without the leading "
         "`opensre ` prefix), such as integrations/status/list/show/synthetic checks. "
+        "`payload` is the only argument (there is no `command` argument): when asked to "
+        "run `opensre <args>` via cli_exec, pass `<args>` as `payload`. "
         "Not a discovery tool: never run it to find a repository, a token, or configured "
         "integrations for a skill, and never run `health` unless the user asked for a "
         "health check; it prints every integration on the machine."

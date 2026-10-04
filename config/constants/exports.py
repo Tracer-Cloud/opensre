@@ -196,6 +196,7 @@ EXPORTS: dict[str, str] = {
     "PROMPT_DEFAULT_ACTOR": "gateway",
     "PROMPT_CONVERSATION_NEW": "gateway",
     "PROMPT_MAX_CHARS": "gateway",
+    "PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS": "gateway",
     "PROMPT_QUEUE_MAX": "gateway",
     "PROMPT_PROGRESS_KIND_NOTE": "gateway",
     "PROMPT_PROGRESS_KIND_PLAN": "gateway",
@@ -242,6 +243,8 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_PROMPT_POLL_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS": "hosted_gateway",
     # github
     "GH_TOKEN_ENV": "github",
@@ -315,6 +318,8 @@ EXPORTS: dict[str, str] = {
     "LLM_PROVIDER_ENV": "llm",
     "OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV": "llm",
     "OPENSRE_REACT_GOAL_LLM_REVIEW_ENV": "llm",
+    "OPENAI_PROMPT_CACHE_KEY_HASH_CHARS": "llm",
+    "OPENAI_PROMPT_CACHE_KEY_PREFIX": "llm",
     # mariadb
     "MARIADB_DATABASE_ENV": "mariadb",
     "MARIADB_HOST_ENV": "mariadb",
@@ -356,6 +361,7 @@ EXPORTS: dict[str, str] = {
     "NEW_RELIC_DEFAULT_INCIDENT_LIMIT": "new_relic",
     "NEW_RELIC_DEFAULT_WINDOW_MINUTES": "new_relic",
     "NEW_RELIC_INSTANCES_ENV": "new_relic",
+    "NEW_RELIC_TIMESERIES_MAX_BUCKETS": "new_relic",
     "NEW_RELIC_NRQL_LIMIT_MAX": "new_relic",
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS": "new_relic",
     # opensearch
@@ -551,7 +557,10 @@ EXPORTS: dict[str, str] = {
     "INTEGRATIONS_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_STORE_PATH_ENV": "tenancy",
     # tooling
+    "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",
+    "TOOL_PREFETCH_MAX_ENTRIES": "tooling",
+    "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "ToolBlockedBy": "tooling",
     "ToolSkippedBy": "tooling",
     # tracer

@@ -18,6 +18,7 @@ from integrations.hosted_gateway.client import (
     ERR_NOT_SIGNED_IN,
     ERR_NOT_SUPPORTED,
     ERR_PROMPT_TOO_LARGE,
+    ERR_TOO_MANY_PROMPTS,
     ERR_UNAUTHORIZED,
     ERR_UNKNOWN_PROMPT,
     ERR_UNREACHABLE,
@@ -42,6 +43,10 @@ _FAILURE_TEXT = {
     ERR_NOT_RUNNING: "Your organization's hosted gateway is not running, so it cannot take a prompt.",
     ERR_UNKNOWN_PROMPT: "The hosted gateway no longer holds that prompt; send it again.",
     ERR_PROMPT_TOO_LARGE: "That prompt is too long for the hosted gateway; shorten it.",
+    ERR_TOO_MANY_PROMPTS: (
+        "The hosted gateway's prompt queue is full, so it refused this prompt and queued "
+        "nothing. Send it again in a moment."
+    ),
     ERR_ALREADY_SETTLED: "That prompt already finished, so there is nothing to cancel.",
     ERR_NOT_OWNED: (
         "The hosted gateway is being replaced and the outgoing task still runs that prompt; "
@@ -69,10 +74,6 @@ _CAUSE_TEXT = {
         "connection was refused or timed out). That happens while the gateway is restarting, "
         "including after an integration change in the OpenSRE app, which takes a few minutes. "
         "Try again once it is steady."
-    ),
-    "too_many_prompts": (
-        "The hosted gateway's prompt queue is full, so it refused this prompt. Send it again "
-        "in a moment."
     ),
     "prompt_intake_unavailable": (
         "The gateway process is running but is not accepting prompts yet. Try again in a minute."
@@ -216,6 +217,11 @@ def _status_text(exc: HostedGatewayError, settings_url: str) -> str:
     """The sentence for ``exc.code``; a not-provisioned refusal names the admin page."""
     if exc.code == ERR_NOT_PROVISIONED:
         return not_provisioned_text(settings_url)
+    if exc.code == ERR_TOO_MANY_PROMPTS and exc.retry_after:
+        return (
+            "The hosted gateway's prompt queue is full, so it refused this prompt and queued "
+            f"nothing. Send it again in about {exc.retry_after} seconds."
+        )
     return _FAILURE_TEXT.get(exc.code, f"The OpenSRE app could not do that ({exc.code}).")
 
 

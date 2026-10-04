@@ -8,6 +8,7 @@ import sys
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
@@ -1092,10 +1093,45 @@ def test_the_scheduling_tool_returns_the_refusal_reason(monkeypatch: pytest.Monk
         owner="Tracer-Cloud", repo="opensre", pr_number=6408, github_token="t"
     )
 
-    # Assert
+    # Assert: the reason is in the error too, which is all the model and telemetry read
     assert result["ok"] is False
     assert result["response_text"] == refusal
     assert result["error_kind"] == "refused"
+    assert refusal in result["error"]
+
+
+def _signed_in_api(_token: str) -> _PullRequestApi:
+    return _PullRequestApi(state="open", head_full_name="Tracer-Cloud/opensre")
+
+
+def test_a_failed_repair_read_names_its_cause_not_a_generic_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Production: every failed read said only 'check your GitHub connection and run id'."""
+    from integrations.github.tools.ci_repair_loop import tool as repair_tool
+
+    # Arrange: GitHub refuses the token while the account is looked up
+    class _RefusingClient:
+        def __init__(self, _token: str) -> None:
+            pass
+
+        def request(self, _method: str, path: str) -> Any:
+            raise GitHubApiError("Bad credentials", status_code=HTTPStatus.UNAUTHORIZED, path=path)
+
+    monkeypatch.setattr(repair_tool, "RepairStore", lambda: RepairStore(tmp_path))
+    monkeypatch.setattr(repair_tool, "configured_token", lambda _token: "t")
+    monkeypatch.setattr(repair_tool, "GitHubRestClient", _RefusingClient)
+
+    # Act
+    unauthorized = repair_tool.get_ci_repair_loop(task_id="a" * 12, github_token="t")
+    monkeypatch.setattr(repair_tool, "GitHubRestClient", _signed_in_api)
+    unknown = repair_tool.get_ci_repair_loop(task_id="not-a-run", github_token="t")
+
+    # Assert
+    assert unauthorized["ok"] is False
+    assert f"{HTTPStatus.UNAUTHORIZED.value}" in unauthorized["error"]
+    assert "Bad credentials" in unauthorized["error"]
+    assert "Invalid CI repair run id" in unknown["error"]
 
 
 def test_an_active_run_is_reused_without_the_pull_request_check(

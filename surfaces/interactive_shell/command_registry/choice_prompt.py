@@ -57,6 +57,9 @@ from surfaces.interactive_shell.command_registry.prerequisite_menu import (
 )
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
+from surfaces.interactive_shell.runtime.startup.analysis_prefetch import (
+    prefetch_after_menu_answer,
+)
 from surfaces.interactive_shell.runtime.startup.onboarding_telemetry import (
     capture_onboarding_choice,
 )
@@ -265,6 +268,8 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     _capture_prompt_rendered(session, pending, render_mode="picker")
     clear_live_prompt_paint(session)
     play_notification(NotifyEvent.INPUT_NEEDED)  # the agent is now waiting on the user
+    # Launch work held for the first wait starts now, settling behind this draw.
+    session.terminal.release_startup_work()
     if pending.is_batch():
         picked = repl_ask_user(items, on_answer=remember_answer, on_dismiss=dismiss_keys.append)
         if picked is None:
@@ -414,6 +419,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return _show_queued_menu(session, console)
     if is_onboarding:
         _enter_chosen_demo(session, console, picked_one)
+    prefetch_after_menu_answer(session, picked_one)
     session.terminal.set_auto_command(answer)
     session.terminal.awaiting_handoff_answer = True
     # ``render_choice_selections`` above already painted this answer's card.

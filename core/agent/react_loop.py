@@ -152,6 +152,22 @@ def _observation_fingerprint(
     return digest.digest()
 
 
+_CALL_USAGE_FIELDS = ("input_tokens", "cache_read_tokens", "output_tokens", "reasoning_tokens")
+
+
+def _record_call_usage(span_attrs: dict[str, Any], response: Any) -> None:
+    """Put the provider-reported usage of one model call on its trace span.
+
+    The span lands in the session log, which makes the per-call prompt-cache
+    hit rate and reasoning spend readable after the fact. Fields the provider
+    did not report stay off the span rather than reading as 0.
+    """
+    for name in _CALL_USAGE_FIELDS:
+        value = getattr(response, name, None)
+        if isinstance(value, int):
+            span_attrs[name] = value
+
+
 def _traced_exception_message(exc: BaseException) -> str | None:
     """Redacted, capped exception text for an error span; ``None`` when nothing is traced."""
     if not is_session_trace_active():
@@ -464,6 +480,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             span_attrs["has_tool_calls"] = response.has_tool_calls
             span_attrs["tool_call_count"] = len(response.tool_calls)
             span_attrs["content_chars"] = len(response.content or "")
+            _record_call_usage(span_attrs, response)
             if is_observation_sink_active():
                 generation.update(
                     output=generation_output(response),

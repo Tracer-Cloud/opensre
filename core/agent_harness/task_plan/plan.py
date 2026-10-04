@@ -205,8 +205,9 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
     raw_plan = args.get("plan")
     if not isinstance(raw_plan, list) or len(raw_plan) < 2:
         return None, (
-            "plan must list at least two steps; work that fits in one step needs "
-            "no plan, so run its tool directly"
+            "plan must list at least two steps: list the work already done this "
+            "turn as completed and each remaining step after it. Only work that "
+            "fits in one tool call, with nothing run yet, needs no plan."
         )
     steps: list[PlanStep] = []
     in_progress = 0

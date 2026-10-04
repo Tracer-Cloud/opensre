@@ -200,6 +200,40 @@ def test_run_gh_refuses_a_json_result_the_output_cap_cut_short() -> None:
     assert result["truncated"] is True
 
 
+def test_a_graphql_query_reaches_gh_verbatim_as_one_argument() -> None:
+    """Production GraphQL parse errors: the query must not be split, quoted, or cut on the way."""
+    # Arrange: braces, quotes, newlines and $variables in one argument
+    query = (
+        "query=query($o: String!, $n: String!) {\n"
+        "  repository(owner: $o, name: $n) { pullRequests(first: 5, states: OPEN) "
+        "{ nodes { number title } } }\n}"
+    )
+    args = ["api", "graphql", "-f", query, "-f", "o=acme", "-f", "n=widgets"]
+    completed = MagicMock(returncode=0, stdout='{"data": {}}', stderr="")
+
+    # Act
+    with (
+        patch("integrations.github.tools.github_cli.runner.resolve_github_token", return_value="t"),
+        patch(
+            "integrations.github.tools.github_cli.runner.shutil.which", return_value="/usr/bin/gh"
+        ),
+        patch(
+            "integrations.github.tools.github_cli.runner.subprocess.run", return_value=completed
+        ) as run_mock,
+    ):
+        run_gh(args=args, repo="acme/widgets")
+
+    # Assert: no -R for gh api, and the query is the same single argv entry
+    assert run_mock.call_args.args[0] == ["gh", *args]
+
+
+def test_the_description_says_how_to_stay_under_the_output_cap_up_front() -> None:
+    """The model kept hitting the cut-JSON refusal; the narrowing flags belong in the contract."""
+    description = _registered(github_cli).description
+
+    assert "--jq" in description and "--limit" in description and "--json" in description
+
+
 def test_run_gh_missing_token() -> None:
     with patch("integrations.github.tools.github_cli.runner.resolve_github_token", return_value=""):
         result = run_gh(args=["issue", "list"])

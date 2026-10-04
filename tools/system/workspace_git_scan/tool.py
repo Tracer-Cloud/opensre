@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,11 @@ from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from tools.system.workspace_git_scan.prefetch import (
+    ScanRequest,
+    claim_scan_prefetch,
+    start_scan_prefetch,
+)
 from tools.system.workspace_git_scan.render import render_snapshot, snapshot_text
 from tools.system.workspace_git_scan.scan import ScanStop, WorkspaceSnapshot, scan_workspace
 from tools.system.workspace_git_scan.skips import default_skip_paths
@@ -71,6 +77,50 @@ def _working_directory() -> Path | None:
         return None
 
 
+def _scan_request(root: str | None, days: int | None) -> ScanRequest:
+    """The scan's arguments for a call with ``root`` and ``days``, prefetched or not."""
+    window = min(max(int(days or _DEFAULT_DAYS), 1), _MAX_DAYS)
+    # Skip paths match the walk's spelling of each folder, so home, the root and
+    # the working directory are all compared in their resolved form.
+    home = Path.home().resolve()
+    return ScanRequest(
+        root=Path(root).expanduser().resolve() if root else home,
+        days=window,
+        skip_paths=default_skip_paths(home, cwd=_working_directory(), platform=sys.platform),
+    )
+
+
+def _scan(
+    request: ScanRequest,
+    *,
+    should_stop: Callable[[], bool] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+) -> WorkspaceSnapshot:
+    return scan_workspace(
+        request.root,
+        days=request.days,
+        skip_paths=request.skip_paths,
+        should_stop=should_stop,
+        on_progress=on_progress,
+    )
+
+
+def _prefetch_scan(request: ScanRequest, should_stop: Callable[[], bool]) -> WorkspaceSnapshot:
+    return _scan(request, should_stop=should_stop)
+
+
+def prefetch_workspace_scan(root: str | None = None, days: int | None = None) -> bool:
+    """Start the scan a ``scan_local_git_workspace(root, days)`` call would run, in the background.
+
+    That call, made within a couple of minutes, takes the result instead of
+    scanning again. Never renders or reports. False when nothing was started.
+    """
+    request = _scan_request(root, days)
+    if not request.root.is_dir():
+        return False
+    return start_scan_prefetch(request, partial(_prefetch_scan, request))
+
+
 def _repo_payload(snapshot: WorkspaceSnapshot) -> list[dict[str, Any]]:
     return [
         {
@@ -118,13 +168,12 @@ def scan_local_git_workspace(
 ) -> dict[str, Any]:
     """Scan for local git checkouts and render the activity snapshot.
 
-    A cancelled scan returns ``cancelled: True`` and renders nothing.
+    A cancelled scan returns ``cancelled: True`` and renders nothing. A matching
+    scan from :func:`prefetch_workspace_scan` is used instead of a new one.
     """
-    window = min(max(int(days or _DEFAULT_DAYS), 1), _MAX_DAYS)
-    # Skip paths match the walk's spelling of each folder, so home, the root and
-    # the working directory are all compared in their resolved form.
-    home = Path.home().resolve()
-    scan_root = Path(root).expanduser().resolve() if root else home
+    request = _scan_request(root, days)
+    window = request.days
+    scan_root = request.root
     if not scan_root.is_dir():
         return {
             "source": "system",
@@ -133,13 +182,12 @@ def scan_local_git_workspace(
             "response_text": f"{scan_root} is not a directory; nothing was scanned.",
         }
     console = _console(context)
-    snapshot = scan_workspace(
-        scan_root,
-        days=window,
-        skip_paths=default_skip_paths(home, cwd=_working_directory(), platform=sys.platform),
-        should_stop=_cancellation(console),
-        on_progress=_progress(context),
-    )
+    should_stop = _cancellation(console)
+    # A scan started when the menu was answered stands in for this one; a
+    # cancel while it finishes reaches the live scan below, which stops at once.
+    snapshot = claim_scan_prefetch(request, should_stop=should_stop)
+    if snapshot is None:
+        snapshot = _scan(request, should_stop=should_stop, on_progress=_progress(context))
     if snapshot.stop_reason is ScanStop.CANCELLED:
         return {
             "source": "system",
@@ -180,4 +228,4 @@ def scan_local_git_workspace(
     }
 
 
-__all__ = ["scan_local_git_workspace"]
+__all__ = ["prefetch_workspace_scan", "scan_local_git_workspace"]

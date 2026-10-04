@@ -231,6 +231,59 @@ def test_validate_public_input_extra_arg_rejected_with_additional_properties_fal
     assert "unexpected" in error
 
 
+def test_validate_public_input_empty_payload_says_no_arguments_arrived() -> None:
+    error = _make_strict_tool().validate_public_input({})
+    assert error is not None
+    assert error.startswith("strict_tool missing required args: name.")
+    assert "carried no arguments" in error
+
+
+def test_validate_public_input_alias_names_the_expected_args() -> None:
+    """A model sending ``cmd``/``command`` for a ``payload`` arg learns the real name."""
+    error = _make_strict_tool().validate_public_input({"title": "secret-value"})
+    assert error is not None
+    assert "Unknown args received: title" in error
+    assert "this tool's args are: name, count" in error
+    assert "secret-value" not in error
+
+
+def test_validate_public_input_type_mismatch_names_expected_and_actual_type() -> None:
+    error = _make_strict_tool().validate_public_input({"name": ["a", "b"]})
+    assert error == "strict_tool.name has invalid type/value: expected string, got array."
+
+
+def test_validate_public_input_enum_line_points_at_the_allowed_head() -> None:
+    """A full ``/cmd sub arg`` line in an enum field says to move the rest to args."""
+    tool = RegisteredTool(
+        name="slashy",
+        description="d",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "enum": ["/integrations", "/cron"]},
+                "args": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["command"],
+            "additionalProperties": False,
+        },
+        source="interactive_shell",
+        run=lambda **_kw: None,
+    )
+
+    line_error = tool.validate_public_input({"command": "/integrations setup tok-123"})
+    unknown_error = tool.validate_public_input({"command": "integrations"})
+    string_args_error = tool.validate_public_input({"command": "/cron", "args": '["list"]'})
+
+    assert line_error is not None
+    assert "'/integrations' is allowed" in line_error
+    assert "tok-123" not in line_error
+    assert unknown_error == (
+        "slashy.command has invalid type/value: expected one of: /integrations, /cron."
+    )
+    assert string_args_error is not None
+    assert "send a JSON array, not a string" in string_args_error
+
+
 def test_validate_public_input_type_mismatch_returns_error() -> None:
     rt = _make_strict_tool()
     error = rt.validate_public_input({"name": "alice", "count": "not-an-int"})

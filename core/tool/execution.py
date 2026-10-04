@@ -513,6 +513,11 @@ def _capture_tool_call_analytics(
         status if status in ("noop", "blocked", "failed", "incomplete", "succeeded") else ""
     )
     failure = _failure_facts(details, span_attrs or {}) if is_error else _NO_FAILURE
+    recorded_error = error_message.strip() if is_error else ""
+    if is_error and not recorded_error:
+        # A failure with no text of its own is still recorded as one, so an
+        # undescribed error path shows up by name instead of as a blank.
+        recorded_error = f"{tool_call.name} failed ({outcome}) without an error message."
     capture_agent_tool_call_completed(
         tool_call_id=tool_call.id,
         tool_name=tool_call.name,
@@ -524,7 +529,7 @@ def _capture_tool_call_analytics(
         terminate=terminate,
         duration_ms=duration_ms,
         work_status=work_status,
-        error_message=error_message.strip() if is_error else "",
+        error_message=recorded_error,
         blocked_by=failure.blocked_by,
         skipped_by=skipped_by.value if skipped_by is not None else "",
         exception_type=failure.exception_type,

@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from functools import lru_cache
 from typing import Any
 
+from config.constants.llm import (
+    OPENAI_PROMPT_CACHE_KEY_HASH_CHARS,
+    OPENAI_PROMPT_CACHE_KEY_PREFIX,
+)
 from core.llm.types import ToolCall
 
 _RESPONSE_OUTPUT_KEY = "_openai_response_output"
@@ -13,6 +19,19 @@ _RESPONSE_OUTPUT_KEY = "_openai_response_output"
 def uses_responses_api(model: str, api_key_env: str) -> bool:
     """Return whether this official OpenAI model requires the Responses API."""
     return api_key_env == "OPENAI_API_KEY" and model.lower().startswith("gpt-5.6")
+
+
+@lru_cache(maxsize=32)
+def responses_prompt_cache_key(system: str) -> str:
+    """Return the ``prompt_cache_key`` for requests that share this system prompt.
+
+    The key is derived from the prompt itself, so every request that can reuse
+    the same cached prefix carries the same key, and different prompts never
+    share a routing bucket. Cached because one run sends the same prompt on
+    every model call.
+    """
+    digest = hashlib.sha256(system.encode("utf-8")).hexdigest()
+    return f"{OPENAI_PROMPT_CACHE_KEY_PREFIX}{digest[:OPENAI_PROMPT_CACHE_KEY_HASH_CHARS]}"
 
 
 def responses_tool_specs(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

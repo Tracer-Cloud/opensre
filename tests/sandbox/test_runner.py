@@ -62,6 +62,15 @@ class TestSandboxRunnerBasicExecution:
         result = run_python_sandbox("pass")
         assert result.inputs == {}
 
+    def test_non_ascii_code_and_output_are_utf8_on_every_platform(self) -> None:
+        # Windows production: "'charmap' codec can't encode character '→'" — the
+        # script file and child stdio used the cp1252 platform default.
+        result = run_python_sandbox(
+            "import sys\nprint(sys.flags.utf8_mode, sys.stdout.encoding, 'a → b')"
+        )
+        assert result.success, result.stderr
+        assert result.stdout.strip() == "1 utf-8 a → b"
+
     def test_frozen_runner_skips_broken_candidate_and_uses_path_python(
         self,
         tmp_path: Path,
@@ -112,8 +121,8 @@ class TestSandboxRunnerBasicExecution:
         ]
         assert commands[1][1:3] == ["-I", "-c"]
         assert commands[2][0] != frozen_executable
-        assert commands[2][1] == "-I"
-        assert Path(commands[2][2]).suffix == ".py"
+        assert commands[2][1:4] == ["-I", "-X", "utf8"]
+        assert Path(commands[2][4]).suffix == ".py"
 
     def test_frozen_interpreter_unavailable_when_all_candidates_are_broken(
         self,

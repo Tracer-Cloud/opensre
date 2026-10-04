@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import patch
 
@@ -85,6 +86,44 @@ def test_pr_discovery_accepts_explicit_repo_without_configured_default() -> None
     assert result.is_error is False
     assert result.details["available"] is True
     assert paginate.call_args.args[0] == "/repos/o/r/pulls"
+
+
+@pytest.mark.parametrize(
+    ("owner", "repo"),
+    [
+        ("Tracer-Cloud", "Tracer-Cloud/opensre"),
+        ("", "https://github.com/Tracer-Cloud/opensre"),
+        ("Tracer-Cloud", "opensre"),
+    ],
+)
+def test_pr_status_reads_one_repository_however_the_model_names_it(owner: str, repo: str) -> None:
+    """A full name in ``repo`` was appended to ``owner``, and GitHub answered 404."""
+    with patch.object(GitHubRestClient, "paginate", return_value=[]) as paginate:
+        result = summarize_github_pr_status(owner=owner, repo=repo, github_token="tok")
+
+    assert result["available"] is True
+    assert paginate.call_args.args[0] == "/repos/Tracer-Cloud/opensre/pulls"
+
+
+def test_pr_status_refuses_a_missing_owner_without_calling_github() -> None:
+    with patch.object(GitHubRestClient, "paginate") as paginate:
+        result = summarize_github_pr_status(owner=None, repo="opensre", github_token="tok")  # type: ignore[arg-type]
+
+    assert result["available"] is False and "owner" in result["error"]
+    paginate.assert_not_called()
+
+
+def test_pr_status_404_says_the_repository_is_missing_or_not_visible_to_the_token() -> None:
+    not_found = GitHubApiError(
+        "Not Found (https://docs.github.com/rest/pulls/pulls#list-pull-requests)",
+        status_code=HTTPStatus.NOT_FOUND,
+        path="/repos/acme/private/pulls",
+    )
+    with patch.object(GitHubRestClient, "paginate", side_effect=not_found):
+        result = summarize_github_pr_status(owner="acme", repo="private", github_token="tok")
+
+    assert result["available"] is False
+    assert "acme/private does not exist or the GitHub token cannot see it" in result["error"]
 
 
 def test_list_github_work_items_classifies_taken_and_up_for_grabs() -> None:

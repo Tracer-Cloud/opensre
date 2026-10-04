@@ -96,6 +96,8 @@ class AgentLLMResponse:
     #: Provider-reported usage for this call; ``None`` when the provider sent none.
     input_tokens: int | None = None
     output_tokens: int | None = None
+    #: The part of ``output_tokens`` spent on hidden reasoning, when reported.
+    reasoning_tokens: int | None = None
 
     @property
     def has_tool_calls(self) -> bool:

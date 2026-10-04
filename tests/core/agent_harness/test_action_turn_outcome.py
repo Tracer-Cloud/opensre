@@ -393,3 +393,49 @@ def test_a_plan_update_does_not_rescue_a_restated_closing() -> None:
 
     # Assert
     assert chunks == []
+
+
+def test_a_verify_reread_of_the_same_record_is_shown_once() -> None:
+    """A re-read that returns the delegated report again must not print it twice."""
+    from core.agent_harness.turns.action_driver import (
+        _generic_chunks,
+        _response_text_from_generic_results,
+    )
+    from core.llm.types import ToolCall
+
+    report = "acme/demo#1 success: task t1, failed run 11, fix abc, passing run 12."
+
+    class _ToolResult:
+        def __init__(self, text: str, prompt_id: str = "") -> None:
+            self.details = {"response_text": text}
+            if prompt_id:
+                self.details["prompt_id"] = prompt_id
+            self.content = text
+            self.is_error = False
+
+    probe = ToolCall(id="1", name="ask_hosted_gateway", input={"prompt": "probe"})
+    repair = ToolCall(id="2", name="ask_hosted_gateway", input={"prompt": "repair"})
+    reread = ToolCall(id="3", name="ask_hosted_gateway", input={"prompt_id": "p_repair"})
+    first_check = ToolCall(id="4", name="github_cli", input={"args": ["api", "a"]})
+    second_check = ToolCall(id="5", name="github_cli", input={"args": ["api", "b"]})
+
+    class _Result:
+        tool_results = [
+            (probe, _ToolResult("Login acme; classic PAT.", "p_probe")),
+            (repair, _ToolResult(report, "p_repair")),
+            (reread, _ToolResult(report, "p_repair")),
+            (first_check, _ToolResult("0")),
+            (second_check, _ToolResult("0")),
+        ]
+        executed = tool_results
+        planned = [probe, repair, reread, first_check, second_check]
+
+    chunks = _generic_chunks(_Result())
+    response_text = _response_text_from_generic_results(_Result())
+
+    # The re-read of the same record shows once, in the chunks and the saved text.
+    assert sum(report in chunk for chunk in chunks) == 1
+    assert response_text.count(report) == 1
+    assert "Login acme" in response_text
+    # Two independent checks with the same output both stay.
+    assert sum(chunk.strip().endswith("0") for chunk in chunks) >= 2
