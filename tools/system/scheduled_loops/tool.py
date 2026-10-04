@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from config.constants.organization import organization_id
+from config.constants.scheduler import WORK_UNVERIFIED_ERROR_KIND
 from config.principal import PrincipalKind
 from config.scope_context import current_scope
 from core.domain.types.tools import ToolSurface
@@ -122,34 +123,39 @@ def _cadence(cron: str, timezone: str) -> str:
     return "on a custom schedule"
 
 
-def _health(loop: LoopSummary, run: TaskRun | None) -> str:
-    """Whether the loop is doing its job, with the reason when it is not."""
+def _health(loop: LoopSummary, run: TaskRun | None) -> tuple[str, bool]:
+    """Whether the loop is doing its job, with the reason when it is not, and if it needs a person."""
     if not loop.enabled:
-        return "paused" if loop.last_run else "not switched on yet"
+        return ("paused" if loop.last_run else "not switched on yet"), False
     if loop.schedule_error:
-        return f"not running: {_clip(loop.schedule_error, _REASON_CHARS)}"
+        return f"not running: {_clip(loop.schedule_error, _REASON_CHARS)}", True
     if run is None:
-        return "has not run yet"
+        return "has not run yet", False
     if run.status == TaskStatus.SUCCESS:
-        return "last run went fine"
+        return "last run went fine", False
     if run.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
-        return "running now"
+        return "running now", False
     if run.status == TaskStatus.SKIPPED:
-        return "last run was skipped"
-    reason = (
-        run.error.strip().splitlines()[0].rstrip(" .") if run.error and run.error.strip() else ""
-    )
+        return "last run was skipped", False
+    if run.work_error_kind == WORK_UNVERIFIED_ERROR_KIND and run.status == TaskStatus.FAILED:
+        # The agent replied but no tool reported an outcome: the work may be done, it is unconfirmed.
+        return "last run finished, but no tool confirmed its work", False
+    error = run.error.strip()
+    reason = error.splitlines()[0].rstrip(" .") if error else run.work_error_kind.replace("_", " ")
     verb = "stopped early" if run.status == TaskStatus.ABANDONED else "failed"
-    return f"last run {verb}: {_clip(reason, _REASON_CHARS)}" if reason else f"last run {verb}"
+    text = f"last run {verb}: {_clip(reason, _REASON_CHARS)}" if reason else f"last run {verb}"
+    return text, True
 
 
 def _loop_row(loop: LoopSummary, run: TaskRun | None) -> dict[str, Any]:
+    health, needs_attention = _health(loop, run)
     row: dict[str, Any] = {
         "id": loop.id,
         "name": loop.name,
         "purpose": _purpose(loop),
         "cadence": _cadence(loop.cron, loop.timezone),
-        "health": _health(loop, run),
+        "health": health,
+        "needs_attention": needs_attention,
         "kind": str(loop.kind),
         "prompt": loop.prompt,
         "cron": loop.cron,
@@ -177,11 +183,11 @@ def _summary(rows: list[dict[str, Any]], *, store_missing: bool) -> str:
             return "No scheduler task store exists here yet, so no loops are configured."
         return "No scheduled loops are configured."
     active = sum(1 for row in rows if row["enabled"])
-    needs_attention = sum(1 for row in rows if row["enabled"] and "fail" in row["health"])
+    needs_attention = sum(1 for row in rows if row["needs_attention"])
     noun = "loop" if len(rows) == 1 else "loops"
     headline = f"{len(rows)} scheduled {noun}, {active} active"
     if needs_attention:
-        headline += f", {needs_attention} need attention"
+        headline += f", {needs_attention} {'needs' if needs_attention == 1 else 'need'} attention"
     lines = [headline + "."]
     for row in rows:
         lines.append(f"- {row['name']}: {row['purpose']}")
@@ -215,8 +221,8 @@ def _summary(rows: list[dict[str, Any]], *, store_missing: bool) -> str:
     ],
     outputs={
         "loops": (
-            "One row per loop: id, name, purpose, cadence, health, kind, cron, enabled, "
-            "status, next_run, latest_run"
+            "One row per loop: id, name, purpose, cadence, health, needs_attention, kind, "
+            "cron, enabled, status, next_run, latest_run"
         ),
         "count": "How many loops were listed",
         "store_missing": "True when no task store file exists yet (nothing was ever scheduled)",

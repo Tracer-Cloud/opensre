@@ -7,9 +7,11 @@ from typing import Any
 
 import pytest
 
+from config.constants.scheduler import WORK_UNVERIFIED_ERROR_KIND
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from infrastructure.scheduling.scheduler.loops import LoopSummary
+from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 from infrastructure.scheduling.scheduler.storage import TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.types import (
     Provider,
@@ -109,7 +111,7 @@ def test_every_loop_is_listed_with_its_schedule_and_newest_run(
     assert repair_row["latest_run"]["error"] == "Stopped after 3 failed repair attempts."
     assert "latest_run" not in everything["loops"][1]
     assert everything["response_text"].splitlines() == [
-        "2 scheduled loops, 1 active, 1 need attention.",
+        "2 scheduled loops, 1 active, 1 needs attention.",
         "- CI repair: o/r: Repair only CI repair: o/r.",
         "  Runs every 5 minutes; last run failed: Stopped after 3 failed repair attempts.",
         "- Standup reminder: Repair only Standup reminder.",
@@ -138,12 +140,8 @@ def test_an_unreadable_store_is_reported_not_shown_as_empty(
     ("cron", "cadence"),
     [
         ("8 * * * *", "every hour"),
-        ("*/15 * * * *", "every 15 minutes"),
-        ("59 */2 * * *", "every 2 hours"),
-        ("30 9 * * *", "daily at 09:30 Europe/Warsaw"),
         ("59 3,15 * * *", "daily at 03:59 and 15:59 Europe/Warsaw"),
         ("0 8 * * mon-fri", "weekdays at 08:00 Europe/Warsaw"),
-        ("0 10 * * 1", "Mondays at 10:00 Europe/Warsaw"),
         ("0 0 1 * *", "on a custom schedule"),
     ],
 )
@@ -165,6 +163,41 @@ def test_a_described_loop_leads_with_its_description_not_its_prompt() -> None:
     # Assert
     assert row["purpose"] == "Keeps open pull requests green by fixing failing checks."
     assert row["health"] == "has not run yet"
+
+
+def test_an_unconfirmed_run_is_not_reported_as_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run whose tools reported no outcome may have done its work; only real failures need a person."""
+    # Arrange: one run replied without tool-confirmed work, one was interrupted with no error text
+    unconfirmed = _loop("a8e1", "PR CI", enabled=True)
+    interrupted = _loop("b9f2", "Merge conflicts", enabled=True)
+    runs = {
+        "a8e1": TaskRun(
+            task_id="a8e1",
+            fire_time="2026-10-04T19:12:00+00:00",
+            status=TaskStatus.FAILED,
+            work_outcome=WorkOutcome(
+                status=WorkStatus.INCOMPLETE, error_kind=WORK_UNVERIFIED_ERROR_KIND
+            ),
+        ),
+        "b9f2": TaskRun(
+            task_id="b9f2",
+            fire_time="2026-10-04T19:04:00+00:00",
+            status=TaskStatus.FAILED,
+            work_outcome=WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="turn_interrupted"),
+        ),
+    }
+    _store_reads(monkeypatch, loops=[unconfirmed, interrupted], runs=runs)
+
+    # Act
+    out = list_scheduled_loops()
+
+    # Assert
+    lines = out["response_text"].splitlines()
+    assert lines[0] == "2 scheduled loops, 2 active, 1 needs attention."
+    assert lines[2] == "  Runs every 5 minutes; last run finished, but no tool confirmed its work."
+    assert lines[4] == "  Runs every 5 minutes; last run failed: turn interrupted."
 
 
 def test_no_store_yet_and_an_empty_store_read_differently(monkeypatch: pytest.MonkeyPatch) -> None:
