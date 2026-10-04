@@ -17,6 +17,7 @@ from gateway.transports.telegram.settings import (
     load_telegram_credentials,
     store_allowed_users,
     store_bot_token,
+    store_owner_user,
 )
 from integrations.messaging_security import MessagingIdentityPolicy
 
@@ -172,6 +173,21 @@ def test_choose_authorized_users_prefers_store() -> None:
 def test_choose_authorized_users_falls_back_to_env() -> None:
     env = GatewayEnv(allowed_users=["1", "2"])
     assert choose_authorized_users(env, {}) == ["1", "2"]
+
+
+def test_choose_authorized_users_falls_back_to_web_app_private_chat() -> None:
+    assert choose_authorized_users(GatewayEnv(), {"default_chat_id": "123456789"}) == ["123456789"]
+
+
+def test_choose_authorized_users_paired_policy_beats_web_app_chat() -> None:
+    policy = MessagingIdentityPolicy(allowed_user_ids=["42"]).model_dump()
+    credentials = {"identity_policy": policy, "default_chat_id": "123456789"}
+    assert choose_authorized_users(GatewayEnv(), credentials) == ["42"]
+
+
+@pytest.mark.parametrize("chat_id", ["-1001234567890", "-42", "@channel", "", "0", None])
+def test_store_owner_user_ignores_group_channel_and_blank_chats(chat_id: object) -> None:
+    assert store_owner_user({"default_chat_id": chat_id}) == []
 
 
 def test_choose_authorized_users_empty_warns(
