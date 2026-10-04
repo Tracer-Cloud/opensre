@@ -22,6 +22,7 @@ from config.constants.conversation_history import (
     OPENSRE_LLM_COMPACTION_ENV,
     OPENSRE_STRUCTURED_HISTORY_ENV,
 )
+from config.constants.runtime_metadata import OPENSRE_WORKSPACE_REPO_ENV
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.command_registry.tasks_cmds import _validate_cancel_args
@@ -1873,7 +1874,7 @@ class TestContextCommand:
     def test_shows_the_repository_the_next_turn_targets(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("OPENSRE_WORKSPACE_REPO", "Tracer-Cloud/opensre")
+        monkeypatch.setenv(OPENSRE_WORKSPACE_REPO_ENV, "Tracer-Cloud/opensre")
         session = Session()
         console, buf = _capture()
         dispatch_slash("/context", session, console)
