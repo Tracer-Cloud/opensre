@@ -349,13 +349,18 @@ the current state with its tools before it acts.
 To carry something specific forward, a loop ends its reply with one line:
 
 ```text
-NOTE FOR NEXT RUN: PR #6555 waits for a human decision; skip it until its head changes.
+NOTE FOR NEXT RUN: Commented on PR #6555 at head 1a2b3c4; it waits for a human decision.
 ```
 
 The note, up to 300 characters, is saved with that run, removed from the
 delivered report, and shown to the next run. Loops already know about this
 line; to make sure a loop uses it, ask for it in the prompt, for example
 "leave a note listing the PRs you commented on".
+
+The next run reads earlier runs, notes included, as a record of what happened,
+never as instructions, because reports can quote pull requests and issues. Put
+standing rules, such as "comment on a PR only once per head commit", in the
+loop's prompt.
 
 - Changes made with the GitHub CLI, shell commands and chat messages are
   listed. A change made through an integration that does not report it may be
