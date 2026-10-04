@@ -1,4 +1,4 @@
-"""Behavioral coverage for the purpose-first, inline tool browser."""
+"""Behavioral coverage for the purpose-first terminal tool browser."""
 
 from __future__ import annotations
 
@@ -7,9 +7,12 @@ from os import terminal_size
 from types import SimpleNamespace
 
 import pytest
+from prompt_toolkit.output.base import DummyOutput, Size
+from prompt_toolkit.output.vt100 import Vt100_Output
 from rich.console import Console
 from rich.text import Text
 
+from config.constants.product import OPENSRE_INTERACTIVE_ENV
 from surfaces.interactive_shell.command_registry import dispatch_slash, tools_cmds
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import tool_browser
@@ -42,9 +45,19 @@ def terminal(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         assert isinstance(key, str)
         return key
 
-    def _erase(_height: int, *, delete: bool = False) -> None:
-        events.append("delete" if delete else "redraw")
-        rows.clear()
+    class _Output(DummyOutput):
+        def enter_alternate_screen(self) -> None:
+            events.append("screen")
+
+        def cursor_goto(self, row: int = 0, column: int = 0) -> None:
+            assert row == column == 0
+            rows.clear()
+
+        def write_raw(self, data: str) -> None:
+            rows.append(data.rstrip("\r\n"))
+
+        def quit_alternate_screen(self) -> None:
+            events.append("restore")
 
     def _size(**_kwargs: object) -> terminal_size:
         return terminal_size((state.columns, state.lines))
@@ -53,8 +66,7 @@ def terminal(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(tool_browser, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(tool_browser, "enter_inline_menu", lambda: events.append("enter"))
     monkeypatch.setattr(tool_browser, "leave_inline_menu", lambda: events.append("leave"))
-    monkeypatch.setattr(tool_browser, "erase_menu_lines", _erase)
-    monkeypatch.setattr(tool_browser, "write_menu_line", lambda row="": rows.append(row))
+    monkeypatch.setattr(tool_browser, "create_output", _Output)
     monkeypatch.setattr(tool_browser, "read_menu_or_char", _read_key)
     state.frames, state.events = frames, events
     return state
@@ -98,7 +110,7 @@ def test_browse_has_compact_rows_and_a_fixed_selected_tool_preview(
     assert len({len(frame) for frame in terminal.frames}) == 1
     assert output.getvalue() == ""
     assert terminal.events[0] == "enter"
-    assert terminal.events[-2:] == ["delete", "leave"]
+    assert terminal.events[-2:] == ["restore", "leave"]
 
 
 def test_long_details_can_be_read_forward_and_backward_without_changing_tool(
@@ -187,7 +199,31 @@ def test_exception_restores_terminal(terminal: SimpleNamespace) -> None:
     with pytest.raises(RuntimeError, match="input failed"):
         tool_browser.browse_tools([_entry("tool")])
 
-    assert terminal.events[-2:] == ["delete", "leave"]
+    assert terminal.events[-2:] == ["restore", "leave"]
+
+
+@pytest.mark.parametrize("dismiss_on_resize", [False, True])
+def test_resizing_keeps_browser_writes_inside_a_temporary_screen(
+    terminal: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, dismiss_on_resize: bool
+) -> None:
+    stream = io.StringIO()
+    output = Vt100_Output(stream, lambda: Size(rows=terminal.lines, columns=terminal.columns))
+    monkeypatch.setattr(tool_browser, "create_output", lambda: output)
+
+    def _shrink() -> str:
+        terminal.columns, terminal.lines = 40, 12
+        return "cancel" if dismiss_on_resize else "down"
+
+    terminal.actions = iter(["enter", _shrink, "cancel"])
+    tool_browser.browse_tools([_entry("search_github"), _entry("fleet_scan")])
+
+    written = stream.getvalue()
+    enter, leave = "\x1b[?1049h", "\x1b[?1049l"
+    assert written.startswith(enter) and written.endswith(leave)
+    assert written.count(enter) == written.count(leave) == 1
+    assert "search_github" in written and "query: string" in written
+    assert "\x1b[3J" not in written  # Never clear the conversation's scrollback.
+    assert terminal.events[-1] == "leave"
 
 
 def test_details_preserve_parameter_requirements_and_full_clipped_name(
@@ -241,6 +277,23 @@ def test_headless_dispatch_does_not_open_browser_on_an_inherited_tty(
 
     assert terminal.events == []
     assert "search_github" in output.getvalue()
+
+
+def test_live_interactive_dispatch_overrides_disabled_startup_preference(
+    terminal: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(OPENSRE_INTERACTIVE_ENV, "0")
+    monkeypatch.setattr(tools_cmds, "build_tool_catalog", lambda: [_entry("search_github")])
+    monkeypatch.setattr(tools_cmds, "repl_tty_interactive", lambda: True)
+    output = io.StringIO()
+
+    assert (
+        dispatch_slash("/tools", Session(), Console(file=output, force_terminal=True), is_tty=True)
+        is True
+    )
+
+    assert terminal.frames and "search_github" in _plain(terminal.frames[0])
+    assert output.getvalue() == ""
 
 
 @pytest.mark.parametrize("entries", [[], [_entry("tool")]])

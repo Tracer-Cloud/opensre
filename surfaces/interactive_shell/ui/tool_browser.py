@@ -1,12 +1,12 @@
-"""Purpose-first, inline browser for registered tools."""
+"""Purpose-first terminal browser for registered tools."""
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from shutil import get_terminal_size
 
+from prompt_toolkit.output import create_output
 from rich.console import Console
 from rich.text import Text
 
@@ -14,10 +14,8 @@ from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal import theme as ui_theme
 from surfaces.shared.terminal.components.choice_menu import (
     enter_inline_menu,
-    erase_menu_lines,
     leave_inline_menu,
     repl_tty_interactive,
-    write_menu_line,
 )
 from surfaces.shared.terminal.components.key_reader import read_menu_or_char
 from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_text_width
@@ -196,12 +194,15 @@ def browse_tools(entries: Sequence[ToolCatalogEntry]) -> None:
     """Keep browsing until dismissed, with one tool expanded at a time."""
     if not entries or not repl_tty_interactive():
         return
-    selected = top = page = drawn_height = 0
+    selected = top = page = 0
     expanded = False
     detail_key: tuple[int, int] | None = None
     details: list[str] = []
+    output = create_output()
     enter_inline_menu()
     try:
+        # A resizable catalog must not reflow into the conversation's scrollback.
+        output.enter_alternate_screen()
         while True:
             size = get_terminal_size(fallback=(80, 24))
             width = max(1, size.columns - 1)
@@ -217,12 +218,11 @@ def browse_tools(entries: Sequence[ToolCatalogEntry]) -> None:
                 width=width,
                 height=size.lines,
             )
-            if drawn_height:
-                erase_menu_lines(drawn_height)
-            drawn_height = len(frame.rows)
+            output.cursor_goto(0, 0)
+            output.erase_down()
             for row in frame.rows:
-                write_menu_line(row)
-            sys.stdout.flush()
+                output.write_raw(f"{row}\r\n")
+            output.flush()
             top, page = frame.top, frame.page
             action = read_menu_or_char()
             if action in ("up", "down", "tab"):
@@ -238,6 +238,7 @@ def browse_tools(entries: Sequence[ToolCatalogEntry]) -> None:
                 return
     finally:
         try:
-            erase_menu_lines(drawn_height, delete=True)
+            output.quit_alternate_screen()
+            output.flush()
         finally:
             leave_inline_menu()

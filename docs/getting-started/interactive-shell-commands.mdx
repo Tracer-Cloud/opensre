@@ -654,9 +654,12 @@ parameter count.
 
 In an interactive terminal, use **↑/↓** to browse and **Enter** to toggle
 parameters and the full description in the preview. **←/→** pages through long
-details; **Esc** closes the browser. Moving to another tool returns to its
-preview. Narrow terminals omit the purpose column; the selected tool's
-description remains visible below the list.
+details; **Esc** closes the browser and restores the conversation. Moving to
+another tool returns to its preview. Narrow terminals omit the purpose column;
+the selected tool's description remains visible below the list.
+
+The browser uses a temporary terminal screen, so browsing and resizing do not
+add tool listings to your conversation's scrollback.
 
 Piped and noninteractive output stays a readable table without keyboard input.
 
