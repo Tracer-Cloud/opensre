@@ -644,12 +644,18 @@ See [LLM providers](/platform/llm-providers).
 
 <Accordion title="/tools">
 
-List tools available to the chat and action surfaces in this build (name, source, surfaces).
+Browse registered tools with their names, short descriptions, and chat/action surfaces.
 
 ```text
 /tools
-/tools list
 ```
+
+In an interactive terminal, use **↑/↓** to browse and **Enter** to expand or
+collapse a tool's parameters and full description. **←/→** pages through long
+details; **Esc** closes the browser. Moving to another tool closes the current
+details. In narrow terminals, expand a tool to see its surfaces.
+
+Piped and noninteractive output stays a readable table without keyboard input.
 
 There is no global `/list` command — use domain-specific list commands (see [Natural language actions](#natural-language-actions)).
 

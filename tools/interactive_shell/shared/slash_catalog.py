@@ -428,7 +428,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     ),
     "/tools": _mcp(
         "Explicit /tools command operation: list registered chat/action tools "
-        "wired into this OpenSRE build.",
+        "wired into this OpenSRE build. Takes no arguments.",
         "User explicitly types /tools or asks to run /tools",
         "User explicitly asks to list registered tools as a shell command",
         anti_examples=(
@@ -624,7 +624,7 @@ def slash_invoke_input_schema(
     args_description = (
         "Positional arguments after the command name. Valid values depend on the "
         "chosen command — see the slash_invoke tool description. Examples: "
-        '["list"] for /tools, ["verify", "datadog"] for /integrations.'
+        '[] for /tools, ["verify", "datadog"] for /integrations.'
     )
     return object_schema(
         properties={

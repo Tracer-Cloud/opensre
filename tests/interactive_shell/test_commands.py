@@ -375,7 +375,7 @@ class TestDispatchSlash:
 
 
 class TestSpecificListCommands:
-    """Coverage for /integrations list, /mcp list, /model show, and /tools list."""
+    """Coverage for /integrations list, /mcp list, /model show, and /tools."""
 
     _FAKE_INTEGRATIONS = [
         {"service": "datadog", "source": "store", "status": "ok", "detail": "API ok"},
@@ -504,7 +504,7 @@ class TestSpecificListCommands:
         )
 
         console, buf = _capture()
-        dispatch_slash("/tools list", Session(), console)
+        dispatch_slash("/tools", Session(), console)
         output = buf.getvalue()
         assert "search_github" in output
         assert "chat" in output

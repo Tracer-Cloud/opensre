@@ -1,4 +1,4 @@
-"""Tests for the registered-tool catalog used by the ``/tools list`` slash command."""
+"""Tests for the registered-tool catalog used by the ``/tools`` slash command."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from rich.console import Console
 from core.domain.types.tools import ToolSurface
 from core.tool.contracts import RegisteredTool
 from surfaces.interactive_shell.command_registry import dispatch_slash
-from surfaces.interactive_shell.command_registry.tools_cmds import _TOOLS_FIRST_ARGS, _cmd_tools
+from surfaces.interactive_shell.command_registry.tools_cmds import COMMANDS, _cmd_tools
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.terminal.tables import tool_catalog
 from surfaces.shared.terminal.tables.tool_catalog import (
@@ -109,6 +109,29 @@ class TestSummarizeInputSchema:
 
 
 class TestBuildToolCatalog:
+    def test_keeps_all_parameters_for_details_without_growing_the_summary(
+        self, fake_registry: list[RegisteredTool]
+    ) -> None:
+        fake_registry.append(
+            _make_tool(
+                "many_inputs",
+                input_schema={
+                    "properties": {f"param_{i}": {"type": "string"} for i in range(40)},
+                    "required": ["param_0"],
+                },
+            )
+        )
+
+        entry = build_tool_catalog()[0]
+
+        assert len(entry.input_schema_summary) <= 200
+        assert entry.input_schema_summary.endswith("…")
+        assert len(entry.parameters) == 40
+        assert entry.parameters[0].required is True
+        assert entry.parameters[-1].name == "param_39"
+        assert entry.parameters[-1].type_label == "string"
+        assert entry.parameters[-1].required is False
+
     def test_returns_empty_list_when_no_tools(self, fake_registry: list[RegisteredTool]) -> None:
         del fake_registry  # unused — registry is empty by default
         assert build_tool_catalog() == []
@@ -235,7 +258,7 @@ class TestFormatToolCatalogText:
 
 
 class TestListToolsSlashCommand:
-    """``/tools list`` reaches the catalog and prints non-empty output."""
+    """``/tools`` reaches the catalog and prints non-empty output."""
 
     def _capture(self) -> tuple[Console, io.StringIO]:
         buf = io.StringIO()
@@ -258,7 +281,7 @@ class TestListToolsSlashCommand:
             "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog",
             return_value=fake,
         ):
-            assert _cmd_tools(session, console, ["list"]) is True
+            assert _cmd_tools(session, console, []) is True
         out = buf.getvalue()
         assert "search_github" in out
         assert "action" in out
@@ -308,7 +331,7 @@ class TestListToolsSlashCommand:
             "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog",
             return_value=fake,
         ):
-            assert _cmd_tools(session, console, ["list"]) is True
+            assert _cmd_tools(session, console, []) is True
         out = buf.getvalue()
         assert "[bold]injection[/bold]" in out
 
@@ -319,9 +342,20 @@ class TestListToolsSlashCommand:
             "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog",
             return_value=[],
         ):
-            assert _cmd_tools(session, console, ["list"]) is True
+            assert _cmd_tools(session, console, []) is True
         assert "no tools registered" in buf.getvalue()
 
-    def test_tools_first_args_advertise_list_for_tab_completion(self) -> None:
-        names = {arg for arg, _hint in _TOOLS_FIRST_ARGS}
-        assert "list" in names
+    def test_tools_has_no_submenu_or_argument_completions(self) -> None:
+        assert COMMANDS[0].first_arg_completions == ()
+        assert COMMANDS[0].usage == ("/tools",)
+
+    @pytest.mark.parametrize("alias", ["list", "ls", "tool", "tools"])
+    def test_removed_aliases_show_usage_without_opening_the_catalog(self, alias: str) -> None:
+        console, buf = self._capture()
+        with patch(
+            "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog"
+        ) as catalog:
+            assert dispatch_slash(f"/tools {alias}", Session(), console) is True
+
+        catalog.assert_not_called()
+        assert "Use /tools without arguments" in buf.getvalue()
