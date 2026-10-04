@@ -223,6 +223,24 @@ def get_task(task_id: str, store_path: Path | None = None) -> ScheduledTask | No
     return None
 
 
+#: Params a template loop copies from its template; re-adding the loop refreshes them.
+_TEMPLATE_COPIES = (LOOP_PROMPT_PARAM, LOOP_DESCRIPTION_PARAM)
+
+
+def _refresh_template_copies(existing: dict[str, Any], task: ScheduledTask) -> bool:
+    """Take a re-added template loop's prompt and description; return whether either changed."""
+    params = existing.get("params") or {}
+    if not params.get(LOOP_TEMPLATE_PARAM):
+        return False
+    changes = {
+        key: task.params[key]
+        for key in _TEMPLATE_COPIES
+        if key in task.params and params.get(key) != task.params[key]
+    }
+    existing["params"] = {**params, **changes}
+    return bool(changes)
+
+
 def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     """What makes two rows the same schedule.
 
@@ -232,13 +250,13 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     created it, and the run bookkeeping (``created_at``, ``last_run``,
     ``next_run``), which differ between two confirmations of the same schedule.
     The owning organization is part of it: two organizations with the same
-    schedule hold two rows. A template loop is identified by its template name:
-    the prompt and description copied from it change with releases.
+    schedule hold two rows. A template loop is identified by its template name,
+    not by the prompt and description copied from it.
     """
     raw_params = entry.get("params") or {}
     ignored = {LOOP_CREATED_BY_PARAM}
     if raw_params.get(LOOP_TEMPLATE_PARAM):
-        ignored |= {LOOP_PROMPT_PARAM, LOOP_DESCRIPTION_PARAM}
+        ignored.update(_TEMPLATE_COPIES)
     params = {key: value for key, value in raw_params.items() if key not in ignored}
     return (
         _owner_of(entry),
@@ -303,7 +321,8 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
         )
         if existing_index is not None:
             existing = raw[existing_index]
-            if existing.get("skill_revision", "") == task.skill_revision:
+            refreshed = _refresh_template_copies(existing, task)
+            if existing.get("skill_revision", "") == task.skill_revision and not refreshed:
                 return ScheduledTask.model_validate(existing)
             existing["skill_revision"] = task.skill_revision
             stored_task = ScheduledTask.model_validate(existing)

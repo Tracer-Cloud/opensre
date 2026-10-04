@@ -33,14 +33,19 @@ def _template_task(prompt_copy: str, description: str) -> ScheduledTask:
     )
 
 
-def test_re_adding_a_template_loop_after_its_text_changed_keeps_one_loop(tmp_path: Path) -> None:
+def test_re_adding_a_template_loop_keeps_one_loop_and_takes_the_new_copies(
+    tmp_path: Path,
+) -> None:
     store = tmp_path / "scheduler_tasks.json"
     first = add_task(_template_task("Release 1 text.", "Release 1 description."), store)
 
-    second = add_task(_template_task("Release 2 text.", "Release 2 description."), store)
+    second = add_task(_template_task("Release 2 text.", "Operator's new description."), store)
 
+    stored = list_tasks(store)
     assert second.id == first.id
-    assert len(list_tasks(store)) == 1
+    assert len(stored) == 1
+    assert stored[0].params[LOOP_PROMPT_PARAM] == "Release 2 text."
+    assert stored[0].params[LOOP_DESCRIPTION_PARAM] == "Operator's new description."
 
 
 def test_inspecting_a_template_loop_shows_the_text_its_ticks_run(tmp_path: Path) -> None:
