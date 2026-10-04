@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import sqlite3
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import replace
@@ -86,6 +88,7 @@ from integrations.github.tools.ci_fix.worktree import (
 )
 
 SOURCE: Final = "github"
+logger = logging.getLogger(__name__)
 _YES = {"y", "yes"}
 # Merge errors assert "no push was made"; after a fix push that clause is false.
 _NO_PUSH_TAIL_RE = re.compile(r"(?: and)? [Nn]o push was made\.?")
@@ -347,11 +350,18 @@ def _escalated(ctx: CiFixContext, exc: GitHubCiFixError) -> GitHubCiFixError:
     """
     if exc.kind != ERR_MERGE_UNSETTLED:
         return exc
-    attempts = record_unsettled_merge(
-        repair_key(ctx.owner, ctx.repo, str(ctx.number)), ctx.head_sha
-    )
+    # The same PR head merging the same base: a new base can bring different conflicts.
+    revision = f"{ctx.head_sha}:{exc.base_sha}"
+    try:
+        attempts = record_unsettled_merge(
+            repair_key(ctx.owner, ctx.repo, str(ctx.number)), revision
+        )
+    except (sqlite3.Error, OSError) as journal_error:
+        # Without the count this run cannot know it is a repeat: retry rather than ask.
+        logger.warning("Could not count an unsettled merge for %s: %s", ctx.url, journal_error)
+        attempts = 1
     kind = ERR_MERGE_DECISION if attempts >= CI_FIX_UNSETTLED_MERGE_ATTEMPTS else ERR_MERGE_CONFLICT
-    return GitHubCiFixError(kind, exc.message, branch_name=exc.branch_name)
+    return GitHubCiFixError(kind, exc.message, branch_name=exc.branch_name, base_sha=exc.base_sha)
 
 
 def _reported(

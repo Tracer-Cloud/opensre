@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from contextlib import nullcontext
 from dataclasses import replace
 from itertools import count
@@ -1477,6 +1478,10 @@ def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
     assert (outcome["status"], outcome["retryable"]) == (status, retryable)
 
 
+def _journal_unavailable(*_args: object) -> int:
+    raise sqlite3.OperationalError("database is locked")
+
+
 @patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
 @patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
 @patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
@@ -1490,6 +1495,17 @@ def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
     return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
 )
 @patch("integrations.github.tools.ci_fix.runner.base_has_new_commits", return_value=True)
+@pytest.mark.parametrize(
+    "second_base, journal_works, second_kind",
+    [
+        # The same head merging the same base again: the agent will not settle it.
+        ("base-1", True, "merge_decision_required"),
+        # A new base can bring different conflicts, so it is a fresh first attempt.
+        ("base-2", True, "merge_conflict"),
+        # Without the count a run cannot know it repeats: it retries, it does not crash.
+        ("base-1", False, "merge_conflict"),
+    ],
+)
 def test_a_merge_left_unsettled_twice_at_one_head_goes_to_a_person(
     _behind: MagicMock,
     _gather: MagicMock,
@@ -1499,6 +1515,9 @@ def test_a_merge_left_unsettled_twice_at_one_head_goes_to_a_person(
     _pre: MagicMock,
     mock_merge: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
+    second_base: str,
+    journal_works: bool,
+    second_kind: str,
 ) -> None:
     # Arrange: the agent finishes each time but never touches the conflicted file.
     from integrations.github.tools.ci_fix.errors import ERR_MERGE_UNSETTLED
@@ -1509,13 +1528,19 @@ def test_a_merge_left_unsettled_twice_at_one_head_goes_to_a_person(
         asked.append(ctx.head_sha)
         return True
 
+    def unsettled(base_sha: str) -> GitHubCiFixError:
+        return GitHubCiFixError(
+            ERR_MERGE_UNSETTLED,
+            "Merging main into feat/fix-ci is blocked on 1 file(s) a person must decide: "
+            "auth.py (changed on both feat/fix-ci and main). No push was made.",
+            branch_name="feat/fix-ci",
+            base_sha=base_sha,
+        )
+
     monkeypatch.setattr(runner, "report_decision", report)
-    mock_merge.side_effect = GitHubCiFixError(
-        ERR_MERGE_UNSETTLED,
-        "Merging main into feat/fix-ci is blocked on 1 file(s) a person must decide: "
-        "auth.py (changed on both feat/fix-ci and main). No push was made.",
-        branch_name="feat/fix-ci",
-    )
+    if not journal_works:
+        monkeypatch.setattr(runner, "record_unsettled_merge", _journal_unavailable)
+    mock_merge.side_effect = [unsettled("base-1"), unsettled(second_base)]
 
     # Act
     first = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
@@ -1523,8 +1548,8 @@ def test_a_merge_left_unsettled_twice_at_one_head_goes_to_a_person(
 
     # Assert: one retry, then a visible request instead of an hourly coding-agent run
     assert first["error_kind"] == "merge_conflict"
-    assert second["error_kind"] == "merge_decision_required"
-    assert asked == ["head-1"]
+    assert second["error_kind"] == second_kind
+    assert asked == (["head-1"] if second_kind == "merge_decision_required" else [])
 
 
 @patch("integrations.github.tools.ci_fix.runner.repair_workspace")

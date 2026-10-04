@@ -297,6 +297,9 @@ if TYPE_CHECKING:
     from config.constants.ci_fixes import (
         CI_FIX_LEDGER_PATH_ENV as CI_FIX_LEDGER_PATH_ENV,
     )
+    from config.constants.ci_fixes import (
+        CI_FIX_UNSETTLED_MERGE_ATTEMPTS as CI_FIX_UNSETTLED_MERGE_ATTEMPTS,
+    )
     from config.constants.ci_repair import CI_REPAIR_CRON as CI_REPAIR_CRON
     from config.constants.ci_repair import CI_REPAIR_DIRECTORY as CI_REPAIR_DIRECTORY
     from config.constants.ci_repair import (

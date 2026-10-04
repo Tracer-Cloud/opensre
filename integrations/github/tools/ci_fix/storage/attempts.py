@@ -36,18 +36,18 @@ def load_prepared_push(key: str) -> PreparedPush | None:
     return PreparedPush(**json.loads(row[0])) if row is not None else None
 
 
-def record_unsettled_merge(key: str, head_sha: str) -> int:
-    """Count one more unsettled merge at *head_sha*; a new head starts again at one."""
+def record_unsettled_merge(key: str, revision: str) -> int:
+    """Count one more unsettled merge of *revision*; any other revision starts again at one."""
     with database.transaction() as conn:
         row = conn.execute(
-            "SELECT head_sha, attempts FROM unsettled_merges WHERE target = ?", (key,)
+            "SELECT revision, attempts FROM unsettled_merges WHERE target = ?", (key,)
         ).fetchone()
-        attempts = row[1] + 1 if row is not None and row[0] == head_sha else 1
+        attempts = row[1] + 1 if row is not None and row[0] == revision else 1
         conn.execute(
-            "INSERT INTO unsettled_merges (target, head_sha, attempts) VALUES (?, ?, ?) "
-            "ON CONFLICT(target) DO UPDATE SET head_sha = excluded.head_sha, "
+            "INSERT INTO unsettled_merges (target, revision, attempts) VALUES (?, ?, ?) "
+            "ON CONFLICT(target) DO UPDATE SET revision = excluded.revision, "
             "attempts = excluded.attempts",
-            (key, head_sha, attempts),
+            (key, revision, attempts),
         )
     return int(attempts)
 

@@ -122,7 +122,9 @@ def merge_base_into_head(
                 decided = _left_for_a_person(workspace, conflicts, blocked)
                 kind = ERR_MERGE_DECISION if decided else ERR_MERGE_UNSETTLED
             abort_merge(workspace)
-            raise _blocked_error(ctx, blocked or list(conflicts.paths), result, kind=kind)
+            raise _blocked_error(
+                ctx, blocked or list(conflicts.paths), result, kind=kind, base_sha=merging
+            )
         if console is not None:
             render_review(
                 console,
@@ -198,6 +200,7 @@ def _blocked_error(
     result: CodingResult,
     *,
     kind: str = ERR_MERGE_CONFLICT,
+    base_sha: str = "",
 ) -> GitHubCiFixError:
     decisions = "; ".join(f"{c.path} ({c.description})" for c in blocked)
     note = " ".join((result.error or result.summary or "").split()).rstrip(".")
@@ -210,6 +213,7 @@ def _blocked_error(
             "The merge was aborted and no push was made."
         ),
         branch_name=ctx.head_branch,
+        base_sha=base_sha,
     )
 
 

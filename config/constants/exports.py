@@ -152,6 +152,7 @@ EXPORTS: dict[str, str] = {
     "CI_FIX_COUNT_LABEL": "ci_fixes",
     "CI_FIX_LEDGER_LOCK_TIMEOUT_SECONDS": "ci_fixes",
     "CI_FIX_LEDGER_PATH_ENV": "ci_fixes",
+    "CI_FIX_UNSETTLED_MERGE_ATTEMPTS": "ci_fixes",
     # clerk
     "CLERK_ISSUER_ENV": "clerk",
     "CLERK_JWKS_URL_ENV": "clerk",

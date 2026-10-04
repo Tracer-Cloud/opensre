@@ -11,5 +11,5 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         "CREATE TABLE IF NOT EXISTS unsettled_merges "
-        "(target TEXT PRIMARY KEY, head_sha TEXT NOT NULL, attempts INTEGER NOT NULL)"
+        "(target TEXT PRIMARY KEY, revision TEXT NOT NULL, attempts INTEGER NOT NULL)"
     )

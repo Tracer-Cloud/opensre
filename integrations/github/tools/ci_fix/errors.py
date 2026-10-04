@@ -28,8 +28,17 @@ ERR_UNSUPPORTED_PR_BRANCH = "unsupported_pr_branch"
 class GitHubCiFixError(Exception):
     """Expected, user-actionable failure with a stable ``kind``."""
 
-    def __init__(self, kind: str, message: str, *, branch_name: str | None = None) -> None:
+    def __init__(
+        self,
+        kind: str,
+        message: str,
+        *,
+        branch_name: str | None = None,
+        base_sha: str = "",
+    ) -> None:
         super().__init__(message)
         self.kind = kind
         self.message = message
         self.branch_name = branch_name
+        #: The base commit a failed merge tried to bring in, when one was known.
+        self.base_sha = base_sha
