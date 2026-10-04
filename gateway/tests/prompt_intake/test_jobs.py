@@ -99,6 +99,25 @@ def test_the_view_shows_only_the_field_for_its_state() -> None:
     assert failed.view()["error"] == "turn_failed" and "answer" not in failed.view()
 
 
+def test_a_question_keeps_the_reply_written_before_it_across_a_restart(tmp_path: Path) -> None:
+    """The report a turn wrote before its menu must reach the caller, not only the question."""
+    # Arrange: a turn that reported an outcome, then asked
+    path = tmp_path / "prompt-jobs.jsonl"
+    queue = PromptQueue(clock=_Clock().read, store=JsonlPromptJobStore(path))
+    asked = queue.submit("rerun the repair", context={}, actor="a")
+    assert asked is not None and queue.take(timeout_seconds=0.01) is asked
+    report = "Outcome: blocked — the rerun did not reset the failing job."
+
+    # Act
+    queue.needs_input(asked, "Retry?", answer=report, choice={"title": "Retry?"})
+    restarted = PromptQueue(clock=_Clock().read, store=JsonlPromptJobStore(path))
+    reread = restarted.get(asked.id)
+
+    # Assert: the reply sits beside the question, and a replacement task serves the same view
+    assert asked.view()["answer"] == report and asked.view()["question"] == "Retry?"
+    assert reread is not None and reread.view() == asked.view()
+
+
 def test_an_answer_becomes_a_follow_up_on_the_parents_session_and_only_once() -> None:
     # Arrange: a prompt that stopped to ask
     queue = PromptQueue(clock=_Clock().read)

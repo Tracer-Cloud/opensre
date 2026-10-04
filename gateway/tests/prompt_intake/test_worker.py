@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from gateway.core.prompt_intake import (
     PromptWorker,
 )
 from infrastructure.turn_host.capability_policy import ensure_gateway_capability_policy
+from infrastructure.turn_host.status_messages import EMPTY_RESPONSE_MESSAGE
 from infrastructure.turn_host.unattended_session import (
     UnattendedSessions,
     prepare_unattended_session,
@@ -214,6 +216,70 @@ def test_a_question_ends_the_turn_as_needs_input_with_the_question_as_text() -> 
         ],
         "custom_answer": True,
     }
+
+
+class _ReplyThenAskHandler(_Handler):
+    """A turn that writes to its output as the turn runner does, then leaves a question."""
+
+    def __init__(self, write: Callable[[Any], None]) -> None:
+        super().__init__(
+            asks=PendingUserChoice(title="Retry the repair?", options=("Retry", "Stop"))
+        )
+        self.write = write
+
+    def run(self, text: str, session: SessionCore, output: Any, _logger: Any, **kwargs: Any) -> Any:
+        self.write(output)
+        return super().run(text, session, output, _logger, **kwargs)
+
+
+_REPORT = "Outcome: blocked — the rerun did not reset the failing job."
+
+
+def _report(output: Any) -> None:
+    output.finalize(_REPORT)
+
+
+def _fail_with_detail(output: Any) -> None:
+    # An action-phase exception: its text is rendered as the error, then finalized as the reply.
+    output.render_error("provider exploded: secret detail")
+    output.finalize("provider exploded: secret detail")
+
+
+def _write_nothing(output: Any) -> None:
+    # What the runner finalizes for a turn that wrote no reply.
+    output.finalize(EMPTY_RESPONSE_MESSAGE)
+
+
+def test_a_question_carries_the_report_the_turn_wrote_before_it() -> None:
+    # Arrange
+    worker, queue = _worker(_ReplyThenAskHandler(_report))
+    job = queue.submit("rerun the repair", context={}, actor="u")
+    assert job is not None
+
+    # Act
+    worker.run_one(job)
+
+    # Assert: the caller reads the outcome, not only the next question
+    assert job.state is PromptState.NEEDS_INPUT
+    assert job.view()["answer"] == _REPORT
+    assert job.view()["question"].startswith("Retry the repair?")
+
+
+@pytest.mark.parametrize("write", [_fail_with_detail, _write_nothing], ids=["failed", "silent"])
+def test_a_question_after_a_failed_or_silent_turn_carries_no_reply(
+    write: Callable[[Any], None],
+) -> None:
+    # Arrange
+    worker, queue = _worker(_ReplyThenAskHandler(write))
+    job = queue.submit("rerun the repair", context={}, actor="u")
+    assert job is not None
+
+    # Act
+    worker.run_one(job)
+
+    # Assert: neither exception detail nor the placeholder reaches the caller; the question does
+    assert job.state is PromptState.NEEDS_INPUT and job.answer == ""
+    assert "answer" not in job.view() and "secret detail" not in str(job.view())
 
 
 def test_a_rejected_admission_and_a_failed_turn_become_stable_codes() -> None:

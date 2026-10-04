@@ -285,6 +285,37 @@ def test_a_question_from_the_gateway_opens_this_shells_menu(
     assert out["choice"]["note"] == "Starts a background worker."
 
 
+def test_the_gateways_report_before_its_question_reads_above_the_menu_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The incident: a blocked outcome was hidden behind the next question."""
+    # Arrange: the gateway wrote its outcome, then stopped on a question
+    report = "Outcome: blocked — the rerun did not reset the failing job."
+    question = PromptQuestion("Retry the repair?", ("Retry", "Stop"))
+    asked = PromptRecord(
+        _ID,
+        "needs_input",
+        answer=report,
+        question="Retry the repair?",
+        choice=PromptChoice("Retry the repair?", (question,)),
+    )
+    app = _App([asked])
+    _signed_in_with(monkeypatch, app)
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt="rerun the repair", context=_tool_context(session, ""))
+
+    # Assert: the report leads; the menu line, which keeps the prompt id, still follows
+    text = out["response_text"]
+    assert text.startswith(
+        f"{report}\n\nThe hosted gateway needs your decision; the menu opens now"
+    )
+    assert _ID in text and f"prompt_id={_ID}" in out["instructions"]
+    parked = session.pending_user_choice
+    assert parked is not None and parked.interaction_id == f"hosted_prompt:{_ID}"
+
+
 def test_the_answer_comes_from_the_users_selection_never_from_the_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

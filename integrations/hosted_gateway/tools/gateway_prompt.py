@@ -543,6 +543,10 @@ def _outcome(
         text = record.answer
     elif record.state == "needs_input":
         text, parked = _ask_here(record, scope)
+        report = record.answer.strip()
+        if report:
+            # What the gateway wrote before it asked, such as the outcome the question follows.
+            text = f"{report}\n\n{text}"
         if parked:
             instructions.append(_ASKING_IN_SHELL_INSTRUCTIONS.format(prompt_id=record.prompt_id))
     elif record.state in _STATE_TEXT:
