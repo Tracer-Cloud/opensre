@@ -116,7 +116,8 @@ def _skip_cancelled_schedule(
         status=TaskStatus.SKIPPED,
         extra={"reason": reason, "in_flight_cancel": True},
     )
-    complete_run(claim, status=TaskStatus.SKIPPED, error=reason)
+    if complete_run(claim, status=TaskStatus.SKIPPED, error=reason):
+        _emit_analytics(claim, task, TaskStatus.SKIPPED, error=reason)
     return True
 
 
@@ -251,14 +252,15 @@ def _execute_claimed_task(
         if any(outcome.ok for outcome in result.outcomes):
             # A destination may already have the message. Keep that history
             # instead of replacing the row with an empty skipped run.
-            complete_run(
+            if complete_run(
                 claim,
                 status=TaskStatus.SKIPPED,
                 posted_message_id=result.message_id(),
                 error=reason,
                 provider=_run_provider_label(task),
                 targets=result.outcomes,
-            )
+            ):
+                _emit_analytics(claim, task, TaskStatus.SKIPPED, error=reason)
             return False
         _skip_cancelled_schedule(claim, task, fire_time)
         return False
@@ -462,16 +464,15 @@ def _emit_analytics_started(claim: ExecutionClaim, task: ScheduledTask) -> None:
 def _emit_analytics(
     claim: ExecutionClaim, task: ScheduledTask, status: TaskStatus, error: str = ""
 ) -> None:
-    """Emit analytics event for task execution completion."""
+    """Emit the run's terminal event; a skipped run is one the user cancelled mid-tick."""
     try:
         from infrastructure.analytics.events import Event
         from infrastructure.analytics.provider import get_analytics
 
-        event_name = (
-            Event.SCHEDULED_TASK_COMPLETED
-            if status == TaskStatus.SUCCESS
-            else Event.SCHEDULED_TASK_FAILED
-        )
+        event_name = {
+            TaskStatus.SUCCESS: Event.SCHEDULED_TASK_COMPLETED,
+            TaskStatus.SKIPPED: Event.SCHEDULED_TASK_CANCELLED,
+        }.get(status, Event.SCHEDULED_TASK_FAILED)
         properties = _run_properties(claim, task)
         properties["status"] = status.value
         if error:
