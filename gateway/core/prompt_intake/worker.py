@@ -58,6 +58,7 @@ from infrastructure.turn_host.unattended_session import (
     choice_view,
     hosted_conversation_id,
     invocation_key,
+    prompt_with_facts,
 )
 from tools.registry import integration_of_tool
 
@@ -71,8 +72,6 @@ _ALREADY_WAITING = (
 )
 
 _POLL_SECONDS = 1.0
-#: A prompt starting with one of these is a command the turn dispatches verbatim.
-_LITERAL_COMMAND_PREFIXES = ("/", "!")
 
 
 class PromptTurnRunner(Protocol):
@@ -534,15 +533,8 @@ def actor_conversation(actor: str) -> str | None:
 
 
 def _render_prompt(job: PromptJob) -> str:
-    """The prompt plus the facts the caller resolved up front, so nothing is left to ask.
-
-    A literal ``/command`` or ``!command`` runs verbatim without the model, so it is
-    left as sent: appended facts would reach the command as extra arguments.
-    """
-    if not job.context or job.prompt.lstrip().startswith(_LITERAL_COMMAND_PREFIXES):
-        return job.prompt
-    facts = "\n".join(f"- {key}: {value}" for key, value in sorted(job.context.items()))
-    return f"{job.prompt}\n\nKnown context:\n{facts}"
+    """The prompt plus the facts the caller resolved up front, so nothing is left to ask."""
+    return prompt_with_facts(job.prompt, job.context)
 
 
 def _question_text(pending: Any) -> str:
