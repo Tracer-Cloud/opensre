@@ -22,7 +22,7 @@ from core.agent_harness.prompts.kernel.envelope import (
     PromptEnvelope,
     PromptTier,
 )
-from core.agent_harness.prompts.kernel.surfaces import profile_for
+from core.agent_harness.prompts.kernel.surfaces import known_profile
 from core.agent_harness.prompts.memory.conversation import (
     format_prior_action_facts,
     format_recent_conversation,
@@ -58,9 +58,10 @@ def _runtime_facts_blocks(surface: str | None) -> tuple[str, str]:
     """
     from config.runtime_metadata import capture_runtime_facts
 
-    # As with setup state, an unknown surface gets no host readings:
-    # profile_for fails open, the wrong direction for one installation's facts.
-    host_measurements = surface is not None and profile_for(surface).host_measurements
+    # A missing or unrecognised surface gets no host readings: profile_for would
+    # read it as the shell, the wrong direction for one installation's facts.
+    profile = known_profile(surface)
+    host_measurements = profile is not None and profile.host_measurements
     try:
         runtime = capture_runtime_facts()
         live = build_live_runtime_facts_block(runtime, host_measurements=host_measurements)

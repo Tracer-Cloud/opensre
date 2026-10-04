@@ -76,4 +76,18 @@ def profile_for(surface: str) -> SurfaceProfile:
     return _PROFILES[known]
 
 
-__all__ = ["PromptSurface", "SurfaceProfile", "profile_for"]
+def known_profile(surface: str | None) -> SurfaceProfile | None:
+    """Return the profile for a recognised ``surface``, or ``None``.
+
+    For facts about one installation, where guessing wrong discloses them:
+    unlike :func:`profile_for`, a missing or unrecognised surface is not the shell.
+    """
+    if surface is None:
+        return None
+    try:
+        return _PROFILES[PromptSurface(surface)]
+    except ValueError:
+        return None
+
+
+__all__ = ["PromptSurface", "SurfaceProfile", "known_profile", "profile_for"]

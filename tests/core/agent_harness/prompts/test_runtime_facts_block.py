@@ -303,15 +303,15 @@ def test_each_turn_reads_the_current_time_and_the_cached_half_never_does(
 
 @pytest.mark.parametrize(
     ("surface", "measured"),
-    [("interactive_shell", True), ("gateway", False), (None, False)],
+    [("interactive_shell", True), ("gateway", False), (None, False), ("slack", False)],
 )
 def test_only_a_local_surface_reads_this_hosts_uptime_disk_and_memory(
     monkeypatch: pytest.MonkeyPatch, surface: str | None, measured: bool
 ) -> None:
     """A shared chat gets the clock, never readings of the machine OpenSRE runs on.
 
-    An unknown surface gets none either: ``profile_for`` fails open, the wrong
-    direction for facts about one installation.
+    A missing or unrecognised surface gets none either: ``profile_for`` reads it
+    as the shell, the wrong direction for facts about one installation.
     """
     monkeypatch.setattr(_CAPTURE, _capture_at("2026-10-04T23:59:30+02:00", []))
 
