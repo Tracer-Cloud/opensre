@@ -18,7 +18,14 @@ from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry, ToolP
 
 
 def _entry(name: str, description: str = "Find matching code.") -> ToolCatalogEntry:
-    return ToolCatalogEntry(name, ("chat", "action"), description, "", "query: string")
+    return ToolCatalogEntry(
+        name,
+        ("chat", "action"),
+        description,
+        "",
+        "query: string",
+        (ToolParameter("query", "string", True),),
+    )
 
 
 @pytest.fixture
@@ -57,7 +64,7 @@ def _plain(frame: list[str]) -> str:
     return "\n".join(Text.from_ansi(row).plain for row in frame)
 
 
-def test_browse_shows_every_visible_tools_purpose_then_expands_in_place(
+def test_browse_has_compact_rows_and_a_fixed_selected_tool_preview(
     terminal: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     entries = [_entry("search_github"), _entry("fleet_scan", "Find unhealthy services.")]
@@ -71,11 +78,24 @@ def test_browse_shows_every_visible_tools_purpose_then_expands_in_place(
     initial, expanded, collapsed, moved, second = map(_plain, terminal.frames)
     assert "Find matching code." in initial and "Find unhealthy services." in initial
     assert "chat · action" in initial
-    assert "parameters" not in initial
+    initial_rows = initial.splitlines()
+    assert any("search_github" in row and "Find matching code." in row for row in initial_rows)
+    assert any("fleet_scan" in row and "Find unhealthy services." in row for row in initial_rows)
+    assert "TOOL" in initial and "PURPOSE" in initial
+    assert "1 parameter" in initial and "query: string" not in initial
     assert "▾ search_github" in expanded and "parameters" in expanded
     assert "query: string" in expanded and "description" in expanded
-    assert "parameters" not in collapsed
+    assert "query: string" not in collapsed
     assert "› fleet_scan" in moved and "▾ fleet_scan" in second
+    for frame in (initial, expanded, collapsed, moved, second):
+        # The preview is below the list, not inserted into the selected row.
+        assert (
+            frame.splitlines()[4]
+            .strip()
+            .startswith(("› search_github", "▾ search_github", "search_github"))
+        )
+        assert frame.splitlines()[8].strip() in ("search_github", "fleet_scan")
+    assert len({len(frame) for frame in terminal.frames}) == 1
     assert output.getvalue() == ""
     assert terminal.events[0] == "enter"
     assert terminal.events[-2:] == ["delete", "leave"]
@@ -96,7 +116,7 @@ def test_long_details_can_be_read_forward_and_backward_without_changing_tool(
     assert "Detail line 44" in frames[-3]
     assert "Detail line 44" not in frames[-2]
     assert "› next_tool" in frames[-1]
-    assert "parameters" not in frames[-1]
+    assert "query: string" not in frames[-1]
 
 
 @pytest.mark.parametrize(("columns", "lines"), [(80, 24), (40, 12), (26, 8), (12, 5)])
@@ -113,7 +133,6 @@ def test_frames_fit_the_terminal_even_when_expanded(
         assert all(prompt_text_width(Text.from_ansi(row).plain) < columns for row in frame)
     assert len(terminal.frames) == 4
     if columns >= 26:
-        assert "description" in "\n".join(map(_plain, terminal.frames))
         assert all("Esc" in _plain(frame) for frame in terminal.frames)
 
 

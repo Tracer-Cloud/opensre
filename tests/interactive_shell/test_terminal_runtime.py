@@ -348,15 +348,14 @@ def test_shell_completer_filters_by_prefix() -> None:
     assert [completion.text for completion in completions] == ["/tools"]
 
 
-def test_shell_completer_suggests_subcommands_for_tools() -> None:
+def test_shell_completer_has_no_subcommands_for_tools() -> None:
     completions = list(
         ShellCompleter().get_completions(
             Document("/tools "),
             CompleteEvent(text_inserted=True),
         )
     )
-    names = sorted({c.text for c in completions})
-    assert names == ["list", "ls", "tool", "tools"]
+    assert completions == []
 
 
 def test_shell_completer_hides_inline_picker_autocomplete_in_tty(

@@ -644,16 +644,19 @@ See [LLM providers](/platform/llm-providers).
 
 <Accordion title="/tools">
 
-Browse registered tools with their names, short descriptions, and chat/action surfaces.
+Browse registered tools with a short purpose beside each name. A preview below
+the list shows the selected tool's description, chat/action surfaces, and
+parameter count.
 
 ```text
 /tools
 ```
 
-In an interactive terminal, use **↑/↓** to browse and **Enter** to expand or
-collapse a tool's parameters and full description. **←/→** pages through long
-details; **Esc** closes the browser. Moving to another tool closes the current
-details. In narrow terminals, expand a tool to see its surfaces.
+In an interactive terminal, use **↑/↓** to browse and **Enter** to toggle
+parameters and the full description in the preview. **←/→** pages through long
+details; **Esc** closes the browser. Moving to another tool returns to its
+preview. Narrow terminals omit the purpose column; the selected tool's
+description remains visible below the list.
 
 Piped and noninteractive output stays a readable table without keyboard input.
 

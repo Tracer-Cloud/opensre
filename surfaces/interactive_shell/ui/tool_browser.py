@@ -36,23 +36,55 @@ def _styled(text: str, style: str, width: int) -> str:
     return f"{style}{clip_prompt_text(text, width)}{ui_theme.ANSI_RESET}"
 
 
-def _tool_rows(
-    entry: ToolCatalogEntry, *, selected: bool, expanded: bool, width: int
-) -> tuple[str, str]:
+def _name_width(width: int) -> int:
+    return min(34, (width - 5) // 2) if width >= 60 else width - 4
+
+
+def _tool_row(entry: ToolCatalogEntry, *, selected: bool, expanded: bool, width: int) -> str:
     marker = "▾" if expanded else "›" if selected else " "
-    surfaces = strip_terminal_controls(" · ".join(entry.surfaces)) if width >= 60 else ""
-    name_width = max(1, width - prompt_text_width(surfaces) - 2) if surfaces else width
-    name = clip_prompt_text(f"  {marker} {entry.name}", name_width)
-    padding = " " * max(0, width - prompt_text_width(name + surfaces))
-    style = ui_theme.prominent_menu_selection_ansi() if selected else ui_theme.HIGHLIGHT_ANSI
-    heading = (
-        f"{style}{name}{ui_theme.ANSI_RESET}{padding}"
-        f"{ui_theme.DIM_COUNTER_ANSI}{surfaces}{ui_theme.ANSI_RESET}"
+    name_width = _name_width(width)
+    name = clip_prompt_text(entry.name, name_width)
+    name += " " * (name_width - prompt_text_width(name))
+    prefix = f"  {marker} {name}"
+    summary = ""
+    if width >= 60:
+        description = (
+            " ".join(strip_terminal_controls(entry.description, keep_whitespace=True).split())
+            or "No description provided."
+        )
+        summary = clip_prompt_text(description.partition(". ")[0], width - name_width - 5)
+        if summary.endswith("…") and " " in summary:
+            summary = summary[:-1].rsplit(" ", 1)[0] + "…"
+        summary = " " + summary
+    if selected:
+        row = prefix + summary
+        row += " " * max(0, width - prompt_text_width(row))
+        return _styled(row, ui_theme.MENU_SELECTION_ROW_ANSI, width)
+    return (
+        f"{ui_theme.TEXT_ANSI}{prefix}{ui_theme.ANSI_RESET}"
+        f"{ui_theme.SECONDARY_ANSI}{summary}{ui_theme.ANSI_RESET}"
     )
-    summary = " ".join(strip_terminal_controls(entry.description, keep_whitespace=True).split())
-    return heading, _styled(
-        f"    {summary or 'No description provided.'}", ui_theme.SECONDARY_ANSI, width
-    )
+
+
+def _preview_lines(entry: ToolCatalogEntry, width: int, height: int) -> list[str]:
+    rows = [_styled(f"  {entry.name}", ui_theme.HIGHLIGHT_ANSI, width)]
+    if height >= 3:
+        count = len(entry.parameters)
+        metadata = " · ".join((*entry.surfaces, f"{count} parameter{'s' if count != 1 else ''}"))
+        rows.append(_styled(f"  {metadata}", ui_theme.DIM_COUNTER_ANSI, width))
+    if height >= 5:
+        rows.append("")
+    description = strip_terminal_controls(
+        entry.description or "No description provided.", keep_whitespace=True
+    ).replace("\t", " ")
+    wrapped = Text(description).wrap(Console(width=width), width - 4, overflow="fold")
+    visible = min(3, height - len(rows))
+    for index, line in enumerate(wrapped[:visible]):
+        value = line.plain
+        if index == visible - 1 and len(wrapped) > visible:
+            value = clip_prompt_text(value, width - 5).rstrip("… ") + "…"
+        rows.append(_styled(f"  {value}", ui_theme.TEXT_ANSI, width))
+    return rows
 
 
 def _detail_lines(entry: ToolCatalogEntry, width: int) -> list[str]:
@@ -66,8 +98,7 @@ def _detail_lines(entry: ToolCatalogEntry, width: int) -> list[str]:
         ("parameters", params or entry.input_schema_summary),
         ("description", entry.description or "No description provided."),
     ]
-    surfaces_width = prompt_text_width(" · ".join(entry.surfaces)) + 2 if width >= 60 else 0
-    if prompt_text_width(entry.name) > width - surfaces_width - 4:
+    if prompt_text_width(entry.name) > width - 2:
         fields.insert(0, ("name", entry.name))
     console = Console(width=width)
     rows: list[str] = []
@@ -106,49 +137,57 @@ def _render_frame(
         )
         return _Frame(notice[: max(0, height - 1)], top, 0, 1)
 
-    chrome_rows = 4 if height >= 10 else 3
-    body_rows = min(18, height - chrome_rows - 1)
-    detail_rows = min(len(details), max(1, body_rows // 2)) if details else 0
-    pages = max(1, (len(details) + detail_rows - 1) // detail_rows) if detail_rows else 1
-    page = min(page, pages - 1)
-    visible = min(len(entries), max(1, (body_rows - detail_rows) // 2))
+    roomy = height >= 20
+    rows = [_styled("  Tools", ui_theme.PROMPT_ACCENT_ANSI, width)]
+    if roomy:
+        rows.append("")
+    if width >= 60 and height >= 14:
+        rows.append(
+            _styled(f"    {'TOOL':<{_name_width(width)}} PURPOSE", ui_theme.DIM_COUNTER_ANSI, width)
+        )
+        rows.append(_styled("  " + "─" * (width - 2), ui_theme.DIM_COUNTER_ANSI, width))
+
+    # Reserve the divider and two footer rows; toggling details keeps the preview fixed.
+    available = min(26, height - 1) - len(rows) - 3 - int(roomy)
+    preview_height = max(2, min(8, available // 2))
+    visible = min(len(entries), 7, max(1, available - preview_height))
     top = max(0, min(top, len(entries) - visible, selected))
     top = max(top, selected - visible + 1)
-    end = min(len(entries), top + visible)
-    position = f"{selected + 1}/{len(entries)}"
-    title = f"  Tools · {len(entries)} registered" if width >= 60 else f"  Tools · {position}"
-    rows = [_styled(title, ui_theme.PROMPT_ACCENT_ANSI, width)]
-    if height >= 10:
-        rows.append(_styled("─" * width, ui_theme.DIM_COUNTER_ANSI, width))
-    for index in range(top, end):
-        rows.extend(
-            _tool_rows(
+    for index in range(top, top + visible):
+        rows.append(
+            _tool_row(
                 entries[index],
                 selected=index == selected,
                 expanded=bool(details) and index == selected,
                 width=width,
             )
         )
-        if details and index == selected:
-            start = page * detail_rows
-            shown = details[start : start + detail_rows]
-            rows.extend(shown)
-            rows.extend([""] * (detail_rows - len(shown)))
+    if roomy:
+        rows.append("")
+    rows.append(_styled("  " + "─" * (width - 2), ui_theme.DIM_COUNTER_ANSI, width))
 
-    if width >= 60:
-        more = "  ↑ earlier" if top else ""
-        more += "  ↓ more" if end < len(entries) else ""
-        status = f"  {position}{more}"
-        if details:
-            status += f"  ·  Details {page + 1}/{pages}"
-        action = "collapse" if details else "details"
-        paging = "   ←→ page" if pages > 1 else ""
-        hint = f"  ↑↓ move   Enter {action}{paging}   Esc close"
+    detail_rows = preview_height - 1
+    pages = max(1, (len(details) + detail_rows - 1) // detail_rows)
+    page = min(page, pages - 1)
+    if details:
+        preview = [_styled(f"  {entries[selected].name}", ui_theme.HIGHLIGHT_ANSI, width)]
+        preview.extend(details[page * detail_rows : (page + 1) * detail_rows])
     else:
-        status = "↑↓ move · Enter toggle" if details else "↑↓ move · Enter details"
-        hint = "Esc close"
+        preview = _preview_lines(entries[selected], width, preview_height)
+    rows.extend(preview)
+    rows.extend([""] * (preview_height - len(preview)))
+
+    position = f"{selected + 1}/{len(entries)}"
+    if width >= 60:
+        status = f"  ←→ page · Details {page + 1}/{pages}" if pages > 1 else ""
+        action = "collapse" if details else "details"
+        controls = f"  ↑↓ browse   Enter {action}   Esc close"
+        hint = controls + " " * max(1, width - prompt_text_width(controls + position)) + position
+    else:
+        status = "↑↓ browse · Enter toggle" if details else "↑↓ browse · Enter details"
+        hint = f"Esc close · {position}"
         if pages > 1:
-            hint += f" · ←→ page {page + 1}/{pages}"
+            hint = f"Esc · ←→ page {page + 1}/{pages} · {position}"
     rows.extend(_styled(text, ui_theme.DIM_COUNTER_ANSI, width) for text in (status, hint))
     return _Frame(tuple(rows), top, page, pages)
 
