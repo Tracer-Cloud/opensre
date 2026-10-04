@@ -1,9 +1,9 @@
 """The active repositories' AGENTS.md, loaded for the action prompt.
 
-Not OpenSRE's own docs (that is :mod:`.agents_md_reference`): these are the
-instructions of the repository the turn works on. The shared system prompt says
-the AGENTS.md chain from the repository root to the working directory comes with
-the prompt; this module is what delivers it.
+These are the instructions of the repository the turn works on, not OpenSRE's
+own docs. The shared system prompt says the AGENTS.md chain from the repository
+root to the working directory comes with the prompt; this module is what
+delivers it.
 
 For each active repository a verified local checkout comes first: every
 directory from the git root down to the working directory contributes its
