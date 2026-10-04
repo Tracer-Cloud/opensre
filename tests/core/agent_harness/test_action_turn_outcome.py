@@ -444,8 +444,8 @@ def test_a_verify_reread_of_the_same_record_is_shown_once() -> None:
 def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
     """Polls and retried failures before the repair must not head the closing.
 
-    A read whose later answer names a different record (``task_id``) is a
-    separate report and stays.
+    A result that names a record the later call does not (a ``task_id``, or a
+    failed prompt's ``prompt_id``) is a separate report and stays.
 
     Live QA on 50d8fc7 (session c7273771): the gateway was starting, so the
     turn polled ``check_hosted_gateway`` eight times and its probe failed twice
@@ -507,6 +507,16 @@ def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
             # A mutating call that ran twice did two things; both stay.
             (label("x"), _ToolResult("Created label repair.")),
             (label("x"), _ToolResult("Created label repair.")),
+            # The gateway took this prompt before the connection dropped; its id
+            # is how the user recovers that work, so the resend does not hide it.
+            (
+                call("ask_hosted_gateway", {"conversation": "new", "prompt": "scan"}),
+                _ToolResult("Lost contact; recover with p_scan1.", ok=False, prompt_id="p_scan1"),
+            ),
+            (
+                call("ask_hosted_gateway", {"conversation": "new", "prompt": "scan"}),
+                _ToolResult("Scan finished.", prompt_id="p_scan2"),
+            ),
             # "The most recent run" moved to a new repair between two reads.
             (latest_repair(), _ToolResult("Repair t1 succeeded.", task_id="t1")),
             (latest_repair(), _ToolResult("Repair t2 is running.", task_id="t2")),
@@ -543,6 +553,7 @@ def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
         assert text.count(running) == 1
         assert text.count(probed) == 1
     assert shown.count("Created label repair.") == 2
+    assert "recover with p_scan1" in shown
     assert "Repair t1 succeeded." in shown
     assert "Repair t2 is running." in shown
     assert shown.index(running) < shown.index(probed)

@@ -287,20 +287,23 @@ def _tool_failed(tool_result: Any) -> bool:
     return bool(getattr(tool_result, "is_error", False))
 
 
-def _names_another_record(earlier: Any, later: Any) -> bool:
-    """True when the two results carry a different value for the same ``*_id`` field.
+def _reports_another_record(earlier: Any, later: Any) -> bool:
+    """True when *earlier* names a record (a ``*_id`` field) that *later* does not.
 
-    A read with no id in its input ("the most recent run") can land on a new
-    record between two calls; each is then its own report.
+    A read with no id in its input ("the most recent run") can reach a new
+    record between two calls, and a failed ``ask_hosted_gateway`` can carry
+    the ``prompt_id`` that recovers work the gateway already took. Either one
+    is its own report, so the later call does not replace it.
     """
     earlier_details = getattr(earlier, "details", None)
-    later_details = getattr(later, "details", None)
-    if not isinstance(earlier_details, dict) or not isinstance(later_details, dict):
+    if not isinstance(earlier_details, dict):
         return False
+    later_details = getattr(later, "details", None)
+    if not isinstance(later_details, dict):
+        later_details = {}
     return any(
-        key.endswith("_id") and isinstance(value, str) and value and value != later_details[key]
+        key.endswith("_id") and isinstance(value, str) and value and later_details.get(key) != value
         for key, value in earlier_details.items()
-        if isinstance(later_details.get(key), str) and later_details[key]
     )
 
 
@@ -312,8 +315,8 @@ def _current_generic_results(
     A status poll (``check_hosted_gateway`` while a gateway starts) and a failed
     call that was sent again report a state that no longer holds. The closing
     shows the latest. A mutating call that succeeded twice did two things, and
-    a read that reached a different record reported something else, so both
-    stay.
+    a result that names a record the later one does not reported something
+    else, so both stay.
     """
     results = _generic_tool_results(result)
     tools = tools_by_name or {}
@@ -322,13 +325,9 @@ def _current_generic_results(
     current: list[tuple[ToolCall, Any]] = []
     for index, (tool_call, tool_result) in enumerate(results):
         last = latest[identities[index]]
-        if last != index:
-            if _tool_failed(tool_result):
-                continue
+        if last != index and not _reports_another_record(tool_result, results[last][1]):
             level = getattr(tools.get(tool_call.name), "side_effect_level", None)
-            if level in _OBSERVING_LEVELS and not _names_another_record(
-                tool_result, results[last][1]
-            ):
+            if level in _OBSERVING_LEVELS or _tool_failed(tool_result):
                 continue
         current.append((tool_call, tool_result))
     return current
