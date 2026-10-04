@@ -329,6 +329,7 @@ def _run_extraction(job: ExtractionJob) -> None:
             job.session_id,
             redact_memory_unsafe_text(result.session_summary),
             outcome=result.outcome,
+            session_started=digest.started_at,
         )
     if saved:
         logger.debug("[memory] extraction saved %d memories", saved)

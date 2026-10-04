@@ -4,6 +4,10 @@ Session summaries (``sessions/<session_id>.md``) record what each session tried
 and how it ended. They are never put in a prompt directly; consolidation reads
 the recent ones to write ``memory_summary.md``, which is read at the top of the
 prompt index until the next consolidation replaces it.
+
+Forgetting a memory must not let a summary bring it back, so once a memory is
+forgotten no session that began before that moment records a summary, and
+summaries recorded up to it are no longer read.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from pathlib import Path
 
 from filelock import Timeout
 
+from core.domain.memory.consolidation_state import read_consolidation_state
 from core.domain.memory.files import (
     SESSIONS_DIRNAME,
     SUMMARY_FILENAME,
@@ -114,17 +119,36 @@ def _prune_session_files(sessions: Path) -> None:
             stale.unlink()
 
 
+def _forgotten_since(directory: Path, session_started: datetime | None) -> bool:
+    """Whether a memory was forgotten after a session that began at ``session_started``.
+
+    An unknown start counts as before any forget.
+    """
+    forgotten = read_consolidation_state(directory).forgotten_at
+    if forgotten is None:
+        return False
+    if session_started is None:
+        return True
+    if session_started.tzinfo is None:
+        session_started = session_started.replace(tzinfo=UTC)
+    return session_started <= forgotten
+
+
 def append_session_summary(
     session_id: str,
     text: str,
     *,
     outcome: str = _DEFAULT_OUTCOME,
+    session_started: datetime | None = None,
     now: datetime | None = None,
 ) -> bool:
     """Append one summary entry for ``session_id``; ``False`` when nothing was written.
 
-    Keeps the newest :data:`MAX_ENTRIES_PER_SESSION_FILE` entries per session and the
-    newest :data:`MAX_SESSION_SUMMARY_FILES` session files. Never raises.
+    ``session_started`` is when the summarized session began (unknown when
+    ``None``). Nothing is written once a memory was forgotten after that: the
+    session may have stated the forgotten fact. Keeps the newest
+    :data:`MAX_ENTRIES_PER_SESSION_FILE` entries per session and the newest
+    :data:`MAX_SESSION_SUMMARY_FILES` session files. Never raises.
     """
     summary = _cap(" ".join(text.split()), MAX_SESSION_SUMMARY_CHARS)
     if not summary or not _SESSION_ID_RE.fullmatch(session_id):
@@ -134,6 +158,8 @@ def append_session_summary(
     entry = f"{_ENTRY_PREFIX}{stamp}{_OUTCOME_SEPARATOR}{label}\n{summary}"
     try:
         with memory_lock():
+            if _forgotten_since(memory_dir(), session_started):
+                return False
             sessions = ensure_private_subdir(SESSIONS_DIRNAME)
             path = sessions / f"{session_id}.md"
             try:
@@ -162,22 +188,40 @@ def _parse_entry(session_id: str, entry: str) -> SessionSummary | None:
     )
 
 
+def _recorded_after(summary: SessionSummary, moment: datetime) -> bool:
+    try:
+        recorded = datetime.fromisoformat(summary.recorded_at)
+    except ValueError:
+        return False
+    if recorded.tzinfo is None:
+        recorded = recorded.replace(tzinfo=UTC)
+    return recorded > moment
+
+
 def recent_session_summaries(
-    limit: int = 10, *, directory: Path | None = None
+    limit: int = 10,
+    *,
+    directory: Path | None = None,
+    after: datetime | None = None,
 ) -> list[SessionSummary]:
-    """The newest entry of each of the ``limit`` most recently written session files."""
+    """The newest entry of up to ``limit`` session files, most recently written first.
+
+    With ``after``, a session whose newest entry was recorded at or before it
+    is skipped.
+    """
     sessions = _sessions_dir(directory or memory_dir())
     if not sessions.is_dir():
         return []
-    files = _newest_session_files(sessions)
     summaries: list[SessionSummary] = []
-    for path in files[: max(limit, 0)]:
+    for path in _newest_session_files(sessions):
+        if len(summaries) >= limit:
+            break
         try:
             entries = _split_entries(path.read_text(encoding="utf-8"))
         except OSError:
             continue
         parsed = _parse_entry(path.stem, entries[-1]) if entries else None
-        if parsed is not None:
+        if parsed is not None and (after is None or _recorded_after(parsed, after)):
             summaries.append(parsed)
     return summaries
 

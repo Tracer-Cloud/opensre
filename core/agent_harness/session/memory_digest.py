@@ -17,7 +17,8 @@ from __future__ import annotations
 import contextlib
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,8 @@ class SessionDigest:
     #: Complete turns (a user message plus a reply or tool calls) in the digest.
     turns: int
     demo_turns_dropped: int
+    #: When the session began, from its log; ``None`` when the log does not say.
+    started_at: datetime | None = None
 
     @property
     def empty(self) -> bool:
@@ -110,6 +113,25 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
             if isinstance(record, dict):
                 records.append(record)
     return records
+
+
+def _parse_stamp(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        stamp = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
+
+
+def _session_started(records: Sequence[dict[str, Any]]) -> datetime | None:
+    """The log header's creation time, else its earliest entry's; ``None`` when neither parses."""
+    header = next((record for record in records if record.get("type") == "session"), None)
+    if header is not None and (created := _parse_stamp(header.get("created_at"))) is not None:
+        return created
+    stamps = [stamp for record in records if (stamp := _parse_stamp(record.get("timestamp")))]
+    return min(stamps, default=None)
 
 
 def _turns_from_log(records: Sequence[dict[str, Any]]) -> list[_Turn]:
@@ -268,7 +290,7 @@ def build_session_digest(
             records = _load_records(session_path(session_id))
         logged = _turns_from_log(records)
         if any(turn.user_text for turn in logged):
-            return _assemble(logged, demo, max_chars)
+            return replace(_assemble(logged, demo, max_chars), started_at=_session_started(records))
     return _assemble(_turns_from_transcript(fallback_messages), demo, max_chars)
 
 

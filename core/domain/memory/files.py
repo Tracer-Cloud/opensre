@@ -13,7 +13,7 @@ Layout of the memory directory::
     .archive/              archived memories; never parsed as live memory
     sessions/<id>.md       per-session summaries that consolidation reads
     .usage.json            per-memory use counts
-    .consolidation.json    when consolidation last ran
+    .consolidation.json    when consolidation last ran and a memory was last forgotten
     .memory.lock           directory lock serializing writers
 """
 

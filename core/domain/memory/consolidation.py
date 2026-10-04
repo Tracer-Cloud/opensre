@@ -6,12 +6,16 @@ Two steps:
    memories and memories neither updated nor used for 120 days (``user`` and
    ``preference`` memories never age out), and merge repository memories
    about the same ``owner/repo`` — the most recently updated one is kept, the
-   others' bodies are appended to it under ``## Merged from`` headings, and the
-   others are archived.
+   others' notes are appended to it under ``## Merged from`` headings, and
+   each other memory whose notes all fit is archived (one that does not fit
+   stays live).
 2. **Summary**, optional: an injected summarizer (an LLM on the harness side)
-   turns the live memories and recent session summaries into
-   ``memory_summary.md``. The lock is not held while it runs, and it is skipped
-   when its input has not changed since the last summary.
+   turns the live memories and the session summaries recorded since the last
+   forget into ``memory_summary.md``. The lock is not held while it runs, so
+   the summary is written only if its input is unchanged when the lock is
+   taken again; otherwise it is dropped and the cooldown is cleared so the
+   next attempt starts over. It is skipped when its input has not changed
+   since the last summary.
 
 Nothing is deleted: archived files move to ``.archive/``.
 """
@@ -39,7 +43,6 @@ from core.domain.memory.files import memory_dir, memory_lock
 from core.domain.memory.models import (
     MAX_BODY_CHARS,
     PERSONAL_MEMORY_TYPES,
-    TRUNCATION_MARKER,
     MemoryRecord,
     MemoryType,
 )
@@ -147,40 +150,47 @@ def _without_blank_runs(lines: list[str]) -> list[str]:
     return tidy
 
 
-def merged_body(kept: MemoryRecord, duplicates: Sequence[MemoryRecord]) -> str:
-    """``kept``'s body, then each duplicate's body under a ``## Merged from`` heading.
+def merged_body(
+    kept: MemoryRecord, duplicates: Sequence[MemoryRecord]
+) -> tuple[str, tuple[MemoryRecord, ...]]:
+    """``kept``'s body with duplicates' notes appended, and the duplicates that were merged.
 
-    The heading names the duplicate and the day it was last updated. A line
-    already present anywhere above (ignoring surrounding whitespace) is not
-    repeated. The kept body always survives whole: when the result would pass
-    :data:`MAX_BODY_CHARS`, only the merged-in part is cut, ending in the
-    truncation marker; the archived files keep everything.
+    Each merged duplicate gets a ``## Merged from`` heading naming it and the
+    day it was last updated; a line already present anywhere above (ignoring
+    surrounding whitespace) is not repeated. Nothing is ever cut: a duplicate
+    whose new lines would push the body past :data:`MAX_BODY_CHARS` is left
+    out, so its caller can keep that memory live instead of archiving notes
+    that are not in the kept body.
     """
-    base = kept.body.strip()
-    seen = {line.strip() for line in base.splitlines() if line.strip()}
-    sections: list[str] = []
+    body = kept.body.strip()
+    seen = {line.strip() for line in body.splitlines() if line.strip()}
+    merged: list[MemoryRecord] = []
     for duplicate in duplicates:
         fresh: list[str] = []
+        added: set[str] = set()
         for line in duplicate.body.strip().splitlines():
             key = line.strip()
-            if key in seen:
+            if key in seen or key in added:
                 continue
             if key:
-                seen.add(key)
+                added.add(key)
             fresh.append(line.rstrip())
         heading = f"## Merged from {duplicate.slug} ({duplicate.updated_at[:10]})"
-        sections.append("\n".join((heading, *_without_blank_runs(fresh))))
-    addition = "\n\n".join(sections)
-    room = MAX_BODY_CHARS - len(base) - len(_SECTION_GAP)
-    if len(addition) > room:
-        if room <= len(TRUNCATION_MARKER):
-            return base
-        addition = addition[: room - len(TRUNCATION_MARKER)].rstrip() + TRUNCATION_MARKER
-    return f"{base}{_SECTION_GAP}{addition}" if addition else base
+        candidate = _SECTION_GAP.join((body, "\n".join((heading, *_without_blank_runs(fresh)))))
+        if len(candidate) > MAX_BODY_CHARS:
+            continue
+        body = candidate
+        seen |= added
+        merged.append(duplicate)
+    return body, tuple(merged)
 
 
 def _merge_duplicates_unlocked(records: list[MemoryRecord], now: datetime) -> list[tuple[str, str]]:
-    """Keep the newest memory per repository subject, fold the others into it, archive them."""
+    """Keep the newest memory per repository subject, fold the others into it, archive them.
+
+    Only a duplicate whose notes all made it into the kept memory is archived;
+    one that did not fit stays live.
+    """
     groups: dict[str, list[MemoryRecord]] = {}
     for record in records:
         subject = repository_subject(record)
@@ -192,12 +202,15 @@ def _merge_duplicates_unlocked(records: list[MemoryRecord], now: datetime) -> li
             continue
         group.sort(key=lambda record: (record.updated_at, record.slug), reverse=True)
         kept, duplicates = group[0], group[1:]
+        body, folded = merged_body(kept, duplicates)
+        if not folded:
+            continue
         try:
             combined = build_record(
                 slug=kept.slug,
                 memory_type=kept.memory_type,
                 description=kept.description,
-                body=merged_body(kept, duplicates),
+                body=body,
                 created_at=kept.created_at,
                 updated_at=now.isoformat(timespec="seconds"),
                 source=kept.source,
@@ -207,7 +220,7 @@ def _merge_duplicates_unlocked(records: list[MemoryRecord], now: datetime) -> li
         except ValueError:
             continue
         write_record_unlocked(combined)
-        for duplicate in duplicates:
+        for duplicate in folded:
             if archive_memory_unlocked(duplicate.slug, now=now) is not None:
                 merged.append((duplicate.slug, kept.slug))
     return merged
@@ -233,27 +246,40 @@ def _tidy_unlocked(directory: Path, now: datetime) -> tuple[list[str], list[tupl
 
 
 def _fingerprint(source: ConsolidationInput) -> str:
+    """Identity of a summary input: every memory and session summary, by name, time and text."""
     digest = hashlib.sha256()
     for record in source.memories:
-        digest.update(f"m\0{record.slug}\0{record.updated_at}\n".encode())
+        digest.update(
+            f"m\0{record.slug}\0{record.updated_at}\0{record.description}\0{record.body}\n".encode()
+        )
     for summary in source.session_summaries:
-        digest.update(f"s\0{summary.session_id}\0{summary.recorded_at}\n".encode())
+        digest.update(f"s\0{summary.session_id}\0{summary.recorded_at}\0{summary.text}\n".encode())
     return digest.hexdigest()
 
 
-def _summary_input(directory: Path) -> ConsolidationInput:
+def _summary_input(directory: Path, state: ConsolidationState) -> ConsolidationInput:
+    """Live memories, session summaries recorded since the last forget, and the current summary."""
     return ConsolidationInput(
         memories=tuple(record for record in list_memories() if not is_fenced_record(record)),
         session_summaries=tuple(
-            recent_session_summaries(RECENT_SESSION_SUMMARIES, directory=directory)
+            recent_session_summaries(
+                RECENT_SESSION_SUMMARIES, directory=directory, after=state.forgotten_at
+            )
         ),
         current_summary=read_memory_summary(directory),
     )
 
 
 def _write_summary(directory: Path, summarize: Summarizer, previous: ConsolidationState) -> bool:
-    """Ask the summarizer for a new ``memory_summary.md``; never raises."""
-    source = _summary_input(directory)
+    """Ask the summarizer for a new ``memory_summary.md``; never raises.
+
+    The summarizer runs without the lock, so the store can change meanwhile
+    (a forget, an update, a new session summary). The summary is written only
+    when the input read again under the lock is unchanged; otherwise it is
+    dropped and the cooldown cleared, so a forgotten fact is never written
+    back and the next consolidation summarizes the current store.
+    """
+    source = _summary_input(directory, previous)
     if not source.memories and not source.session_summaries:
         return False
     fingerprint = _fingerprint(source)
@@ -268,8 +294,12 @@ def _write_summary(directory: Path, summarize: Summarizer, previous: Consolidati
         return False
     try:
         with memory_lock():
-            write_memory_summary_unlocked(directory, text)
             state = read_consolidation_state(directory)
+            if _fingerprint(_summary_input(directory, state)) != fingerprint:
+                logger.debug("[memory] store changed while summarizing; summary dropped")
+                write_consolidation_state_unlocked(directory, replace(state, last_run_at=None))
+                return False
+            write_memory_summary_unlocked(directory, text)
             write_consolidation_state_unlocked(directory, replace(state, summary_input=fingerprint))
     except (Timeout, OSError):
         logger.debug("[memory] could not write memory_summary.md", exc_info=True)

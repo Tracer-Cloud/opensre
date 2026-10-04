@@ -22,7 +22,7 @@ from pathlib import Path
 
 from filelock import Timeout
 
-from core.domain.memory.consolidation_state import clear_consolidation_state_unlocked
+from core.domain.memory.consolidation_state import record_forget_unlocked
 from core.domain.memory.files import (
     INDEX_FILENAME,
     RESERVED_FILENAMES,
@@ -257,9 +257,11 @@ def list_memories() -> list[MemoryRecord]:
 def delete_memory(slug: str) -> bool:
     """Delete one memory; ``True`` when a file was removed.
 
-    Also drops ``memory_summary.md`` and the consolidation cooldown, so a
-    forgotten fact does not live on in the summary: the next session start
-    writes a fresh one.
+    A forgotten fact must not come back through the summary. This drops
+    ``memory_summary.md`` and the consolidation cooldown, so the next
+    consolidation writes a fresh summary, and records when the forget
+    happened: session summaries recorded until then may describe the fact,
+    so consolidation never reads them again.
     """
     if not is_valid_slug(slug):
         return False
@@ -272,7 +274,7 @@ def delete_memory(slug: str) -> bool:
                 return False
             directory = memory_dir()
             remove_memory_summary_unlocked(directory)
-            clear_consolidation_state_unlocked(directory)
+            record_forget_unlocked(directory)
             rebuild_index_best_effort()
             return True
     except Timeout:

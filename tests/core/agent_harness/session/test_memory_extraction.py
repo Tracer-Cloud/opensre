@@ -20,7 +20,9 @@ from config.constants import (
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope, current_scope
 from core.agent_harness.session import memory_turns
-from core.domain.memory import list_memories, load_memory, memory_dir
+from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
+from core.agent_harness.session.session_core import SessionCore
+from core.domain.memory import delete_memory, list_memories, load_memory, memory_dir, save_memory
 from core.domain.memory.summaries import recent_session_summaries
 
 
@@ -139,6 +141,26 @@ class TestParsing:
         [summary] = recent_session_summaries()
         assert (summary.session_id, summary.outcome) == ("s-summary", "fail")
         assert summary.text == "Set up the prod cluster facts."
+
+
+def test_a_session_that_began_before_a_forget_records_no_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Its turns may state the forgotten fact, and consolidation reads session summaries."""
+    store = JsonlSessionStore()
+    store.open_session(SessionCore(session_id="s-forget"))
+    store.append_turn_detail("s-forget", "chat", "I work at Acme", response="Noted.", turn_id="t1")
+    assert save_memory(slug="employer", memory_type="user", description="Acme", body="Acme")
+    assert delete_memory("employer")
+    _patch_llm(monkeypatch, _response(summary="The user said where they work."))
+
+    extraction.schedule_memory_extraction(
+        [("user", "I work at Acme"), ("assistant", "Noted.")],
+        session_id="s-forget",
+        wait_for_completion=True,
+    )
+
+    assert recent_session_summaries() == []
 
 
 class TestProvenanceGate:

@@ -24,10 +24,11 @@ from core.domain.memory import (
     render_prompt_index,
     save_memory,
     search_memories,
+    search_memories_scored,
 )
 from core.domain.memory.consolidation_state import read_consolidation_state
 from core.domain.memory.files import ARCHIVE_DIRNAME, INDEX_FILENAME, SUMMARY_FILENAME
-from core.domain.memory.models import MAX_BODY_CHARS, TRUNCATION_MARKER
+from core.domain.memory.models import TRUNCATION_MARKER
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 
@@ -150,9 +151,10 @@ def test_duplicate_repository_memories_merge_into_the_newest_without_losing_note
     assert load_memory("repository-opensre-webapp") is not None
 
 
-def test_a_merge_keeps_the_kept_body_whole_and_cuts_only_the_merged_part(
+def test_a_duplicate_whose_notes_do_not_fit_stays_live_instead_of_being_archived(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Archiving a duplicate whose notes were cut took them out of prompts and recall."""
     own_body = "# acme/payments\n" + "\n".join(f"- note {index:04d}" for index in range(700))
     _save_at(
         monkeypatch,
@@ -164,6 +166,14 @@ def test_a_merge_keeps_the_kept_body_whole_and_cuts_only_the_merged_part(
     )
     _save_at(
         monkeypatch,
+        NOW - timedelta(days=5),
+        slug="repo-acme-payments-ci",
+        memory_type="repository",
+        description="acme/payments CI notes",
+        body="- CI runs on GitHub Actions",
+    )
+    _save_at(
+        monkeypatch,
         NOW - timedelta(days=1),
         slug="repository-acme-payments",
         memory_type="repository",
@@ -171,16 +181,20 @@ def test_a_merge_keeps_the_kept_body_whole_and_cuts_only_the_merged_part(
         body=own_body,
     )
 
-    consolidate_memories(now=NOW)
+    result = consolidate_memories(now=NOW)
 
+    assert result.merged == (("repo-acme-payments-ci", "repository-acme-payments"),)
+    assert _archived() == {"repo-acme-payments-ci"}
     kept = load_memory("repository-acme-payments")
     assert kept is not None
-    assert len(kept.body) <= MAX_BODY_CHARS
     assert kept.body.startswith(own_body)
-    assert "## Merged from repo-acme-payments-old" in kept.body
-    assert kept.body.endswith(TRUNCATION_MARKER)
-    archived = (memory_dir() / ARCHIVE_DIRNAME / "repo-acme-payments-old.md").read_text()
-    assert "- older note 0299" in archived
+    assert kept.body.endswith("- CI runs on GitHub Actions")
+    assert TRUNCATION_MARKER not in kept.body
+    left = load_memory("repo-acme-payments-old")
+    assert left is not None and "- older note 0299" in left.body
+    assert "repo-acme-payments-old" in {
+        record.slug for record, _ in search_memories_scored("older note 0299")
+    }
 
 
 def test_runs_once_per_cooldown_and_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -263,6 +277,72 @@ def test_forgetting_a_memory_drops_the_summary_and_reopens_consolidation(
 
     assert delete_memory("employer")
 
+    assert not (memory_dir() / SUMMARY_FILENAME).exists()
+    assert read_consolidation_state(memory_dir()).last_run_at is None
+    assert consolidate_memories(now=NOW + timedelta(minutes=5)).ran
+
+
+def test_a_forgotten_fact_never_returns_through_a_session_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session summary may describe the forgotten fact; consolidation must not read it back."""
+    _save_at(monkeypatch, NOW, slug="user-profile", memory_type="user", description="Vaibhav")
+    _save_at(
+        monkeypatch,
+        NOW,
+        slug="payments-seed-fix",
+        memory_type="investigation_learning",
+        description="Pinning the random seed fixes the payments flake",
+    )
+    started = datetime.now(UTC) - timedelta(minutes=5)
+    assert append_session_summary(
+        "before-forget", "Fixed the payments flake by pinning the seed.", session_started=started
+    )
+
+    assert delete_memory("payments-seed-fix")
+
+    # A session that was running when the memory was forgotten records nothing more.
+    assert not append_session_summary(
+        "before-forget", "Pinned the seed once more.", session_started=started
+    )
+    forgotten = read_consolidation_state(memory_dir()).forgotten_at
+    assert forgotten is not None
+    later = forgotten + timedelta(minutes=1)
+    assert append_session_summary(
+        "after-forget", "Reviewed the deploy dashboards.", session_started=later, now=later
+    )
+    seen: list[ConsolidationInput] = []
+
+    def _summarize(source: ConsolidationInput) -> str:
+        seen.append(source)
+        return "## User\nVaibhav."
+
+    assert consolidate_memories(now=NOW, summarize=_summarize).summary_written
+    [source] = seen
+    assert [summary.session_id for summary in source.session_summaries] == ["after-forget"]
+    assert [record.slug for record in source.memories] == ["user-profile"]
+
+
+@pytest.mark.parametrize("change", ["forget", "update"])
+def test_a_summary_of_a_store_that_changed_meanwhile_is_dropped(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    """The summarizer runs unlocked; its result must not undo a forget or hide an update."""
+    _save_at(monkeypatch, NOW, slug="user-profile", memory_type="user", description="Vaibhav")
+    _save_at(monkeypatch, NOW, slug="employer", memory_type="user", description="Works at Acme")
+
+    def _summarize(_source: ConsolidationInput) -> str:
+        if change == "forget":
+            assert delete_memory("employer")
+        else:
+            assert save_memory(
+                slug="employer", memory_type="user", description="Works at Globex", body="Globex"
+            )
+        return "## User\nVaibhav works at Acme."
+
+    result = consolidate_memories(now=NOW, summarize=_summarize)
+
+    assert result.ran and not result.summary_written
     assert not (memory_dir() / SUMMARY_FILENAME).exists()
     assert read_consolidation_state(memory_dir()).last_run_at is None
     assert consolidate_memories(now=NOW + timedelta(minutes=5)).ran
