@@ -291,7 +291,7 @@ download_to() {
   local url="$1"
   local destination="$2"
 
-  curl "${CURL_FLAGS[@]}" -o "$destination" "$url"
+  curl "${CURL_FLAGS[@]}" --http1.1 -o "$destination" "$url"
 }
 
 download_text() {

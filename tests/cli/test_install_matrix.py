@@ -131,6 +131,7 @@ def _write_curl_shim(bin_dir: Path, assets_dir: Path, release_json_by_url: dict[
             set -euo pipefail
             out=""
             url=""
+            http1=false
             args=("$@")
             i=0
             while [ "$i" -lt "${{#args[@]}}" ]; do
@@ -141,6 +142,7 @@ def _write_curl_shim(bin_dir: Path, assets_dir: Path, release_json_by_url: dict[
                   out="${{args[$i]}}"
                   ;;
                 -H|--header|--retry|--retry-delay) i=$((i + 1)) ;;
+                --http1.1) http1=true ;;
                 --fail|--silent|--show-error|--location) ;;
                 http://*|https://*) url="$arg" ;;
               esac
@@ -150,11 +152,19 @@ def _write_curl_shim(bin_dir: Path, assets_dir: Path, release_json_by_url: dict[
             map={json.dumps(str(mapping_path))}
             assets={json.dumps(str(assets_dir))}
             if printf '%s' "$url" | grep -q 'api.github.com'; then
+              if [ "$http1" != false ]; then
+                echo "metadata requests must not force HTTP/1.1" >&2
+                exit 1
+              fi
               body="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$map" "$url")"
               if [ -n "$out" ]; then printf '%s' "$body" >"$out"; else printf '%s' "$body"; fi
               exit 0
             fi
             if printf '%s' "$url" | grep -q 'releases/download/'; then
+              if [ "$http1" != true ]; then
+                echo "curl: (92) HTTP/2 stream was not closed cleanly" >&2
+                exit 92
+              fi
               name="$(basename "$url")"
               src="$assets/$name"
               [ -f "$src" ] || {{ echo "curl-shim: missing asset $src for $url" >&2; exit 1; }}
