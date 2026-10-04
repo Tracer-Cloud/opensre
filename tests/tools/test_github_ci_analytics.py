@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import re
+import threading
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from pathlib import Path
@@ -1044,7 +1045,7 @@ def test_collect_runs_treats_exactly_the_ceiling_as_complete() -> None:
     assert len(collected.pr_runs) == 1000
     assert collected.coverage_notices == []
     # One listing sufficed: the whole-window query was not split.
-    assert sum(1 for q in client.run_queries if q.get("event") == "pull_request") <= 2
+    assert len({q["created"] for q in client.run_queries if q.get("event") == "pull_request"}) == 1
 
 
 def test_rerun_budget_is_spent_on_merged_prs_first(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1210,6 +1211,97 @@ def test_collect_runs_still_fails_when_pull_requests_are_forbidden() -> None:
     assert excinfo.value.status_code == HTTPStatus.FORBIDDEN
 
 
+def test_collect_runs_reads_each_page_once_and_merges_a_listing_that_shifted() -> None:
+    # Arrange: 250 runs, one an hour; a run completing mid-read pushed page 1's
+    # last row onto page 2, so GitHub returns it twice.
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    rows = [
+        _payload(index, created_at=_iso(now - timedelta(hours=index))) for index in range(1, 251)
+    ]
+    client = _ShiftedPageTwo(repository={"default_branch": "main"}, runs=rows)
+
+    # Act
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    # Assert: every run once, newest first, and no page was read twice.
+    assert [run.run_id for run in collected.pr_runs] == list(range(1, 251))
+    pages = [
+        q["page"]
+        for q in client.run_queries
+        if q.get("event") == "pull_request" and q.get("per_page") == 100
+    ]
+    assert sorted(pages) == [1, 2, 3]
+
+
+def test_collect_runs_splits_an_oversized_window_in_one_step() -> None:
+    # Arrange: 2,700 PR runs evenly over 30 days, none on a slice edge; halving
+    # would take two rounds (1,350 per half is still over the 1,000-row ceiling).
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    rows = [
+        _payload(index, created_at=_iso(now - timedelta(minutes=16 * index - 5)))
+        for index in range(1, 2701)
+    ]
+    client = _FakeGitHub(repository={"default_branch": "main"}, runs=rows)
+
+    # Act
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    # Assert: the whole window, then three slices that each fit; every page read once.
+    assert len({run.run_id for run in collected.pr_runs}) == 2700
+    pr_queries = [q for q in client.run_queries if q.get("event") == "pull_request"]
+    probed = [q["created"] for q in pr_queries if q["per_page"] == 1]
+    assert len(probed) == 4
+    page_reads = [(q["created"], q["page"]) for q in pr_queries if q["per_page"] == 100]
+    assert len(page_reads) == len(set(page_reads)) == 27
+
+
+def test_a_closed_pr_page_read_ahead_past_the_window_changes_nothing() -> None:
+    # Page 1 is short, so the scan ends there; pages requested ahead fail.
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    pulls = [
+        {
+            "number": 42,
+            "merged_at": "2026-09-03T09:00:00Z",
+            "updated_at": "2026-09-03T09:00:00Z",
+            "head": {"ref": "feat/x", "repo": {"full_name": "o/r"}},
+        }
+    ]
+    client = _PullsFailAfterPageOne(repository={"default_branch": "main"}, runs=[], pulls=pulls)
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert [pr.number for pr in collected.merged_prs] == [42]
+    assert collected.coverage_notices == []
+
+
+def test_a_failed_read_raises_at_once_and_cancels_queued_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: a timeout surfaced only after every other in-flight and queued
+    request had finished (~50 s), because the pools were ``with`` blocks."""
+    from integrations.github.tools.ci_analytics import collector
+
+    # Arrange: two connections; the PR listing fails while closed-PR reads stall.
+    monkeypatch.setattr(collector, "_MAX_WORKERS", 2)
+    client = _StallingGitHub()
+
+    # Act
+    try:
+        with pytest.raises(GitHubApiError):
+            collect_runs(client, owner="o", repo="r", window_days=30, now=_T0)
+        # Assert: raised while the stalled reads were still waiting.
+        assert client.finished_stalls == 0
+    finally:
+        client.release.set()
+    for thread in threading.enumerate():
+        if thread.name.startswith("github-ci-analytics"):
+            thread.join(timeout=10)
+    # Assert: beyond the repository read, the failed listing and one stalled read
+    # per connection, nothing queued at the failure (the third closed-PR page,
+    # the default-branch listings) was ever sent.
+    assert client.sent <= 4
+
+
 def _iso(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -1241,6 +1333,8 @@ def _payload(
 
 
 class _FakeGitHub:
+    """One repository's REST answers; run listings page and stop at 1,000 rows like GitHub's."""
+
     def __init__(
         self,
         *,
@@ -1261,10 +1355,8 @@ class _FakeGitHub:
         if path == "/repos/o/r":
             return self._repository
         if path == "/repos/o/r/actions/runs":
-            params = kwargs.get("params") or {}
-            self.run_queries.append(params)
-            inside = self._runs_in(params)
-            return {"total_count": len(inside), "workflow_runs": inside[:100]}
+            payload, _headers = self._runs_page(kwargs.get("params") or {})
+            return payload
         if path == "/repos/o/r/pulls":
             if self._pulls_error is not None:
                 raise self._pulls_error
@@ -1279,6 +1371,26 @@ class _FakeGitHub:
             except KeyError as exc:
                 raise GitHubApiError("attempt not found", status_code=404) from exc
         raise AssertionError(f"unexpected {method} {path}")
+
+    def request_with_headers(
+        self, method: str, path: str, **kwargs: Any
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        if path == "/repos/o/r/actions/runs":
+            return self._runs_page(kwargs.get("params") or {})
+        return self.request(method, path, **kwargs), {}
+
+    def _runs_page(self, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+        self.run_queries.append(params)
+        inside = self._runs_in(params)
+        per_page = int(params.get("per_page", 30))
+        page = int(params.get("page", 1))
+        listed = inside[:1000]
+        headers: dict[str, str] = {}
+        if page * per_page < len(inside):
+            link = f"https://api.github.com/repos/o/r/actions/runs?page={page + 1}"
+            headers["Link"] = f'<{link}>; rel="next"'
+        rows = listed[(page - 1) * per_page : page * per_page]
+        return {"total_count": len(inside), "workflow_runs": rows}, headers
 
     def _runs_in(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Rows for one listing query: PR event only, inside the created range, newest first."""
@@ -1299,6 +1411,47 @@ class _FakeGitHub:
             return self._runs_in(params or {})[:1000]
         if path == "/repos/o/r/pulls":
             return self._pulls
+        return []
+
+
+class _ShiftedPageTwo(_FakeGitHub):
+    """A listing that moved by one row between reads: page 2 repeats page 1's last row."""
+
+    def _runs_page(self, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+        payload, headers = super()._runs_page(params)
+        if int(params.get("page", 1)) == 2:
+            repeated = self._runs_in(params)[int(params["per_page"]) - 1]
+            payload["workflow_runs"] = [repeated, *payload["workflow_runs"]]
+        return payload, headers
+
+
+class _PullsFailAfterPageOne(_FakeGitHub):
+    def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        page = int((kwargs.get("params") or {}).get("page", 1))
+        if path == "/repos/o/r/pulls" and page > 1:
+            raise GitHubApiError("server error", status_code=HTTPStatus.BAD_GATEWAY)
+        return super().request(method, path, **kwargs)
+
+
+class _StallingGitHub:
+    """The repository reads, the PR listing fails, and every other read waits for ``release``."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.sent = 0
+        self.finished_stalls = 0
+        self._lock = threading.Lock()
+
+    def request(self, _method: str, path: str, **kwargs: Any) -> Any:
+        with self._lock:
+            self.sent += 1
+        if path == "/repos/o/r":
+            return {"default_branch": "main"}
+        if (kwargs.get("params") or {}).get("event") == "pull_request":
+            raise GitHubApiError("The read operation timed out")
+        self.release.wait(timeout=30)
+        with self._lock:
+            self.finished_stalls += 1
         return []
 
 

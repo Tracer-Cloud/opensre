@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -12,6 +13,7 @@ from urllib import error, request
 
 import pytest
 
+from integrations.github import client as client_module
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 
 
@@ -277,3 +279,141 @@ def test_invalid_json_raises_typed_error(monkeypatch: pytest.MonkeyPatch) -> Non
         client.request("GET", "/repos/o/r/issues")
 
     assert "invalid JSON" in str(exc.value)
+
+
+class _BrokenRead(_Response):
+    """A response whose body never arrives whole: the read raises ``failure``."""
+
+    def __init__(self, failure: Exception) -> None:
+        super().__init__({})
+        self._failure = failure
+
+    def read(self) -> bytes:
+        raise self._failure
+
+
+@pytest.fixture
+def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(client_module, "_RETRY_BACKOFF_SECONDS", 0)
+
+
+@pytest.mark.usefixtures("_no_backoff")
+@pytest.mark.parametrize("call", ["request", "paginate"])
+@pytest.mark.parametrize(
+    ("failure", "at_open"),
+    [
+        (TimeoutError("The read operation timed out"), False),
+        (http.client.IncompleteRead(b"{", 10), False),
+        (ConnectionResetError(54, "Connection reset by peer"), False),
+        (http.client.RemoteDisconnected("Remote end closed connection without response"), True),
+    ],
+    ids=["read-timeout", "incomplete-read", "connection-reset", "remote-disconnected"],
+)
+def test_a_stalled_or_dropped_response_surfaces_as_a_typed_error(
+    monkeypatch: pytest.MonkeyPatch, call: str, failure: Exception, at_open: bool
+) -> None:
+    """Regression: urllib wraps only connect errors in URLError, so a timeout in
+    read() escaped every ``except GitHubApiError`` and failed the CI analysis raw
+    ("The read operation timed out")."""
+
+    def fake_urlopen(_req: request.Request, timeout: int = 0) -> _Response:
+        del timeout
+        if at_open:
+            raise failure
+        return _BrokenRead(failure)
+
+    monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
+    client = GitHubRestClient(github_token="ghp_secret")
+
+    with pytest.raises(GitHubApiError) as caught:
+        if call == "paginate":
+            client.paginate("/repos/o/r/actions/runs")
+        else:
+            client.request("GET", "/repos/o/r/actions/runs")
+
+    assert caught.value.status_code is None
+    assert caught.value.__cause__ is failure
+    assert caught.value.path == "/repos/o/r/actions/runs"
+    assert "ghp_secret" not in str(caught.value)
+
+
+@pytest.mark.usefixtures("_no_backoff")
+def test_a_get_retries_a_timeout_and_returns_the_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[str] = []
+
+    def fake_urlopen(req: request.Request, timeout: int = 0) -> _Response:
+        del timeout
+        sent.append(req.get_method())
+        if len(sent) == 1:
+            return _BrokenRead(TimeoutError("The read operation timed out"))
+        return _Response({"default_branch": "main"})
+
+    monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
+
+    payload = GitHubRestClient(github_token="tok").request("GET", "/repos/o/r")
+
+    assert payload == {"default_branch": "main"}
+    assert sent == ["GET", "GET"]
+
+
+@pytest.mark.usefixtures("_no_backoff")
+@pytest.mark.parametrize(("method", "sent"), [("GET", 3), ("POST", 1)])
+def test_retries_stop_at_the_limit_and_a_write_is_never_resent(
+    monkeypatch: pytest.MonkeyPatch, method: str, sent: int
+) -> None:
+    calls: list[str] = []
+
+    def fake_urlopen(req: request.Request, timeout: int = 0) -> _Response:
+        del timeout
+        calls.append(req.get_method())
+        return _BrokenRead(TimeoutError("The read operation timed out"))
+
+    monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
+
+    with pytest.raises(GitHubApiError, match="timed out") as caught:
+        GitHubRestClient(github_token="tok").request(method, "/repos/o/r/issues")
+
+    assert len(calls) == sent
+    assert caught.value.method == method
+
+
+@pytest.mark.usefixtures("_no_backoff")
+@pytest.mark.parametrize(
+    ("status", "headers", "sent"),
+    [
+        (HTTPStatus.SERVICE_UNAVAILABLE, {}, 3),
+        (HTTPStatus.FORBIDDEN, {"Retry-After": "0"}, 3),
+        (HTTPStatus.TOO_MANY_REQUESTS, {"Retry-After": "60"}, 1),
+        (HTTPStatus.FORBIDDEN, {"Retry-After": "0", "X-RateLimit-Remaining": "0"}, 1),
+        (HTTPStatus.FORBIDDEN, {}, 1),
+        (HTTPStatus.NOT_FOUND, {}, 1),
+    ],
+    ids=[
+        "gateway-error",
+        "short-secondary-limit",
+        "long-secondary-limit",
+        "exhausted-primary-limit",
+        "forbidden",
+        "not-found",
+    ],
+)
+def test_only_transient_statuses_are_retried(
+    monkeypatch: pytest.MonkeyPatch, status: HTTPStatus, headers: dict[str, str], sent: int
+) -> None:
+    calls: list[str] = []
+
+    def fake_urlopen(req: request.Request, timeout: int = 0) -> _Response:
+        del timeout
+        calls.append(req.full_url)
+        hdrs = Message()
+        for name, value in headers.items():
+            hdrs[name] = value
+        raise error.HTTPError(req.full_url, status, "failed", hdrs=hdrs, fp=None)
+
+    monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
+
+    with pytest.raises(GitHubApiError) as caught:
+        GitHubRestClient(github_token="tok").request("GET", "/repos/o/r/actions/runs")
+
+    assert len(calls) == sent
+    assert caught.value.status_code == status

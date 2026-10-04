@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
+import random
+import time
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any
 from urllib import error, parse, request
 
@@ -24,6 +28,32 @@ JsonPayload = dict[str, Any] | list[Any]
 # multi-minute scan. 50 pages at the default 100/page is 5,000 items -- ample
 # for any bounded listing (open issues/PRs), while capping runaway endpoints.
 _DEFAULT_PAGINATE_MAX_PAGES = 50
+# Applies to each socket operation (connect, every read), not the whole
+# request. GitHub aborts a REST request after 10 seconds of server time, so a
+# socket silent for longer has no answer coming; the 2 extra seconds cover
+# connect, TLS and network latency. A 100-run Actions page takes about 2
+# seconds to its first byte, so this only cuts off a stalled connection.
+_REQUEST_TIMEOUT_SECONDS = 12
+# A GET is retried this many times after a timeout, a dropped connection or a
+# gateway error, waiting a jittered backoff that doubles from this base.
+_MAX_GET_RETRIES = 2
+_RETRY_BACKOFF_SECONDS = 0.5
+# A secondary rate limit asking for a longer pause than this is surfaced
+# rather than stalling the tool call.
+_MAX_RETRY_AFTER_SECONDS = 5
+_RETRYABLE_STATUSES = frozenset(
+    {HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT}
+)
+_RATE_LIMIT_STATUSES = frozenset({HTTPStatus.FORBIDDEN, HTTPStatus.TOO_MANY_REQUESTS})
+# urllib wraps only connect-phase errors in URLError: a timeout or dropped
+# connection inside getresponse() or read() escapes raw. ``socket.timeout`` is
+# ``TimeoutError``; ``RemoteDisconnected`` and ``IncompleteRead`` are
+# ``HTTPException``s.
+_TRANSIENT_ERRORS: tuple[type[Exception], ...] = (
+    TimeoutError,
+    ConnectionError,
+    http.client.HTTPException,
+)
 
 
 @dataclass
@@ -54,7 +84,8 @@ def resolve_github_token(github_token: str | None = None) -> str:
     )
 
 
-def _next_link(headers: Any) -> str | None:
+def next_page_url(headers: Any) -> str | None:
+    """The ``rel="next"`` target of a response's ``Link`` header, or None on the last page."""
     raw_link = ""
     if hasattr(headers, "get"):
         raw_link = str(headers.get("Link") or headers.get("link") or "")
@@ -65,13 +96,102 @@ def _next_link(headers: Any) -> str | None:
     return None
 
 
-def _response_headers(response: Any) -> dict[str, str]:
+def _header_dict(raw: Any) -> dict[str, str]:
     """Copy response headers. ``X-OAuth-Scopes`` is only present here, not in the body."""
-    raw = getattr(response, "headers", None)
     items = getattr(raw, "items", None)
     if not callable(items):
         return {}
     return {str(key): str(value) for key, value in items()}
+
+
+def _http_error(exc: error.HTTPError, *, path: str, method: str) -> GitHubApiError:
+    detail = exc.read().decode("utf-8", errors="replace") if exc.fp is not None else ""
+    return GitHubApiError(
+        detail or exc.msg or "GitHub API request failed.",
+        status_code=exc.code,
+        path=path,
+        method=method,
+        rate_limit_remaining=exc.headers.get("X-RateLimit-Remaining") if exc.headers else None,
+        rate_limit_reset=exc.headers.get("X-RateLimit-Reset") if exc.headers else None,
+    )
+
+
+def _transport_error(exc: Exception, *, path: str, method: str, attempts: int) -> GitHubApiError:
+    """A timeout or dropped connection as ``GitHubApiError``; names the failure, never the request."""
+    if isinstance(exc, error.URLError):
+        reason = f"{exc.reason}"
+    elif isinstance(exc, TimeoutError):
+        reason = "timed out"
+    else:
+        reason = f"connection failed ({type(exc).__name__})"
+    tries = f" after {attempts} attempts" if attempts > 1 else ""
+    return GitHubApiError(f"GitHub API request failed: {reason}{tries}", path=path, method=method)
+
+
+def _backoff_seconds(retry: int) -> float:
+    return _RETRY_BACKOFF_SECONDS * 2.0**retry * random.uniform(0.5, 1.5)
+
+
+def _retry_after_seconds(exc: error.HTTPError) -> float | None:
+    """The pause a secondary rate limit asks for, or None when it is not one worth waiting out.
+
+    An exhausted primary limit (``X-RateLimit-Remaining: 0``) lasts until the
+    hourly reset, so it surfaces however short ``Retry-After`` claims to be.
+    """
+    headers = exc.headers
+    if exc.code not in _RATE_LIMIT_STATUSES or headers is None:
+        return None
+    if str(headers.get("X-RateLimit-Remaining") or "").strip() == "0":
+        return None
+    try:
+        seconds = float(str(headers.get("Retry-After") or "").strip())
+    except ValueError:
+        return None
+    return seconds if 0 <= seconds <= _MAX_RETRY_AFTER_SECONDS else None
+
+
+def _retry_delay(exc: Exception, *, retry: int) -> float | None:
+    """Seconds to wait before retrying a GET that raised ``exc``, or None to surface it."""
+    if isinstance(exc, error.HTTPError):
+        if exc.code in _RETRYABLE_STATUSES:
+            return _backoff_seconds(retry)
+        wait = _retry_after_seconds(exc)
+        return None if wait is None else max(wait, _backoff_seconds(retry))
+    if isinstance(exc, error.URLError):
+        return _backoff_seconds(retry) if isinstance(exc.reason, _TRANSIENT_ERRORS) else None
+    return _backoff_seconds(retry) if isinstance(exc, _TRANSIENT_ERRORS) else None
+
+
+def _discard_body(exc: error.HTTPError) -> None:
+    if exc.fp is not None:
+        exc.close()
+
+
+def _send(req: request.Request, *, path: str) -> tuple[str, Any]:
+    """Send ``req`` and read the whole body, returning it with the raw response headers.
+
+    Every failure surfaces as ``GitHubApiError``, including a timeout or a
+    dropped connection while the response is read. Only a GET is retried
+    (timeouts, dropped connections, 502/503/504, a secondary rate limit
+    with a short ``Retry-After``); a write is never sent twice.
+    """
+    method = req.get_method()
+    retries = _MAX_GET_RETRIES if method == "GET" else 0
+    attempt = 0
+    while True:
+        try:
+            with request.urlopen(req, timeout=_REQUEST_TIMEOUT_SECONDS) as response:  # nosemgrep
+                return response.read().decode("utf-8"), getattr(response, "headers", None)
+        except (OSError, http.client.HTTPException) as exc:
+            delay = _retry_delay(exc, retry=attempt) if attempt < retries else None
+            if delay is None:
+                if isinstance(exc, error.HTTPError):
+                    raise _http_error(exc, path=path, method=method) from exc
+                raise _transport_error(exc, path=path, method=method, attempts=attempt + 1) from exc
+            if isinstance(exc, error.HTTPError):
+                _discard_body(exc)
+            time.sleep(delay)
+        attempt += 1
 
 
 def _decode_json_payload(raw: str, *, path: str) -> JsonPayload:
@@ -149,33 +269,8 @@ class GitHubRestClient:
                 **({"Authorization": f"Bearer {self._token}"} if self._token else {}),
             },
         )
-        try:
-            with request.urlopen(req, timeout=20) as response:  # nosemgrep
-                raw = response.read().decode("utf-8")
-                headers = _response_headers(response)
-        except error.HTTPError as exc:
-            detail = ""
-            if exc.fp is not None:
-                detail = exc.read().decode("utf-8", errors="replace")
-            message = detail or exc.msg or "GitHub API request failed."
-            raise GitHubApiError(
-                message,
-                status_code=exc.code,
-                path=path,
-                method=method.upper(),
-                rate_limit_remaining=exc.headers.get("X-RateLimit-Remaining")
-                if exc.headers
-                else None,
-                rate_limit_reset=exc.headers.get("X-RateLimit-Reset") if exc.headers else None,
-            ) from exc
-        except error.URLError as exc:
-            raise GitHubApiError(
-                f"GitHub API request failed: {exc.reason}",
-                path=path,
-                method=method.upper(),
-            ) from exc
-
-        return _decode_json_payload(raw, path=path), headers
+        raw, headers = _send(req, path=path)
+        return _decode_json_payload(raw, path=path), _header_dict(headers)
 
     def paginate(
         self,
@@ -215,29 +310,7 @@ class GitHubRestClient:
                     **({"Authorization": f"Bearer {self._token}"} if self._token else {}),
                 },
             )
-            try:
-                with request.urlopen(req, timeout=20) as response:  # nosemgrep
-                    raw = response.read().decode("utf-8")
-                    headers = getattr(response, "headers", {})
-            except error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-                raise GitHubApiError(
-                    detail or exc.msg or "GitHub API request failed.",
-                    status_code=exc.code,
-                    path=path,
-                    method="GET",
-                    rate_limit_remaining=exc.headers.get("X-RateLimit-Remaining")
-                    if exc.headers
-                    else None,
-                    rate_limit_reset=exc.headers.get("X-RateLimit-Reset") if exc.headers else None,
-                ) from exc
-            except error.URLError as exc:
-                raise GitHubApiError(
-                    f"GitHub API request failed: {exc.reason}",
-                    path=path,
-                    method="GET",
-                ) from exc
-
+            raw, headers = _send(req, path=path)
             parsed = _decode_json_payload(raw, path=path) if raw.strip() else []
             if isinstance(parsed, list):
                 items.extend(item for item in parsed if isinstance(item, dict))
@@ -245,7 +318,7 @@ class GitHubRestClient:
                 raw_items = parsed.get(collection_key)
                 if isinstance(raw_items, list):
                     items.extend(item for item in raw_items if isinstance(item, dict))
-            url = _next_link(headers)
+            url = next_page_url(headers)
         return items
 
     def _url(self, path: str, *, params: dict[str, Any] | None = None) -> str:
@@ -260,4 +333,10 @@ class GitHubRestClient:
         return f"{base}{separator}{query}"
 
 
-__all__ = ["GitHubApiError", "GitHubRestClient", "JsonPayload", "resolve_github_token"]
+__all__ = [
+    "GitHubApiError",
+    "GitHubRestClient",
+    "JsonPayload",
+    "next_page_url",
+    "resolve_github_token",
+]
