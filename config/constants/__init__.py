@@ -327,6 +327,18 @@ if TYPE_CHECKING:
     from config.constants.coding_agent import (
         CODING_AGENT_SANDBOX_HOST as CODING_AGENT_SANDBOX_HOST,
     )
+    from config.constants.conversation_history import (
+        OPENSRE_HISTORY_TOKEN_BUDGET_ENV as OPENSRE_HISTORY_TOKEN_BUDGET_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV as OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_LLM_COMPACTION_ENV as OPENSRE_LLM_COMPACTION_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_STRUCTURED_HISTORY_ENV as OPENSRE_STRUCTURED_HISTORY_ENV,
+    )
     from config.constants.coralogix import (
         CORALOGIX_API_KEY_ENV as CORALOGIX_API_KEY_ENV,
     )

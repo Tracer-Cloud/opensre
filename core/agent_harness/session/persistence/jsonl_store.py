@@ -346,6 +346,8 @@ class JsonlSessionStore:
         after_chars: int,
         before_tokens: int | None = None,
         after_tokens: int | None = None,
+        replacement_messages: list[list[str]] | None = None,
+        replacement_evidence: list[dict[str, Any]] | None = None,
     ) -> str:
         return self._append_entry(
             session_id,
@@ -357,6 +359,18 @@ class JsonlSessionStore:
                 "after_chars": after_chars,
                 "before_tokens": before_tokens,
                 "after_tokens": after_tokens,
+                # What the compaction kept verbatim. Present means the record
+                # replaces everything before it when the session is restored.
+                **(
+                    {"replacement_messages": replacement_messages}
+                    if replacement_messages is not None
+                    else {}
+                ),
+                **(
+                    {"replacement_evidence": replacement_evidence}
+                    if replacement_evidence is not None
+                    else {}
+                ),
             },
         )
 

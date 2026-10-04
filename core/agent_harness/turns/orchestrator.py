@@ -230,7 +230,9 @@ def _run_turn(
     if action_result.hit_iteration_cap and not action_result.response_streamed:
         response_text = "\n\n".join(filter(None, (response_text, _ITERATION_CAP_MESSAGE)))
     if response_text:
-        record_conversation_turn(session, text, response_text)
+        record_conversation_turn(
+            session, text, response_text, tool_items=action_result.history_items
+        )
     return accounting.finalize(
         TurnResult(
             final_intent=(

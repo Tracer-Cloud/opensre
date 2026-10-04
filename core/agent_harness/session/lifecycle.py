@@ -279,6 +279,12 @@ class SessionManager:
                 if role in {"user", "assistant"} and isinstance(content, str) and content:
                     restored.append((role, content))
             session.cli_agent_messages = restored
+        evidence = data.get(RestoreContextKey.TURN_EVIDENCE)
+        if isinstance(evidence, list) and hasattr(session, "turn_evidence"):
+            from core.state import TurnEvidence
+
+            records = (TurnEvidence.from_json(item) for item in evidence)
+            session.turn_evidence = [record for record in records if record is not None]
         context = data.get(RestoreContextKey.ACCUMULATED_CONTEXT)
         if isinstance(context, dict):
             session.accumulated_context = dict(context)

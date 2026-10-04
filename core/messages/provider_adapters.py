@@ -74,6 +74,16 @@ class MessageAdapter[LLMT: _ToolResultClient]:
         names = ", ".join(tc.name for tc in tool_calls)
         return {"role": "assistant", "content": f"I will start by querying: {names}"}
 
+    def to_replayed_assistant_provider_message(
+        self, content: str, tool_calls: list[ToolCall]
+    ) -> ProviderMessage:
+        """An assistant turn rebuilt from stored text and tool calls, with no raw payload.
+
+        Replayed history from an earlier turn arrives this way; the provider's raw
+        response for it is gone (and may come from another provider).
+        """
+        raise NotImplementedError
+
     def app_message_content(self, content: RuntimeContent) -> RuntimeContent:
         return content
 
@@ -87,6 +97,11 @@ class _GenericAdapter[LLMT: _ConstructAssistantClient](MessageAdapter[LLMT]):
         if response.raw_content is not None:
             return response.raw_content  # type: ignore[no-any-return]
         return self._llm.build_assistant_message(response.content, response.tool_calls)
+
+    def to_replayed_assistant_provider_message(
+        self, content: str, tool_calls: list[ToolCall]
+    ) -> ProviderMessage:
+        return self._llm.build_assistant_message(content, tool_calls)
 
 
 class _AnthropicAdapter[LLMT: _RawAssistantClient](MessageAdapter[LLMT]):
@@ -104,6 +119,19 @@ class _AnthropicAdapter[LLMT: _RawAssistantClient](MessageAdapter[LLMT]):
             ],
         }
 
+    def to_replayed_assistant_provider_message(
+        self, content: str, tool_calls: list[ToolCall]
+    ) -> ProviderMessage:
+        if not tool_calls:
+            return {"role": "assistant", "content": content}
+        # Anthropic rejects empty text blocks, so text rides only when present.
+        blocks: list[dict[str, Any]] = [{"type": "text", "text": content}] if content else []
+        blocks.extend(
+            {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
+            for tc in tool_calls
+        )
+        return {"role": "assistant", "content": blocks}
+
 
 class _BedrockConverseAdapter[LLMT: _RawAssistantClient](MessageAdapter[LLMT]):
     def to_assistant_provider_message(self, response: AgentLLMResponse) -> ProviderMessage:
@@ -116,6 +144,16 @@ class _BedrockConverseAdapter[LLMT: _RawAssistantClient](MessageAdapter[LLMT]):
 
         result: dict[str, Any] = build_assistant_tool_use_message(tool_calls)
         return result
+
+    def to_replayed_assistant_provider_message(
+        self, content: str, tool_calls: list[ToolCall]
+    ) -> ProviderMessage:
+        from core.llm.transports.sdk.bedrock_converse import build_assistant_tool_use_message
+
+        message: dict[str, Any] = build_assistant_tool_use_message(tool_calls)
+        text_blocks: list[dict[str, Any]] = [{"text": content}] if content else []
+        message["content"] = text_blocks + list(message["content"])
+        return message
 
     def app_message_content(self, content: RuntimeContent) -> RuntimeContent:
         return _to_converse_text_blocks(content)

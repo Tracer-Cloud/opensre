@@ -14,6 +14,9 @@ from collections.abc import Sequence
 SESSION_SUMMARY_PREFIX = "Session summary:\n"
 SUMMARY_MAX_CHARS = 6_000
 _SUMMARY_LINE_MAX_CHARS = 700
+_SUMMARY_GAP_MARKER = "\n…[earlier compacted context omitted]…\n"
+#: Share of a full summary kept from its start; the rest comes from its end.
+_SUMMARY_HEAD_SHARE = 0.4
 
 
 def format_messages_for_summary(
@@ -43,8 +46,8 @@ def compact_messages_to_window(
     recent messages are kept verbatim (an even count, so user/assistant turn
     pairing survives) and everything older is summarized into one leading
     ``Session summary:`` assistant message. An existing leading summary is
-    merged, never stacked; the merged text keeps its head and truncates its
-    tail, so the earliest facts are the last to go.
+    merged, never stacked; a full summary keeps its start and its end, so the
+    earliest facts and the most recently compacted turns both survive.
     """
     if max_messages < 1:
         raise ValueError("max_messages must be >= 1")
@@ -69,8 +72,21 @@ def compact_messages_to_window(
 
 
 def merge_summary_texts(prior: str, addition: str, *, max_chars: int = SUMMARY_MAX_CHARS) -> str:
-    """Merge summary bodies keeping the head; the tail truncates first."""
-    return "\n".join(part for part in (prior, addition) if part)[:max_chars]
+    """Merge summary bodies; over the cap, keep the oldest and the newest context.
+
+    The start holds what the session is about and the facts stated first; the
+    end holds what was compacted last. Cutting only the end froze a full
+    summary, so every turn that left the window afterwards was dropped unread.
+    """
+    merged = "\n".join(part for part in (prior, addition) if part)
+    if len(merged) <= max_chars:
+        return merged
+    keep = max(max_chars - len(_SUMMARY_GAP_MARKER), 0)
+    if keep == 0:
+        return merged[:max_chars]
+    head = int(keep * _SUMMARY_HEAD_SHARE)
+    tail = keep - head
+    return "".join((merged[:head], _SUMMARY_GAP_MARKER, merged[len(merged) - tail :]))
 
 
 def is_summary_message(entry: tuple[str, str]) -> bool:

@@ -86,6 +86,13 @@ _GENERATION_OBSERVATION_NAME = "think"
 _OVERFLOW_RETRY_BUDGET_FACTOR = 0.6
 _OVERFLOW_RETRY_MIN_MESSAGE_TOKENS = 4_000
 
+# The budget estimates tokens from characters on purpose high. After each call
+# the ceiling is corrected by the provider's own count, within these bounds, so
+# a request is not trimmed at half the real window.
+_MIN_TOKEN_SCALE = 0.25
+_MAX_TOKEN_SCALE = 1.5
+_MAX_CEILING_STRETCH = 3.0
+
 _SAFETY_HANDOFF_PROMPT = """\
 The tool loop has stopped for safety ({reason}). Tools are disabled for this response.
 Give the user a concise final handoff based only on the work and tool results above:
@@ -220,6 +227,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._runtime_tools = list(host._filter_tools(initial_tools))
         self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
         self._ceiling = context_budget_ceiling_for_model(getattr(self._llm, "_model", None))
+        # Provider-counted tokens per estimated token, learned from the last call.
+        self._token_scale = 1.0
+        self._calibrate_budget = True
         # Recompute only when the host changes the available tools.
         self._fixed_overhead_tokens = system_and_tools_overhead(self._system, self._tool_schemas)
         self._executed: list[tuple[ToolCall, Any]] = []
@@ -422,10 +432,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         request_tools = self._tool_schemas if tool_schemas is None else tool_schemas
         transformed_messages = self._host._transform_messages(self._messages)
         llm_messages = self._host._convert_to_llm(self._llm, transformed_messages)
-        enforce_context_budget(
+        estimated_tokens = enforce_context_budget(
             llm_messages,
             fixed_overhead_tokens=self._fixed_overhead_tokens,
-            ceiling=self._ceiling,
+            ceiling=self._effective_ceiling(),
         )
         provider_request = ProviderRequest(
             messages=llm_messages,
@@ -495,6 +505,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         input_tokens = getattr(response, "input_tokens", None)
         output_tokens = getattr(response, "output_tokens", None)
         cache_read_tokens = int(getattr(response, "cache_read_tokens", 0) or 0)
+        self._calibrate(estimated_tokens, input_tokens)
         self._input_tokens = (
             self._input_tokens + input_tokens
             if self._input_tokens is not None and input_tokens is not None
@@ -523,6 +534,20 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         )
         return response
 
+    def _effective_ceiling(self) -> int:
+        """The budget in estimated tokens, corrected by the provider's last count."""
+        stretched = self._ceiling / self._token_scale
+        return int(min(stretched, self._ceiling * _MAX_CEILING_STRETCH))
+
+    def _calibrate(self, estimated_tokens: int, input_tokens: Any) -> None:
+        """Learn how the estimate compares with what the provider counted."""
+        if not self._calibrate_budget or estimated_tokens <= 0:
+            return
+        if not isinstance(input_tokens, int) or input_tokens <= 0:
+            return
+        scale = input_tokens / estimated_tokens
+        self._token_scale = min(max(scale, _MIN_TOKEN_SCALE), _MAX_TOKEN_SCALE)
+
     def _invoke_within_budget(self, provider_request: ProviderRequest) -> Any:
         """Call the model; on a size rejection, shrink the budget and retry once.
 
@@ -540,6 +565,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         except Exception as exc:
             if not is_context_length_overflow(str(exc)):
                 raise
+            # The provider refused a request the corrected budget allowed, so
+            # stop correcting and fall back to the conservative estimate.
+            self._calibrate_budget = False
+            self._token_scale = 1.0
             estimated = (
                 estimate_message_tokens(provider_request.messages) + self._fixed_overhead_tokens
             )

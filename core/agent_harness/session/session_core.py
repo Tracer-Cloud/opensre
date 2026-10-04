@@ -34,7 +34,7 @@ from core.agent_harness.session.persistence.contracts import SessionStore
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.task_plan.plan import TaskPlan
-from core.state import MutableAgentState
+from core.state import MutableAgentState, TurnEvidence
 from infrastructure.harness_providers import integration_sources_stamp
 from infrastructure.scheduling.task_registry import TaskRegistry
 
@@ -221,6 +221,15 @@ class SessionCore:
     @cli_agent_messages.setter
     def cli_agent_messages(self, value: list[tuple[str, str]]) -> None:
         self.agent.messages = value
+
+    @property
+    def turn_evidence(self) -> list[TurnEvidence]:
+        """Structured records of recent turns (tool calls and bounded results)."""
+        return self.agent.turn_evidence
+
+    @turn_evidence.setter
+    def turn_evidence(self, value: list[TurnEvidence]) -> None:
+        self.agent.turn_evidence = value
 
     @property
     def last_command_observation(self) -> str | None:

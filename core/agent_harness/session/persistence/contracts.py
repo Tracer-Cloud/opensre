@@ -32,7 +32,12 @@ class RestoreContextKey(StrEnum):
     TASK_PLAN_STATE = "task_plan_state"
     PENDING_USER_CHOICE_STATE = "pending_user_choice_state"
     HISTORY = "history"
+    TURN_EVIDENCE = "turn_evidence"
 
+
+#: ``custom_message`` type of the per-turn evidence record (tool calls and
+#: bounded results) that structured history replays on resume.
+TURN_EVIDENCE_CUSTOM_TYPE = "turn_evidence"
 
 # Turn kinds that represent user-initiated chat messages. Session.record()
 # is called with the turn kind, not a normalized "chat" label, so this set must
@@ -123,8 +128,10 @@ class SessionStore(Protocol):
         after_chars: int,
         before_tokens: int | None = None,
         after_tokens: int | None = None,
+        replacement_messages: list[list[str]] | None = None,
+        replacement_evidence: list[dict[str, Any]] | None = None,
     ) -> str:
-        raise NotImplementedError
+        """Record a compaction; with replacements, it restarts the transcript on resume."""
 
     def flush(self, session: SessionPersistenceSource) -> None:
         raise NotImplementedError

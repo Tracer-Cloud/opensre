@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
 from core.agent_harness.prompts import (
     PromptBlock,
     PromptBlockId,
@@ -15,6 +16,12 @@ from core.agent_harness.prompts import (
     build_action_user_message,
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+
+
+@pytest.fixture(autouse=True)
+def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
 
 
 def _ctx() -> TurnSnapshot:

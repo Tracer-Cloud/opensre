@@ -333,6 +333,11 @@ EXPORTS: dict[str, str] = {
     "MCP_NO_COLOR_ENV": "mcp",
     "MCP_TERMINAL_ENV": "mcp",
     "MCP_TERMINAL_DUMB_VALUE": "mcp",
+    # conversation history
+    "OPENSRE_HISTORY_TOKEN_BUDGET_ENV": "conversation_history",
+    "OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV": "conversation_history",
+    "OPENSRE_LLM_COMPACTION_ENV": "conversation_history",
+    "OPENSRE_STRUCTURED_HISTORY_ENV": "conversation_history",
     # memory
     "OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV": "memory",
     "OPENSRE_MEMORY_DIR_ENV": "memory",
