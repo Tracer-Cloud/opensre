@@ -52,5 +52,6 @@ request. Complete when every target has a result.
 ### 3. Reply
 
 Write one line per target whose result is new (one with `already_reported: true`
-is not): its link, then `checks_state`, or `error_kind` and `error` as returned;
-with no line left, reply with only the note line. Complete when the reply is sent.
+is not): its link, then `checks_state` and any `error_kind` and `error`, as
+returned; with no line left, reply with only the note line. Complete when the
+reply is sent.
