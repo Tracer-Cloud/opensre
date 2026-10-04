@@ -406,6 +406,27 @@ def checkout_branch(workspace: str, branch: str) -> None:
         )
 
 
+def _add_paths(workspace: str, paths: Sequence[str]) -> str:
+    """Stage exactly *paths*; return git's error text, or "" when all were staged.
+
+    Tracked paths go through ``git add -u``: plain ``git add <path>`` refuses a
+    tracked file inside a directory a ``.gitignore`` rule matches (a package
+    under an ``output/`` rule), while ``-u`` stages its change or deletion. New
+    files still go through ``git add -A``, so an ignored new file fails here
+    instead of being committed.
+    """
+    listed = _run_git(workspace, "ls-files", "-z", "--", *paths)
+    indexed = {path for path in listed.stdout.split("\0") if path}
+    tracked = [path for path in paths if path in indexed]
+    new = [path for path in paths if path not in indexed]
+    for flag, group in (("-u", tracked), ("-A", new)):
+        if group:
+            result = _run_git(workspace, "add", flag, "--", *group)
+            if result.returncode != 0:
+                return result.stderr.strip()
+    return ""
+
+
 def commit_paths(
     workspace: str,
     paths: Sequence[str],
@@ -427,9 +448,9 @@ def commit_paths(
     # handled by ``git commit --only``, which records their removal.
     existing = [p for p in paths if os.path.isfile(os.path.join(workspace, p))]
     if existing:
-        add = _run_git(workspace, "add", "--", *existing)
-        if add.returncode != 0:
-            raise GitCommandError(COMMIT_FAILED, f"git add failed: {add.stderr.strip()}")
+        error = _add_paths(workspace, existing)
+        if error:
+            raise GitCommandError(COMMIT_FAILED, f"git add failed: {error}")
 
     commit = _run_git(
         workspace,
