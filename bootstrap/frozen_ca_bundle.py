@@ -14,6 +14,8 @@ import os
 import ssl
 import sys
 
+from config.constants import SSL_CERT_DIR_ENV, SSL_CERT_FILE_ENV
+
 
 def use_bundled_ca_certificates() -> str | None:
     """In a frozen build, set ``SSL_CERT_FILE`` to certifi's bundle when OpenSSL has no CA file.
@@ -27,14 +29,14 @@ def use_bundled_ca_certificates() -> str | None:
     """
     if not getattr(sys, "frozen", False):
         return None
-    if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
+    if os.environ.get(SSL_CERT_FILE_ENV) or os.environ.get(SSL_CERT_DIR_ENV):
         return None
     if ssl.get_default_verify_paths().cafile:
         return None
     import certifi
 
     bundle = certifi.where()
-    os.environ["SSL_CERT_FILE"] = bundle
+    os.environ[SSL_CERT_FILE_ENV] = bundle
     return bundle
 
 

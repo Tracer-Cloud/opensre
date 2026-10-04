@@ -13,6 +13,7 @@ import pytest
 
 from bootstrap.frozen_ca_bundle import use_bundled_ca_certificates
 from bootstrap.process import BootStep, ProcessName, ProcessProfile, configure_process
+from config.constants import SSL_CERT_DIR_ENV, SSL_CERT_FILE_ENV
 from config.local_env import OPENSRE_PROJECT_ENV_PATH_ENV, bootstrap_opensre_env
 
 _ENV_ONLY = ProcessProfile(name=ProcessName.EMBEDDED, steps=frozenset({BootStep.ENV}))
@@ -21,7 +22,7 @@ _ENV_ONLY = ProcessProfile(name=ProcessName.EMBEDDED, steps=frozenset({BootStep.
 def _verify_paths(cafile: str | None, capath: str | None) -> Any:
     def paths() -> ssl.DefaultVerifyPaths:
         return ssl.DefaultVerifyPaths(
-            cafile, capath, "SSL_CERT_FILE", "/build/ssl/cert.pem", "SSL_CERT_DIR", "/build/ssl"
+            cafile, capath, SSL_CERT_FILE_ENV, "/build/ssl/cert.pem", SSL_CERT_DIR_ENV, "/build/ssl"
         )
 
     return paths
@@ -31,7 +32,7 @@ def _verify_paths(cafile: str | None, capath: str | None) -> Any:
 def _frozen_without_ca_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """A frozen process with neither variable set; whatever boot sets is undone afterwards."""
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    for name in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+    for name in (SSL_CERT_FILE_ENV, SSL_CERT_DIR_ENV):
         monkeypatch.setenv(name, "")
         monkeypatch.delenv(name)
 
@@ -51,8 +52,8 @@ def test_an_openssl_without_a_ca_file_here_gets_the_bundled_certificates(
     monkeypatch.setattr(ssl, "get_default_verify_paths", _verify_paths(None, directory))
 
     assert use_bundled_ca_certificates() == certifi.where()
-    assert os.environ["SSL_CERT_FILE"] == certifi.where()
-    assert "SSL_CERT_DIR" not in os.environ
+    assert os.environ[SSL_CERT_FILE_ENV] == certifi.where()
+    assert SSL_CERT_DIR_ENV not in os.environ
 
 
 @pytest.mark.usefixtures("_frozen_without_ca_env")
@@ -63,14 +64,14 @@ def test_a_ca_bundle_set_in_the_env_file_is_kept(
     configured there, because loading an env file never replaces a variable already set."""
     corporate = tmp_path / "corporate-ca.pem"
     env_file = tmp_path / ".env"
-    env_file.write_text(f"SSL_CERT_FILE={corporate}\n", encoding="utf-8")
+    env_file.write_text(f"{SSL_CERT_FILE_ENV}={corporate}\n", encoding="utf-8")
     monkeypatch.setenv(OPENSRE_PROJECT_ENV_PATH_ENV, str(env_file))
     monkeypatch.setattr("bootstrap.process.bootstrap_opensre_env_once", bootstrap_opensre_env)
     monkeypatch.setattr(ssl, "get_default_verify_paths", _verify_paths(None, None))
 
     configure_process(_ENV_ONLY)
 
-    assert os.environ["SSL_CERT_FILE"] == str(corporate)
+    assert os.environ[SSL_CERT_FILE_ENV] == str(corporate)
 
 
 @pytest.mark.usefixtures("_frozen_without_ca_env")
@@ -83,4 +84,4 @@ def test_a_default_ca_file_that_exists_here_is_kept(
     monkeypatch.setattr(ssl, "get_default_verify_paths", _verify_paths(str(system_bundle), None))
 
     assert use_bundled_ca_certificates() is None
-    assert "SSL_CERT_FILE" not in os.environ
+    assert SSL_CERT_FILE_ENV not in os.environ

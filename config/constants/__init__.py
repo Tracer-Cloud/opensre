@@ -1430,6 +1430,12 @@ if TYPE_CHECKING:
     from config.constants.terminal_host import (
         WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
     )
+    from config.constants.tls import (
+        SSL_CERT_DIR_ENV as SSL_CERT_DIR_ENV,
+    )
+    from config.constants.tls import (
+        SSL_CERT_FILE_ENV as SSL_CERT_FILE_ENV,
+    )
     from config.constants.tooling import (
         CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS as CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS,
     )

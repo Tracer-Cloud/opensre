@@ -10,13 +10,14 @@ import pytest
 from click.testing import CliRunner
 
 from bootstrap.frozen_ca_bundle import use_bundled_ca_certificates
+from config.constants import SSL_CERT_DIR_ENV, SSL_CERT_FILE_ENV
 from surfaces.cli.app import cli
 from tools.registry_index import BAKED_INDEX_RELATIVE_PATH
 
 
 def _boot_frozen_ca(monkeypatch: pytest.MonkeyPatch) -> None:
     """What a frozen binary's boot does before any command: fall back to certifi if needed."""
-    for name in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+    for name in (SSL_CERT_FILE_ENV, SSL_CERT_DIR_ENV):
         monkeypatch.setenv(name, "")
         monkeypatch.delenv(name)
     use_bundled_ca_certificates()
@@ -81,28 +82,44 @@ def test_package_smoke_reports_baked_index_on_frozen_bundle(
         clear_descriptor_index_cache()
 
 
+def _first_certificate() -> str:
+    import certifi
+
+    marker = "-----END CERTIFICATE-----"
+    return Path(certifi.where()).read_text(encoding="utf-8").split(marker, 1)[0] + marker + "\n"
+
+
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Windows loads its system store whatever OpenSSL's paths say"
 )
-def test_package_smoke_fails_when_a_frozen_bundle_trusts_no_ca(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("ca_directory", "trusted"),
+    [("missing", False), ("empty", False), ("hashed", True)],
+)
+def test_frozen_smoke_requires_a_ca_the_tls_context_can_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ca_directory: str, trusted: bool
 ) -> None:
-    """Release smoke must not pass an artifact whose OpenSSL finds no CA certificates: every
-    ``urllib`` HTTPS call from it fails verification."""
+    """Release smoke must fail an artifact whose OpenSSL trusts no CA (every ``urllib`` HTTPS
+    call fails), yet pass one that trusts a hashed CA directory, which OpenSSL reads only
+    while verifying, so it never shows in the loaded count."""
     from tools.registry_index import clear_descriptor_index_cache, dump_descriptor_index
 
     dump_descriptor_index(tmp_path / BAKED_INDEX_RELATIVE_PATH)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
-    # What the bundled libcrypto sees on a user's Mac without the boot fallback: CA
-    # locations that do not exist.
-    monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "missing" / "cert.pem"))
-    monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path / "missing" / "certs"))
+    # What the bundled libcrypto sees: no CA file, and the directory under test.
+    directory = tmp_path / "certs"
+    if ca_directory != "missing":
+        directory.mkdir()
+    if ca_directory == "hashed":
+        (directory / "00000000.0").write_text(_first_certificate(), encoding="utf-8")
+    monkeypatch.setenv(SSL_CERT_FILE_ENV, str(tmp_path / "missing" / "cert.pem"))
+    monkeypatch.setenv(SSL_CERT_DIR_ENV, str(directory))
     clear_descriptor_index_cache()
     try:
         result = CliRunner().invoke(cli, ["_package-smoke"])
     finally:
         clear_descriptor_index_cache()
 
-    assert result.exit_code != 0, result.output
-    assert "missing_ca_certificates" in result.output
+    assert (result.exit_code == 0) is trusted, result.output
+    assert ("missing_ca_certificates" in result.output) is not trusted

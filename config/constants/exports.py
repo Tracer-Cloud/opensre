@@ -559,6 +559,9 @@ EXPORTS: dict[str, str] = {
     "CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_STORE_PATH_ENV": "tenancy",
+    # tls
+    "SSL_CERT_DIR_ENV": "tls",
+    "SSL_CERT_FILE_ENV": "tls",
     # tooling
     "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",

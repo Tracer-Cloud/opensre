@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import re
 import sys
 from typing import TYPE_CHECKING
 
 import click
 
+from config.constants import SSL_CERT_DIR_ENV
+
 if TYPE_CHECKING:
     from core.tool import RegisteredTool
 
+# OpenSSL names each certificate in a CA directory by its subject hash: ``<8 hex>.<n>``.
+_HASHED_CERTIFICATE = re.compile(r"[0-9a-f]{8}\.\d+")
 _REQUIRED_TOOL_NAMES = frozenset(
     {
         "call_x_tool",
@@ -63,16 +69,26 @@ def _load_required_tools() -> tuple[dict[str, RegisteredTool], int]:
     return tools_by_name, len(index)
 
 
-def _ca_certificates_loaded() -> bool:
-    """Whether the default TLS context loaded any CA certificate.
+def _holds_hashed_certificates(directory: str) -> bool:
+    try:
+        return any(_HASHED_CERTIFICATE.fullmatch(entry.name) for entry in os.scandir(directory))
+    except OSError:
+        return False
 
-    After boot every frozen build loads some: the system's CA file, Windows'
-    store, or certifi's bundle. A CA directory alone is not counted; it may be
-    empty. Without one, every ``urllib`` HTTPS call fails verification.
+
+def _ca_certificates_found() -> bool:
+    """Whether the default TLS context trusts a CA: one it loaded, or a hashed CA directory.
+
+    OpenSSL reads a hashed directory only while verifying, so its certificates
+    never show in the loaded count; an empty directory trusts nothing. A frozen
+    build that finds neither fails every ``urllib`` HTTPS call.
     """
     import ssl
 
-    return bool(ssl.create_default_context().cert_store_stats().get("x509_ca"))
+    if ssl.create_default_context().cert_store_stats().get("x509_ca"):
+        return True
+    directories = os.environ.get(SSL_CERT_DIR_ENV) or ssl.get_default_verify_paths().openssl_capath
+    return any(_holds_hashed_certificates(path) for path in directories.split(os.pathsep) if path)
 
 
 @click.command(name="_package-smoke", hidden=True)
@@ -116,7 +132,7 @@ def package_smoke_command() -> None:
     )
     failures = {
         "missing_ca_certificates": ["default TLS context"]
-        if frozen and not _ca_certificates_loaded()
+        if frozen and not _ca_certificates_found()
         else [],
         "missing_tools": missing_tools,
         "missing_action_skills": missing_action_skills,
