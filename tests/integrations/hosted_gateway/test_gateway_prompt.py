@@ -467,6 +467,27 @@ def test_a_restarting_gateway_is_retried_under_one_request_id_before_failing(
     assert len(app.sent) == 6
 
 
+def test_no_retry_starts_once_the_retry_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each send can wait out HTTP timeouts, so the retries are bounded by elapsed time."""
+    # Arrange: the gateway keeps failing and the budget is already spent
+    restarting = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    app = _App([restarting, restarting, restarting])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS", 0.0)
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["success"] is False and out["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert len(app.sent) == 1
+
+
 def test_a_refusal_that_is_not_transient_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     app = _App([HostedGatewayError(ERR_NOT_RUNNING, HTTPStatus.CONFLICT)])

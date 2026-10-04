@@ -74,7 +74,20 @@ class MimirMixin:
         )
 
         query = metric_name
-        if service_name and _BARE_METRIC_NAME.fullmatch(metric_name):
+        if service_name:
+            if not _BARE_METRIC_NAME.fullmatch(metric_name):
+                # Running the expression unfiltered would report other services'
+                # series as this service's; the filter belongs inside the PromQL.
+                return {
+                    "success": False,
+                    "error": (
+                        "service_name applies only to a bare metric name. For a PromQL "
+                        "expression, put the matcher inside it, e.g. "
+                        f'sum(rate(my_metric{{service_name="{service_name}"}}[5m])), '
+                        "and omit service_name."
+                    ),
+                    "metrics": [],
+                }
             query = f'{metric_name}{{service_name="{service_name}"}}'
 
         params = {"query": query}

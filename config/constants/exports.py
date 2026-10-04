@@ -242,6 +242,8 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_PROMPT_POLL_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS": "hosted_gateway",
     # github
     "GH_TOKEN_ENV": "github",
@@ -358,6 +360,7 @@ EXPORTS: dict[str, str] = {
     "NEW_RELIC_DEFAULT_INCIDENT_LIMIT": "new_relic",
     "NEW_RELIC_DEFAULT_WINDOW_MINUTES": "new_relic",
     "NEW_RELIC_INSTANCES_ENV": "new_relic",
+    "NEW_RELIC_TIMESERIES_MAX_BUCKETS": "new_relic",
     "NEW_RELIC_NRQL_LIMIT_MAX": "new_relic",
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS": "new_relic",
     # opensearch

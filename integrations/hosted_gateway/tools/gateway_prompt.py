@@ -20,6 +20,7 @@ from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
     HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
     HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS,
+    HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS,
     HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS,
     HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS,
 )
@@ -372,22 +373,30 @@ def _submit_riding_out_restarts(
 
     Safe to repeat: every attempt carries the same ``request_id``, so the gateway
     queues a prompt or takes an answer at most once, and a read changes nothing.
-    Only transient failures are retried; the last one is raised as is.
+    Only transient failures are retried, and no retry starts once
+    ``HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS`` has elapsed; the last failure
+    is raised as is.
     """
+    deadline = time.monotonic() + HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS
+    delays = iter(HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS)
     noticed = False
-    for delay in HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS:
+    while True:
         try:
             return _submit_or_continue(
                 client, prompt, facts, prompt_id, scope, request_id, conversation
             )
         except HostedGatewayError as exc:
-            if exc.code not in TRANSIENT_ERRORS:
+            delay = next(delays, None)
+            if (
+                exc.code not in TRANSIENT_ERRORS
+                or delay is None
+                or time.monotonic() + delay >= deadline
+            ):
                 raise
             if not noticed:
                 relay.note(_waiting_notice(exc))
                 noticed = True
-        time.sleep(delay)
-    return _submit_or_continue(client, prompt, facts, prompt_id, scope, request_id, conversation)
+            time.sleep(delay)
 
 
 def _submit_or_continue(

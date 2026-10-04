@@ -166,14 +166,13 @@ def test_query_mimir_404_hints_at_the_datasource():
     assert "datasource UID" in result["error"]
 
 
-def test_query_mimir_service_filter_skips_promql_expressions():
-    # Appending {service_name=...} to an expression yields invalid PromQL (a 400).
+def test_query_mimir_refuses_service_name_with_a_promql_expression():
+    # Appending {service_name=...} to an expression yields invalid PromQL (a 400),
+    # and running it unfiltered would pass other services' series off as this one's.
     client = DummyMimirClient()
-    client._make_get_request.return_value = {"data": {"result": []}}
 
-    client.query_mimir("sum(rate(http_requests_total[5m]))", service_name="api")
+    result = client.query_mimir("sum(rate(http_requests_total[5m]))", service_name="api")
 
-    client._make_get_request.assert_called_once_with(
-        "https://fake-grafana.com/api/v1/query",
-        params={"query": "sum(rate(http_requests_total[5m]))"},
-    )
+    assert result["success"] is False
+    assert 'service_name="api"' in result["error"]
+    client._make_get_request.assert_not_called()
