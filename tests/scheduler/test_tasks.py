@@ -11,6 +11,7 @@ import infrastructure.scheduling.scheduler.tasks as tasks_mod
 from config.prompt_log import PromptLogConfig
 from core.agent.run_io import AgentRunResult
 from core.agent_harness.harness import AgentSession, SessionStartupResult
+from core.agent_harness.prompts.loop_templates import load_loop_template
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns import action_driver
@@ -21,7 +22,11 @@ from infrastructure.observability.trace.trace_session import (
     current_trace_session,
     inherit_trace_session,
 )
-from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_PARAM, LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_MODE_PARAM,
+    LOOP_PROMPT_PARAM,
+    LOOP_TEMPLATE_PARAM,
+)
 from infrastructure.scheduling.scheduler.storage import task_store
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tests.scheduler._bundle import real_runners, runners_with_agent
@@ -178,6 +183,35 @@ class TestMessageBuilders:
         assert captured["loop_prompt"] == "Check incidents and summarize risk."
         assert captured["name"] == "Morning ops"
         assert captured[LOOP_MODE_PARAM] == "agent"
+
+    @pytest.mark.parametrize(
+        ("template", "expected"),
+        [
+            ("pr-ci", load_loop_template("pr-ci").prompt),
+            ("retired-template", "Stored copy of the old template."),
+        ],
+    )
+    def test_template_loop_runs_the_shipped_text_or_its_stored_copy(
+        self, template: str, expected: str
+    ) -> None:
+        task = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            provider=Provider.INTERACTIVE_SHELL,
+            params={
+                LOOP_TEMPLATE_PARAM: template,
+                LOOP_PROMPT_PARAM: "Stored copy of the old template.",
+            },
+        )
+        captured: dict[str, object] = {}
+
+        def _mock_agent_runner(payload: dict[str, object]) -> str:
+            captured.update(payload)
+            return "report"
+
+        tasks_mod.build_message(task, runners_with_agent(_mock_agent_runner))
+
+        assert captured["loop_prompt"] == expected
 
     def test_manual_loop_strips_credentials(self) -> None:
         """Verify credential keys are not forwarded to the agent runner."""

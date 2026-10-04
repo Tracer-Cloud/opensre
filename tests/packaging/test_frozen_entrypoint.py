@@ -65,8 +65,9 @@ def test_frozen_bundle_ships_the_shared_system_prompt() -> None:
     spec = (REPO_ROOT / "opensre.spec").read_text(encoding="utf-8")
 
     assert '"core.agent_harness.prompts"' in spec
-    assert 'includes=["opensre_system_prompt.md"]' in spec
+    assert 'includes=["opensre_system_prompt.md", "loop_templates/*.md"]' in spec
     assert (REPO_ROOT / "core/agent_harness/prompts/opensre_system_prompt.md").is_file()
+    assert any((REPO_ROOT / "core/agent_harness/prompts/loop_templates").glob("*.md"))
 
 
 def test_release_artifacts_do_not_ship_removed_planning_instructions() -> None:

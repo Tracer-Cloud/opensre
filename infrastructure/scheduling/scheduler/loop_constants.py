@@ -31,6 +31,9 @@ LOOP_SLACK_CHAT_ID_PARAM = "slack_chat_id"
 LOOP_SLUG_PARAM = "loop_slug"
 LOOP_SOURCE_PARAM = "loop_source"
 LOOP_TELEGRAM_CHAT_ID_PARAM = "telegram_chat_id"
+LOOP_TEMPLATE_PARAM = "loop_template"
+"""Name of the shipped loop template whose current text each tick runs."""
+
 LOOP_TIME_PARAM = "loop_time"
 
 __all__ = [
@@ -54,5 +57,6 @@ __all__ = [
     "LOOP_STATUS_DRAFT",
     "LOOP_STATUS_PAUSED",
     "LOOP_TELEGRAM_CHAT_ID_PARAM",
+    "LOOP_TEMPLATE_PARAM",
     "LOOP_TIME_PARAM",
 ]
