@@ -700,7 +700,11 @@ def capture_scheduled_task_reported(
 
 
 def capture_skill_value_delivered(
-    *, skill_name: str, insight: str, prompt_turn_id: str | None = None
+    *,
+    skill_name: str,
+    insight: str,
+    prompt_turn_id: str | None = None,
+    insight_kind: str = "",
 ) -> None:
     """Record the business insight that successfully reached a skill's output sink."""
     properties: Properties = {
@@ -709,7 +713,87 @@ def capture_skill_value_delivered(
     }
     if prompt_turn_id:
         properties["prompt_turn_id"] = prompt_turn_id
+    if insight_kind:
+        properties["insight_kind"] = insight_kind[:_TOOL_FACT_MAX_CHARS]
     _capture(Event.SKILL_VALUE_DELIVERED, properties)
+
+
+def capture_workspace_scanned(
+    *,
+    repositories: int,
+    repos_with_workflows: int,
+    repos_on_github: int,
+    commits: int,
+    own_commits: int,
+    uncommitted: int,
+    days: int,
+    stop_reason: str | None,
+    truncated: bool,
+    skipped_protected: int,
+    prefetched: bool,
+    via: str,
+) -> None:
+    """Record what one local workspace scan found, as counts: no repository names or paths.
+
+    ``via`` names what asked for the scan: the scan tool, or the local insights analysis.
+    """
+    _capture(
+        Event.WORKSPACE_SCANNED,
+        {
+            "repositories": repositories,
+            "repos_with_workflows": repos_with_workflows,
+            "repos_on_github": repos_on_github,
+            "commits": commits,
+            "own_commits": own_commits,
+            "uncommitted": uncommitted,
+            "days": days,
+            "stop_reason": stop_reason or "",
+            "truncated": truncated,
+            "skipped_protected": skipped_protected,
+            "prefetched": prefetched,
+            "via": via,
+        },
+    )
+
+
+def capture_local_repositories_analyzed(
+    *,
+    reason: str,
+    github_error: str,
+    outcome: str,
+    repositories: int,
+    commits: int,
+    own_commits: int,
+    ai_coauthored_share: int | None,
+    insight_kinds: Sequence[str],
+    ci_providers: Mapping[str, int],
+    hosts: Mapping[str, int],
+    repos_without_ci: int,
+    days: int,
+    duration_ms: int,
+) -> None:
+    """Record one local repository analysis as counts and kinds: no names, paths or commit text.
+
+    ``ai_coauthored_share`` is the rounded percentage of the user's commits an AI
+    agent co-authored, None when there were too few to tell.
+    """
+    properties: Properties = {
+        "reason": reason[:_TOOL_FACT_MAX_CHARS],
+        "github_error": github_error[:_TOOL_FACT_MAX_CHARS],
+        "outcome": outcome,
+        "repositories": repositories,
+        "commits": commits,
+        "own_commits": own_commits,
+        "insight_kinds": list(insight_kinds),
+        "ci_providers": dict(ci_providers),
+        "hosts": dict(hosts),
+        "repos_without_ci": repos_without_ci,
+        "days": days,
+        "duration_ms": duration_ms,
+    }
+    if ai_coauthored_share is not None:
+        properties["ai_coauthored_share"] = ai_coauthored_share
+    _capture(Event.LOCAL_REPOSITORIES_ANALYZED, properties)
 
 
 def capture_skill_prerequisite_missing(*, skill: str, check: str, reason_code: str) -> None:

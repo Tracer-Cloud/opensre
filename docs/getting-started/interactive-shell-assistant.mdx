@@ -28,6 +28,16 @@ The dim progress line shows which integration and tool ran.
 
 For GitHub, you can put the repo URL in the question, mention it earlier in the session, set `GITHUB_REPOSITORY`, or let OpenSRE use the current checkout's `origin` remote when GitHub is connected.
 
+## Repository instructions (AGENTS.md)
+
+The agent follows the active repository's `AGENTS.md`, the file coding agents such as Codex already read. Put build, test, and style rules there.
+
+- **In a checkout of that repository** (its `origin` remote names it), OpenSRE reads `AGENTS.md` in every directory from the checkout root down to the directory `opensre` runs in. An `AGENTS.override.md` replaces the `AGENTS.md` in its directory.
+- **Otherwise**, OpenSRE reads the root `AGENTS.md` on the default branch through your GitHub connection. An edit there reaches the agent within ten minutes.
+- At most 32 KiB of instructions are included, filled from the checkout root down. The agent is told to read the rest of a longer file itself. Credential-shaped values are redacted first.
+- The instructions stay out of product analytics and trace exports. The local prompt log keeps them.
+- Without a GitHub connection, or when GitHub does not answer within a few seconds, the agent is told to read `AGENTS.md` itself before it changes files.
+
 ## How it works
 
 1. **You ask** a free-form question (not a `/slash` command).

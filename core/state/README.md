@@ -10,7 +10,10 @@ request assembly.
 ## Belongs Here
 
 - The mutable per-session conversation store (`MutableAgentState`).
-- Transcript-window compaction helpers.
+- The structured record of each completed turn (`TurnEvidence`): the tool calls
+  and bounded results that later turns replay.
+- Transcript-window compaction helpers and the history switches and budgets
+  (`history_settings`).
 
 ## Does Not Belong Here
 
@@ -28,7 +31,8 @@ request assembly.
 ## Also exported (temporary)
 
 - ``MutableAgentState`` in ``agent_state.py``. Now slimmed to the cross-turn
-  transcript (``messages``) plus ``last_observation`` and ``clear()`` — the
+  transcript (``messages``), its turn evidence (``turn_evidence``), plus
+  ``last_observation`` and ``clear()`` — the
   per-turn tool/prompt machinery has been removed. It still lives here for
   historical import paths; the remaining move to
   ``core/agent_harness/session/`` is pending

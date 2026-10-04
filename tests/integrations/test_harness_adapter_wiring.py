@@ -104,6 +104,18 @@ def test_vcs_repo_scope_providers_registered_for_both_hosts() -> None:
     assert len(harness_providers.repo_scope._vcs_repo_scope_providers) == 2
 
 
+def test_github_registers_the_repository_instructions_source() -> None:
+    # Arrange
+    from integrations.github.repository_instructions import (
+        GITHUB_REPOSITORY_INSTRUCTIONS_SOURCE,
+    )
+
+    # Assert: without it every GitHub repository's AGENTS.md reads as "could not check".
+    source = harness_providers.repository_instructions_source("github")
+    assert source is GITHUB_REPOSITORY_INSTRUCTIONS_SOURCE
+    assert source.vendor == "github"
+
+
 def test_incident_anchor_parsers_are_registered() -> None:
     # Assert: alertmanager, pagerduty, datadog, cloudwatch.
     assert len(incident_anchors._anchor_parsers) == 4
@@ -140,3 +152,4 @@ def test_reset_clears_every_vendor_registry() -> None:
     assert harness_providers.gateway_persona_fragments() == ""
     assert harness_providers.preferred_evidence_sources_for("metric_read") == ()
     assert harness_providers.repo_scope._vcs_repo_scope_providers == []
+    assert harness_providers.repository_instructions_source("github") is None

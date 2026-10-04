@@ -13,6 +13,9 @@ from core.agent_harness.session_goal.goal import SessionGoal, SessionGoalStatus
 
 # Persisted on flush as ``custom_message`` / ``custom_type`` (last write wins).
 SESSION_GOAL_STATE_CUSTOM_TYPE = "session_goal_state"
+SESSION_GOAL_CONTROL_RECORD_TYPE = "session_goal_control"
+SESSION_GOAL_CONTROL_REQUESTED = "requested"
+SESSION_GOAL_CONTROL_APPLIED = "applied"
 
 
 def session_goal_to_payload(goal: SessionGoal) -> dict[str, Any]:
@@ -201,6 +204,38 @@ def should_persist_session_goal_state(
     return last is not None
 
 
+def pending_session_goal_controls(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    branch_entry_ids: set[str] | None = None,
+) -> list[dict[str, str]]:
+    """Return durable goal controls that have no matching applied record."""
+    pending: dict[str, tuple[str, str]] = {}
+    for record in records:
+        if record.get("type") != SESSION_GOAL_CONTROL_RECORD_TYPE:
+            continue
+        control_id = record.get("control_id")
+        if not isinstance(control_id, str) or not control_id:
+            continue
+        status = record.get("status")
+        if status == SESSION_GOAL_CONTROL_APPLIED:
+            pending.pop(control_id, None)
+            continue
+        reason = record.get("reason")
+        target_entry_id = record.get("target_entry_id")
+        if (
+            status == SESSION_GOAL_CONTROL_REQUESTED
+            and isinstance(reason, str)
+            and isinstance(target_entry_id, str)
+        ):
+            pending[control_id] = (reason, target_entry_id)
+    return [
+        {"control_id": control_id, "reason": reason}
+        for control_id, (reason, target_entry_id) in pending.items()
+        if branch_entry_ids is None or target_entry_id in branch_entry_ids
+    ]
+
+
 def apply_session_goal_state(session: Any, payload: Any) -> None:
     """Rehydrate session goal / CTA state from a flush snapshot."""
     if not isinstance(payload, dict):
@@ -233,7 +268,11 @@ def apply_session_goal_state(session: Any, payload: Any) -> None:
 
 __all__ = [
     "SESSION_GOAL_STATE_CUSTOM_TYPE",
+    "SESSION_GOAL_CONTROL_APPLIED",
+    "SESSION_GOAL_CONTROL_RECORD_TYPE",
+    "SESSION_GOAL_CONTROL_REQUESTED",
     "apply_session_goal_state",
+    "pending_session_goal_controls",
     "session_goal_from_payload",
     "session_goal_state_is_empty",
     "session_goal_state_snapshot",

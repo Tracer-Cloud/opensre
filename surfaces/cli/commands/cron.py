@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 from core.agent_harness import pin_recurring_skill, validate_skill_inputs
 from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
+from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_AGENT,
     LOOP_MODE_PARAM,
@@ -238,6 +239,8 @@ def cron_add(
             branch=branch,
             pr_number=pr_number,
         )
+    if task_kind is TaskKind.MANUAL_LOOP:
+        cron_expr = cap_cron_at_most_hourly(cron_expr, timezone)
 
     task = ScheduledTask(
         name=name.strip(),

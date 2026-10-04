@@ -11,6 +11,10 @@ SUCCESS_CRITERIA: dict[str, tuple[str, ...]] = {
     "analyzing-github-ci-performance": (
         "`analyze_github_ci_reliability` has returned and the reply shows the metrics table.",
     ),
+    "analyzing-local-repositories": (
+        "`analyze_local_repositories` has returned and the reply shows its `insights` "
+        "with every figure unchanged.",
+    ),
     "connecting-slack": (
         "Slack verify via `cli_exec` reports connected, or the reply quotes the verify failure.",
     ),

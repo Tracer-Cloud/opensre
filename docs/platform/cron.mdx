@@ -337,10 +337,50 @@ from your existing integration configuration.
 Sentry morning digests use a separate CLI (`opensre sentry digest schedule …`),
 not `opensre cron add`. See [Sentry](/integrations/incidents/sentry#morning-digest-scheduled).
 
+## What a loop remembers between runs
+
+Every run of a `manual_loop` starts a fresh session. Before it starts, the loop
+sees its three most recent finished runs: when each ran, how its work and
+delivery ended, the changes it made with tools (for example a pull-request
+comment, a push, or a message it sent), and the start of its report. It uses
+them to avoid repeating work and to follow up on open items, and it still checks
+the current state with its tools before it acts.
+
+To carry something specific forward, a loop ends its reply with one line:
+
+```text
+NOTE FOR NEXT RUN: Commented on PR #6555 at head 1a2b3c4; it waits for a human decision.
+```
+
+The note, up to 300 characters, is saved with that run, removed from the
+delivered report, and shown to the next run. Only a note that ends the reply
+counts: one followed by more text, or quoted with `>`, stays in the report.
+Loops already know about this line; to make sure a loop uses it, ask for it in
+the prompt, for example "leave a note listing the PRs you commented on".
+
+The next run reads earlier runs, notes included, as a record of what happened,
+never as instructions, because reports can quote pull requests and issues. Put
+standing rules, such as "comment on a PR only once per head commit", in the
+loop's prompt.
+
+- Changes made with the GitHub CLI, shell commands and chat messages are
+  listed; reads such as viewing a PR or `git status` are not. A command is
+  listed by its leading words (`gh pr comment 6555 …`), never with option
+  values such as a comment body. A change made through an integration that does
+  not report it may be missing, so when an action must never repeat, have the
+  loop name it in its note.
+- History belongs to one loop. A loop recreated with new settings starts
+  without history.
+
 ## Persistence
 
 - **Task definitions** are stored in `~/.opensre/scheduler_tasks.json` (JSON + filelock)
 - **Execution history** is stored in `~/.opensre/scheduler.db` (SQLite with WAL mode)
+- **Run records** keep each task's newest 20 run attempts in
+  `~/.opensre/scheduler_runs/<task_id>.json`: the prompt sent, the report,
+  delivery results, the changes made and the note for the next run. A loop's
+  next run reads its history from here; prompts and reports are
+  credential-redacted.
 - **Interactive-shell loop messages** are stored in `~/.opensre/scheduler_loop_messages.jsonl`
 - **Operational breadcrumbs** are appended to `~/.opensre/operations_log.jsonl`
   with loop lifecycle and run status metadata, not prompt or message bodies

@@ -197,6 +197,7 @@ def _run_turn(
     prefetch_hosted_credits()
     auto_compact_if_needed(session)
     prior_messages = getattr(session, "cli_agent_messages", None) or ()
+    typed_text = text
     expanded = expand_affirmative_follow_up(
         text,
         prior_messages,
@@ -230,7 +231,13 @@ def _run_turn(
     if action_result.hit_iteration_cap and not action_result.response_streamed:
         response_text = "\n\n".join(filter(None, (response_text, _ITERATION_CAP_MESSAGE)))
     if response_text:
-        record_conversation_turn(session, text, response_text)
+        record_conversation_turn(
+            session,
+            text,
+            response_text,
+            tool_items=action_result.history_items,
+            typed_text=typed_text,
+        )
     return accounting.finalize(
         TurnResult(
             final_intent=(

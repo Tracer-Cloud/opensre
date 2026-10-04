@@ -29,6 +29,8 @@ class InMemorySessionState:
 
     session_id: str = "headless"
     cli_agent_messages: list[tuple[str, str]] = field(default_factory=list)
+    # Structured records of recent turns, replayed with the transcript.
+    turn_evidence: list[Any] = field(default_factory=list)
     configured_integrations: list[str] = field(default_factory=list)
     configured_integrations_known: bool = False
     pending_schedule_offer: PendingScheduleOffer | None = None

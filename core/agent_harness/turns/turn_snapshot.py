@@ -14,7 +14,7 @@ from core.agent_harness.prompts.kernel.surfaces import profile_for
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.session_goal.progress import format_session_goal_brief
 from core.agent_harness.task_plan.ownership import session_answer_continues_plan
-from core.state import MAX_CONVERSATION_MESSAGES
+from core.state import TurnEvidence, history_window_messages
 from core.state.transcript_window import compact_messages_to_window
 from infrastructure.setup_state import cached_setup_state
 
@@ -148,8 +148,8 @@ class TurnSnapshot:
 
     conversation_messages: tuple[tuple[str, str], ...]
     """Snapshot of recent CLI conversation: ``(role, content)`` pairs, oldest
-    first, compacted to the ``MAX_CONVERSATION_MESSAGES`` window at assembly
-    time (overflow becomes a leading session-summary message)."""
+    first, compacted to the history window at assembly time (overflow becomes a
+    leading session-summary message)."""
 
     configured_integrations: tuple[str, ...]
     """Integration names known to be configured at turn start."""
@@ -164,6 +164,10 @@ class TurnSnapshot:
     """The operator's connected integrations, schedules, and last delivery
     outcome, rendered as a fact block. The planner decides whether to offer a
     scheduled delivery, so it reads what is already configured."""
+
+    turn_evidence: tuple[TurnEvidence, ...] = ()
+    """Structured records of recent turns (tool calls and bounded results), matched
+    to ``conversation_messages`` by text when history is replayed."""
 
     system_prompt: SystemPromptInput = ""
     """Runtime system prompt used by the shared agent loop."""
@@ -262,7 +266,7 @@ class TurnSnapshot:
             if isinstance(role, str) and isinstance(content, str)
         ]
         snapshot: tuple[tuple[str, str], ...] = tuple(
-            compact_messages_to_window(valid_messages, max_messages=MAX_CONVERSATION_MESSAGES)
+            compact_messages_to_window(valid_messages, max_messages=history_window_messages())
         )
         runtime_input = _select_runtime_request_input(text, session)
         last_observation = _read_last_observation(session, runtime_input)
@@ -270,6 +274,7 @@ class TurnSnapshot:
         return cls(
             text=text,
             conversation_messages=snapshot,
+            turn_evidence=_read_turn_evidence(session),
             configured_integrations=tuple(session.configured_integrations),
             configured_integrations_known=bool(session.configured_integrations_known),
             setup_state=_setup_state_for_surface(session.configured_integrations, surface),
@@ -332,6 +337,14 @@ def _pop_recovery_note(session: TurnSnapshotSource) -> str | None:
         return None
     setattr(session, "pending_recovery_note", None)  # noqa: B010 - protocol lacks the optional field
     return note
+
+
+def _read_turn_evidence(session: Any) -> tuple[TurnEvidence, ...]:
+    """Copy the session's turn evidence when it keeps any (headless doubles may not)."""
+    records = getattr(session, "turn_evidence", None)
+    if not isinstance(records, (list, tuple)):
+        return ()
+    return tuple(record for record in records if isinstance(record, TurnEvidence))
 
 
 def _session_goal_brief(session: Any) -> str:

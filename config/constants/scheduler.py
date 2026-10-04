@@ -31,6 +31,12 @@ SCHEDULER_MISSED_FIRE_GRACE_SECONDS = 15 * 60
 # restores legacy rows without ``retryable`` agree on the list.
 NON_RETRYABLE_WORK_ERROR_KINDS: frozenset[str] = frozenset({"unsupported_pr_branch", "pr_not_open"})
 
+# ``WorkOutcome.error_kind`` of an agent run that replied but whose tools reported
+# no work outcome: its work may well be done, it is only unconfirmed. Shared so
+# the producer (``integrations.scheduled_outcomes``) and the loop's PREVIOUS RUNS
+# block, which must not present such a run as unfinished, agree on it.
+WORK_UNVERIFIED_ERROR_KIND = "work_unverified"
+
 __all__ = [
     "NON_RETRYABLE_WORK_ERROR_KINDS",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV",
@@ -38,4 +44,5 @@ __all__ = [
     "SCHEDULED_TASK_TRACE_KEY",
     "SCHEDULER_MISSED_FIRE_GRACE_SECONDS",
     "WEEKDAY_CRON_FIELD",
+    "WORK_UNVERIFIED_ERROR_KIND",
 ]

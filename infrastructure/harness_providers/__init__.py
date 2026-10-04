@@ -95,6 +95,19 @@ from infrastructure.harness_providers.repo_scope import (
     register_vcs_repo_scope_provider,
 )
 from infrastructure.harness_providers.repo_scope import reset as _reset_repo_scope
+from infrastructure.harness_providers.repository_instructions import (
+    RemoteInstructions,
+    RemoteInstructionsStatus,
+    RepositoryInstructionsSource,
+    checkout_matches_repository,
+    clear_repository_instructions_sources,
+    fetch_repository_instructions,
+    register_repository_instructions_source,
+    repository_instructions_source,
+)
+from infrastructure.harness_providers.repository_instructions import (
+    reset as _reset_repository_instructions,
+)
 from infrastructure.harness_providers.runbooks import (
     RunbookSourceFactory,
     clear_runbook_source_providers,
@@ -143,6 +156,7 @@ def reset_harness_providers() -> None:
     _reset_tool_registry()
     _reset_cli_llm()
     _reset_repo_scope()
+    _reset_repository_instructions()
     _reset_runbooks()
     _reset_prompt_fragments()
     _reset_message_context()
@@ -190,8 +204,11 @@ __all__ = [
     "MetricCohortResolvedFn",
     "MetricQueryDraft",
     "PromptFragmentFn",
+    "RemoteInstructions",
+    "RemoteInstructionsStatus",
     "RemoteIntegrationsFetcher",
     "RemoteIntegrationsProvider",
+    "RepositoryInstructionsSource",
     "RunbookSourceFactory",
     "SetupableIntegrationServicesFn",
     "SkillPrerequisiteCheck",
@@ -202,12 +219,14 @@ __all__ = [
     "action_prompt_vendor_fragments",
     "assistant_prompt_vendor_fragments",
     "build_cli_client",
+    "checkout_matches_repository",
     "clear_action_prompt_fragments",
     "clear_assistant_prompt_fragments",
     "clear_gateway_persona_fragments",
     "clear_message_context_prefix_strippers",
     "clear_metric_query_drafts",
     "clear_preferred_evidence_sources",
+    "clear_repository_instructions_sources",
     "clear_runbook_source_providers",
     "clear_skill_prerequisite_checks",
     "clear_vcs_repo_scope_providers",
@@ -215,6 +234,7 @@ __all__ = [
     "configured_integration_services",
     "enrich_resolved_with_repo_scopes",
     "fetch_remote_integrations",
+    "fetch_repository_instructions",
     "flatten_cli_messages_to_prompt",
     "gateway_persona_fragments",
     "integration_setup_command",
@@ -232,12 +252,14 @@ __all__ = [
     "register_metric_query_draft",
     "register_metric_query_tools",
     "register_preferred_evidence_source",
+    "register_repository_instructions_source",
     "register_runbook_source_provider",
     "register_skill_prerequisite_check",
     "register_vcs_repo_scope_provider",
     "registered_discovery_targets",
     "registered_metric_query_tools",
     "registered_skill_prerequisite_checks",
+    "repository_instructions_source",
     "reset_harness_providers",
     "resolve_integrations",
     "resolve_integrations_with_metadata",

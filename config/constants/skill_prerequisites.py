@@ -19,6 +19,7 @@ from typing import NamedTuple
 from config.constants.github import GITHUB_SETUP_SLASH_INVOKE
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
+    ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME,
     CONNECTING_SLACK_SKILL_NAME,
     DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME,
     ONBOARDING_SKILL_NAME,
@@ -59,6 +60,27 @@ SKILL_PREREQUISITES: Mapping[str, tuple[SkillPrerequisite, ...]] = MappingProxyT
         SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME: (_GITHUB_REST_TOKEN,),
         DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME: (),
         CONNECTING_SLACK_SKILL_NAME: (_SLACK_CONNECTED,),
+        ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME: (),
+    }
+)
+
+
+class PrerequisiteFallback(NamedTuple):
+    """A skill the setup menu can start instead, for a user who would rather not set up now."""
+
+    skill: str
+    option: str
+
+
+#: Skill name -> what its setup menu offers in place of setup. The analysis demo
+#: can still show the user's own repositories when GitHub is not connected. The
+#: row appears only while the catalog the process serves has the fallback skill.
+PREREQUISITE_FALLBACKS: Mapping[str, PrerequisiteFallback] = MappingProxyType(
+    {
+        ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME: PrerequisiteFallback(
+            skill=ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME,
+            option="Use my local repos instead (no GitHub needed)",
+        ),
     }
 )
 
@@ -90,6 +112,7 @@ PREREQUISITE_ACTION_PREFIX = "prerequisite:"
 PREREQUISITE_OPEN_APP_ACTION = "open-app"
 PREREQUISITE_CONTINUE_ACTION = "continue"
 PREREQUISITE_SKIP_ACTION = "skip"
+PREREQUISITE_FALLBACK_ACTION = "fallback"
 
 CONNECT_INTEGRATIONS_HEADING = "## Connect integrations first"
 
@@ -148,6 +171,8 @@ __all__ = [
     "CONNECT_INTEGRATIONS_HEADING",
     "GITHUB_REST_TOKEN_CHECK",
     "PREREQUISITE_ACTION_PREFIX",
+    "PREREQUISITE_FALLBACKS",
+    "PREREQUISITE_FALLBACK_ACTION",
     "PREREQUISITE_CONTINUE_ACTION",
     "PREREQUISITE_CONTINUE_OPTION",
     "PREREQUISITE_CREDENTIAL_MISSING",
@@ -163,6 +188,7 @@ __all__ = [
     "PREREQUISITE_STILL_MISSING_NOTE",
     "SKILL_PREREQUISITES",
     "SLACK_CONNECTED_CHECK",
+    "PrerequisiteFallback",
     "SkillPrerequisite",
     "prerequisite_section",
     "prerequisite_service_label",

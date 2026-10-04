@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 import surfaces.interactive_shell.main as main_entrypoint
+import surfaces.interactive_shell.runtime.session_shutdown as session_shutdown
 from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from infrastructure.turn_host.session_lock import (
@@ -91,7 +92,7 @@ def test_repl_shutdown_refreshes_before_closing(
     )
     monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)
     monkeypatch.setattr(main_entrypoint.SessionManager, "for_session", lambda _session: _Manager())
-    monkeypatch.setattr(main_entrypoint, "session_execution_lock", _lease)
+    monkeypatch.setattr(session_shutdown, "session_execution_lock", _lease)
 
     assert asyncio.run(main_entrypoint.run_repl_async()) == 0
     assert events == ["lock", "refresh", "close"]

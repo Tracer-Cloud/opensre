@@ -460,6 +460,10 @@ REGISTERED_TOOL_ATTR = "__opensre_registered_tool__"
 #: ``error_kind`` of a result whose tool refused the request on its own rules.
 #: The integration behind such a tool is healthy; its credential needs no change.
 ERROR_KIND_REFUSED = "refused"
+#: Result ``details`` key a tool sets when one call did less than its declared
+#: ``side_effect_level`` (a read through a tool declared mutating); the value is
+#: a :class:`SideEffectLevel` value.
+CALL_SIDE_EFFECT_LEVEL_KEY = "side_effect_level"
 
 _DEFAULT_SURFACES: tuple[ToolSurface, ...] = (ToolSurface.CHAT,)
 
@@ -822,6 +826,7 @@ __all__ = [
     "AgentToolContext",
     "AgentToolExecutor",
     "BaseTool",
+    "CALL_SIDE_EFFECT_LEVEL_KEY",
     "ERROR_KIND_REFUSED",
     "EvidenceType",
     "REGISTERED_TOOL_ATTR",
