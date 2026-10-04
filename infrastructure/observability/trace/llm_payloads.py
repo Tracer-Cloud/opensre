@@ -16,8 +16,6 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from infrastructure.safety.repository_instructions_redaction import omit_repository_instructions
-
 
 def _tool_call_card(tool_call: Any) -> dict[str, Any]:
     arguments = getattr(tool_call, "input", None)
@@ -39,14 +37,10 @@ def generation_input(
     system: str | None,
     messages: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    """The full prompt as a chat transcript: system first, then the provider messages.
-
-    A trace backend is an export, so the system prompt leaves out repository
-    AGENTS.md text.
-    """
+    """The full prompt as a chat transcript: system first, then the provider messages."""
     transcript: list[dict[str, Any]] = []
     if system:
-        transcript.append({"role": "system", "content": omit_repository_instructions(system)})
+        transcript.append({"role": "system", "content": system})
     transcript.extend(dict(message) for message in messages)
     return transcript
 

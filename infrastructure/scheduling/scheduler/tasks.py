@@ -19,7 +19,7 @@ from core.agent_harness import (
     resolve_scheduled_skill,
 )
 from infrastructure.observability.trace.trace_session import inherit_trace_session
-from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.loop_prompt import current_loop_prompt
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.sources import (
@@ -209,7 +209,7 @@ def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """
     try:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        prompt = safe_params.get(LOOP_PROMPT_PARAM, "").strip()
+        prompt = current_loop_prompt(safe_params)
         if not prompt:
             return f"⚠️ Manual loop task {task.id} has no prompt configured."
         payload = {

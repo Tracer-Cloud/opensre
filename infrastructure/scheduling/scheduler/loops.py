@@ -43,6 +43,10 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_TELEGRAM_CHAT_ID_PARAM,
     LOOP_TIME_PARAM,
 )
+from infrastructure.scheduling.scheduler.loop_prompt import (
+    current_loop_description,
+    current_loop_prompt,
+)
 from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_loop_operation,
     record_scheduler_task_operation,
@@ -202,7 +206,7 @@ def loop_name(task: ScheduledTask) -> str:
 
 def loop_description(task: ScheduledTask) -> str:
     """Return optional loop description metadata."""
-    return task.params.get(LOOP_DESCRIPTION_PARAM, "").strip()
+    return current_loop_description(task.params)
 
 
 def loop_channels(task: ScheduledTask) -> tuple[Provider, ...]:
@@ -671,7 +675,7 @@ def _summarize_group(
         task_ids=tuple(task.id for task in tasks),
         name=loop_name(representative),
         description=loop_description(representative),
-        prompt=representative.params.get(LOOP_PROMPT_PARAM, "").strip(),
+        prompt=current_loop_prompt(representative.params),
         kind=representative.kind,
         cron=representative.cron,
         timezone=representative.timezone,

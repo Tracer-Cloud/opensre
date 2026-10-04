@@ -38,6 +38,7 @@ step instead.
 | `memory/` | Text-history fallback rendering (RECENT CONVERSATION, PRIOR ACTION FACTS when structured history is off) and affirmative follow-up expansion |
 | `runtime_facts/` | Runtime-metadata fact lines for prompts |
 | `skills/` | Progressive skill index + markdown bodies (`catalog/` + `content/` + workflow Markdown) |
+| `loop_templates/` | Scheduled-loop instructions (`cron add --template`): frontmatter plus at most ten sentences, run fresh on every tick |
 | `rules.py` | Shared rule fragments (leaf) |
 | `system_prompt.py` + `opensre_system_prompt.md` | Loader and adjacent Markdown for the shared system base |
 

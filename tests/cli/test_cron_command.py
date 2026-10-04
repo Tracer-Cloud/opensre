@@ -1079,3 +1079,69 @@ def test_cron_run_failed_only_skips_the_warning(monkeypatch: pytest.MonkeyPatch)
     assert result.exit_code == 0, result.output
     assert "already delivered" not in result.output
     assert calls == [{"task_id": "t1", "only_failed": True}]
+
+
+def test_cron_add_template_fills_the_loop_and_stores_its_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core.agent_harness.prompts.loop_templates import load_loop_template
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_MODE_PARAM,
+        LOOP_PROMPT_PARAM,
+        LOOP_TEMPLATE_PARAM,
+    )
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+    template = load_loop_template("pr-ci")
+
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--template",
+            "pr-ci",
+            "--owner",
+            "acme",
+            "--repo",
+            "widgets",
+            "--provider",
+            "interactive_shell",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    task = list_tasks(store)[0]
+    assert (task.name, task.cron) == (template.name, template.cron)
+    assert task.params == {
+        LOOP_PROMPT_PARAM: template.prompt,
+        LOOP_TEMPLATE_PARAM: "pr-ci",
+        LOOP_MODE_PARAM: "agent",
+        "owner": "acme",
+        "repo": "widgets",
+    }
+    listed = CliRunner().invoke(cron_module.cron_command, ["list"])
+    assert f"What it does: {template.description}" in listed.output
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (["--kind", "manual_loop", "--template", "pr-ci", "--prompt", "x"], "not both"),
+        (["--kind", "manual_loop", "--template", "pr-ci"], "requires --owner and --repo"),
+        (["--kind", "recurring_skill", "--template", "pr-ci"], "--template is only valid"),
+        (["--kind", "manual_loop", "--prompt", "x"], "Missing option '--cron'"),
+    ],
+)
+def test_cron_add_rejects_conflicting_template_use(extra: list[str], message: str) -> None:
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        ["add", "--provider", "interactive_shell", *extra],
+    )
+
+    assert result.exit_code != 0
+    assert message in result.output

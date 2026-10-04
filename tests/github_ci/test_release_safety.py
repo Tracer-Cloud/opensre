@@ -127,5 +127,6 @@ def test_release_path_classifier_preserves_the_previous_push_filters() -> None:
     assert _requires_release("pyproject.toml")
     assert _requires_release("core/agent_harness/prompts/skills/onboarding-github-ci/SKILL.md")
     assert _requires_release("core/agent_harness/prompts/opensre_system_prompt.md")
+    assert _requires_release("core/agent_harness/prompts/loop_templates/pr-ci.md")
     assert _requires_release("integrations/github/SKILL.md")
     assert not _requires_release("docs/install/docker.mdx")

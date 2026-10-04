@@ -26,6 +26,11 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_PARAM,
     LOOP_PROMPT_PARAM,
     LOOP_SLUG_PARAM,
+    LOOP_TEMPLATE_PARAM,
+)
+from infrastructure.scheduling.scheduler.loop_prompt import (
+    current_loop_description,
+    current_loop_prompt,
 )
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
 from infrastructure.scheduling.scheduler.types import ScheduledTask
@@ -36,6 +41,7 @@ _REPOSITORY_KEYS = ("owner", "repo", "repository", "branch", "pr_number")
 _PARAM_KEYS = (
     LOOP_GROUP_ID_PARAM,
     LOOP_SLUG_PARAM,
+    LOOP_TEMPLATE_PARAM,
     LOOP_MODE_PARAM,
     LOOP_DESCRIPTION_PARAM,
     LOOP_PROMPT_PARAM,
@@ -88,7 +94,12 @@ def registry_entry(task: ScheduledTask) -> dict[str, Any]:
     entry = {
         key: _bounded(value) if isinstance(value, str) else value for key, value in entry.items()
     }
-    if params := _allowed(task.params, _PARAM_KEYS):
+    shown = {
+        **task.params,
+        LOOP_PROMPT_PARAM: current_loop_prompt(task.params),
+        LOOP_DESCRIPTION_PARAM: current_loop_description(task.params),
+    }
+    if params := _allowed(shown, _PARAM_KEYS):
         entry["params"] = params
     if inputs := _allowed(task.skill_inputs, _REPOSITORY_KEYS):
         entry["skill_inputs"] = inputs

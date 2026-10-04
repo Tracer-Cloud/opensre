@@ -16,7 +16,12 @@ from rich.table import Table
 if TYPE_CHECKING:
     from infrastructure.scheduling.scheduler.loops import LoopSummary
 
-from core.agent_harness import pin_recurring_skill, validate_skill_inputs
+from core.agent_harness import (
+    load_loop_template,
+    loop_template_names,
+    pin_recurring_skill,
+    validate_skill_inputs,
+)
 from core.agent_harness.prompts.skills.scheduling import resolve_loop_skill
 from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
@@ -28,6 +33,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODES,
     LOOP_PROMPT_PARAM,
     LOOP_SKILL_PARAM,
+    LOOP_TEMPLATE_PARAM,
 )
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
@@ -108,10 +114,11 @@ def cron_command() -> None:
     "--cron",
     "cron_expr",
     type=str,
-    required=True,
+    default="",
     help=(
         "Cron expression (5 fields: minute hour day month day_of_week; "
-        "prepend a seconds field, e.g. '*/30 * * * * *', for sub-minute polling)."
+        "prepend a seconds field, e.g. '*/30 * * * * *', for sub-minute polling). "
+        "Required unless --template supplies one."
     ),
 )
 @click.option(
@@ -155,6 +162,15 @@ def cron_command() -> None:
     help="Instruction to execute on each manual_loop run.",
 )
 @click.option(
+    "--template",
+    type=click.Choice(loop_template_names()),
+    default=None,
+    help=(
+        "Shipped loop template a manual_loop runs instead of --prompt; each tick runs the "
+        "template's current text. It also supplies the default name, description, cron and mode."
+    ),
+)
+@click.option(
     "--mode",
     type=click.Choice(LOOP_MODES),
     default=None,
@@ -190,6 +206,7 @@ def cron_add(
     chat_id: str,
     window_hours: int,
     prompt: str,
+    template: str | None,
     mode: str | None,
     skill_name: str,
     owner: str,
@@ -201,11 +218,25 @@ def cron_add(
     """Add a new scheduled delivery task."""
     from infrastructure.scheduling.scheduler.types import ScheduledTask
 
+    task_kind = TaskKind(kind)
+    if template:
+        if task_kind != TaskKind.MANUAL_LOOP:
+            raise click.ClickException("--template is only valid with --kind manual_loop.")
+        if prompt.strip():
+            raise click.ClickException("Use either --template or --prompt, not both.")
+        if not (owner.strip() and repo.strip()):
+            raise click.UsageError("--template requires --owner and --repo.")
+        loop_template = load_loop_template(template)
+        prompt = loop_template.prompt
+        name = name.strip() or loop_template.name
+        cron_expr = cron_expr.strip() or loop_template.cron
+        mode = mode or loop_template.mode or None
+    if not cron_expr.strip():
+        raise click.UsageError("Missing option '--cron'.")
     # Validate cron expression by constructing the APScheduler trigger
     validate_cron_and_timezone(cron_expr, timezone)
     _validate_chat_id_for_provider(provider, chat_id)
 
-    task_kind = TaskKind(kind)
     if mode is not None and task_kind != TaskKind.MANUAL_LOOP:
         raise click.ClickException("--mode is only valid with --kind manual_loop.")
     normalized_prompt = prompt.strip()
@@ -231,6 +262,8 @@ def cron_add(
             "--skill is only valid with --kind recurring_skill or --kind manual_loop --mode agent."
         )
     task_params = {LOOP_PROMPT_PARAM: normalized_prompt} if normalized_prompt else {}
+    if template:
+        task_params[LOOP_TEMPLATE_PARAM] = template
     if description.strip():
         task_params[LOOP_DESCRIPTION_PARAM] = " ".join(description.split())
     if mode == LOOP_MODE_AGENT:
@@ -298,6 +331,8 @@ def cron_add(
     _console.print(f"  Kind: {added.kind.value}  Cron: {added.cron}  TZ: {added.timezone}")
     if added.kind is TaskKind.MANUAL_LOOP:
         _console.print(f"  Mode: {added.params.get(LOOP_MODE_PARAM, 'report')}")
+    if added.params.get(LOOP_TEMPLATE_PARAM):
+        _console.print(f"  Template: {added.params[LOOP_TEMPLATE_PARAM]}")
     if added.skill_name:
         _console.print(f"  Skill: {added.skill_name}  Revision: {added.skill_revision[:12]}…")
     if added.params.get(LOOP_SKILL_PARAM):

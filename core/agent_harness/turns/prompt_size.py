@@ -94,9 +94,9 @@ class PromptSize:
         return _tokens(self.chars)
 
     @property
-    def carries_repository_instructions(self) -> bool:
-        """Whether an active repository's AGENTS.md block (or why it is absent) is in the call."""
-        return any(block.id == PromptBlockId.REPOSITORY_INSTRUCTIONS for block in self.blocks)
+    def carries_repository_context(self) -> bool:
+        """Whether the call names the session's repositories (the REPOSITORY CONTEXT block)."""
+        return any(block.id == PromptBlockId.REPOSITORY_CONTEXT for block in self.blocks)
 
     def as_record(self) -> dict[str, JsonValue]:
         """The prompt log's ``model_blocks`` field: sizes and block ids, never prompt text."""

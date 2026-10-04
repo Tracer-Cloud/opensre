@@ -26,6 +26,7 @@ from tests.shared.harness_api import API_MODULES, SPI_ROLES
 ROOT_API = frozenset(
     {
         "AgentSession",
+        "LoopTemplate",
         "OutputSink",
         "PromptSurface",
         "SessionConfig",
@@ -35,6 +36,8 @@ ROOT_API = frozenset(
         "TurnResult",
         "is_legacy_skill_name",
         "is_recurring_skill",
+        "load_loop_template",
+        "loop_template_names",
         "normalize_skill_name",
         "pin_recurring_skill",
         "resolve_scheduled_skill",
