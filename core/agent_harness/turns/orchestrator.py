@@ -15,6 +15,7 @@ from core.agent_harness.ports import (
 )
 from core.agent_harness.prompts.memory.conversation import expand_affirmative_follow_up
 from core.agent_harness.prompts.skills import active_skill_catalog
+from core.agent_harness.session.memory_consolidation import start_memory_consolidation
 from core.agent_harness.session.pending_offer import (
     clear_unconfirmed_pending_offers,
     consume_confirmed_pending_offer,
@@ -195,6 +196,9 @@ def _run_turn(
     from core.llm.hosted_credits import prefetch_hosted_credits
 
     prefetch_hosted_credits()
+    # Here, not at session start: a gateway transport binds its surface (and so
+    # the member's memory opt-in) only around the turn.
+    start_memory_consolidation()
     auto_compact_if_needed(session)
     prior_messages = getattr(session, "cli_agent_messages", None) or ()
     typed_text = text

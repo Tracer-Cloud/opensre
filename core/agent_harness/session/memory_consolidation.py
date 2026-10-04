@@ -1,14 +1,19 @@
-"""Phase 2 of the memory pipeline: consolidate memories in the background at session start.
+"""Phase 2 of the memory pipeline: consolidate memories in the background as a turn starts.
 
-:func:`start_memory_consolidation` is the session-start hook. It returns at
-once; a daemon thread runs :func:`core.domain.memory.consolidate_memories`,
-which acts at most once every six hours per memory directory (the cooldown is
-on disk, so it holds across processes). The thread inherits the caller's
-storage scope, so a gateway member's store is consolidated, not the org's.
+:func:`start_memory_consolidation` is the turn-start hook. It runs inside the
+turn because that is where a gateway transport binds its surface and the
+member's storage scope: a session is resolved before either is bound, so a
+session-start check could not see that a Slack member never opted in to
+memory. It returns at once; a daemon thread runs
+:func:`core.domain.memory.consolidate_memories`, which acts at most once every
+six hours per memory directory (the cooldown is on disk, so it holds across
+processes). The thread inherits the turn's context, so a gateway member's
+store is consolidated, not the org's.
 
 The summary step asks the classification-tier LLM to write
-``memory_summary.md`` from the live memories and recent session summaries; it
-is skipped when the LLM is unavailable.
+``memory_summary.md`` from the live memories and recent session summaries,
+with secret-shaped spans redacted from that input; it is skipped when the LLM
+is unavailable.
 """
 
 from __future__ import annotations
@@ -24,14 +29,14 @@ from core.domain.memory import (
     auto_extract_enabled,
     consolidate_memories,
     memory_dir,
+    redact_memory_unsafe_text,
 )
 
 logger = logging.getLogger(__name__)
 
 #: The LLM tier the summary step uses; one place to change it.
 CONSOLIDATION_LLM_ROLE = "classification"
-#: How often one process re-reads a directory's on-disk cooldown. Session
-#: starts are frequent on the gateway (one per inbound message).
+#: How often one process re-reads a directory's on-disk cooldown; every turn calls the hook.
 _RECHECK_SECONDS = 600.0
 _MAX_MEMORY_CHARS = 400
 _MAX_MEMORIES_CHARS = 16_000
@@ -73,15 +78,17 @@ _running: set[str] = set()
 
 
 def start_memory_consolidation() -> None:
-    """Consolidate the current memory directory in a daemon thread; never raises or blocks."""
+    """Consolidate the current memory directory in a daemon thread; never raises or blocks.
+
+    Call it inside a turn, where the surface and storage scope are bound: the
+    memory gate reads the surface, so outside a turn it cannot tell a Slack
+    member without the opt-in from a CLI user.
+    """
     try:
         if not auto_extract_enabled():
             return
         path = memory_dir()
-        # Gateway transports bind the chat surface only after the session
-        # starts, so the memory gate cannot tell a Slack member without the
-        # opt-in from a CLI user here. Such a member never gets a memory
-        # folder, so consolidate only stores that exist and never create one.
+        # Upkeep never creates a memory folder; one that does not exist has nothing to tidy.
         if not path.is_dir():
             return
         directory = str(path)
@@ -132,26 +139,34 @@ def _clip(text: str, limit: int) -> str:
 
 
 def build_summary_prompt(source: ConsolidationInput) -> str:
-    """The summary prompt for ``source``, with each memory body shortened."""
+    """The summary prompt for ``source``: every text redacted, each memory body shortened.
+
+    Stored files can be edited by hand, so secret-shaped spans are redacted
+    before anything reaches the model, and before shortening, which could cut
+    a secret below the length its detector needs.
+    """
     memory_lines: list[str] = []
     used = 0
     for record in source.memories:
+        description = redact_memory_unsafe_text(record.description)
+        body = _clip(redact_memory_unsafe_text(record.body), _MAX_MEMORY_CHARS)
         line = (
             f"- [{record.memory_type}] {record.slug} (updated {record.updated_at[:10]}): "
-            f"{record.description}\n  {_clip(record.body, _MAX_MEMORY_CHARS)}"
+            f"{description}\n  {body}"
         )
         if used + len(line) > _MAX_MEMORIES_CHARS:
             break
         memory_lines.append(line)
         used += len(line) + 1
     session_lines = [
-        f"- {summary.recorded_at[:10]} ({summary.outcome}): {summary.text}"
+        f"- {summary.recorded_at[:10]} ({summary.outcome}): "
+        f"{redact_memory_unsafe_text(summary.text)}"
         for summary in source.session_summaries
     ]
     return _SUMMARY_PROMPT.format(
         memories="\n".join(memory_lines) or "(none)",
         sessions="\n".join(session_lines) or "(none)",
-        current=source.current_summary or "(none yet)",
+        current=redact_memory_unsafe_text(source.current_summary) or "(none yet)",
     )
 
 

@@ -102,13 +102,13 @@ and runs are hidden from the agent and archived.
 
 Delete one with `/memory forget prod-cluster-conventions`, or ask the agent:
 "forget what you know about the prod cluster". Forgetting a memory also
-removes the consolidated summary, which is rewritten without it at the start of
-your next session. Summaries of conversations that had started before you
-forgot it are not used to write the new one.
+removes the consolidated summary, which is rewritten without it in the
+background as you keep chatting. Summaries of conversations that had started
+before you forgot it are not used to write the new one.
 
 ## Upkeep
 
-At the start of a session, at most once every six hours, OpenSRE tidies the
+When you send a message, at most once every six hours, OpenSRE tidies the
 store in the background:
 
 - **Archives** demo, sample, and synthetic memories, and memories neither

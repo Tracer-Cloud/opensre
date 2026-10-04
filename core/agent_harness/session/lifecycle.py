@@ -35,7 +35,6 @@ import logging
 from datetime import datetime
 from typing import Any, TypeVar
 
-from core.agent_harness.session.memory_consolidation import start_memory_consolidation
 from core.agent_harness.session.persistence.contracts import (
     TURN_EVIDENCE_CUSTOM_TYPE,
     RestoreContextKey,
@@ -106,8 +105,7 @@ class SessionManager:
 
         This is the single definition of "a booted session": a persistent task
         registry and hydrated (optionally warmed) integration state. Surface UI
-        wiring is layered by the surface after this returns. It also starts
-        background memory consolidation, which never blocks or raises.
+        wiring is layered by the surface after this returns.
         """
         if persistent_tasks:
             session.task_registry = TaskRegistry.persistent()
@@ -118,7 +116,6 @@ class SessionManager:
             session.hydrate_configured_integrations()
         if warm_integrations:
             session.warm_resolved_integrations()
-        start_memory_consolidation()
         return session
 
     # ─── Lifecycle ───────────────────────────────────────────────────────
