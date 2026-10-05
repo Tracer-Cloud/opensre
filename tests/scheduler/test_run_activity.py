@@ -250,6 +250,10 @@ def _shell(command: str, **_kwargs: Any) -> dict[str, Any]:
     "name, arguments, wrote",
     [
         ("shell_run", {"command": "cd /tmp/r && git -C r push -u origin ci-fix/ci"}, True),
+        ("shell_run", {"command": "git add -A\ngit commit -m fix\ngit push"}, True),
+        ("shell_run", {"command": "bash -lc 'cd /tmp/r && git push origin main'"}, True),
+        # Text that only mentions a push is not one.
+        ("shell_run", {"command": "echo git push origin main"}, False),
         ("shell_run", {"command": "git push --dry-run origin HEAD"}, False),
         ("shell_run", {"command": 'git commit -m "make git push work"'}, False),
         ("shell_run", {"command": "git push origin rejected"}, False),

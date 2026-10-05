@@ -9,7 +9,11 @@ from config.constants.scheduler import STATELESS_LOOP_IDLE_REPLY, WORK_UNVERIFIE
 from core.agent_harness import TurnResult
 from core.tool import ToolExecutionRequest, ToolExecutionResult
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
-from infrastructure.scheduling.scheduler.tool_actions import describe_tool_action, is_remote_write
+from infrastructure.scheduling.scheduler.tool_actions import (
+    call_failed,
+    describe_tool_action,
+    is_remote_write,
+)
 from infrastructure.scheduling.scheduler.types import TaskReport
 
 
@@ -20,7 +24,8 @@ class ScheduledOutcomes:
     An unbound sweep skips such a target and keeps its schedule for the others.
     A stateless loop is also judged by what its tools changed: a successful push
     or GitHub write is done work, and the exact idle reply is a no-op unless a
-    tool failed without reporting an outcome.
+    tool failed without reporting an outcome; there a nonzero shell exit counts
+    as a failure too.
     """
 
     def __init__(self, *, bound_target: bool = True, stateless: bool = False) -> None:
@@ -37,7 +42,7 @@ class ScheduledOutcomes:
         """Record producer-owned structured evidence without interpreting report prose."""
         payload: Any = result.details
         if not isinstance(payload, dict) or "work_outcome" not in payload:
-            if result.is_error:
+            if result.is_error or (self._stateless and call_failed(result)):
                 with self._lock:
                     self._unverified_failure = True
             elif self._stateless and is_remote_write(request, result):
@@ -108,10 +113,12 @@ class ScheduledOutcomes:
                 }
                 if skipped:
                     evidence["skipped"] = [item.model_dump(mode="json") for item in skipped]
+                if remote_writes:
+                    evidence["actions"] = list(remote_writes)
+                # A write the tools made is work even when every reported operation was a no-op.
+                quiet = not remote_writes and all(item.status is WorkStatus.NOOP for item in work)
                 outcome = WorkOutcome(
-                    status=WorkStatus.NOOP
-                    if all(item.status is WorkStatus.NOOP for item in work)
-                    else WorkStatus.SUCCEEDED,
+                    status=WorkStatus.NOOP if quiet else WorkStatus.SUCCEEDED,
                     evidence=evidence,
                 )
             elif remote_writes:

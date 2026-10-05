@@ -234,10 +234,14 @@ def bound_action_hook() -> Callable[[ToolExecutionRequest, ToolExecutionResult],
     return record
 
 
-#: ``git`` or ``gh`` as its own word in a shell string, not a prefix of another word.
-_GIT_WORD = re.compile(r"(?<![-\w./])git(?![-\w])")
-_GH_WORD = re.compile(r"(?<![-\w./])gh(?![-\w])")
-_SHELL_OPERATORS = frozenset({"&&", "||", "|", ";", "&"})
+#: Characters that end a simple command when unquoted: operators, groups, newlines.
+_SHELL_PUNCTUATION = "();<>|&\n"
+#: Shells whose ``-c`` script holds commands of its own.
+_SHELLS = frozenset({"bash", "dash", "sh", "zsh"})
+#: Words that run the command after them; skipped to find the program that runs.
+_COMMAND_WRAPPERS = frozenset({"command", "env", "exec", "nohup", "sudo", "time"})
+#: How deep ``sh -c '…'`` scripts are followed.
+_MAX_SCRIPT_DEPTH = 2
 #: Global ``git`` options that take the next word as their value.
 _GIT_VALUE_OPTIONS = frozenset(
     {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
@@ -255,63 +259,84 @@ _GH_API_WRITE_METHODS = frozenset({"DELETE", "PATCH", "POST", "PUT"})
 _GH_API_BODY_OPTIONS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
 
 
+def call_failed(result: ToolExecutionResult) -> bool:
+    """Whether a call errored or reported ``ok`` or ``success`` false, e.g. a nonzero exit."""
+    details: Mapping[str, Any] = result.details if isinstance(result.details, Mapping) else {}
+    return not _succeeded(result, details)
+
+
 def is_remote_write(request: ToolExecutionRequest, result: ToolExecutionResult) -> bool:
     """Whether a successful ``shell_run`` or ``github_cli`` call pushed or changed GitHub.
 
     A ``git push``, a pull-request or issue change (``gh pr create``, ``gh pr
-    comment``, ...) or a ``gh api`` call that sends a write counts; reads and
-    failed calls never do.
+    comment``, ...) or a ``gh api`` call that sends a write counts when it is the
+    program a shell command runs, including inside ``sh -c '…'``. Reads, failed
+    calls and text that only mentions such a command never count.
     """
-    details: Mapping[str, Any] = result.details if isinstance(result.details, Mapping) else {}
-    if not _succeeded(result, details):
+    if call_failed(result):
         return False
     name = request.tool_call.name
     if name == "github_cli":
         return _gh_writes(_command_tokens(request.arguments.get("args")))
-    if name != "shell_run":
-        return False
     command = request.arguments.get("command")
-    if not isinstance(command, str):
-        return False
-    return any(
-        _git_pushes(_simple_command(command, match.end()))
-        for match in _GIT_WORD.finditer(command)
-        if not _quoted(command, match.start())
-    ) or any(
-        _gh_writes(_simple_command(command, match.end()))
-        for match in _GH_WORD.finditer(command)
-        if not _quoted(command, match.start())
-    )
+    return name == "shell_run" and isinstance(command, str) and _script_writes(command, 0)
 
 
-def _quoted(command: str, index: int) -> bool:
-    """Whether ``index`` falls inside a quoted string, such as a commit message."""
-    single = double = False
-    escaped = False
-    for char in command[:index]:
-        if escaped:
-            escaped = False
-        elif char == "\\" and not single:
-            escaped = True
-        elif char == "'" and not double:
-            single = not single
-        elif char == '"' and not single:
-            double = not double
-    return single or double
+def _script_writes(script: str, depth: int) -> bool:
+    """Whether a simple command of ``script`` runs a push or a GitHub write."""
+    for words in _simple_commands(script):
+        program, args = _program(words)
+        if program == "git" and _git_pushes(args):
+            return True
+        if program == "gh" and _gh_writes(args):
+            return True
+        if program in _SHELLS and depth < _MAX_SCRIPT_DEPTH:
+            inner = _shell_script(args)
+            if inner and _script_writes(inner, depth + 1):
+                return True
+    return False
 
 
-def _simple_command(command: str, start: int) -> list[str]:
-    """The words after ``start`` up to the next shell operator."""
-    words: list[str] = []
-    for token in _command_tokens(command[start:]):
-        stripped = token.rstrip(";&|")
-        if token in _SHELL_OPERATORS:
-            break
-        if stripped:
-            words.append(stripped)
-        if stripped != token:
-            break
-    return words
+def _simple_commands(script: str) -> list[list[str]]:
+    """The words of each simple command in ``script``; none when it does not parse."""
+    lexer = shlex.shlex(script, posix=True, punctuation_chars=_SHELL_PUNCTUATION)
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    commands: list[list[str]] = [[]]
+    try:
+        for token in lexer:
+            if token and all(char in _SHELL_PUNCTUATION for char in token):
+                commands.append([])
+            else:
+                commands[-1].append(token)
+    except ValueError:
+        return []
+    return [words for words in commands if words]
+
+
+def _program(words: list[str]) -> tuple[str, list[str]]:
+    """The program a simple command runs, past assignments and wrappers, and its arguments."""
+    index = 0
+    while index < len(words):
+        if _ENV_ASSIGNMENT.match(words[index]):
+            index += 1
+        elif words[index] in _COMMAND_WRAPPERS:
+            index += 1
+            while index < len(words) and words[index].startswith("-"):
+                index += 1
+        else:
+            return words[index].rsplit("/", 1)[-1], words[index + 1 :]
+    return "", []
+
+
+def _shell_script(args: list[str]) -> str:
+    """The script a shell runs with ``-c`` (options such as ``-e`` may come first), else ""."""
+    for index, word in enumerate(args):
+        if not word.startswith("-"):
+            return ""
+        if not word.startswith("--") and "c" in word[1:]:
+            return args[index + 1] if index + 1 < len(args) else ""
+    return ""
 
 
 def _git_pushes(args: list[str]) -> bool:
@@ -354,4 +379,4 @@ def _gh_writes(args: list[str]) -> bool:
     return len(positionals) > 1 and positionals[1] in verbs
 
 
-__all__ = ["bound_action_hook", "describe_tool_action", "is_remote_write"]
+__all__ = ["bound_action_hook", "call_failed", "describe_tool_action", "is_remote_write"]
