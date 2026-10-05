@@ -12,14 +12,14 @@ _INTERACTIVE_WIZARD_SLASH_ROOTS: frozenset[str] = frozenset(
         "/onboard",
         "/auth",
         "/login",
-        "/integrations",
-        "/mcp",
     }
 )
 _INTERACTIVE_WIZARD_SLASH_PATHS: frozenset[str] = frozenset(
     {
+        "/integrations list",
         "/integrations setup",
         "/integrations remove",
+        "/mcp list",
         "/mcp connect",
         "/mcp disconnect",
         "/auth login",
