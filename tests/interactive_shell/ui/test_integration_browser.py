@@ -49,8 +49,8 @@ def terminal(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 @pytest.mark.parametrize("size", [(8, 3), (39, 12), (59, 20), (99, 32), (119, 50)])
 def test_frame_fits_and_keeps_selected_item_visible(mcp: bool, size: tuple[int, int]) -> None:
     width, height = size
-    names = [f"connection-{n}" for n in range(40)]
-    names[30] = "界" * 45 + "\x1b[31m\r\nspoof"
+    names = [browser.IntegrationEntry(f"connection-{n}", True) for n in range(40)]
+    names[30] = browser.IntegrationEntry("界" * 45 + "\x1b[31m\r\nspoof", True)
     frame = browser._render_frame(names, selected=30, top=0, mcp=mcp, width=width, height=height)
     rows = [Text.from_ansi(row).plain for row in frame.rows]
     assert len(rows) < height
@@ -69,7 +69,9 @@ def test_actions_target_selection_only_after_explicit_key(
     terminal: SimpleNamespace, key: str, action: str | None
 ) -> None:
     terminal.keys = iter(["down", key])
-    selected = browser.browse_integrations(["github", "grafana"])
+    selected = browser.browse_integrations(
+        [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)]
+    )
     if action is None:
         assert selected is None
     else:
@@ -90,19 +92,29 @@ def test_empty_browser_offers_setup_but_never_removes(terminal: SimpleNamespace)
 def test_read_failure_restores_terminal(terminal: SimpleNamespace) -> None:
     terminal.keys = iter([RuntimeError("read failed")])
     with pytest.raises(RuntimeError, match="read failed"):
-        browser.browse_integrations(["github"])
+        browser.browse_integrations([browser.IntegrationEntry("github", True)])
     assert terminal.events[-2:] == ["restore", "leave"]
 
 
 def test_tiny_terminal_cannot_activate_hidden_actions(terminal: SimpleNamespace) -> None:
     terminal.width = 20
     terminal.keys = iter(["r", "enter", "a", "cancel"])
-    assert browser.browse_integrations(["github"]) is None
+    assert browser.browse_integrations([browser.IntegrationEntry("github", True)]) is None
 
 
 def test_non_tty_never_reads_input(
     terminal: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(browser, "repl_tty_interactive", lambda: False)
-    assert browser.browse_integrations(["github"]) is None
+    assert browser.browse_integrations([browser.IntegrationEntry("github", True)]) is None
     assert terminal.events == []
+
+
+def test_unsupported_verification_is_not_offered_or_executed(terminal: SimpleNamespace) -> None:
+    entries = [browser.IntegrationEntry("airflow", False)]
+    frame = browser._render_frame(entries, selected=0, top=0, mcp=False, width=79, height=24)
+    text = "\n".join(Text.from_ansi(row).plain for row in frame.rows)
+    assert "No connectivity check available" in text
+    assert "Configured" in text and "Enter verify" not in text
+    terminal.keys = iter(["enter", "s"])
+    assert browser.browse_integrations(entries) == browser.IntegrationSelection("setup", "airflow")

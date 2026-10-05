@@ -20,6 +20,14 @@ from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_text
 
 
 @dataclass(frozen=True)
+class IntegrationEntry:
+    """Safe display metadata, without configuration values or credentials."""
+
+    service: str
+    can_verify: bool
+
+
+@dataclass(frozen=True)
 class IntegrationSelection:
     """An explicit action; a missing service requests the setup picker."""
 
@@ -38,7 +46,13 @@ def _styled(text: str, style: str, width: int) -> str:
 
 
 def _render_frame(
-    names: Sequence[str], *, selected: int, top: int, mcp: bool, width: int, height: int
+    entries: Sequence[IntegrationEntry],
+    *,
+    selected: int,
+    top: int,
+    mcp: bool,
+    width: int,
+    height: int,
 ) -> _Frame:
     if width < 39 or height < 12:
         notice = ("Esc close", "Resize to at least 40×12", "to browse connections.")
@@ -66,15 +80,16 @@ def _render_frame(
     rule = _styled("  " + "─" * (width - 2), ui_theme.DIM_COUNTER_ANSI, width)
     rows.append(rule)
     # Leave room for the selected-item preview and three complete control rows.
-    visible = min(len(names), 20, max(1, height - len(rows) - 9))
-    top = max(0, min(top, len(names) - visible, selected))
+    visible = min(len(entries), 20, max(1, height - len(rows) - 9))
+    top = max(0, min(top, len(entries) - visible, selected))
     top = max(top, selected - visible + 1)
     for index in range(top, top + visible):
-        name = clip_prompt_text(names[index], name_width)
+        name = clip_prompt_text(entries[index].service, name_width)
         name += " " * (name_width - prompt_text_width(name))
         prefix = f"  {'›' if index == selected else ' '} {name} "
+        status = "Not checked" if entries[index].can_verify else "Configured"
         if index == selected:
-            row = prefix + "Not checked"
+            row = prefix + status
             rows.append(
                 _styled(
                     row + " " * max(0, width - prompt_text_width(row)),
@@ -85,9 +100,9 @@ def _render_frame(
         else:
             rows.append(
                 _styled(prefix, ui_theme.TEXT_ANSI, width)
-                + _styled("Not checked", ui_theme.SECONDARY_ANSI, 11)
+                + _styled(status, ui_theme.SECONDARY_ANSI, 11)
             )
-    if not names:
+    if not entries:
         rows.append(
             _styled(
                 f"  No {'MCP servers' if mcp else 'integrations'} configured.",
@@ -96,27 +111,34 @@ def _render_frame(
             )
         )
     rows.extend(["", rule])
-    if names:
-        rows.append(_styled(f"  {names[selected]}", ui_theme.HIGHLIGHT_ANSI, width))
-        rows.append(
-            _styled("  Configured; connectivity not checked.", ui_theme.SECONDARY_ANSI, width)
+    if entries:
+        rows.append(_styled(f"  {entries[selected].service}", ui_theme.HIGHLIGHT_ANSI, width))
+        detail = (
+            "Configured; connectivity not checked."
+            if entries[selected].can_verify
+            else "No connectivity check available."
         )
+        rows.append(_styled(f"  {detail}", ui_theme.SECONDARY_ANSI, width))
     else:
         rows.append(
             _styled(f"  Press a to {add} your first connection.", ui_theme.SECONDARY_ANSI, width)
         )
         rows.append("")
     rows.append("")
-    position = f"{selected + 1}/{len(names)}" if names else "0 configured"
-    controls = "↑↓ browse · Enter verify" if names else f"a {add}"
+    position = f"{selected + 1}/{len(entries)}" if entries else "0 configured"
+    controls = "↑↓ browse" if entries else f"a {add}"
+    if entries and entries[selected].can_verify:
+        controls += " · Enter verify"
     rows.append(_styled(f"  {controls}", ui_theme.DIM_COUNTER_ANSI, width))
-    actions = f"a {add} · s setup · r {remove}" if names else ""
+    actions = f"a {add} · s setup · r {remove}" if entries else ""
     rows.append(_styled(f"  {actions}", ui_theme.DIM_COUNTER_ANSI, width))
     rows.append(_styled(f"  Esc close  ·  {position}", ui_theme.DIM_COUNTER_ANSI, width))
     return _Frame(tuple(rows), top)
 
 
-def browse_integrations(names: Sequence[str], *, mcp: bool = False) -> IntegrationSelection | None:
+def browse_integrations(
+    entries: Sequence[IntegrationEntry], *, mcp: bool = False
+) -> IntegrationSelection | None:
     """Browse without probes; return an explicit action after restoring the terminal."""
     if not repl_tty_interactive():
         return None
@@ -128,7 +150,7 @@ def browse_integrations(names: Sequence[str], *, mcp: bool = False) -> Integrati
         while True:
             size = get_terminal_size(fallback=(80, 24))
             frame = _render_frame(
-                names,
+                entries,
                 selected=selected,
                 top=top,
                 mcp=mcp,
@@ -148,17 +170,19 @@ def browse_integrations(names: Sequence[str], *, mcp: bool = False) -> Integrati
                 continue
             if key == "a":
                 return IntegrationSelection("setup")
-            if not names:
+            if not entries:
                 continue
             if key in ("up", "down", "tab"):
-                selected = (selected + (-1 if key == "up" else 1)) % len(names)
+                selected = (selected + (-1 if key == "up" else 1)) % len(entries)
             elif key in ("enter", "s", "r"):
+                if key == "enter" and not entries[selected].can_verify:
+                    continue
                 action: Literal["verify", "setup", "remove"] = "verify"
                 if key == "s":
                     action = "setup"
                 elif key == "r":
                     action = "remove"
-                return IntegrationSelection(action, names[selected])
+                return IntegrationSelection(action, entries[selected].service)
     finally:
         try:
             output.quit_alternate_screen()

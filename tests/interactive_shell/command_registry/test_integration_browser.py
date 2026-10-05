@@ -10,6 +10,7 @@ from rich.console import Console
 from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.command_registry import integrations as commands
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.integration_browser import IntegrationEntry
 
 
 @pytest.mark.parametrize(
@@ -20,9 +21,9 @@ def test_bare_command_lists_configured_items_without_verifying(
 ) -> None:
     seen: list[list[str]] = []
 
-    def browse(names: list[str], *, mcp: bool) -> None:
+    def browse(entries: list[IntegrationEntry], *, mcp: bool) -> None:
         assert mcp == (command == "/mcp")
-        seen.append(names)
+        seen.append([entry.service for entry in entries])
 
     def no_probe(*_args: object) -> None:
         pytest.fail("Browsing must not probe services or open an action submenu")
@@ -99,3 +100,17 @@ def test_browser_removal_keeps_confirmation(
         command, Session(), Console(file=io.StringIO(), force_terminal=True), is_tty=True
     )
     assert deletions == (["github"] if removed else [])
+
+
+def test_browser_marks_integrations_without_a_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    def browse(entries: list[IntegrationEntry], *, mcp: bool) -> None:
+        assert [(entry.service, entry.can_verify) for entry in entries] == [
+            ("airflow", False),
+            ("github", True),
+        ]
+
+    monkeypatch.setattr(
+        commands.repl_data, "configured_integration_names", lambda: ["airflow", "github"]
+    )
+    monkeypatch.setattr(commands, "browse_integrations", browse)
+    commands._browse_connections(Session(), Console(file=io.StringIO()), mcp=False)

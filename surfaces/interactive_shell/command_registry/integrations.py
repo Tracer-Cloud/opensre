@@ -26,7 +26,7 @@ from surfaces.interactive_shell.ui import (
     render_mcp_table,
     repl_table,
 )
-from surfaces.interactive_shell.ui.integration_browser import browse_integrations
+from surfaces.interactive_shell.ui.integration_browser import IntegrationEntry, browse_integrations
 from surfaces.shared.terminal.components.choice_menu import (
     CRUMB_SEP,
     prepare_repl_output_line,
@@ -312,10 +312,16 @@ def _use_browser(console: Console) -> bool:
 
 
 def _browse_connections(session: Session, console: Console, *, mcp: bool) -> bool:
+    from integrations.registry import SUPPORTED_VERIFY_SERVICES, resolve_management_service
+
     names = repl_data.configured_integration_names()
     if mcp:
         names = [name for name in names if name in MCP_INTEGRATION_SERVICES]
-    selected = browse_integrations(names, mcp=mcp)
+    entries = [
+        IntegrationEntry(name, resolve_management_service(name) in SUPPORTED_VERIFY_SERVICES)
+        for name in names
+    ]
+    selected = browse_integrations(entries, mcp=mcp)
     if selected is None:
         return True
     if selected.action == "verify":
