@@ -69,6 +69,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         "setup_flow.py",
         "store.py",
         "verify.py",
+        # Signed-in CLI peer of webapp_vault.py: fetches every vendor's org
+        # integrations with the account token, not one vendor's package.
+        "account_vault.py",
         # Cross-cutting credential-resolution infra (fetches every vendor's org
         # creds from the webapp vault), not a vendor — like store.py / registry.py.
         "webapp_vault.py",

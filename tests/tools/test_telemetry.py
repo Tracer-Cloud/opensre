@@ -873,6 +873,56 @@ def _x_mcp_call_tool_case() -> ToolFailureCase:
     )
 
 
+def _pipedream_source() -> dict[str, Any]:
+    return {
+        "access_mode": "webapp_proxy",
+        "apps": [{"service": "notion", "app_slug": "notion", "account_id": "acc"}],
+    }
+
+
+def _patch_pipedream_runtime(mp: pytest.MonkeyPatch, failing: str) -> None:
+    """Force the webapp proxy call the tool reports."""
+    from integrations.pipedream.tools.pipedream_tool import tool as mod
+
+    mp.setattr(mod, failing, MagicMock(side_effect=RuntimeError("mcp")))
+
+
+def _pipedream_list_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        _patch_pipedream_runtime(mp, "list_proxy_tools")
+
+    def invoke() -> dict[str, Any]:
+        from integrations.pipedream.tools.pipedream_tool import list_pipedream_tools
+
+        return list_pipedream_tools(pipedream=_pipedream_source())
+
+    return ToolFailureCase(
+        "pipedream_list_tools",
+        patch,
+        invoke,
+        "list_pipedream_tools",
+        "pipedream",
+    )
+
+
+def _pipedream_call_tool_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        _patch_pipedream_runtime(mp, "call_proxy_tool")
+
+    def invoke() -> dict[str, Any]:
+        from integrations.pipedream.tools.pipedream_tool import call_pipedream_tool
+
+        return call_pipedream_tool(tool_name="search", pipedream=_pipedream_source())
+
+    return ToolFailureCase(
+        "pipedream_call_tool",
+        patch,
+        invoke,
+        "call_pipedream_tool",
+        "pipedream",
+    )
+
+
 def _runbook_guidance_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from tools.system.runbook_guidance_tool import tool as mod
@@ -973,6 +1023,8 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _sentry_mcp_call_tool_case(),
     _x_mcp_list_case(),
     _x_mcp_call_tool_case(),
+    _pipedream_list_case(),
+    _pipedream_call_tool_case(),
     _runbook_guidance_case(),
 ]
 
@@ -1175,7 +1227,7 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         # PostHog MCP — both swallow sites in PostHogMCPTool/__init__.py.
         "list_posthog_tools",
         "call_posthog_tool",
-        # Pipedream MCP — both swallow sites in pipedream_tool/__init__.py.
+        # Pipedream proxy — both swallow sites in pipedream_tool/tool.py.
         "list_pipedream_tools",
         "call_pipedream_tool",
         # Sentry MCP — both swallow sites in SentryMCPTool/__init__.py.
