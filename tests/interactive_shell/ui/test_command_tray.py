@@ -109,7 +109,9 @@ async def test_tray_is_attached_bounded_and_keeps_selected_result_visible() -> N
         lines = _screen_lines(prompt)
         assert lines[0] == "Working"
         assert "Commands" in lines[2]
-        assert "› /integrations" in lines[3]
+        assert lines[3].startswith("│") and lines[3].endswith("│")
+        assert not lines[3].strip("│ ")
+        assert "› /integrations" in lines[4]
         assert sum("│ › /" in line or "│   /" in line for line in lines) == 6
         assert lines[-5].startswith("│") and lines[-5].endswith("│")
         assert not lines[-5].strip("│ ")
