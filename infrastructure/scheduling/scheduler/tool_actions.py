@@ -238,24 +238,22 @@ def bound_action_hook() -> Callable[[ToolExecutionRequest, ToolExecutionResult],
 _SHELL_PUNCTUATION = "();<>|&\n"
 #: Shells whose ``-c`` script holds commands of its own.
 _SHELLS = frozenset({"bash", "dash", "sh", "zsh"})
-#: Words that run the command after them, each with its options that take a value;
-#: skipped to find the program that runs.
-_COMMAND_WRAPPERS: dict[str, frozenset[str]] = {
-    "command": frozenset(),
-    "env": frozenset({"-C", "-S", "-u", "--chdir", "--split-string", "--unset"}),
-    "exec": frozenset({"-a"}),
-    "nohup": frozenset(),
-    "sudo": frozenset(
-        {"-C", "-D", "-R", "-T", "-U", "-g", "-p", "-r", "-t", "-u"}
-        | {"--chdir", "--chroot", "--close-from", "--command-timeout", "--group"}
-        | {"--other-user", "--prompt", "--role", "--type", "--user"}
+#: Wrappers that run the command after them: their flags, then their options that take a
+#: value. Any other option makes the command unknown, so its writes are never claimed.
+_COMMAND_WRAPPERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "command": (frozenset({"-p"}), frozenset()),
+    "env": (
+        frozenset({"-i", "--ignore-environment"}),
+        frozenset({"-C", "-u", "--chdir", "--unset"}),
     ),
-    "time": frozenset({"-f", "-o", "--format", "--output"}),
+    "exec": (frozenset({"-c", "-l"}), frozenset({"-a"})),
+    "nohup": (frozenset(), frozenset()),
+    "sudo": (
+        frozenset({"-E", "-H", "-S", "-n", "--non-interactive", "--preserve-env", "--stdin"}),
+        frozenset({"-g", "-u", "--group", "--user"}),
+    ),
+    "time": (frozenset({"-p", "--portability"}), frozenset({"-f", "-o", "--format", "--output"})),
 }
-#: ``env`` options whose value is itself a command line.
-_ENV_SPLIT_OPTIONS = frozenset({"-S", "--split-string"})
-#: ``command`` options that look a program up instead of running it.
-_COMMAND_LOOKUPS = frozenset({"-V", "-v"})
 #: How deep ``sh -c '…'`` scripts are followed.
 _MAX_SCRIPT_DEPTH = 2
 #: Global ``git`` options that take the next word as their value.
@@ -333,9 +331,10 @@ def _simple_commands(script: str) -> list[list[str]]:
 def _program(words: list[str]) -> tuple[str, list[str]]:
     """The program a simple command runs, past assignments and wrappers, and its arguments.
 
-    A wrapper's options are skipped with their values (``env -u NAME``,
-    ``sudo -u user``); ``env -S '…'`` contributes its command line, and
-    ``command -v`` runs nothing.
+    Only wrapper options known to still run the command are skipped, with their
+    values (``env -u NAME``, ``sudo --user=bot``). Any other option, such as
+    ``sudo -l`` or ``env -S``, leaves the program unknown: a write is never
+    claimed for a command that may not have run.
     """
     index = 0
     while index < len(words):
@@ -344,29 +343,20 @@ def _program(words: list[str]) -> tuple[str, list[str]]:
         index += 1
         if _ENV_ASSIGNMENT.match(word):
             continue
-        value_options = _COMMAND_WRAPPERS.get(program)
-        if value_options is None:
+        options = _COMMAND_WRAPPERS.get(program)
+        if options is None:
             return program, words[index:]
+        flags, value_options = options
         while index < len(words) and words[index].startswith("-"):
-            option = words[index]
+            option, _, attached = words[index].partition("=")
             index += 1
             if option == "--":
                 break
-            if program == "command" and option in _COMMAND_LOOKUPS:
+            if option in value_options:
+                index += 0 if attached else 1
+            elif option not in flags or attached:
                 return "", []
-            if program == "env" and option in _ENV_SPLIT_OPTIONS and index < len(words):
-                words = [*words[:index], *_split_words(words[index]), *words[index + 1 :]]
-            elif option in value_options:
-                index += 1
     return "", []
-
-
-def _split_words(text: str) -> list[str]:
-    """``text`` split like a shell splits arguments; none when it does not parse."""
-    try:
-        return shlex.split(text)
-    except ValueError:
-        return []
 
 
 def _shell_script(args: list[str]) -> str:

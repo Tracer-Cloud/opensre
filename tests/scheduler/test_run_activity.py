@@ -254,8 +254,10 @@ def _shell(command: str, **_kwargs: Any) -> dict[str, Any]:
         ("shell_run", {"command": "bash -lc 'cd /tmp/r && git push origin main'"}, True),
         # Wrapper options that take a value are not the program.
         ("shell_run", {"command": "env -u GH_HOST gh pr comment 42 --body ok"}, True),
-        ("shell_run", {"command": "sudo -u bot /usr/bin/git push origin fix"}, True),
-        ("shell_run", {"command": "/usr/bin/env -S 'gh pr comment 42 --body ok'"}, True),
+        ("shell_run", {"command": "sudo --user=bot /usr/bin/git push origin fix"}, True),
+        # A wrapper option that may not run the command is never claimed as a write.
+        ("shell_run", {"command": "sudo -l git push origin main"}, False),
+        ("shell_run", {"command": "/usr/bin/env -S'gh pr comment 42 --body ok'"}, False),
         ("shell_run", {"command": "command -v gh && gh pr view 42"}, False),
         # Text that only mentions a push is not one.
         ("shell_run", {"command": "echo git push origin main"}, False),
