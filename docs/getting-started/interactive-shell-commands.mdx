@@ -192,8 +192,8 @@ Bare invocation opens a picker or submenu:
 | Command | Menu behavior |
 | --- | --- |
 | `/help` | Browse categories; Enter runs the selected command |
-| `/integrations` | list / verify / show / setup / remove |
-| `/mcp` | list / connect / disconnect |
+| `/integrations` | Browse configured integrations; verify, setup, or remove the selected item |
+| `/mcp` | Browse configured MCP servers; verify, connect, or disconnect |
 | `/model` | show / set / restore / toolcall |
 | `/theme` | Pick a colour theme from the installed list |
 | `/choose` | Reopen the selection menu the agent queued |
@@ -587,13 +587,17 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 
 You can ask “Can you configure Telegram/GitHub/PostHog for me?” to start the same guided flow. It explains each human action before requesting input, discovers IDs where possible, and lets you retry failed checks. Enter credentials only in the setup flow's hidden input.
 
-Bare `/integrations` opens an interactive menu in a TTY with service pickers for show/remove.
+Bare `/integrations` opens a configured-integration browser in a TTY. Use **↑↓** to browse, **Enter** to verify the selected connection, **a** to add, **s** to run setup for the selected integration, and **r** to remove it with confirmation. **Esc** closes without changes. Choosing an action returns to the conversation when it finishes.
+
+Browsing does not run health checks: **Not checked** means configuration exists, not that the connection is healthy. Use `/integrations list` for the verified table.
 
 </Accordion>
 
 <Accordion title="/mcp">
 
 MCP-capable integrations only (subset of the full integration catalog).
+
+Bare `/mcp` opens the server browser without running health checks. Use **↑↓** to browse, **Enter** to verify, **a** to connect, **s** to reconfigure the selected server, **r** to disconnect with confirmation, and **Esc** to close. Explicit subcommands remain available below.
 
 ```text
 /mcp list
