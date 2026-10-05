@@ -238,8 +238,24 @@ def bound_action_hook() -> Callable[[ToolExecutionRequest, ToolExecutionResult],
 _SHELL_PUNCTUATION = "();<>|&\n"
 #: Shells whose ``-c`` script holds commands of its own.
 _SHELLS = frozenset({"bash", "dash", "sh", "zsh"})
-#: Words that run the command after them; skipped to find the program that runs.
-_COMMAND_WRAPPERS = frozenset({"command", "env", "exec", "nohup", "sudo", "time"})
+#: Words that run the command after them, each with its options that take a value;
+#: skipped to find the program that runs.
+_COMMAND_WRAPPERS: dict[str, frozenset[str]] = {
+    "command": frozenset(),
+    "env": frozenset({"-C", "-S", "-u", "--chdir", "--split-string", "--unset"}),
+    "exec": frozenset({"-a"}),
+    "nohup": frozenset(),
+    "sudo": frozenset(
+        {"-C", "-D", "-R", "-T", "-U", "-g", "-p", "-r", "-t", "-u"}
+        | {"--chdir", "--chroot", "--close-from", "--command-timeout", "--group"}
+        | {"--other-user", "--prompt", "--role", "--type", "--user"}
+    ),
+    "time": frozenset({"-f", "-o", "--format", "--output"}),
+}
+#: ``env`` options whose value is itself a command line.
+_ENV_SPLIT_OPTIONS = frozenset({"-S", "--split-string"})
+#: ``command`` options that look a program up instead of running it.
+_COMMAND_LOOKUPS = frozenset({"-V", "-v"})
 #: How deep ``sh -c '…'`` scripts are followed.
 _MAX_SCRIPT_DEPTH = 2
 #: Global ``git`` options that take the next word as their value.
@@ -315,18 +331,42 @@ def _simple_commands(script: str) -> list[list[str]]:
 
 
 def _program(words: list[str]) -> tuple[str, list[str]]:
-    """The program a simple command runs, past assignments and wrappers, and its arguments."""
+    """The program a simple command runs, past assignments and wrappers, and its arguments.
+
+    A wrapper's options are skipped with their values (``env -u NAME``,
+    ``sudo -u user``); ``env -S '…'`` contributes its command line, and
+    ``command -v`` runs nothing.
+    """
     index = 0
     while index < len(words):
-        if _ENV_ASSIGNMENT.match(words[index]):
+        word = words[index]
+        program = word.rsplit("/", 1)[-1]
+        index += 1
+        if _ENV_ASSIGNMENT.match(word):
+            continue
+        value_options = _COMMAND_WRAPPERS.get(program)
+        if value_options is None:
+            return program, words[index:]
+        while index < len(words) and words[index].startswith("-"):
+            option = words[index]
             index += 1
-        elif words[index] in _COMMAND_WRAPPERS:
-            index += 1
-            while index < len(words) and words[index].startswith("-"):
+            if option == "--":
+                break
+            if program == "command" and option in _COMMAND_LOOKUPS:
+                return "", []
+            if program == "env" and option in _ENV_SPLIT_OPTIONS and index < len(words):
+                words = [*words[:index], *_split_words(words[index]), *words[index + 1 :]]
+            elif option in value_options:
                 index += 1
-        else:
-            return words[index].rsplit("/", 1)[-1], words[index + 1 :]
     return "", []
+
+
+def _split_words(text: str) -> list[str]:
+    """``text`` split like a shell splits arguments; none when it does not parse."""
+    try:
+        return shlex.split(text)
+    except ValueError:
+        return []
 
 
 def _shell_script(args: list[str]) -> str:
