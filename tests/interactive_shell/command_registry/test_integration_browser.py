@@ -96,10 +96,10 @@ def test_headless_dispatch_on_inherited_tty_keeps_table(
         lambda: [{"service": "github", "status": "ok"}],
     )
     output = io.StringIO()
-    assert dispatch_slash(
-        command, Session(), Console(file=output, force_terminal=True), is_tty=False
-    )
+    session = Session()
+    assert dispatch_slash(command, session, Console(file=output, force_terminal=True), is_tty=False)
     assert "github" in output.getvalue()
+    assert "github" in session.history[-1]["response_text"]
 
 
 @pytest.mark.parametrize("command", ["/integrations list", "/mcp list"])

@@ -18,7 +18,10 @@ from surfaces.interactive_shell.command_registry.suggestions import (
 )
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.telemetry.console_capture import capture_console_segment
-from surfaces.interactive_shell.telemetry.turn_outcome import format_terminal_turn_outcome
+from surfaces.interactive_shell.telemetry.turn_outcome import (
+    format_terminal_turn_outcome,
+    slash_command_is_interactive_wizard,
+)
 from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
 from tools.interactive_shell.shared import allow_tool
 
@@ -47,6 +50,7 @@ def _attach_slash_analytics(
     command_line: str,
     *,
     captured_output: str,
+    is_tty: bool | None,
 ) -> None:
     latest = _latest_slash_record(session)
     ok = _latest_record_ok(session, "slash")
@@ -59,7 +63,10 @@ def _attach_slash_analytics(
             ok=ok,
             captured_output=captured_output,
             outcome_hint=pop_turn_outcome_hint(session),
-            include_captured_on_summary_only=session_terminal(session) is None,
+            include_captured_on_summary_only=(
+                session_terminal(session) is None
+                or (is_tty is False and slash_command_is_interactive_wizard(command_line))
+            ),
         )
     session.complete_latest_record(
         "slash",
@@ -201,6 +208,7 @@ def dispatch_slash(
                     session,
                     stripped,
                     captured_output=get_captured(),
+                    is_tty=is_tty,
                 )
 
 
