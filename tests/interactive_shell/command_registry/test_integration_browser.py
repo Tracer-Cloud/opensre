@@ -124,6 +124,35 @@ def test_redirected_output_keeps_table_in_turn_result(
     assert "github" in session.history[-1]["response_text"]
 
 
+def test_browser_setup_preserves_wizard_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.agent_harness.spi.session_state import set_turn_outcome_hint
+    from surfaces.interactive_shell.ui.integration_browser import IntegrationSelection
+
+    expected = "opensre integrations setup github: interactive wizard cancelled"
+
+    def setup(session: Session, _console: Console, _args: list[str]) -> bool:
+        set_turn_outcome_hint(session, expected)
+        return True
+
+    monkeypatch.setattr(commands, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(commands.repl_data, "configured_integration_names", lambda: ["github"])
+    monkeypatch.setattr(
+        commands,
+        "browse_integrations",
+        lambda *_args, **_kwargs: IntegrationSelection("setup", "github"),
+    )
+    monkeypatch.setattr(commands, "_run_integrations_setup", setup)
+    session = Session()
+
+    assert dispatch_slash(
+        "/integrations list",
+        session,
+        Console(file=io.StringIO(), force_terminal=True),
+        is_tty=True,
+    )
+    assert session.history[-1]["response_text"] == expected
+
+
 @pytest.mark.parametrize("command", ["/integrations list", "/mcp list"])
 @pytest.mark.parametrize("confirmation, removed", [("no", False), ("cancel", False), ("yes", True)])
 def test_browser_removal_keeps_confirmation(

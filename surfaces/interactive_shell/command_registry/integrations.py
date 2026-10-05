@@ -319,6 +319,22 @@ def _use_browser(console: Console) -> bool:
 def _browse_connections(session: Session, console: Console, *, mcp: bool) -> bool:
     from integrations.registry import SUPPORTED_VERIFY_SERVICES, resolve_management_service
 
+    command = "/mcp list" if mcp else "/integrations list"
+
+    def set_browser_outcome() -> None:
+        latest_slash = next(
+            (entry for entry in reversed(session.history) if entry.get("type") == "slash"),
+            {},
+        )
+        set_turn_outcome_hint(
+            session,
+            format_terminal_turn_outcome(
+                command,
+                kind="slash",
+                ok=bool(latest_slash.get("ok", True)),
+            ),
+        )
+
     names = repl_data.configured_integration_names()
     if mcp:
         names = [name for name in names if name in MCP_INTEGRATION_SERVICES]
@@ -326,31 +342,20 @@ def _browse_connections(session: Session, console: Console, *, mcp: bool) -> boo
         IntegrationEntry(name, resolve_management_service(name) in SUPPORTED_VERIFY_SERVICES)
         for name in names
     ]
+    set_browser_outcome()
     selected = browse_integrations(entries, mcp=mcp)
     if selected is None:
-        result = True
-    elif selected.action == "verify":
+        return True
+    if selected.action == "verify":
         result = _run_verify(session, console, selected.service)
-    elif selected.action == "remove":
+        set_browser_outcome()
+        return result
+    if selected.action == "remove":
         result = _handle_remove(session, console, selected.service)
-    else:
-        args = ["setup", selected.service] if selected.service else ["setup"]
-        result = _run_integrations_setup(session, console, args)
-
-    command = "/mcp list" if mcp else "/integrations list"
-    latest_slash = next(
-        (entry for entry in reversed(session.history) if entry.get("type") == "slash"),
-        {},
-    )
-    set_turn_outcome_hint(
-        session,
-        format_terminal_turn_outcome(
-            command,
-            kind="slash",
-            ok=bool(latest_slash.get("ok", True)),
-        ),
-    )
-    return result
+        set_browser_outcome()
+        return result
+    args = ["setup", selected.service] if selected.service else ["setup"]
+    return _run_integrations_setup(session, console, args)
 
 
 def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
