@@ -14,15 +14,21 @@ from surfaces.interactive_shell.ui.integration_browser import IntegrationEntry
 
 
 @pytest.mark.parametrize(
-    "command, expected", [("/integrations", ["github", "grafana"]), ("/mcp", ["github"])]
+    "command, expected",
+    [
+        ("/integrations list", ["github", "grafana"]),
+        ("/integrations ls", ["github", "grafana"]),
+        ("/mcp list", ["github"]),
+        ("/mcp ls", ["github"]),
+    ],
 )
-def test_bare_command_lists_configured_items_without_verifying(
+def test_list_subcommand_browses_configured_items_without_verifying(
     monkeypatch: pytest.MonkeyPatch, command: str, expected: list[str]
 ) -> None:
     seen: list[list[str]] = []
 
     def browse(entries: list[IntegrationEntry], *, mcp: bool) -> None:
-        assert mcp == (command == "/mcp")
+        assert mcp == command.startswith("/mcp ")
         seen.append([entry.service for entry in entries])
 
     def no_probe(*_args: object) -> None:
@@ -41,7 +47,26 @@ def test_bare_command_lists_configured_items_without_verifying(
     assert seen == [expected]
 
 
-@pytest.mark.parametrize("command", ["/integrations", "/mcp"])
+@pytest.mark.parametrize(
+    "command, usage", [("/integrations", "/integrations list"), ("/mcp", "/mcp list")]
+)
+def test_bare_command_shows_usage_instead_of_opening_browser(
+    monkeypatch: pytest.MonkeyPatch, command: str, usage: str
+) -> None:
+    def no_browser(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("The connection browser belongs to the explicit list subcommand")
+
+    monkeypatch.setattr(commands, "browse_integrations", no_browser)
+    monkeypatch.setattr(commands, "repl_tty_interactive", lambda: True)
+    output = io.StringIO()
+    session = Session()
+
+    assert dispatch_slash(command, session, Console(file=output, force_terminal=True), is_tty=True)
+    assert usage in output.getvalue()
+    assert session.history[-1]["ok"] is False
+
+
+@pytest.mark.parametrize("command", ["/integrations list", "/mcp list"])
 def test_headless_dispatch_on_inherited_tty_keeps_table(
     monkeypatch: pytest.MonkeyPatch, command: str
 ) -> None:
@@ -63,7 +88,7 @@ def test_headless_dispatch_on_inherited_tty_keeps_table(
     assert "github" in output.getvalue()
 
 
-@pytest.mark.parametrize("command", ["/integrations", "/mcp"])
+@pytest.mark.parametrize("command", ["/integrations list", "/mcp list"])
 @pytest.mark.parametrize("confirmation, removed", [("no", False), ("cancel", False), ("yes", True)])
 def test_browser_removal_keeps_confirmation(
     monkeypatch: pytest.MonkeyPatch, command: str, confirmation: str, removed: bool

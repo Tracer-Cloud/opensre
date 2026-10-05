@@ -23,21 +23,24 @@ from surfaces.interactive_shell.session import Session
 from tests.shared.harness_turn_driver import run_harness_turn
 
 
-def test_turn_needs_exclusive_stdin_for_bare_integration_menu(
+def test_turn_needs_exclusive_stdin_for_integration_list_browser(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)
     session = Session()
 
-    assert loop_input_policy.turn_needs_exclusive_stdin("/integrations", session) is True
-    assert loop_input_policy.turn_needs_exclusive_stdin("/mcp", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/integrations", session) is False
+    assert loop_input_policy.turn_needs_exclusive_stdin("/mcp", session) is False
+    assert loop_input_policy.turn_needs_exclusive_stdin("/integrations list", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/integrations ls", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/mcp list", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/mcp ls", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/memory", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/model", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/fleet", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/theme", session) is True
 
-    assert loop_input_policy.turn_needs_exclusive_stdin("/integrations list", session) is False
     # Typed bare `/model set` opens the provider picker.
     assert loop_input_policy.turn_needs_exclusive_stdin("/model set", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops active", session) is True

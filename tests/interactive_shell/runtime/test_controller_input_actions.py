@@ -163,8 +163,8 @@ def test_decide_submits_text_matching_the_placeholder() -> None:
 
 
 def test_decide_submits_normal_turn_with_exclusive_stdin_wait() -> None:
-    assert _decide(InputSubmitted("/integrations"), needs_exclusive_stdin=True) == SubmitTurn(
-        text="/integrations",
+    assert _decide(InputSubmitted("/integrations list"), needs_exclusive_stdin=True) == SubmitTurn(
+        text="/integrations list",
         wait_until_idle=True,
     )
 

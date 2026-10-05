@@ -538,11 +538,12 @@ class TestIntegrationsCommand:
         assert "datadog" in output
         assert "github" in output
 
-    def test_list_is_default_when_no_subcommand(self, monkeypatch: object) -> None:
+    def test_bare_command_shows_list_usage(self, monkeypatch: object) -> None:
         self._patch(monkeypatch)
         console, buf = _capture()
         dispatch_slash("/integrations", Session(), console)
-        assert "datadog" in buf.getvalue()
+        assert "usage:" in buf.getvalue()
+        assert "/integrations list" in buf.getvalue()
 
     def test_verify_reports_issues(self, monkeypatch: object) -> None:
         self._patch(monkeypatch)
@@ -741,11 +742,12 @@ class TestMcpCommand:
         dispatch_slash("/mcp list", Session(), console)
         assert "github" in buf.getvalue()
 
-    def test_list_is_default_when_no_subcommand(self, monkeypatch: object) -> None:
+    def test_bare_command_shows_list_usage(self, monkeypatch: object) -> None:
         self._patch(monkeypatch)
         console, buf = _capture()
         dispatch_slash("/mcp", Session(), console)
-        assert "github" in buf.getvalue()
+        assert "usage:" in buf.getvalue()
+        assert "/mcp list" in buf.getvalue()
 
     def test_connect_delegates_to_cli(self, monkeypatch: object) -> None:
         from surfaces.interactive_shell.command_registry import integrations as m

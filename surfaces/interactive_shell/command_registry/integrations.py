@@ -259,12 +259,16 @@ def _run_integrations_setup(session: Session, console: Console, args: list[str])
 
 
 def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bool:
-    if not args and _use_browser(console):
-        return _browse_connections(session, console, mcp=False)
+    if not args:
+        repl_print(console, f"[{DIM}]usage:[/] /integrations list")
+        session.mark_latest(ok=False, kind="slash")
+        return True
 
-    sub = (args[0].lower() if args else "list").strip()
+    sub = args[0].lower().strip()
 
     if sub in ("list", "ls"):
+        if _use_browser(console):
+            return _browse_connections(session, console, mcp=False)
         prepare_repl_output_line()
         with console.status(f"[{DIM}]Verifying integrations…[/]", spinner="dots"):
             results = repl_data.load_verified_integrations()
@@ -333,12 +337,16 @@ def _browse_connections(session: Session, console: Console, *, mcp: bool) -> boo
 
 
 def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
-    if not args and _use_browser(console):
-        return _browse_connections(session, console, mcp=True)
+    if not args:
+        repl_print(console, f"[{DIM}]usage:[/] /mcp list")
+        session.mark_latest(ok=False, kind="slash")
+        return True
 
-    sub = (args[0].lower() if args else "list").strip()
+    sub = args[0].lower().strip()
 
     if sub in ("list", "ls"):
+        if _use_browser(console):
+            return _browse_connections(session, console, mcp=True)
         render_mcp_table(console, repl_data.load_verified_integrations())
         return True
 
@@ -385,7 +393,6 @@ COMMANDS: list[SlashCommand] = [
         "Manage integrations.",
         _cmd_integrations,
         usage=(
-            "/integrations",
             "/integrations setup <service>",
             "/integrations list",
             "/integrations verify",
@@ -394,7 +401,7 @@ COMMANDS: list[SlashCommand] = [
             "/integrations remove <service>",
         ),
         notes=(
-            "In a TTY, bare /integrations browses configured integrations without probing them.",
+            "In a TTY, /integrations list browses configured integrations without probing them.",
         ),
         first_arg_completions=_INTEGRATIONS_FIRST_ARGS,
     ),
@@ -402,8 +409,8 @@ COMMANDS: list[SlashCommand] = [
         "/mcp",
         "Manage MCP servers.",
         _cmd_mcp,
-        usage=("/mcp", "/mcp list", "/mcp connect", "/mcp disconnect"),
-        notes=("In a TTY, bare /mcp browses configured MCP servers without probing them.",),
+        usage=("/mcp list", "/mcp connect", "/mcp disconnect"),
+        notes=("In a TTY, /mcp list browses configured MCP servers without probing them.",),
         first_arg_completions=_MCP_FIRST_ARGS,
     ),
 ]

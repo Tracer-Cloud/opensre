@@ -187,13 +187,13 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 
 ### Commands with interactive menus (TTY)
 
-Bare invocation opens a picker or submenu:
+These invocations open a picker or submenu:
 
 | Command | Menu behavior |
 | --- | --- |
 | `/help` | Browse categories; Enter runs the selected command |
-| `/integrations` | Browse configured integrations; verify, setup, or remove the selected item |
-| `/mcp` | Browse configured MCP servers; verify, connect, or disconnect |
+| `/integrations list` | Browse configured integrations; verify, setup, or remove the selected item |
+| `/mcp list` | Browse configured MCP servers; verify, connect, or disconnect |
 | `/model` | show / set / restore / toolcall |
 | `/theme` | Pick a colour theme from the installed list |
 | `/choose` | Reopen the selection menu the agent queued |
@@ -566,7 +566,6 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 <Accordion title="/integrations">
 
 ```text
-/integrations
 /integrations list
 /integrations verify
 /integrations verify datadog
@@ -578,7 +577,7 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 
 | Subcommand | Behavior |
 | --- | --- |
-| `list` (default) | Verify all configured integrations and render status table |
+| `list` | Browse configured integrations in a TTY; verify and render a status table otherwise |
 | `verify` | Verify all integrations; prints summary line |
 | `verify &lt;service&gt;` | Verify one integration (same as `/verify &lt;service&gt;`) |
 | `show &lt;service&gt;` | Verify one service and print key/value config (masked secrets) |
@@ -587,9 +586,9 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 
 You can ask “Can you configure Telegram/GitHub/PostHog for me?” to start the same guided flow. It explains each human action before requesting input, discovers IDs where possible, and lets you retry failed checks. Enter credentials only in the setup flow's hidden input.
 
-Bare `/integrations` opens a configured-integration browser in a TTY. Use **↑↓** to browse, **Enter** to verify the selected connection when supported, **a** to add, **s** to run setup for the selected integration, and **r** to remove it with confirmation. **Esc** closes without changes. Choosing an action returns to the conversation when it finishes.
+`/integrations list` opens a configured-integration browser in a TTY. Use **↑↓** to browse, **Enter** to verify the selected connection when supported, **a** to add, **s** to run setup for the selected integration, and **r** to remove it with confirmation. **Esc** closes without changes. Choosing an action returns to the conversation when it finishes.
 
-Browsing does not run health checks: **Not checked** means configuration exists, not that the connection is healthy. Connections without a verifier show **Configured** and do not offer Enter-to-verify; setup and removal remain available. Use `/integrations list` for the verified table.
+Browsing does not run health checks: **Not checked** means configuration exists, not that the connection is healthy. Connections without a verifier show **Configured** and do not offer Enter-to-verify; setup and removal remain available. Use `/integrations verify` to run health checks.
 
 </Accordion>
 
@@ -597,7 +596,7 @@ Browsing does not run health checks: **Not checked** means configuration exists,
 
 MCP-capable integrations only (subset of the full integration catalog).
 
-Bare `/mcp` opens the server browser without running health checks. Use **↑↓** to browse, **Enter** to verify, **a** to connect, **s** to reconfigure the selected server, **r** to disconnect with confirmation, and **Esc** to close. Explicit subcommands remain available below.
+`/mcp list` opens the server browser without running health checks. Use **↑↓** to browse, **Enter** to verify, **a** to connect, **s** to reconfigure the selected server, **r** to disconnect with confirmation, and **Esc** to close. Explicit subcommands remain available below.
 
 ```text
 /mcp list
@@ -607,7 +606,7 @@ Bare `/mcp` opens the server browser without running health checks. Use **↑↓
 
 | Subcommand | Maps to |
 | --- | --- |
-| `list` | Table of MCP servers from verified integrations |
+| `list` | Browse configured MCP servers in a TTY; render a verified table otherwise |
 | `connect &lt;server&gt;` | `opensre integrations setup &lt;server&gt;` |
 | `disconnect &lt;server&gt;` | `opensre integrations remove &lt;server&gt;` |
 
