@@ -53,8 +53,8 @@ def _ctx(
         ("/integrations", ["setup", "datadog"], "/integrations setup datadog"),
         ("/mcp", ["connect", "github"], "/mcp connect github"),
         ("/mcp", ["disconnect", "github"], "/mcp disconnect github"),
-        ("/integrations", [], "/integrations"),
-        ("/mcp", [], "/mcp"),
+        ("/integrations", ["list"], "/integrations list"),
+        ("/mcp", ["list"], "/mcp list"),
         ("/loops", ["show"], "/loops show"),
         ("/tools", [], "/tools"),
     ],
@@ -143,12 +143,12 @@ def test_interactive_picker_runs_inline_when_exclusive_stdin_active() -> None:
     session.terminal.exclusive_stdin_active = True
 
     handled = slash_tool.execute_slash_tool(
-        {"command": "/integrations", "args": []},
+        {"command": "/integrations", "args": ["list"]},
         ctx,
     )
 
     assert handled is True
-    assert ports.dispatched == ["/integrations"]
+    assert ports.dispatched == ["/integrations list"]
     assert session.terminal.pending_prompt_default is None
     assert session.terminal.pending_prompt_autosubmit is False
     # Exclusive stdin means the user typed this slash literally, so the prompt
@@ -244,12 +244,12 @@ def test_interactive_picker_runs_inline_when_not_a_tty() -> None:
 def test_duplicate_slash_invoke_alone_may_run_twice() -> None:
     """Slash tool itself does not suppress repeats; the action-turn guard does."""
     ctx, _buf, _session, ports = _ctx(ports=FakeSlashPorts(tty=True))
-    args = {"command": "/integrations", "args": ["list"]}
+    args = {"command": "/health", "args": []}
 
     assert slash_tool.execute_slash_tool(args, ctx) is True
     assert slash_tool.execute_slash_tool(args, ctx) is True
 
-    assert ports.dispatched == ["/integrations list", "/integrations list"]
+    assert ports.dispatched == ["/health", "/health"]
 
 
 def test_interleaved_slash_invoke_runs_each_time() -> None:
@@ -258,17 +258,17 @@ def test_interleaved_slash_invoke_runs_each_time() -> None:
 
     assert slash_tool.execute_slash_tool({"command": "/health", "args": []}, ctx) is True
     assert (
-        slash_tool.execute_slash_tool({"command": "/integrations", "args": ["list"]}, ctx) is True
+        slash_tool.execute_slash_tool({"command": "/integrations", "args": ["show", "github"]}, ctx)
+        is True
     )
     assert slash_tool.execute_slash_tool({"command": "/health", "args": []}, ctx) is True
 
-    assert ports.dispatched == ["/health", "/integrations list", "/health"]
+    assert ports.dispatched == ["/health", "/integrations show github", "/health"]
 
 
 @pytest.mark.parametrize(
     ("command", "args"),
     [
-        ("/integrations", ["list"]),
         ("/integrations", ["show", "github"]),
         ("/loops", ["show", "abc123"]),
         ("/health", []),

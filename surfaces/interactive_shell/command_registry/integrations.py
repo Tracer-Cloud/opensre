@@ -266,7 +266,7 @@ def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bo
 
     sub = args[0].lower().strip()
 
-    if sub in ("list", "ls"):
+    if sub == "list":
         if _use_browser(console):
             return _browse_connections(session, console, mcp=False)
         prepare_repl_output_line()
@@ -344,7 +344,7 @@ def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
 
     sub = args[0].lower().strip()
 
-    if sub in ("list", "ls"):
+    if sub == "list":
         if _use_browser(console):
             return _browse_connections(session, console, mcp=True)
         render_mcp_table(console, repl_data.load_verified_integrations())
@@ -369,14 +369,12 @@ _INTEGRATIONS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("setup", "guided setup for an integration"),
     ("remove", "remove a configured integration"),
     ("list", "list all configured integrations"),
-    ("ls", "alias for list"),
     ("verify", "run health checks on all integrations"),
     ("show", "show details for a single integration"),
 )
 
 _MCP_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("list", "list connected MCP servers"),
-    ("ls", "alias for list"),
     ("connect", "add an MCP server via opensre integrations setup"),
     ("disconnect", "remove an MCP server"),
 )

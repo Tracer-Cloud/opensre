@@ -53,8 +53,6 @@ def test_resolve_literal_slash_typo_unknown_root() -> None:
         "/resume redis",
         "/help model",
         "/help /model",
-        "/integrations ls",
-        "/mcp ls",
     ],
 )
 def test_resolve_literal_slash_typo_allows_free_form_first_args(command_line: str) -> None:

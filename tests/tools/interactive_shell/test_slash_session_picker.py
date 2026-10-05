@@ -22,9 +22,7 @@ def test_agent_selected_sessions_picker_is_deferred_to_exclusive_stdin_turn() ->
     ("command", "args"),
     [
         ("/integrations", ["list"]),
-        ("/integrations", ["ls"]),
         ("/mcp", ["list"]),
-        ("/mcp", ["ls"]),
     ],
 )
 def test_agent_selected_connection_list_browser_is_deferred(command: str, args: list[str]) -> None:

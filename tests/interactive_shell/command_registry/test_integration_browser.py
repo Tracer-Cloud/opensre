@@ -6,6 +6,7 @@ import io
 
 import pytest
 from rich.console import Console
+from rich.text import Text
 
 from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.command_registry import integrations as commands
@@ -17,9 +18,7 @@ from surfaces.interactive_shell.ui.integration_browser import IntegrationEntry
     "command, expected",
     [
         ("/integrations list", ["github", "grafana"]),
-        ("/integrations ls", ["github", "grafana"]),
         ("/mcp list", ["github"]),
-        ("/mcp ls", ["github"]),
     ],
 )
 def test_list_subcommand_browses_configured_items_without_verifying(
@@ -62,7 +61,22 @@ def test_bare_command_shows_usage_instead_of_opening_browser(
     session = Session()
 
     assert dispatch_slash(command, session, Console(file=output, force_terminal=True), is_tty=True)
-    assert usage in output.getvalue()
+    assert usage in Text.from_ansi(output.getvalue()).plain
+    assert session.history[-1]["ok"] is False
+
+
+@pytest.mark.parametrize("command", ["/integrations ls", "/mcp ls"])
+def test_ls_alias_is_not_supported(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
+    def no_browser(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("Only the explicit list subcommand opens the connection browser")
+
+    monkeypatch.setattr(commands, "browse_integrations", no_browser)
+    monkeypatch.setattr(commands, "repl_tty_interactive", lambda: True)
+    output = io.StringIO()
+    session = Session()
+
+    assert dispatch_slash(command, session, Console(file=output, force_terminal=True), is_tty=True)
+    assert "unknown subcommand" in Text.from_ansi(output.getvalue()).plain
     assert session.history[-1]["ok"] is False
 
 
