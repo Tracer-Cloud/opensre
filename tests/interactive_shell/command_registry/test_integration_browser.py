@@ -41,9 +41,11 @@ def test_list_subcommand_browses_configured_items_without_verifying(
     monkeypatch.setattr(commands.repl_data, "load_verified_integrations", no_probe)
     monkeypatch.setattr(commands, "repl_choose_one", no_probe)
     console = Console(file=io.StringIO(), force_terminal=True)
+    session = Session()
 
-    assert dispatch_slash(command, Session(), console, is_tty=True)
+    assert dispatch_slash(command, session, console, is_tty=True)
     assert seen == [expected]
+    assert session.history[-1]["response_text"] == f"slash {command} (succeeded)"
 
 
 @pytest.mark.parametrize(
@@ -99,6 +101,26 @@ def test_headless_dispatch_on_inherited_tty_keeps_table(
     session = Session()
     assert dispatch_slash(command, session, Console(file=output, force_terminal=True), is_tty=False)
     assert "github" in output.getvalue()
+    assert "github" in session.history[-1]["response_text"]
+
+
+@pytest.mark.parametrize("command", ["/integrations list", "/mcp list"])
+def test_redirected_output_keeps_table_in_turn_result(
+    monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    def no_browser(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("Redirected output must not open the connection browser")
+
+    monkeypatch.setattr(commands, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(commands, "browse_integrations", no_browser)
+    monkeypatch.setattr(
+        commands.repl_data,
+        "load_verified_integrations",
+        lambda: [{"service": "github", "status": "ok"}],
+    )
+    session = Session()
+
+    assert dispatch_slash(command, session, Console(file=io.StringIO()), is_tty=None)
     assert "github" in session.history[-1]["response_text"]
 
 

@@ -26,6 +26,12 @@ _INTERACTIVE_WIZARD_SLASH_PATHS: frozenset[str] = frozenset(
         "/auth logout",
     }
 )
+_CONDITIONAL_BROWSER_SLASH_PATHS: frozenset[str] = frozenset(
+    {
+        "/integrations list",
+        "/mcp list",
+    }
+)
 
 # Slash commands where console capture is noisy or redundant.
 _SUMMARY_ONLY_SLASH_ROOTS: frozenset[str] = frozenset(
@@ -69,6 +75,10 @@ def slash_command_is_summary_only(command_line: str) -> bool:
     root = parts[0].lower()
     if root in _SUMMARY_ONLY_SLASH_ROOTS:
         return True
+    if len(parts) >= 2:
+        path = f"{root} {parts[1].lower()}"
+        if path in _CONDITIONAL_BROWSER_SLASH_PATHS:
+            return False
     return slash_command_is_interactive_wizard(command_line)
 
 

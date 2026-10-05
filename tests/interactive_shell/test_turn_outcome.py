@@ -43,6 +43,8 @@ def test_slash_command_is_summary_only() -> None:
     assert slash_command_is_summary_only("/help")
     assert slash_command_is_summary_only("/help /model")
     assert slash_command_is_summary_only("/onboard")
+    assert not slash_command_is_summary_only("/integrations list")
+    assert not slash_command_is_summary_only("/mcp list")
     assert not slash_command_is_summary_only("/status")
 
 

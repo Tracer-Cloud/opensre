@@ -7,7 +7,7 @@ from rich.markup import escape
 
 import surfaces.interactive_shell.command_registry.repl_data as repl_data
 from config.interactive_override import interactive_override_env
-from core.agent_harness.spi.session_state import session_terminal
+from core.agent_harness.spi.session_state import session_terminal, set_turn_outcome_hint
 from surfaces.interactive_shell.command_registry.cli_parity import (
     publish_headless_slash_response,
     run_cli_command,
@@ -15,6 +15,7 @@ from surfaces.interactive_shell.command_registry.cli_parity import (
 from surfaces.interactive_shell.command_registry.setup_resume import resume_after_setup
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
+from surfaces.interactive_shell.telemetry.turn_outcome import format_terminal_turn_outcome
 from surfaces.interactive_shell.ui import (
     BOLD_BRAND,
     DIM,
@@ -327,13 +328,29 @@ def _browse_connections(session: Session, console: Console, *, mcp: bool) -> boo
     ]
     selected = browse_integrations(entries, mcp=mcp)
     if selected is None:
-        return True
-    if selected.action == "verify":
-        return _run_verify(session, console, selected.service)
-    if selected.action == "remove":
-        return _handle_remove(session, console, selected.service)
-    args = ["setup", selected.service] if selected.service else ["setup"]
-    return _run_integrations_setup(session, console, args)
+        result = True
+    elif selected.action == "verify":
+        result = _run_verify(session, console, selected.service)
+    elif selected.action == "remove":
+        result = _handle_remove(session, console, selected.service)
+    else:
+        args = ["setup", selected.service] if selected.service else ["setup"]
+        result = _run_integrations_setup(session, console, args)
+
+    command = "/mcp list" if mcp else "/integrations list"
+    latest_slash = next(
+        (entry for entry in reversed(session.history) if entry.get("type") == "slash"),
+        {},
+    )
+    set_turn_outcome_hint(
+        session,
+        format_terminal_turn_outcome(
+            command,
+            kind="slash",
+            ok=bool(latest_slash.get("ok", True)),
+        ),
+    )
+    return result
 
 
 def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
