@@ -388,9 +388,9 @@ def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
 
 
 _INTEGRATIONS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("list", "list all configured integrations"),
     ("setup", "guided setup for an integration"),
     ("remove", "remove a configured integration"),
-    ("list", "list all configured integrations"),
     ("verify", "run health checks on all integrations"),
     ("show", "show details for a single integration"),
 )
@@ -413,8 +413,8 @@ COMMANDS: list[SlashCommand] = [
         "Manage integrations.",
         _cmd_integrations,
         usage=(
-            "/integrations setup <service>",
             "/integrations list",
+            "/integrations setup <service>",
             "/integrations verify",
             "/integrations verify <service>",
             "/integrations show <service>",

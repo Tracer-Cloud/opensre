@@ -376,7 +376,7 @@ def test_shell_completer_hides_inline_picker_autocomplete_in_tty(
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
-        ("/integrations ", ["setup", "remove", "list", "verify", "show"]),
+        ("/integrations ", ["list", "setup", "remove", "verify", "show"]),
         ("/mcp ", ["list", "connect", "disconnect"]),
     ],
 )

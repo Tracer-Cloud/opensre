@@ -160,14 +160,14 @@ async def test_tab_on_slash_command_opens_its_subcommand_tray() -> None:
         assert prompt.default_buffer.text == "/integrations "
         assert state is not None
         assert [completion.text for completion in state.completions] == [
+            "list",
             "setup",
             "remove",
-            "list",
             "verify",
             "show",
         ]
         lines = _screen_lines(prompt)
-        assert any("› setup" in line for line in lines)
+        assert any("› list" in line for line in lines)
         assert any("Subcommands · /integrations" in line for line in lines)
 
 
@@ -196,6 +196,7 @@ async def test_enter_submits_the_selected_subcommand_from_the_continuation_tray(
     async with _running_prompt() as prompt:
         _complete(prompt, "/")
         _press(prompt, Keys.Tab)
+        _press(prompt, Keys.Down)
         _press(prompt, Keys.Down)
 
         _press(prompt, Keys.ControlM)
