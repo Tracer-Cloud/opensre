@@ -224,6 +224,31 @@ class TestDispatchSlash:
         assert picker_called == [True]
         assert buf.getvalue() == ""
 
+    @pytest.mark.parametrize(
+        ("selected", "expected"),
+        [
+            ("/integrations", "/integrations list"),
+            ("/mcp", "/mcp list"),
+        ],
+    )
+    def test_tty_help_runs_explicit_connection_list_command(
+        self, monkeypatch: pytest.MonkeyPatch, selected: str, expected: str
+    ) -> None:
+        import surfaces.interactive_shell.command_registry as command_registry
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        dispatched: list[str] = []
+        monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(help_cmd, "choose_help_command", lambda _sections: selected)
+        monkeypatch.setattr(
+            command_registry,
+            "dispatch_slash",
+            lambda command, _session, _console: dispatched.append(command) or True,
+        )
+
+        assert dispatch_slash("/help", Session(), _capture()[0]) is True
+        assert dispatched == [expected]
+
     def test_bare_slash_previews_all_commands(self) -> None:
         session = Session()
         console, buf = _capture()
