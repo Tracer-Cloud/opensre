@@ -373,6 +373,28 @@ def test_shell_completer_hides_inline_picker_autocomplete_in_tty(
     assert completions == []
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("/integrations ", ["setup", "remove", "list", "verify", "show"]),
+        ("/mcp ", ["list", "connect", "disconnect"]),
+    ],
+)
+def test_shell_completer_shows_required_connection_subcommands_in_tty(
+    monkeypatch: pytest.MonkeyPatch, command: str, expected: list[str]
+) -> None:
+    monkeypatch.setattr(prompt_completion, "repl_tty_interactive", lambda: True)
+
+    completions = list(
+        ShellCompleter().get_completions(
+            Document(command),
+            CompleteEvent(text_inserted=True),
+        )
+    )
+
+    assert [completion.text for completion in completions] == expected
+
+
 def test_shell_completer_keeps_inline_picker_autocomplete_when_arg_started(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

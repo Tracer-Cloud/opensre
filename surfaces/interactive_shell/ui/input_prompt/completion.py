@@ -165,8 +165,6 @@ class ShellCompleter(Completer):
 _INLINE_PICKER_COMMANDS: frozenset[str] = frozenset(
     {
         "/history",
-        "/integrations",
-        "/mcp",
         "/model",
         "/trust",
         "/verbose",

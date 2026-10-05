@@ -163,7 +163,6 @@ async def test_tab_on_slash_command_opens_its_subcommand_tray() -> None:
             "setup",
             "remove",
             "list",
-            "ls",
             "verify",
             "show",
         ]
