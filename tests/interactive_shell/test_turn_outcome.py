@@ -14,6 +14,10 @@ from surfaces.interactive_shell.telemetry.turn_outcome import (
 def test_slash_command_is_interactive_wizard() -> None:
     assert slash_command_is_interactive_wizard("/onboard")
     assert slash_command_is_interactive_wizard("/integrations setup")
+    assert slash_command_is_interactive_wizard("/integrations list")
+    assert slash_command_is_interactive_wizard("/mcp list")
+    assert not slash_command_is_interactive_wizard("/integrations")
+    assert not slash_command_is_interactive_wizard("/mcp")
     assert not slash_command_is_interactive_wizard("/health")
     assert not slash_command_is_interactive_wizard("/status")
 
@@ -39,6 +43,8 @@ def test_slash_command_is_summary_only() -> None:
     assert slash_command_is_summary_only("/help")
     assert slash_command_is_summary_only("/help /model")
     assert slash_command_is_summary_only("/onboard")
+    assert not slash_command_is_summary_only("/integrations list")
+    assert not slash_command_is_summary_only("/mcp list")
     assert not slash_command_is_summary_only("/status")
 
 
@@ -61,6 +67,17 @@ def test_format_terminal_turn_outcome_includes_captured_output() -> None:
     )
     assert text.startswith("slash /status (succeeded)")
     assert "datadog" in text
+
+
+def test_bare_connection_command_returns_list_usage_to_the_agent() -> None:
+    text = format_terminal_turn_outcome(
+        "/integrations",
+        kind="slash",
+        ok=False,
+        captured_output="usage: /integrations list",
+    )
+
+    assert text == "slash /integrations (failed)\nusage: /integrations list"
 
 
 def test_truncate_analytics_text() -> None:

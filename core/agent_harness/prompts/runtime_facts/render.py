@@ -1,4 +1,4 @@
-"""Runtime-facts section of the assistant environment block.
+"""Runtime facts rendered as quotable prompt text.
 
 Renders the ``capture_runtime_facts()`` dict into verbatim-quotable prompt
 strings plus anti-hallucination guidance. Phrased for quote-verbatim recall:
@@ -8,11 +8,13 @@ when the marker was empty.
 
 Live facts (``now_iso``, uptime, disk, memory) are rendered separately from
 session-static facts so the system/env prefix can stay cache-stable across
-turns.
+turns. Uptime, disk and memory describe this host, so a caller can render the
+clock alone.
 """
 
 from __future__ import annotations
 
+import datetime as _dt
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -42,14 +44,29 @@ _STATIC_GUIDANCE = (
     "needs these facts, read `inputs['opensre_runtime']` instead."
 )
 
+# Shared by both live renderings; each names only the facts it renders.
+_LIVE_ANSWER_RULES = (
+    ", answer from the strings above — do NOT guess a date/time from your "
+    "training data. Resolve relative ranges in the request, such as 'the last "
+    "hour', 'today' or 'since yesterday', from the current time above. "
+    f"Never run {_BLOCKED_COMMANDS}. Do NOT invent field names, values, or "
+    "numbers not present above."
+)
+
+_CLOCK_GUIDANCE = (
+    ". When the user asks for the current date, time, day of the week, or "
+    "timezone offset embedded in the timestamp"
+    f"{_LIVE_ANSWER_RULES}"
+)
+
 _LIVE_GUIDANCE = (
     ". When the user asks for the current date, time, day of the week, "
-    "timezone offset embedded in the timestamp, uptime, disk or memory usage, "
-    "answer from the strings above — do NOT guess a date/time from your "
-    "training data. Never run "
-    f"{_BLOCKED_COMMANDS}. Do NOT invent field names, values, or numbers not "
-    "present above."
+    "timezone offset embedded in the timestamp, uptime, disk or memory usage"
+    f"{_LIVE_ANSWER_RULES}"
 )
+
+#: Day names by ``date.weekday()``; ``strftime("%A")`` would follow the locale.
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 FactProducer = Callable[[Mapping[str, Any]], str | None]
 
@@ -85,6 +102,18 @@ def _version_line(runtime: Mapping[str, Any]) -> str | None:
     build = _clean_str(runtime, "opensre_build")
     display = f"{version} ({build})" if build else version
     return f"OpenSRE version is {display}"
+
+
+def _now_line(runtime: Mapping[str, Any]) -> str | None:
+    """The time as of this request, with its UTC offset and weekday; models misjudge the day."""
+    now = _clean_str(runtime, "now_iso")
+    if not now:
+        return None
+    try:
+        stamp = f"{now} ({_WEEKDAYS[_dt.datetime.fromisoformat(now).weekday()]})"
+    except ValueError:
+        stamp = now
+    return f"current time is {stamp}, as of this request"
 
 
 def _uptime_line(runtime: Mapping[str, Any]) -> str | None:
@@ -215,8 +244,10 @@ _STATIC_FACT_PRODUCERS: tuple[FactProducer, ...] = (
     _str_fact("scratchpad_dir", "scratchpad directory is {}"),
 )
 
+_CLOCK_FACT_PRODUCERS: tuple[FactProducer, ...] = (_now_line,)
+
 _LIVE_FACT_PRODUCERS: tuple[FactProducer, ...] = (
-    _str_fact("now_iso", "current time is {}"),
+    *_CLOCK_FACT_PRODUCERS,
     _uptime_line,
     _pair_line("disk_used_percent", "disk_free_gb", "root disk is {}% used with {} GB free"),
     _pair_line(
@@ -256,19 +287,16 @@ def render_static_runtime_facts(runtime: Mapping[str, Any]) -> str:
     return _render_facts(_STATIC_FACT_PRODUCERS, runtime, guidance=_STATIC_GUIDANCE)
 
 
-def render_live_runtime_facts(runtime: Mapping[str, Any]) -> str:
-    """Per-turn live facts (time/uptime/disk/memory) for a late prompt block."""
-    return _render_facts(_LIVE_FACT_PRODUCERS, runtime, guidance=_LIVE_GUIDANCE)
+def render_live_runtime_facts(runtime: Mapping[str, Any], *, host_measurements: bool) -> str:
+    """Per-turn live facts for a late prompt block: the clock, and this host's readings if allowed."""
+    if host_measurements:
+        return _render_facts(_LIVE_FACT_PRODUCERS, runtime, guidance=_LIVE_GUIDANCE)
+    return _render_facts(_CLOCK_FACT_PRODUCERS, runtime, guidance=_CLOCK_GUIDANCE)
 
 
-def render_runtime_facts(runtime: Mapping[str, Any]) -> str:
-    """Compatibility: static facts only (live facts use :func:`render_live_runtime_facts`)."""
-    return render_static_runtime_facts(runtime)
-
-
-def build_live_runtime_facts_block(runtime: Mapping[str, Any]) -> str:
+def build_live_runtime_facts_block(runtime: Mapping[str, Any], *, host_measurements: bool) -> str:
     """Late prompt section carrying live facts, or ``""`` when none."""
-    body = render_live_runtime_facts(runtime)
+    body = render_live_runtime_facts(runtime, host_measurements=host_measurements)
     if not body:
         return ""
     return f"--- Live runtime facts ---\n{body}\n\n"
@@ -277,6 +305,5 @@ def build_live_runtime_facts_block(runtime: Mapping[str, Any]) -> str:
 __all__ = [
     "build_live_runtime_facts_block",
     "render_live_runtime_facts",
-    "render_runtime_facts",
     "render_static_runtime_facts",
 ]

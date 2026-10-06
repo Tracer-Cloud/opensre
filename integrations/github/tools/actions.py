@@ -323,6 +323,11 @@ _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 _GITHUB_RUNS_PER_PAGE_MAX = 100
 
 
+def _mcp_page_arguments(*, page: int, per_page: int) -> dict[str, int]:
+    """Pagination for ``actions_list``, which reads ``page``/``perPage`` and ignores ``per_page``."""
+    return {"page": page, "perPage": max(1, min(per_page, _GITHUB_RUNS_PER_PAGE_MAX))}
+
+
 def _run_started_at(run: dict[str, Any]) -> datetime | None:
     """Parse a run's ``created_at``; ``None`` when absent or unparsable."""
     return _parse_run_time(run.get("created_at"))
@@ -419,6 +424,55 @@ def _fetch_workflow_run_page(
     return payload, runs
 
 
+def _run_created_key(run: dict[str, Any]) -> tuple[float, int]:
+    """Sort key for a listing, higher is newer: ``created_at``, then run id."""
+    created = _run_started_at(run)
+    return (created.timestamp() if created is not None else 0.0, _as_int(run.get("id")))
+
+
+def _newest_first(runs: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    """The ``limit`` newest runs, newest first, whatever order the listing came in."""
+    return sorted(runs, key=_run_created_key, reverse=True)[: max(1, limit)]
+
+
+def _rest_run_listing(
+    owner: str,
+    repo: str,
+    *,
+    filters: dict[str, str],
+    per_page: int,
+    github_token: str | None,
+) -> list[dict[str, Any]] | None:
+    """Page 1 of the REST listing under ``filters``, or ``None`` when REST is unavailable."""
+    try:
+        payload = GitHubRestClient(github_token).request(
+            "GET",
+            f"repos/{owner}/{repo}/actions/runs",
+            params={**filters, "per_page": max(1, min(per_page, _GITHUB_RUNS_PER_PAGE_MAX))},
+        )
+    except (GitHubApiError, OSError):
+        # OSError covers the socket timeout urlopen raises directly.
+        return None
+    raw_runs = payload.get("workflow_runs") if isinstance(payload, dict) else None
+    if not isinstance(raw_runs, list):
+        return None
+    return [_normalize_run(item) for item in raw_runs if isinstance(item, dict)]
+
+
+def _page_mismatch(
+    runs: list[dict[str, Any]], newest_on_github: list[dict[str, Any]]
+) -> tuple[list[Any], list[Any]]:
+    """Ids GitHub's newest page has that the MCP page lacks, and ids only the MCP page has.
+
+    Either list being non-empty means the MCP page is not GitHub's newest page.
+    """
+    on_page = {str(run.get("id")) for run in runs}
+    on_github = {str(run.get("id")) for run in newest_on_github}
+    missing = [run.get("id") for run in newest_on_github if str(run.get("id")) not in on_page]
+    extra = [run.get("id") for run in runs if str(run.get("id")) not in on_github]
+    return missing, extra
+
+
 def _commit_run_history_rest(
     owner: str, repo: str, *, head_sha: str, github_token: str | None
 ) -> CommitRunHistory | None:
@@ -488,7 +542,7 @@ def _commit_run_history(
     last_payload: dict[str, Any] = {"available": False}
 
     for page in range(1, _HEAD_SHA_MAX_PAGES + 1):
-        arguments = {**base_arguments, "page": page, "per_page": page_limit}
+        arguments = {**base_arguments, **_mcp_page_arguments(page=page, per_page=page_limit)}
         payload, page_runs = _fetch_workflow_run_page(config, arguments)
         if not payload.get("available"):
             if pages_fetched == 0:
@@ -658,7 +712,10 @@ def _map_list_github_actions_workflow_runs(
     source="github",
     description=(
         "List GitHub Actions workflow runs for a repository, each with status, "
-        "conclusion and run_attempt. With head_sha it is the run history of one "
+        "conclusion and run_attempt. Without head_sha the rows are the newest "
+        "per_page runs, newest first; a listing_note says the GitHub MCP page was "
+        "stale and the rows came from the REST API, and listing_verified false means "
+        "they could not be checked against it. With head_sha it is the run history of one "
         "commit: a run_attempt above 1 means that workflow was re-run on that "
         "commit, and its conclusion says whether the re-run passed. The result "
         "also carries workflow_verdicts, one line per workflow with "
@@ -761,7 +818,7 @@ def list_github_actions_workflow_runs(
         "method": "list_workflow_runs",
         "owner": owner,
         "repo": repo,
-        "per_page": per_page,
+        **_mcp_page_arguments(page=1, per_page=per_page),
     }
     if workflow_runs_filter:
         arguments["workflow_runs_filter"] = workflow_runs_filter
@@ -776,9 +833,31 @@ def list_github_actions_workflow_runs(
         payload = history.payload
         workflow_runs = history.runs
     else:
-        result = call_github_mcp_tool(config, "actions_list", arguments)
-        payload = normalize_github_tool_result(result)
-        workflow_runs = [_normalize_run(item) for item in _extract_list(result, "workflow_runs")]
+        payload, workflow_runs = _fetch_workflow_run_page(config, arguments)
+        if payload.get("available"):
+            workflow_runs = _newest_first(workflow_runs, limit=per_page)
+            payload["listing_source"] = "mcp"
+            payload["listing_verified"] = False
+            rest_runs = _rest_run_listing(
+                owner,
+                repo,
+                filters=workflow_runs_filter,
+                per_page=per_page,
+                github_token=github_token,
+            )
+            if rest_runs is not None:
+                rest_runs = _newest_first(rest_runs, limit=per_page)
+                payload["listing_verified"] = True
+                missing, extra = _page_mismatch(workflow_runs, rest_runs)
+                if missing or extra:
+                    workflow_runs = rest_runs
+                    payload["listing_source"] = "rest"
+                    payload["listing_note"] = (
+                        f"The GitHub MCP page did not match GitHub's {len(rest_runs)} newest "
+                        f"runs ({len(missing)} missing, {len(extra)} not listed by GitHub); "
+                        "these rows are the newest page "
+                        "from the GitHub REST API instead."
+                    )
 
     if not isinstance(payload, dict):
         return {"error": "Unexpected payload format returned from GitHub MCP tool"}
@@ -902,7 +981,7 @@ def list_github_actions_active_runs(
             "method": "list_workflow_runs",
             "owner": owner,
             "repo": repo,
-            "per_page": per_page,
+            **_mcp_page_arguments(page=1, per_page=per_page),
             "workflow_runs_filter": {"status": "queued"},
         },
     )
@@ -915,7 +994,7 @@ def list_github_actions_active_runs(
             "method": "list_workflow_runs",
             "owner": owner,
             "repo": repo,
-            "per_page": per_page,
+            **_mcp_page_arguments(page=1, per_page=per_page),
             "workflow_runs_filter": {"status": "in_progress"},
         },
     )

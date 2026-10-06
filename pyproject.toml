@@ -18,7 +18,7 @@ dependencies = [
     "anthropic>=0.77.1",
     "mcp>=1.28.1",
     "openai>=2.0.0",
-    "litellm>=1.90.0,<1.101.0",
+    "litellm>=1.90.0,<1.104.0",
     # Data validation
     "pydantic>=2.12.5,<3",
     "pydantic-settings>=2.12.0,<3",
@@ -161,7 +161,12 @@ include = [
 ]
 
 [tool.setuptools.package-data]
-"core.agent_harness.prompts" = ["opensre_system_prompt.md", "skills/**/*.md", "skills/**/scripts/*.py"]
+"core.agent_harness.prompts" = [
+  "opensre_system_prompt.md",
+  "loop_templates/*.md",
+  "skills/**/*.md",
+  "skills/**/scripts/*.py",
+]
 "integrations" = ["**/SKILL.md", "yandex_cloud/api_index.json"]
 "tools" = ["**/SKILL.md"]
 

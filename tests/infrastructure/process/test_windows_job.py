@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import threading
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -30,6 +31,50 @@ def test_environment_block_preserves_values_and_rejects_injected_entries() -> No
         windows_job._environment_block({"SAFE": "value\0INJECTED=yes"})
     with pytest.raises(ValueError, match="environment"):
         windows_job._environment_block({"BAD=NAME": "value"})
+
+
+@_NATIVE_WINDOWS
+def test_stdin_fallback_descriptor_closes_when_duplication_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import msvcrt
+
+    descriptor = 123
+    closed: list[int] = []
+    api = WindowsAPI()
+
+    def _missing_stdin(_kind: int) -> int:
+        return 0
+
+    def _open_null(_path: str, _flags: int) -> int:
+        return descriptor
+
+    def _descriptor_handle(value: int) -> int:
+        assert value == descriptor
+        return 456
+
+    def _close(value: int) -> None:
+        closed.append(value)
+
+    def _fail_duplicate(*_args: Any) -> int:
+        raise OSError("simulated duplication failure")
+
+    monkeypatch.setattr(api.dll, "GetStdHandle", _missing_stdin)
+    monkeypatch.setattr(api.dll, "DuplicateHandle", _fail_duplicate)
+    monkeypatch.setattr(windows_job.os, "open", _open_null)
+    monkeypatch.setattr(windows_job.os, "close", _close)
+    monkeypatch.setattr(msvcrt, "get_osfhandle", _descriptor_handle)
+
+    duplicate_error: OSError | None = None
+    try:
+        with ExitStack() as stack:
+            windows_job._stdin_handle(stack, api)
+    except OSError as error:
+        duplicate_error = error
+
+    assert duplicate_error is not None, "expected handle duplication to fail"
+    assert str(duplicate_error) == "simulated duplication failure"
+    assert closed == [descriptor]
 
 
 def test_command_nul_is_rejected_before_any_windows_launch() -> None:
@@ -286,24 +331,27 @@ def test_exception_closes_job_before_closing_captured_streams(
         raise OSError("simulated job termination failure")
 
     try:
-        with (
-            pytest.raises(RuntimeError, match="consumer failure"),
-            windows_job.spawn_windows_job(command, environment=os.environ) as process,
-        ):
-            processes.append(psutil.Process(process.pid))
-            processes.append(psutil.Process(int(process.stdout.readline())))
+        consumer_error: RuntimeError | None = None
+        try:
+            with windows_job.spawn_windows_job(command, environment=os.environ) as process:
+                processes.append(psutil.Process(process.pid))
+                processes.append(psutil.Process(int(process.stdout.readline())))
 
-            def _read_to_eof() -> None:
-                reader_started.set()
-                process.stdout.read()
+                def _read_to_eof() -> None:
+                    reader_started.set()
+                    process.stdout.read()
 
-            reader = threading.Thread(target=_read_to_eof, daemon=True)
-            reader.start()
-            assert reader_started.wait(timeout=2)
-            monkeypatch.setattr(
-                windows_job.WindowsJobProcess, "terminate_tree", _failed_termination
-            )
-            raise RuntimeError("consumer failure")
+                reader = threading.Thread(target=_read_to_eof, daemon=True)
+                reader.start()
+                assert reader_started.wait(timeout=2)
+                monkeypatch.setattr(
+                    windows_job.WindowsJobProcess, "terminate_tree", _failed_termination
+                )
+                raise RuntimeError("consumer failure")
+        except RuntimeError as error:
+            consumer_error = error
+        assert consumer_error is not None, "expected consumer failure to propagate"
+        assert str(consumer_error) == "consumer failure"
         for descendant in processes:
             descendant.wait(timeout=5)
             assert not descendant.is_running()

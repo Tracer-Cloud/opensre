@@ -471,30 +471,31 @@ def test_goal_reviewer_accepts_after_a_failed_curl_is_retried_successfully() -> 
 
 
 def test_goal_reviewer_accepts_a_classified_blocked_repair() -> None:
-    """A repair tool that already classified the target may end and report it."""
-    from core.agent_harness.turns.work_outcome import ExecutedToolOutcome
+    """A repair tool that already classified the target may end and report it.
 
+    Its block also reports an error, so the outcome tap keeps only that text;
+    the ``work_outcome`` survives only in the loop's raw result.
+    """
     llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
-    outcomes = [
-        ExecutedToolOutcome(
-            name="fix_github_pr_ci",
-            arguments={},
-            is_error=False,
-            details={
-                "success": False,
-                "error_kind": "repo_mismatch",
-                "work_outcome": {"status": "blocked", "error_kind": "repo_mismatch"},
-            },
-        )
-    ]
+    details = {
+        "success": False,
+        "error": "The pull request's repository does not match this checkout.",
+        "error_kind": "repo_mismatch",
+        "work_outcome": {"status": "blocked", "error_kind": "repo_mismatch"},
+    }
+    call = ToolCall(id="call-repair", name="fix_github_pr_ci", input={})
+    result = ToolExecutionResult(content=details["error"], details=details, is_error=True)
+    outcome = ExecutedToolOutcome(
+        name="fix_github_pr_ci", arguments={}, is_error=True, details=result.compat_payload()
+    )
     goal = build_goal_reviewer(
         llm,
         "repair the failing checks",
         executed_tool_names=["fix_github_pr_ci"],
-        executed_outcomes=outcomes,
+        executed_outcomes=[outcome],
     )
     assert goal.verify is not None
-    assert goal.verify(_obs()) is True
+    assert goal.verify(_obs(tool_results=[(call, result)])) is True
     assert llm.invokes == 0
 
 

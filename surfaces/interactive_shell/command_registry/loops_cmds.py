@@ -10,6 +10,7 @@ from rich.markup import escape
 from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
 from core.agent_harness.tools import capability_values
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_TIME_PARAM
+from infrastructure.scheduling.scheduler.types import DeliveryStatus, TaskRun
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -443,13 +444,31 @@ def _cmd_loops_service(session: Session, console: Console, args: list[str]) -> b
 def _run_loop_task_ids_once(console: Console, task_ids: tuple[str, ...]) -> bool:
     from surfaces.interactive_shell.runtime.loop_scheduler import run_loop_now
 
-    failures = [task_id for task_id in task_ids if not run_loop_now(task_id)]
+    failures: list[str] = []
+    partial_deliveries: list[str] = []
+    for task_id in task_ids:
+        runs: list[TaskRun] = []
+        if not run_loop_now(task_id, on_result=runs.append):
+            failures.append(task_id)
+            continue
+        if runs and runs[-1].delivery_status is DeliveryStatus.PARTIAL:
+            failed_destinations = ", ".join(
+                target.label() for target in runs[-1].targets if not target.ok
+            )
+            partial_deliveries.append(f"{task_id}: {failed_destinations}")
 
     if failures:
         console.print(
             f"[{ERROR}]run-now failed for:[/] {escape(', '.join(failures))} "
             f"[{DIM}](check /cron logs)[/]"
         )
+    if partial_deliveries:
+        console.print(
+            f"[{WARNING}]run-now partial delivery:[/] "
+            f"{escape('; '.join(partial_deliveries))} "
+            f"[{DIM}](check /loops show <loop-id>)[/]"
+        )
+    if failures or partial_deliveries:
         return False
     console.print(f"[{HIGHLIGHT}]run-now complete.[/]")
     return True

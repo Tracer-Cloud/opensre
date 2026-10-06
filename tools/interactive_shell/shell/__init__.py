@@ -7,7 +7,8 @@ Groups the shell command-line concern next to the agent-facing
 * ``policy`` resolves the (alpha-mode, allow-everything) shell execution plan,
 * ``execution`` runs the subprocess and returns a structured result,
 * ``runner`` wires normalization, policy, and execution together and records
-  the turn.
+  the turn,
+* ``effects`` recognises commands that only read, so a call can report it.
 
 Import submodules explicitly (for example ``tools.interactive_shell.shell.runner``)
 rather than relying on this package initializer, to keep interactive-shell

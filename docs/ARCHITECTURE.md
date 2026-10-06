@@ -89,8 +89,8 @@ layers below it.
   tables, prompts, banner, health and feedback rendering), `llm_setup/`,
   `error_handling/` — or a lower layer. `surfaces/entrypoint.py` is the
   `opensre` console script: it hands the CLI a `CliHost` (how to open the
-  shell, how to run the gateway attached) and hands the shell the CLI's Click
-  group for grounding, so composition happens in one place above both. Slack is not a surface: its inbound
+  shell, how to run the gateway attached), so composition happens in one place
+  above both. Slack is not a surface: its inbound
   transport lives in `gateway/transports/slack`, outbound delivery in
   `integrations/slack`.
 - **`gateway/`** — the standalone messaging gateway for inbound chat platforms

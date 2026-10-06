@@ -29,6 +29,26 @@ def test_warmup_builds_the_client_and_reads_credits_even_after_a_failure(
     assert ran == ["client", "credits"]
 
 
+def test_warmup_prewarms_the_clients_request_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    ran: list[str] = []
+
+    class _Client:
+        def prewarm(self) -> None:
+            ran.append("prewarm")
+
+    def build() -> _Client:
+        ran.append("client")
+        return _Client()
+
+    monkeypatch.setattr(harness_runtime, "default_llm_factory", build)
+    monkeypatch.setattr(hosted_credits, "prefetch_hosted_credits", lambda: ran.append("credits"))
+
+    thread = warm_first_turn()
+    thread.join(timeout=5)
+
+    assert ran == ["client", "prewarm", "credits"]
+
+
 def test_shutdown_waits_a_bounded_time_for_a_stuck_warmup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

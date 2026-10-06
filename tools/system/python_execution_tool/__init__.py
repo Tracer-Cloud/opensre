@@ -34,14 +34,16 @@ class PythonExecutionTool(BaseTool):
     display_name = "Python execution"
     source = "knowledge"
     evidence_mapper = map_execute_python_code
-    side_effect_level = SideEffectLevel.READ_ONLY
+    side_effect_level = SideEffectLevel.EXTERNAL
+    requires_approval = True
+    approval_reason = "Runs model-written Python on this machine."
     surfaces = (ToolSurface.CHAT,)
     injected_params = ["github_token"]
     description = (
         "Execute generated Python code in a restricted subprocess, capture stdout, stderr, "
-        "exceptions, and timeout state, and return the result to the agent. Network access is "
-        "blocked by default; opt in only for approved API-backed analysis. Subprocess spawning "
-        "is always blocked. Runtime facts "
+        "exceptions, and timeout state, and return the result to the agent. The user approves "
+        "every call. Network access is blocked by default; opt in only for approved API-backed "
+        "analysis. Launching other programs is blocked. Runtime facts "
         f"({_RUNTIME_FACT_KEYS}) are already stated in the conversation's environment block — "
         "answer them from there directly and never call this tool just to re-read them; code "
         "already running for another reason can reuse them via `inputs['opensre_runtime']` "

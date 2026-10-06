@@ -7,7 +7,7 @@ getting_started: Run one repair in OpenSRE Cloud
 demo_order: 3
 metadata:
   owner: Vincent
-  last_changed_by: Jan
+  last_changed_by: Vincent
   last_changed_at: 2026-10-04
   usecases:
     - For interactive-shell users running a GitHub CI repair on their hosted gateway.
@@ -15,7 +15,7 @@ metadata:
     - A reachable hosted gateway with a GitHub integration and an authenticated coding agent.
     - An interactive shell and a signed-in OpenSRE account in the organization for hosted gateway access.
     - GitHub write access to the selected PR; demo mode also needs private-repository creation.
-  version: "2.11"
+  version: "2.13"
 ---
 
 # Delegate a remote CI repair
@@ -49,7 +49,7 @@ Use `update_plan` to create the live plan from the workflow headings below. Mark
 
 **Remote Gateway agent:**
 
-- [ ] Call `run_ci_repair_demo` once for the approved owner and repo. Do not walk `scheduling-github-ci-repairs` step by step.
+- [ ] Call `run_ci_repair_demo` once for the approved owner and repo, without loading a skill.
 - [ ] Respond with that tool's outcome as Markdown. Nothing on GitHub is deleted; the demo repository is kept.
 
 **Inside the interactive shell:**
@@ -106,7 +106,7 @@ Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings
 
 ### Delegate the repair
 
-- Send one `ask_hosted_gateway` prompt: "This is a new request. Call `run_ci_repair_demo` once with owner <owner> and repo <repo>. Do not walk `scheduling-github-ci-repairs` step by step. Do not reuse task IDs or repositories from earlier in this conversation. Delete nothing on GitHub. Do not ask the user. If the seed or schedule fails, return that failure and do not schedule another loop."
+- Send one `ask_hosted_gateway` prompt: "This is a new request. Call `run_ci_repair_demo` once with owner <owner> and repo <repo>. Do not load a skill; this prompt is the whole task. Do not reuse task IDs or repositories from earlier in this conversation. Delete nothing on GitHub. Ask the user only about a blocked step. If the seed or schedule fails, return that failure and do not schedule another loop."
 - Pass the target as `facts` (`demo`, `owner`, `repo`, `pr_number`). Keep the prompt ID.
 
 
@@ -128,6 +128,10 @@ Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings
 ### Show the outcome in a report
 
 - Report the target PR, task ID, repair outcome, available CI evidence links, and retained resources. State pending, blocked, or failed outcomes plainly and concisely. 
+
+- Write each GitHub link as its full URL, such as `Pull request: https://github.com/<owner>/<repo>/pull/<n>`, not as Markdown link text: the terminal shows link text without its URL. Give the pull request, failing commit, failed run, fix commit, and passing run URLs that the delegated record has.
+
+- Add a `Root cause analysis` section from the delegated record: what failed, the root cause, the fix (with its diff when the record shows one), and the verification. State only what the record says; if it has no root cause analysis, say the gateway did not report one.
 
 - The task's gateway ownership establishes independence from the shell; claim a tested disconnect only if the shell was actually disconnected during execution.
 

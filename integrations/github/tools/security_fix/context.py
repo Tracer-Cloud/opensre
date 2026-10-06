@@ -17,11 +17,13 @@ from typing import Any, Literal
 from infrastructure.safety.masking import MaskingPolicy, MaskingRules
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.repo_scope import detect_git_remote_repo_scope
+from integrations.github.tools.security_fix.branches import fix_branch_stem, open_fix_branches
 from integrations.github.tools.security_fix.errors import (
     ERR_ALERT_NOT_FOUND,
     ERR_GITHUB_UNAVAILABLE,
     ERR_INVALID_INPUT,
     ERR_NO_AUTOFIXABLE_FINDING,
+    ERR_NO_ELIGIBLE_ALERT,
     ERR_UNSUPPORTED_ALERT_TYPE,
     GitHubSecurityFixError,
 )
@@ -73,6 +75,8 @@ _EXACT_LOOKUP_TYPES: tuple[ResolvedAlertType, ...] = (
     "code_quality",
     "secret_scanning",
 )
+#: Finding families ``quality_only`` may fix; Dependabot alerts are always vulnerabilities.
+_QUALITY_TYPES: tuple[ResolvedAlertType, ...] = ("code_scanning", "code_quality")
 _SEVERITY_RANK = {
     "critical": 5,
     "high": 4,
@@ -188,8 +192,13 @@ def gather_security_alert_context(
     workspace: str | None = None,
     github_token: str | None = None,
     prefer_builtin_local_fix: bool = False,
+    quality_only: bool = False,
 ) -> SecurityAlertContext:
-    """Resolve a GitHub alert and build the coding-agent task."""
+    """Resolve a GitHub alert and build the coding-agent task.
+
+    ``quality_only`` never resolves a finding that carries a security severity, so an
+    unattended fixer cannot publish a vulnerability fix in a public pull request.
+    """
     parsed_url = parse_security_alert_url(alert_url)
     normalized_type = parsed_url.alert_type if parsed_url else normalize_alert_type(alert_type)
     number = parsed_url.number if parsed_url and parsed_url.number is not None else alert_number
@@ -211,6 +220,11 @@ def gather_security_alert_context(
             ERR_UNSUPPORTED_ALERT_TYPE,
             "Secret-scanning alerts are not auto-fixed: revoke or rotate the secret first, then remove it from history with a repo-specific plan.",
         )
+    if quality_only and normalized_type == "dependabot":
+        raise GitHubSecurityFixError(
+            ERR_INVALID_INPUT,
+            "quality_only covers code-scanning and code-quality findings; Dependabot alerts are security findings.",
+        )
 
     client = GitHubRestClient(github_token)
     if number is not None:
@@ -220,21 +234,15 @@ def gather_security_alert_context(
             repo=repo_name,
             alert_type=normalized_type,
             number=int(number),
-        )
-    if normalized_type != "auto":
-        return _select_first_alert_context(
-            client,
-            owner=repo_owner,
-            repo=repo_name,
-            alert_type=normalized_type,
-            prefer_builtin_local_fix=prefer_builtin_local_fix,
+            quality_only=quality_only,
         )
     return _select_first_alert_context(
         client,
         owner=repo_owner,
         repo=repo_name,
-        alert_type="auto",
+        alert_type=normalized_type,
         prefer_builtin_local_fix=prefer_builtin_local_fix,
+        quality_only=quality_only,
     )
 
 
@@ -245,9 +253,12 @@ def _get_exact_alert_context(
     repo: str,
     alert_type: AlertType,
     number: int,
+    quality_only: bool,
 ) -> SecurityAlertContext:
     if alert_type == "auto":
-        selected_types: tuple[ResolvedAlertType, ...] = _EXACT_LOOKUP_TYPES
+        selected_types: tuple[ResolvedAlertType, ...] = (
+            _QUALITY_TYPES if quality_only else _EXACT_LOOKUP_TYPES
+        )
     else:
         selected_types = (alert_type,)
     not_found: list[str] = []
@@ -268,6 +279,11 @@ def _get_exact_alert_context(
                 not_found.append(candidate)
                 continue
             raise _github_error(exc) from exc
+        if quality_only and _is_security_finding(candidate, alert):
+            raise GitHubSecurityFixError(
+                ERR_UNSUPPORTED_ALERT_TYPE,
+                f"Finding #{number} in {owner}/{repo} has a security severity; quality_only never fixes it in a pull request.",
+            )
         return _context_from_alert(
             client, owner=owner, repo=repo, alert_type=candidate, alert=alert
         )
@@ -285,10 +301,13 @@ def _select_first_alert_context(
     repo: str,
     alert_type: AlertType,
     prefer_builtin_local_fix: bool,
+    quality_only: bool,
 ) -> SecurityAlertContext:
-    selected_types = _SUPPORTED_AUTO_TYPES if alert_type == "auto" else (alert_type,)
+    auto_types = _QUALITY_TYPES if quality_only else _SUPPORTED_AUTO_TYPES
+    selected_types = auto_types if alert_type == "auto" else (alert_type,)
     candidates: list[tuple[int, bool, ResolvedAlertType, dict[str, Any]]] = []
     errors: list[str] = []
+    unavailable: list[str] = []
     for candidate in selected_types:
         if candidate == "secret_scanning":
             raise GitHubSecurityFixError(
@@ -302,7 +321,9 @@ def _select_first_alert_context(
                 api_version=_api_version(candidate),
             )
         except GitHubApiError as exc:
-            errors.append(f"{candidate}: {exc}")
+            (unavailable if _finding_type_unavailable(exc) else errors).append(
+                f"{candidate}: {exc}"
+            )
             continue
         candidates.extend(
             (
@@ -314,16 +335,45 @@ def _select_first_alert_context(
             for alert in alerts
             if isinstance(alert.get("number"), int)
         )
+    # A type that failed to load may hold the top-ranked finding: never choose among the rest.
+    if errors:
+        raise GitHubSecurityFixError(
+            ERR_GITHUB_UNAVAILABLE,
+            f"Could not read every GitHub finding type in {owner}/{repo}; no PR was created. Errors: {'; '.join(errors)}",
+        )
     if not candidates:
-        if errors:
-            detail = f" Errors: {'; '.join(errors)}"
+        if len(unavailable) == len(selected_types):
             raise GitHubSecurityFixError(
                 ERR_GITHUB_UNAVAILABLE,
-                f"Could not read GitHub security or quality findings in {owner}/{repo}; no PR was created.{detail}",
+                f"Could not read GitHub security or quality findings in {owner}/{repo}; no PR was created. Errors: {'; '.join(unavailable)}",
             )
+        families = (
+            "code-scanning or Code Quality"
+            if quality_only
+            else "Dependabot, code-scanning, or Code Quality"
+        )
         raise GitHubSecurityFixError(
-            ERR_ALERT_NOT_FOUND,
-            f"No open Dependabot, code-scanning, or Code Quality findings found in {owner}/{repo}; no PR was created.",
+            ERR_NO_ELIGIBLE_ALERT,
+            f"No open {families} findings found in {owner}/{repo}; no PR was created.",
+        )
+    found = len(candidates)
+    if quality_only:
+        candidates = [item for item in candidates if not _is_security_finding(item[2], item[3])]
+    if candidates:
+        in_flight = _open_fix_branches(client, owner=owner, repo=repo)
+        candidates = [
+            item
+            for item in candidates
+            if not any(
+                branch.startswith(fix_branch_stem(item[2], item[3]["number"]))
+                for branch in in_flight
+            )
+        ]
+    if not candidates:
+        excluded = " or are security findings that quality_only leaves out" if quality_only else ""
+        raise GitHubSecurityFixError(
+            ERR_NO_ELIGIBLE_ALERT,
+            f"All {found} open findings in {owner}/{repo} already have an open OpenSRE fix PR{excluded}; no PR was created.",
         )
     if prefer_builtin_local_fix:
         local_candidates = [item for item in candidates if item[1]]
@@ -611,6 +661,44 @@ def _alert_severity_rank(alert_type: ResolvedAlertType, alert: dict[str, Any]) -
     if isinstance(rule, dict):
         severity = str(rule.get("security_severity_level") or rule.get("severity") or "")
     return _SEVERITY_RANK.get(severity.lower(), 0)
+
+
+def _finding_type_unavailable(exc: GitHubApiError) -> bool:
+    """Whether a listing failure means the type is off for this repository or token.
+
+    Such a type holds nothing this token could fix. A rate limit or any other
+    failure is transient and may be hiding the highest-ranked finding.
+    """
+    if exc.status_code not in (HTTPStatus.FORBIDDEN, HTTPStatus.NOT_FOUND):
+        return False
+    return exc.rate_limit_remaining != "0" and "rate limit" not in exc.message.lower()
+
+
+def _is_security_finding(alert_type: ResolvedAlertType, alert: dict[str, Any]) -> bool:
+    """Whether a finding is a vulnerability rather than a code-quality issue."""
+    if alert_type == "code_quality":
+        return False
+    if alert_type != "code_scanning":
+        return True
+    rule = _dict_value(alert.get("rule"))
+    tags = rule.get("tags")
+    return bool(rule.get("security_severity_level")) or (
+        isinstance(tags, list) and "security" in tags
+    )
+
+
+def _open_fix_branches(client: GitHubRestClient, *, owner: str, repo: str) -> frozenset[str]:
+    """Branches of open OpenSRE fix PRs; an unreadable PR list fails closed."""
+    try:
+        pulls = client.paginate(
+            f"/repos/{owner}/{repo}/pulls", params={"state": "open", "per_page": 100}
+        )
+    except GitHubApiError as exc:
+        raise GitHubSecurityFixError(
+            ERR_GITHUB_UNAVAILABLE,
+            f"Could not list open pull requests in {owner}/{repo} to skip findings already being fixed; no PR was created. {exc}",
+        ) from exc
+    return open_fix_branches(pulls, repository=f"{owner}/{repo}")
 
 
 def _has_builtin_local_fix(alert_type: ResolvedAlertType, alert: dict[str, Any]) -> bool:

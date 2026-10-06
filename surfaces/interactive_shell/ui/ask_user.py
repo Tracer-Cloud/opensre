@@ -25,6 +25,7 @@ from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.ui.prompt_visibility import clear_live_prompt_paint
 from surfaces.shared.terminal.components.choice_menu import (
+    begin_inline_menu_output,
     erase_menu_lines,
     hide_terminal_cursor,
     leave_inline_menu,
@@ -266,6 +267,7 @@ def repl_ask_user(
     items = tuple(questions)
     if len(items) < 2 or not repl_tty_interactive():
         return None
+    begin_inline_menu_output()
     clear_live_prompt_paint()
     drain_stale_cpr_bytes()
     hide_terminal_cursor()

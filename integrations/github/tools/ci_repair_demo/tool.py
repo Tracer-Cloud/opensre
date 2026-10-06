@@ -105,8 +105,9 @@ def _failed(exc: Exception, *, tool_name: str, method: str, action: str) -> dict
         "with. Commits a passing main (calculator.py adding, its unit test, and Demo "
         "calculator CI) and one commit on demo/failing-ci that makes add subtract, opens "
         "that pull request, and returns after the pull-request Actions run has failed. An "
-        "existing open demo pull request is reused. Does not list the organization or "
-        "search code."
+        "existing open demo pull request is reused; one whose repair already landed first "
+        "gets one new commit that makes add subtract again (rearmed). Does not list the "
+        "organization or search code."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -192,9 +193,14 @@ def finish_ci_repair_demo(
     fix_commit: str = "",
     passing_run_id: int = 0,
     github_token: str | None = None,
+    analysis: str = "",
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Save evidence, remove the demo schedule, and leave the repository in place."""
+    """Save evidence, remove the demo schedule, and leave the repository in place.
+
+    ``analysis`` (links and root cause, from ``run_ci_repair_demo``) is not in the
+    model's schema; it is appended to the evidence file.
+    """
     del github_token
     try:
         full_name = "/".join(split_repo(repo))
@@ -216,6 +222,7 @@ def finish_ci_repair_demo(
         failed_run_id=failed_run_id,
         fix_commit=fix_commit,
         passing_run_id=passing_run_id,
+        analysis=analysis,
     )
     try:
         remove_task(loop_id.strip())

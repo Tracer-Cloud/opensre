@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -11,12 +12,21 @@ from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from infrastructure.analytics.capture import capture_workspace_scanned
+from tools.system.workspace_git_scan.prefetch import (
+    ScanRequest,
+    claim_scan_prefetch,
+    start_scan_prefetch,
+)
 from tools.system.workspace_git_scan.render import render_snapshot, snapshot_text
 from tools.system.workspace_git_scan.scan import ScanStop, WorkspaceSnapshot, scan_workspace
-from tools.system.workspace_git_scan.skips import default_skip_paths
+from tools.system.workspace_git_scan.skips import MACOS_PRIVACY_PROTECTED, default_skip_paths
 
 _DEFAULT_DAYS = 30
 _MAX_DAYS = 365
+# What asked for a recorded scan.
+_VIA_TOOL = "scan_tool"
+_VIA_LOCAL_INSIGHTS = "local_insights"
 
 _INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -71,6 +81,100 @@ def _working_directory() -> Path | None:
         return None
 
 
+def _scan_request(root: str | None, days: int | None) -> ScanRequest:
+    """The scan's arguments for a call with ``root`` and ``days``, prefetched or not."""
+    window = min(max(int(days or _DEFAULT_DAYS), 1), _MAX_DAYS)
+    # Skip paths match the walk's spelling of each folder, so home, the root and
+    # the working directory are all compared in their resolved form.
+    home = Path.home().resolve()
+    return ScanRequest(
+        root=Path(root).expanduser().resolve() if root else home,
+        days=window,
+        skip_paths=default_skip_paths(home, cwd=_working_directory(), platform=sys.platform),
+    )
+
+
+def _scan(
+    request: ScanRequest,
+    *,
+    should_stop: Callable[[], bool] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+) -> WorkspaceSnapshot:
+    return scan_workspace(
+        request.root,
+        days=request.days,
+        skip_paths=request.skip_paths,
+        should_stop=should_stop,
+        on_progress=on_progress,
+    )
+
+
+def _prefetch_scan(request: ScanRequest, should_stop: Callable[[], bool]) -> WorkspaceSnapshot:
+    return _scan(request, should_stop=should_stop)
+
+
+def prefetch_workspace_scan(root: str | None = None, days: int | None = None) -> bool:
+    """Start the scan a ``scan_local_git_workspace(root, days)`` call would run, in the background.
+
+    That call, made within a couple of minutes, takes the result instead of
+    scanning again. Never renders or reports. False when nothing was started.
+    """
+    request = _scan_request(root, days)
+    if not request.root.is_dir():
+        return False
+    return start_scan_prefetch(request, partial(_prefetch_scan, request))
+
+
+def workspace_snapshot(
+    root: str | None = None,
+    days: int | None = None,
+    *,
+    should_stop: Callable[[], bool] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+) -> WorkspaceSnapshot | None:
+    """The snapshot a ``scan_local_git_workspace(root, days)`` call would show, prefetched or new.
+
+    None when ``root`` is not a directory. Renders and reports nothing.
+    """
+    request = _scan_request(root, days)
+    if not request.root.is_dir():
+        return None
+    snapshot = claim_scan_prefetch(request, should_stop=should_stop)
+    prefetched = snapshot is not None
+    if snapshot is None:
+        snapshot = _scan(request, should_stop=should_stop, on_progress=on_progress)
+    if snapshot.stop_reason is not ScanStop.CANCELLED:
+        _record_scan(
+            snapshot,
+            with_workflows=sum(1 for repo in snapshot.repos if repo.has_workflows),
+            prefetched=prefetched,
+            via=_VIA_LOCAL_INSIGHTS,
+        )
+    return snapshot
+
+
+def _record_scan(
+    snapshot: WorkspaceSnapshot, *, with_workflows: int, prefetched: bool, via: str
+) -> None:
+    """Record the scan as counts, so onboarding can tell how many users have no GitHub Actions."""
+    capture_workspace_scanned(
+        repositories=len(snapshot.repos),
+        repos_with_workflows=with_workflows,
+        repos_on_github=sum(1 for repo in snapshot.repos if repo.github_full_name),
+        commits=snapshot.total_commits,
+        own_commits=snapshot.total_own_commits,
+        uncommitted=snapshot.total_uncommitted,
+        days=snapshot.days,
+        stop_reason=snapshot.stop_reason.value if snapshot.stop_reason else None,
+        truncated=snapshot.truncated,
+        skipped_protected=sum(
+            1 for path in snapshot.skipped if Path(path).name in MACOS_PRIVACY_PROTECTED
+        ),
+        prefetched=prefetched,
+        via=via,
+    )
+
+
 def _repo_payload(snapshot: WorkspaceSnapshot) -> list[dict[str, Any]]:
     return [
         {
@@ -118,13 +222,12 @@ def scan_local_git_workspace(
 ) -> dict[str, Any]:
     """Scan for local git checkouts and render the activity snapshot.
 
-    A cancelled scan returns ``cancelled: True`` and renders nothing.
+    A cancelled scan returns ``cancelled: True`` and renders nothing. A matching
+    scan from :func:`prefetch_workspace_scan` is used instead of a new one.
     """
-    window = min(max(int(days or _DEFAULT_DAYS), 1), _MAX_DAYS)
-    # Skip paths match the walk's spelling of each folder, so home, the root and
-    # the working directory are all compared in their resolved form.
-    home = Path.home().resolve()
-    scan_root = Path(root).expanduser().resolve() if root else home
+    request = _scan_request(root, days)
+    window = request.days
+    scan_root = request.root
     if not scan_root.is_dir():
         return {
             "source": "system",
@@ -133,13 +236,13 @@ def scan_local_git_workspace(
             "response_text": f"{scan_root} is not a directory; nothing was scanned.",
         }
     console = _console(context)
-    snapshot = scan_workspace(
-        scan_root,
-        days=window,
-        skip_paths=default_skip_paths(home, cwd=_working_directory(), platform=sys.platform),
-        should_stop=_cancellation(console),
-        on_progress=_progress(context),
-    )
+    should_stop = _cancellation(console)
+    # A scan started when the menu was answered stands in for this one; a
+    # cancel while it finishes reaches the live scan below, which stops at once.
+    snapshot = claim_scan_prefetch(request, should_stop=should_stop)
+    prefetched = snapshot is not None
+    if snapshot is None:
+        snapshot = _scan(request, should_stop=should_stop, on_progress=_progress(context))
     if snapshot.stop_reason is ScanStop.CANCELLED:
         return {
             "source": "system",
@@ -153,6 +256,7 @@ def scan_local_git_workspace(
     if rendered:
         render_snapshot(console, snapshot)
     with_workflows = sum(1 for repo in snapshot.repos if repo.has_workflows)
+    _record_scan(snapshot, with_workflows=with_workflows, prefetched=prefetched, via=_VIA_TOOL)
     summary = (
         f"Found {len(snapshot.repos)} git repositories under {snapshot.root}: "
         f"{snapshot.total_commits} commits in the last {window} days "
@@ -180,4 +284,4 @@ def scan_local_git_workspace(
     }
 
 
-__all__ = ["scan_local_git_workspace"]
+__all__ = ["prefetch_workspace_scan", "scan_local_git_workspace", "workspace_snapshot"]

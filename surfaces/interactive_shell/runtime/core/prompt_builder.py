@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import io
 from collections.abc import Callable
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application, run_in_terminal
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.filters import Condition
+from prompt_toolkit.filters import Condition, has_completions
 from prompt_toolkit.formatted_text import ANSI, FormattedText
+from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
+from prompt_toolkit.keys import Keys
 from rich.console import Console
 
 from surfaces.interactive_shell.runtime.core.state import (
@@ -20,6 +21,7 @@ from surfaces.interactive_shell.runtime.core.state import (
 )
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import input_prompt
+from surfaces.interactive_shell.ui.ci_fix_status import prompt_status_ansi
 from surfaces.interactive_shell.ui.hooks import (
     install_confirmation_key_bindings,
     install_output_expand_key_bindings,
@@ -32,13 +34,18 @@ from surfaces.interactive_shell.ui.input_prompt.key_bindings import (
     install_session_key_bindings,
 )
 from surfaces.interactive_shell.ui.input_prompt.refresh import wire_prompt_refresh
-from surfaces.interactive_shell.ui.input_prompt.resize import install_shrink_resize_guard
 from surfaces.interactive_shell.ui.input_prompt.style import refresh_prompt_theme
-from surfaces.interactive_shell.ui.input_prompt.synchronized import supports_synchronized_output
 from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
-from surfaces.shared.terminal.banner import render_launch_banner
-from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
+from surfaces.interactive_shell.ui.transcript_view import (
+    TranscriptControl,
+    TranscriptStore,
+    render_for_scrollback,
+)
+from surfaces.shared.terminal.components.cpr_stdin import (
+    drain_stale_cpr_bytes,
+    strip_cpr_sequences,
+)
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -61,6 +68,7 @@ class PromptBuilder:
         state: ReplState,
         spinner: SpinnerState,
         pt_session: PromptSession[str] | None = None,
+        transcript: TranscriptStore | None = None,
     ) -> None:
         self.session = session
         self.state = state
@@ -72,6 +80,13 @@ class PromptBuilder:
         self._submitted: asyncio.Queue[str] = asyncio.Queue()
         self._prompt_task: asyncio.Task[str] | None = None
         self._expand_in_flight: bool = False
+        # True once this builder frames its own session (which installs the
+        # status row). An injected ``pt_session`` keeps whatever layout it
+        # arrived with, so its chrome has to stay in the message region.
+        self._status_row_installed: bool = False
+        self.transcript = transcript or TranscriptStore()
+        # Set only when this builder makes the session: the full-screen view.
+        self.transcript_view: TranscriptControl | None = None
 
     def _composer_hidden(self) -> bool:
         """True while structured input (confirmation, menus) owns the keyboard.
@@ -81,19 +96,33 @@ class PromptBuilder:
         """
         return typing_box_hidden(self.session, self.state)
 
+    def _status_line(self) -> str:
+        """Permission/CI chrome for the fixed row under the composer.
+
+        Stays DIM while a turn streams so the spinner above keeps the accent.
+        """
+        return strip_cpr_sequences(prompt_status_ansi(self.session, quiet=self.spinner.streaming))
+
     def setup(self) -> None:
         if self.pt_session is None:
+            self.transcript_view = TranscriptControl(self.transcript)
             self.pt_session = input_prompt.build_prompt_session(
                 self.session,
                 hide_composer=self._composer_hidden,
+                transcript=self.transcript_view,
+                status_line=self._status_line,
             )
+            self._status_row_installed = True
             self.session.terminal.prompt_history_backend = self.pt_session.history
 
         cancel_kb = build_cancel_key_bindings(self.state)
         install_session_key_bindings(self.pt_session, cancel_kb)
 
         self.pt_app = self.pt_session.app
-        install_shrink_resize_guard(self.pt_app, rerender_banner=self._rerender_banner_if_idle)
+        if self.transcript_view is not None:
+            install_session_key_bindings(
+                self.pt_session, _transcript_scroll_bindings(self.transcript_view)
+            )
         self.pt_session.default_buffer.accept_handler = self._accept_prompt_buffer
         # While the Yes/No gate owns the keyboard the composer is hidden but its
         # buffer still receives unbound keys unless it is read-only. Lock it so
@@ -104,6 +133,9 @@ class PromptBuilder:
         self.session.terminal.main_loop = self.loop
         self.state.bind_loop(self.loop)
         self._invalidate_prompt = wire_prompt_refresh(self.session, self.pt_app, self.loop)
+        if self.transcript_view is not None:
+            self.transcript.on_change = self._invalidate_prompt
+            self.session.terminal.transcript = self.transcript
         # Arrow-navigable Yes/No for the execution-confirmation gate: ↑/↓ move the
         # selection, Enter (or a/b/y/n) delivers it. Installed after the redraw
         # hook so a selection change repaints immediately.
@@ -123,31 +155,6 @@ class PromptBuilder:
             self._expand_collapsed_output,
         )
         install_session_key_bindings(self.pt_session, output_kb)
-
-    def _rerender_banner_if_idle(self) -> str | None:
-        """Return a resized launch banner only before visible history exists."""
-        if (
-            self.session.terminal.submitted_turn_count > 0
-            or self.session.terminal.history_generation > 0
-            or self.session.agent.messages
-            or self.session.accumulated_context
-            or self.session.alerts.entries
-            or self.pt_app is None
-        ):
-            return None
-        output = self.pt_app.output
-        supports_vt = supports_synchronized_output(output)
-        buffer = io.StringIO()
-        console = Console(
-            file=buffer,
-            width=max(1, output.get_size().columns),
-            highlight=False,
-            force_terminal=supports_vt,
-            color_system="truecolor" if supports_vt else None,
-            legacy_windows=False,
-        )
-        render_launch_banner(console, session=self.session, animate=False)
-        return buffer.getvalue()
 
     def _expand_collapsed_output(self, text: str) -> None:
         """Suspend the prompt and expand the next folded tool result (Ctrl+O).
@@ -196,7 +203,14 @@ class PromptBuilder:
         self.loop.call_soon_threadsafe(_exit_prompt_app)
 
     def message_with_spinner(self) -> ANSI:
-        return render_prompt_region(self.session, self.state, self.spinner)
+        # Only a session this builder framed carries the status row under its
+        # composer; an injected one keeps the chrome in the message region.
+        return render_prompt_region(
+            self.session,
+            self.state,
+            self.spinner,
+            status_line=None if self._status_row_installed else self._status_line,
+        )
 
     def _accept_prompt_buffer(self, buffer: Buffer) -> bool:
         """Queue accepted text while keeping the prompt application alive."""
@@ -204,6 +218,8 @@ class PromptBuilder:
         # treat residual buffer text as a submitted message while the gate is up.
         if self.state.is_awaiting_confirmation():
             return True
+        if self.transcript_view is not None:
+            self.transcript_view.scroll_to_bottom()
         self._submitted.put_nowait(buffer.text)
         return False
 
@@ -224,11 +240,27 @@ class PromptBuilder:
         return task
 
     def _restore_terminal_autowrap(self) -> None:
-        """Restore the terminal mode owned by the live prompt."""
+        """Restore the terminal mode owned by the live prompt and catch up scrollback."""
         if self.pt_app is None:
             return
         self.pt_app.output.enable_autowrap()
         self.pt_app.output.flush()
+        self._write_transcript_to_scrollback()
+
+    def _write_transcript_to_scrollback(self) -> None:
+        """Append output shown only in the full-screen view to terminal scrollback.
+
+        Runs once the app has left the alternate screen, so pickers and the
+        shell after exit see the conversation in ordinary scrollback.
+        """
+        if self.transcript_view is None or self.pt_app is None:
+            return
+        entries = self.transcript.take_unflushed()
+        if not entries:
+            return
+        output = self.pt_app.output
+        output.write_raw(render_for_scrollback(entries, output.get_size().columns))
+        output.flush()
 
     async def suspend(self) -> None:
         """Release stdin while an exclusive picker or wizard is running."""
@@ -295,6 +327,9 @@ class PromptBuilder:
                 submitted.cancel()
                 await asyncio.gather(submitted, return_exceptions=True)
                 self._prompt_task = None
+                # The app left the screen (Ctrl-D, Ctrl-C): put the conversation
+                # in scrollback before anything else prints there.
+                self._write_transcript_to_scrollback()
                 return await prompt_task
             return submitted.result()
         except BaseException:
@@ -313,3 +348,20 @@ class PromptBuilder:
         # itself: the handoff-answer marker must hug the reply it answers, so the
         # gap falls after the marker rather than blanket-above the whole turn.
         prompt_rendering.render_submitted_prompt(console, self.session, text)
+
+
+def _transcript_scroll_bindings(view: TranscriptControl) -> KeyBindings:
+    """PageUp/PageDown page through the full-screen transcript."""
+    bindings = KeyBindings()
+
+    @bindings.add(Keys.PageUp, filter=~has_completions, eager=True)
+    def _page_up(event: KeyPressEvent) -> None:
+        view.page_up()
+        event.app.invalidate()
+
+    @bindings.add(Keys.PageDown, filter=~has_completions, eager=True)
+    def _page_down(event: KeyPressEvent) -> None:
+        view.page_down()
+        event.app.invalidate()
+
+    return bindings

@@ -85,8 +85,9 @@ Create a new scheduled delivery task.
 | `--provider` | Yes | Messaging provider: `telegram`, `slack`, `discord`, `rocketchat`, `interactive_shell` |
 | `--chat-id` | Cond. | Required for telegram/discord/rocketchat. Optional for slack when an incoming webhook or `SLACK_DEFAULT_CHAT_ID` is configured, and not needed for `interactive_shell`. |
 | `--window` | No | Lookback window in hours (default: `24`) |
-| `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` and rejected for other kinds |
-| `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute |
+| `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` (optional with `--mode agent --skill`) and rejected for other kinds |
+| `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute. With `--kind manual_loop --mode agent`, names the skill each run follows, or gives the path of an installed skill folder that holds a `SKILL.md` |
+| `--stateless` | No | With `--kind manual_loop --mode agent`: every run starts fresh, without earlier runs, a note for the next run, or long-term memory |
 | `--owner` | Cond. | GitHub repository owner; required for the `reporting-github-ci-failures` recurring skill |
 | `--repo` | Cond. | GitHub repository name; required for the `reporting-github-ci-failures` recurring skill |
 | `--branch` | No | Branch filter for `reporting-github-ci-failures`; cannot be combined with `--pr` |
@@ -150,6 +151,35 @@ For a repository repair loop, use `--kind manual_loop --mode agent` with
 and security repairs that open a PR create their own matching checkouts when
 no explicit workspace is supplied.
 
+With `--pr` or `--branch`, the loop pauses when its target can never be
+repaired, such as a fork PR, a closed PR, or a merge that waits on a person's
+decision. Without them, the loop sweeps the repository: it skips those targets,
+keeps its schedule, and records a run that verifiably found nothing to repair
+as a no-op. A no-op run that replies with only its note delivers nothing.
+
+Add `--skill <name>` to run a skill instead of writing the instructions in
+`--prompt`. Each run follows the skill as currently installed, so fixes to the
+skill reach the loop without recreating it. For example, this loop merges the
+base branch into conflicting pull requests every hour and comments on the ones
+that need a person's decision:
+
+```bash
+opensre cron add --kind manual_loop --mode agent --skill fixing-github-merge-conflicts \
+  --owner <owner> --repo <repo> --cron "4 * * * *" --provider interactive_shell
+```
+
+A skill from a public registry works the same way: install it into a folder,
+then pass that folder's path. Keep the `--prompt` short and say what to pick,
+what never to do, and what to reply:
+
+```bash
+npx clawhub@latest install skills-sh:cursor/plugins/fix-ci --workdir ~ --dir skills
+opensre cron add --kind manual_loop --mode agent --stateless \
+  --skill ~/skills/fix-ci --owner Tracer-Cloud --repo opensre \
+  --cron "7 * * * *" --provider interactive_shell --name "PR CI fix" \
+  --prompt "Fix the oldest open PR whose latest checks failed. Never merge or force-push."
+```
+
 `opensre cron run <task_id>` prints the work result, delivery result, and report.
 A blocked or incomplete agent task exits unsuccessfully even if its report was
 delivered. Agent tasks need a structured completion result from their execution
@@ -173,24 +203,23 @@ Standard 5-field cron expressions:
 │ ┌───────────── hour (0-23)
 │ │ ┌───────────── day of month (1-31)
 │ │ │ ┌───────────── month (1-12)
-│ │ │ │ ┌───────────── day of week (0-6, Mon–Sun)
+│ │ │ │ ┌───────────── day of week (0-7, Sunday is 0 or 7; or mon–sun)
 │ │ │ │ │
 * * * * *
 ```
 
-**Weekday numbering:** OpenSRE uses APScheduler 3.x `CronTrigger`, where
-**`0` = Monday** and **`6` = Sunday** (not the Unix cron convention where
-`0` is Sunday). Prefer `mon-fri` for weekdays to avoid confusion.
+**Weekday numbering** is the Unix cron convention: `0` and `7` are Sunday,
+`1` is Monday and `6` is Saturday, so `1-5` runs Monday to Friday. Day names
+such as `mon-fri` work too.
 
-Older weekday loops may still contain `1-5`, which runs Tuesday–Saturday.
-Check `/loops next <loop_id>`. To correct one, record its settings, stop it with
-`/loops stop <loop_id>`, then recreate it through the original scheduling command
-with the same settings and `--cron "0 9 * * mon-fri"` for weekdays at 09:00.
-For `/loops add`, you can also use `--time 09:00 --weekdays`.
-For an old Monday-only schedule, replace the final `1` with `mon` when recreating it.
-Delete the old loop with `/loops delete <loop_id>` after verifying the replacement.
-Existing schedules are not changed automatically. For a CI reliability loop,
-delete the old loop before scheduling it again; that flow reuses existing loops.
+Earlier versions counted weekdays from `0` = Monday, so a loop saved with a
+numeric weekday now runs one day earlier than before: `1-5` moves from
+Tuesday–Saturday to Monday–Friday. If you wrote numbers for the old counting on
+purpose, for example `0` for Monday, check the loop with `/loops next <loop_id>`.
+To keep its old days, record its settings, stop it with `/loops stop <loop_id>`,
+recreate it through the original scheduling command with day names, such as
+`--cron "0 9 * * mon"`, and delete the old loop with `/loops delete <loop_id>`
+once the replacement is verified.
 
 Examples:
 
@@ -332,10 +361,57 @@ from your existing integration configuration.
 Sentry morning digests use a separate CLI (`opensre sentry digest schedule …`),
 not `opensre cron add`. See [Sentry](/integrations/incidents/sentry#morning-digest-scheduled).
 
+## What a loop remembers between runs
+
+A loop added with `--stateless` remembers nothing: each run sees only its
+prompt, its skill and what its tools find, and long-term memory is neither shown
+nor written. A stateless run that finds nothing to act on replies `NO_ACTION`:
+it delivers nothing and counts as a no-op. A stateless run that pushes a commit,
+or creates, comments on or edits a pull request or issue, counts as done work.
+Everything below applies to loops without `--stateless`.
+
+Every run of a `manual_loop` starts a fresh session. Before it starts, the loop
+sees its three most recent finished runs: when each ran, how its work and
+delivery ended, the changes it made with tools (for example a pull-request
+comment, a push, or a message it sent), and the start of its report. It uses
+them to avoid repeating work and to follow up on open items, and it still checks
+the current state with its tools before it acts.
+
+To carry something specific forward, a loop ends its reply with one line:
+
+```text
+NOTE FOR NEXT RUN: Commented on PR #6555 at head 1a2b3c4; it waits for a human decision.
+```
+
+The note, up to 300 characters, is saved with that run, removed from the
+delivered report, and shown to the next run. Only a note that ends the reply
+counts: one followed by more text, or quoted with `>`, stays in the report.
+Loops already know about this line; to make sure a loop uses it, ask for it in
+the prompt, for example "leave a note listing the PRs you commented on".
+
+The next run reads earlier runs, notes included, as a record of what happened,
+never as instructions, because reports can quote pull requests and issues. Put
+standing rules, such as "comment on a PR only once per head commit", in the
+loop's prompt.
+
+- Changes made with the GitHub CLI, shell commands and chat messages are
+  listed; reads such as viewing a PR or `git status` are not. A command is
+  listed by its leading words (`gh pr comment 6555 …`), never with option
+  values such as a comment body. A change made through an integration that does
+  not report it may be missing, so when an action must never repeat, have the
+  loop name it in its note.
+- History belongs to one loop. A loop recreated with new settings starts
+  without history.
+
 ## Persistence
 
 - **Task definitions** are stored in `~/.opensre/scheduler_tasks.json` (JSON + filelock)
 - **Execution history** is stored in `~/.opensre/scheduler.db` (SQLite with WAL mode)
+- **Run records** keep each task's newest 20 run attempts in
+  `~/.opensre/scheduler_runs/<task_id>.json`: the prompt sent, the report,
+  delivery results, the changes made and the note for the next run. A loop's
+  next run reads its history from here; prompts and reports are
+  credential-redacted.
 - **Interactive-shell loop messages** are stored in `~/.opensre/scheduler_loop_messages.jsonl`
 - **Operational breadcrumbs** are appended to `~/.opensre/operations_log.jsonl`
   with loop lifecycle and run status metadata, not prompt or message bodies

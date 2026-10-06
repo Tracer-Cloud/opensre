@@ -409,6 +409,43 @@ def test_cron_add_rejects_prompt_for_non_manual_loop() -> None:
     assert "--prompt is only valid" in result.output
 
 
+def test_cron_add_stores_the_description_readers_see_in_loop_listings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_DESCRIPTION_PARAM
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    # Arrange
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+
+    # Act
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--cron",
+            "0 * * * *",
+            "--provider",
+            "interactive_shell",
+            "--prompt",
+            "Repair failing checks on open PRs.",
+            "--description",
+            "  Keeps   open pull requests green.  ",
+        ],
+    )
+
+    listed = CliRunner().invoke(cron_module.cron_command, ["list"])
+
+    # Assert: stored normalised, and the operator can read back what they entered
+    assert result.exit_code == 0, result.output
+    assert list_tasks(store)[0].params[LOOP_DESCRIPTION_PARAM] == "Keeps open pull requests green."
+    assert "What it does: Keeps open pull requests green." in listed.output
+
+
 @pytest.mark.parametrize("mode", [None, "report", "agent"])
 def test_cron_add_persists_manual_loop_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str | None
@@ -830,6 +867,156 @@ def test_cron_add_rejects_non_recurring_skill() -> None:
     assert "not marked recurring" in result.output
 
 
+def test_cron_add_binds_an_agent_loop_to_a_skill_without_a_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_MODE_PARAM,
+        LOOP_PROMPT_PARAM,
+        LOOP_SKILL_PARAM,
+    )
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--mode",
+            "agent",
+            "--skill",
+            "repair-github-ci",
+            "--owner",
+            "o",
+            "--repo",
+            "r",
+            "--cron",
+            "4 * * * *",
+            "--provider",
+            "interactive_shell",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert list_tasks(store)[0].params == {
+        LOOP_PROMPT_PARAM: "Run the repair-github-ci skill.",
+        LOOP_MODE_PARAM: "agent",
+        LOOP_SKILL_PARAM: "repair-github-ci",
+        "owner": "o",
+        "repo": "r",
+    }
+
+
+def test_cron_add_stores_a_stateless_loop_on_an_installed_skill_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A skill installed as a folder (e.g. by ``clawhub install``) is stored by its path."""
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_MODE_PARAM,
+        LOOP_PROMPT_PARAM,
+        LOOP_SKILL_PARAM,
+        LOOP_STATELESS_PARAM,
+    )
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+    folder = tmp_path / "skills" / "fix-ci"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: fix-ci\n---\n\n# Fix CI\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--mode",
+            "agent",
+            "--stateless",
+            "--skill",
+            str(folder / "SKILL.md"),
+            "--prompt",
+            "Fix the oldest open PR whose latest checks failed.",
+            "--owner",
+            "o",
+            "--repo",
+            "r",
+            "--cron",
+            "7 * * * *",
+            "--provider",
+            "interactive_shell",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Mode: agent (stateless)" in result.output
+    assert list_tasks(store)[0].params == {
+        LOOP_PROMPT_PARAM: "Fix the oldest open PR whose latest checks failed.",
+        LOOP_MODE_PARAM: "agent",
+        LOOP_SKILL_PARAM: str(folder.resolve()),
+        LOOP_STATELESS_PARAM: "true",
+        "owner": "o",
+        "repo": "r",
+    }
+
+
+def test_cron_add_rejects_stateless_outside_an_agent_loop() -> None:
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--stateless",
+            "--prompt",
+            "Summarize open incidents.",
+            "--cron",
+            "4 * * * *",
+            "--provider",
+            "interactive_shell",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--stateless is only valid with --kind manual_loop --mode agent" in result.output
+
+
+@pytest.mark.parametrize(
+    "args, error",
+    [
+        (["--mode", "agent", "--skill", "no-such-card"], "'no-such-card' is not installed"),
+        (["--mode", "agent", "--skill", "/no/such/skills/fix-ci"], "is not installed"),
+        # Its helper scripts only load through skill_view, which a tick does not have.
+        (["--mode", "agent", "--skill", "scheduling-github-ci-repairs"], "cannot run"),
+        (["--prompt", "Check CI.", "--skill", "repair-github-ci"], "--skill is only valid with"),
+    ],
+)
+def test_cron_add_rejects_a_loop_skill_it_cannot_run(args: list[str], error: str) -> None:
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--cron",
+            "4 * * * *",
+            "--provider",
+            "interactive_shell",
+            *args,
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert error in result.output
+
+
 def _partial_run(task_id: str) -> object:
     from infrastructure.scheduling.scheduler.types import DeliveryOutcome, TaskRun, TaskStatus
 
@@ -971,3 +1158,69 @@ def test_cron_run_failed_only_skips_the_warning(monkeypatch: pytest.MonkeyPatch)
     assert result.exit_code == 0, result.output
     assert "already delivered" not in result.output
     assert calls == [{"task_id": "t1", "only_failed": True}]
+
+
+def test_cron_add_template_fills_the_loop_and_stores_its_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core.agent_harness.prompts.loop_templates import load_loop_template
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_MODE_PARAM,
+        LOOP_PROMPT_PARAM,
+        LOOP_TEMPLATE_PARAM,
+    )
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+    template = load_loop_template("pr-ci")
+
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--template",
+            "pr-ci",
+            "--owner",
+            "acme",
+            "--repo",
+            "widgets",
+            "--provider",
+            "interactive_shell",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    task = list_tasks(store)[0]
+    assert (task.name, task.cron) == (template.name, template.cron)
+    assert task.params == {
+        LOOP_PROMPT_PARAM: template.prompt,
+        LOOP_TEMPLATE_PARAM: "pr-ci",
+        LOOP_MODE_PARAM: "agent",
+        "owner": "acme",
+        "repo": "widgets",
+    }
+    listed = CliRunner().invoke(cron_module.cron_command, ["list"])
+    assert f"What it does: {template.description}" in listed.output
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (["--kind", "manual_loop", "--template", "pr-ci", "--prompt", "x"], "not both"),
+        (["--kind", "manual_loop", "--template", "pr-ci"], "requires --owner and --repo"),
+        (["--kind", "recurring_skill", "--template", "pr-ci"], "--template is only valid"),
+        (["--kind", "manual_loop", "--prompt", "x"], "Missing option '--cron'"),
+    ],
+)
+def test_cron_add_rejects_conflicting_template_use(extra: list[str], message: str) -> None:
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        ["add", "--provider", "interactive_shell", *extra],
+    )
+
+    assert result.exit_code != 0
+    assert message in result.output

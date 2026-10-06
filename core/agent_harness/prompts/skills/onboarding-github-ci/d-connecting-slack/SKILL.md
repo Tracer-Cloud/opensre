@@ -61,8 +61,8 @@ Call `cli_exec` with payload `integrations verify slack`.
 
 ### 2. Set up if needed
 
-If Slack is not configured, call `slash_invoke` with
-`/integrations setup slack` and stop. The shell queues that wizard on the
+If Slack is not configured, call `slash_invoke` with command
+`/integrations` and args `["setup", "slack"]`, and stop. The shell queues that wizard on the
 next prompt so it gets exclusive stdin. If Slack is already connected, say
 so and skip setup.
 

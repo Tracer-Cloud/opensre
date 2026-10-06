@@ -13,6 +13,7 @@ from integrations.hosted_gateway import (
     ERR_INVALID_RESPONSE,
     ERR_NOT_SIGNED_IN,
     ERR_NOT_SUPPORTED,
+    ERR_TOO_MANY_PROMPTS,
     ERR_UNAUTHORIZED,
     ERR_UNREACHABLE,
     GatewayHealth,
@@ -184,6 +185,40 @@ def test_a_capacity_refusal_keeps_the_status_and_names_the_cause() -> None:
     # Assert
     assert excinfo.value.code == "not_running"
     assert excinfo.value.cause_code == "GATEWAY_CAPACITY_EXCEEDED"
+
+
+@pytest.mark.parametrize(
+    ("status", "retry_after"),
+    [
+        (HTTPStatus.SERVICE_UNAVAILABLE, "10"),
+        (HTTPStatus.TOO_MANY_REQUESTS, "10"),
+        # An app deployed before it kept the gateway's 503 relays the refusal as a 502.
+        (HTTPStatus.BAD_GATEWAY, None),
+    ],
+)
+def test_a_full_prompt_queue_is_a_capacity_refusal_that_is_not_resent(
+    status: HTTPStatus, retry_after: str | None
+) -> None:
+    """Load test: each refused prompt reached the gateway twice, resent as a transient 502."""
+    # Arrange
+    attempts: list[httpx.Request] = []
+    headers = {"Retry-After": retry_after} if retry_after else {}
+
+    def queue_full(request: httpx.Request) -> httpx.Response:
+        attempts.append(request)
+        return httpx.Response(status, json={"error": "too_many_prompts"}, headers=headers)
+
+    client = _client(httpx.MockTransport(queue_full))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        client.send_prompt("delegate the demo", context={}, request_id="req_capacity_1")
+
+    # Assert
+    assert excinfo.value.code == ERR_TOO_MANY_PROMPTS
+    assert excinfo.value.status == status
+    assert excinfo.value.retry_after == (int(retry_after) if retry_after else None)
+    assert len(attempts) == 1
 
 
 def test_a_cause_that_repeats_the_status_code_is_not_recorded_again() -> None:

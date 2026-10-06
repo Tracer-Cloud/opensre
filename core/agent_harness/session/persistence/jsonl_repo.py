@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 
 import core.agent_harness.session.persistence.paths as storage_paths
-from core.agent_harness.session.persistence.contracts import CHAT_KINDS, RestoreContextKey
+from core.agent_harness.session.persistence.contracts import (
+    CHAT_KINDS,
+    SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+    TURN_EVIDENCE_CUSTOM_TYPE,
+    RestoreContextKey,
+)
 from core.agent_harness.session.persistence.wal_recovery import dangling_tool_intents
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 
@@ -84,6 +89,11 @@ class JsonlSessionRepo:
             messages = _messages_for_branch(branch)
             context = _accumulated_context_for_branch(branch)
             goal_state = _session_goal_state_for_branch(branch)
+            # A control targets the live branch. Explicit ``session:entry``
+            # restores are historical snapshots and must never consume it.
+            goal_controls = (
+                _pending_session_goal_controls(entries, branch) if entry_ref is None else []
+            )
             plan_state = _task_plan_state_for_branch(branch)
             choice_state = _pending_user_choice_state_for_branch(branch)
             history = _history_for_branch(branch)
@@ -97,9 +107,11 @@ class JsonlSessionRepo:
                 RestoreContextKey.CLI_AGENT_MESSAGES: messages,
                 RestoreContextKey.ACCUMULATED_CONTEXT: context,
                 RestoreContextKey.SESSION_GOAL_STATE: goal_state,
+                RestoreContextKey.SESSION_GOAL_CONTROLS: goal_controls,
                 RestoreContextKey.TASK_PLAN_STATE: plan_state,
                 RestoreContextKey.PENDING_USER_CHOICE_STATE: choice_state,
                 RestoreContextKey.HISTORY: history,
+                RestoreContextKey.TURN_EVIDENCE: _turn_evidence_for_branch(branch),
                 "turn_details": turn_details,
                 "has_snapshot": False,
                 # WAL sidecars are off-branch, so scan the full entry list:
@@ -236,7 +248,13 @@ def _messages_for_branch(branch: list[dict[str, Any]]) -> list[tuple[str, str]]:
     for rec in branch:
         if rec.get("type") == "compaction":
             summary = str(rec.get("summary") or "").strip()
-            if summary:
+            replacement = rec.get("replacement_messages")
+            if isinstance(replacement, list):
+                # The compaction recorded what it kept, so it replaces the
+                # transcript so far instead of adding a summary beside it.
+                messages = [("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}")] if summary else []
+                messages.extend(_replacement_pairs(replacement))
+            elif summary:
                 messages.append(("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}"))
             continue
         if rec.get("type") != "message":
@@ -248,6 +266,36 @@ def _messages_for_branch(branch: list[dict[str, Any]]) -> list[tuple[str, str]]:
         if content:
             messages.append((role, content))
     return messages
+
+
+def _replacement_pairs(raw: list[Any]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        role, content = item
+        if role in {"user", "assistant"} and isinstance(content, str) and content:
+            pairs.append((role, content))
+    return pairs
+
+
+def _turn_evidence_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Persisted turn-evidence records, restarting at a compaction that kept its own."""
+    records: list[dict[str, Any]] = []
+    for rec in branch:
+        if rec.get("type") == "compaction":
+            replacement = rec.get("replacement_evidence")
+            if isinstance(replacement, list):
+                records = [item for item in replacement if isinstance(item, dict)]
+            continue
+        if (
+            rec.get("type") == "custom_message"
+            and rec.get("custom_type") == TURN_EVIDENCE_CUSTOM_TYPE
+        ):
+            content = rec.get("content")
+            if isinstance(content, dict):
+                records.append(content)
+    return records
 
 
 def _history_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -307,12 +355,25 @@ def _session_goal_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, An
     for rec in branch:
         if rec.get("type") != "custom_message":
             continue
-        if rec.get("custom_type") != SESSION_GOAL_STATE_CUSTOM_TYPE:
-            continue
         content = rec.get("content")
-        if isinstance(content, dict):
+        if rec.get("custom_type") == SESSION_GOAL_STATE_CUSTOM_TYPE and isinstance(content, dict):
             latest = content
+        elif rec.get("custom_type") == SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE:
+            state = content.get("session_goal_state") if isinstance(content, dict) else None
+            if isinstance(state, dict):
+                latest = state
     return latest
+
+
+def _pending_session_goal_controls(
+    entries: list[dict[str, Any]],
+    branch: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Return unacknowledged goal controls from off-branch sidecar records."""
+    from core.agent_harness.session_goal.persist import pending_session_goal_controls
+
+    branch_entry_ids = {str(record["id"]) for record in branch if isinstance(record.get("id"), str)}
+    return pending_session_goal_controls(entries, branch_entry_ids=branch_entry_ids)
 
 
 def _task_plan_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -323,11 +384,13 @@ def _task_plan_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, Any] 
     for rec in branch:
         if rec.get("type") != "custom_message":
             continue
-        if rec.get("custom_type") != TASK_PLAN_STATE_CUSTOM_TYPE:
-            continue
         content = rec.get("content")
-        if isinstance(content, dict):
+        if rec.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE and isinstance(content, dict):
             latest = content
+        elif rec.get("custom_type") == SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE:
+            state = content.get("task_plan_state") if isinstance(content, dict) else None
+            if isinstance(state, dict):
+                latest = state
     return latest
 
 

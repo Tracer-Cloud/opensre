@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import http.client
+import io
 import json
-from collections.abc import Iterator
+import ssl
+import threading
+import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from email.message import Message
 from http import HTTPStatus
@@ -14,7 +18,17 @@ from urllib import error, request
 import pytest
 
 from integrations.github import client as client_module
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.client import (
+    GitHubApiError,
+    GitHubFailureKind,
+    GitHubRestClient,
+    github_failure_kind,
+    resolve_github_token,
+)
+
+# An exhausted hourly limit that lifts long after any test ends: the client
+# fails at once with the wait instead of sleeping through it.
+_FAR_FUTURE_RESET = "4102444800"
 
 
 class _Response:
@@ -173,7 +187,7 @@ def test_http_error_preserves_status_and_rate_limit_headers(
     def fake_urlopen(_req: request.Request, timeout: int = 0) -> _Response:  # noqa: ARG001
         headers = Message()
         headers["X-RateLimit-Remaining"] = "0"
-        headers["X-RateLimit-Reset"] = "123"
+        headers["X-RateLimit-Reset"] = _FAR_FUTURE_RESET
         raise error.HTTPError(
             url="https://api.github.com/repos/o/r/issues",
             code=403,
@@ -190,7 +204,7 @@ def test_http_error_preserves_status_and_rate_limit_headers(
 
     assert exc.value.status_code == 403
     assert exc.value.rate_limit_remaining == "0"
-    assert exc.value.rate_limit_reset == "123"
+    assert exc.value.rate_limit_reset == _FAR_FUTURE_RESET
 
 
 def test_api_error_keeps_its_identity_and_details_across_context_manager_cleanup(
@@ -198,7 +212,7 @@ def test_api_error_keeps_its_identity_and_details_across_context_manager_cleanup
 ) -> None:
     headers = Message()
     headers["X-RateLimit-Remaining"] = "0"
-    headers["X-RateLimit-Reset"] = "123"
+    headers["X-RateLimit-Reset"] = _FAR_FUTURE_RESET
     http_error = error.HTTPError(
         url="https://api.github.com/repos/o/r/actions/runs",
         code=HTTPStatus.FORBIDDEN,
@@ -232,7 +246,7 @@ def test_api_error_keeps_its_identity_and_details_across_context_manager_cleanup
     assert caught.value.method == "GET"
     assert caught.value.path == "/repos/o/r/actions/runs"
     assert caught.value.rate_limit_remaining == "0"
-    assert caught.value.rate_limit_reset == "123"
+    assert caught.value.rate_limit_reset == _FAR_FUTURE_RESET
     assert str(caught.value) == "GitHub API error 403: rate limited"
 
 
@@ -417,3 +431,149 @@ def test_only_transient_statuses_are_retried(
 
     assert len(calls) == sent
     assert caught.value.status_code == status
+
+
+def _untrusted_certificate(req: request.Request) -> Exception:
+    del req
+    return error.URLError(
+        ssl.SSLCertVerificationError(
+            1, "certificate verify failed: unable to get local issuer certificate"
+        )
+    )
+
+
+def _secondary_limit_named_in_body(req: request.Request) -> Exception:
+    body = b'{"message":"You have exceeded a secondary rate limit. Please wait a few minutes."}'
+    return error.HTTPError(
+        req.full_url, HTTPStatus.FORBIDDEN, "Forbidden", hdrs=Message(), fp=io.BytesIO(body)
+    )
+
+
+def _permission_denied(req: request.Request) -> Exception:
+    body = b'{"message":"Resource not accessible by integration"}'
+    return error.HTTPError(
+        req.full_url, HTTPStatus.FORBIDDEN, "Forbidden", hdrs=Message(), fp=io.BytesIO(body)
+    )
+
+
+@pytest.mark.usefixtures("_no_backoff")
+@pytest.mark.parametrize(
+    ("failure", "kind"),
+    [
+        (_untrusted_certificate, GitHubFailureKind.TLS_UNTRUSTED),
+        (_secondary_limit_named_in_body, GitHubFailureKind.RATE_LIMITED),
+        (_permission_denied, GitHubFailureKind.UNAUTHORIZED),
+    ],
+    ids=["untrusted-certificate", "secondary-limit-named-in-body", "permission-denied"],
+)
+def test_a_failure_is_classified_by_what_github_or_the_network_said_and_sent_once(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Callable[[request.Request], Exception],
+    kind: GitHubFailureKind,
+) -> None:
+    """Regression: an untrusted certificate surfaced as a bare ``GitHubApiError`` the agent
+    retried, and a 403 secondary rate limit read as a rejected token."""
+    sent: list[str] = []
+
+    def fake_urlopen(req: request.Request, timeout: int = 0) -> _Response:
+        del timeout
+        sent.append(req.full_url)
+        raise failure(req)
+
+    monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
+
+    with pytest.raises(GitHubApiError) as caught:
+        GitHubRestClient(github_token="tok").request("GET", "/repos/o/r/actions/runs")
+
+    assert github_failure_kind(caught.value) is kind
+    assert len(sent) == 1
+
+
+def test_a_limit_longer_than_the_clients_patience_fails_at_once_and_sends_nothing_more(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GitHub warns that requests sent while rate limited can get an integration banned, so
+    the client sends nothing until the limit lifts and says when that is."""
+    sent: list[str] = []
+    reset = int(time.time()) + 3600
+
+    def fake_urlopen(req: request.Request, timeout: int = 0) -> _Response:
+        del timeout
+        sent.append(req.full_url)
+        hdrs = Message()
+        hdrs["X-RateLimit-Remaining"] = "0"
+        hdrs["X-RateLimit-Reset"] = str(reset)
+        raise error.HTTPError(
+            req.full_url, HTTPStatus.FORBIDDEN, "rate limited", hdrs=hdrs, fp=None
+        )
+
+    monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
+    client = GitHubRestClient(github_token="tok")
+
+    with pytest.raises(GitHubApiError) as limited:
+        client.request("GET", "/repos/o/r/actions/runs")
+    with pytest.raises(GitHubApiError) as held:
+        client.request("GET", "/repos/o/r/pulls")
+
+    assert len(sent) == 1
+    for caught in (limited, held):
+        assert github_failure_kind(caught.value) is GitHubFailureKind.RATE_LIMITED
+        assert 3500 < (caught.value.retry_after_seconds or 0) <= 3601
+
+
+@pytest.mark.usefixtures("_no_backoff")
+def test_a_secondary_limit_holds_every_thread_of_the_client_then_sends_one_at_a_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A secondary limit means the client sent too much at once: the pause holds every
+    thread, not only the one that read it, and the client resumes one request at a time."""
+    pause = 0.3
+    lock = threading.Lock()
+    sends: list[float] = []
+    in_flight = 0
+    peak = 0
+    limited = threading.Event()
+
+    def fake_urlopen(req: request.Request, timeout: int = 0) -> _Response:
+        nonlocal in_flight, peak
+        del timeout
+        with lock:
+            sends.append(time.monotonic())
+            first = len(sends) == 1
+            in_flight += 1
+            peak = max(peak, in_flight)
+        try:
+            if first:
+                hdrs = Message()
+                hdrs["Retry-After"] = str(pause)
+                raise error.HTTPError(
+                    req.full_url, HTTPStatus.FORBIDDEN, "slow down", hdrs=hdrs, fp=None
+                )
+            time.sleep(0.05)
+            return _Response({"ok": True})
+        finally:
+            with lock:
+                in_flight -= 1
+
+    def notice(_seconds: float) -> None:
+        limited.set()
+
+    monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
+    client = GitHubRestClient(github_token="tok", on_rate_limit_pause=notice)
+    results: list[Any] = []
+
+    def read(path: str) -> None:
+        results.append(client.request("GET", path))
+
+    first = threading.Thread(target=read, args=("/repos/o/r",))
+    first.start()
+    assert limited.wait(10)
+    others = [threading.Thread(target=read, args=(f"/repos/o/r/pulls/{n}",)) for n in range(3)]
+    for thread in others:
+        thread.start()
+    for thread in (first, *others):
+        thread.join(10)
+
+    assert results == [{"ok": True}] * 4
+    assert min(sends[1:]) >= sends[0] + pause
+    assert peak == 1

@@ -12,29 +12,37 @@ def test_inline_spinner_empty_when_idle() -> None:
     assert SpinnerState().inline_spinner_ansi() == ""
 
 
-def test_inline_spinner_includes_phase_and_stop_hint() -> None:
-    spinner = SpinnerState()
+def test_inline_spinner_groups_phase_time_and_stop_hint(monkeypatch) -> None:
+    """Primary status stays left while the secondary stop hint anchors right."""
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.state.prompt_line_width",
+        lambda: 60,
+    )
+    spinner = SpinnerState(frames=("◌",))
     spinner.start()
+    spinner.started_at = time.monotonic() - 3.0
     spinner.set_phase(SpinnerState.THINKING_PHASE)
     rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
-    assert SpinnerState.THINKING_PHASE in rendered
-    assert "Press ESC to stop" in rendered
+    assert rendered.startswith("  ◌ Thinking… 3s")
+    assert rendered.endswith("Esc to stop")
+    assert len(rendered) == 60
+    assert "Press" not in rendered
+    assert "(" not in rendered
+    assert "[" not in rendered
 
 
-def test_status_row_uses_single_spaces_around_elapsed_badge() -> None:
-    """Hint and badge sit one cell apart and the badge hugs its brackets."""
+def test_status_row_keeps_tool_and_elapsed_together_before_stop_hint() -> None:
+    """Live work and elapsed detail stay grouped before the right-side hint."""
     spinner = SpinnerState()
     spinner.start()
     spinner.set_phase(SpinnerState.INVOKING_TOOLS_PHASE)
     spinner.set_active_action("scan github ci health")
     rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
-    assert re.search(r"scan github ci health \(Press ESC to stop\) \[\d+s\]$", rendered)
-    assert "  " not in rendered
+    assert re.search(r"scan github ci health \d+s {2,}Esc to stop$", rendered)
 
     spinner.bytes_in = 40_000
     rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
-    assert re.search(r"\(Press ESC to stop\) \[\d+s · ↓ \S+ tokens\]$", rendered)
-    assert "  " not in rendered
+    assert re.search(r"\d+s · ↓ \S+ tokens {2,}Esc to stop$", rendered)
 
 
 def test_long_phase_clips_to_one_prompt_column_budget() -> None:
@@ -47,6 +55,35 @@ def test_long_phase_clips_to_one_prompt_column_budget() -> None:
     rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
 
     assert prompt_text_width(rendered) <= prompt_line_width()
+
+
+def test_status_row_fits_every_terminal_width(monkeypatch) -> None:
+    """The live status row must not soft-wrap at any terminal size.
+
+    Widths 19-21 bracket the point where the right-anchored hint stops fitting
+    and the row falls back to a single clipped string. A row wider than the
+    budget wraps, desyncs prompt_toolkit's row accounting against the one-row
+    prefix, and strands stale spinner lines after a resize.
+    """
+    from surfaces.shared.terminal.prompt_layout import prompt_text_width
+
+    loads = (("", 0), ("GitHub CLI · gh api repos/x", 0), ("查询 · " + "中" * 80, 400_000))
+    for width in (1, 8, 12, 19, 20, 21, 24, 40, 80, 200):
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.runtime.core.state.prompt_line_width",
+            lambda width=width: width,
+        )
+        for action, tokens in loads:
+            spinner = SpinnerState(frames=("◌",))
+            spinner.start()
+            spinner.started_at = time.monotonic() - 3.0
+            spinner.set_phase(SpinnerState.INVOKING_TOOLS_PHASE)
+            if action:
+                spinner.set_active_action(action)
+            spinner.bytes_in = tokens
+            rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
+            assert prompt_text_width(rendered) <= width
+            assert "\n" not in rendered
 
 
 def test_live_tool_folds_into_spinner_row_and_clears() -> None:

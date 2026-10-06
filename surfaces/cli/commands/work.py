@@ -22,6 +22,7 @@ from core.domain.work_items import (
     resolve_work_item_datetime,
     work_items_path,
 )
+from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
@@ -360,10 +361,8 @@ def _validate_cron(cron_expr: str, timezone: str) -> None:
     if len(cron_expr.split()) != 5:
         raise click.BadParameter("cron must have exactly 5 fields")
     try:
-        from apscheduler.triggers.cron import CronTrigger
-
-        CronTrigger.from_crontab(cron_expr, timezone=timezone)
-    except (KeyError, TypeError, ValueError) as exc:
+        build_cron_trigger(cron_expr, timezone)
+    except ValueError as exc:
         raise click.BadParameter(str(exc)) from None
 
 

@@ -9,6 +9,7 @@ from collections.abc import Iterator
 
 import pytest
 from rich.console import Console
+from rich.text import Text
 
 from surfaces.interactive_shell.ui.streaming import (
     finish_deferred_closer,
@@ -79,6 +80,49 @@ def test_prose_reply_keeps_the_inline_label() -> None:
     publish_full_response(console, "Root disk is 44% full.")
 
     assert "● Root disk is 44% full." in buf.getvalue()
+
+
+_PR_URL = "https://github.com/o/r/pull/1"
+_ENCODED_PR_URL = "https://github.com/o/r/pull%2F1"
+
+
+@pytest.mark.parametrize(
+    ("reply", "visible", "href"),
+    [
+        pytest.param(
+            f"Opened [o/r PR #1]({_PR_URL}).",
+            f"Opened o/r PR #1 ({_PR_URL}).",
+            _PR_URL,
+            id="text-differs-from-url",
+        ),
+        pytest.param(f"Opened <{_PR_URL}>.", f"Opened {_PR_URL}.", _PR_URL, id="autolink"),
+        pytest.param(
+            f"Opened [{_PR_URL}]({_PR_URL}).", f"Opened {_PR_URL}.", _PR_URL, id="text-is-the-url"
+        ),
+        # ``%2F`` and ``/`` can reach different resources, so the real target still shows.
+        pytest.param(
+            f"Opened [{_PR_URL}]({_ENCODED_PR_URL}).",
+            f"Opened {_PR_URL} ({_ENCODED_PR_URL}).",
+            _ENCODED_PR_URL,
+            id="text-decodes-the-url",
+        ),
+    ],
+)
+def test_reply_link_shows_its_destination_once(reply: str, visible: str, href: str) -> None:
+    # Arrange: a terminal console, where Rich would put the URL only in an OSC 8
+    # escape that Terminal.app cannot open and copying drops.
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=True, color_system="truecolor", width=120)
+
+    # Act
+    publish_full_response(console, reply)
+
+    # Assert: the sentence shows the destination once (a repeat would break the
+    # match), and the link text still carries the OSC 8 hyperlink.
+    rendered = Text.from_ansi(buf.getvalue())
+    assert visible in rendered.plain
+    link_text_at = rendered.plain.index(visible) + len("Opened ")
+    assert rendered.get_style_at_offset(console, link_text_at).link == href
 
 
 def _tty_console() -> tuple[Console, io.StringIO]:

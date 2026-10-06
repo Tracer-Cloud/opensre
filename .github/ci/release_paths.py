@@ -15,7 +15,10 @@ _EXCLUDED_SUFFIXES = (".md", ".mdx")
 # Markdown the frozen binary actually loads. A skill-only push has to publish a
 # main build, or a container that installs that binary never sees the edit.
 _BUNDLED_MARKDOWN = "core/agent_harness/prompts/opensre_system_prompt.md"
-_BUNDLED_MARKDOWN_PREFIXES = ("core/agent_harness/prompts/skills/",)
+_BUNDLED_MARKDOWN_PREFIXES = (
+    "core/agent_harness/prompts/loop_templates/",
+    "core/agent_harness/prompts/skills/",
+)
 
 
 def _affects_release(path: str) -> bool:

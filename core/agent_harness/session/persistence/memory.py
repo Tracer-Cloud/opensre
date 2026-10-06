@@ -158,6 +158,20 @@ class InMemorySessionStore:
             sidecar=True,
         )
 
+    def append_custom_message(
+        self,
+        session_id: str,
+        *,
+        custom_type: str,
+        content: Any,
+        display: bool = True,
+    ) -> str:
+        return self._append(
+            session_id,
+            "custom_message",
+            {"custom_type": custom_type, "content": content, "display": display},
+        )
+
     def append_tool_update(
         self,
         session_id: str,
@@ -182,6 +196,8 @@ class InMemorySessionStore:
         after_chars: int,
         before_tokens: int | None = None,
         after_tokens: int | None = None,
+        replacement_messages: list[list[str]] | None = None,
+        replacement_evidence: list[dict[str, Any]] | None = None,
     ) -> str:
         return self._append(
             session_id,
@@ -193,6 +209,18 @@ class InMemorySessionStore:
                 "after_chars": after_chars,
                 "before_tokens": before_tokens,
                 "after_tokens": after_tokens,
+                # What the compaction kept verbatim. Present means the record
+                # replaces everything before it when the session is restored.
+                **(
+                    {"replacement_messages": replacement_messages}
+                    if replacement_messages is not None
+                    else {}
+                ),
+                **(
+                    {"replacement_evidence": replacement_evidence}
+                    if replacement_evidence is not None
+                    else {}
+                ),
             },
         )
 
@@ -200,7 +228,7 @@ class InMemorySessionStore:
         records = self._files.get(session.session_id)
         if not records:
             return
-        trailing_leaf = records[-1].get("type") == "leaf"
+        trailing_leaf = self._conversation_tip_is_closed(records)
         if not trailing_leaf and not any(rec.get("type") != "session" for rec in records):
             from core.agent_harness.session.pending_choice import PendingUserChoice
 
@@ -222,44 +250,10 @@ class InMemorySessionStore:
                 },
             )
             records = self._files.get(session.session_id, records)
-        if hasattr(session, "session_goal"):
-            from core.agent_harness.session_goal.persist import (
-                SESSION_GOAL_STATE_CUSTOM_TYPE,
-                session_goal_state_snapshot,
-                should_persist_session_goal_state,
-            )
-
-            goal_state = session_goal_state_snapshot(session)
-            if should_persist_session_goal_state(goal_state, prior_records=records):
-                self._append(
-                    session.session_id,
-                    "custom_message",
-                    {
-                        "custom_type": SESSION_GOAL_STATE_CUSTOM_TYPE,
-                        "content": goal_state,
-                        "display": False,
-                    },
-                )
-                records = self._files.get(session.session_id, records)
-        if hasattr(session, "task_plan"):
-            from core.agent_harness.task_plan.persist import (
-                TASK_PLAN_STATE_CUSTOM_TYPE,
-                should_persist_task_plan_state,
-                task_plan_state_snapshot,
-            )
-
-            plan_state = task_plan_state_snapshot(session)
-            if should_persist_task_plan_state(plan_state, prior_records=records):
-                self._append(
-                    session.session_id,
-                    "custom_message",
-                    {
-                        "custom_type": TASK_PLAN_STATE_CUSTOM_TYPE,
-                        "content": plan_state or {},
-                        "display": False,
-                    },
-                )
-                records = self._files.get(session.session_id, records)
+        self._append_session_goal_state(session, records)
+        records = self._files.get(session.session_id, records)
+        self._append_task_plan_state(session, records)
+        records = self._files.get(session.session_id, records)
         if hasattr(session, "pending_user_choice"):
             from core.agent_harness.session.pending_choice import (
                 PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
@@ -300,6 +294,131 @@ class InMemorySessionStore:
                 )
             },
         )
+
+    def flush_session_goal_control_state(self, session: SessionPersistenceSource) -> None:
+        """Persist goal and task-plan state changed by a goal control."""
+        from core.agent_harness.session.persistence.contracts import (
+            SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+        )
+        from core.agent_harness.session_goal.persist import session_goal_state_snapshot
+        from core.agent_harness.task_plan.persist import task_plan_state_snapshot
+
+        records = self._files.get(session.session_id)
+        if records is None:
+            raise FileNotFoundError(session.session_id)
+        self._append(
+            session.session_id,
+            "custom_message",
+            {
+                "custom_type": SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+                "content": {
+                    "session_goal_state": session_goal_state_snapshot(session),
+                    "task_plan_state": task_plan_state_snapshot(session) or {},
+                },
+                "display": False,
+            },
+        )
+        self._append_task_plan_state(session, records)
+        records = self._files.get(session.session_id, records)
+        self._append_session_goal_state(session, records)
+
+    def append_session_goal_control(self, session_id: str, reason: str) -> str:
+        """Durably record a goal control outside the live conversation branch."""
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            SESSION_GOAL_CONTROL_REQUESTED,
+        )
+
+        records = self._files.get(session_id)
+        if records is None:
+            raise OSError("Could not persist session-goal control")
+        target_entry_id = self._current_leaf(records)
+        if target_entry_id is None:
+            raise OSError("Could not identify session-goal control branch")
+        control_id = uuid.uuid4().hex
+        entry_id = self._append(
+            session_id,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            {
+                "control_id": control_id,
+                "reason": reason,
+                "status": SESSION_GOAL_CONTROL_REQUESTED,
+                "target_entry_id": target_entry_id,
+            },
+            sidecar=True,
+        )
+        if not entry_id:
+            raise OSError("Could not persist session-goal control")
+        return control_id
+
+    def complete_session_goal_control(self, session_id: str, control_id: str) -> None:
+        """Acknowledge a previously recorded goal control."""
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_CONTROL_APPLIED,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+        )
+
+        entry_id = self._append(
+            session_id,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            {
+                "control_id": control_id,
+                "status": SESSION_GOAL_CONTROL_APPLIED,
+            },
+            sidecar=True,
+        )
+        if not entry_id:
+            raise OSError("Could not acknowledge session-goal control")
+
+    def _append_session_goal_state(
+        self,
+        session: SessionPersistenceSource,
+        records: list[dict[str, Any]],
+    ) -> None:
+        if not hasattr(session, "session_goal"):
+            return
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_STATE_CUSTOM_TYPE,
+            session_goal_state_snapshot,
+            should_persist_session_goal_state,
+        )
+
+        goal_state = session_goal_state_snapshot(session)
+        if should_persist_session_goal_state(goal_state, prior_records=records):
+            self._append(
+                session.session_id,
+                "custom_message",
+                {
+                    "custom_type": SESSION_GOAL_STATE_CUSTOM_TYPE,
+                    "content": goal_state,
+                    "display": False,
+                },
+            )
+
+    def _append_task_plan_state(
+        self,
+        session: SessionPersistenceSource,
+        records: list[dict[str, Any]],
+    ) -> None:
+        if not hasattr(session, "task_plan"):
+            return
+        from core.agent_harness.task_plan.persist import (
+            TASK_PLAN_STATE_CUSTOM_TYPE,
+            should_persist_task_plan_state,
+            task_plan_state_snapshot,
+        )
+
+        plan_state = task_plan_state_snapshot(session)
+        if should_persist_task_plan_state(plan_state, prior_records=records):
+            self._append(
+                session.session_id,
+                "custom_message",
+                {
+                    "custom_type": TASK_PLAN_STATE_CUSTOM_TYPE,
+                    "content": plan_state or {},
+                    "display": False,
+                },
+            )
 
     def reopen_session(self, _session_id: str) -> None:
         return
@@ -342,3 +461,12 @@ class InMemorySessionStore:
             if rec.get("type") != "session":
                 return str(rec.get("id") or "") or None
         return None
+
+    @staticmethod
+    def _conversation_tip_is_closed(records: list[dict[str, Any]]) -> bool:
+        """Return whether the newest non-sidecar record is a closing leaf."""
+        for record in reversed(records):
+            if record.get("sidecar"):
+                continue
+            return bool(record.get("type") == "leaf")
+        return False

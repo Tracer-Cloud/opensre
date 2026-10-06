@@ -84,7 +84,23 @@ such a step completed. The second work tool of a turn with no open plan is
 refused (`task_plan/required.py`). A response whose only tool call is
 `update_plan` runs: the prompt asks for the write in the same response as the
 step's tool, but refusing it cost the same model call it meant to save and
-sent the model into retries and off-plan tools. A step newly marked
+sent the model into retries and off-plan tools. The host advances the plan
+so the model need not write it to move on (`task_plan/advance.py`, armed per
+batch in `turns/plan_hooks.py`): before the first work call of a batch with
+no `update_plan` (`ask_user_choice` counts; bookkeeping and `slash_invoke` do
+not), the earned `in_progress` step completes and the first pending step
+after it starts (never one behind it). Earned is the completion rule above (a
+tool return, or the Ask User answer for the step that asked); a shown
+`deliverable` reply earns exactly one deliverable step; a `verifies` step
+needs its own tool return. A plan records the skill that wrote it
+(`TaskPlan.owner`). Only a plan written this turn moves, or one whose owner is
+still the active skill on a turn answering that skill's own question
+(`task_plan/ownership.py`, decided once at turn start as
+`TurnSnapshot.plan_answer_continues`); the CURRENT PLAN, ACTIVE SKILL and
+answered-guidance blocks say the host advances only on such a turn and keep
+asking for paired status writes otherwise. The host never settles a plan or
+touches `blocked` steps, and a host advance counts as the turn working the
+plan for the stop gates (`goal_review.py`). A step newly marked
 `blocked` is resolved with the user, not skipped: the conclusion is rejected
 until `ask_user_choice`
 is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
@@ -147,7 +163,14 @@ new demo, and `/new` drop it. Never park skill-less prose or a slash command.
 Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`
 to `False` through `prepare_session`. This host-owned policy removes the skill
 index and `skill_view` while retaining execution tools; never infer it from
-prompt text or restore it from conversation history.
+prompt text or restore it from conversation history. A loop bound to a skill
+(`loop_skill`) still gets that one card: the runner appends its rendered body
+to the task (`infrastructure/scheduling/scheduler/loop_prompt.py`), and a missing
+card fails the tick.
+
+**Repository AGENTS.md files are for local coding agents.** Never load a
+repository's `AGENTS.md` (or `AGENTS.override.md`) into the OpenSRE agent's
+prompt, from a checkout or through an integration.
 
 Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.
 Expand `AgentBuildConfig` through `resolve_agent_ports` — do not re-copy the
@@ -245,9 +268,9 @@ subpackage. Default port implementations live with the concern they serve, not i
   `TurnAccounting` (`turn_accounting.py`).
 - `prompts/` — the single agent's prompt assembly. Layout: `kernel/`
   (envelope + surface Strategy), `action/` (assembler), `grounding/`
-  (prompt providers), plus leaves `memory/` / `runtime_facts/` / `skills/`.
-- `grounding/` — reusable grounding cache and rendering contracts; surfaces
-  inject surface-owned command registries instead of being imported here.
+  (the provider that names a session's surface), plus leaves `memory/` /
+  `runtime_facts/` / `skills/`.
+- `grounding/` — grounding sources the action assembler reads.
 - `session/` — reusable agent session state (`SessionCore`), JSONL storage, prompt
   history, task registry, session-scoped background records, integration resolution
   (:mod:`session.integration_resolution`), and `SessionManager` (the lifecycle owner).
@@ -265,8 +288,8 @@ to it instead of re-implementing bootstrap + persistence:
 
 - **shell** — `SessionBootstrapSpec` calls `SessionManager().bootstrap(...)` for
   the core startup mutations (persistent task registry + integration
-  hydration), then layers shell-only UI concerns (theme, grounding providers,
-  prompt history) on top. Interactive REPL entry calls
+  hydration), then layers shell-only UI concerns (theme, prompt history) on
+  top. Interactive REPL entry calls
   :meth:`SessionManager.open_storage` once the run is confirmed interactive;
   ``/new`` calls :meth:`SessionManager.rotate_in_place`; ``/resume`` calls
   :meth:`SessionManager.rebind_for_resume` then :meth:`SessionManager.restore_context`.
@@ -286,6 +309,13 @@ to it instead of re-implementing bootstrap + persistence:
   :meth:`AgentSession.run_headless_turn` (or ``start`` + ``chat``).
   That is the same ``run_turn`` engine as the shell; do not reassemble
   ``BufferOutputSink`` + ``DefaultHeadlessBuild`` in integrations.
+  Inside a scheduler run attempt, ``run_headless_turn`` records the message
+  it submits and adds an ``after_tool_call`` hook that records each call of a
+  tool declaring a mutating or external ``side_effect_level``
+  (``infrastructure/scheduling/scheduler/tool_actions.py``). The attempt's run
+  record keeps them, and the loop's next tick reads them back as its PREVIOUS
+  RUNS block: a loop's continuity across ticks comes from those records, not
+  from a long-lived agent.
   Ephemeral in-memory sessions (``headless_adapters.InMemorySessionState``)
   bypass ``SessionManager`` by design when tests need no JSONL.
 
@@ -334,6 +364,30 @@ construct a persistent ``core.agent.Agent`` — gateway chat reuses one
 
 Turn assembly starts in ``turns/orchestrator.py`` with
 ``TurnSnapshot.from_session``.
+
+**Conversation history is replayed, not quoted.** Earlier turns go to the model
+as typed messages ahead of the new user message (``turns/structured_history.py``):
+each user message, every assistant tool-call batch with its results (bounded at
+record time, head and tail kept), and the reply. ``record_conversation_turn``
+stores a turn's ``TurnEvidence`` beside its ``(user, assistant)`` text pair and
+appends it to the session log as a ``turn_evidence`` record; ``restore_context``
+brings it back. Evidence is matched to transcript pairs by reply text, so a
+transcript rewritten elsewhere (thread seeding, compaction) replays as text
+instead of the wrong turn. Compaction (``turns/transcript_compaction.py``) is
+token-based: past ``OPENSRE_HISTORY_TOKEN_BUDGET`` a model writes a handoff
+summary of the older turns, the newest stay verbatim with their evidence, and
+the compaction record keeps both so resume restarts from the same state.
+``OPENSRE_STRUCTURED_HISTORY=0`` restores the text block (``RECENT
+CONVERSATION``) as a kill switch. Code that scans a run's ``result.messages``
+for this turn's output must skip the replayed prefix (``history_count``), or an
+earlier turn's message is mistaken for this one's.
+
+**The model's context is measured in one place.** ``turns/prompt_size.py``
+sizes each envelope block, the replayed history and the tool schemas of a model
+call; the prompt log records that per turn (``model_blocks``) and ``/context``
+shows it for the next turn without calling a model. A new block or context
+source is assembled in ``prompts/action/assemble.py`` and is measured from
+there; do not compute prompt sizes anywhere else.
 
 **Do NOT** reintroduce per-surface `Agent` subclasses that override
 `build_llm` / `build_system_prompt` / `build_tools` / `resolved_integrations`

@@ -474,7 +474,7 @@ class TestResolvePromptPrefix:
             idle_hint=spinner.idle_hint_ansi(),
         )
         assert "preview line" not in prefix
-        assert "Press ESC to stop" in _strip_ansi(prefix)
+        assert "Esc to stop" in _strip_ansi(prefix)
 
     def test_completion_details_do_not_replace_runtime_status(self) -> None:
         spinner = loop_state.SpinnerState()

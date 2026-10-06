@@ -45,6 +45,12 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_SESSION_PATH as OPENSRE_ACCOUNT_SESSION_PATH,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS as OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS,  # noqa: E501
+    )
+    from config.constants.account import (
+        OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS as OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS,  # noqa: E501
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_TOKEN_ENV as OPENSRE_ACCOUNT_TOKEN_ENV,
     )
     from config.constants.account import (
@@ -146,6 +152,7 @@ if TYPE_CHECKING:
     from config.constants.analytics import (
         ANALYTICS_TIMESTAMP_HEADER as ANALYTICS_TIMESTAMP_HEADER,
     )
+    from config.constants.analytics import LLMCreditErrorReason as LLMCreditErrorReason
     from config.constants.ask_user import (
         AskUserReason as AskUserReason,
     )
@@ -290,6 +297,9 @@ if TYPE_CHECKING:
     from config.constants.ci_fixes import (
         CI_FIX_LEDGER_PATH_ENV as CI_FIX_LEDGER_PATH_ENV,
     )
+    from config.constants.ci_fixes import (
+        CI_FIX_UNSETTLED_MERGE_ATTEMPTS as CI_FIX_UNSETTLED_MERGE_ATTEMPTS,
+    )
     from config.constants.ci_repair import CI_REPAIR_CRON as CI_REPAIR_CRON
     from config.constants.ci_repair import CI_REPAIR_DIRECTORY as CI_REPAIR_DIRECTORY
     from config.constants.ci_repair import (
@@ -320,6 +330,18 @@ if TYPE_CHECKING:
     )
     from config.constants.coding_agent import (
         CODING_AGENT_SANDBOX_HOST as CODING_AGENT_SANDBOX_HOST,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_HISTORY_TOKEN_BUDGET_ENV as OPENSRE_HISTORY_TOKEN_BUDGET_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV as OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_LLM_COMPACTION_ENV as OPENSRE_LLM_COMPACTION_ENV,
+    )
+    from config.constants.conversation_history import (
+        OPENSRE_STRUCTURED_HISTORY_ENV as OPENSRE_STRUCTURED_HISTORY_ENV,
     )
     from config.constants.coralogix import (
         CORALOGIX_API_KEY_ENV as CORALOGIX_API_KEY_ENV,
@@ -470,6 +492,9 @@ if TYPE_CHECKING:
     )
     from config.constants.gateway import (
         PROMPT_PROGRESS_PLAN_OMITTED as PROMPT_PROGRESS_PLAN_OMITTED,
+    )
+    from config.constants.gateway import (
+        PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS as PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS,
     )
     from config.constants.gateway import (
         PROMPT_QUEUE_MAX as PROMPT_QUEUE_MAX,
@@ -737,6 +762,12 @@ if TYPE_CHECKING:
         OPENAI_BASE_URL_ENV as OPENAI_BASE_URL_ENV,
     )
     from config.constants.llm import (
+        OPENAI_PROMPT_CACHE_KEY_HASH_CHARS as OPENAI_PROMPT_CACHE_KEY_HASH_CHARS,
+    )
+    from config.constants.llm import (
+        OPENAI_PROMPT_CACHE_KEY_PREFIX as OPENAI_PROMPT_CACHE_KEY_PREFIX,
+    )
+    from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
     )
     from config.constants.llm import (
@@ -768,6 +799,9 @@ if TYPE_CHECKING:
     )
     from config.constants.mcp import (
         MCP_TERMINAL_ENV as MCP_TERMINAL_ENV,
+    )
+    from config.constants.memory import (
+        MEMORY_TOOL_NAMES as MEMORY_TOOL_NAMES,
     )
     from config.constants.memory import (
         OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV as OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
@@ -1152,6 +1186,15 @@ if TYPE_CHECKING:
         OPENSRE_SCHEDULER_BUILD_ENV as OPENSRE_SCHEDULER_BUILD_ENV,
     )
     from config.constants.scheduler import (
+        SCHEDULED_TASK_TRACE_KEY as SCHEDULED_TASK_TRACE_KEY,
+    )
+    from config.constants.scheduler import (
+        SCHEDULER_MISSED_FIRE_GRACE_SECONDS as SCHEDULER_MISSED_FIRE_GRACE_SECONDS,
+    )
+    from config.constants.scheduler import (
+        STATELESS_LOOP_IDLE_REPLY as STATELESS_LOOP_IDLE_REPLY,
+    )
+    from config.constants.scheduler import (
         WEEKDAY_CRON_FIELD as WEEKDAY_CRON_FIELD,
     )
     from config.constants.secrets import (
@@ -1382,6 +1425,12 @@ if TYPE_CHECKING:
     from config.constants.tenancy import (
         INTEGRATIONS_STORE_PATH_ENV as INTEGRATIONS_STORE_PATH_ENV,
     )
+    from config.constants.tenancy import (
+        TURN_ACTOR_ID_ENV as TURN_ACTOR_ID_ENV,
+    )
+    from config.constants.tenancy import (
+        TURN_ORGANIZATION_ID_ENV as TURN_ORGANIZATION_ID_ENV,
+    )
     from config.constants.terminal_host import (
         APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,
     )
@@ -1412,8 +1461,23 @@ if TYPE_CHECKING:
     from config.constants.terminal_host import (
         WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
     )
+    from config.constants.tls import (
+        SSL_CERT_DIR_ENV as SSL_CERT_DIR_ENV,
+    )
+    from config.constants.tls import (
+        SSL_CERT_FILE_ENV as SSL_CERT_FILE_ENV,
+    )
+    from config.constants.tooling import (
+        CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS as CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS,
+    )
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
+    )
+    from config.constants.tooling import (
+        TOOL_PREFETCH_MAX_ENTRIES as TOOL_PREFETCH_MAX_ENTRIES,
+    )
+    from config.constants.tooling import (
+        WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS as WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS,
     )
     from config.constants.tooling import (
         ToolBlockedBy as ToolBlockedBy,

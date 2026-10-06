@@ -27,10 +27,21 @@ LOOP_REPORT_PARAM = "loop_report"
 LOOP_REPORT_ARGS_PARAM = "loop_report_args"
 """JSON object of string arguments handed to the report builder."""
 
+LOOP_SKILL_PARAM = "loop_skill"
+"""Workflow card, or installed skill folder path, an agent-mode loop follows.
+
+Its body is added to each tick's task."""
+
 LOOP_SLACK_CHAT_ID_PARAM = "slack_chat_id"
 LOOP_SLUG_PARAM = "loop_slug"
 LOOP_SOURCE_PARAM = "loop_source"
+LOOP_STATELESS_PARAM = "loop_stateless"
+"""``"true"`` when each agent tick starts without earlier runs, carry notes or long-term memory."""
+
 LOOP_TELEGRAM_CHAT_ID_PARAM = "telegram_chat_id"
+LOOP_TEMPLATE_PARAM = "loop_template"
+"""Name of the shipped loop template whose current text each tick runs."""
+
 LOOP_TIME_PARAM = "loop_time"
 
 __all__ = [
@@ -47,12 +58,15 @@ __all__ = [
     "LOOP_PROMPT_PARAM",
     "LOOP_REPORT_ARGS_PARAM",
     "LOOP_REPORT_PARAM",
+    "LOOP_SKILL_PARAM",
     "LOOP_SLACK_CHAT_ID_PARAM",
     "LOOP_SLUG_PARAM",
     "LOOP_SOURCE_PARAM",
+    "LOOP_STATELESS_PARAM",
     "LOOP_STATUS_ACTIVE",
     "LOOP_STATUS_DRAFT",
     "LOOP_STATUS_PAUSED",
     "LOOP_TELEGRAM_CHAT_ID_PARAM",
+    "LOOP_TEMPLATE_PARAM",
     "LOOP_TIME_PARAM",
 ]

@@ -16,6 +16,14 @@ HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS = 10.0
 #: How long a prompt's wait rides out a gateway that stopped answering before handing back
 #: the prompt id. Covers a relay blip; a restart takes longer and drops the prompt anyway.
 HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS = 60.0
+#: Pauses before each retry of a send or first read the gateway did not answer (502/503/504,
+#: connection refused or timed out). Every retry reuses the call's request id, so nothing is
+#: queued twice.
+HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS: tuple[float, ...] = (3.0, 6.0, 12.0, 24.0)
+#: No send or first-read retry starts after this many seconds. A request already in
+#: flight still runs to its HTTP timeout, so a gateway that times out every request is
+#: reported after at most this budget plus one attempt.
+HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS = 60.0
 # Where an organization admin provisions and inspects the gateway in the app.
 HOSTED_GATEWAY_SETTINGS_PATH = "/settings/agent-backend"
 HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS = 30.0
@@ -38,5 +46,7 @@ __all__ = [
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS",
     "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS",
     "HOSTED_GATEWAY_STOP_PATH",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS",
     "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS",
 ]

@@ -20,6 +20,8 @@ from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
     HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
     HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS,
+    HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS,
+    HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS,
     HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS,
 )
 from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
@@ -106,6 +108,8 @@ _ASKING_IN_SHELL = (
     "The hosted gateway needs your decision; the menu opens now. Your selection goes back "
     "to its prompt {prompt_id}."
 )
+#: Introduces what the gateway wrote before its question.
+_GATEWAY_REPORTED = "The hosted gateway reported:"
 #: For the model only: how the parked question continues once the user has answered.
 _ASKING_IN_SHELL_INSTRUCTIONS = (
     "The question is parked on the shell's menu; the user answers it there. Once they have "
@@ -275,8 +279,10 @@ def ask_hosted_gateway(
     request_id = request_id.strip() or uuid.uuid4().hex
     try:
         with HostedGatewayClient.from_account() as client:
-            record, sent_at, skip_recorded = _submit_or_continue(
+            relay = _ProgressRelay(context)
+            record, sent_at, skip_recorded = _submit_riding_out_restarts(
                 client,
+                relay,
                 prompt.strip(),
                 dict(facts or {}),
                 prompt_id.strip(),
@@ -285,7 +291,6 @@ def ask_hosted_gateway(
                 conversation,
             )
             in_flight = record.prompt_id
-            relay = _ProgressRelay(context)
             if skip_recorded:
                 relay.skip_recorded(record)
             record, waited = _wait_until_settled(client, record, relay, sent_at=sent_at)
@@ -354,6 +359,46 @@ def _answer_not_used(record: PromptRecord) -> str:
     if record.state != "failed":
         return ""
     return _ANSWER_NOT_USED.get(record.error, "")
+
+
+def _submit_riding_out_restarts(
+    client: HostedGatewayClient,
+    relay: _ProgressRelay,
+    prompt: str,
+    facts: dict[str, str],
+    prompt_id: str,
+    scope: ActionToolScope | None,
+    request_id: str,
+    conversation: str,
+) -> tuple[PromptRecord, float, bool]:
+    """``_submit_or_continue``, retried with a bounded backoff while the gateway is not answering.
+
+    Safe to repeat: every attempt carries the same ``request_id``, so the gateway
+    queues a prompt or takes an answer at most once, and a read changes nothing.
+    Only transient failures are retried, and no retry starts once
+    ``HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS`` has elapsed; the last failure
+    is raised as is.
+    """
+    deadline = time.monotonic() + HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS
+    delays = iter(HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS)
+    noticed = False
+    while True:
+        try:
+            return _submit_or_continue(
+                client, prompt, facts, prompt_id, scope, request_id, conversation
+            )
+        except HostedGatewayError as exc:
+            delay = next(delays, None)
+            if (
+                exc.code not in TRANSIENT_ERRORS
+                or delay is None
+                or time.monotonic() + delay >= deadline
+            ):
+                raise
+            if not noticed:
+                relay.note(_waiting_notice(exc))
+                noticed = True
+            time.sleep(delay)
 
 
 def _submit_or_continue(
@@ -500,6 +545,10 @@ def _outcome(
         text = record.answer
     elif record.state == "needs_input":
         text, parked = _ask_here(record, scope)
+        report = record.answer.strip()
+        if report:
+            # The menu line, with its prompt id, leads: the shell previews only the head.
+            text = f"{text}\n\n{_relayed_report(report)}"
         if parked:
             instructions.append(_ASKING_IN_SHELL_INSTRUCTIONS.format(prompt_id=record.prompt_id))
     elif record.state in _STATE_TEXT:
@@ -552,6 +601,18 @@ def _failure_text(error: str) -> str:
     if known is not None:
         return known
     return _STATE_TEXT["failed"].format(error=error)
+
+
+def _relayed_report(report: str) -> str:
+    """The gateway's reply before its question, shaped so the shell keeps the menu line.
+
+    The shell drops a tool text that reads as data (it opens with a bracket or carries
+    two ``":``) or as a repeated outcome report, and the menu line with the prompt id
+    would go with it. A label, a block quote, and single quotes keep the reply as prose.
+    """
+    lines = report.replace('"', "'").splitlines()
+    quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in lines)
+    return f"{_GATEWAY_REPORTED}\n{quoted}"
 
 
 def _ask_here(record: PromptRecord, scope: ActionToolScope | None) -> tuple[str, bool]:

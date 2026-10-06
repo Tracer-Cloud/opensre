@@ -51,6 +51,8 @@ class ElasticsearchLogsTool(BaseTool):
     name = "query_elasticsearch_logs"
     evidence_mapper = _map_elasticsearch_logs
     source = "elasticsearch"
+    # The configured cluster receives the configured credentials; never a model-chosen URL.
+    injected_params = ["url"]
     description = "Search Elasticsearch logs for errors, exceptions, and application events."
     use_cases = [
         "Investigating application errors stored in Elasticsearch",

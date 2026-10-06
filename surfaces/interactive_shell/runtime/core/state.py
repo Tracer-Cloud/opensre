@@ -14,6 +14,7 @@ from prompt_toolkit.application.current import get_app_or_none
 from core.agent_harness.spi.cancel import (
     HostCancelEvent,
     HostCancelReason,
+    is_goal_control_reason,
     turn_cancel_reason,
 )
 from infrastructure.terminal import theme as ui_theme
@@ -121,6 +122,7 @@ class ReplState:
     gateway_plan: TaskPlan | None = None
     phase: TurnPhase = TurnPhase.IDLE
     ctrl_c_exit_hint_until: float = 0.0
+    _detached_turn_worker: bool = False
 
     def is_dispatch_running(self) -> bool:
         return self.current_task is not None and not self.current_task.done()
@@ -135,22 +137,31 @@ class ReplState:
     def is_cancelling(self) -> bool:
         return self.phase is TurnPhase.CANCELLING
 
-    def is_goal_pause_requested(self) -> bool:
-        return turn_cancel_reason(self.current_cancel_event) is HostCancelReason.GOAL_PAUSE
+    def requested_goal_control(self) -> HostCancelReason | None:
+        """Return the pending goal-boundary control for the active dispatch."""
+        reason = turn_cancel_reason(self.current_cancel_event)
+        return reason if is_goal_control_reason(reason) else None
 
-    def request_goal_pause(self, *, interrupt: bool = True) -> None:
-        """Mark this dispatch as a goal pause and optionally stop current work.
+    def request_goal_control(
+        self,
+        reason: HostCancelReason,
+        *,
+        interrupt: bool = True,
+    ) -> None:
+        """Record a goal-boundary control and optionally stop current work.
 
         The reason lives on the canonical turn-cancel event. When the current
         action has not attached a goal yet, retain that reason without setting
-        the event so the action may finish and the new goal can be paused at
+        the event so the action may finish and the new goal can be controlled at
         the next safe boundary.
         """
+        if not is_goal_control_reason(reason):
+            raise ValueError(f"Not a goal control reason: {reason}")
         cancel = self.current_cancel_event
         if cancel is None and self.is_dispatch_running():
             cancel = self.ensure_current_cancel_event()
         if isinstance(cancel, HostCancelEvent):
-            cancel.request(HostCancelReason.GOAL_PAUSE, interrupt=interrupt)
+            cancel.request(reason, interrupt=interrupt)
         elif interrupt and cancel is not None:
             cancel.set()
         if interrupt and (
@@ -177,6 +188,14 @@ class ReplState:
 
     def request_exit(self) -> None:
         self.exit_requested = True
+
+    def mark_turn_worker_detached(self) -> None:
+        """Record that forced exit abandoned blocking work outside the event loop."""
+        self._detached_turn_worker = True
+
+    def has_detached_turn_worker(self) -> bool:
+        """Return whether final teardown must avoid the worker-owned session lease."""
+        return self._detached_turn_worker
 
     def arm_ctrl_c_exit_hint(self, duration_seconds: float) -> None:
         """Show the double-press exit hint without restarting the prompt."""
@@ -237,9 +256,11 @@ class ReplState:
 
     def clear_current_task(self, task: asyncio.Task[None] | None = None) -> None:
         if task is None or self.current_task is task:
-            preserve_goal_pause = self.exit_requested and self.is_goal_pause_requested()
+            preserve_goal_control = (
+                self.exit_requested and self.requested_goal_control() is not None
+            )
             self.current_task = None
-            if not preserve_goal_pause:
+            if not preserve_goal_control:
                 self.current_cancel_event = None
             self.phase = TurnPhase.IDLE
 
@@ -248,7 +269,8 @@ class ReplState:
             self.current_cancel_event = None
         self.phase = TurnPhase.IDLE
 
-    def cancel_current_dispatch(self) -> None:
+    def signal_current_dispatch(self) -> None:
+        """Request cooperative turn shutdown without cancelling its asyncio task."""
         # Mark the cancel intent first, but only when there is something to
         # cancel, so an idle no-op call does not leave a stale CANCELLING phase.
         if (
@@ -261,6 +283,9 @@ class ReplState:
             self.current_cancel_event.set()
         if self.confirm_event is not None:
             self.confirm_event.set()
+
+    def cancel_current_dispatch(self) -> None:
+        self.signal_current_dispatch()
         task = self.current_task
         if task is not None and not task.done():
             if self.loop is not None:
@@ -288,7 +313,9 @@ class SpinnerState:
     THINKING_PHASE = "Thinking…"
     EXECUTING_PHASE = "Executing…"
     INVOKING_TOOLS_PHASE = "Invoking tools…"
-    _STOP_HINT = "(Press ESC to stop)"
+    _STOP_HINT = "Esc to stop"
+    _STATUS_INDENT = "  "
+    _MIN_HINT_GAP = 2
     # Traveling light wave across the status sentence (Cursor / Droid style).
     _SHIMMER_PERIOD_SECONDS = 1.5
 
@@ -400,12 +427,14 @@ class SpinnerState:
         return ui_theme.BOLD_REPLY_MARKER_ANSI
 
     def inline_spinner_ansi(self) -> str:
-        """One status row: quiet phase (+ live tool) · stop hint · elapsed.
+        """One status row: primary phase and elapsed time, then the stop hint.
 
         When a tool is in flight the label becomes
         ``Invoking tools… · GitHub CLI · gh api …`` so awareness stays on the
         same row as the spinner — never a second reserved prompt row. A soft
         silver wave runs across the sentence; the glyph alone carries warmth.
+        The hint anchors to the right when space permits, separating the live
+        status from the keyboard instruction without adding another row.
         """
         if not self.streaming:
             return ""
@@ -415,9 +444,9 @@ class SpinnerState:
         glyph = self._SPINNER_FRAMES[frame_idx % len(self._SPINNER_FRAMES)]
         if token_count > 0:
             tokens_str = format_token_count_short(token_count)
-            elapsed_badge = f"[{elapsed:.0f}s · ↓ {tokens_str} tokens]"
+            elapsed_detail = f"{elapsed:.0f}s · ↓ {tokens_str} tokens"
         else:
-            elapsed_badge = f"[{elapsed:.0f}s]"
+            elapsed_detail = f"{elapsed:.0f}s"
         label = self.phase or self.THINKING_PHASE
         action = self.active_action
         if action:
@@ -425,17 +454,21 @@ class SpinnerState:
         # One prompt-region row only: a long phase (or a narrow terminal) must
         # not soft-wrap, which desyncs row height vs the one-row confirmation
         # prefix and leaves stale spinner/status lines.
-        lead = f"{glyph} "
-        # Single spaces throughout the row: the hint and the elapsed badge sit
-        # one cell apart like every other token, and the badge hugs its brackets.
-        tail = f" {self._STOP_HINT} {elapsed_badge}"
+        lead = f"{self._STATUS_INDENT}{glyph} "
         accent = self._phase_accent_ansi()
         width = prompt_line_width()
-        reserved = prompt_text_width(lead) + prompt_text_width(tail)
+        lead_width = prompt_text_width(lead)
+        elapsed_width = prompt_text_width(elapsed_detail)
+        hint_width = prompt_text_width(self._STOP_HINT)
+        reserved = lead_width + 1 + elapsed_width + self._MIN_HINT_GAP + hint_width
         if reserved >= width:
-            visible = clip_prompt_text(f"{lead}{label}{tail}", width)
+            visible = clip_prompt_text(f"{lead}{label} {elapsed_detail}  {self._STOP_HINT}", width)
             return f"{accent}{visible}{ui_theme.ANSI_RESET}"
         clipped_label = clip_prompt_text(label, width - reserved)
+        hint_gap = max(
+            self._MIN_HINT_GAP,
+            width - lead_width - prompt_text_width(clipped_label) - 1 - elapsed_width - hint_width,
+        )
         shimmered = ui_theme.shimmer_text_ansi(
             clipped_label,
             elapsed=elapsed,
@@ -444,7 +477,8 @@ class SpinnerState:
         )
         return (
             f"{accent}{lead}{ui_theme.ANSI_RESET}{shimmered}"
-            f"{ui_theme.ANSI_DIM}{tail}{ui_theme.ANSI_RESET}"
+            f"{ui_theme.ANSI_DIM} {elapsed_detail}{' ' * hint_gap}"
+            f"{self._STOP_HINT}{ui_theme.ANSI_RESET}"
         )
 
 

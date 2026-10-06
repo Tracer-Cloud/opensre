@@ -12,6 +12,10 @@ SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME = "scheduling-github-ci-repairs"
 DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME = "delegating-github-ci-repairs"
 CONNECTING_SLACK_SKILL_NAME = "connecting-slack"
 
+# Not a demo child: the analysis demo hands off to it when GitHub is not
+# connected, cannot be read, or the user's repositories have no GitHub Actions.
+ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME = "analyzing-local-repositories"
+
 # Master onboarding menu the host opens on skill entry. When the four onboarding
 # children are present, the rows are the outcome choices below rather than each
 # child's ``getting_started`` label. The automation row opens a follow-up; the

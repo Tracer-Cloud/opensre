@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import MagicMock
 
@@ -10,6 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gateway.web import webapp
+from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
+from infrastructure.scheduling.scheduler.storage import ExecutionClaim
 
 
 def test_webapp_module_calls_init_sentry_on_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,3 +54,27 @@ def test_ok_route_is_registered() -> None:
     data = resp.json()
     assert "ok" in data
     assert "version" in data
+
+
+def test_health_reports_the_scheduled_runs_this_process_is_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the hosted refresh reads this before it replaces the gateway
+    renewer = ClaimLeaseRenewer(renew=lambda _claims: {}, renewal_interval_seconds=60)
+    monkeypatch.setattr(webapp, "default_claim_lease_renewer", renewer)
+    claim = ExecutionClaim(
+        task_id="pilot-loop",
+        fire_time="2026-10-04T09:29:00Z",
+        attempt=1,
+        owner_token="owner",
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=2),
+    )
+    client = TestClient(webapp.app)
+
+    # Act
+    with renewer.hold(claim):
+        during = client.get("/health").json()["scheduled_runs_in_flight"]
+    after = client.get("/health").json()["scheduled_runs_in_flight"]
+
+    # Assert
+    assert (during, after) == (1, 0)

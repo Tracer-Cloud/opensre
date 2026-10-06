@@ -7,6 +7,7 @@ from core.agent_harness.turns.host_cancel import (
     HostCancelReason,
     ensure_turn_cancel,
     host_cancel_requested,
+    is_goal_control_reason,
     turn_cancel_reason,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "HostCancelReason",
     "ensure_turn_cancel",
     "host_cancel_requested",
+    "is_goal_control_reason",
     "turn_cancel_reason",
 ]

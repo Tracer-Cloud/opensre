@@ -63,7 +63,7 @@ def ensure_active_step(plan: TaskPlan) -> TaskPlan:
             steps.append(item)
     if not promoted:
         return plan
-    return TaskPlan(steps=tuple(steps), explanation=plan.explanation)
+    return replace(plan, steps=tuple(steps))
 
 
 __all__ = [

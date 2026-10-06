@@ -42,7 +42,7 @@ class SessionBootstrapSpec(BaseModel):
 
         Core bootstrap (persistent task registry + integration hydration) is
         delegated to :class:`SessionManager`; the shell layers its own UI
-        concerns (theme, grounding providers, prompt history) on top.
+        concerns (theme, prompt history) on top.
         """
         SessionManager().bootstrap(
             self.session,

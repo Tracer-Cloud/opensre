@@ -51,6 +51,7 @@ class Event(StrEnum):
     TERMINAL_ACTIONS_EXECUTED = "terminal_actions_executed"
     TERMINAL_TURN_SUMMARIZED = "terminal_turn_summarized"
     REACT_TURN_COMPLETED = "react_turn_completed"
+    LLM_CREDIT_LIMIT_REACHED = "llm_credit_limit_reached"
     AI_GENERATION = "$ai_generation"
     AGENT_TOOL_CALL_COMPLETED = "agent_tool_call_completed"
     HOSTED_GATEWAY_TASK_SUBMITTED = "hosted_gateway_task_submitted"
@@ -63,6 +64,8 @@ class Event(StrEnum):
     SKILL_VALUE_DELIVERED = "skill_value_delivered"
     SKILLS_RELEASE_ACTIVATED = "skills_release_activated"
     SKILL_PREREQUISITE_MISSING = "skill_prerequisite_missing"
+    WORKSPACE_SCANNED = "workspace_scanned"
+    LOCAL_REPOSITORIES_ANALYZED = "local_repositories_analyzed"
     OPENSRE_COMMIT_CREATED = "opensre_commit_created"
     OPENSRE_CI_EPOCH_RESOLVED = "opensre_ci_epoch_resolved"
 
@@ -85,6 +88,10 @@ class Event(StrEnum):
     SCHEDULED_TASK_STARTED = "scheduled_task_started"
     SCHEDULED_TASK_COMPLETED = "scheduled_task_completed"
     SCHEDULED_TASK_FAILED = "scheduled_task_failed"
+    SCHEDULED_TASK_CANCELLED = "scheduled_task_cancelled"
+    SCHEDULED_TASKS_REGISTERED = "scheduled_tasks_registered"
+    SCHEDULED_TASK_REPORTED = "scheduled_task_reported"
+    SCHEDULED_TASK_RUN_RECORDED = "scheduled_task_run_recorded"
 
     # Suggested loops (interactive-shell startup picker shown when no
     # scheduled tasks are configured)

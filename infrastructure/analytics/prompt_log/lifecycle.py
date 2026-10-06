@@ -78,7 +78,7 @@ def record_prompt_turn(text: str, session: Any, *, surface: str) -> Iterator[Pro
                     error = None if completed else sys.exception()
                     if error is not None:
                         if isinstance(error, Exception):
-                            recorder.set_error("turn_error", str(error))
+                            recorder.set_error("turn_error", str(error), error=error)
                         else:
                             recorder.set_error("cancelled", "Agent execution cancelled.")
                     with contextlib.suppress(Exception):

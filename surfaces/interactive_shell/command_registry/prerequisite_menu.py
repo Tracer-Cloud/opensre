@@ -3,7 +3,8 @@
 The menu's rows are not answers for the model. "Set up on this machine" maps to
 the setup wizard's slash command, which ``/choose`` runs like any mapped row; the
 wizard resumes the parked turn when it finishes. The other rows land here: open
-the OpenSRE app, re-check after connecting there, or drop the parked turn.
+the OpenSRE app, re-check after connecting there, start the held skill's
+fallback instead, or drop the parked turn.
 """
 
 from __future__ import annotations
@@ -17,11 +18,15 @@ from rich.markup import escape
 
 from config.constants.skill_prerequisites import (
     PREREQUISITE_CONTINUE_ACTION,
+    PREREQUISITE_FALLBACK_ACTION,
+    PREREQUISITE_MENU_TITLE,
     PREREQUISITE_OPEN_APP_ACTION,
     PREREQUISITE_SKIP_ACTION,
     prerequisite_service_label,
 )
-from core.agent_harness.spi.session_state import clear_setup_resume
+from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
+from core.agent_harness.spi.session_state import clear_setup_resume, take_setup_resume
+from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_browser_open_requested
 from infrastructure.terminal import theme as ui_theme
 from integrations.account_integrations import account_setup_url, load_account_integrations
@@ -30,7 +35,11 @@ from surfaces.interactive_shell.command_registry.setup_resume import (
     resume_after_setup,
 )
 from surfaces.interactive_shell.runtime import Session
-from tools.interactive_shell.actions.skill_prerequisite_gate import queue_prerequisite_menu
+from tools.interactive_shell.actions.skill_entry import enter_skill, entry_menu_queued
+from tools.interactive_shell.actions.skill_prerequisite_gate import (
+    prerequisite_fallback,
+    queue_prerequisite_menu,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +70,8 @@ def run_prerequisite_action(
     if action == PREREQUISITE_SKIP_ACTION:
         clear_setup_resume(session)
         return MenuStep.LEAVE
+    if action == PREREQUISITE_FALLBACK_ACTION:
+        return _start_fallback(session, console, service)
     logger.debug("Ignoring unknown setup-menu action %r", action)
     return MenuStep.DONE
 
@@ -83,6 +94,36 @@ def _open_app(console: Console, service: str) -> None:
         capture_browser_open_requested(target="integration_setup", opened=opened)
     lead = f"Opened {escape(url)}." if opened else f"Open {escape(url)}."
     console.print(f"[{ui_theme.DIM}]{lead} Connect {label} there, then continue.[/]")
+
+
+def _start_fallback(session: Session, console: Console, service: str) -> MenuStep:
+    """Drop the parked turn and start the held skill's fallback, answered as this menu's pick.
+
+    The answer reaches the fallback skill the way ``/choose`` submits a pick, so
+    its first step knows the user chose to go on without ``service``.
+    """
+    parked = take_setup_resume(session)
+    fallback = prerequisite_fallback(parked.skill) if parked is not None else None
+    if fallback is None:
+        return MenuStep.LEAVE
+    entered = enter_skill(
+        fallback.skill, ActionToolScope(session=session, console=console, is_tty=True)
+    )
+    if not entered.get("ok"):
+        return MenuStep.LEAVE
+    if entry_menu_queued(entered):
+        # The skill opened its own first question; show that, not an answer to this menu.
+        return MenuStep.ASK_AGAIN
+    label = prerequisite_service_label(service)
+    question = AskUserQuestion(
+        label=label,
+        title=PREREQUISITE_MENU_TITLE.format(service=label),
+        options=(fallback.option,),
+    )
+    console.print(f"[{ui_theme.DIM}]Going on without {escape(label)}.[/]")
+    session.terminal.set_auto_command(format_ask_user_answers((question,), (fallback.option,)))
+    session.terminal.awaiting_handoff_answer = True
+    return MenuStep.DONE
 
 
 def _continue(session: Session, console: Console, service: str) -> MenuStep:

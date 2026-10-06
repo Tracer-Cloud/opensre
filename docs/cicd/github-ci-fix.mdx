@@ -105,7 +105,7 @@ older commit.
 | --- | --- |
 | **Fork PR refused** | Only same-repository PR head branches are supported |
 | **No push when checks are green** | Expected — OpenSRE does not push when nothing is failing |
-| **"blocked on N file(s) a person must decide"** | The coding agent could not resolve those merge conflicts. The merge was aborted; resolve the listed files by hand, push, and run the fix again. If the message starts with "Pushed a CI fix", the fix commit is already on the branch and only the base merge is missing |
+| **"blocked on N file(s) a person must decide"** | The coding agent could not resolve those merge conflicts. The merge was aborted; resolve the listed files by hand, push, and run the fix again. If the message starts with "Pushed a CI fix", the fix commit is already on the branch and only the base merge is missing. When the agent named a choice only a person can make, OpenSRE also comments it on the PR and skips that PR until new commits land on it |
 | **Approval prompts** | Appear at `/auto med` or lower; the default `/auto high` runs the repair without them |
 | **gh / checks unavailable** | Install GitHub CLI and ensure the token can read Actions checks |
 

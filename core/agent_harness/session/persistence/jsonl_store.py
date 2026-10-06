@@ -346,6 +346,8 @@ class JsonlSessionStore:
         after_chars: int,
         before_tokens: int | None = None,
         after_tokens: int | None = None,
+        replacement_messages: list[list[str]] | None = None,
+        replacement_evidence: list[dict[str, Any]] | None = None,
     ) -> str:
         return self._append_entry(
             session_id,
@@ -357,6 +359,18 @@ class JsonlSessionStore:
                 "after_chars": after_chars,
                 "before_tokens": before_tokens,
                 "after_tokens": after_tokens,
+                # What the compaction kept verbatim. Present means the record
+                # replaces everything before it when the session is restored.
+                **(
+                    {"replacement_messages": replacement_messages}
+                    if replacement_messages is not None
+                    else {}
+                ),
+                **(
+                    {"replacement_evidence": replacement_evidence}
+                    if replacement_evidence is not None
+                    else {}
+                ),
             },
         )
 
@@ -416,6 +430,136 @@ class JsonlSessionStore:
             with self._locked(path):
                 self._flush_locked(session, path)
 
+    def flush_session_goal_control_state(self, session: SessionPersistenceSource) -> None:
+        """Persist goal and task-plan state changed by a goal control."""
+        from core.agent_harness.session.persistence.contracts import (
+            SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+        )
+        from core.agent_harness.session_goal.persist import session_goal_state_snapshot
+        from core.agent_harness.task_plan.persist import task_plan_state_snapshot
+
+        path = session_path(session.session_id)
+        if not path.exists():
+            raise FileNotFoundError(path)
+        with self._locked(path):
+            records = self._read_records(path)
+            snapshot = {
+                "session_goal_state": session_goal_state_snapshot(session),
+                "task_plan_state": task_plan_state_snapshot(session) or {},
+            }
+            if not self.append_custom_message(
+                session.session_id,
+                custom_type=SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+                content=snapshot,
+                display=False,
+            ):
+                raise OSError("Could not persist session-goal control state")
+            if not self._append_task_plan_state(session, records):
+                raise OSError("Could not persist task-plan state")
+            if not self._append_session_goal_state(session, records):
+                raise OSError("Could not persist session-goal state")
+
+    def append_session_goal_control(self, session_id: str, reason: str) -> str:
+        """Durably record a goal control outside the live conversation branch."""
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            SESSION_GOAL_CONTROL_REQUESTED,
+        )
+
+        path = session_path(session_id)
+        if not path.exists():
+            raise OSError("Could not persist session-goal control")
+        control_id = _new_id()
+        with self._locked(path):
+            target_entry_id, _needs_separator = self._current_leaf_id(session_id, path)
+            if target_entry_id is None:
+                raise OSError("Could not identify session-goal control branch")
+            entry_id = self._append_entry(
+                session_id,
+                SESSION_GOAL_CONTROL_RECORD_TYPE,
+                {
+                    "control_id": control_id,
+                    "reason": reason,
+                    "status": SESSION_GOAL_CONTROL_REQUESTED,
+                    "target_entry_id": target_entry_id,
+                },
+                durable=True,
+                sidecar=True,
+            )
+        if not entry_id:
+            raise OSError("Could not persist session-goal control")
+        return control_id
+
+    def complete_session_goal_control(self, session_id: str, control_id: str) -> None:
+        """Durably acknowledge a previously recorded goal control."""
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_CONTROL_APPLIED,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+        )
+
+        entry_id = self._append_entry(
+            session_id,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            {
+                "control_id": control_id,
+                "status": SESSION_GOAL_CONTROL_APPLIED,
+            },
+            durable=True,
+            sidecar=True,
+        )
+        if not entry_id:
+            raise OSError("Could not acknowledge session-goal control")
+
+    def _append_session_goal_state(
+        self,
+        session: SessionPersistenceSource,
+        records: list[dict[str, Any]],
+    ) -> bool:
+        if not records or not hasattr(session, "session_goal"):
+            return True
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_STATE_CUSTOM_TYPE,
+            session_goal_state_snapshot,
+            should_persist_session_goal_state,
+        )
+
+        goal_state = session_goal_state_snapshot(session)
+        if should_persist_session_goal_state(goal_state, prior_records=records):
+            return bool(
+                self.append_custom_message(
+                    session.session_id,
+                    custom_type=SESSION_GOAL_STATE_CUSTOM_TYPE,
+                    content=goal_state,
+                    display=False,
+                )
+            )
+        return True
+
+    def _append_task_plan_state(
+        self,
+        session: SessionPersistenceSource,
+        records: list[dict[str, Any]],
+    ) -> bool:
+        if not hasattr(session, "task_plan"):
+            return True
+        from core.agent_harness.task_plan.persist import (
+            TASK_PLAN_STATE_CUSTOM_TYPE,
+            should_persist_task_plan_state,
+            task_plan_state_snapshot,
+        )
+
+        plan_state = task_plan_state_snapshot(session)
+        if should_persist_task_plan_state(plan_state, prior_records=records):
+            return bool(
+                self.append_custom_message(
+                    session.session_id,
+                    custom_type=TASK_PLAN_STATE_CUSTOM_TYPE,
+                    content=plan_state or {},
+                    display=False,
+                )
+            )
+        return True
+
     def _flush_locked(self, session: SessionPersistenceSource, path: Path) -> None:
         """Read-modify-append leaf / goal / message records; runs under the write lock.
 
@@ -426,7 +570,7 @@ class JsonlSessionStore:
         records = self._read_records(path)
         if not records:
             return
-        trailing_leaf = records[-1].get("type") == "leaf"
+        trailing_leaf = self._conversation_tip_is_closed(records)
         if not trailing_leaf and not self._has_turns(records):
             from core.agent_harness.session.pending_choice import PendingUserChoice
 
@@ -448,36 +592,8 @@ class JsonlSessionStore:
                 content=dict(session.accumulated_context),
                 display=False,
             )
-        if hasattr(session, "session_goal"):
-            from core.agent_harness.session_goal.persist import (
-                SESSION_GOAL_STATE_CUSTOM_TYPE,
-                session_goal_state_snapshot,
-                should_persist_session_goal_state,
-            )
-
-            goal_state = session_goal_state_snapshot(session)
-            if should_persist_session_goal_state(goal_state, prior_records=records):
-                self.append_custom_message(
-                    session.session_id,
-                    custom_type=SESSION_GOAL_STATE_CUSTOM_TYPE,
-                    content=goal_state,
-                    display=False,
-                )
-        if hasattr(session, "task_plan"):
-            from core.agent_harness.task_plan.persist import (
-                TASK_PLAN_STATE_CUSTOM_TYPE,
-                should_persist_task_plan_state,
-                task_plan_state_snapshot,
-            )
-
-            plan_state = task_plan_state_snapshot(session)
-            if should_persist_task_plan_state(plan_state, prior_records=records):
-                self.append_custom_message(
-                    session.session_id,
-                    custom_type=TASK_PLAN_STATE_CUSTOM_TYPE,
-                    content=plan_state or {},
-                    display=False,
-                )
+        self._append_session_goal_state(session, records)
+        self._append_task_plan_state(session, records)
         if hasattr(session, "pending_user_choice"):
             from core.agent_harness.session.pending_choice import (
                 PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
@@ -753,6 +869,15 @@ class JsonlSessionStore:
             or (rec.get("type") == "custom_message" and rec.get("custom_type") == "turn_stub")
             for rec in records
         )
+
+    @staticmethod
+    def _conversation_tip_is_closed(records: list[dict[str, Any]]) -> bool:
+        """Return whether the newest non-sidecar record is a closing leaf."""
+        for record in reversed(records):
+            if record.get("sidecar") or record.get("type") == "trace_span":
+                continue
+            return bool(record.get("type") == "leaf")
+        return False
 
     @staticmethod
     def _count_turns(records: list[dict[str, Any]]) -> int:

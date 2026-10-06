@@ -42,7 +42,7 @@ from core.agent_harness.session_goal.goal import (
 )
 from core.agent_harness.session_goal.judge import judge_reason_is_contradiction
 from core.agent_harness.session_goal.review_input import retain_tool_evidence
-from core.agent_harness.turns.host_cancel import HostCancelReason
+from core.agent_harness.turns.host_cancel import HostCancelReason, is_goal_control_reason
 from core.agent_harness.turns.turn_results import TurnResult
 
 log = logging.getLogger(__name__)
@@ -54,8 +54,11 @@ CancelReasonFn = Callable[[], HostCancelReason | None]
 ProgressFn = Callable[[SessionGoal], None]
 
 
-def _goal_pause_requested(cancel_reason: CancelReasonFn | None) -> bool:
-    return cancel_reason is not None and cancel_reason() is HostCancelReason.GOAL_PAUSE
+def _goal_control_reason(
+    cancel_reason: CancelReasonFn | None,
+) -> HostCancelReason | None:
+    reason = cancel_reason() if cancel_reason is not None else None
+    return reason if is_goal_control_reason(reason) else None
 
 
 def _record_goal_turn(session: Any, active: SessionGoal) -> SessionGoal:
@@ -247,7 +250,7 @@ def _chat_or_pause(
     on_progress: ProgressFn | None,
     cancel_reason: CancelReasonFn | None = None,
 ) -> TurnResult:
-    """Run one goal turn; when it raises, pause the goal before the error propagates.
+    """Run one goal turn; when it raises, stop the goal safely before the error propagates.
 
     The host still prints the turn error. Without the pause the next message
     would resume the goal into the same failure (a credit wall, a rejected key)
@@ -258,8 +261,9 @@ def _chat_or_pause(
     except Exception:
         active = getattr(session, "session_goal", None)
         if isinstance(active, SessionGoal) and active.status == SessionGoalStatus.ACTIVE:
-            if _goal_pause_requested(cancel_reason):
-                _pause_by_user(session, active, on_progress)
+            control_reason = _goal_control_reason(cancel_reason)
+            if control_reason is not None:
+                _pause_for_goal_control(session, active, control_reason, on_progress)
             else:
                 _pause_failed_turn(session, active, on_progress)
         raise
@@ -279,6 +283,28 @@ def _pause_by_user(
     )
 
 
+def _pause_for_goal_control(
+    session: Any,
+    active: SessionGoal,
+    reason: HostCancelReason,
+    on_progress: ProgressFn | None,
+) -> SessionGoal:
+    """Pause at the worker boundary, hiding transient state for a pending clear."""
+    progress = None if reason is HostCancelReason.GOAL_CLEAR else on_progress
+    return _pause_by_user(session, active, progress)
+
+
+def _finish_goal_control(
+    session: Any,
+    active: SessionGoal,
+    last: TurnResult,
+    reason: HostCancelReason,
+    on_progress: ProgressFn | None,
+) -> tuple[SessionGoal, TurnResult, bool]:
+    """Return one completed loop result for a pending host goal control."""
+    return _pause_for_goal_control(session, active, reason, on_progress), last, True
+
+
 def pause_active_session_goal(
     session: Any,
     on_progress: ProgressFn | None = None,
@@ -290,14 +316,15 @@ def pause_active_session_goal(
     return _pause_by_user(session, active, on_progress)
 
 
-def _requested_pause(
+def _requested_goal_control_boundary(
     session: Any,
     active: SessionGoal,
     cancel_reason: CancelReasonFn | None,
     on_progress: ProgressFn | None,
 ) -> SessionGoal | None:
-    """Apply a pending host pause without overwriting an already-paused goal."""
-    if not _goal_pause_requested(cancel_reason):
+    """Pause at a pending host-control boundary without overwriting an existing pause."""
+    reason = _goal_control_reason(cancel_reason)
+    if reason is None:
         return None
     stored = getattr(session, "session_goal", None)
     current = stored if isinstance(stored, SessionGoal) else active
@@ -305,7 +332,7 @@ def _requested_pause(
         return current
     if current.status != SessionGoalStatus.ACTIVE:
         return None
-    return _pause_by_user(session, current, on_progress)
+    return _pause_for_goal_control(session, current, reason, on_progress)
 
 
 def _pause_failed_turn(
@@ -371,9 +398,11 @@ def _finish_outer_turn(
     *,
     evaluate_fn: EvaluateFn,
     on_progress: ProgressFn | None,
-    pause_requested: bool = False,
+    goal_control: HostCancelReason | None = None,
 ) -> tuple[SessionGoal, TurnResult, bool]:
     """Evaluate → single paint. Returns ``(goal, result, stop)``."""
+    pause_requested = goal_control is not None
+    control_progress = None if goal_control is HostCancelReason.GOAL_CLEAR else on_progress
     turn_evidence = turn_has_session_goal_evidence(
         last,
         bookkeeping_calls=active.bookkeeping_calls,
@@ -407,29 +436,47 @@ def _finish_outer_turn(
             session,
             active,
             SessionGoalStatus.PAUSED,
-            on_progress,
+            control_progress,
             reason=active.last_reason,
         )
         return ended, last, True
 
     if last.cancelled and not (pause_requested and turn_evidence):
-        if pause_requested:
-            return _pause_by_user(session, active, on_progress), last, True
+        if goal_control is not None:
+            return _finish_goal_control(
+                session,
+                active,
+                last,
+                goal_control,
+                on_progress,
+            )
         cancelled = _end(
             session, active, SessionGoalStatus.CANCELLED, on_progress, drop_queued=True
         )
         return cancelled, last, True
 
     if _turn_did_not_run(last):
-        if pause_requested:
-            return _pause_by_user(session, active, on_progress), last, True
+        if goal_control is not None:
+            return _finish_goal_control(
+                session,
+                active,
+                last,
+                goal_control,
+                on_progress,
+            )
         return _pause_failed_turn(session, active, on_progress), last, True
 
     # The user owns the next turn: a menu to answer, or a command the shell
     # submits next (a setup wizard). Another goal turn now would run ahead of it.
     if getattr(session, "pending_user_choice", None) is not None or pending_autosubmit(session):
-        if pause_requested:
-            return _pause_by_user(session, active, on_progress), last, True
+        if goal_control is not None:
+            return _finish_goal_control(
+                session,
+                active,
+                last,
+                goal_control,
+                on_progress,
+            )
         active = active.with_reason(SessionGoalReason.PAUSED_USER_CHOICE)
         active = _paint(session, active, on_progress, rederive=False)
         return active, last, True
@@ -468,11 +515,23 @@ def _finish_outer_turn(
         attach_session_goal(session, active)
 
     if next_status != SessionGoalStatus.ACTIVE:
-        ended = _end(session, active, next_status, on_progress, reason=active.last_reason)
+        ended = _end(
+            session,
+            active,
+            next_status,
+            control_progress,
+            reason=active.last_reason,
+        )
         return ended, last, True
 
-    if pause_requested:
-        return _pause_by_user(session, active, on_progress), last, True
+    if goal_control is not None:
+        return _finish_goal_control(
+            session,
+            active,
+            last,
+            goal_control,
+            on_progress,
+        )
 
     if (
         session_goal_has_turn_budget(active.max_outer_turns)
@@ -554,7 +613,7 @@ def run_until_session_goal(
     # the pause applies to whatever goal is active when the turn raises.
     last = _chat_or_pause(chat, first, session, on_progress, cancel_reason)
     active = getattr(session, "session_goal", None)
-    pause_after_first = _goal_pause_requested(cancel_reason)
+    control_after_first = _goal_control_reason(cancel_reason)
     if not isinstance(active, SessionGoal):
         synthetic = SessionGoal(
             condition=message.strip() or "(none)",
@@ -564,7 +623,7 @@ def run_until_session_goal(
         )
         return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
     if not session_goal_is_active(session) and not (
-        had_active_before and session_goal_is_paused(session) and pause_after_first
+        had_active_before and session_goal_is_paused(session) and control_after_first is not None
     ):
         # Paused after the first chat (e.g. slash during turn) — keep state.
         if session_goal_is_paused(session):
@@ -578,12 +637,17 @@ def run_until_session_goal(
         return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
 
     if not had_active_before:
-        requested_pause = _requested_pause(session, active, cancel_reason, on_progress)
-        if requested_pause is not None:
+        requested_boundary = _requested_goal_control_boundary(
+            session,
+            active,
+            cancel_reason,
+            on_progress,
+        )
+        if requested_boundary is not None:
             return SessionGoalRunResult(
-                goal=requested_pause,
+                goal=requested_boundary,
                 last_result=last,
-                turn_count=requested_pause.turns_used,
+                turn_count=requested_boundary.turns_used,
             )
 
     # ``/goal set`` attaches a host-owned goal mid-turn. The attach turn must
@@ -592,14 +656,14 @@ def run_until_session_goal(
     # condition starts here as the first real session-goal turn.
     if not had_active_before and active.host_owned and active.turns_used == 0:
         if session_terminal(session) is not None:
-            requested_pause = _requested_pause(
+            requested_boundary = _requested_goal_control_boundary(
                 session,
                 active,
                 cancel_reason,
                 on_progress,
             )
-            if requested_pause is not None:
-                active = requested_pause
+            if requested_boundary is not None:
+                active = requested_boundary
             return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
         last = _chat_or_pause(
             chat,
@@ -611,13 +675,13 @@ def run_until_session_goal(
         stored = getattr(session, "session_goal", None)
         if isinstance(stored, SessionGoal):
             active = stored
-        pause_after_first = _goal_pause_requested(cancel_reason)
+        control_after_first = _goal_control_reason(cancel_reason)
 
-    pause_after_turn = pause_after_first
+    control_after_turn = control_after_first
     if (had_active_before or active.turns_used == 0) and _goal_turn_should_count(
         active,
         last,
-        pause_requested=pause_after_turn,
+        pause_requested=control_after_turn is not None,
     ):
         # This chat was a goal turn: the first one, or a resumed goal's next
         # one. Evaluate must see this-turn tool ticks as new, so re-read them
@@ -631,27 +695,32 @@ def run_until_session_goal(
         last,
         evaluate_fn=evaluate_fn,
         on_progress=on_progress,
-        pause_requested=pause_after_turn,
+        goal_control=control_after_turn,
     )
     if stop:
         return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
 
     while active.status == SessionGoalStatus.ACTIVE:
-        requested_pause = _requested_pause(session, active, cancel_reason, on_progress)
-        if requested_pause is not None:
-            active = requested_pause
+        requested_boundary = _requested_goal_control_boundary(
+            session,
+            active,
+            cancel_reason,
+            on_progress,
+        )
+        if requested_boundary is not None:
+            active = requested_boundary
             break
 
         if cancel_requested is not None and cancel_requested():
-            # Read the reason from the same canonical cancel state so a goal
-            # pause remains resumable rather than becoming a terminal cancel.
-            requested_pause = _requested_pause(
+            # Read the canonical reason so goal controls reach their safe
+            # boundary rather than becoming an ordinary terminal cancel.
+            requested_boundary = _requested_goal_control_boundary(
                 session,
                 active,
                 cancel_reason,
                 on_progress,
             )
-            active = requested_pause or _end(
+            active = requested_boundary or _end(
                 session,
                 active,
                 SessionGoalStatus.CANCELLED,
@@ -675,8 +744,12 @@ def run_until_session_goal(
             on_progress,
             cancel_reason,
         )
-        pause_after_turn = _goal_pause_requested(cancel_reason)
-        if _goal_turn_should_count(active, last, pause_requested=pause_after_turn):
+        control_after_turn = _goal_control_reason(cancel_reason)
+        if _goal_turn_should_count(
+            active,
+            last,
+            pause_requested=control_after_turn is not None,
+        ):
             active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
             session,
@@ -684,7 +757,7 @@ def run_until_session_goal(
             last,
             evaluate_fn=evaluate_fn,
             on_progress=on_progress,
-            pause_requested=pause_after_turn,
+            goal_control=control_after_turn,
         )
         if stop:
             break

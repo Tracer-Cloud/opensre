@@ -1,21 +1,32 @@
-"""Tests for the manual loop runner's deterministic report builders."""
+"""Tests for the manual loop runner: report builders, model turns, and loop memory."""
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+import infrastructure.scheduling.scheduler.delivery_bundle as delivery_bundle
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV
 from core.agent_harness import AgentSession, SessionCore
 from core.agent_harness.harness import SessionStartupResult
 from core.agent_harness.tools.action_tools import get_action_tool
 from core.agent_harness.turns.headless_adapters import EmptyPromptContextProvider
-from core.llm.types import AgentLLMResponse
-from core.tool import RegisteredTool, SideEffectLevel
+from core.llm.types import AgentLLMResponse, ToolCall
+from core.tool import RegisteredTool, SideEffectLevel, ToolExecutionHooks
+from core.tool.execution import execute_tool_calls
+from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_AGENT, LOOP_MODE_PARAM
+from infrastructure.scheduling.scheduler.previous_runs import PREVIOUS_RUNS_HEADER
+from infrastructure.scheduling.scheduler.run_activity import CARRY_NOTE_MAX_CHARS
+from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.storage import task_store
+from infrastructure.scheduling.scheduler.storage.run_record_store import read_run_records
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations import manual_loop_runner
 from integrations.github.repair_outcomes import attach_repair_outcome
 from integrations.github.tools.ci_analytics import loop as ci_loop
@@ -96,6 +107,60 @@ def test_agent_mode_drops_the_report_only_and_read_only_framing() -> None:
     assert "report body" not in message
     assert "Do not load skill_view or follow a report-only skill" in message
     assert "the task text below is the complete instruction" in message
+
+
+def test_agent_mode_forbids_pasted_files_and_makes_quiet_ticks_deliver_nothing() -> None:
+    """The wrapper rules out the reply shape a live loop fell into.
+
+    The merge-conflicts loop was told to read its approved-policy file before
+    acting and delivered that file's contents as the result, tick after tick,
+    while an eligible conflicting PR went unrepaired.
+    """
+    message = manual_loop_runner.build_manual_loop_prompt(
+        {
+            "loop_prompt": "Repair merge conflicts on open PRs",
+            "name": "Merge conflicts",
+            LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+        }
+    )
+
+    assert "Never paste a policy, state, ledger, queue, or any" in message
+    assert "even when the task tells you to read such" in message
+    assert "nothing eligible to act on delivers nothing" in message
+
+
+def test_an_agent_loop_bound_to_a_skill_runs_that_card_as_its_task() -> None:
+    """Agent ticks cannot discover skills, so the host adds the bound card's body."""
+    from core.agent_harness.prompts.skills import load_skill_body
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_SKILL_PARAM
+
+    message = manual_loop_runner.build_manual_loop_prompt(
+        {
+            "loop_prompt": "Run the repair-github-ci skill.",
+            "name": "CI repair",
+            LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+            LOOP_SKILL_PARAM: "repair-github-ci",
+            "owner": "o",
+            "repo": "r",
+        }
+    )
+
+    task = message.split("\n\nTask:\n", 1)[1]
+    assert task.startswith("Run the repair-github-ci skill.\n\nSkill recipe (repair-github-ci):\n")
+    assert task.endswith(load_skill_body("repair-github-ci"))
+
+
+def test_an_agent_loop_whose_skill_is_gone_fails_instead_of_running_without_it() -> None:
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_SKILL_PARAM
+
+    with pytest.raises(RuntimeError, match="'no-such-card' is not installed"):
+        manual_loop_runner.build_manual_loop_prompt(
+            {
+                "loop_prompt": "Run the no-such-card skill.",
+                LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+                LOOP_SKILL_PARAM: "no-such-card",
+            }
+        )
 
 
 @pytest.mark.parametrize("mode, recover", [("report", False), ("agent", False), ("agent", True)])
@@ -218,6 +283,55 @@ def test_unknown_builder_name_falls_back_to_the_model_turn(monkeypatch: pytest.M
     assert report == "fallback"
 
 
+@pytest.mark.parametrize(
+    "binding, paused",
+    [({}, False), ({"pr_number": "42"}, True), ({"branch": "main"}, True)],
+)
+def test_only_a_loop_bound_to_one_target_pauses_on_an_unrepairable_target(
+    monkeypatch: pytest.MonkeyPatch, binding: dict[str, str], paused: bool
+) -> None:
+    class _Result:
+        answered = True
+        cancelled = False
+        action_result = type("Action", (), {"hit_iteration_cap": False})()
+        primary_response_text = "PR #42 comes from a fork"
+
+    output = attach_repair_outcome({"error_kind": "unsupported_pr_branch"}, operation="ci:o/r:42")
+
+    def fake_turn(_message: str, *, tool_hooks: ToolExecutionHooks, **_kwargs: object) -> _Result:
+        execute_tool_calls(
+            [ToolCall(id="repair", name="fix_github_pr_ci", input={})],
+            [
+                RegisteredTool(
+                    name="fix_github_pr_ci",
+                    description="Repair",
+                    input_schema={"type": "object", "properties": {}},
+                    source="github",
+                    run=lambda: output,
+                )
+            ],
+            {},
+            hooks=tool_hooks,
+        )
+        return _Result()
+
+    monkeypatch.setattr(manual_loop_runner.AgentSession, "run_headless_turn", fake_turn)
+
+    report = manual_loop_runner.run_manual_prompt_loop(
+        {
+            "loop_prompt": "Repair failing PRs",
+            "name": "PR doctor",
+            LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+            "owner": "o",
+            "repo": "r",
+            **binding,
+        }
+    )
+
+    assert report.stop_schedule is paused
+    assert report.outcome.status == ("blocked" if paused else "noop")
+
+
 def test_only_a_loop_with_a_report_builder_runs_without_a_model_turn() -> None:
     from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
     from infrastructure.scheduling.scheduler.loop_constants import LOOP_REPORT_PARAM
@@ -242,3 +356,322 @@ def test_only_a_loop_with_a_report_builder_runs_without_a_model_turn() -> None:
     assert runs_model_turn(prompted) is True
     assert runs_model_turn(digest) is True
     assert runs_model_turn(skill_with_stray_report) is True
+
+
+@pytest.mark.parametrize(
+    "reply, body, note",
+    [
+        (
+            "Commented on PR #6555.\n\nNOTE FOR NEXT RUN: skip #6555 until head 1a2b3c4 changes",
+            "Commented on PR #6555.",
+            "skip #6555 until head 1a2b3c4 changes",
+        ),
+        (
+            "Two PRs need review.\n**Note for next run:** wait for CI\non PR 12",
+            "Two PRs need review.",
+            "wait for CI on PR 12",
+        ),
+        # A marker the report quotes, or one more of the report follows, is
+        # report content: nothing leaves the delivered reply.
+        ("Two PRs need review.\nNOTE FOR NEXT RUN: wait for CI\n\nAll else is green.", None, ""),
+        ("The last run said:\n> NOTE FOR NEXT RUN: wait for CI", None, ""),
+        ("I will leave a note for next run: nothing new.", None, ""),
+        (f"Done.\nNOTE FOR NEXT RUN: {'x' * 400}", "Done.", None),
+    ],
+)
+def test_the_note_for_the_next_run_leaves_the_delivered_reply(
+    reply: str, body: str | None, note: str | None
+) -> None:
+    delivered, kept = manual_loop_runner.split_carry_note(reply)
+
+    assert delivered == (reply if body is None else body)
+    assert len(kept) <= CARRY_NOTE_MAX_CHARS
+    if note is not None:
+        assert kept == note
+
+
+class _TurnResult:
+    cancelled = False
+    action_result = type("Action", (), {"hit_iteration_cap": False})()
+
+    def __init__(self, reply: str) -> None:
+        self.answered = True
+        self.primary_response_text = reply
+
+
+def _comment_on_pr(args: list[str], **_kwargs: Any) -> dict[str, Any]:
+    url = "https://github.com/o/r/pull/6555#issuecomment-99"
+    return {"ok": True, "stdout": url, "summary": f"Commented on PR #6555: {url}"}
+
+
+_GITHUB_CLI = RegisteredTool(
+    name="github_cli",
+    description="gh",
+    input_schema={"type": "object", "properties": {}},
+    source="github",
+    run=_comment_on_pr,
+    side_effect_level=SideEffectLevel.MUTATING,
+)
+
+
+class _Slack:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def deliver(self, _task: ScheduledTask, message: str) -> tuple[bool, str, str]:
+        self.messages.append(message)
+        return True, "", "msg-1"
+
+
+def test_a_loop_tick_sees_what_its_previous_run_did_and_the_note_it_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two ticks through the scheduler: only the agent itself is faked."""
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.database.default_run_database_path",
+        lambda: tmp_path / "scheduler.db",
+    )
+    monkeypatch.setattr(task_store, "default_task_store_path", lambda: tmp_path / "tasks.json")
+    slack = _Slack()
+    delivery_bundle.ScheduledDeliveryAdapters({Provider.SLACK: slack}).install()
+    prompts: list[str] = []
+    replies = iter(
+        [
+            "Commented on PR #6555.\n\nNOTE FOR NEXT RUN: PR #6555 waits on a human; "
+            "skip it until head 1a2b3c4 changes.",
+            "Nothing new to do.",
+        ]
+    )
+
+    class _Agent:
+        def __init__(self, tool_hooks: ToolExecutionHooks | None) -> None:
+            self._tool_hooks = tool_hooks
+
+        def chat(self, message: str) -> _TurnResult:
+            prompts.append(message)
+            args = {"args": ["pr", "comment", "6555", "--body", "Needs a decision."]}
+            call = ToolCall(id="comment", name="github_cli", input=args)
+            execute_tool_calls([call], [_GITHUB_CLI], {}, hooks=self._tool_hooks)
+            return _TurnResult(next(replies))
+
+    def start(
+        *_args: object, tool_hooks: ToolExecutionHooks | None = None, **_kw: object
+    ) -> _Agent:
+        return _Agent(tool_hooks)
+
+    monkeypatch.setattr(AgentSession, "start", start)
+    task = ScheduledTask(
+        id="pr_doctor",
+        name="PR doctor",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="29 * * * *",
+        provider=Provider.SLACK,
+        chat_id="C123",
+        params={"loop_prompt": "Comment on PRs that need a human.", LOOP_MODE_PARAM: "agent"},
+    )
+    runners = SchedulerRunners(agent=manual_loop_runner.run_manual_prompt_loop)
+    try:
+        execute_task(task, "2026-10-04T12:29:00Z", runners)
+        execute_task(task, "2026-10-04T13:29:00Z", runners)
+    finally:
+        delivery_bundle._installed = None
+
+    assert PREVIOUS_RUNS_HEADER not in prompts[0]
+    assert slack.messages[0] == "Commented on PR #6555."
+    first = read_run_records(task.id)[-1]
+    assert first["carry_note"] == "PR #6555 waits on a human; skip it until head 1a2b3c4 changes."
+    assert first["actions"] == [
+        "github_cli pr comment 6555 … → Commented on PR #6555: "
+        "https://github.com/o/r/pull/6555#issuecomment-99"
+    ]
+    history, task_text = prompts[1].split("\n\nTask:\n")
+    assert task_text == "Comment on PRs that need a human."
+    block = history[history.index(PREVIOUS_RUNS_HEADER) :]
+    # No tool reported a work outcome: the run is unconfirmed, which must not read as unfinished.
+    assert re.search(
+        r"\n- \d{4}-\d\d-\d\d \d\d:\d\d UTC · outcome: unverified \(no tool confirmed "
+        r"the work\) · delivered: ok \(1 destination\)",
+        block,
+    )
+    assert "actions: github_cli pr comment 6555" in block
+    assert "note: PR #6555 waits on a human; skip it until head 1a2b3c4 changes." in block
+    assert "report: Commented on PR #6555." in block
+    assert block.count("\n- ") == 1
+
+
+def _installed_skill(root: Path) -> Path:
+    folder = root / "skills" / "fix-ci"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(
+        "---\nname: fix-ci\ndescription: Fix failing PR checks\n---\n\n# Fix CI\n\n"
+        "1. Read the failing job's log.\n2. Apply the smallest safe fix.\n",
+        encoding="utf-8",
+    )
+    return folder
+
+
+def test_a_stateless_loop_runs_an_installed_skill_without_the_note_for_the_next_run(
+    tmp_path: Path,
+) -> None:
+    """A skill installed as a folder (e.g. by ``clawhub install``) becomes the tick's recipe."""
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_SKILL_PARAM,
+        LOOP_STATELESS_PARAM,
+    )
+
+    folder = _installed_skill(tmp_path)
+    payload = {
+        "loop_prompt": "Fix the oldest open PR whose latest checks failed.",
+        "name": "PR CI fix",
+        LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+        LOOP_SKILL_PARAM: str(folder),
+        LOOP_STATELESS_PARAM: "true",
+    }
+
+    message = manual_loop_runner.build_manual_loop_prompt(payload, previous_runs="PREVIOUS RUNS…")
+
+    instructions, task = message.split("\n\nTask:\n", 1)
+    assert "This run is stateless" in instructions
+    assert "reply with exactly NO_ACTION" in instructions
+    assert "NOTE FOR NEXT RUN" not in message
+    assert "PREVIOUS RUNS" not in message
+    assert task == (
+        "Fix the oldest open PR whose latest checks failed.\n\n"
+        f"Skill recipe (fix-ci, installed at {folder.resolve()}):\n"
+        "# Fix CI\n\n1. Read the failing job's log.\n2. Apply the smallest safe fix."
+    )
+    (folder / "SKILL.md").unlink()
+    with pytest.raises(RuntimeError, match="is not installed"):
+        manual_loop_runner.build_manual_loop_prompt(payload)
+
+
+def test_a_stateless_loop_tick_starts_fresh_and_an_idle_tick_delivers_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two ticks through the scheduler: only the agent itself is faked."""
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_STATELESS_PARAM
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.database.default_run_database_path",
+        lambda: tmp_path / "scheduler.db",
+    )
+    monkeypatch.setattr(task_store, "default_task_store_path", lambda: tmp_path / "tasks.json")
+    slack = _Slack()
+    delivery_bundle.ScheduledDeliveryAdapters({Provider.SLACK: slack}).install()
+    prompts: list[str] = []
+    ticks = iter([True, False])
+
+    class _Agent:
+        def __init__(self, tool_hooks: ToolExecutionHooks | None) -> None:
+            self._tool_hooks = tool_hooks
+
+        def chat(self, message: str) -> _TurnResult:
+            prompts.append(message)
+            if not next(ticks):
+                return _TurnResult("NO_ACTION")
+            args = {"args": ["pr", "comment", "6555", "--body", "Needs a decision."]}
+            call = ToolCall(id="comment", name="github_cli", input=args)
+            execute_tool_calls([call], [_GITHUB_CLI], {}, hooks=self._tool_hooks)
+            return _TurnResult("Commented on PR #6555.")
+
+    def start(
+        *_args: object, tool_hooks: ToolExecutionHooks | None = None, **_kw: object
+    ) -> _Agent:
+        return _Agent(tool_hooks)
+
+    monkeypatch.setattr(AgentSession, "start", start)
+    task = ScheduledTask(
+        id="pr_doctor",
+        name="PR doctor",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="29 * * * *",
+        provider=Provider.SLACK,
+        chat_id="C123",
+        params={
+            "loop_prompt": "Comment on PRs that need a human.",
+            LOOP_MODE_PARAM: "agent",
+            LOOP_STATELESS_PARAM: "true",
+        },
+    )
+    runners = SchedulerRunners(agent=manual_loop_runner.run_manual_prompt_loop)
+    try:
+        execute_task(task, "2026-10-04T12:29:00Z", runners)
+        execute_task(task, "2026-10-04T13:29:00Z", runners)
+    finally:
+        delivery_bundle._installed = None
+
+    assert PREVIOUS_RUNS_HEADER not in prompts[1]
+    assert prompts[1].split("\n\nTask:\n")[1] == "Comment on PRs that need a human."
+    assert slack.messages == ["Commented on PR #6555."]
+    newest, first = read_run_records(task.id)
+    assert first["work_status"] == "succeeded"
+    assert newest["work_status"] == "noop"
+    assert newest["report"] == ""
+
+
+@pytest.mark.parametrize("stateless", [False, True])
+def test_a_stateless_tick_neither_sees_nor_writes_long_term_memory(
+    monkeypatch: pytest.MonkeyPatch, stateless: bool
+) -> None:
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_STATELESS_PARAM
+
+    monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
+    # A gateway whose memory still holds an old loop's lock protocol.
+    monkeypatch.setattr("core.domain.memory.memory_available_here", lambda: True)
+    monkeypatch.setattr("core.domain.memory.ensure_memory_store", lambda: None)
+    monkeypatch.setattr(
+        "core.domain.memory.render_prompt_index",
+        lambda: "- opensre-repair-loop-coordination: shared claim and FIFO queue",
+    )
+    monkeypatch.setattr(
+        "core.domain.memory.render_relevant_memories",
+        lambda *_args, **_kwargs: "Acquire repair.claim before pushing.",
+    )
+    session = SessionCore()
+    session.configured_integrations_known = True
+    seen: list[str] = []
+
+    class RecordingLLM(FakeActionLLM):
+        def invoke(
+            self,
+            messages: list[dict[str, Any]],
+            *,
+            system: str | None = None,
+            tools: list[dict[str, Any]] | None = None,
+        ) -> AgentLLMResponse:
+            seen.append(system or "")
+            seen.extend(str(message.get("content", "")) for message in messages)
+            return super().invoke(messages, system=system, tools=tools)
+
+    remember = RegisteredTool(
+        name="memory_remember",
+        description="Remember a durable fact.",
+        input_schema={"type": "object", "properties": {}},
+        source="system",
+        run=lambda: {"ok": True},
+        side_effect_level=SideEffectLevel.MUTATING,
+    )
+
+    def startup(_self: AgentSession) -> SessionStartupResult:
+        return SessionStartupResult(session=session, prompts=EmptyPromptContextProvider())
+
+    def available_tools(*_args: Any, **_kwargs: Any) -> list[RegisteredTool]:
+        return [remember]
+
+    llm = RecordingLLM([no_tool_response("NO_ACTION")])
+    monkeypatch.setattr(AgentSession, "startup", startup)
+    monkeypatch.setattr(
+        "core.agent_harness.tools.tool_provider.get_action_tools_from_integrations_view",
+        available_tools,
+    )
+    monkeypatch.setattr("core.agent_harness.turns.headless_build.default_llm_factory", lambda: llm)
+    payload = {"loop_prompt": "Fix one failing PR.", LOOP_MODE_PARAM: LOOP_MODE_AGENT}
+    if stateless:
+        payload[LOOP_STATELESS_PARAM] = "true"
+
+    manual_loop_runner.run_manual_prompt_loop(payload)
+
+    prompt = "\n".join(seen)
+    assert ("opensre-repair-loop-coordination" in prompt) is not stateless
+    assert ("Acquire repair.claim" in prompt) is not stateless
+    assert ("memory_remember" in llm.tool_schema_names) is not stateless

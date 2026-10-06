@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.prompts import (
     build_action_system_prompt,
@@ -14,6 +16,7 @@ from core.agent_harness.prompts import (
     recent_conversation_block,
     repository_context_block,
 )
+from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.memory.conversation import NO_HISTORY_PLACEHOLDER
 from core.agent_harness.prompts.skills import (
     SKILLS_HEADER,
@@ -25,6 +28,12 @@ from core.agent_harness.prompts.skills import (
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from tests.utils.skill_cards import skill_card
+
+
+@pytest.fixture(autouse=True)
+def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
 
 
 def _skill_instruction_text(name: str) -> str:
@@ -169,6 +178,30 @@ def test_repository_context_renders_one_active_and_multiple_remembered_repos() -
     assert repository_context_block(_ctx()) == ""
 
 
+def test_repository_agents_md_files_never_reach_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AGENTS.md is for local coding agents: the agent's prompt never carries it."""
+    root = tmp_path / "payments"
+    service = root / "svc"
+    service.mkdir(parents=True)
+    (root / ".git").mkdir()
+    (root / "AGENTS.md").write_text("ROOT-RULE-ZEBRA-7731\n")
+    (service / "AGENTS.override.md").write_text("OVERRIDE-RULE-QUOKKA-1942\n")
+    monkeypatch.chdir(service)
+    snapshot = replace(
+        _ctx(active_repositories={"github": "acme/payments"}),
+        working_directory=str(service),
+    )
+
+    prompt = build_action_system_prompt_envelope(snapshot).render()
+
+    assert "acme/payments" in prompt  # the repository itself is still named
+    assert "ROOT-RULE-ZEBRA-7731" not in prompt
+    assert "OVERRIDE-RULE-QUOKKA-1942" not in prompt
+    assert "REPOSITORY INSTRUCTIONS" not in prompt
+
+
 def test_skill_body_appends_sibling_report_template_but_index_stays_thin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -305,9 +338,11 @@ def test_action_system_prompt_includes_skills_block() -> None:
     )
 
 
-def test_action_prompt_includes_long_term_memory_bodies(
+def test_action_prompt_lists_memories_and_includes_bodies_relevant_to_the_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from dataclasses import replace
+
     from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
     from core.domain.memory import save_memory
 
@@ -319,10 +354,15 @@ def test_action_prompt_includes_long_term_memory_bodies(
         description="Name is Vaibhav",
         body="The user's name is Vaibhav on the platform team.",
     )
-    prompt = build_action_system_prompt(_ctx())
-    assert "LONG-TERM MEMORY" in prompt
-    assert "user-profile" in prompt
-    assert "platform team" in prompt
+
+    idle = build_action_system_prompt(_ctx())
+    asked = build_action_system_prompt(replace(_ctx(), text="which team is Vaibhav on?"))
+
+    assert "LONG-TERM MEMORY" in idle
+    assert "- [user] user-profile — Name is Vaibhav" in idle
+    assert "platform team" not in idle
+    assert "RELEVANT MEMORIES" in asked
+    assert "platform team" in asked
 
 
 def test_scheduling_guidance_survives_prompt_assembly() -> None:

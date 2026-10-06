@@ -177,3 +177,53 @@ def test_a_lone_plan_write_that_starts_a_step_is_stored() -> None:
         PlanStepStatus.IN_PROGRESS,
         PlanStepStatus.PENDING,
     ]
+
+
+def test_the_refusal_prescribes_a_paired_write_that_runs_in_one_response() -> None:
+    # Arrange: one work tool returned and no plan is open. The refusal used to
+    # prescribe a lone update_plan first, which spent a model call on its own.
+    session = Session()
+    hooks = with_task_plan_hooks(None, session)
+    _returned(hooks, "shell_run")
+    scope = ActionToolScope(session=session, console=Console(file=io.StringIO()))
+
+    def write_plan(args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        return execute_update_plan_tool(args, scope)
+
+    def run_shell(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        return {"ok": True}
+
+    tools = [
+        AgentTool(
+            name="update_plan",
+            description="Record the plan",
+            input_schema={"type": "object", "additionalProperties": True},
+            execute=write_plan,
+            role=ToolRole.BOOKKEEPING,
+        ),
+        AgentTool(
+            name="shell_run",
+            description="Run a command",
+            input_schema={"type": "object", "additionalProperties": True},
+            execute=run_shell,
+        ),
+    ]
+    plan = [
+        {"step": "List the workflow files", "status": "completed"},
+        {"step": "Count the jobs in each", "status": "in_progress"},
+    ]
+
+    # Act: the response the refusal now asks for.
+    results = execute_tool_calls(
+        [
+            ToolCall(id="call-plan", name="update_plan", input={"plan": plan}),
+            ToolCall(id="call-shell", name="shell_run", input={}),
+        ],
+        tools,
+        {},
+        hooks=hooks,
+    )
+
+    # Assert: both ran in one response.
+    assert [result.is_error for result in results] == [False, False]
+    assert "in one response with update_plan listed before it" in PLAN_REQUIRED_REASON

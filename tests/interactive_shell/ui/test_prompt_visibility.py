@@ -112,11 +112,12 @@ def test_confirmation_region_height_is_stable_across_selection_changes() -> None
 
 
 def test_streaming_prompt_height_matches_idle_with_live_tool_on_status_row() -> None:
-    """Prompt stack is status → Auto; no reserved empty action gap.
+    """Message region is lead blank → status → seam; no reserved action gap.
 
     Idle omits the empty status placeholder (that was the big gap under the
     banner). Thinking/Invoking add one status line, but never a second reserved
-    action row.
+    action row. Auto chrome is not counted here — it renders on a fixed row
+    under the composer.
     """
     session = Session()
     idle = SpinnerState()
@@ -126,8 +127,8 @@ def test_streaming_prompt_height_matches_idle_with_live_tool_on_status_row() -> 
     spinner.start()
     spinner.set_phase(SpinnerState.THINKING_PHASE)
     thinking_rows = render_prompt_region(session, ReplState(), spinner).value.count("\n")
-    # Busy adds the Thinking row and one lead blank under mid-turn text.
-    assert thinking_rows == idle_rows + 2
+    # Busy adds a lead blank, the Thinking row, and the seam above the composer.
+    assert thinking_rows == idle_rows + 3
 
     spinner.set_phase(SpinnerState.INVOKING_TOOLS_PHASE)
     spinner.set_active_action("GitHub CLI · gh api repos/x", action_id="t1")
@@ -138,16 +139,23 @@ def test_streaming_prompt_height_matches_idle_with_live_tool_on_status_row() -> 
     assert "Invoking tools" in plain
 
 
-def test_prompt_region_idle_does_not_lead_with_a_blank_row() -> None:
-    """Idle chrome stays flush; a leading blank under the banner is a hole."""
+def test_prompt_region_idle_is_just_the_composer() -> None:
+    """Idle reserves no chrome rows above the box.
+
+    Permission chrome moved to its own fixed row under the composer, so an
+    idle message region that grows a row again is the old gap-under-the-banner
+    regression coming back.
+    """
     session = Session()
-    idle = render_prompt_region(session, ReplState(), SpinnerState()).value
+    idle = _plain(render_prompt_region(session, ReplState(), SpinnerState()).value)
     assert not idle.startswith("\n")
-    assert "\n\n" not in idle
+    assert "\n" not in idle
+    assert "Auto (High)" not in idle
+    assert idle.startswith(" >")
 
 
 def test_prompt_region_thinking_leads_with_a_blank_row() -> None:
-    """Thinking sits under mid-turn assistant text — one blank so it breathes."""
+    """Thinking is separated from transcript and quieter composer metadata."""
     session = Session()
     spinner = SpinnerState()
     spinner.start()
@@ -160,6 +168,11 @@ def test_prompt_region_thinking_leads_with_a_blank_row() -> None:
     first_content_line = plain.split("\n", 1)[1]
     assert "Thinking" in first_content_line
     assert not plain.startswith("\n\n")
+    lines = plain.splitlines()
+    assert lines[1].startswith("  ")
+    # The seam: one blank row between the live region and the composer.
+    assert lines[2] == ""
+    assert lines[3].startswith(" >")
 
 
 def test_idle_prompt_has_no_recurring_ready_hint() -> None:

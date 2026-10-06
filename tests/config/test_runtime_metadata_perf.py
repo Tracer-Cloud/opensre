@@ -6,10 +6,10 @@ arm64 baseline so slow CI runners don't flake.
 
 Baseline (Darwin arm64, Python 3.14.3, n=200; includes host OS + workspace
 identity probes):
-- session dict lookup        ~0.0001 ms
-- importlib.metadata.version ~0.56 ms
-- build_runtime_metadata     ~1.7 ms (can approach ~6 ms under xdist load)
-- build_environment_block    ~0.0016 ms
+- session dict lookup         ~0.0001 ms
+- importlib.metadata.version  ~0.56 ms
+- build_runtime_metadata      ~1.7 ms (can approach ~6 ms under xdist load)
+- render_static_runtime_facts ~0.003 ms
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from collections.abc import Callable
 import pytest
 
 from config.runtime_metadata import build_runtime_metadata
-from core.agent_harness.prompts.grounding import build_environment_block
+from core.agent_harness.prompts.runtime_facts import render_static_runtime_facts
 
 _RUNS = 200
 
@@ -75,27 +75,15 @@ def test_build_runtime_metadata_stays_under_15ms() -> None:
     assert median_ms < 15.0, f"regression: {median_ms} ms > 15 ms threshold"
 
 
-def test_environment_block_render_stays_under_1ms() -> None:
-    """The per-turn cost of rendering the version fact into the LLM prompt.
+def test_static_runtime_facts_render_stays_under_1ms() -> None:
+    """The per-turn cost of rendering the runtime facts into the LLM prompt.
 
-    Baseline ~0.0016 ms; 500x buffer = 1 ms. This runs per prompt build so
+    Baseline ~0.003 ms; ~300x buffer = 1 ms. This runs per prompt build so
     even sub-millisecond overhead matters.
     """
     metadata = build_runtime_metadata()
-
-    def _run() -> str:
-        return build_environment_block(
-            integrations=("github",),
-            known=True,
-            llm_provider="openai",
-            reasoning_model="gpt-5.4-mini",
-            toolcall_model="gpt-5.4-mini",
-            llm_settings_available=True,
-            runtime=metadata,
-        )
-
-    median_ms = _time_median_ms(_run)
-    print(f"\n  build_environment_block: {median_ms * 1000:.2f} µs")
+    median_ms = _time_median_ms(lambda: render_static_runtime_facts(metadata))
+    print(f"\n  render_static_runtime_facts: {median_ms * 1000:.2f} µs")
     assert median_ms < 1.0, f"regression: {median_ms} ms > 1 ms threshold"
 
 
@@ -112,10 +100,7 @@ def test_baseline_stability(_i: int) -> None:
     imp_ms = _time_median_ms(lambda: importlib.metadata.version("opensre"))
     build_ms = _time_median_ms(build_runtime_metadata)
 
-    def _env() -> str:
-        return build_environment_block(integrations=(), known=False, runtime=metadata)
-
-    env_ms = _time_median_ms(_env)
+    env_ms = _time_median_ms(lambda: render_static_runtime_facts(metadata))
 
     assert dict_ms < 0.01, f"dict {dict_ms} ms"
     assert imp_ms < 5.0, f"importlib {imp_ms} ms"

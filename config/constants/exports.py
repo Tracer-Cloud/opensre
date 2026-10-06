@@ -35,6 +35,7 @@ EXPORTS: dict[str, str] = {
     "SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "CONNECTING_SLACK_SKILL_NAME": "skills",
+    "ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME": "skills",
     "SKILLS_API_VERSION": "skills",
     "SKILLS_AUTO_UPDATE_ENV": "skills",
     "SKILLS_DIR_ENV": "skills",
@@ -60,6 +61,8 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_ACCOUNT_LLM_MODEL_ENV": "account",
     "OPENSRE_ACCOUNT_METADATA_PATH_ENV": "account",
     "OPENSRE_ACCOUNT_SESSION_PATH": "account",
+    "OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS": "account",
+    "OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS": "account",
     "OPENSRE_ACCOUNT_TOKEN_ENV": "account",
     "OPENSRE_ACCOUNT_USAGE_PATH": "account",
     "OPENSRE_APP_URL_DEFAULT": "account",
@@ -68,6 +71,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_GATEWAY_LLM_MODEL_DEFAULT": "account",
     "OPENSRE_STAFF_EMAIL_DOMAIN": "account",
     # analytics
+    "LLMCreditErrorReason": "analytics",
     "ANALYTICS_DISABLED_ENV": "analytics",
     "ANALYTICS_ENV_ENV": "analytics",
     "ANALYTICS_TEST_ENV": "analytics",
@@ -148,6 +152,7 @@ EXPORTS: dict[str, str] = {
     "CI_FIX_COUNT_LABEL": "ci_fixes",
     "CI_FIX_LEDGER_LOCK_TIMEOUT_SECONDS": "ci_fixes",
     "CI_FIX_LEDGER_PATH_ENV": "ci_fixes",
+    "CI_FIX_UNSETTLED_MERGE_ATTEMPTS": "ci_fixes",
     # clerk
     "CLERK_ISSUER_ENV": "clerk",
     "CLERK_JWKS_URL_ENV": "clerk",
@@ -196,6 +201,7 @@ EXPORTS: dict[str, str] = {
     "PROMPT_DEFAULT_ACTOR": "gateway",
     "PROMPT_CONVERSATION_NEW": "gateway",
     "PROMPT_MAX_CHARS": "gateway",
+    "PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS": "gateway",
     "PROMPT_QUEUE_MAX": "gateway",
     "PROMPT_PROGRESS_KIND_NOTE": "gateway",
     "PROMPT_PROGRESS_KIND_PLAN": "gateway",
@@ -242,6 +248,8 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_PROMPT_POLL_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS": "hosted_gateway",
     # github
     "GH_TOKEN_ENV": "github",
@@ -315,6 +323,8 @@ EXPORTS: dict[str, str] = {
     "LLM_PROVIDER_ENV": "llm",
     "OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV": "llm",
     "OPENSRE_REACT_GOAL_LLM_REVIEW_ENV": "llm",
+    "OPENAI_PROMPT_CACHE_KEY_HASH_CHARS": "llm",
+    "OPENAI_PROMPT_CACHE_KEY_PREFIX": "llm",
     # mariadb
     "MARIADB_DATABASE_ENV": "mariadb",
     "MARIADB_HOST_ENV": "mariadb",
@@ -326,7 +336,13 @@ EXPORTS: dict[str, str] = {
     "MCP_NO_COLOR_ENV": "mcp",
     "MCP_TERMINAL_ENV": "mcp",
     "MCP_TERMINAL_DUMB_VALUE": "mcp",
+    # conversation history
+    "OPENSRE_HISTORY_TOKEN_BUDGET_ENV": "conversation_history",
+    "OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV": "conversation_history",
+    "OPENSRE_LLM_COMPACTION_ENV": "conversation_history",
+    "OPENSRE_STRUCTURED_HISTORY_ENV": "conversation_history",
     # memory
+    "MEMORY_TOOL_NAMES": "memory",
     "OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV": "memory",
     "OPENSRE_MEMORY_DIR_ENV": "memory",
     "OPENSRE_MEMORY_DISABLED_ENV": "memory",
@@ -356,6 +372,7 @@ EXPORTS: dict[str, str] = {
     "NEW_RELIC_DEFAULT_INCIDENT_LIMIT": "new_relic",
     "NEW_RELIC_DEFAULT_WINDOW_MINUTES": "new_relic",
     "NEW_RELIC_INSTANCES_ENV": "new_relic",
+    "NEW_RELIC_TIMESERIES_MAX_BUCKETS": "new_relic",
     "NEW_RELIC_NRQL_LIMIT_MAX": "new_relic",
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS": "new_relic",
     # opensearch
@@ -479,6 +496,9 @@ EXPORTS: dict[str, str] = {
     "NON_RETRYABLE_WORK_ERROR_KINDS": "scheduler",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV": "scheduler",
     "OPENSRE_SCHEDULER_BUILD_ENV": "scheduler",
+    "SCHEDULER_MISSED_FIRE_GRACE_SECONDS": "scheduler",
+    "STATELESS_LOOP_IDLE_REPLY": "scheduler",
+    "SCHEDULED_TASK_TRACE_KEY": "scheduler",
     # secrets
     "CREDENTIAL_FALLBACK_FILENAME": "secrets",
     "OPENSRE_DISABLE_KEYRING_ENV": "secrets",
@@ -550,8 +570,16 @@ EXPORTS: dict[str, str] = {
     "CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_STORE_PATH_ENV": "tenancy",
+    # tls
+    "SSL_CERT_DIR_ENV": "tls",
+    "SSL_CERT_FILE_ENV": "tls",
+    "TURN_ACTOR_ID_ENV": "tenancy",
+    "TURN_ORGANIZATION_ID_ENV": "tenancy",
     # tooling
+    "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",
+    "TOOL_PREFETCH_MAX_ENTRIES": "tooling",
+    "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "ToolBlockedBy": "tooling",
     "ToolSkippedBy": "tooling",
     # tracer

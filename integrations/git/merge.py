@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from integrations.git.errors import COMMIT_FAILED, MERGE_FAILED, GitCommandError
 from integrations.git.local import (
+    _add_paths,
     _opensre_author_env,
     _remote_https_base,
     _run_git,
@@ -166,12 +167,11 @@ def take_side(workspace: str, path: str, side: str) -> None:
         result = _run_git(workspace, "rm", "-q", "--", path)
     else:
         result = _run_git(workspace, "checkout", f"--{side}", "--", path)
-        if result.returncode == 0:
-            result = _run_git(workspace, "add", "--", path)
-    if result.returncode != 0:
-        raise GitCommandError(
-            MERGE_FAILED, f"Could not take {side} for {path}: {result.stderr.strip()}"
-        )
+    error = result.stderr.strip() if result.returncode != 0 else ""
+    if not error and wanted in present:
+        error = _add_paths(workspace, [path])
+    if error:
+        raise GitCommandError(MERGE_FAILED, f"Could not take {side} for {path}: {error}")
 
 
 def _conflict_stages(workspace: str, path: str) -> set[str]:
@@ -211,9 +211,9 @@ def stage_paths(workspace: str, paths: Sequence[str]) -> None:
     ]
     if not stageable:
         return
-    result = _run_git(workspace, "add", "-A", "--", *stageable)
-    if result.returncode != 0:
-        raise GitCommandError(MERGE_FAILED, f"git add failed: {result.stderr.strip()}")
+    error = _add_paths(workspace, stageable)
+    if error:
+        raise GitCommandError(MERGE_FAILED, f"git add failed: {error}")
 
 
 def _indexed(workspace: str, paths: Sequence[str]) -> set[str]:

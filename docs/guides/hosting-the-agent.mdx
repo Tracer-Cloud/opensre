@@ -37,7 +37,7 @@ agent = DefaultHeadlessBuild(
     error_reporter=my_reporter, # optional; default logs at debug
 ).agent(
     tools=my_tool_provider,     # optional; a configured DefaultToolProvider or your own
-    prompts=my_prompts,         # optional; default grounding provider
+    prompts=my_prompts,         # optional; names the prompt surface
 )
 
 # 2. Handle — state the whole turn; the agent binds it, dispatches, and keeps
@@ -98,7 +98,7 @@ for tests or a custom host looks like:
 agent = DefaultHeadlessBuild(session=session, output=ShellOutputSink(console), console=console,
                      error_reporter=ShellErrorReporter()).agent(
     tools=shell_tool_provider(session, console, request_exit=…),
-    prompts=shell_prompt_context_provider(session),
+    prompts=DefaultPromptContextProvider(session, surface="interactive_shell"),
 )
 result = agent.handle(
     text,
@@ -120,7 +120,7 @@ go through the pool; expand `AgentBuildConfig` with `resolve_agent_ports`.
 | --- | --- | --- |
 | Send output somewhere new (a websocket, a chat thread) | `OutputSink` — `print`, `stream`, `render_error`, `render_response_header` | `DefaultHeadlessBuild(output=…)` |
 | Add tools or change how they are rendered/confirmed | a `ToolProvider` — usually `DefaultToolProvider(...)` with your port factories | `.agent(tools=…)` |
-| Change what the model is told about the environment | subclass `spi.defaults.DefaultPromptContextProvider`, override the block you need | `.agent(prompts=…)` |
+| Run turns under another surface's prompt (setup facts, menus) | nothing, or a `PromptContextProvider` whose `surface()` names it | `DefaultHeadlessBuild(surface=…)`, or `.agent(prompts=…)` |
 | Route swallowed exceptions (Sentry, logs) | `ErrorReporter` — `report(exc, context=…, expected=…)` | `DefaultHeadlessBuild(error_reporter=…)` |
 | Account a turn (telemetry, token totals) | `TurnAccounting` — `record_action_result`, `finalize` | `TurnBinding(accounting=…)` |
 | Approve or deny tool calls per conversation | — | `TurnBinding(tool_hooks=…)` |

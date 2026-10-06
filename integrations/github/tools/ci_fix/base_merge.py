@@ -16,6 +16,7 @@ from integrations.git import (
     conclude_merge,
     conflict_resolution_task,
     fetch_remote_branch,
+    file_fingerprints,
     head_sha,
     is_ancestor,
     merge_committed_by_resolver,
@@ -23,13 +24,19 @@ from integrations.git import (
     merge_head_sha,
     merge_in_progress,
     merge_ref,
+    paths_with_conflict_markers,
     render_overview,
     render_review,
     resolution_lines,
     unresolved_conflicts,
 )
 from integrations.github.tools.ci_fix.context import CiFixContext
-from integrations.github.tools.ci_fix.errors import ERR_MERGE_CONFLICT, GitHubCiFixError
+from integrations.github.tools.ci_fix.errors import (
+    ERR_MERGE_CONFLICT,
+    ERR_MERGE_DECISION,
+    ERR_MERGE_UNSETTLED,
+    GitHubCiFixError,
+)
 
 
 @dataclass(frozen=True)
@@ -110,8 +117,14 @@ def merge_base_into_head(
             return _merge_finished_by_agent(workspace, ctx, merging, conflicts)
         blocked = unresolved_conflicts(workspace, conflicts)
         if not result.success or blocked:
+            kind = ERR_MERGE_CONFLICT
+            if result.success:
+                decided = _left_for_a_person(workspace, conflicts, blocked)
+                kind = ERR_MERGE_DECISION if decided else ERR_MERGE_UNSETTLED
             abort_merge(workspace)
-            raise _blocked_error(ctx, blocked or list(conflicts.paths), result)
+            raise _blocked_error(
+                ctx, blocked or list(conflicts.paths), result, kind=kind, base_sha=merging
+            )
         if console is not None:
             render_review(
                 console,
@@ -167,22 +180,40 @@ def _merge_finished_by_agent(
     )
 
 
+def _left_for_a_person(
+    workspace: str, conflicts: MergeConflicts, blocked: list[ConflictedPath]
+) -> bool:
+    """True when the agent edited a blocked file yet kept conflict markers in it.
+
+    That is how its task tells it to flag a choice for a person. A file it never
+    touched still holds git's own markers, which prove nothing on their own; the
+    runner retries such a merge and asks a person only when it stays unsettled.
+    """
+    marked = paths_with_conflict_markers(workspace, [conflict.path for conflict in blocked])
+    current = file_fingerprints(workspace, marked)
+    return any(current.get(path, "") != conflicts.content.get(path, "") for path in marked)
+
+
 def _blocked_error(
     ctx: CiFixContext,
     blocked: list[ConflictedPath],
     result: CodingResult,
+    *,
+    kind: str = ERR_MERGE_CONFLICT,
+    base_sha: str = "",
 ) -> GitHubCiFixError:
     decisions = "; ".join(f"{c.path} ({c.description})" for c in blocked)
     note = " ".join((result.error or result.summary or "").split()).rstrip(".")
     detail = f" Coding agent: {note}." if note else ""
     return GitHubCiFixError(
-        ERR_MERGE_CONFLICT,
+        kind,
         (
             f"Merging {ctx.base_branch} into {ctx.head_branch} is blocked on "
             f"{len(blocked)} file(s) a person must decide: {decisions}.{detail} "
             "The merge was aborted and no push was made."
         ),
         branch_name=ctx.head_branch,
+        base_sha=base_sha,
     )
 
 

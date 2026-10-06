@@ -1,8 +1,8 @@
 """Core session state shared by every surface.
 
 The surface-agnostic half of the REPL session: identity, persistence, integration
-resolution, token accounting, conversational agent state, and grounding caches —
-everything ``core``, ``gateway``, and ``tools`` consumers depend on. The interactive
+resolution, token accounting, and conversational agent state — everything
+``core``, ``gateway``, and ``tools`` consumers depend on. The interactive
 shell extends this with its own UI state in
 :class:`~surfaces.interactive_shell.session.session.Session`.
 """
@@ -17,10 +17,7 @@ from typing import TYPE_CHECKING, Any
 from core.agent_harness.session.history_entry import build_history_entry
 
 if TYPE_CHECKING:
-    from core.agent_harness.grounding.context import GroundingContext
     from core.agent_harness.session.integration_resolution import IntegrationResolutionResult
-else:
-    GroundingContext = Any
 
 from config.llm_reasoning_effort import ReasoningEffortChoice
 from core.agent_harness.accounting.token_usage import TokenUsage
@@ -34,7 +31,7 @@ from core.agent_harness.session.persistence.contracts import SessionStore
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.task_plan.plan import TaskPlan
-from core.state import MutableAgentState
+from core.state import MutableAgentState, TurnEvidence
 from infrastructure.harness_providers import integration_sources_stamp
 from infrastructure.scheduling.task_registry import TaskRegistry
 
@@ -42,17 +39,6 @@ from infrastructure.scheduling.task_registry import TaskRegistry
 #: the conversation window so anything a prompt or a ``*_latest_*`` lookup
 #: reads is still intact, while a long session stops holding every reply.
 RESPONSE_TEXT_WINDOW = 20
-
-
-def _default_grounding() -> GroundingContext:
-    """Build a fresh per-session grounding cache bundle.
-
-    Imported lazily so the session package can expose the state model without
-    eagerly constructing grounding caches.
-    """
-    from core.agent_harness.grounding.context import GroundingContext
-
-    return GroundingContext()
 
 
 @dataclass
@@ -123,19 +109,11 @@ class SessionCore:
     a persistent registry); only the shell surface reads it today."""
 
     agent: MutableAgentState = field(default_factory=MutableAgentState)
-    """Dedicated conversational-agent state (transcript + per-turn observation).
+    """Dedicated conversational-agent state (transcript + turn evidence).
 
     Owns the assistant conversation history (alternating
-    (\"user\"|\"assistant\", text)) and the per-turn read-only discovery
-    observation, kept in one place rather than as loose session fields."""
-
-    grounding: GroundingContext = field(
-        default_factory=_default_grounding, repr=False, compare=False
-    )
-    """Per-session LLM grounding caches (CLI help, docs, AGENTS.md).
-
-    Injected so the grounding caches have a process-scoped lifetime with no
-    module-level mutable globals; tests can supply a fresh ``GroundingContext``."""
+    (\"user\"|\"assistant\", text)) and each recorded turn's tool evidence,
+    kept in one place rather than as loose session fields."""
 
     pending_schedule_offer: PendingScheduleOffer | None = None
     """Structured schedule awaiting bare yes — set by propose_scheduled_delivery."""
@@ -161,6 +139,9 @@ class SessionCore:
     skill_discovery_enabled: bool = True
     """Host-owned policy for the skill index and skill_view; never restored from history."""
 
+    long_term_memory_enabled: bool = True
+    """Host-owned policy for memory prompt blocks, memory tools and extraction; never restored."""
+
     active_skill: str | None = None
     """Skill loaded by ``skill_view`` in the current flow; cleared on a genuine user turn."""
 
@@ -182,6 +163,13 @@ class SessionCore:
     The host may reopen one on request (startup, ``/demo``); the model may not,
     or a later message that routes back to the skill asks the same question
     again.
+    """
+
+    skill_value_notes: dict[str, tuple[str, str]] = field(default_factory=dict)
+    """``label -> (kind, summary)`` a tool left for the skill-value recorder.
+
+    A report bullet names its insight by label; the recorder records the summary
+    stored under that label, which names no repository, instead of the reply text.
     """
 
     task_plan: TaskPlan | None = None
@@ -223,13 +211,13 @@ class SessionCore:
         self.agent.messages = value
 
     @property
-    def last_command_observation(self) -> str | None:
-        """Latest command/tool observation for the current turn."""
-        return self.agent.last_observation
+    def turn_evidence(self) -> list[TurnEvidence]:
+        """Structured records of recent turns (tool calls and bounded results)."""
+        return self.agent.turn_evidence
 
-    @last_command_observation.setter
-    def last_command_observation(self, value: str | None) -> None:
-        self.agent.last_observation = value
+    @turn_evidence.setter
+    def turn_evidence(self, value: list[TurnEvidence]) -> None:
+        self.agent.turn_evidence = value
 
     def record(
         self,
@@ -438,6 +426,7 @@ class SessionCore:
         self.questions_already_answered.clear()
         self.skill_question_keys.clear()
         self.skills_already_prompted.clear()
+        self.skill_value_notes.clear()
         if rotate_identity:
             # Rotate session identity so the new post-reset session gets its own ID and file.
             self.session_id = str(uuid.uuid4())

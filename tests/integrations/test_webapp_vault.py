@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
+import config.account as account
 import integrations.webapp_vault as vault
 from config.constants.billing import (
     MACHINE_SECRET_ENV,
@@ -25,6 +26,31 @@ class _FakeResponse:
         if isinstance(self._payload, Exception):
             raise self._payload
         return self._payload
+
+
+@pytest.fixture(autouse=True)
+def _no_account_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a token stored on the developer's machine out of these tests."""
+    monkeypatch.setattr(account, "resolve_account_token", lambda: "")
+
+
+def test_account_token_wins_over_the_fleet_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The webapp takes the organization from this token; the fleet secret names none.
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example.com")
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_1")
+    monkeypatch.setenv(USAGE_SECRET_ENV, "SHARED-SECRET")
+    monkeypatch.setattr(account, "resolve_account_token", lambda: "ORG-TOKEN")
+    sent: list[dict[str, Any]] = []
+
+    def fake_get(url: str, **kwargs: Any) -> _FakeResponse:
+        sent.append(kwargs)
+        return _FakeResponse(200, {"success": True, "data": []})
+
+    monkeypatch.setattr(vault.httpx, "get", fake_get)
+
+    vault.fetch_webapp_org_integrations()
+
+    assert sent[0]["headers"]["Authorization"] == "Bearer ORG-TOKEN"
 
 
 def test_unconfigured_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:

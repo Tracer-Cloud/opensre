@@ -10,8 +10,10 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from config.constants.analytics import LLMCreditErrorReason
 from config.prompt_log import PromptLogConfig
 from config.version import get_opensre_version
+from core.llm.shared.llm_retry import credit_exhaustion_reason
 from core.llm_invoke_errors import LLM_PROVIDER_FAILURE_KINDS, classify_provider_error_kind
 from infrastructure.analytics.event_properties import bounded_error_message
 from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
@@ -19,6 +21,7 @@ from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
 )
 from infrastructure.analytics.prompt_log.sinks.posthog_ai import capture_ai_generation
 from infrastructure.analytics.provider import JsonValue
+from infrastructure.analytics.scheduled_task_attribution import current_scheduled_task_id
 from infrastructure.safety.secret_redaction import redact_text
 
 _SUPPORTED_TURN_KINDS = frozenset({"agent", "follow_up", "new_alert", "background_task"})
@@ -118,9 +121,13 @@ class PromptRecorder:
         self._history_start = len(history) if isinstance(history, list) else 0
         self._surface = surface
         self._properties: dict[str, JsonValue] = {}
+        # Read at start: a background task's recorder flushes later, outside the tick.
+        if scheduled_task_id := current_scheduled_task_id():
+            self._properties["scheduled_task_id"] = scheduled_task_id
         self._response: str = ""
         self._error_kind: str = ""
         self._error_message: str = ""
+        self._ai_error_reason: LLMCreditErrorReason | None = None
         self._model: str | None = None
         self._provider: str | None = None
         self._latency_ms: int | None = None
@@ -130,6 +137,7 @@ class PromptRecorder:
         self._model_system = ""
         self._model_skill = ""
         self._model_context = ""
+        self._model_blocks: dict[str, JsonValue] = {}
         self._loop_outcome: dict[str, JsonValue] = {}
         self._start = time.monotonic()
         self._flushed = False
@@ -161,6 +169,14 @@ class PromptRecorder:
         self._model_context = _bound_model_text(
             context, config=self._config, limit=_CONTEXT_MAX_CHARS
         )
+
+    def set_model_blocks(self, blocks: dict[str, JsonValue]) -> None:
+        """Attach the size of each prompt block, the replayed history, and the tool count.
+
+        Block ids and numbers only, never prompt text, so both sinks receive it
+        whole: no redaction, no cap.
+        """
+        self._model_blocks = dict(blocks)
 
     def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""
@@ -283,7 +299,7 @@ class PromptRecorder:
             session=session,
         )
 
-    def set_error(self, kind: str, message: str) -> None:
+    def set_error(self, kind: str, message: str, *, error: BaseException | None = None) -> None:
         """Attach a structured turn error emitted as ``$ai_error`` properties.
 
         The human-readable response text is unaffected; these properties make
@@ -296,7 +312,9 @@ class PromptRecorder:
             return
         self._error_kind = kind or "error"
         self._error_message = _sanitize_text(message, config=self._config)
-        if self._error_kind in LLM_PROVIDER_FAILURE_KINDS:
+        if error is not None:
+            self._ai_error_reason = credit_exhaustion_reason(error)
+        if self._error_kind in LLM_PROVIDER_FAILURE_KINDS or self._ai_error_reason:
             self._llm_attempted = True
 
     def set_response(self, text: str, run: _RunInfo | None = None) -> None:
@@ -352,6 +370,8 @@ class PromptRecorder:
             record["model_skill_prompt"] = self._model_skill
         if self._model_context:
             record["model_context"] = self._model_context
+        if self._model_blocks:
+            record["model_blocks"] = self._model_blocks
         if self._config.local_enabled:
             with contextlib.suppress(OSError):
                 append_prompt_log_record(path=self._config.log_path, record=record)
@@ -376,7 +396,10 @@ class PromptRecorder:
                 # failed, the turn is a failed LLM call — never a terminal
                 # action. Fall back to "unknown" instead of the terminal
                 # sentinel when the attempted model could not be resolved.
-                llm_provider_failed = self._error_kind in LLM_PROVIDER_FAILURE_KINDS
+                llm_provider_failed = (
+                    self._error_kind in LLM_PROVIDER_FAILURE_KINDS
+                    or self._ai_error_reason is not None
+                )
                 fallback_label = (
                     NO_CONVERSATIONAL_AGENT if self._llm_attempted is False else UNKNOWN_LLM
                 )
@@ -442,15 +465,23 @@ class PromptRecorder:
                     posthog_properties["$ai_error"] = self._error_message or self._error_kind
                     posthog_properties["error_kind"] = self._error_kind
                     if llm_provider_failed:
-                        posthog_properties["ai_error_kind"] = classify_provider_error_kind(
-                            self._error_message or self._error_kind
+                        posthog_properties["ai_error_kind"] = (
+                            "quota"
+                            if self._ai_error_reason
+                            else classify_provider_error_kind(
+                                self._error_message or self._error_kind
+                            )
                         )
+                    if self._ai_error_reason:
+                        posthog_properties["ai_error_reason"] = self._ai_error_reason
                 if self._model_system:
                     posthog_properties["model_system_prompt"] = self._model_system
                 if self._model_skill:
                     posthog_properties["model_skill_prompt"] = self._model_skill
                 if self._model_context:
                     posthog_properties["model_context"] = self._model_context
+                if self._model_blocks:
+                    posthog_properties["model_blocks"] = self._model_blocks
                 _fit_model_prompt(posthog_properties)
                 capture_ai_generation(posthog_properties)
 

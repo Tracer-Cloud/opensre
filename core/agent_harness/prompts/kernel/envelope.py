@@ -22,12 +22,14 @@ class PromptBlockId(StrEnum):
     ACTION_GOAL_KERNEL_CLOSER = "action-agent-goal-kernel-closer"
     ACTION_VENDOR_FRAGMENTS = "action-agent-vendor-fragments"
     ACTION_RUNTIME_FACTS = "action-agent-runtime-facts"
+    ACTION_LIVE_RUNTIME_FACTS = "action-agent-live-runtime-facts"
     ACTION_SKILLS = "action-agent-skills"
     ACTIVE_SKILL = "active-skill"
     ACTION_SETUP_STATE = "action-agent-setup-state"
     ASK_USER_ANSWERED = "ask-user-answered"
     CURRENT_TASK_PLAN = "current-task-plan"
     TURN_INTERACTION = "turn-interaction"
+    RELEVANT_MEMORIES = "relevant-memories"
 
     # Shared across envelopes.
     CONNECTED_INTEGRATIONS = "connected-integrations"

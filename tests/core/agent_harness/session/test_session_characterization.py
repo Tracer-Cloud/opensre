@@ -27,10 +27,12 @@ _CORE_FIELDS = (
     "pending_user_choice",
     "ask_user_rounds",
     "skill_discovery_enabled",
+    "long_term_memory_enabled",
     "active_skill",
     "questions_already_answered",
     "skill_question_keys",
     "skills_already_prompted",
+    "skill_value_notes",
     "task_plan",
     "task_plan_work",
     "task_plan_work_step_texts",
@@ -51,7 +53,6 @@ _CORE_FIELDS = (
     "tokens",
     "task_registry",
     "agent",
-    "grounding",
     "runtime_metadata",
 )
 

@@ -2,13 +2,13 @@
 
 Contract mirrors credits metering:
   GET/POST/DELETE {OPENSRE_WEBAPP_URL}/api/agent/integrations
-  Authorization: Bearer <AGENT_USAGE_SECRET>
+  Authorization: Bearer <OPENSRE_ACCOUNT_TOKEN>  (org-scoped gateway token)
   Success: {"success": true, "data": [{id, service, status, name, credentials}, …]}
 
-All three verbs compare the bearer against the shared ``AGENT_USAGE_SECRET``
-alone, so that is the only credential this module sends. Infra wires the same
-secret into every silo: it authenticates the fleet, and ``organizationId``
-selects the tenant.
+The webapp takes the organization from the gateway token and refuses a
+request naming another one. The shared ``AGENT_USAGE_SECRET`` is sent only
+when no account token is set, and the webapp accepts it only under an
+explicit rollout opt-in.
 
 Used by the gateway when resolving integrations for Slack/Telegram turns so
 org-admins can connect GitHub (etc.) in the webapp, and to mirror a silo's own
@@ -25,9 +25,9 @@ from typing import Any
 
 import httpx
 
+from config.account import agent_bearer_token
 from config.constants.billing import (
     CREDITS_HTTP_TIMEOUT_SECONDS,
-    USAGE_SECRET_ENV,
     WEBAPP_URL_ENV,
 )
 from config.constants.organization import organization_id
@@ -38,14 +38,13 @@ _INTEGRATIONS_PATH = "/api/agent/integrations"
 
 
 def webapp_shared_secret() -> str:
-    """The fleet secret this silo sends to the vault.
+    """The credential this silo sends to the vault.
 
-    ``/api/agent/integrations`` compares the bearer against
-    ``AGENT_USAGE_SECRET`` alone — an org-scoped machine token is a 401 there,
-    and the 401 is indistinguishable from an empty result. Returns "" when
-    unset, which leaves the vault switched off.
+    The org-scoped account token when present (the webapp takes the
+    organization from it), else the fleet secret during rollout. Returns ""
+    when neither is set, which leaves the vault switched off.
     """
-    return (os.getenv(USAGE_SECRET_ENV) or "").strip()
+    return agent_bearer_token()
 
 
 def _env(name: str) -> str:

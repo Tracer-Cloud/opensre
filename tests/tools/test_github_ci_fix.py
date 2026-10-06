@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from contextlib import nullcontext
 from dataclasses import replace
 from itertools import count
@@ -190,6 +191,13 @@ def _isolate_repair_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     # Fake workspaces have no git history; PR heads count as up to date unless a test says so.
     monkeypatch.setattr(
         "integrations.github.tools.ci_fix.runner.base_has_new_commits", lambda *_a, **_k: False
+    )
+    # Merge-decision requests are PR comments; a test that needs them patches them itself.
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_fix.runner.reported_decision", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_fix.runner.report_decision", lambda *_a, **_k: True
     )
 
 
@@ -1402,6 +1410,175 @@ def test_run_ci_fix_reports_blocked_merge_files_in_one_line(
     assert result["error_kind"] == ERR_MERGE_CONFLICT
     assert "package.json (changed on both feat/fix-ci and main)" in result["response_text"]
     assert "\n" not in result["response_text"]
+
+
+@patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
+)
+@patch("integrations.github.tools.ci_fix.runner.base_has_new_commits", return_value=True)
+@pytest.mark.parametrize(
+    "posted, kind, status, retryable",
+    [
+        (True, "merge_decision_required", "blocked", False),
+        # Nobody was told, so the head must not stay blocked: the next call retries.
+        (False, "merge_conflict", "failed", True),
+    ],
+)
+def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
+    _behind: MagicMock,
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    mock_merge: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    posted: bool,
+    kind: str,
+    status: str,
+    retryable: bool,
+) -> None:
+    # Arrange
+    from integrations.github.repair_outcomes import attach_repair_outcome
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_DECISION
+
+    asked: list[tuple[str, str]] = []
+
+    def report(ctx: CiFixContext, message: str, **_kw: object) -> bool:
+        asked.append((ctx.head_sha, message))
+        return posted
+
+    monkeypatch.setattr(runner, "report_decision", report)
+    decision = (
+        "Merging main into feat/fix-ci is blocked on 1 file(s) a person must decide: "
+        "auth.py (changed on both feat/fix-ci and main). No push was made."
+    )
+    mock_merge.side_effect = GitHubCiFixError(
+        ERR_MERGE_DECISION, decision, branch_name="feat/fix-ci"
+    )
+
+    # Act
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
+    )
+
+    # Assert: asked once, for the head that conflicts; a sweep skips it only once asked
+    assert asked == [("head-1", decision)]
+    assert result["error_kind"] == kind
+    outcome = attach_repair_outcome(result, operation="ci")["work_outcome"]
+    assert (outcome["status"], outcome["retryable"]) == (status, retryable)
+
+
+def _journal_unavailable(*_args: object) -> int:
+    raise sqlite3.OperationalError("database is locked")
+
+
+@patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
+)
+@patch("integrations.github.tools.ci_fix.runner.base_has_new_commits", return_value=True)
+@pytest.mark.parametrize(
+    "second_base, journal_works, second_kind",
+    [
+        # The same head merging the same base again: the agent will not settle it.
+        ("base-1", True, "merge_decision_required"),
+        # A new base can bring different conflicts, so it is a fresh first attempt.
+        ("base-2", True, "merge_conflict"),
+        # Without the count a run cannot know it repeats: it retries, it does not crash.
+        ("base-1", False, "merge_conflict"),
+    ],
+)
+def test_a_merge_left_unsettled_twice_at_one_head_goes_to_a_person(
+    _behind: MagicMock,
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    mock_merge: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    second_base: str,
+    journal_works: bool,
+    second_kind: str,
+) -> None:
+    # Arrange: the agent finishes each time but never touches the conflicted file.
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_UNSETTLED
+
+    asked: list[str] = []
+
+    def report(ctx: CiFixContext, _message: str, **_kw: object) -> bool:
+        asked.append(ctx.head_sha)
+        return True
+
+    def unsettled(base_sha: str) -> GitHubCiFixError:
+        return GitHubCiFixError(
+            ERR_MERGE_UNSETTLED,
+            "Merging main into feat/fix-ci is blocked on 1 file(s) a person must decide: "
+            "auth.py (changed on both feat/fix-ci and main). No push was made.",
+            branch_name="feat/fix-ci",
+            base_sha=base_sha,
+        )
+
+    monkeypatch.setattr(runner, "report_decision", report)
+    if not journal_works:
+        monkeypatch.setattr(runner, "record_unsettled_merge", _journal_unavailable)
+    mock_merge.side_effect = [unsettled("base-1"), unsettled(second_base)]
+
+    # Act
+    first = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+    second = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+
+    # Assert: one retry, then a visible request instead of an hourly coding-agent run
+    assert first["error_kind"] == "merge_conflict"
+    assert second["error_kind"] == second_kind
+    assert asked == (["head-1"] if second_kind == "merge_decision_required" else [])
+
+
+@patch("integrations.github.tools.ci_fix.runner.repair_workspace")
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
+)
+def test_run_ci_fix_does_not_retry_a_merge_already_waiting_on_a_person(
+    _gather: MagicMock,
+    mock_workspace: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the PR already carries the request for this head
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_DECISION
+
+    monkeypatch.setattr(
+        runner, "reported_decision", lambda *_a, **_k: "decide whether to keep auth.py"
+    )
+
+    # Act
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
+    )
+
+    # Assert: no clone, no coding agent; the result says it was already asked
+    mock_workspace.assert_not_called()
+    assert result["error_kind"] == ERR_MERGE_DECISION
+    assert result["already_reported"] is True
+    assert "decide whether to keep auth.py" in result["error"]
 
 
 @patch(

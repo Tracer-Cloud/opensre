@@ -175,6 +175,7 @@ def test_revoked_or_unreachable_session_fails_closed(
 ) -> None:
     monkeypatch.setattr(account_session, "load_account_record", _record)
     monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
+    monkeypatch.setattr(account_session.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         account_session.httpx,
         "get",
@@ -189,3 +190,63 @@ def test_revoked_or_unreachable_session_fails_closed(
     status = account_session.account_status()
     assert status.state is AccountSessionState.UNAVAILABLE
     assert status.authenticated is False
+
+
+def test_a_brief_app_outage_does_not_sign_the_user_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A timeout or a 5xx is retried; a 401 is the answer the first time.
+
+    Live QA on 50d8fc7: one launch got no answer from the session check and
+    showed the sign-in screen for a login that was active a minute later.
+    """
+    monkeypatch.setattr(account_session, "load_account_record", _record)
+    monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
+    pauses: list[float] = []
+    monkeypatch.setattr(account_session.time, "sleep", pauses.append)
+    answers: list[httpx.Response | Exception] = [
+        httpx.ReadTimeout("slow"),
+        httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE),
+        httpx.Response(HTTPStatus.OK, json=_session_payload()),
+    ]
+
+    def _get(*_args: object, **_kwargs: object) -> httpx.Response:
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(account_session.httpx, "get", _get)
+
+    assert account_session.account_status().state is AccountSessionState.ACTIVE
+    assert len(pauses) == 2
+
+    answers[:] = [httpx.Response(HTTPStatus.UNAUTHORIZED)]
+    pauses.clear()
+    assert account_session.account_status().state is AccountSessionState.INVALID
+    assert pauses == []
+
+
+def test_an_app_that_never_answers_is_reported_within_the_retry_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three full 15s timeouts plus pauses would look like a hung launch."""
+    monkeypatch.setattr(account_session, "load_account_record", _record)
+    monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
+    clock = [0.0]
+    monkeypatch.setattr(account_session.time, "monotonic", lambda: clock[0])
+
+    def _sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    def _hang(*_args: object, timeout: float, **_kwargs: object) -> httpx.Response:
+        clock[0] += timeout
+        raise httpx.ReadTimeout("no answer")
+
+    monkeypatch.setattr(account_session.time, "sleep", _sleep)
+    monkeypatch.setattr(account_session.httpx, "get", _hang)
+
+    status = account_session.account_status()
+
+    assert status.state is AccountSessionState.UNAVAILABLE
+    assert clock[0] <= account_session.OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS

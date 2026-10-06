@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -21,6 +22,19 @@ from config.account_credits import AccountCredits, parse_credit_balance_payload
 from config.constants.account import (
     OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
     OPENSRE_ACCOUNT_SESSION_PATH,
+    OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS,
+    OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS,
+)
+
+#: Answers that say the app is briefly unable to answer, not that the login is bad.
+_TRANSIENT_STATUSES = frozenset(
+    {
+        HTTPStatus.TOO_MANY_REQUESTS,
+        HTTPStatus.INTERNAL_SERVER_ERROR,
+        HTTPStatus.BAD_GATEWAY,
+        HTTPStatus.SERVICE_UNAVAILABLE,
+        HTTPStatus.GATEWAY_TIMEOUT,
+    }
 )
 
 
@@ -90,6 +104,34 @@ def _refreshed_record(payload: object, record: AccountRecord) -> AccountRecord |
     )
 
 
+def _get_session(url: str, token: str) -> httpx.Response:
+    """GET the session, retrying a timeout, a dropped connection or a 429/5xx.
+
+    Every attempt and pause fits in one overall budget, so an app that never
+    answers is reported in that time rather than after every full timeout.
+    Raises the last transport error when no attempt connected.
+    """
+    deadline = time.monotonic() + OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS
+    delays = iter(OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS)
+    while True:
+        remaining = deadline - time.monotonic()
+        try:
+            response = httpx.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=min(OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS, remaining),
+            )
+        except httpx.TransportError:
+            delay = next(delays, None)
+            if delay is None or time.monotonic() + delay >= deadline:
+                raise
+        else:
+            delay = next(delays, None) if response.status_code in _TRANSIENT_STATUSES else None
+            if delay is None or time.monotonic() + delay >= deadline:
+                return response
+        time.sleep(delay)
+
+
 def account_status(*, app_url: str | None = None) -> AccountStatus:
     """Validate complete local account state against the webapp."""
     record = load_account_record()
@@ -122,11 +164,7 @@ def account_status(*, app_url: str | None = None) -> AccountStatus:
             "The stored OpenSRE app URL is invalid.",
         )
     try:
-        response = httpx.get(
-            f"{resolved_app_url}{OPENSRE_ACCOUNT_SESSION_PATH}",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
-        )
+        response = _get_session(f"{resolved_app_url}{OPENSRE_ACCOUNT_SESSION_PATH}", token)
     except httpx.HTTPError:
         return AccountStatus(
             AccountSessionState.UNAVAILABLE,

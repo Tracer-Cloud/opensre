@@ -11,25 +11,32 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import sqlite3
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
+from config.constants.scheduler import SCHEDULER_MISSED_FIRE_GRACE_SECONDS
 from config.constants.turn_concurrency import (
     DEFAULT_SCHEDULED_RUN_CONCURRENCY,
     OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV,
 )
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
-from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
+from infrastructure.scheduling.scheduler.cron_expression import (
+    build_cron_trigger,
+    cap_cron_at_most_hourly,
+)
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_REPORT_PARAM
+from infrastructure.scheduling.scheduler.loop_report_telemetry import resend_recent_loop_reports
 from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_execution_operation,
     record_scheduler_service_operation,
     record_scheduler_task_operation,
 )
+from infrastructure.scheduling.scheduler.registry_telemetry import report_task_registry
 from infrastructure.scheduling.scheduler.reload_signal import (
     RELOAD_POLL_SECONDS,
     watch_and_reconcile,
@@ -299,25 +306,85 @@ def _register_recovery_job(
     )
 
 
+def _stored_time(raw: str | None) -> datetime | None:
+    """A stored ISO timestamp in UTC; a naive one is UTC, an unreadable one ``None``."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 def _immediate_ci_repair_fire(task: ScheduledTask, now: datetime) -> datetime | None:
     """Due time for a never-run CI repair whose stored next run is already due."""
     if task.last_run is not None:
         return None
     if task.params.get(LOOP_REPORT_PARAM) != CI_REPAIR_REPORT_BUILDER:
         return None
-    raw = (task.next_run or "").strip()
-    if not raw:
-        return None
-    try:
-        due = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    if due.tzinfo is None:
-        due = due.replace(tzinfo=UTC)
-    due = due.astimezone(UTC)
-    if due > now:
+    due = _stored_time(task.next_run)
+    if due is None or due > now:
         return None
     return due
+
+
+def _missed_fire(task: ScheduledTask, trigger: Any, now: datetime) -> datetime | None:
+    """The latest fire no scheduler ran, when it falls inside the grace window.
+
+    A replaced hosted gateway runs no scheduler for minutes, and a starting one
+    resumes at the first fire after now, so a tick due in that gap never runs.
+    Only fires from the stored next run on count: that is the first fire the
+    last registration expected, so an earlier slot predates the task or its
+    enabling. A fire with a run record was queued by a scheduler, which ran it
+    or left it to the recovery sweep. Several missed fires coalesce into the
+    latest, and its fire time is the claim key, so it runs at most once.
+    """
+    expected = _stored_time(task.next_run)
+    if expected is None or expected > now:
+        return None
+    window_start = max(expected, now - timedelta(seconds=SCHEDULER_MISSED_FIRE_GRACE_SECONDS))
+    missed: datetime | None = None
+    fire = cast(datetime | None, trigger.get_next_fire_time(None, window_start))
+    while fire is not None and window_start <= fire <= now:
+        missed = fire
+        fire = cast(datetime | None, trigger.get_next_fire_time(fire, fire))
+    if missed is None:
+        return None
+    fire_time = _compute_fire_time(missed)
+    try:
+        recorded = get_latest_run_for_fire_time(task.id, fire_time)
+    except (OSError, sqlite3.Error):
+        logger.warning(
+            "Not catching up task %s fire_time=%s: run history is unreadable", task.id, fire_time
+        )
+        return None
+    return missed if recorded is None else None
+
+
+def _limit_prompt_loop_rate(task: ScheduledTask) -> None:
+    """Slow a prompt loop to at most one run an hour.
+
+    The CI repair poller is exempt: it has to notice a failing check within
+    half a minute, and widening that cron would leave pull requests red.
+    """
+    if task.kind is not TaskKind.MANUAL_LOOP:
+        return
+    if task.params.get(LOOP_REPORT_PARAM) == CI_REPAIR_REPORT_BUILDER:
+        return
+    capped = cap_cron_at_most_hourly(task.cron, task.timezone)
+    if capped == task.cron:
+        return
+    logger.info(
+        "Capping prompt loop %s from cron %s to %s (at most once per hour)",
+        task.id,
+        task.cron,
+        capped,
+    )
+    task.cron = capped
 
 
 def _register_jobs(
@@ -325,8 +392,14 @@ def _register_jobs(
     runners: SchedulerRunners,
     *,
     task_filter: TaskFilter | None = None,
+    catch_up: bool = False,
 ) -> int:
-    """Register all enabled tasks on *scheduler*; invalid tasks are logged and skipped."""
+    """Register all enabled tasks on *scheduler*; invalid tasks are logged and skipped.
+
+    ``catch_up`` is for a starting scheduler: it also fires, once, the latest
+    tick missed while no scheduler ran (see :func:`_missed_fire`). A live resync
+    never does, so editing a schedule cannot fire one of its past slots.
+    """
     enabled_count = 0
     now = datetime.now(UTC)
     for task in list_tasks():
@@ -334,17 +407,28 @@ def _register_jobs(
             continue
         if task_filter is not None and not task_filter(task):
             continue
+        previous_cron = task.cron
         try:
+            _limit_prompt_loop_rate(task)
             trigger = _make_trigger(task)
         except ValueError as exc:
             logger.error("Skipping task %s: %s", task.id, exc)
             continue
+        if task.cron != previous_cron:
+            # Persist before catch-up. A 15-minute next_run must not be treated
+            # as a missed hourly slot, and a restart must keep the coarser cron.
+            task.next_run = _next_run_from_trigger(trigger)
+            update_task(task)
         immediate = _immediate_ci_repair_fire(task, now)
+        missed: datetime | None = None
+        if immediate is None and catch_up:
+            immediate = missed = _missed_fire(task, trigger, now)
         job_kwargs: dict[str, Any] = {}
         next_run: str | None
         if immediate is not None:
-            # Keep the stored due time. The cron trigger would replace it with the
-            # next */30 slot, and a resync would lose the first immediate fire.
+            # Fire the due time now and keep the stored next run: the trigger
+            # alone resumes at its next slot, and storing that slot would hide
+            # this fire from a re-registration before it runs.
             next_run = immediate.isoformat()
             job_kwargs["next_run_time"] = immediate
         else:
@@ -365,10 +449,18 @@ def _register_jobs(
             **job_kwargs,
         )
         enabled_count += 1
+        registration: dict[str, Any] = {"next_run": next_run}
+        if missed is not None:
+            registration["missed_fire_time"] = _compute_fire_time(missed)
+            logger.info(
+                "Catching up task %s fire_time=%s, missed while no scheduler ran",
+                task.id,
+                registration["missed_fire_time"],
+            )
         record_scheduler_task_operation(
             "scheduler_job_registered",
             task,
-            extra={"next_run": next_run},
+            extra=registration,
         )
         logger.info(
             "Registered task %s (%s) with cron=%s tz=%s",
@@ -377,6 +469,11 @@ def _register_jobs(
             task.cron,
             task.timezone,
         )
+    if task_filter is None:
+        # Only a host that runs the whole store can report it; a filtered shell
+        # scheduler registers a subset. Its passes also recover dropped reports.
+        report_task_registry()
+        resend_recent_loop_reports()
     return enabled_count
 
 
@@ -464,12 +561,13 @@ def start_background_scheduler(
 
     Installs no signal handlers and never exits the process. Returns
     ``(scheduler, task_count)``; the scheduler is ``None`` when there are no
-    enabled tasks. The caller owns shutdown via ``scheduler.shutdown()``.
+    enabled tasks. The caller owns shutdown via ``scheduler.shutdown()``. A
+    tick missed while no scheduler ran fires once at start.
     """
     from apscheduler.schedulers.background import BackgroundScheduler
 
     scheduler = _build_scheduler(BackgroundScheduler)
-    enabled_count = _register_jobs(scheduler, runners, task_filter=task_filter)
+    enabled_count = _register_jobs(scheduler, runners, task_filter=task_filter, catch_up=True)
     if enabled_count == 0:
         record_scheduler_service_operation("scheduler_idle", task_count=0)
         return None, 0
@@ -506,12 +604,13 @@ def start_scheduler(runners: SchedulerRunners, *, idle_when_empty: bool = False)
     enabled tasks the CLI exits with guidance; ``idle_when_empty`` (a dedicated
     scheduler service) idles and waits instead, so tasks can be added later
     without the process crash-looping. Tasks added while running are picked up
-    from the reload signal without a restart.
+    from the reload signal without a restart. A tick missed while no scheduler
+    ran fires once at start.
     """
     from apscheduler.schedulers.blocking import BlockingScheduler
 
     scheduler = _build_scheduler(BlockingScheduler)
-    enabled_count = _register_jobs(scheduler, runners)
+    enabled_count = _register_jobs(scheduler, runners, catch_up=True)
     if enabled_count == 0 and not idle_when_empty:
         logger.warning("No enabled tasks found. Scheduler has nothing to run.")
         record_scheduler_service_operation("scheduler_idle", task_count=0)

@@ -100,7 +100,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | --- | --- |
 | `/status` | Session summary — interactions, alerts, provider, effort, trust mode |
 | `/cost` | Token usage and LLM call count for the current session |
-| `/context` | Infra metadata accumulated during the session |
+| `/context` | What the next model call will contain, and how big each part is |
 | `/effort` | Set or show reasoning effort (`low` … `max`) |
 | `/auto` | Tool-approval autonomy (`off` / `low` / `med` / `high`; default `high`) |
 | `/trust` | Enable or disable trust mode (skip confirmation prompts) |
@@ -187,13 +187,13 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 
 ### Commands with interactive menus (TTY)
 
-Bare invocation opens a picker or submenu:
+These invocations open a picker or submenu:
 
 | Command | Menu behavior |
 | --- | --- |
 | `/help` | Browse categories; Enter runs the selected command |
-| `/integrations` | list / verify / show / setup / remove |
-| `/mcp` | list / connect / disconnect |
+| `/integrations list` | Browse configured integrations; verify, setup, or remove the selected item |
+| `/mcp list` | Browse configured MCP servers; verify, connect, or disconnect |
 | `/model` | show / set / restore / toolcall |
 | `/theme` | Pick a colour theme from the installed list |
 | `/choose` | Reopen the selection menu the agent queued |
@@ -258,7 +258,6 @@ Typical fields:
 | `trust mode` | `on` / `off` |
 | `reasoning effort` | Current `/effort` level (OpenAI/Codex only) |
 | `provider` | Active `LLM_PROVIDER` |
-| `grounding … cache` | Doc/source cache stats used for help answers |
 | `accumulated context` | Comma-separated keys from prior turns (e.g. `service`, `cluster`) |
 
 Use `/status` for **session** state. Use `/health` for **integration connectivity**.
@@ -307,13 +306,19 @@ Token totals reset on `/new` or when session identity is rotated. They do **not*
 
 <Accordion title="/context">
 
-Displays key/value infra metadata collected during chat — typically `service`, `cluster`, `region`, or similar fields extracted from alert text and tool results.
+Shows what the model will receive with your next message, without calling a model:
 
 ```text
 /context
 ```
 
-Context is **inherited** across turns in the same session (and restored by `/resume`), so the agent does not re-ask for environment details you already established.
+| Row | Meaning |
+| --- | --- |
+| one row per prompt block | The system prompt, rules, runtime facts, skills, connected integrations, memory, and the per-turn blocks, each with its tier, characters, and estimated tokens |
+| `history` | Earlier turns replayed to the model, including their tool calls and results. Shown as `history after compaction` when the next turn compacts first: only the turns compaction keeps, without the summary it writes then |
+| `total` | Blocks plus history; the message you type next and the tool schemas are not included |
+
+Below the table: how many messages and turns the history holds and how many of those turns carry tool results, whether a session summary opens it, how many tool schemas go with every call, and how close the history is to compaction (`OPENSRE_HISTORY_TOKEN_BUDGET` tokens or 60 turns). Past either, older turns are summarized before the next turn; `/compact` does that now.
 
 </Accordion>
 
@@ -561,7 +566,6 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 <Accordion title="/integrations">
 
 ```text
-/integrations
 /integrations list
 /integrations verify
 /integrations verify datadog
@@ -573,7 +577,7 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 
 | Subcommand | Behavior |
 | --- | --- |
-| `list` (default) | Verify all configured integrations and render status table |
+| `list` | Browse configured integrations in a TTY; verify and render a status table otherwise |
 | `verify` | Verify all integrations; prints summary line |
 | `verify &lt;service&gt;` | Verify one integration (same as `/verify &lt;service&gt;`) |
 | `show &lt;service&gt;` | Verify one service and print key/value config (masked secrets) |
@@ -582,13 +586,17 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 
 You can ask “Can you configure Telegram/GitHub/PostHog for me?” to start the same guided flow. It explains each human action before requesting input, discovers IDs where possible, and lets you retry failed checks. Enter credentials only in the setup flow's hidden input.
 
-Bare `/integrations` opens an interactive menu in a TTY with service pickers for show/remove.
+`/integrations list` opens a configured-integration browser in a TTY. Use **↑↓** to browse, **Enter** to verify the selected connection when supported, **a** to add, **s** to run setup for the selected integration, and **r** to remove it with confirmation. **Esc** closes without changes. Choosing an action returns to the conversation when it finishes.
+
+Browsing does not run health checks: **Not checked** means configuration exists, not that the connection is healthy. Connections without a verifier show **Configured** and do not offer Enter-to-verify; setup and removal remain available. Use `/integrations verify` to run health checks.
 
 </Accordion>
 
 <Accordion title="/mcp">
 
 MCP-capable integrations only (subset of the full integration catalog).
+
+`/mcp list` opens the server browser without running health checks. Use **↑↓** to browse, **Enter** to verify, **a** to connect, **s** to reconfigure the selected server, **r** to disconnect with confirmation, and **Esc** to close. Explicit subcommands remain available below.
 
 ```text
 /mcp list
@@ -598,7 +606,7 @@ MCP-capable integrations only (subset of the full integration catalog).
 
 | Subcommand | Maps to |
 | --- | --- |
-| `list` | Table of MCP servers from verified integrations |
+| `list` | Browse configured MCP servers in a TTY; render a verified table otherwise |
 | `connect &lt;server&gt;` | `opensre integrations setup &lt;server&gt;` |
 | `disconnect &lt;server&gt;` | `opensre integrations remove &lt;server&gt;` |
 
@@ -639,12 +647,25 @@ See [LLM providers](/platform/llm-providers).
 
 <Accordion title="/tools">
 
-List tools available to the chat and action surfaces in this build (name, source, surfaces).
+Browse registered tools with a short purpose beside each name. The list grows
+with your terminal height, showing up to 20 tools. A compact preview below the
+list shows the selected tool's name and description.
 
 ```text
 /tools
-/tools list
 ```
+
+In an interactive terminal, use **↑/↓** to browse and **Enter** to toggle
+chat/action surfaces, parameters, and the full description. Expanded details
+use the available height below the list. If they still overflow, **←/→** changes
+pages. **Esc** closes the browser and restores the conversation. Moving to
+another tool returns to its compact preview. Narrow terminals omit the purpose column;
+the selected tool's description remains visible below the list.
+
+The browser uses a temporary terminal screen, so browsing and resizing do not
+add tool listings to your conversation's scrollback.
+
+Piped and noninteractive output stays a readable table without keyboard input.
 
 There is no global `/list` command — use domain-specific list commands (see [Natural language actions](#natural-language-actions)).
 

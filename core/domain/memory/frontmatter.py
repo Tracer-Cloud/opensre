@@ -3,15 +3,41 @@
 The frontmatter is a deliberately tiny ``key: value`` block between ``---``
 fences — not YAML — so the store needs no third-party parser and malformed
 files degrade to ``None`` instead of raising.
+
+Provenance keys (``source``, ``evidence``, ``verified``) are optional and are
+written only when set, so files from before provenance existed still parse and
+older readers ignore the extra keys.
 """
 
 from __future__ import annotations
 
-from core.domain.memory.models import MEMORY_TYPES, MemoryRecord, MemoryType
+from core.domain.memory.models import (
+    MEMORY_SOURCES,
+    MEMORY_TYPES,
+    MemoryRecord,
+    MemorySource,
+    MemoryType,
+)
 from core.domain.memory.slugs import is_valid_slug
 
 _FENCE = "---"
 _REQUIRED_KEYS = ("name", "type", "description", "created", "updated")
+_TRUE = "true"
+_FALSE = "false"
+
+
+def _parse_source(value: str | None) -> MemorySource | None:
+    if value is None or value not in MEMORY_SOURCES:
+        return None
+    return MemorySource(value)
+
+
+def _parse_verified(value: str | None) -> bool | None:
+    if value == _TRUE:
+        return True
+    if value == _FALSE:
+        return False
+    return None
 
 
 def parse_memory_file(text: str) -> MemoryRecord | None:
@@ -19,9 +45,11 @@ def parse_memory_file(text: str) -> MemoryRecord | None:
     lines = text.splitlines()
     if not lines or lines[0].strip() != _FENCE:
         return None
-    try:
-        close_idx = next(i for i, line in enumerate(lines[1:], start=1) if line.strip() == _FENCE)
-    except StopIteration:
+    close_idx = next(
+        (i for i, line in enumerate(lines[1:], start=1) if line.strip() == _FENCE),
+        None,
+    )
+    if close_idx is None:
         return None
 
     fields: dict[str, str] = {}
@@ -46,12 +74,22 @@ def parse_memory_file(text: str) -> MemoryRecord | None:
         created_at=fields["created"],
         updated_at=fields["updated"],
         body=body,
+        source=_parse_source(fields.get("source")),
+        evidence=fields.get("evidence", ""),
+        verified=_parse_verified(fields.get("verified")),
     )
 
 
 def serialize_memory(record: MemoryRecord) -> str:
-    # Frontmatter values are single-line by construction (descriptions are
-    # sanitized on save); the body is free-form markdown.
+    # Frontmatter values are single-line by construction (descriptions and
+    # evidence are sanitized on save); the body is free-form markdown.
+    provenance = ""
+    if record.source is not None:
+        provenance += f"source: {record.source}\n"
+    if record.evidence:
+        provenance += f"evidence: {record.evidence}\n"
+    if record.verified is not None:
+        provenance += f"verified: {_TRUE if record.verified else _FALSE}\n"
     return (
         f"{_FENCE}\n"
         f"name: {record.slug}\n"
@@ -59,6 +97,7 @@ def serialize_memory(record: MemoryRecord) -> str:
         f"description: {record.description}\n"
         f"created: {record.created_at}\n"
         f"updated: {record.updated_at}\n"
+        f"{provenance}"
         f"{_FENCE}\n"
         f"{record.body}\n"
     )

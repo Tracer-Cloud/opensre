@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -66,6 +67,39 @@ def test_real_run_attaches_provider_evidence_and_preserves_missing_usage(
     assert event["token_usage_status"] == "partial"
 
 
+def test_a_model_turn_records_the_size_of_each_prompt_part(captured) -> None:
+    from core.llm.types import AgentLLMResponse
+    from tests.core.agent.orchestration.action_execution_test_harness import FakeActionLLM
+
+    client = FakeActionLLM(
+        [AgentLLMResponse(content="First answer"), AgentLLMResponse(content="Second answer")]
+    )
+    session = _session()
+    agent = InMemoryHeadlessBuild(session=session).agent(
+        tools=NullToolProvider(),
+        llm_factory=lambda: client,
+    )
+    agent.handle("Hello", TurnBinding(session=session))
+    agent.handle("And then?", TurnBinding(session=session))
+
+    first, second = (event["model_blocks"] for event in captured)
+    assert first["blocks"]["action-agent-system-base"]["tier"] == "stable"
+    assert first["history"]["messages"] == 0
+    # The second call replays the first turn ahead of the new message.
+    assert second["history"]["messages"] == 2
+    assert second["tool_schema_count"] == 0
+    # The message itself is part of the call: a long request shows in the total.
+    assert second["request"]["chars"] >= len("And then?")
+    assert second["total"]["chars"] == (
+        sum(block["chars"] for block in second["blocks"].values())
+        + second["history"]["chars"]
+        + second["request"]["chars"]
+    )
+    # Sizes and block ids only: no prompt or reply text leaves through this field.
+    assert "Hello" not in json.dumps(second)
+    assert "First answer" not in json.dumps(second)
+
+
 def _reply(text: str, **_kwargs: Any) -> ToolCallingTurnResult:
     return ToolCallingTurnResult(1, 1, 1, False, True, response_text=text)
 
@@ -93,6 +127,8 @@ def test_failed_static_dispatch_never_claims_a_provider_attempt(captured, monkey
     assert event["$ai_is_error"] is True
     assert event["turn_outcome"] == "error"
     assert event["token_usage_status"] == "unavailable"
+    # A literal command builds no model prompt, so it claims no prompt sizes.
+    assert "model_blocks" not in event
 
 
 def _turn(session: SessionCore, text: str, execute=_reply, surface="gateway"):

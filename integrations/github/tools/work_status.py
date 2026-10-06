@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import math
+import re
+import time
+from http import HTTPStatus
 from typing import Any, Literal, cast
 
 from core.domain.types.evidence import record_evidence_entry
@@ -17,6 +20,7 @@ from integrations.github.helpers import (
     github_source_available,
 )
 from integrations.github.repair_outcomes import attach_ci_scan_outcome
+from integrations.github.repo_scope import parse_github_repository_reference
 from integrations.github.tools.workflow import (
     GitHubIssueMutationProposal,
     PullRequestStatus,
@@ -254,6 +258,15 @@ def _normalize_pull_request(
             reasons.append("mergeable=false")
     else:
         status = "mergeable"
+    head_repo = _repository_name(pr.get("head"))
+    base_repo = _repository_name(pr.get("base"))
+    # Matches what fix_github_pr_ci refuses: a fork head, or a deleted fork with no head repo.
+    repairable = (
+        str(pr.get("state") or "").lower() == "open"
+        and not pr.get("draft")
+        and bool(head_repo)
+        and head_repo.casefold() == base_repo.casefold()
+    )
     return PullRequestStatus(
         number=pr.get("number") if isinstance(pr.get("number"), int) else None,
         title=str(pr.get("title", "")),
@@ -269,6 +282,63 @@ def _normalize_pull_request(
         mergeability=status,
         blocking_reasons=reasons,
         updated_at=str(pr.get("updated_at", "")),
+        head_repo=head_repo,
+        repairable=repairable,
+    )
+
+
+#: Re-reads of a PR whose mergeability GitHub is still computing, and the wait between them.
+_MERGEABILITY_REREADS = 2
+_MERGEABILITY_WAIT_SECONDS = 2.0
+
+
+def _settled_mergeability(client: GitHubRestClient, path: str, detail_pr: Any) -> Any:
+    """Re-read a PR until GitHub reports its mergeability, a few seconds at most."""
+    for _ in range(_MERGEABILITY_REREADS):
+        if not isinstance(detail_pr, dict) or isinstance(detail_pr.get("mergeable"), bool):
+            return detail_pr
+        time.sleep(_MERGEABILITY_WAIT_SECONDS)
+        detail_pr = client.request("GET", path)
+    return detail_pr
+
+
+def _repository_name(ref: Any) -> str:
+    """``owner/name`` of a PR head or base, or "" when GitHub reports no repository."""
+    repository = ref.get("repo") if isinstance(ref, dict) else None
+    return str(repository.get("full_name") or "") if isinstance(repository, dict) else ""
+
+
+#: One owner or repository name as GitHub allows it; anything else would 404 or change the path.
+_REPO_COMPONENT_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def _repository_scope(owner: Any, repo: Any) -> tuple[str, str] | None:
+    """``(owner, repo)`` from the arguments, or ``None`` when they cannot name one repository.
+
+    A full name or URL in ``repo`` (``owner/name``, ``https://github.com/owner/name``)
+    is split rather than appended to ``owner``, which would request a path GitHub 404s.
+    """
+    owner_text = str(owner or "").strip()
+    repo_text = str(repo or "").strip()
+    if "/" in repo_text:
+        reference = parse_github_repository_reference(repo_text)
+        if reference is None:
+            return None
+        owner_text, repo_text = reference
+    for part in (owner_text, repo_text):
+        if not _REPO_COMPONENT_RE.fullmatch(part) or part in {".", ".."}:
+            return None
+    return owner_text, repo_text
+
+
+def _pull_request_listing_error(exc: GitHubApiError, owner: str, repo: str) -> str:
+    """GitHub's error, and for a 404 what it means here: no such repository, or no access."""
+    if exc.status_code != HTTPStatus.NOT_FOUND:
+        return str(exc)
+    return (
+        f"{exc}. GitHub answers 404 when {owner}/{repo} does not exist or the GitHub "
+        "token cannot see it (a private repository needs a token or app installation "
+        "with access to it). Check the owner and repository name, or the token's access."
     )
 
 
@@ -303,6 +373,13 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
             "state": {"type": "string", "enum": ["open", "closed", "all"]},
             "per_page": {"type": "integer"},
             "include_checks": {"type": "boolean"},
+            "conflicts_only": {
+                "type": "boolean",
+                "description": (
+                    "Judge only merge conflicts: skips check runs, and reports nothing to "
+                    "repair when no open same-repository PR conflicts with its base."
+                ),
+            },
             "github_token": {"type": "string"},
         },
         "required": ["owner", "repo"],
@@ -317,16 +394,40 @@ def summarize_github_pr_status(
     state: str = "open",
     per_page: int = 30,
     include_checks: bool = True,
+    conflicts_only: bool = False,
     github_token: str | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
+    scope = _repository_scope(owner, repo)
+    if scope is None:
+        return tool_unavailable(
+            "github",
+            f"owner={owner!r} and repo={repo!r} do not name one GitHub repository. Pass the "
+            "owner (user or organization) and the repository name separately, for example "
+            "owner='octocat', repo='hello-world'.",
+            pull_requests=[],
+            counts=_count_prs([]),
+            side_effects=[],
+        )
+    owner, repo = scope
     client = GitHubRestClient(github_token)
-    fully_inspected = state == "open" and include_checks
+    # A conflict scan needs only each PR's mergeability, not its check runs.
+    include_checks = include_checks and not conflicts_only
+    fully_inspected = state == "open" and (include_checks or conflicts_only)
     try:
         raw_prs = client.paginate(
             f"/repos/{owner}/{repo}/pulls",
             params={"state": state, "per_page": max(1, min(per_page, 100))},
         )
+    except GitHubApiError as exc:
+        return tool_unavailable(
+            "github",
+            _pull_request_listing_error(exc, owner, repo),
+            pull_requests=[],
+            counts=_count_prs([]),
+            side_effects=[],
+        )
+    try:
         prs: list[dict[str, Any]] = []
         for list_pr in raw_prs:
             number = list_pr.get("number")
@@ -334,6 +435,10 @@ def summarize_github_pr_status(
                 fully_inspected = False
                 continue
             detail_pr = client.request("GET", f"/repos/{owner}/{repo}/pulls/{number}")
+            if conflicts_only:
+                detail_pr = _settled_mergeability(
+                    client, f"/repos/{owner}/{repo}/pulls/{number}", detail_pr
+                )
             if not isinstance(detail_pr, dict):
                 fully_inspected = False
                 detail_pr = list_pr
@@ -353,7 +458,7 @@ def summarize_github_pr_status(
                         run for run in check_payload["check_runs"] if isinstance(run, dict)
                     ]
                     complete_checks = check_payload.get("total_count") == len(check_runs)
-            fully_inspected = fully_inspected and complete_checks
+            fully_inspected = fully_inspected and (complete_checks or conflicts_only)
             prs.append(_normalize_pull_request(detail_pr, check_runs).to_dict())
     except GitHubApiError as exc:
         return tool_unavailable(
@@ -368,7 +473,9 @@ def summarize_github_pr_status(
         "counts": _count_prs(prs),
         "side_effects": [],
     }
-    return attach_ci_scan_outcome(output, fully_inspected=fully_inspected)
+    return attach_ci_scan_outcome(
+        output, fully_inspected=fully_inspected, conflicts_only=conflicts_only
+    )
 
 
 def _normalize_security_alert(alert_type: str, item: dict[str, Any]) -> SecurityAlert:

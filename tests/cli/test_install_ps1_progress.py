@@ -61,7 +61,10 @@ def test_install_ps1_preserves_retry_contract_source() -> None:
 
     assert 'Write-Warning "Attempt $attempt to $Description failed' in source
     assert "after $attempt attempts" in source
-    assert "$statusCode -ge 400 -and $statusCode -lt 500" in source
+    assert (
+        "$statusCode -ge 400 -and $statusCode -lt 500 "
+        "-and $statusCode -ne 403 -and $statusCode -ne 429"
+    ) in source
 
 
 def test_install_ps1_defaults_to_main_build_channel() -> None:

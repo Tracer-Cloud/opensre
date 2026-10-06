@@ -348,15 +348,14 @@ def test_shell_completer_filters_by_prefix() -> None:
     assert [completion.text for completion in completions] == ["/tools"]
 
 
-def test_shell_completer_suggests_subcommands_for_tools() -> None:
+def test_shell_completer_has_no_subcommands_for_tools() -> None:
     completions = list(
         ShellCompleter().get_completions(
             Document("/tools "),
             CompleteEvent(text_inserted=True),
         )
     )
-    names = sorted({c.text for c in completions})
-    assert names == ["list", "ls", "tool", "tools"]
+    assert completions == []
 
 
 def test_shell_completer_hides_inline_picker_autocomplete_in_tty(
@@ -372,6 +371,28 @@ def test_shell_completer_hides_inline_picker_autocomplete_in_tty(
     )
 
     assert completions == []
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("/integrations ", ["list", "setup", "remove", "verify", "show"]),
+        ("/mcp ", ["list", "connect", "disconnect"]),
+    ],
+)
+def test_shell_completer_shows_required_connection_subcommands_in_tty(
+    monkeypatch: pytest.MonkeyPatch, command: str, expected: list[str]
+) -> None:
+    monkeypatch.setattr(prompt_completion, "repl_tty_interactive", lambda: True)
+
+    completions = list(
+        ShellCompleter().get_completions(
+            Document(command),
+            CompleteEvent(text_inserted=True),
+        )
+    )
+
+    assert [completion.text for completion in completions] == expected
 
 
 def test_shell_completer_keeps_inline_picker_autocomplete_when_arg_started(
@@ -923,13 +944,13 @@ class TestSpinnerState:
 
     def test_inline_spinner_contains_stop_hint_when_streaming(self) -> None:
         """During streaming the inline spinner (shown in the prompt's first
-        reserved line) carries ``(Press ESC to stop)`` so the user can
+        reserved line) carries ``Esc to stop`` so the user can
         interrupt the dispatch.
         """
         spinner = loop_state.SpinnerState()
         spinner.start()
         rendered = _strip_ansi(spinner.inline_spinner_ansi())
-        assert "(Press ESC to stop)" in rendered
+        assert "Esc to stop" in rendered
         # Idle hint text should NOT appear in the spinner row.
         assert "/ for commands" not in rendered
 

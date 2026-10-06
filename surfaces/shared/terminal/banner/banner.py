@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from rich.align import Align
 from rich.cells import cell_len
-from rich.console import Console, Group, RenderableType
+from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
 from rich.padding import Padding
 from rich.text import Text
 
@@ -363,6 +363,16 @@ def build_launch_banner(
     return Padding(body, (_BANNER_VERTICAL_PADDING, 0))
 
 
+class ResponsiveLaunchBanner:
+    """The launch banner, laid out for whatever width it is rendered at."""
+
+    def __init__(self, *, session: object = None) -> None:
+        self._session = session
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        yield build_launch_banner(console, session=self._session)
+
+
 def render_launch_banner(
     console: Console | None = None,
     *,
@@ -392,6 +402,7 @@ def _wordmark_cell_width() -> int:
 
 
 __all__ = [
+    "ResponsiveLaunchBanner",
     "WordmarkSpinFrame",
     "animate_launch_wordmark",
     "build_launch_banner",

@@ -54,6 +54,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "Analysis": "integrations.github.tools.ci_analytics.analysis",
     "analyze_repository": "integrations.github.tools.ci_analytics.analysis",
     "ci_report_headline": "integrations.github.tools.ci_analytics.render",
+    "prefetch_ci_analysis": "integrations.github.tools.ci_analytics.tool",
     "DEFAULT_LOOP_TIME": "integrations.github.tools.ci_analytics.loop",
     "LoopCard": "integrations.github.tools.ci_analytics.loop",
     "ScheduledLoop": "integrations.github.tools.ci_analytics.loop",
@@ -127,6 +128,7 @@ if TYPE_CHECKING:
         schedule_ci_reliability_loop,
     )
     from integrations.github.tools.ci_analytics.render import ci_report_headline
+    from integrations.github.tools.ci_analytics.tool import prefetch_ci_analysis
     from integrations.github.tools.ci_fix.ledger import count_ci_fixes, get_ci_fix_counter
     from integrations.github.tools.ci_repair_demo.seed import fresh_demo_repo_name
     from integrations.github.tools.ci_repair_loop.credentials import effective_github_token
@@ -174,6 +176,7 @@ __all__ = [
     "local_timezone",
     "loop_card",
     "open_pull_request",
+    "prefetch_ci_analysis",
     "print_github_mcp_validation_report",
     "report_looks_complete",
     "resolve_github_token",

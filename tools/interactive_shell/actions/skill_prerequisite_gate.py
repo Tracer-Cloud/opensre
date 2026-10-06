@@ -24,6 +24,8 @@ from config.constants.skill_prerequisites import (
     PREREQUISITE_CONTINUE_ACTION,
     PREREQUISITE_CONTINUE_OPTION,
     PREREQUISITE_CREDENTIAL_MISSING,
+    PREREQUISITE_FALLBACK_ACTION,
+    PREREQUISITE_FALLBACKS,
     PREREQUISITE_LOCAL_SETUP_OPTION,
     PREREQUISITE_MENU_NOTE,
     PREREQUISITE_MENU_TITLE,
@@ -33,6 +35,7 @@ from config.constants.skill_prerequisites import (
     PREREQUISITE_SKIP_OPTION,
     PREREQUISITE_STILL_MISSING_NOTE,
     SKILL_PREREQUISITES,
+    PrerequisiteFallback,
     SkillPrerequisite,
     prerequisite_service_label,
 )
@@ -40,8 +43,10 @@ from core.agent_harness.spi.integrations import resolve_and_cache_integrations
 from core.agent_harness.spi.session_state import (
     PendingUserChoice,
     arm_setup_resume,
+    pending_setup_resume,
     set_auto_command,
 )
+from core.agent_harness.spi.skill_releases import active_skill_catalog
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_skill_prerequisite_missing
 from infrastructure.harness_providers import (
@@ -164,8 +169,13 @@ def hold_for_setup(session: Any, skill_name: str, text: str) -> bool:
     return True
 
 
-def prerequisite_menu(service: str, *, still_missing: bool = False) -> PendingUserChoice:
-    """The setup menu for ``service``: the OpenSRE app first when signed in, then local setup."""
+def prerequisite_menu(
+    service: str, *, still_missing: bool = False, skill: str | None = None
+) -> PendingUserChoice:
+    """The setup menu for ``service``: the OpenSRE app first when signed in, then local setup.
+
+    When the held ``skill`` has a fallback, the menu offers it before "Not now".
+    """
     label = prerequisite_service_label(service)
     commands: dict[str, str] = {}
     if _signed_in():
@@ -178,6 +188,9 @@ def prerequisite_menu(service: str, *, still_missing: bool = False) -> PendingUs
     commands[PREREQUISITE_CONTINUE_OPTION.format(service=label)] = prerequisite_action(
         PREREQUISITE_CONTINUE_ACTION, service
     )
+    fallback = prerequisite_fallback(skill)
+    if fallback is not None:
+        commands[fallback.option] = prerequisite_action(PREREQUISITE_FALLBACK_ACTION, service)
     commands[PREREQUISITE_SKIP_OPTION] = prerequisite_action(PREREQUISITE_SKIP_ACTION, service)
     note = PREREQUISITE_STILL_MISSING_NOTE if still_missing else PREREQUISITE_MENU_NOTE
     return PendingUserChoice(
@@ -189,9 +202,23 @@ def prerequisite_menu(service: str, *, still_missing: bool = False) -> PendingUs
     )
 
 
+def prerequisite_fallback(skill: str | None) -> PrerequisiteFallback | None:
+    """What the setup menu of held ``skill`` offers instead of setup, when its catalog has it."""
+    fallback = PREREQUISITE_FALLBACKS.get(skill or "")
+    if fallback is None or active_skill_catalog().current().find(fallback.skill) is None:
+        return None
+    return fallback
+
+
 def queue_prerequisite_menu(session: Any, service: str, *, still_missing: bool = False) -> None:
-    """Store the setup menu for ``service`` and queue ``/choose`` so the shell opens it."""
-    session.pending_user_choice = prerequisite_menu(service, still_missing=still_missing)
+    """Store the setup menu for ``service`` and queue ``/choose`` so the shell opens it.
+
+    The menu is for the skill whose turn is parked, so it can offer that skill's fallback.
+    """
+    parked = pending_setup_resume(session)
+    session.pending_user_choice = prerequisite_menu(
+        service, still_missing=still_missing, skill=parked.skill if parked else None
+    )
     set_auto_command(session, _CHOOSE_COMMAND)
 
 
@@ -275,6 +302,7 @@ __all__ = [
     "is_prerequisite_menu",
     "parse_prerequisite_action",
     "prerequisite_action",
+    "prerequisite_fallback",
     "prerequisite_menu",
     "queue_prerequisite_menu",
     "resumable_setup",

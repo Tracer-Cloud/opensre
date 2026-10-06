@@ -120,18 +120,31 @@ def test_bookkeeping_only_is_not_a_failed_work_stop() -> None:
 
 
 def test_classified_repair_outcome_is_a_finished_report() -> None:
-    blocked = _outcome(
-        "fix_github_pr_ci",
-        details={
-            "success": False,
-            "error_kind": "pr_not_open",
-            "work_outcome": {"status": "blocked", "error_kind": "pr_not_open"},
-        },
-    )
-    assert last_work_tool_failed([blocked]) is True
-    assert last_work_classified([blocked]) is True
-    unfinished = _outcome("shell_run", details={"ok": False, "exit_code": 1})
+    details = {
+        "success": False,
+        "error_kind": "pr_not_open",
+        "work_outcome": {"status": "blocked", "error_kind": "pr_not_open"},
+    }
+    assert last_work_tool_failed([_outcome("fix_github_pr_ci", details=details)]) is True
+    assert last_work_classified([_ran("fix_github_pr_ci", details)]) is True
+    unfinished = _ran("shell_run", {"ok": False, "exit_code": 1})
     assert last_work_classified([unfinished]) is False
+
+
+def test_a_classified_failure_that_also_reports_an_error_is_a_finished_report() -> None:
+    """Regression: a failed call's compat payload keeps only ``{"error": text}``, so a read or
+    repair that classified its block and also reported an error lost its ``work_outcome``,
+    and the turn host made the agent retry what could not succeed."""
+    blocked = _ran(
+        "analyze_github_ci_reliability",
+        {
+            "error": "GitHub is rate-limiting this token.",
+            "work_outcome": {"status": "blocked", "error_kind": "rate_limited"},
+        },
+        is_error=True,
+    )
+
+    assert last_work_classified([blocked]) is True
 
 
 def test_execution_error_counts_as_failed_work() -> None:

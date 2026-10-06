@@ -125,6 +125,32 @@ def store_allowed_users(credentials: Mapping[str, Any]) -> list[str]:
     return list(policy.allowed_user_ids)
 
 
+def connected_chat_user_id(credentials: Mapping[str, Any]) -> str:
+    """Return the connection's chat (``default_chat_id`` or ``chat_id``) when private, else ``""``.
+
+    Connecting a private chat authorizes its user: a private chat's ID equals
+    the user's ``from.id`` and is positive, while group and channel IDs are
+    negative and never name a user.
+    """
+    raw = credentials.get("default_chat_id") or credentials.get("chat_id")
+    chat_id = str(raw or "").strip()
+    return chat_id if chat_id.isdigit() and int(chat_id) > 0 else ""
+
+
+def current_connected_chat_user_ids() -> list[str]:
+    """Return the connected private chat from the store as it is now, or ``[]``.
+
+    Read per use, never cached at startup, so a chat changed or removed in the
+    web app stops being authorized as soon as the store is rehydrated.
+    """
+    try:
+        user_id = connected_chat_user_id(load_telegram_credentials())
+    except GatewayConfigurationError:
+        logger.warning("[telegram-gateway] could not read the connected chat", exc_info=True)
+        return []
+    return [user_id] if user_id else []
+
+
 def choose_bot_token(env: GatewayEnv, credentials: Mapping[str, Any]) -> str:
     token = env.bot_token or store_bot_token(credentials)
 

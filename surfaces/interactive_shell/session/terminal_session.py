@@ -67,12 +67,6 @@ class TerminalSession:
     """Shell-surface session state, composed onto ``Session`` for the interactive shell."""
 
     active_theme_name: str = "green"
-
-    cli_command_group: Any = field(default=None, repr=False, compare=False)
-    """The ``opensre`` Click command group the shell documents to the model.
-
-    Handed in by the process entrypoint; ``None`` when the shell runs on its
-    own, in which case grounding covers slash commands only."""
     """Interactive shell palette name for this REPL session (``/theme``, prompts)."""
 
     pending_theme_refresh: bool = False
@@ -98,6 +92,12 @@ class TerminalSession:
     slash commands (e.g. ``/theme``) can refresh styles via ``call_soon_threadsafe`` on
     the main asyncio loop."""
 
+    transcript: Any = None
+    """The full-screen transcript store, when the shell runs full screen.
+
+    Screen resets (``/clear``, a theme change) reset it instead of clearing the
+    terminal, because the full-screen view draws from it."""
+
     main_loop: Any = None
     """The asyncio event loop for the main REPL coroutine.
 
@@ -116,6 +116,12 @@ class TerminalSession:
     Set by the interactive-shell controller so the sampler (and its ``psutil`` dependency)
     stays out of base REPL startup and only runs when fleet monitoring is actually
     requested. Thread-safe: the starter marshals task creation onto the REPL event loop."""
+
+    startup_work_release: Callable[[], None] | None = field(default=None, repr=False)
+    """Launch hook that starts work held back until the shell first waits on the user.
+
+    Set by the shell entry; ``/choose`` calls it as the first menu draws so
+    warm-ups and snapshots do not compete with that paint. Idempotent."""
 
     pending_prompt_default: str | None = None
     """When set, the next interactive prompt is pre-filled with this string (then cleared)."""
@@ -165,8 +171,8 @@ class TerminalSession:
     goal_paint_signature: GoalPaintSignature | None = None
     """What the last session-goal block showed; unchanged goals repaint as one line."""
 
-    pending_inflight_goal_pauses: int = 0
-    """Queued ``/goal pause`` controls whose boundary handling may already be painted."""
+    pending_inflight_goal_controls: dict[str, int] = field(default_factory=dict)
+    """Queued goal controls whose safe-boundary mutations were already applied."""
 
     """Selected label while its synthetic answer turn awaits a response.
 
@@ -389,6 +395,11 @@ class TerminalSession:
         """Redraw the active prompt (placeholder state and pending prefill)."""
         if self.prompt_refresh_fn is not None:
             self.prompt_refresh_fn()
+
+    def release_startup_work(self) -> None:
+        """Start launch work held for the first wait on the user (no-op when unwired)."""
+        if self.startup_work_release is not None:
+            self.startup_work_release()
 
     def ensure_fleet_sampler_started(self) -> None:
         """Request that the fleet sampler start (no-op if unwired or already running)."""

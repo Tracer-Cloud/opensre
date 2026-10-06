@@ -1,4 +1,4 @@
-"""A task created inside an organization's turn is stamped as that organization's."""
+"""A task created in an organization's turn names that organization and the member who acted."""
 
 from __future__ import annotations
 
@@ -8,6 +8,11 @@ import pytest
 
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CREATED_BY_PARAM,
+    LOOP_PROMPT_PARAM,
+)
+from infrastructure.scheduling.scheduler.loops import create_manual_loop
 from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
@@ -80,3 +85,41 @@ def test_on_a_declared_deployment_an_unstamped_row_is_the_deployments_own(
 
     # Assert: no second row; the existing schedule is the organization's own
     assert len(list_tasks(store)) == 1 and folded.organization == ""
+
+
+def test_a_schedule_confirmed_again_with_its_creator_stays_one_row(tmp_path: Path) -> None:
+    """Who created a loop is not part of its identity, so a re-add never doubles its delivery."""
+    # Arrange: a row stored before creators were recorded
+    store = tmp_path / "tasks.json"
+    prompt = {LOOP_PROMPT_PARAM: "Check incidents."}
+    legacy = add_task(
+        _task("Nightly report", "0 9 * * *").model_copy(update={"params": prompt}), store
+    )
+    confirmed = _task("Nightly report", "0 9 * * *").model_copy(
+        update={"params": {**prompt, LOOP_CREATED_BY_PARAM: "U_ALICE"}}
+    )
+
+    # Act
+    folded = add_task(confirmed, store)
+
+    # Assert: the existing schedule is reused, not duplicated
+    assert folded.id == legacy.id and len(list_tasks(store)) == 1
+
+
+def test_a_loop_names_the_member_who_created_it_or_else_the_operators_shell(
+    tmp_path: Path,
+) -> None:
+    """``/loops`` and CI scheduling in a hosted turn credit the member, not the shell."""
+    # Arrange
+    store = tmp_path / "tasks.json"
+    alice = StorageScope(principal=Principal.org("org_A"), actor=Actor(id="U_ALICE"))
+
+    # Act
+    with bound_storage_scope(alice):
+        hosted = create_manual_loop(name="", prompt="Check CI.", cron="0 9 * * *", store_path=store)
+    local = create_manual_loop(name="", prompt="Check CI.", cron="0 10 * * *", store_path=store)
+
+    # Assert
+    assert hosted.task.params[LOOP_CREATED_BY_PARAM] == "U_ALICE"
+    assert hosted.task.organization == "org_A"
+    assert local.task.params[LOOP_CREATED_BY_PARAM] == "interactive_shell"

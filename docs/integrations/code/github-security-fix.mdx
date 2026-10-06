@@ -63,7 +63,7 @@ fix the code quality findings on https://github.com/Tracer-Cloud/opensre/securit
 fix the security issues in Tracer-Cloud/opensre and raise a PR
 ```
 
-For a broad repo request, OpenSRE selects one open supported finding by severity. If you do not name a repo, it uses the current checkout's GitHub `origin`. For a specific alert, include the alert URL or say the alert type and number:
+For a broad repo request, OpenSRE selects one open supported finding by severity, skipping findings that already have an open OpenSRE fix PR. When nothing is left, it reports that no PR was needed. If you do not name a repo, it uses the current checkout's GitHub `origin`. For a specific alert, include the alert URL or say the alert type and number:
 
 ```text
 fix Dependabot alert 12 in this repo
@@ -84,6 +84,10 @@ OpenSRE asks before editing files, then asks again before committing, pushing, a
 
 Secret-scanning alerts are not auto-fixed. Revoke or rotate the secret first, then plan repository cleanup separately.
 
+### Scheduled fixes on public repositories
+
+A scheduled loop that opens PRs on a public repository should pass `quality_only=true`. OpenSRE then fixes only code-scanning and Code Quality findings without a security severity, so a vulnerability fix is never published in a public PR before you can handle it privately.
+
 ## Verify
 
 There is no dedicated `integrations verify` target. Confirm readiness by:
@@ -100,6 +104,7 @@ There is no dedicated `integrations verify` target. Confirm readiness by:
 | **Dual confirmation prompts** | Edit confirm, then commit/push/PR confirm when `open_pr` is requested |
 | **Wrong repository** | Ensure checkout `origin` matches the finding repo, or name the repo in the prompt |
 | **No coding agent found** | Install/login Pi, Claude Code, Codex, or Cursor, or pin `CODING_AGENT` |
+| **A loop reports nothing to fix while findings stay open** | Each remaining finding already has an open OpenSRE fix PR: merge or close those PRs, or dismiss findings you will not fix |
 
 ## Security
 

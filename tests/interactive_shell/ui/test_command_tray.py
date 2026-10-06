@@ -109,7 +109,9 @@ async def test_tray_is_attached_bounded_and_keeps_selected_result_visible() -> N
         lines = _screen_lines(prompt)
         assert lines[0] == "Working"
         assert "Commands" in lines[2]
-        assert "› /integrations" in lines[3]
+        assert lines[3].startswith("│") and lines[3].endswith("│")
+        assert not lines[3].strip("│ ")
+        assert "› /integrations" in lines[4]
         assert sum("│ › /" in line or "│   /" in line for line in lines) == 6
         assert lines[-5].startswith("│") and lines[-5].endswith("│")
         assert not lines[-5].strip("│ ")
@@ -160,15 +162,14 @@ async def test_tab_on_slash_command_opens_its_subcommand_tray() -> None:
         assert prompt.default_buffer.text == "/integrations "
         assert state is not None
         assert [completion.text for completion in state.completions] == [
+            "list",
             "setup",
             "remove",
-            "list",
-            "ls",
             "verify",
             "show",
         ]
         lines = _screen_lines(prompt)
-        assert any("› setup" in line for line in lines)
+        assert any("› list" in line for line in lines)
         assert any("Subcommands · /integrations" in line for line in lines)
 
 
@@ -197,6 +198,7 @@ async def test_enter_submits_the_selected_subcommand_from_the_continuation_tray(
     async with _running_prompt() as prompt:
         _complete(prompt, "/")
         _press(prompt, Keys.Tab)
+        _press(prompt, Keys.Down)
         _press(prompt, Keys.Down)
 
         _press(prompt, Keys.ControlM)

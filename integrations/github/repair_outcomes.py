@@ -5,20 +5,49 @@ from typing import Any
 from config.constants.scheduler import NON_RETRYABLE_WORK_ERROR_KINDS
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 
+_REPAIR_MERGE_STATES = frozenset({"dirty", "unstable"})
+#: Repair results that verified there was nothing to do: green checks, or no finding left.
+_NOTHING_TO_REPAIR = frozenset({"no_failing_checks", "no_eligible_alert"})
 
-def attach_ci_scan_outcome(output: dict[str, Any], *, fully_inspected: bool) -> dict[str, Any]:
-    """Record no repair needed only for a complete scan of mergeable open PRs."""
+
+def _needs_repair(pr: dict[str, Any]) -> bool:
+    """Failing checks or a conflict; pending checks and unknown mergeability are read next tick."""
+    return (
+        pr["check_status"] == "failed"
+        or pr["mergeable"] is False
+        or pr["mergeable_state"] in _REPAIR_MERGE_STATES
+    )
+
+
+def _may_conflict(pr: dict[str, Any]) -> bool:
+    """Not proven mergeable: a conflict, or mergeability GitHub has not computed yet."""
+    return pr["mergeable"] is not True
+
+
+def attach_ci_scan_outcome(
+    output: dict[str, Any], *, fully_inspected: bool, conflicts_only: bool = False
+) -> dict[str, Any]:
+    """Record no repair needed only when a complete scan finds no repairable PR needing one.
+
+    Fork, draft and closed PRs are never repairable, so they cannot hold the scan open.
+    A ``conflicts_only`` scan judges merge conflicts alone, so a PR whose checks fail
+    does not hold open a loop that only repairs conflicts.
+    """
     prs = output["pull_requests"]
-    if not fully_inspected or any(pr["status"] != "mergeable" for pr in prs):
+    repairable = [pr for pr in prs if pr["repairable"]]
+    needs_repair = _may_conflict if conflicts_only else _needs_repair
+    if not fully_inspected or any(needs_repair(pr) for pr in repairable):
         return output
     owner, repo = output["owner"], output["repo"]
+    scan = "conflict-scan" if conflicts_only else "ci-scan"
     outcome = WorkOutcome(
         status=WorkStatus.NOOP,
-        operation=f"ci-scan:{owner.casefold()}/{repo.casefold()}",
+        operation=f"{scan}:{owner.casefold()}/{repo.casefold()}",
         evidence={
             "owner": owner,
             "repo": repo,
-            "checked_heads": {str(pr["number"]): pr["head_sha"] for pr in prs},
+            "checked_heads": {str(pr["number"]): pr["head_sha"] for pr in repairable},
+            "skipped_prs": [pr["number"] for pr in prs if not pr["repairable"]],
         },
     )
     return {**output, "work_outcome": outcome.model_dump(mode="json")}
@@ -38,7 +67,7 @@ def attach_repair_outcome(output: dict[str, Any], *, operation: str) -> dict[str
             target = f"{output.get('alert_type')}:{output.get('alert_number')}"
         operation = f"{prefix}:{str(owner).casefold()}/{str(repo).casefold()}:{target}"
     kind = str(output.get("error_kind") or "")
-    if kind == "no_failing_checks":
+    if kind in _NOTHING_TO_REPAIR:
         status = WorkStatus.NOOP
     elif kind in {"checks_timeout", "checks_superseded", "timeout"}:
         status = WorkStatus.INCOMPLETE
@@ -53,6 +82,7 @@ def attach_repair_outcome(output: dict[str, Any], *, operation: str) -> dict[str
         "cli_unavailable",
         "pr_not_open",
         "alert_not_found",
+        "merge_decision_required",
     }:
         status = WorkStatus.BLOCKED
     elif output.get("success") is True:

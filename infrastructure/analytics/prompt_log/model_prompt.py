@@ -1,4 +1,4 @@
-"""Pull the skill body and surrounding context off a finished action turn."""
+"""Record what the model received on an action turn: prompt text and its block sizes."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder
+from infrastructure.analytics.provider import JsonValue
 
 
 def skill_prompt_from_tool_results(tool_results: Sequence[tuple[Any, Any]]) -> str:
@@ -34,6 +35,14 @@ def record_action_model_prompt(result: Any, *, skill: str, context: str) -> None
     )
 
 
+def record_model_blocks(blocks: dict[str, JsonValue]) -> None:
+    """Store the size of each part of the turn's prompt on the open recorder."""
+    recorder = PromptRecorder.current()
+    if recorder is None:
+        return
+    recorder.set_model_blocks(blocks)
+
+
 def _skill_body(execution: Any) -> str:
     details = getattr(execution, "details", None)
     if isinstance(details, dict):
@@ -50,4 +59,4 @@ def _skill_body(execution: Any) -> str:
     return ""
 
 
-__all__ = ["record_action_model_prompt", "skill_prompt_from_tool_results"]
+__all__ = ["record_action_model_prompt", "record_model_blocks", "skill_prompt_from_tool_results"]

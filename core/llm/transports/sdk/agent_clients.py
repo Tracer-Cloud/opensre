@@ -33,11 +33,16 @@ from core.llm.shared.openai_responses import (
     response_raw_message,
     response_tool_calls,
     responses_input,
+    responses_prompt_cache_key,
     responses_tool_specs,
     uses_responses_api,
 )
 from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
-from core.llm.shared.usage import emit_provider_usage, extract_cache_tokens
+from core.llm.shared.usage import (
+    emit_provider_usage,
+    extract_cache_tokens,
+    extract_reasoning_tokens,
+)
 from core.llm.transports.sdk.anthropic_cache import (
     cached_system as _anthropic_cached_system,
 )
@@ -544,6 +549,45 @@ _PROVIDER_LABEL_OVERRIDES = {
 }
 
 
+# A minimal Responses payload with each output item type the agent reads, so
+# ``prewarm`` builds the same model classes the first real response needs.
+_PREWARM_RESPONSE: dict[str, Any] = {
+    "id": "resp_prewarm",
+    "object": "response",
+    "created_at": 0,
+    "model": "prewarm",
+    "status": "completed",
+    "parallel_tool_calls": True,
+    "tool_choice": "auto",
+    "tools": [],
+    "output": [
+        {"type": "reasoning", "id": "rs_prewarm", "summary": []},
+        {
+            "type": "message",
+            "id": "msg_prewarm",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "", "annotations": []}],
+        },
+        {
+            "type": "function_call",
+            "id": "fc_prewarm",
+            "call_id": "call_prewarm",
+            "name": "prewarm",
+            "arguments": "{}",
+            "status": "completed",
+        },
+    ],
+    "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+        "output_tokens_details": {"reasoning_tokens": 0},
+    },
+}
+
+
 class OpenAIAgentClient:
     """OpenAI-compatible client with tool-calling for the agent loop."""
 
@@ -601,6 +645,27 @@ class OpenAIAgentClient:
         if override:
             return override
         return api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
+
+    def prewarm(self) -> None:
+        """Load what the first request would otherwise load inline, without a request.
+
+        The SDK imports its endpoint resource and builds its response models
+        lazily, on the first call. Hosts run this in the background while the
+        user is still choosing, so the first model call does not pay for it.
+        """
+        self._ensure_client()
+        api_key_env = str(getattr(self, "_api_key_env", "OPENAI_API_KEY"))
+        if uses_responses_api(self._model, api_key_env):
+            from openai.types.responses import Response
+
+            _ = self._client.responses
+            # Validation builds the nested output and usage models a real response needs.
+            try:
+                Response.model_validate(_PREWARM_RESPONSE)
+            except ValueError:
+                Response.model_construct(**_PREWARM_RESPONSE)
+        else:
+            _ = self._client.chat.completions
 
     def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         return build_openai_tool_specs(tools)
@@ -671,6 +736,8 @@ class OpenAIAgentClient:
                 "max_output_tokens": self._max_tokens,
                 "input": responses_input(msgs),
             }
+            if system:
+                kwargs["prompt_cache_key"] = responses_prompt_cache_key(system)
             if tools:
                 kwargs["tools"] = responses_tool_specs(tools)
                 kwargs["tool_choice"] = "auto"
@@ -750,7 +817,8 @@ class OpenAIAgentClient:
                 output_key="output_tokens",
             )
             responses_tool_calls = response_tool_calls(response)
-            cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
+            usage = getattr(response, "usage", None)
+            cache_read, cache_write = extract_cache_tokens(usage)
             return AgentLLMResponse(
                 content=str(getattr(response, "output_text", "") or ""),
                 tool_calls=responses_tool_calls,
@@ -760,6 +828,7 @@ class OpenAIAgentClient:
                 cache_creation_tokens=cache_write,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                reasoning_tokens=extract_reasoning_tokens(usage),
             )
 
         if not hasattr(response, "choices") or not response.choices:
@@ -773,7 +842,8 @@ class OpenAIAgentClient:
             input_key="prompt_tokens",
             output_key="completion_tokens",
         )
-        cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
+        usage = getattr(response, "usage", None)
+        cache_read, cache_write = extract_cache_tokens(usage)
         choice = response.choices[0]
         msg = choice.message
         content = msg.content or ""
@@ -800,6 +870,7 @@ class OpenAIAgentClient:
             cache_creation_tokens=cache_write,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            reasoning_tokens=extract_reasoning_tokens(usage),
         )
 
     @staticmethod
@@ -890,13 +961,11 @@ class CLIBackedAgentClient:
                     name = tc.get("name")
                     if not isinstance(name, str) or not name.strip():
                         continue
-                    raw_input = tc.get("input")
-                    input_payload = raw_input if isinstance(raw_input, dict) else {}
                     tool_calls.append(
                         ToolCall(
                             id=str(tc.get("id") or f"call_{i}"),
                             name=name.strip(),
-                            input=input_payload,
+                            input=_cli_tool_call_input(tc),
                         )
                     )
             content = "" if tool_calls else text
@@ -932,6 +1001,26 @@ class CLIBackedAgentClient:
                 return {"role": "assistant", "content": f"{content.strip()}\n\n{tool_json}"}
             return {"role": "assistant", "content": tool_json}
         return {"role": "assistant", "content": content}
+
+
+def _cli_tool_call_input(call: dict[str, Any]) -> dict[str, Any]:
+    """The argument object of one CLI-emitted tool call.
+
+    The instruction asks for ``input`` as an object, but CLI models trained on
+    OpenAI function calling often write ``arguments`` and/or a JSON-encoded
+    string. Both are envelope fields, never tool arguments, so reading them is
+    unambiguous; anything else stays ``{}`` and fails validation as before.
+    """
+    for key in ("input", "arguments"):
+        raw = call.get(key)
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw) if raw.strip() else None
+            except json.JSONDecodeError:
+                raw = None
+        if isinstance(raw, dict):
+            return raw
+    return {}
 
 
 def _try_parse_tool_call_json(text: str) -> dict[str, Any] | None:

@@ -56,8 +56,29 @@ def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
     }
 
 
-#: The tool's error line when the target itself was refused; the reply says which to choose.
-_REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused."
+#: The tool's error line when the target itself was refused; the reason says which to choose.
+_REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused. {reason}"
+_SCHEDULE_ERROR = "Could not schedule CI repair: {cause}"
+_READ_ERROR = "Could not read the repair report: {cause}"
+#: The first line of a failure's own text, at most this long, names the cause.
+_CAUSE_MAX_CHARS = 300
+
+
+def _failure_cause(exc: Exception) -> str:
+    """A short reason for a failed schedule or read that the model and telemetry can use.
+
+    GitHub API errors carry status and GitHub's message, and this package's
+    ``ValueError`` texts are written for the user. A file error keeps only its
+    ``strerror`` (no local path); any other error is named by type only.
+    """
+    if isinstance(exc, GitHubApiError | ValueError):
+        text = str(exc).strip().splitlines()
+        first = text[0].strip() if text else ""
+        if first:
+            return first[:_CAUSE_MAX_CHARS]
+    elif isinstance(exc, OSError) and exc.strerror:
+        return f"{type(exc).__name__}: {exc.strerror}."
+    return f"{type(exc).__name__}."
 
 
 def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float) -> bool:
@@ -132,7 +153,7 @@ def schedule_ci_repair_loop(
     except RepairRefused as exc:
         return {
             "ok": False,
-            "error": _REFUSED_ERROR,
+            "error": _REFUSED_ERROR.format(reason=exc.user_message),
             "error_kind": ERROR_KIND_REFUSED,
             "response_text": exc.user_message,
         }
@@ -146,7 +167,7 @@ def schedule_ci_repair_loop(
         )
         return {
             "ok": False,
-            "error": f"Could not schedule CI repair: {type(exc).__name__}.",
+            "error": _SCHEDULE_ERROR.format(cause=_failure_cause(exc)),
             "response_text": "Check the GitHub connection and background scheduler setup.",
         }
     return {**_result(run, store), "reused": reused, "next_run": next_run}
@@ -238,5 +259,6 @@ def get_ci_repair_loop(
         )
         return {
             "ok": False,
-            "error": "Could not read the repair report; check your GitHub connection and run id.",
+            "error": _READ_ERROR.format(cause=_failure_cause(exc)),
+            "response_text": "Check the GitHub connection and the run id.",
         }

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool import SideEffectLevel
+from core.tool import CALL_SIDE_EFFECT_LEVEL_KEY, SideEffectLevel
 from core.tool_framework import tool
 from integrations.github.tools.github_cli.credentials import (
     GITHUB_CLI_INJECTED_PARAMS,
@@ -13,7 +13,8 @@ from integrations.github.tools.github_cli.credentials import (
     github_source_available,
     resolve_github_token,
 )
-from integrations.github.tools.github_cli.runner import run_gh
+from integrations.github.tools.github_cli.effects import gh_call_only_reads
+from integrations.github.tools.github_cli.runner import MAX_GH_OUTPUT_CHARS, run_gh
 from integrations.github.tools.github_cli.summary import attach_summary
 
 _ARGS_SCHEMA: dict[str, Any] = {
@@ -25,7 +26,9 @@ _ARGS_SCHEMA: dict[str, Any] = {
             "description": (
                 "Arguments after the `gh` binary (for example: "
                 '["issue", "create", "--title", "Bug", "--body", "…"] or '
-                '["issue", "list", "--limit", "10"]). Do not include `gh` itself.'
+                '["issue", "list", "--limit", "10", "--json", "number,title"]). '
+                "Do not include `gh` itself. Each list item is one argv entry, passed "
+                "to gh verbatim without shell quoting or splitting."
             ),
         },
         "repo": {
@@ -95,7 +98,13 @@ def _normalize_args(args: list[str] | None) -> list[str]:
         "tables/headers). Not raw JSON/GraphQL dumps. For a commit's workflow "
         "run history with attempts and conclusions use "
         "list_github_actions_workflow_runs with head_sha; gh run list does not "
-        "show attempts."
+        f"show attempts. Output over {MAX_GH_OUTPUT_CHARS} characters is cut, and cut JSON is "
+        "refused: for list and JSON reads always pass a small --limit, only the "
+        "--json fields you need, and --jq to select them (for gh api, --jq too). "
+        "For gh api graphql pass the whole query as one arg, e.g. "
+        '["api", "graphql", "-f", "query=query($o: String!, $n: String!) '
+        '{ repository(owner: $o, name: $n) { name } }", "-f", "o=OWNER", '
+        '"-f", "n=NAME"], with balanced braces.'
     ),
     use_cases=[
         "Creating a GitHub issue (title/body/assignee/labels) when the user asks",
@@ -125,10 +134,13 @@ def github_cli(
 ) -> dict[str, Any]:
     """Run an authenticated ``gh`` command (read or write; no approval gate)."""
     normalized = _normalize_args(args)
-    return attach_summary(
+    payload = attach_summary(
         run_gh(args=normalized, repo=repo, github_token=github_token, timeout=timeout),
         args=normalized,
     )
+    if gh_call_only_reads(normalized):
+        payload[CALL_SIDE_EFFECT_LEVEL_KEY] = SideEffectLevel.READ_ONLY.value
+    return payload
 
 
 __all__ = ["github_cli"]

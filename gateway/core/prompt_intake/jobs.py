@@ -153,6 +153,8 @@ class PromptJob:
     actor: str
     submitted_at: float
     state: PromptState = PromptState.QUEUED
+    #: The turn's reply: a done prompt's answer, or what a prompt that asked wrote
+    #: before its question.
     answer: str = ""
     question: str = ""
     error_code: str = ""
@@ -210,6 +212,8 @@ class PromptJob:
                 record["answer"] = self.answer
             if self.state is PromptState.NEEDS_INPUT:
                 record["question"] = self.question
+                if self.answer:
+                    record["answer"] = self.answer
                 if self.choice is not None:
                     record["choice"] = self.choice
                 if self.answered_by:
@@ -681,12 +685,15 @@ class PromptQueue:
         job: PromptJob,
         question: str,
         *,
+        answer: str = "",
         choice: dict[str, Any] | None = None,
         failed_integrations: tuple[str, ...] = (),
     ) -> None:
+        """Settle ``job`` on ``question``; ``answer`` is what the turn wrote before asking."""
         self._settle(
             job,
             PromptState.NEEDS_INPUT,
+            answer=answer,
             question=question,
             choice=choice,
             failed_integrations=failed_integrations,

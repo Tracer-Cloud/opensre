@@ -8,7 +8,7 @@ getting_started: Run continuously on this machine (recommended)
 demo_order: 2
 metadata:
   owner: Vincent
-  last_changed_by: Jan
+  last_changed_by: Vincent
   last_changed_at: 2026-10-04
   usecases:
     - For configuring ongoing repair of failing pull requests in one repository.
@@ -17,7 +17,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "0.81"
+  version: "0.82"
 script_tools: references/script-tools.md
 ---
 
@@ -36,7 +36,7 @@ one real repair as fast as possible in well under five minutes.
 
 ## Plan
 
-Use `update_plan` to create the live plan from the workflow headings below. Mark a step `in_progress` or `completed` in the same response as that step's tool call. A response that only calls `update_plan` is not progress. For the private demo, plan three steps instead: run the demo with one `run_ci_repair_demo` call (`verifies: true`), respond with the outcome report (`deliverable: true`), then offer the follow-up with `ask_user_choice`.
+Use `update_plan` to create the live plan from the workflow headings below. Mark a step `in_progress` or `completed` in the same response as that step's tool call. A response that only calls `update_plan` is not progress. For the private demo, plan three steps instead: run the demo with one `run_ci_repair_demo` call (`verifies: true`), respond with the outcome report (`deliverable: true`), then offer the follow-up with `ask_user_choice`: the hand-off after a successful repair, or the blocker question after a blocked or failed run.
 
 - [ ] Check prerequisites: GitHub identity and scopes, then the scheduler.
 - [ ] Select the repository, or the private demo, with ask_user_choice.
@@ -47,7 +47,7 @@ Use `update_plan` to create the live plan from the workflow headings below. Mark
 - [ ] Verify the repair with one `pr view` call.
 - [ ] Save evidence, remove the demo loop, and verify with one `finish_ci_repair_demo` call.
 - [ ] Respond with the outcome report as Markdown.
-- [ ] After the report is shown, offer the follow-up with `ask_user_choice`.
+- [ ] After the report is shown, offer the follow-up with `ask_user_choice`: the hand-off after a success, the blocker question otherwise.
 
 ## Workflow
 
@@ -205,7 +205,9 @@ Complete when the report has been shown to the user as Markdown text.
 
 ### Step 10. Offer the follow-up question
 
-After the report is shown, call `ask_user_choice` with the title `Hand off the next failure?`, `allow_custom` false, and this note:
+After a blocked or failed run, ask the blocker question instead of the menu below: call `ask_user_choice` naming the blocked run step and its blocker, with options a tool here can carry out and one to leave it blocked. On the hosted gateway, skip the menu below after a successful report and mark this item completed; the shell that delegated the work owns follow-ups.
+
+After a successful repair report is shown, call `ask_user_choice` with the title `Hand off the next failure?`, `allow_custom` false, and this note:
 
 `The local loop runs on this machine every 30 seconds while it is on. The managed-service option is one repair, then it stops.`
 
@@ -214,7 +216,7 @@ Options:
 - Auto-fix failing PRs on one of your repos from your local laptop
 - Not now
 
-Complete when the `ask_user_choice` call for this menu has returned in this turn. The user's answer arrives in the next turn. Each branch except `Not now` is owned by a skill: load it with `skill_view` and follow its plan; do not reimplement its steps here.
+Complete when the `ask_user_choice` call for the blocker question or this menu has returned in this turn. The user's answer arrives in the next turn. Each branch except `Not now` is owned by a skill: load it with `skill_view` and follow its plan; do not reimplement its steps here.
 
 - **Run the next fix in the cloud and close your laptop:** call `skill_view(name="delegating-github-ci-repairs")` and follow that skill. That skill runs one repair on the hosted gateway. Do not describe it as a loop that keeps running.
 - **Auto-fix failing PRs on one of your repos from your local laptop:** call `skill_view(name="scheduling-github-ci-repairs")` and follow that skill again. Do not reuse the private demo. Select a repository the user already uses, so the loop stays after the report.

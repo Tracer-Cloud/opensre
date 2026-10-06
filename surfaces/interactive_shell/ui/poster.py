@@ -10,7 +10,7 @@ from rich.markup import escape
 from rich.text import Text
 
 import infrastructure.terminal.theme as ui_theme
-from surfaces.shared.terminal.banner import animate_launch_wordmark
+from surfaces.shared.terminal.banner import ResponsiveLaunchBanner, animate_launch_wordmark
 from surfaces.shared.terminal.components.rendering import (
     _console_is_capturing,
     _console_print_prepared,
@@ -63,6 +63,25 @@ def repl_render_launch_poster(
     render_terminal_ui(console, session=session)
 
 
+def reset_full_screen_transcript(
+    session: object = None, *, theme_notice: str | None = None
+) -> bool:
+    """Start the full-screen transcript over with the launch banner.
+
+    Returns False when the shell is not full screen, so the caller clears the
+    terminal itself.
+    """
+    terminal = getattr(session, "terminal", None)
+    transcript = getattr(terminal, "transcript", None)
+    if transcript is None:
+        return False
+    transcript.clear()
+    if theme_notice:
+        transcript.append_text(_theme_notice_line(theme_notice))
+    transcript.append_renderable(ResponsiveLaunchBanner(session=session))
+    return True
+
+
 def refresh_welcome_poster(
     console: Console,
     *,
@@ -72,10 +91,16 @@ def refresh_welcome_poster(
     """Clear scrollback and redraw the welcome panel with the active theme."""
     from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
+    if reset_full_screen_transcript(session, theme_notice=theme_notice):
+        return
     repl_clear_screen()
     # ``repl_clear_screen`` can trigger a toolbar DSR/CPR exchange; drain before writing.
     drain_stale_cpr_bytes()
     repl_render_launch_poster(console, session=session, theme_notice=theme_notice)
 
 
-__all__ = ["refresh_welcome_poster", "repl_render_launch_poster"]
+__all__ = [
+    "refresh_welcome_poster",
+    "repl_render_launch_poster",
+    "reset_full_screen_transcript",
+]

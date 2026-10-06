@@ -8,6 +8,7 @@ on:
       - infrastructure/analytics/**
       - config/constants/analytics.py
       - .github/workflows/runner-provenance.yml
+      - install.sh
 
 permissions:
   contents: read

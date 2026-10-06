@@ -116,8 +116,13 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks how to configure an integration (answer directly)",),
     ),
     "/context": _mcp(
-        "Display accumulated infrastructure context collected during the session.",
-        "User asks what context or infra metadata the session has accumulated",
+        "Show what the next model call will contain, without calling a model: each "
+        "prompt block with its tier, characters and estimated tokens, the replayed "
+        "conversation history, the tool schema count, the total, and how much of the "
+        "history compaction budget is used.",
+        "User asks how big the context or prompt is, or what the model sees each turn",
+        "User asks how close the conversation is to being compacted",
+        anti_examples=("User asks about token spend or cost so far (use /cost)",),
     ),
     "/cost": _mcp(
         "Show token usage and estimated session cost for LLM calls in this REPL session.",
@@ -423,7 +428,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     ),
     "/tools": _mcp(
         "Explicit /tools command operation: list registered chat/action tools "
-        "wired into this OpenSRE build.",
+        "wired into this OpenSRE build. Takes no arguments.",
         "User explicitly types /tools or asks to run /tools",
         "User explicitly asks to list registered tools as a shell command",
         anti_examples=(
@@ -619,12 +624,15 @@ def slash_invoke_input_schema(
     args_description = (
         "Positional arguments after the command name. Valid values depend on the "
         "chosen command — see the slash_invoke tool description. Examples: "
-        '["list"] for /tools, ["verify", "datadog"] for /integrations.'
+        '[] for /tools, ["verify", "datadog"] for /integrations.'
     )
     return object_schema(
         properties={
             "command": string_property(
-                description="Slash command name including leading `/`.",
+                description=(
+                    "Slash command name only, including the leading `/` (e.g. "
+                    "`/integrations`). Put every word after it in `args`, never in `command`."
+                ),
                 enum=command_names,
             ),
             "args": string_array_property(description=args_description),

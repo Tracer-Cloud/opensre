@@ -11,6 +11,7 @@ description: "Browse recent sessions, resume a conversation, compact long contex
 | `/resume <id>` | Restore a past session so you can continue asking questions |
 | `/resume <id>:<entry>` | Restore a specific branch point by entry ID prefix |
 | `/compact` | Summarize older context into a replayable compaction entry |
+| `/context` | Show what the next model call will contain and how much of the history budget is used |
 | `/new` | Start a fresh session file while keeping the current conversation context |
 
 ---
@@ -123,13 +124,22 @@ Use `/new` after a long session to keep `/sessions` tidy without losing your pla
 
 ## Compacting long sessions — `/compact`
 
-`/compact` summarizes older conversation context, keeps the recent turns, and writes a durable compaction entry into the session file:
+OpenSRE replays earlier turns of the session to the model in order, including the tool calls it made and what they returned (long tool output is shortened to its start and end). A follow-up such as "rerun the one that failed" can use a run ID from an earlier answer without fetching it again.
+
+When that history grows past its token budget, OpenSRE compacts it before the next turn: the model writes a summary of the older turns, and the most recent turns stay word for word with their tool results. `/compact` does the same on demand and keeps only your latest exchange:
 
 ```
 /compact
 ```
 
-OpenSRE also compacts automatically before a shell turn when the replayed branch context grows past the runtime threshold. The compaction entry stores the summary, the first kept entry ID, and before/after size estimates so future `/resume` calls can replay the compacted branch.
+The compaction is saved in the session file, so `/resume` restores exactly the summary and the turns that were kept. Run `/context` to see how much of the budget the history uses and what else the next model call carries.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `OPENSRE_HISTORY_TOKEN_BUDGET` | `48000` | Estimated tokens of history before automatic compaction |
+| `OPENSRE_HISTORY_TOOL_RESULT_CHARS` | `8000` | Characters of each tool result kept in history |
+| `OPENSRE_LLM_COMPACTION` | `1` | Set to `0` to summarize without a model call |
+| `OPENSRE_STRUCTURED_HISTORY` | `1` | Set to `0` to send earlier turns as a single text block (the previous behavior) |
 
 **`/new` vs `/clear`:**
 

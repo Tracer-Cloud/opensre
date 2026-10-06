@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
 from config.constants.scheduler import WEEKDAY_CRON_FIELD
+from config.scope_handoff import acting_scope
 from core.agent_harness import pin_recurring_skill
 from infrastructure.scheduling.scheduler.credentials import (
     resolve_slack_credentials,
@@ -18,6 +20,7 @@ from infrastructure.scheduling.scheduler.credentials import (
     resolve_telegram_credentials,
     resolve_telegram_default_chat_id,
 )
+from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CHANNELS_PARAM,
     LOOP_CREATED_BY_PARAM,
@@ -39,6 +42,10 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_STATUS_PAUSED,
     LOOP_TELEGRAM_CHAT_ID_PARAM,
     LOOP_TIME_PARAM,
+)
+from infrastructure.scheduling.scheduler.loop_prompt import (
+    current_loop_description,
+    current_loop_prompt,
 )
 from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_loop_operation,
@@ -199,7 +206,7 @@ def loop_name(task: ScheduledTask) -> str:
 
 def loop_description(task: ScheduledTask) -> str:
     """Return optional loop description metadata."""
-    return task.params.get(LOOP_DESCRIPTION_PARAM, "").strip()
+    return current_loop_description(task.params)
 
 
 def loop_channels(task: ScheduledTask) -> tuple[Provider, ...]:
@@ -349,6 +356,8 @@ def create_manual_loop(
         if not time_text.strip():
             raise ValueError("time is required unless --cron is provided")
         cron_expr = cron_for_time(time_text, weekdays=weekdays)
+    if report.strip() != CI_REPAIR_REPORT_BUILDER:
+        cron_expr = cap_cron_at_most_hourly(cron_expr, timezone.strip() or "UTC")
 
     channel_providers = normalize_loop_channels(
         channels,
@@ -359,11 +368,13 @@ def create_manual_loop(
     params = {
         LOOP_GROUP_ID_PARAM: loop_id,
         LOOP_SOURCE_PARAM: _MANUAL_LOOP_SOURCE,
-        LOOP_CREATED_BY_PARAM: _MANUAL_LOOP_CREATED_BY,
         LOOP_PROMPT_PARAM: loop_prompt,
         LOOP_DESCRIPTION_PARAM: _description_from_prompt(loop_prompt),
         LOOP_CHANNELS_PARAM: ",".join(provider.value for provider in channel_providers),
     }
+    if acting_scope() is None:
+        # In an organization's turn the store records the member who acted instead.
+        params[LOOP_CREATED_BY_PARAM] = _MANUAL_LOOP_CREATED_BY
     time_label = loop_time_label(cron_expr)
     if time_label:
         params[LOOP_TIME_PARAM] = time_label
@@ -664,7 +675,7 @@ def _summarize_group(
         task_ids=tuple(task.id for task in tasks),
         name=loop_name(representative),
         description=loop_description(representative),
-        prompt=representative.params.get(LOOP_PROMPT_PARAM, "").strip(),
+        prompt=current_loop_prompt(representative.params),
         kind=representative.kind,
         cron=representative.cron,
         timezone=representative.timezone,
