@@ -75,7 +75,9 @@ def test_status_line_renders_below_the_composer_at_a_fixed_height() -> None:
 
     A height that changes with session state is what misplaces the cursor and
     strands stale rows below the input (the reason the prompt_toolkit bottom
-    toolbar stays collapsed), so the row is pinned to 1 and never wraps.
+    toolbar stays collapsed), so the row never wraps and never exceeds one row.
+    It must still allow ``min=0``: a short window has to collapse this chrome
+    rather than refuse to draw ("Window too small") and lose the composer.
     """
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import DummyInput
@@ -97,7 +99,10 @@ def test_status_line_renders_below_the_composer_at_a_fixed_height() -> None:
     assert len(chrome.children) == 3
     status_row = chrome.children[-1]
     assert isinstance(status_row, Window)
-    assert status_row.height == 1
+    assert status_row.height.preferred == 1
+    assert status_row.height.max == 1
+    # Collapsible under vertical pressure, so a short window keeps the composer.
+    assert status_row.height.min == 0
     assert not status_row.wrap_lines()
     assert status_row.content.text().value == "Auto (Med)"
 

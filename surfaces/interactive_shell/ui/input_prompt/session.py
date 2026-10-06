@@ -156,17 +156,21 @@ def _install_prompt_frame(
             ),
         ]
     # Settled chrome sits under the box so the live region above can grow and
-    # shrink without shifting it. Height is pinned to exactly one row in every
-    # state -- never 0, never 2 -- because a *changing* height below the input
-    # is what misplaces the cursor and strands stale status rows (the reason
+    # shrink without shifting it. One row at any usable size: session state
+    # never changes its height, because a height that moves with state is what
+    # misplaces the cursor and strands stale status rows (the reason
     # ``SpinnerState.toolbar_ansi`` stays empty). ``wrap_lines=False`` holds
-    # that guarantee when a narrow terminal would otherwise fold the row.
+    # that when a narrow terminal would otherwise fold the row in two.
+    #
+    # ``min=0`` is required of every row added to this frame: under vertical
+    # pressure prompt_toolkit collapses this row rather than refusing to draw
+    # a short window ("Window too small"), which keeps the 3-row composer.
     status_rows: list[AnyContainer] = []
     if status_line is not None:
         status_rows = [
             Window(
                 FormattedTextControl(lambda: ANSI(status_line())),
-                height=1,
+                height=Dimension(min=0, preferred=1, max=1),
                 dont_extend_height=True,
                 wrap_lines=False,
                 always_hide_cursor=True,
