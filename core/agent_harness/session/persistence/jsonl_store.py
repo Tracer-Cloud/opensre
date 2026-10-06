@@ -876,7 +876,7 @@ class JsonlSessionStore:
         for record in reversed(records):
             if record.get("sidecar") or record.get("type") == "trace_span":
                 continue
-            return record.get("type") == "leaf"
+            return bool(record.get("type") == "leaf")
         return False
 
     @staticmethod

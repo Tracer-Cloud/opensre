@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from rich.console import Console
 from rich.markup import escape
 
@@ -322,7 +324,7 @@ def _browse_connections(session: Session, console: Console, *, mcp: bool) -> boo
     command = "/mcp list" if mcp else "/integrations list"
 
     def set_browser_outcome() -> None:
-        latest_slash = next(
+        latest_slash: dict[str, Any] = next(
             (entry for entry in reversed(session.history) if entry.get("type") == "slash"),
             {},
         )

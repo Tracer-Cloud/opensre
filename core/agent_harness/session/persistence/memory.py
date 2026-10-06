@@ -468,5 +468,5 @@ class InMemorySessionStore:
         for record in reversed(records):
             if record.get("sidecar"):
                 continue
-            return record.get("type") == "leaf"
+            return bool(record.get("type") == "leaf")
         return False

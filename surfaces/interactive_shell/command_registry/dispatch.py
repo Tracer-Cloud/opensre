@@ -5,7 +5,7 @@ from __future__ import annotations
 import shlex
 from collections.abc import Callable
 from contextlib import nullcontext
-from typing import Any
+from typing import Any, cast
 
 from rich.console import Console
 
@@ -38,7 +38,7 @@ def _latest_record_ok(session: Session, kind: str, *, default: bool = True) -> b
 def _latest_slash_record(session: Session) -> dict[str, Any] | None:
     for entry in reversed(session.history):
         if entry.get("type") == "slash":
-            return entry
+            return cast(dict[str, Any], entry)
     return None
 
 

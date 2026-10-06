@@ -66,7 +66,7 @@ def read_repair_evidence(task_id: str, store: RepairStore | None = None) -> Repa
         return RepairEvidence()
     attempts = [repairs.read_attempt(task_id, number) for number in range(1, run.attempts + 1)]
     first = attempts[0] if attempts else {}
-    fix = next(
+    fix: dict[str, Any] = next(
         (
             record
             for record in reversed(attempts)
