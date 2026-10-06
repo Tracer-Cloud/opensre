@@ -222,6 +222,7 @@ def test_render_width_holds_on_a_dumb_terminal(monkeypatch: pytest.MonkeyPatch) 
 def test_printed_tables_keep_their_layout_and_theme_at_every_width(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
     store = TranscriptStore()
     loop = asyncio.new_event_loop()
     try:
