@@ -944,13 +944,13 @@ class TestSpinnerState:
 
     def test_inline_spinner_contains_stop_hint_when_streaming(self) -> None:
         """During streaming the inline spinner (shown in the prompt's first
-        reserved line) carries ``(Press ESC to stop)`` so the user can
+        reserved line) carries ``Esc to stop`` so the user can
         interrupt the dispatch.
         """
         spinner = loop_state.SpinnerState()
         spinner.start()
         rendered = _strip_ansi(spinner.inline_spinner_ansi())
-        assert "(Press ESC to stop)" in rendered
+        assert "Esc to stop" in rendered
         # Idle hint text should NOT appear in the spinner row.
         assert "/ for commands" not in rendered
 

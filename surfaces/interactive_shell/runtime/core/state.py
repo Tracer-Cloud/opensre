@@ -313,7 +313,9 @@ class SpinnerState:
     THINKING_PHASE = "Thinking…"
     EXECUTING_PHASE = "Executing…"
     INVOKING_TOOLS_PHASE = "Invoking tools…"
-    _STOP_HINT = "(Press ESC to stop)"
+    _STOP_HINT = "Esc to stop"
+    _STATUS_INDENT = "  "
+    _MIN_HINT_GAP = 2
     # Traveling light wave across the status sentence (Cursor / Droid style).
     _SHIMMER_PERIOD_SECONDS = 1.5
 
@@ -425,12 +427,14 @@ class SpinnerState:
         return ui_theme.BOLD_REPLY_MARKER_ANSI
 
     def inline_spinner_ansi(self) -> str:
-        """One status row: quiet phase (+ live tool) · stop hint · elapsed.
+        """One status row: primary phase and elapsed time, then the stop hint.
 
         When a tool is in flight the label becomes
         ``Invoking tools… · GitHub CLI · gh api …`` so awareness stays on the
         same row as the spinner — never a second reserved prompt row. A soft
         silver wave runs across the sentence; the glyph alone carries warmth.
+        The hint anchors to the right when space permits, separating the live
+        status from the keyboard instruction without adding another row.
         """
         if not self.streaming:
             return ""
@@ -440,9 +444,9 @@ class SpinnerState:
         glyph = self._SPINNER_FRAMES[frame_idx % len(self._SPINNER_FRAMES)]
         if token_count > 0:
             tokens_str = format_token_count_short(token_count)
-            elapsed_badge = f"[{elapsed:.0f}s · ↓ {tokens_str} tokens]"
+            elapsed_detail = f"{elapsed:.0f}s · ↓ {tokens_str} tokens"
         else:
-            elapsed_badge = f"[{elapsed:.0f}s]"
+            elapsed_detail = f"{elapsed:.0f}s"
         label = self.phase or self.THINKING_PHASE
         action = self.active_action
         if action:
@@ -450,17 +454,21 @@ class SpinnerState:
         # One prompt-region row only: a long phase (or a narrow terminal) must
         # not soft-wrap, which desyncs row height vs the one-row confirmation
         # prefix and leaves stale spinner/status lines.
-        lead = f"{glyph} "
-        # Single spaces throughout the row: the hint and the elapsed badge sit
-        # one cell apart like every other token, and the badge hugs its brackets.
-        tail = f" {self._STOP_HINT} {elapsed_badge}"
+        lead = f"{self._STATUS_INDENT}{glyph} "
         accent = self._phase_accent_ansi()
         width = prompt_line_width()
-        reserved = prompt_text_width(lead) + prompt_text_width(tail)
+        lead_width = prompt_text_width(lead)
+        elapsed_width = prompt_text_width(elapsed_detail)
+        hint_width = prompt_text_width(self._STOP_HINT)
+        reserved = lead_width + 1 + elapsed_width + self._MIN_HINT_GAP + hint_width
         if reserved >= width:
-            visible = clip_prompt_text(f"{lead}{label}{tail}", width)
+            visible = clip_prompt_text(f"{lead}{label} {elapsed_detail}  {self._STOP_HINT}", width)
             return f"{accent}{visible}{ui_theme.ANSI_RESET}"
         clipped_label = clip_prompt_text(label, width - reserved)
+        hint_gap = max(
+            self._MIN_HINT_GAP,
+            width - lead_width - prompt_text_width(clipped_label) - 1 - elapsed_width - hint_width,
+        )
         shimmered = ui_theme.shimmer_text_ansi(
             clipped_label,
             elapsed=elapsed,
@@ -469,7 +477,8 @@ class SpinnerState:
         )
         return (
             f"{accent}{lead}{ui_theme.ANSI_RESET}{shimmered}"
-            f"{ui_theme.ANSI_DIM}{tail}{ui_theme.ANSI_RESET}"
+            f"{ui_theme.ANSI_DIM} {elapsed_detail}{' ' * hint_gap}"
+            f"{self._STOP_HINT}{ui_theme.ANSI_RESET}"
         )
 
 

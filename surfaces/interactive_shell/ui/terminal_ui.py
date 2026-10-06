@@ -149,13 +149,14 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
     # vanish for the length of the turn.
     auto_line = strip_cpr_sequences(prompt_status_ansi(session, quiet=bool(inline_spinner)))
     # Mid-turn stream text has no trailing blank (that lands only when the
-    # reply finishes). One lead row under Thinking/Invoking so status chrome
-    # does not sit flush on the last assistant line. Skip when a plan overlay
-    # already supplies the gap, and skip when idle (no status prefix).
+    # reply finishes). One lead row keeps Thinking/Invoking off the last
+    # assistant line. A second gap separates that active state from the quiet
+    # Auto metadata, which sits with the composer it configures.
     status_lead = "\n" if prefix and not plan_prefix else ""
+    composer_gap = "\n" if base else ""
     if prefix:
-        return ANSI(f"{plan_prefix}{status_lead}{prefix}\n{auto_line}\n{base}")
-    return ANSI(f"{plan_prefix}{auto_line}\n{base}")
+        return ANSI(f"{plan_prefix}{status_lead}{prefix}\n\n{auto_line}\n{base}")
+    return ANSI(f"{plan_prefix}{auto_line}\n{composer_gap}{base}")
 
 
 _CONFIRM_HINT = "↑↓ Navigate • Enter confirm • Esc cancel"

@@ -12,29 +12,37 @@ def test_inline_spinner_empty_when_idle() -> None:
     assert SpinnerState().inline_spinner_ansi() == ""
 
 
-def test_inline_spinner_includes_phase_and_stop_hint() -> None:
-    spinner = SpinnerState()
+def test_inline_spinner_groups_phase_time_and_stop_hint(monkeypatch) -> None:
+    """Primary status stays left while the secondary stop hint anchors right."""
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.state.prompt_line_width",
+        lambda: 60,
+    )
+    spinner = SpinnerState(frames=("◌",))
     spinner.start()
+    spinner.started_at = time.monotonic() - 3.0
     spinner.set_phase(SpinnerState.THINKING_PHASE)
     rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
-    assert SpinnerState.THINKING_PHASE in rendered
-    assert "Press ESC to stop" in rendered
+    assert rendered.startswith("  ◌ Thinking… 3s")
+    assert rendered.endswith("Esc to stop")
+    assert len(rendered) == 60
+    assert "Press" not in rendered
+    assert "(" not in rendered
+    assert "[" not in rendered
 
 
-def test_status_row_uses_single_spaces_around_elapsed_badge() -> None:
-    """Hint and badge sit one cell apart and the badge hugs its brackets."""
+def test_status_row_keeps_tool_and_elapsed_together_before_stop_hint() -> None:
+    """Live work and elapsed detail stay grouped before the right-side hint."""
     spinner = SpinnerState()
     spinner.start()
     spinner.set_phase(SpinnerState.INVOKING_TOOLS_PHASE)
     spinner.set_active_action("scan github ci health")
     rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
-    assert re.search(r"scan github ci health \(Press ESC to stop\) \[\d+s\]$", rendered)
-    assert "  " not in rendered
+    assert re.search(r"scan github ci health \d+s {2,}Esc to stop$", rendered)
 
     spinner.bytes_in = 40_000
     rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
-    assert re.search(r"\(Press ESC to stop\) \[\d+s · ↓ \S+ tokens\]$", rendered)
-    assert "  " not in rendered
+    assert re.search(r"\d+s · ↓ \S+ tokens {2,}Esc to stop$", rendered)
 
 
 def test_long_phase_clips_to_one_prompt_column_budget() -> None:

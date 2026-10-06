@@ -68,7 +68,7 @@ def test_busy_keeps_dim_auto_under_thinking() -> None:
     assert "Auto (High)" in plain
     assert "Allow all" in plain
     assert plain.index("Thinking") < plain.index("Auto (High)")
-    assert ui_theme.DIM_ANSI + "Auto (High)" in rendered
+    assert ui_theme.DIM_ANSI + "    Auto (High)" in rendered
 
 
 def test_render_prompt_region_shows_the_auto_status_line() -> None:

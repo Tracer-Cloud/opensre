@@ -138,16 +138,18 @@ def test_streaming_prompt_height_matches_idle_with_live_tool_on_status_row() -> 
     assert "Invoking tools" in plain
 
 
-def test_prompt_region_idle_does_not_lead_with_a_blank_row() -> None:
-    """Idle chrome stays flush; a leading blank under the banner is a hole."""
+def test_prompt_region_idle_separates_status_from_composer() -> None:
+    """Permission chrome stays flush to the banner but breathes above input."""
     session = Session()
-    idle = render_prompt_region(session, ReplState(), SpinnerState()).value
+    idle = _plain(render_prompt_region(session, ReplState(), SpinnerState()).value)
     assert not idle.startswith("\n")
-    assert "\n\n" not in idle
+    assert idle.count("\n\n") == 1
+    assert "Auto (High)" in idle.splitlines()[0]
+    assert idle.splitlines()[-1].startswith(" >")
 
 
 def test_prompt_region_thinking_leads_with_a_blank_row() -> None:
-    """Thinking sits under mid-turn assistant text — one blank so it breathes."""
+    """Thinking is separated from transcript and quieter composer metadata."""
     session = Session()
     spinner = SpinnerState()
     spinner.start()
@@ -160,6 +162,11 @@ def test_prompt_region_thinking_leads_with_a_blank_row() -> None:
     first_content_line = plain.split("\n", 1)[1]
     assert "Thinking" in first_content_line
     assert not plain.startswith("\n\n")
+    lines = plain.splitlines()
+    assert lines[1].startswith("  ")
+    assert lines[2] == ""
+    assert lines[3].startswith("    Auto (High)")
+    assert lines[4].startswith(" >")
 
 
 def test_idle_prompt_has_no_recurring_ready_hint() -> None:
