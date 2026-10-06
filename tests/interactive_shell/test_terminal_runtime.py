@@ -57,6 +57,7 @@ from surfaces.interactive_shell.ui.input_prompt.rendering import _prompt_message
 from surfaces.interactive_shell.ui.input_prompt.style import _build_prompt_style
 from surfaces.interactive_shell.ui.streaming import _CHARS_PER_TOKEN
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
+from surfaces.interactive_shell.ui.transcript_view import TranscriptControl, TranscriptStore
 from surfaces.shared.terminal.components.cpr_stdin import (
     strip_cpr_escape_sequences,
     strip_cpr_sequences,
@@ -171,6 +172,14 @@ def test_build_prompt_session_uses_persistent_history(
     assert prompt.multiline is True
     assert prompt.reserve_space_for_menu == 0
     assert prompt.app.key_bindings is not None
+
+
+def test_full_screen_transcript_keeps_native_mouse_selection_available() -> None:
+    """Mouse reporting prevents the terminal from selecting transcript text."""
+    with create_app_session(input=DummyInput(), output=DummyOutput()):
+        prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
+
+    assert prompt.app.renderer.mouse_support() is False
 
 
 def test_build_prompt_session_installs_growing_bordered_composer() -> None:

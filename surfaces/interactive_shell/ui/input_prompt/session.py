@@ -251,7 +251,9 @@ def build_prompt_session(
             style=_build_prompt_style(),
             erase_when_done=True,
             placeholder=placeholder,
-            mouse_support=transcript is not None,
+            # Keep terminal mouse reporting disabled so users can drag-select
+            # transcript text. PageUp/PageDown retains transcript navigation.
+            mouse_support=False,
         ),
         hide_composer=hide_composer,
         transcript=transcript,
