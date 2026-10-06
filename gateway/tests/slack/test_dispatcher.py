@@ -489,8 +489,8 @@ def test_stop_cancels_in_flight_turn() -> None:
     assert any(post["text"] == "Stopped." for post in messaging.posts)
 
 
-def test_turn_timeout_posts_when_handler_hangs() -> None:
-    """A turn that outruns the timeout gets one visible message + ✗."""
+def test_turn_timeout_marks_the_mention_without_a_thread_reply() -> None:
+    """A turn that outruns the timeout fails the mention and posts nothing."""
     messaging = _FakeMessagingClient()
     release = threading.Event()
 
@@ -507,17 +507,15 @@ def test_turn_timeout_posts_when_handler_hangs() -> None:
     worker.start()
     try:
         deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline and not any(
-            "taking longer" in post["text"].lower() for post in messaging.posts
-        ):
+        while time.monotonic() < deadline and ("add", "x") not in [
+            (r["op"], r["emoji"]) for r in messaging.reactions
+        ]:
             time.sleep(0.02)
     finally:
         release.set()
         worker.join(5.0)
 
-    assert any("taking longer" in post["text"].lower() for post in messaging.posts), (
-        "timeout did not post"
-    )
+    assert messaging.posts == []
     ops = [(r["op"], r["emoji"]) for r in messaging.reactions]
     assert ("add", "x") in ops
     # The timeout owns the outcome, so a late normal completion must not stack a

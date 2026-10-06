@@ -108,6 +108,10 @@ class SlackTurnOutput:
     def finalize(self, answer: str) -> None:
         self._finalize(answer)
 
+    def abandon(self) -> None:
+        """Stop the loading indicator without posting a thread reply."""
+        self._stop_loading()
+
     def finish_streamed_response(self, answer: str) -> None:
         self._finalize(answer or EMPTY_RESPONSE_MESSAGE)
 

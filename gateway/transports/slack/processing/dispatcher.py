@@ -10,7 +10,6 @@ from config.constants.gateway import (
     CREDITS_DENIED_MESSAGE,
     NO_ACTIVE_TURN_MESSAGE,
     TURN_ERROR_MESSAGE,
-    TURN_TIMEOUT_MESSAGE,
     UNAUTHORIZED_MESSAGE,
     USER_STOP_MESSAGE,
 )
@@ -262,10 +261,12 @@ class SlackTurnDispatcher:
                     inbound.channel_id,
                     session.session_id[:8],
                 )
+                # A timeout is not an answer. Posting it under the mention
+                # looks like the result and blocks the real reply.
                 try:
-                    output.finalize(TURN_TIMEOUT_MESSAGE)
+                    output.abandon()
                 except Exception:
-                    self._logger.debug("[slack-gateway] timeout finalize failed", exc_info=True)
+                    self._logger.debug("[slack-gateway] timeout abandon failed", exc_info=True)
                 mark_turn_failed(
                     self._messaging,
                     channel=inbound.channel_id,

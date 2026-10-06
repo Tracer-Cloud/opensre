@@ -45,9 +45,9 @@ class SlackGatewaySettings(StrictConfigModel):
     max_concurrent_turns: int = Field(default_factory=turn_limit_for_profile, ge=1)
     # Slack's AI-app guidance: call chat.update at most once every 3 seconds.
     status_update_interval_seconds: float = Field(default=3.0, gt=0)
-    # Long enough for a multi-tool turn to finish and post its answer. A 240s
-    # cutoff posted "try again" while the work was still running.
-    turn_timeout_seconds: float = Field(default=900.0, gt=0)
+    # A GitHub fix-and-merge turn can run well past 15 minutes. The old 4-minute
+    # cutoff posted "try again" in the thread and dropped the real answer.
+    turn_timeout_seconds: float = Field(default=1800.0, gt=0)
     # Empty uses the worker's default path; the container health check reads it.
     heartbeat_path: str = ""
 
@@ -72,7 +72,7 @@ class SlackGatewayEnv(BaseSettings):
     allow_open_workspace: bool = False
     gateway_max_concurrent: int = Field(default_factory=turn_limit_for_profile, ge=1)
     gateway_status_update_interval_seconds: float = Field(default=3.0, gt=0)
-    gateway_turn_timeout_seconds: float = Field(default=900.0, gt=0)
+    gateway_turn_timeout_seconds: float = Field(default=1800.0, gt=0)
     gateway_heartbeat_path: str = ""
 
     @field_validator("allowed_users", mode="before")
