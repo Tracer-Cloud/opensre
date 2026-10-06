@@ -111,7 +111,10 @@ def test_entry_cap_never_drops_output_that_has_not_reached_scrollback() -> None:
 
 def _visible(view: TranscriptControl, *, width: int = 20, height: int = 3) -> list[str]:
     content = view.create_content(width=width, height=height)
-    return ["".join(text for _style, text in content.get_line(i)).rstrip() for i in range(height)]
+    return [
+        "".join(text for _style, text in content.get_line(i)).rstrip()
+        for i in range(content.line_count)
+    ]
 
 
 def test_scrolled_back_view_holds_its_passage_while_output_streams() -> None:
@@ -143,7 +146,10 @@ def test_view_cannot_scroll_past_the_oldest_row() -> None:
 
     view.scroll(100)
     content = view.create_content(width=20, height=3)
-    lines = ["".join(text for _style, text in content.get_line(i)).rstrip() for i in range(3)]
+    lines = [
+        "".join(text for _style, text in content.get_line(i)).rstrip()
+        for i in range(content.line_count)
+    ]
 
     assert lines == ["line 0", "line 1", "line 2"]
     view.scroll_to_bottom()
@@ -302,3 +308,41 @@ def test_output_racing_the_menu_end_is_still_recorded() -> None:
     proxy.close()
 
     assert _plain_rows(store, width=40) == ["after the menu"]
+
+
+def test_short_transcript_is_sized_to_its_rows_so_the_composer_follows_it() -> None:
+    store = TranscriptStore()
+    store.append_text("banner\nwelcome\n")
+    view = TranscriptControl(store)
+
+    # The window asks for its two rows, not the 40 the screen could give, so the
+    # composer below it stays under the last line instead of at the floor.
+    assert view.preferred_height(20, 40, False, None) == 2
+    assert _visible(view, height=2) == ["banner", "welcome"]
+
+    store.append_text("reply\n")
+    assert view.preferred_height(20, 40, False, None) == 3
+    assert _visible(view, height=3) == ["banner", "welcome", "reply"]
+
+
+def test_overflowing_transcript_still_fills_the_screen_and_anchors_to_the_newest_row() -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)))
+    view = TranscriptControl(store)
+
+    assert view.preferred_height(20, 3, False, None) == 3
+    assert _visible(view) == ["line 7", "line 8", "line 9"]
+
+
+def test_preferred_height_does_not_move_a_scrolled_back_view() -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)))
+    view = TranscriptControl(store)
+    view.scroll(4)
+    before = _visible(view)
+
+    # A layout pass calls preferred_height before create_content; it must not
+    # consume the scroll reconciliation that create_content owns.
+    for _ in range(3):
+        assert view.preferred_height(20, 3, False, None) == 3
+    assert _visible(view) == before

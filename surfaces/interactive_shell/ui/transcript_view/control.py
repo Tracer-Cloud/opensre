@@ -6,7 +6,7 @@ import threading
 from typing import TYPE_CHECKING
 
 from prompt_toolkit.formatted_text import StyleAndTextTuples
-from prompt_toolkit.layout.controls import UIContent, UIControl
+from prompt_toolkit.layout.controls import GetLinePrefixCallable, UIContent, UIControl
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 
 from surfaces.interactive_shell.ui.transcript_view.store import (
@@ -23,7 +23,12 @@ _WHEEL_ROWS = 3
 
 
 class TranscriptControl(UIControl):
-    """Bottom-anchored transcript viewport, scrolled by rows from the newest line.
+    """Transcript viewport: as tall as its rows until they fill the screen.
+
+    Below a screenful the control asks for exactly the rows it has, so the
+    composer sits directly under the last line and walks down as output
+    arrives. Once the rows overflow, the view anchors to the newest line and
+    older rows scroll off the top.
 
     Only the rows needed for the visible window are rendered, so a resize costs
     one screen of rendering however long the session is. While scrolled back,
@@ -56,13 +61,29 @@ class TranscriptControl(UIControl):
             self._offset = max(0, self._offset - offset + window.offset)
             self._mark = window.mark
         visible: list[Row] = window.rows
-        if len(visible) < height:
-            visible = [() for _ in range(height - len(visible))] + visible
 
         def get_line(index: int) -> StyleAndTextTuples:
             return list(visible[index])
 
         return UIContent(get_line=get_line, line_count=len(visible), show_cursor=False)
+
+    def preferred_height(
+        self,
+        width: int,
+        max_available_height: int,
+        _wrap_lines: bool,
+        _get_line_prefix: GetLinePrefixCallable | None,
+    ) -> int:
+        """Rows this transcript wants, capped at what the screen can give.
+
+        Deliberately read-only: ``create_content`` owns the scroll
+        reconciliation, so computing this through it would apply a concurrent
+        scroll twice in one paint.
+        """
+        with self._lock:
+            offset, anchor = self._offset, self._mark
+        window = self._store.window(max(1, width), max(0, max_available_height), offset, anchor)
+        return len(window.rows)
 
     def scroll(self, rows: int) -> None:
         """Move toward older (positive) or newer (negative) rows."""

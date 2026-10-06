@@ -39,8 +39,6 @@ from surfaces.interactive_shell.ui.transcript_view import TranscriptControl
 
 _COMPOSER_MAX_EDIT_ROWS = 8
 _COMPOSER_MIN_FRAME_ROWS = 3
-# Larger than any terminal: the transcript takes every row the chrome leaves.
-_TRANSCRIPT_PREFERRED_ROWS = 100_000
 
 
 def _limit_editable_height(main_input: HSplit) -> HSplit:
@@ -209,7 +207,12 @@ def _install_prompt_frame(
             0,
             Window(
                 transcript,
-                height=Dimension(min=0, preferred=_TRANSCRIPT_PREFERRED_ROWS),
+                # No preferred height: the control reports its own row count, so
+                # the composer sits under the last line until the transcript
+                # fills the screen. dont_extend_height keeps the leftover rows
+                # for the HSplit's TOP-alignment filler instead of this window.
+                height=Dimension(min=0),
+                dont_extend_height=True,
                 wrap_lines=False,
                 always_hide_cursor=True,
             ),
