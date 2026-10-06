@@ -15,6 +15,7 @@ import os
 from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -59,11 +60,32 @@ def require_local_or_token(request: Request) -> JSONResponse | None:
         return JSONResponse({"error": "unauthorized"}, status_code=HTTPStatus.UNAUTHORIZED)
     client_host = request.client.host if request.client else ""
     if client_host in _LOOPBACK_HOSTS:
+        if _browser_reached_loopback(request):
+            return JSONResponse({"error": "forbidden"}, status_code=HTTPStatus.FORBIDDEN)
         return None
     return JSONResponse(
         {"error": "set OPENSRE_ALERT_LISTENER_TOKEN to accept non-loopback callers"},
         status_code=HTTPStatus.FORBIDDEN,
     )
+
+
+def _url_host(value: str) -> str:
+    """Hostname of ``value`` (a URL or ``host[:port]``), lower-cased, brackets stripped."""
+    parsed = urlsplit(value if "//" in value else f"//{value}")
+    return (parsed.hostname or "").lower()
+
+
+def _browser_reached_loopback(request: Request) -> bool:
+    """Whether a web page, not a local program, sent this loopback request.
+
+    A page on another site can post to ``127.0.0.1`` and arrives with a foreign
+    ``Origin``; a DNS-rebound page arrives with a foreign ``Host``. Local tools
+    such as ``curl`` send a loopback ``Host`` and no ``Origin``.
+    """
+    origin = request.headers.get("origin")
+    if origin is not None and _url_host(origin) not in _LOOPBACK_HOSTS:
+        return True
+    return _url_host(request.headers.get("host", "")) not in _LOOPBACK_HOSTS
 
 
 @router.get("/healthz")

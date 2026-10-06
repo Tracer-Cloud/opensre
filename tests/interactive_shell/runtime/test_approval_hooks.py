@@ -85,5 +85,5 @@ def test_other_tools_are_not_asked_about() -> None:
     assert asked == [] and printed.getvalue() == ""
 
 
-def test_no_tool_asks_at_every_auto_level() -> None:
-    assert not ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES
+def test_generated_code_asks_at_every_auto_level() -> None:
+    assert frozenset({"execute_python_code"}) == ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES

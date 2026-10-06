@@ -2,7 +2,7 @@
 
 Contract:
   POST {OPENSRE_WEBAPP_URL}/api/credits/consume
-  Authorization: Bearer <shared AGENT_USAGE_SECRET>
+  Authorization: Bearer <OPENSRE_ACCOUNT_TOKEN>  (org-scoped gateway token)
   Idempotency-Key: <org>:<caller key>   (optional; see ``idempotency_key``)
   body: {"amount": <number>, "organizationId": <org>, "reason": <str>}
   Success (2xx): {"balance", "consumed", "reason"}.
@@ -25,13 +25,13 @@ from typing import Any
 
 import httpx
 
+from config.account import agent_bearer_token
 from config.constants.billing import (
     CREDITS_HTTP_TIMEOUT_SECONDS,
     CREDITS_IDEMPOTENCY_HEADER,
     WEBAPP_URL_ENV,
 )
 from config.constants.organization import organization_id
-from gateway.core.billing.webapp_auth import webapp_shared_secret
 
 logger = logging.getLogger(__name__)
 
@@ -103,9 +103,9 @@ def consume_credits(
         _log_metering_disabled_once()
         return CreditsOutcome.DISABLED
 
-    # The deployed webapp route deliberately accepts the shared fleet secret;
-    # it does not accept Clerk M2M tokens without a per-org machine binding.
-    token = webapp_shared_secret()
+    # The org-scoped gateway token binds the organization at the webapp; the
+    # shared fleet secret is a rollout fallback the webapp must opt in to.
+    token = agent_bearer_token()
     org = (organization_id or organization_id_for_silo()).strip()
     if not (token and org):
         logger.error("[credits] metering misconfigured: hosted authentication is incomplete")

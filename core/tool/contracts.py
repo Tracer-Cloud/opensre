@@ -15,6 +15,7 @@ from typing import Any, ClassVar, TypeAlias, Union, cast, get_args, get_origin, 
 
 from pydantic import BaseModel, Field, field_validator
 
+from config.constants.tool_params import config_only_params
 from config.constants.tooling import DEFAULT_APPROVAL_EXPIRY_SECONDS
 from config.strict_config import StrictConfigModel
 from core.domain.types.evidence import EvidenceMapper, EvidenceSource
@@ -582,16 +583,17 @@ class RegisteredTool:
     def _public_input_schema(self) -> dict[str, Any]:
         """Deepcopy + prune injected params once; the shared cache behind
         ``public_input_schema``. ``input_schema`` / ``injected_params`` are fixed
-        at construction, so this is invariant."""
+        at construction, so this is invariant. Config-only names are hidden too."""
         schema = deepcopy(self.input_schema)
         properties = schema.get("properties")
         if not isinstance(properties, dict):
             return schema
-        for injected in self.injected_params:
-            properties.pop(injected, None)
+        hidden = config_only_params(self.name, self.injected_params)
+        for name in hidden:
+            properties.pop(name, None)
         required = schema.get("required")
         if isinstance(required, list):
-            schema["required"] = [name for name in required if name not in self.injected_params]
+            schema["required"] = [name for name in required if name not in hidden]
         return schema
 
     @property

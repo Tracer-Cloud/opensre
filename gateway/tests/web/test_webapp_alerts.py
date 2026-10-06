@@ -27,7 +27,7 @@ def inbox(monkeypatch: pytest.MonkeyPatch) -> Iterator[AlertInbox]:
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(webapp.app, client=_LOOPBACK)
+    return TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
 
 
 def test_healthz_is_ok(client: TestClient) -> None:

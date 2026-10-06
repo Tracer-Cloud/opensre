@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from config.constants.tool_params import config_only_params
 from config.constants.tooling import ToolBlockedBy, ToolSkippedBy
 from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
@@ -742,14 +743,7 @@ def _invoke_runtime_tool(
         )
         return tool.execute(tc.input, context)
 
-    injected = tool.extract_params(tool_sources)
-    kwargs = {**injected, **tc.input}
-    # Vendor-agnostic: each tool declares which extract_params keys must win
-    # over model input (secrets / connection fields). See ``injected_params``.
-    protected = frozenset(getattr(tool, "injected_params", ()) or ())
-    for key, value in injected.items():
-        if key in protected and value not in (None, "", []):
-            kwargs[key] = value
+    kwargs = _model_arguments(tool, tool.extract_params(tool_sources), tc.input)
     if getattr(tool, "accepts_runtime_context", False):
         context = AgentToolContext(
             resolved_integrations=resolved_integrations,
@@ -758,6 +752,21 @@ def _invoke_runtime_tool(
         )
         return tool.run(**kwargs, context=context)
     return tool.run(**kwargs)
+
+
+def _model_arguments(
+    tool: Any, injected: Mapping[str, Any], model_input: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Merge configured values with model input; config-only names come from config alone.
+
+    Other ``extract_params`` keys stay defaults the model may override.
+    """
+    hidden = config_only_params(
+        str(getattr(tool, "name", "")),
+        tuple(getattr(tool, "injected_params", ()) or ()),
+    )
+    allowed_input = {key: value for key, value in model_input.items() if key not in hidden}
+    return {**injected, **allowed_input}
 
 
 def _normalize_result(raw: Any, *, tool_name: str) -> ToolExecutionResult:

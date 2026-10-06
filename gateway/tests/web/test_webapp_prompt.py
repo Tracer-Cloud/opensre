@@ -34,7 +34,7 @@ def queue(monkeypatch: pytest.MonkeyPatch) -> Iterator[PromptQueue]:
 
 def test_a_prompt_is_queued_and_its_result_can_be_read_back(queue: PromptQueue) -> None:
     # Arrange
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
 
     # Act
     submitted = client.post(
@@ -68,7 +68,7 @@ def test_bad_bodies_are_refused_with_a_code(
     queue: PromptQueue, body: dict[str, object], status: HTTPStatus, code: str
 ) -> None:
     # Arrange
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
 
     # Act
     response = client.post("/v1/prompt", json=body)
@@ -80,7 +80,7 @@ def test_bad_bodies_are_refused_with_a_code(
 
 def test_a_full_queue_answers_too_many_prompts(queue: PromptQueue) -> None:
     # Arrange
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
     client.post("/v1/prompt", json={"prompt": "first"})
     assert queue.queued_count() == 1
 
@@ -120,7 +120,7 @@ def test_without_a_gateway_the_route_says_so_instead_of_failing(
 ) -> None:
     # Arrange: the interactive shell serves this app without a prompt queue
     monkeypatch.delenv("OPENSRE_ALERT_LISTENER_TOKEN", raising=False)
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
 
     # Act
     response = client.post("/v1/prompt", json={"prompt": "hi"})
@@ -134,7 +134,7 @@ def test_an_answer_is_queued_as_a_follow_up_only_while_the_prompt_is_asking(
     queue: PromptQueue,
 ) -> None:
     # Arrange: one prompt waiting for an answer, one that is not
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
     asked = queue.submit("fix ci", context={}, actor="u")
     queue.take(timeout_seconds=0.01)
     done = queue.submit("other", context={}, actor="v")
@@ -183,7 +183,7 @@ def test_a_prompt_or_answer_the_store_refused_is_not_accepted(
     store = _UnwritableStore(tmp_path / "prompt-jobs.jsonl")
     queue = PromptQueue(store=store)
     webapp.app.state.prompt_queue = queue
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
     asked = queue.submit("fix ci", context={}, actor="u")
     assert asked is not None and queue.take(timeout_seconds=0.01) is asked
     queue.needs_input(asked, "Which branch?")
@@ -223,7 +223,7 @@ def test_a_conversation_is_new_or_a_canonical_id_because_it_names_a_session_file
     queue: PromptQueue, conversation: object, accepted: bool
 ) -> None:
     # Arrange
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
 
     # Act
     response = client.post("/v1/prompt", json={"prompt": "hi", "conversation": conversation})
@@ -244,7 +244,7 @@ def test_cancel_settles_a_queued_prompt_accepts_a_running_one_and_refuses_a_sett
     queue: PromptQueue,
 ) -> None:
     # Arrange: max_queued=1, so take the running prompt before queueing the next
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
     running = queue.submit("running", context={}, actor="u")
     assert running is not None and queue.take(timeout_seconds=0.01) is running
     queued = queue.submit("queued", context={}, actor="u")
@@ -270,7 +270,7 @@ def test_cancel_settles_a_queued_prompt_accepts_a_running_one_and_refuses_a_sett
 
 def test_cancel_naming_an_actor_reaches_only_that_actors_prompt(queue: PromptQueue) -> None:
     # Arrange
-    client = TestClient(webapp.app, client=_LOOPBACK)
+    client = TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
     alices = queue.submit("alice's prompt", context={}, actor="alice")
     assert alices is not None
 

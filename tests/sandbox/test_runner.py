@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from config.constants import OPENSRE_TMP_DIR, ensure_opensre_tmp_dir
+from config.constants.paths import host_home
 from infrastructure.safety.sandbox.runner import (
     MAX_TIMEOUT,
     SandboxResult,
@@ -121,8 +122,8 @@ class TestSandboxRunnerBasicExecution:
         ]
         assert commands[1][1:3] == ["-I", "-c"]
         assert commands[2][0] != frozen_executable
-        assert commands[2][1:4] == ["-I", "-X", "utf8"]
-        assert Path(commands[2][4]).suffix == ".py"
+        assert commands[2][1:5] == ["-I", "-B", "-X", "utf8"]
+        assert Path(commands[2][5]).suffix == ".py"
 
     def test_frozen_interpreter_unavailable_when_all_candidates_are_broken(
         self,
@@ -364,3 +365,30 @@ class TestSandboxResultModel:
             timed_out=True,
         )
         assert r.success is False
+
+
+class TestSandboxFileAccessPolicy:
+    def test_low_level_write_outside_tmp_blocked(self, tmp_path: Path) -> None:
+        target = tmp_path / "outside.txt"
+        code = f"import os; os.open({str(target)!r}, os.O_WRONLY | os.O_CREAT)"
+        result = run_python_sandbox(code)
+        assert not result.success
+        assert not target.exists()
+
+    def test_opensre_home_is_unreadable(self) -> None:
+        code = f"import os; os.listdir({str(host_home())!r})"
+        result = run_python_sandbox(code)
+        assert not result.success
+        assert "Credential locations" in result.stderr
+
+    def test_tempfile_lands_in_the_writable_root(self) -> None:
+        code = "import tempfile\nwith tempfile.NamedTemporaryFile() as f:\n    print(f.name)"
+        result = run_python_sandbox(code)
+        assert result.success, result.stderr
+        assert os.path.realpath(result.stdout.strip()).startswith(os.path.realpath(OPENSRE_TMP_DIR))
+
+    @pytest.mark.skipif(not hasattr(os, "posix_spawn"), reason="POSIX only")
+    def test_starting_another_program_blocked(self) -> None:
+        result = run_python_sandbox("import os; os.posix_spawn('/usr/bin/true', ['true'], {})")
+        assert not result.success
+        assert "PermissionError" in result.stderr

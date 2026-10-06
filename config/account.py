@@ -23,7 +23,7 @@ from config.constants.account import (
     OPENSRE_APP_URL_ENV,
     OPENSRE_GATEWAY_LLM_MODEL_DEFAULT,
 )
-from config.constants.billing import WEBAPP_URL_ENV
+from config.constants.billing import USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from config.constants.hosted_gateway import HOSTED_GATEWAY_LOOPBACK_HOSTS
 from config.constants.llm import OPENAI_API_KEY_ENV, OPENAI_BASE_URL_ENV
 from config.constants.paths import host_home
@@ -198,6 +198,16 @@ def resolve_account_token() -> str:
     return resolve_secret(OPENSRE_ACCOUNT_TOKEN_ENV)
 
 
+def agent_bearer_token() -> str:
+    """Bearer for gateway → webapp agent routes (vault, credits, Pipedream).
+
+    Prefers this gateway's org-scoped account token, from which the webapp takes
+    the organization. The shared fleet secret is a fallback only while
+    deployments move to the token; the webapp refuses it unless opted in.
+    """
+    return resolve_account_token() or (os.getenv(USAGE_SECRET_ENV) or "").strip()
+
+
 def stored_account_token() -> str:
     """Return the file-stored account token, ignoring any environment override."""
     return resolve_stored_secret(OPENSRE_ACCOUNT_TOKEN_ENV)
@@ -256,6 +266,7 @@ def hosted_openai_env() -> dict[str, str] | None:
 __all__ = [
     "AccountRecord",
     "AccountLLMRoute",
+    "agent_bearer_token",
     "account_llm_route",
     "account_metadata_path",
     "delete_account_record",
