@@ -1,12 +1,9 @@
-"""Slack turn output: streamed timeline reply with placeholder-edit fallback.
+"""Slack turn output: one reply, posted when the answer is final.
 
-Preferred delivery is Slack's streaming surface (``chat.startStream`` →
-``chat.appendStream`` → ``chat.stopStream``): tool progress renders as
-timeline task cards and the answer streams as native markdown, like Claude
-Tag. When streaming is unavailable (feature-gated workspace, old plan, API
-error) this class falls back to the classic flow — one status placeholder
-posted in-thread, edited in place while the turn runs, replaced by the final
-answer.
+Progress is not a thread comment. While the turn runs, Slack shows its
+loading status on the triggering thread (``assistant.threads.setStatus``)
+and the dispatcher keeps an eyes reaction on the mention itself. The only
+message posted is the finished answer.
 """
 
 from __future__ import annotations
@@ -24,13 +21,11 @@ from gateway.transports.slack.client import (
     SlackMessagingClient,
 )
 from gateway.transports.slack.delivery.feedback import feedback_block
-from gateway.transports.slack.delivery.turn_stream import TurnStream
 from infrastructure.text.markdown import tighten_markdown_emphasis
 from infrastructure.text.truncation import truncate
 from infrastructure.turn_host.status_messages import (
     EMPTY_RESPONSE_MESSAGE,
     chat_status_headline,
-    initial_status_message,
     status_from_response_label,
     user_facing_error_message,
 )
@@ -38,9 +33,15 @@ from integrations.slack import markdown_to_slack_mrkdwn
 
 logger = logging.getLogger("gateway")
 
+# Slack drops an assistant status after two minutes if no message is sent.
+# Refresh inside that window so a long turn keeps the indicator on the thread.
+_LOADING_REFRESH_SECONDS = 45.0
+_LOADING_STATUS = "is working on your request..."
+_LOADING_DETAIL_MAX_CHARS = 150
+
 
 class SlackTurnOutput:
-    """Stream assistant output back to the triggering Slack thread."""
+    """Post the finished answer into the triggering Slack thread."""
 
     def __init__(
         self,
@@ -51,47 +52,34 @@ class SlackTurnOutput:
         update_interval_seconds: float = 3.0,
         tool_hooks: ToolExecutionHooks | None = None,
     ) -> None:
-        # Per-turn tool-execution hooks (e.g. the Block Kit approval gate),
-        # read duck-typed by TurnRunner when building the agent.
+        # Per-turn tool-execution hooks, read by TurnRunner. Slack leaves this
+        # empty so write tools run without an Approve/Deny prompt.
         self.tool_hooks = tool_hooks
         # Set per turn by this transport's dispatcher; the turn runner reads it
         # to give tools a cooperative cancel signal on soft timeout or stop.
         self.turn_cancel: threading.Event | None = None
+        _ = update_interval_seconds
         self._client = client
         self._channel_id = channel_id
         self._thread_ts = thread_ts
-        self._update_interval = update_interval_seconds
-        self._last_update = 0.0
         self._started_at = time.monotonic()
-        # RLock: the turn stream's on-start callback deletes the placeholder
-        # from inside an already-locked status/stream call.
-        self._lock = threading.RLock()
-        self._turn_stream = TurnStream(
-            client=client,
-            channel_id=channel_id,
-            thread_ts=thread_ts,
-            update_interval_seconds=update_interval_seconds,
-            on_started=self._drop_placeholder,
+        self._lock = threading.Lock()
+        self._loading_detail = _LOADING_STATUS
+        self._loading_stop = threading.Event()
+        self._show_loading()
+        self._loading_thread = threading.Thread(
+            target=self._refresh_loading,
+            name="slack-turn-loading",
+            daemon=True,
         )
-        self._message_ts = client.post_message(
-            channel=channel_id,
-            text=_as_status_line(initial_status_message()),
-            thread_ts=thread_ts,
-        )
-        if self._message_ts is None:
-            logger.warning(
-                "[slack-turn-output] placeholder post FAILED channel=%s thread_ts=%s; "
-                "final answer will be posted as a new message",
-                channel_id,
-                thread_ts,
-            )
+        self._loading_thread.start()
 
     def print(self, message: str = "") -> None:
         if message:
-            self._set_status(message)
+            self._note_loading(message)
 
     def render_response_header(self, label: str) -> None:
-        self._set_status(status_from_response_label(label))
+        self._note_loading(status_from_response_label(label))
 
     def render_error(self, message: str) -> None:
         # Raw detail to the server log only; the user sees safe generic copy.
@@ -107,25 +95,15 @@ class SlackTurnOutput:
         defer_want_me_to_closer: bool = False,
     ) -> str:
         _ = (label, suppress_if_starts_with)
-        parts: list[str] = []
-        for chunk in chunks:
-            text_chunk = str(chunk)
-            parts.append(text_chunk)
-            with self._lock:
-                if self._turn_stream.append_text(text_chunk):
-                    continue
-            now = time.monotonic()
-            if now - self._last_update >= self._update_interval:
-                self._edit_preview("".join(parts))
-        text = "".join(parts)
+        text = "".join(str(chunk) for chunk in chunks)
         if defer_want_me_to_closer:
-            # Preview may show a drifted closer; finish_streamed_response
-            # publishes the canonical rewrite after gather normalize.
+            # Held until finish_streamed_response publishes the canonical text.
             return text
         return text if self._finalize(text or EMPTY_RESPONSE_MESSAGE) else ""
 
     def set_tool_status(self, status: str) -> None:
-        self._set_status(status)
+        # A Slack loading line is the label only. The argument row stays off Slack.
+        self._note_loading(chat_status_headline(status))
 
     def finalize(self, answer: str) -> None:
         self._finalize(answer)
@@ -133,100 +111,76 @@ class SlackTurnOutput:
     def finish_streamed_response(self, answer: str) -> None:
         self._finalize(answer or EMPTY_RESPONSE_MESSAGE)
 
-    def _set_status(self, status: str) -> None:
-        # A Slack task title is the label row. The argument row stays on the shell.
-        headline = chat_status_headline(status)
-        with self._lock:
-            if self._turn_stream.note_task(headline):
-                return
-        self._edit_preview(_as_status_line(headline))
-
-    def _drop_placeholder(self) -> None:
-        """The streamed message replaces the placeholder — remove it."""
-        with self._lock:
-            ts = self._message_ts
-            self._message_ts = None
-        if ts:
-            self._client.delete_message(channel=self._channel_id, ts=ts)
-
-    def _edit_preview(self, preview: str) -> None:
-        if not self._message_ts:
+    def _note_loading(self, detail: str) -> None:
+        line = " ".join(detail.split())
+        if not line:
             return
-        preview = truncate(preview, SLACK_MAX_MESSAGE_CHARS, suffix="…")
         with self._lock:
-            if self._message_ts and self._client.update_message(
-                channel=self._channel_id, ts=self._message_ts, text=preview
-            ):
-                self._last_update = time.monotonic()
+            self._loading_detail = truncate(line, _LOADING_DETAIL_MAX_CHARS, suffix="…")
+        self._show_loading()
+
+    def _show_loading(self) -> None:
+        setter = getattr(self._client, "set_thread_status", None)
+        if not callable(setter):
+            return
+        with self._lock:
+            detail = self._loading_detail
+        messages = None if detail == _LOADING_STATUS else [detail]
+        try:
+            setter(
+                channel=self._channel_id,
+                thread_ts=self._thread_ts,
+                status=_LOADING_STATUS,
+                loading_messages=messages,
+            )
+        except Exception:
+            logger.debug("[slack-turn-output] loading status failed", exc_info=True)
+
+    def _refresh_loading(self) -> None:
+        while not self._loading_stop.wait(_LOADING_REFRESH_SECONDS):
+            self._show_loading()
+
+    def _stop_loading(self) -> None:
+        self._loading_stop.set()
+        clearer = getattr(self._client, "set_thread_status", None)
+        if not callable(clearer):
+            return
+        try:
+            clearer(
+                channel=self._channel_id,
+                thread_ts=self._thread_ts,
+                status="",
+            )
+        except Exception:
+            logger.debug("[slack-turn-output] clear loading status failed", exc_info=True)
 
     def _finalize(self, answer: str) -> bool:
-        with self._lock:
-            if self._turn_stream.is_open:
-                if self._turn_stream.finish(answer, blocks=self._closing_blocks()):
-                    logger.info(
-                        "outbound channel=%s thread_ts=%s mode=stream chars=%d",
-                        self._channel_id,
-                        self._thread_ts,
-                        len(answer),
-                    )
-                    return True
-                # Stream broke mid-turn: deliver the full answer the classic way.
-                logger.warning(
-                    "[slack-turn-output] stream delivery failed channel=%s thread_ts=%s; "
-                    "falling back to a plain message",
-                    self._channel_id,
-                    self._thread_ts,
-                )
-            elif self._turn_stream.closed:
-                # Prior stopStream (session goal continuation, or a raced finalize).
-                # Open a fresh stream so later-turn answer is not treated as already
-                # delivered; if start fails, fall through to classic post.
-                if self._turn_stream.ensure_started_for_continuation() and self._turn_stream.finish(
-                    answer, blocks=self._closing_blocks()
-                ):
-                    logger.info(
-                        "outbound channel=%s thread_ts=%s mode=stream-continuation chars=%d",
-                        self._channel_id,
-                        self._thread_ts,
-                        len(answer),
-                    )
-                    return True
         final = truncate(markdown_to_slack_mrkdwn(answer), SLACK_MAX_MESSAGE_CHARS, suffix="…")
         blocks = self._final_blocks(answer)
-        mode = "edit"
-        with self._lock:
-            delivered = self._message_ts is not None and self._client.update_message(
-                channel=self._channel_id, ts=self._message_ts, text=final, blocks=blocks
+        delivered = (
+            self._client.post_message(
+                channel=self._channel_id,
+                text=final,
+                thread_ts=self._thread_ts,
+                blocks=blocks,
             )
-            if not delivered:
-                mode = "new-message"
-                delivered = (
-                    self._client.post_message(
-                        channel=self._channel_id,
-                        text=final,
-                        thread_ts=self._thread_ts,
-                        blocks=blocks,
-                    )
-                    is not None
-                )
+            is not None
+        )
         if delivered:
             logger.info(
-                "outbound channel=%s thread_ts=%s mode=%s chars=%d",
+                "outbound channel=%s thread_ts=%s mode=final chars=%d",
                 self._channel_id,
                 self._thread_ts,
-                mode,
                 len(final),
             )
         else:
-            # Both the in-place edit and the fresh post failed: the user is left
-            # staring at the "Digging in…" placeholder with no answer.
             logger.error(
-                "[slack-turn-output] DELIVERY FAILED channel=%s thread_ts=%s chars=%d "
-                "(both update and post rejected)",
+                "[slack-turn-output] DELIVERY FAILED channel=%s thread_ts=%s chars=%d",
                 self._channel_id,
                 self._thread_ts,
                 len(final),
             )
+        self._stop_loading()
         return delivered
 
     def _final_blocks(self, answer: str) -> Blocks | None:
@@ -234,11 +188,10 @@ class SlackTurnOutput:
 
         Slack built the markdown block for LLM output: standard markdown
         (headers, tables, fenced code) renders natively instead of being
-        mangled through mrkdwn. The context footer is the Claude-Tag-style
-        provenance line (who answered, how long it took) rendered in Slack's
-        muted small type. Answers over the block's 12k-char limit stay
-        text-only; the mrkdwn text is always sent alongside as the
-        notification/fallback rendering.
+        mangled through mrkdwn. The context footer is the provenance line
+        (who answered, how long it took) rendered in Slack's muted small type.
+        Answers over the block's 12k-char limit stay text-only; the mrkdwn
+        text is always sent alongside as the notification/fallback rendering.
         """
         body = tighten_markdown_emphasis(answer.strip())
         if not body or len(body) > SLACK_MAX_MARKDOWN_BLOCK_CHARS:
@@ -264,14 +217,3 @@ def _format_duration(seconds: float) -> str:
     if whole < 60:
         return f"{whole}s"
     return f"{whole // 60}m {whole % 60:02d}s"
-
-
-def _as_status_line(status: str) -> str:
-    """Render an in-progress status as one italic mrkdwn line.
-
-    Mirrors the "is thinking…" affordance in Claude Tag / Slack assistant
-    threads: progress reads as muted meta-status, clearly distinct from the
-    final answer that replaces it.
-    """
-    line = " ".join(status.split())
-    return f"_{line}_" if line else line
