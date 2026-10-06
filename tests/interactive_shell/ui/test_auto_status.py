@@ -107,6 +107,40 @@ def test_status_line_renders_below_the_composer_at_a_fixed_height() -> None:
     assert status_row.content.text().value == "Auto (Med)"
 
 
+def test_injected_prompt_session_keeps_status_in_the_message_region() -> None:
+    """A caller-supplied session has no status row, so chrome stays above the box.
+
+    ``create_repl_runtime(pt_session=…)`` and ``InteractiveShellController(
+    pt_session=…)`` skip the branch that frames the prompt, so the status row
+    is never installed on those sessions. Without this fallback they lose the
+    permission and repair chrome for their entire lifetime.
+    """
+    import re
+
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import DummyInput
+    from prompt_toolkit.output import DummyOutput
+
+    from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
+    from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
+
+    session = Session()
+    session.terminal.auto_level = AutoLevel.HIGH
+    with create_app_session(input=DummyInput(), output=DummyOutput()):
+        injected: PromptSession[str] = PromptSession()
+        builder = PromptBuilder(session, ReplState(), SpinnerState(), pt_session=injected)
+        assert not builder._status_row_installed
+        plain = re.sub(
+            r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07",
+            "",
+            builder.message_with_spinner().value,
+        )
+
+    assert "Auto (High)" in plain
+    assert "Allow all" in plain
+
+
 def test_confirmation_region_height_is_constant_while_confirming() -> None:
     """The Yes/No block is a taller modal than the idle prompt, but its own
     height must not change as the arrow selection moves between the options."""

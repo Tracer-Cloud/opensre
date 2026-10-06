@@ -14,6 +14,7 @@ by :func:`render_prompt_region`, which ``PromptBuilder`` calls per redraw.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from prompt_toolkit.formatted_text import ANSI
@@ -59,8 +60,20 @@ def render_terminal_ui(
     render_launch_banner(console, session=session, animate=animate)
 
 
-def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerState) -> ANSI:
+def render_prompt_region(
+    session: Session,
+    state: ReplState,
+    spinner: SpinnerState,
+    *,
+    status_line: Callable[[], str] | None = None,
+) -> ANSI:
     """Compose the live prompt region: context line plus rule and input prefix.
+
+    ``status_line`` is the fallback for a prompt session this process did not
+    build: the permission/CI row normally lives under the composer, but a
+    caller-supplied session's layout is not ours to reframe, so its chrome is
+    folded back into this string above the box. Leave it ``None`` whenever the
+    frame already carries that row, or it renders twice.
 
     The top line is the pending confirmation prompt when one is active,
     otherwise Thinking / Invoking while a turn is running, then the ``/auto``
@@ -126,9 +139,12 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
 
     # A pending confirmation renders a stacked, arrow-navigable Yes/No choice
     # (box hidden). Density matches the streaming stack: status → Auto → composer.
+    # Chrome for a session whose frame has no status row (see ``status_line``).
+    fallback = f"{strip_cpr_sequences(status_line())}\n" if status_line is not None else ""
+
     if state.is_awaiting_confirmation():
         choice = _confirmation_block(state)
-        return ANSI(f"{plan_prefix}{choice}\n{base}")
+        return ANSI(f"{plan_prefix}{choice}\n{fallback}{base}")
 
     if state.is_ctrl_c_exit_hint_visible():
         prefix = prompt_rendering.ctrl_c_exit_hint_ansi()
@@ -152,8 +168,8 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
     # renders on a fixed row under the box, so it never moves with the spinner.
     status_lead = "\n" if prefix and not plan_prefix else ""
     if prefix:
-        return ANSI(f"{plan_prefix}{status_lead}{prefix}\n\n{base}")
-    return ANSI(f"{plan_prefix}{base}")
+        return ANSI(f"{plan_prefix}{status_lead}{prefix}\n\n{fallback}{base}")
+    return ANSI(f"{plan_prefix}{fallback}{base}")
 
 
 _CONFIRM_HINT = "↑↓ Navigate • Enter confirm • Esc cancel"

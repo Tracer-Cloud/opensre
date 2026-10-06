@@ -80,6 +80,10 @@ class PromptBuilder:
         self._submitted: asyncio.Queue[str] = asyncio.Queue()
         self._prompt_task: asyncio.Task[str] | None = None
         self._expand_in_flight: bool = False
+        # True once this builder frames its own session (which installs the
+        # status row). An injected ``pt_session`` keeps whatever layout it
+        # arrived with, so its chrome has to stay in the message region.
+        self._status_row_installed: bool = False
         self.transcript = transcript or TranscriptStore()
         # Set only when this builder makes the session: the full-screen view.
         self.transcript_view: TranscriptControl | None = None
@@ -108,6 +112,7 @@ class PromptBuilder:
                 transcript=self.transcript_view,
                 status_line=self._status_line,
             )
+            self._status_row_installed = True
             self.session.terminal.prompt_history_backend = self.pt_session.history
 
         cancel_kb = build_cancel_key_bindings(self.state)
@@ -198,7 +203,14 @@ class PromptBuilder:
         self.loop.call_soon_threadsafe(_exit_prompt_app)
 
     def message_with_spinner(self) -> ANSI:
-        return render_prompt_region(self.session, self.state, self.spinner)
+        # Only a session this builder framed carries the status row under its
+        # composer; an injected one keeps the chrome in the message region.
+        return render_prompt_region(
+            self.session,
+            self.state,
+            self.spinner,
+            status_line=None if self._status_row_installed else self._status_line,
+        )
 
     def _accept_prompt_buffer(self, buffer: Buffer) -> bool:
         """Queue accepted text while keeping the prompt application alive."""
