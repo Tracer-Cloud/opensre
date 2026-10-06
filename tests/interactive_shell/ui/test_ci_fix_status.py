@@ -65,6 +65,35 @@ def test_tool_completion_updates_prompt_from_memory_even_when_save_fails(
     assert session.terminal.ci_fix_count_fn is None
 
 
+def test_chip_gives_way_before_the_autonomy_level_truncates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A visible CI chip must never cost the level its last characters.
+
+    The chip-fit budget has to cover the gutter ``auto_status_ansi`` prepends
+    and the ellipsis column ``clip_prompt_text`` reserves. Reserving only
+    ``len("Auto (High)")`` left widths ~29-35 rendering
+    ``Auto (Hi… · CI/CD fixes (0)`` — strictly worse than one column narrower,
+    which drops the chip and shows the level in full.
+    """
+    from config.constants import CI_FIX_COUNT_LABEL
+
+    session = Session()
+    for count in (0, 3):
+        session.terminal.ci_fix_count_fn = lambda bound=count: bound
+        for width in range(20, 60):
+            monkeypatch.setattr(ci_fix_status, "prompt_line_width", lambda width=width: width)
+            monkeypatch.setattr(
+                "surfaces.interactive_shell.ui.auto_status.prompt_line_width",
+                lambda width=width: width,
+            )
+            plain = fragment_list_to_text(
+                to_formatted_text(ANSI(ci_fix_status.prompt_status_ansi(session)))
+            )
+            if CI_FIX_COUNT_LABEL in plain:
+                assert "Auto (High)" in plain, f"level truncated beside chip at width {width}"
+
+
 def test_zero_chip_is_dim_and_live_line_fits_narrow_terminals(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

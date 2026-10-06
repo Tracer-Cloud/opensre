@@ -11,7 +11,10 @@ from surfaces.interactive_shell.ui.input_prompt.layout import clip_prompt_text, 
 if TYPE_CHECKING:
     from surfaces.interactive_shell.session import Session
 
-_STATUS_TEXT_INDENT = "    "
+# Gutter that aligns this row's text with the spinner row above (two columns of
+# indent plus the glyph and its space). Public because a caller passing
+# ``max_width`` has to reserve it before deciding what else fits on the row.
+STATUS_TEXT_INDENT = "    "
 
 
 def auto_status_ansi(session: Session, *, quiet: bool = False, max_width: int | None = None) -> str:
@@ -21,7 +24,7 @@ def auto_status_ansi(session: Session, *, quiet: bool = False, max_width: int | 
     The model id lives on ``/model`` and ``?``, not this chrome.
     """
     level = getattr(session.terminal, "auto_level", DEFAULT_AUTO_LEVEL)
-    left = f"{_STATUS_TEXT_INDENT}{format_auto_status_bar(level)}"
+    left = f"{STATUS_TEXT_INDENT}{format_auto_status_bar(level)}"
     width = prompt_line_width() if max_width is None else max_width
     clipped = clip_prompt_text(left, width)
     title_end = clipped.find(" · ")
