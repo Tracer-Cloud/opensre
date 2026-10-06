@@ -906,7 +906,7 @@ def _pipedream_source() -> dict[str, Any]:
     }
 
 
-def _patch_pipedream_runtime(mp: pytest.MonkeyPatch, failing: str) -> None:
+def _patch_pipedream_proxy_runtime(mp: pytest.MonkeyPatch, failing: str) -> None:
     """Force the webapp proxy call the tool reports."""
     from integrations.pipedream.tools.pipedream_tool import tool as mod
 
@@ -915,7 +915,7 @@ def _patch_pipedream_runtime(mp: pytest.MonkeyPatch, failing: str) -> None:
 
 def _pipedream_list_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        _patch_pipedream_runtime(mp, "list_proxy_tools")
+        _patch_pipedream_proxy_runtime(mp, "list_proxy_tools")
 
     def invoke() -> dict[str, Any]:
         from integrations.pipedream.tools.pipedream_tool import list_pipedream_tools
@@ -933,7 +933,7 @@ def _pipedream_list_case() -> ToolFailureCase:
 
 def _pipedream_call_tool_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        _patch_pipedream_runtime(mp, "call_proxy_tool")
+        _patch_pipedream_proxy_runtime(mp, "call_proxy_tool")
 
     def invoke() -> dict[str, Any]:
         from integrations.pipedream.tools.pipedream_tool import call_pipedream_tool
