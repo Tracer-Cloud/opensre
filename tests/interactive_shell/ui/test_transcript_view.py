@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import sys
 import threading
@@ -302,3 +303,44 @@ def test_output_racing_the_menu_end_is_still_recorded() -> None:
     proxy.close()
 
     assert _plain_rows(store, width=40) == ["after the menu"]
+
+
+@pytest.mark.asyncio
+async def test_full_screen_composer_fits_a_three_row_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input.defaults import create_pipe_input
+
+    from surfaces.interactive_shell.ui.input_prompt import build_prompt_session
+
+    # TERM=dumb (common in CI) sends prompt_async down a plain-prompt path that
+    # never renders this layout.
+    monkeypatch.setenv("TERM", "xterm-256color")
+    terminal = io.StringIO()
+    output = Vt100_Output(
+        terminal, get_size=lambda: Size(rows=3, columns=33), term="xterm", enable_cpr=False
+    )
+    with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=output):
+        prompt = build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
+        task = asyncio.create_task(prompt.prompt_async("", bottom_toolbar=""))
+        try:
+            pipe_input.send_text("draft")
+            # Wait for a paint that settles the question either way, not a fixed sleep.
+            deadline = asyncio.get_running_loop().time() + 5.0
+            painted = ""
+            while "draft" not in painted and "Window too small" not in painted:
+                assert asyncio.get_running_loop().time() < deadline, "the prompt never painted"
+                await asyncio.sleep(0.02)
+                painted = terminal.getvalue()
+            pipe_input.send_text("\r")
+            await asyncio.wait_for(task, timeout=5.0)
+        finally:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+    # The spinner row yields to the composer instead of "Window too small".
+    assert "Window too small" not in painted
+    assert "draft" in painted

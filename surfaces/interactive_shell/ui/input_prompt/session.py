@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.filters import Condition, has_completions, has_focus, is_done, to_filter
@@ -179,6 +179,7 @@ def _install_prompt_frame(
     # parks Auto/composer at the bottom of a hollow terminal.
     children: list[AnyContainer] = [framed_input, *root.children[1:]]
     if transcript is not None:
+        _let_bottom_toolbar_collapse(root.children[1:])
         children.insert(
             0,
             Window(
@@ -192,6 +193,21 @@ def _install_prompt_frame(
         session.app.renderer.full_screen = True
     session.layout.container = HSplit(children, align=VerticalAlign.TOP)
     return session
+
+
+def _let_bottom_toolbar_collapse(containers: Sequence[AnyContainer]) -> None:
+    """Let the spinner toolbar row give way so the composer fits a 3-row window.
+
+    prompt-toolkit sizes it ``min=1``; full screen, that one row tipped a short
+    terminal into "Window too small" while the composer itself still fit.
+    """
+    for container in containers:
+        if (
+            isinstance(container, ConditionalContainer)
+            and isinstance(container.content, Window)
+            and container.content.style == "class:bottom-toolbar"
+        ):
+            container.content.height = Dimension(min=0, preferred=1)
 
 
 def build_prompt_session(

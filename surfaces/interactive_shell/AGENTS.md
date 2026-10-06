@@ -190,6 +190,9 @@ owning area rather than adding more logic to the caller.
   background output — see the CPR gotcha under Slash commands above. Prefer
   append-only, paragraph-buffered, or throttled rendering paths that do not
   corrupt the editable prompt.
+- Anything that prints to, paints on, or resizes the terminal follows
+  [`ui/AGENTS.md`](ui/AGENTS.md) (full-screen transcript rules and the
+  mandatory local resize/exit verification).
 
 ## Shell, subprocesses, and local system effects
 
