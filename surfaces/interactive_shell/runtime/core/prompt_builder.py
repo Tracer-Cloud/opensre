@@ -21,6 +21,7 @@ from surfaces.interactive_shell.runtime.core.state import (
 )
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import input_prompt
+from surfaces.interactive_shell.ui.ci_fix_status import prompt_status_ansi
 from surfaces.interactive_shell.ui.hooks import (
     install_confirmation_key_bindings,
     install_output_expand_key_bindings,
@@ -41,7 +42,10 @@ from surfaces.interactive_shell.ui.transcript_view import (
     TranscriptStore,
     render_for_scrollback,
 )
-from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
+from surfaces.shared.terminal.components.cpr_stdin import (
+    drain_stale_cpr_bytes,
+    strip_cpr_sequences,
+)
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -88,6 +92,13 @@ class PromptBuilder:
         """
         return typing_box_hidden(self.session, self.state)
 
+    def _status_line(self) -> str:
+        """Permission/CI chrome for the fixed row under the composer.
+
+        Stays DIM while a turn streams so the spinner above keeps the accent.
+        """
+        return strip_cpr_sequences(prompt_status_ansi(self.session, quiet=self.spinner.streaming))
+
     def setup(self) -> None:
         if self.pt_session is None:
             self.transcript_view = TranscriptControl(self.transcript)
@@ -95,6 +106,7 @@ class PromptBuilder:
                 self.session,
                 hide_composer=self._composer_hidden,
                 transcript=self.transcript_view,
+                status_line=self._status_line,
             )
             self.session.terminal.prompt_history_backend = self.pt_session.history
 

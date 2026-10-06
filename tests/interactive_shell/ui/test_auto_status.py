@@ -11,15 +11,14 @@ def test_high_auto_shows_allow_all_permission() -> None:
     """High is the default — the bar must still say what High permits."""
     import re
 
-    from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
-    from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
+    from surfaces.interactive_shell.ui.ci_fix_status import prompt_status_ansi
 
     session = Session()
     session.terminal.auto_level = AutoLevel.HIGH
     plain = re.sub(
         r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07",
         "",
-        render_prompt_region(session, ReplState(), SpinnerState()).value,
+        prompt_status_ansi(session),
     )
     assert "Auto (High)" in plain
     assert "Allow all" in plain
@@ -27,7 +26,7 @@ def test_high_auto_shows_allow_all_permission() -> None:
     med = re.sub(
         r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07",
         "",
-        render_prompt_region(session, ReplState(), SpinnerState()).value,
+        prompt_status_ansi(session),
     )
     assert "Auto (Med)" in med
     assert "Ask shell + edits" in med
@@ -65,26 +64,42 @@ def test_busy_keeps_dim_auto_under_thinking() -> None:
     rendered = render_prompt_region(session, ReplState(), spinner).value
     plain = re.sub(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07", "", rendered)
     assert "Thinking" in plain
-    assert "Auto (High)" in plain
-    assert "Allow all" in plain
-    assert plain.index("Thinking") < plain.index("Auto (High)")
-    assert ui_theme.DIM_ANSI + "    Auto (High)" in rendered
+    # Auto no longer rides the message region: it renders on its own fixed row
+    # under the composer, quiet while the spinner above owns the accent.
+    assert "Auto (High)" not in plain
+    assert ui_theme.DIM_ANSI + "    Auto (High)" in quiet
 
 
-def test_render_prompt_region_shows_the_auto_status_line() -> None:
-    """The live prompt composition must reach ``auto_status_ansi`` so the level shows."""
-    import re
+def test_status_line_renders_below_the_composer_at_a_fixed_height() -> None:
+    """Auto chrome is a one-row window *under* the box, in every state.
 
-    from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
-    from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
+    A height that changes with session state is what misplaces the cursor and
+    strands stale rows below the input (the reason the prompt_toolkit bottom
+    toolbar stays collapsed), so the row is pinned to 1 and never wraps.
+    """
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import DummyInput
+    from prompt_toolkit.layout.containers import FloatContainer, HSplit, Window
+    from prompt_toolkit.output import DummyOutput
 
-    session = Session()
-    session.terminal.auto_level = AutoLevel.MED
+    from surfaces.interactive_shell.ui import input_prompt
 
-    rendered = render_prompt_region(session, ReplState(), SpinnerState()).value
-    plain = re.sub(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07", "", rendered)
+    with create_app_session(input=DummyInput(), output=DummyOutput()):
+        prompt = input_prompt.build_prompt_session(status_line=lambda: "Auto (Med)")
 
-    assert "Auto (Med)" in plain
+    root = prompt.layout.container
+    assert isinstance(root, HSplit)
+    framed_input = root.children[0]
+    assert isinstance(framed_input, FloatContainer)
+    chrome = framed_input.content.children[0]
+    assert isinstance(chrome, HSplit)
+    # before_input, composer, then the settled status row — last, under the box.
+    assert len(chrome.children) == 3
+    status_row = chrome.children[-1]
+    assert isinstance(status_row, Window)
+    assert status_row.height == 1
+    assert not status_row.wrap_lines()
+    assert status_row.content.text().value == "Auto (Med)"
 
 
 def test_confirmation_region_height_is_constant_while_confirming() -> None:

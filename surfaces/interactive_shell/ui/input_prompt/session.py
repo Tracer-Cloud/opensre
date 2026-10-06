@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.filters import Condition, has_completions, has_focus, is_done, to_filter
-from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.formatted_text import ANSI, FormattedText
 from prompt_toolkit.layout.containers import (
     AnyContainer,
     ConditionalContainer,
@@ -17,7 +17,7 @@ from prompt_toolkit.layout.containers import (
     Window,
     to_container,
 )
-from prompt_toolkit.layout.controls import BufferControl
+from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu, MultiColumnCompletionsMenu
 
@@ -75,8 +75,13 @@ def _install_prompt_frame(
     *,
     hide_composer: Callable[[], bool] | None = None,
     transcript: TranscriptControl | None = None,
+    status_line: Callable[[], str] | None = None,
 ) -> PromptSession[str]:
     """Wrap only the editable buffer, leaving live status rows above it.
+
+    ``status_line`` (when given) renders the permission/CI chrome on a fixed
+    row *under* the composer, so the transient region above the box can grow
+    and shrink without moving the settled chrome the user reads.
 
     With ``transcript``, the prompt becomes a full-screen app: the transcript
     fills the rows above the status line and is redrawn from its store at the
@@ -150,10 +155,27 @@ def _install_prompt_frame(
                 filter=~shown,
             ),
         ]
+    # Settled chrome sits under the box so the live region above can grow and
+    # shrink without shifting it. Height is pinned to exactly one row in every
+    # state -- never 0, never 2 -- because a *changing* height below the input
+    # is what misplaces the cursor and strands stale status rows (the reason
+    # ``SpinnerState.toolbar_ansi`` stays empty). ``wrap_lines=False`` holds
+    # that guarantee when a narrow terminal would otherwise fold the row.
+    status_rows: list[AnyContainer] = []
+    if status_line is not None:
+        status_rows = [
+            Window(
+                FormattedTextControl(lambda: ANSI(status_line())),
+                height=1,
+                dont_extend_height=True,
+                wrap_lines=False,
+                always_hide_cursor=True,
+            )
+        ]
     # Pack status + composer at the full prompt width. Last column stays empty
     # for wrap safety.
     chrome = HSplit(
-        [before_input, *box_rows],
+        [before_input, *box_rows, *status_rows],
         width=_live_region_width,
         align=VerticalAlign.TOP,
     )
@@ -199,6 +221,7 @@ def build_prompt_session(
     *,
     hide_composer: Callable[[], bool] | None = None,
     transcript: TranscriptControl | None = None,
+    status_line: Callable[[], str] | None = None,
 ) -> PromptSession[str]:
     def _default_placeholder() -> FormattedText:
         from surfaces.interactive_shell.ui.input_prompt.rendering import (
@@ -228,6 +251,7 @@ def build_prompt_session(
         ),
         hide_composer=hide_composer,
         transcript=transcript,
+        status_line=status_line,
     )
 
 

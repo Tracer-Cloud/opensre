@@ -15,6 +15,7 @@ from prompt_toolkit.output.vt100 import Vt100_Output
 from infrastructure.terminal.prompt_support import repl_reset_ctrl_c_gate
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.ci_fix_status import prompt_status_ansi
 from surfaces.interactive_shell.ui.input_prompt import build_prompt_session
 from surfaces.interactive_shell.ui.input_prompt.key_bindings import (
     build_cancel_key_bindings,
@@ -63,7 +64,7 @@ async def test_background_output_is_inserted_above_the_redrawn_composer(
 
     with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=output):
         session = Session()
-        prompt = build_prompt_session(session)
+        prompt = build_prompt_session(session, status_line=lambda: prompt_status_ansi(session))
         with patch_prompt_stdout(prompt.app, raw=True):
             prompt_task = asyncio.create_task(
                 prompt.prompt_async(
@@ -109,7 +110,7 @@ async def test_ctrl_c_updates_the_live_prompt_before_second_press_exits(
             ),
         ):
             session = Session()
-            prompt = build_prompt_session(session)
+            prompt = build_prompt_session(session, status_line=lambda: prompt_status_ansi(session))
             install_session_key_bindings(prompt, build_cancel_key_bindings(state))
             prompt_task = asyncio.create_task(
                 prompt.prompt_async(
