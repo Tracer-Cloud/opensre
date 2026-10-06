@@ -49,6 +49,7 @@ ConfiguredIntegrationServicesFn = Callable[[], tuple[str, ...]]
 SetupableIntegrationServicesFn = Callable[[], tuple[str, ...]]
 AccountIntegrationsFetcherFn = Callable[[], list[dict[str, Any]]]
 AccountIntegrationsGenerationFn = Callable[[], int]
+FleetVaultConfiguredFn = Callable[[], bool]
 
 
 def _default_fetch_remote(org_id: str, auth_token: str) -> list[dict[str, Any]]:
@@ -102,6 +103,10 @@ def _default_fetch_account_integrations() -> list[dict[str, Any]]:
     return []
 
 
+def _default_fleet_vault_configured() -> bool:
+    return False
+
+
 def _default_account_integrations_generation() -> int:
     return 0
 
@@ -132,6 +137,7 @@ class IntegrationResolutionAdapters:
     configured_services: ConfiguredIntegrationServicesFn = _default_configured_services
     setupable_services: SetupableIntegrationServicesFn = _default_setupable_services
     fetch_webapp_vault: WebappVaultFetcherFn = _default_fetch_webapp_vault
+    fleet_vault_configured: FleetVaultConfiguredFn = _default_fleet_vault_configured
     fetch_account_integrations: AccountIntegrationsFetcherFn = _default_fetch_account_integrations
     account_integrations_generation: AccountIntegrationsGenerationFn = (
         _default_account_integrations_generation
@@ -323,8 +329,11 @@ def _resolve_from_webapp_vault_or_local() -> IntegrationResolutionResult:
     adapters = _adapters()
     remote = adapters.fetch_webapp_vault()
     if not remote:
-        # No fleet vault (None) or an explicitly empty one: a signed-in
-        # laptop still reads its organization's integrations from the app.
+        # A configured fleet vault that failed, or an org with nothing exported,
+        # stays on this silo. The signed-in account is only for a laptop that
+        # has no fleet vault; that account can belong to a different organization.
+        if adapters.fleet_vault_configured():
+            return _resolve_from_local_sources()
         account_records = adapters.fetch_account_integrations()
         if account_records:
             return _resolve_remote_with_local_fallback(account_records)

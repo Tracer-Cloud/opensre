@@ -208,6 +208,31 @@ def test_a_signed_in_laptop_resolves_the_account_integrations_over_the_store(
     assert result.progress_message == "Resolved integrations from remote, store: ['github']"
 
 
+def test_a_configured_fleet_vault_failure_does_not_read_the_signed_in_account(
+    monkeypatch: Any,
+) -> None:
+    """A failed or empty fleet vault stays on this silo, not another account."""
+
+    def _account() -> list[dict[str, Any]]:
+        raise AssertionError("signed-in account must not replace a configured fleet vault")
+
+    monkeypatch.delenv("JWT_TOKEN", raising=False)
+    _install_adapters(
+        monkeypatch,
+        fetch_webapp_vault=lambda: None,
+        fleet_vault_configured=lambda: True,
+        fetch_account_integrations=_account,
+        load_integrations=lambda: [],
+        load_env_integrations=lambda: [],
+    )
+
+    result = harness_providers.resolve_integrations_with_metadata()
+
+    assert result.resolved_integrations == {}
+    assert result.progress_message is not None
+    assert result.progress_message.startswith("No auth context and no local integrations found")
+
+
 def test_the_sources_stamp_tracks_the_account_generation(monkeypatch: Any) -> None:
     """A changed remote set must change the stamp, so sessions re-resolve next turn."""
     generation = {"value": 0}

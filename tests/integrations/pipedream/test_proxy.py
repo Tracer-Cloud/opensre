@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from config.constants.billing import USAGE_SECRET_ENV, WEBAPP_URL_ENV
+from config.constants.billing import WEBAPP_URL_ENV
 from integrations.pipedream import proxy
 
 
@@ -23,7 +23,7 @@ def test_fleet_proxy_stays_bound_to_silo_organization(
 ) -> None:
     request: dict[str, Any] = {}
     monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example.test/")
-    monkeypatch.setenv(USAGE_SECRET_ENV, "fleet-secret")
+    monkeypatch.setattr(proxy, "webapp_shared_secret", lambda: "fleet-secret")
     monkeypatch.setattr(proxy, "webapp_vault_configured", lambda: True)
     monkeypatch.setattr(proxy, "organization_id", lambda: "org_silo")
     monkeypatch.setattr(

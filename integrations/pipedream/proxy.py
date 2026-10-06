@@ -9,9 +9,9 @@ from typing import Any
 import httpx
 
 from config.account import load_account_record, resolve_account_token
-from config.constants.billing import USAGE_SECRET_ENV, WEBAPP_URL_ENV
+from config.constants.billing import WEBAPP_URL_ENV
 from config.constants.organization import organization_id
-from integrations.webapp_vault import webapp_vault_configured
+from integrations.webapp_vault import webapp_shared_secret, webapp_vault_configured
 
 _AGENT_PATH = "/api/agent/pipedream"
 _ACCOUNT_PATH = "/api/auth/cli/pipedream"
@@ -26,9 +26,8 @@ def _target() -> tuple[str, str, dict[str, str]]:
     """Return URL, bearer, and fixed body fields for this process identity."""
     if webapp_vault_configured():
         base_url = (os.getenv(WEBAPP_URL_ENV) or "").strip().rstrip("/")
-        token = (os.getenv(USAGE_SECRET_ENV) or "").strip()
         org = organization_id()
-        return f"{base_url}{_AGENT_PATH}", token, {"organizationId": org}
+        return f"{base_url}{_AGENT_PATH}", webapp_shared_secret(), {"organizationId": org}
 
     record = load_account_record()
     token = resolve_account_token()
