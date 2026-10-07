@@ -254,9 +254,13 @@ def build_prompt_session(
             style=_build_prompt_style(),
             erase_when_done=True,
             placeholder=placeholder,
-            # Keep terminal mouse reporting disabled so users can drag-select
-            # transcript text. PageUp/PageDown retains transcript navigation.
-            mouse_support=False,
+            # Mouse reporting routes wheel notches to TranscriptControl.mouse_handler
+            # so the transcript scrolls. It also claims plain drag-select: hold
+            # Shift to select transcript text, the bypass every terminal honours.
+            # Without it the terminal falls back to alternate scroll and turns the
+            # wheel into Up keys, which recall history into the composer instead
+            # (see ``alternate_scroll``).
+            mouse_support=transcript is not None,
         ),
         hide_composer=hide_composer,
         transcript=transcript,

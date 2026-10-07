@@ -37,6 +37,9 @@ def _rgb(hex_color: str) -> str:
     return f"{int(h[0:2], 16)};{int(h[2:4], 16)};{int(h[4:6], 16)}"
 
 
+from prompt_toolkit.data_structures import Point
+from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.runtime.core import confirmation as controller_runtime
 from surfaces.interactive_shell.runtime.core import state as loop_state
@@ -179,12 +182,39 @@ def test_build_prompt_session_uses_persistent_history(
     assert prompt.app.key_bindings is not None
 
 
-def test_full_screen_transcript_keeps_native_mouse_selection_available() -> None:
-    """Mouse reporting prevents the terminal from selecting transcript text."""
+def test_full_screen_transcript_takes_the_wheel_through_mouse_reporting() -> None:
+    """Without reporting the terminal turns the wheel into Up and recalls history."""
     with create_app_session(input=DummyInput(), output=DummyOutput()):
         prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
 
+    assert prompt.app.renderer.mouse_support() is True
+
+
+def test_a_bare_composer_leaves_mouse_reporting_off() -> None:
+    """No transcript means no scrollback to drive, so selection stays unclaimed."""
+    with create_app_session(input=DummyInput(), output=DummyOutput()):
+        prompt = input_prompt.build_prompt_session()
+
     assert prompt.app.renderer.mouse_support() is False
+
+
+def test_wheel_events_scroll_the_transcript_rather_than_the_composer() -> None:
+    """The wheel must move the viewport; history recall is what the bug produced."""
+    control = TranscriptControl(TranscriptStore())
+
+    def wheel(event_type: MouseEventType) -> MouseEvent:
+        return MouseEvent(
+            position=Point(x=0, y=0),
+            event_type=event_type,
+            button=MouseButton.NONE,
+            modifiers=frozenset(),
+        )
+
+    control.mouse_handler(wheel(MouseEventType.SCROLL_UP))
+    assert control.scrolled_back is True
+
+    control.mouse_handler(wheel(MouseEventType.SCROLL_DOWN))
+    assert control.scrolled_back is False
 
 
 def test_shell_turns_off_alternate_scroll_so_the_wheel_cannot_recall_history() -> None:

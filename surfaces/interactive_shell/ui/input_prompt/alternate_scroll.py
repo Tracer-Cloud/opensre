@@ -1,16 +1,19 @@
 """Terminal alternate-scroll control for the full-screen composer.
 
-The composer runs with ``mouse_support=False`` so the terminal keeps native
-drag-select over the transcript (see ``session.build_prompt_session``). With
-mouse reporting off, terminals in the alternate screen fall back to *alternate
-scroll* (DECSET 1007) and translate wheel notches into cursor-key sequences.
-prompt_toolkit reads those as Up/Down, and ``Buffer.auto_up`` replaces the
-composer contents with a history entry — so scrolling the transcript pastes old
-prompts into the input box. Turning the mode off makes the wheel inert instead
-of destructive; PageUp/PageDown still page the transcript.
+In the alternate screen a terminal with no mouse reporting to forward falls back
+to *alternate scroll* (DECSET 1007): it translates wheel notches into cursor-key
+sequences. prompt_toolkit reads those as Up at row 0, and ``Buffer.auto_up``
+replaces the composer contents with a history entry — so scrolling the transcript
+pastes old prompts into the input box.
 
-Restore writes the mode back *on*, which is the default in every terminal that
-implements it (VTE, Ghostty, kitty, iTerm2, Alacritty, Windows Terminal).
+The composer asks for mouse reporting (see ``session.build_prompt_session``), which
+normally pre-empts the fallback. It does not always arrive: under tmux with
+``mouse off`` the wheel never reaches us and tmux does the translation itself.
+Turning the mode off covers that gap, so the wheel is inert rather than
+destructive wherever reporting is unavailable.
+
+Restore writes the mode back *on*, the default in every terminal that implements
+it (VTE, Ghostty, kitty, iTerm2, Alacritty, Windows Terminal, tmux).
 """
 
 from __future__ import annotations
