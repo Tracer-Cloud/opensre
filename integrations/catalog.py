@@ -233,7 +233,19 @@ def configured_integration_services() -> list[str]:
         remote_records = load_account_integrations()
     except Exception:
         remote_records = []
-    return _configured_service_names(store_records=store_records, remote_records=remote_records)
+    # A silo hydrates GitHub and Slack from its secret, then asks the webapp
+    # which Pipedream apps (Linear, and so on) the workspace connected. Those
+    # app ids have to be in this list or the model reports them as disconnected.
+    try:
+        from integrations.webapp_vault import fetch_webapp_org_integrations
+
+        vault_records = fetch_webapp_org_integrations() or []
+    except Exception:
+        vault_records = []
+    return _configured_service_names(
+        store_records=store_records,
+        remote_records=[*remote_records, *vault_records],
+    )
 
 
 def _configured_service_names(
@@ -259,8 +271,45 @@ def _configured_service_names(
         service = str(record.get("service", "")).strip().lower()
         if service and _is_registered_service(service):
             services.append(service)
+        services.extend(_pipedream_app_services(record))
 
     return list(dict.fromkeys(services))
+
+
+def _record_credentials(record: dict[str, Any]) -> dict[str, Any]:
+    """Credentials from a flat vault record or the first v2 instance."""
+    credentials = record.get("credentials")
+    if isinstance(credentials, dict):
+        return credentials
+    instances = record.get("instances")
+    if not isinstance(instances, list):
+        return {}
+    for instance in instances:
+        if not isinstance(instance, dict):
+            continue
+        instance_credentials = instance.get("credentials")
+        if isinstance(instance_credentials, dict):
+            return instance_credentials
+    return {}
+
+
+def _pipedream_app_services(record: dict[str, Any]) -> list[str]:
+    """App ids inside a Pipedream record, such as ``linear``.
+
+    Pipedream itself is not a registered integration, and neither are most of
+    its apps. The connected-integrations line still has to name them or a
+    Slack turn treats a workspace connection as missing.
+    """
+    if str(record.get("service") or "").strip().lower() != "pipedream":
+        return []
+    from integrations.pipedream.connect import parse_apps
+
+    names: list[str] = []
+    for app in parse_apps(_record_credentials(record).get("apps")):
+        service = app.service.strip().lower()
+        if service:
+            names.append(service)
+    return names
 
 
 def _is_registered_service(service: str) -> bool:

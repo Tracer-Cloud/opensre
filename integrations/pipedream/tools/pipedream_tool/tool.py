@@ -82,9 +82,11 @@ def _result_text(result: dict[str, object]) -> str:
     name="list_pipedream_tools",
     source="pipedream",
     description=(
-        "List tools for a workspace app connected through Pipedream. Pass app "
-        "when more than one app is connected, and account_id when an app has "
-        "multiple connected accounts. Use name_filter to narrow a large catalog."
+        "List tools for a workspace app connected through Pipedream. App ids "
+        "in CONNECTED INTEGRATIONS that have no native tool (such as linear) "
+        "are used through this one: pass that id as app. Pass account_id when "
+        "an app has multiple connected accounts. Use name_filter to narrow a "
+        "large catalog."
     ),
     use_cases=[
         "Discovering which Pipedream tools a connected app exposes",
@@ -173,7 +175,8 @@ def list_pipedream_tools(
     name="call_pipedream_tool",
     source="pipedream",
     description=(
-        "Call a tool on a workspace app connected through Pipedream. Use "
+        "Call a tool on a workspace app connected through Pipedream, including "
+        "apps named in CONNECTED INTEGRATIONS such as linear. Use "
         "list_pipedream_tools first. Pass account_id when an app has multiple "
         "connected accounts."
     ),
