@@ -158,11 +158,9 @@ class JsonlSessionStore:
     def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> str:
         path = session_path(session.session_id)
         if not path.exists():
-            # Self-heal a session whose ``open_session`` was swallowed by a
-            # transient startup failure: without the file every append would
-            # silently return '' for the life of the session (incoming alerts
-            # would stay hidden even after storage recovers). Failure to create
-            # keeps today's '' signal so the alert drain requeues.
+            # The header never made it to disk (e.g. a transient failure
+            # swallowed at open time); recreate it, or the '' signal would
+            # hide every later record for this session's lifetime.
             try:
                 self._ensure_session_file(session, path)
             except Exception:
@@ -179,7 +177,12 @@ class JsonlSessionStore:
         )
 
     def _write_session_header(self, session: SessionPersistenceSource, path: Path) -> None:
-        """Write the v2 session header (same record ``open_session`` writes)."""
+        """Publish the v2 session header atomically (same record ``open_session`` writes).
+
+        The header is written to a sibling temp file and moved into place with
+        ``os.replace``, so readers never observe a missing or partial header:
+        ``path`` either does not exist or starts with a complete header.
+        """
         record = {
             "type": "session",
             "version": 2,
@@ -188,19 +191,19 @@ class JsonlSessionStore:
             "cwd": str(Path.cwd()),
             "opensre_version": get_opensre_version(),
         }
-        with path.open("w", encoding="utf-8") as fh:
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
             fh.flush()
             os.fsync(fh.fileno())
+        os.replace(tmp, path)
 
     def _ensure_session_file(self, session: SessionPersistenceSource, path: Path) -> None:
         """Create the session file with its header when it is missing.
 
-        Self-heals a session whose ``open_session`` was swallowed by a
-        transient startup failure (e.g. storage briefly unavailable): without
-        this, ``_append_entry`` returns ``''`` forever and incoming alerts stay
-        hidden until a new session is started. Only called when the file does
-        not exist, so an existing file (with its data) is never touched.
+        Only called when ``path`` does not exist; if it appears meanwhile the
+        call keeps it untouched. A header that cannot be published leaves
+        ``path`` absent, so the caller keeps signaling failure.
         """
         with self._locked(path):
             if path.exists():

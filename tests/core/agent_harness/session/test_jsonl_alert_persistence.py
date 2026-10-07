@@ -109,6 +109,40 @@ def test_append_turn_recovers_when_session_file_missing(
     assert session_file.read_text(encoding="utf-8").count("disk pressure") == 1
 
 
+def test_failed_header_write_leaves_no_file_and_later_retry_recovers(
+    storage_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed header publish never leaves a header-less file behind.
+
+    The header is written to a temp file and moved into place, so an interrupted
+    creation leaves ``path`` absent — the next append retries creation instead
+    of appending to an unrestorable header-less file (Greptile P1).
+    """
+    store = JsonlSessionStore()
+    src = _source("sess-alert-atomic")
+    session_file = storage_home / "sessions" / "sess-alert-atomic.jsonl"
+
+    real_replace = os.replace
+
+    def broken_replace(src_: Any, dst: Any) -> None:
+        raise OSError("publish failed")
+
+    monkeypatch.setattr(os, "replace", broken_replace)
+    assert store.append_turn(src, "incoming_alert", "disk pressure") == ""
+    # No file appeared: the temp file may exist, but ``path`` does not, so the
+    # next attempt retries creation instead of trusting an incomplete file.
+    assert not session_file.exists()
+
+    monkeypatch.setattr(os, "replace", real_replace)
+    entry_id = store.append_turn(src, "incoming_alert", "disk pressure")
+
+    assert entry_id
+    on_disk = session_file.read_text(encoding="utf-8")
+    assert on_disk.count('"type": "session"') == 1  # exactly one header
+    assert on_disk.count("disk pressure") == 1  # exactly one record
+
+
 def test_self_heal_never_touches_an_existing_session_file(
     storage_home: Path,
 ) -> None:
