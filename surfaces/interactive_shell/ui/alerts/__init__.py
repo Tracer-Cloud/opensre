@@ -6,6 +6,7 @@ The alert receiver, queue, and listener lifecycle live in
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,8 @@ from infrastructure.terminal.theme import (
     INCOMING_ALERT_ACCENT,
     TEXT,
 )
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from rich.console import RenderableType
@@ -97,16 +100,33 @@ def drain_and_render_incoming(
     console: Console,
     inbox: AlertInbox,
 ) -> int:
-    """Pop all queued alerts, render each one, and record them in session.
+    """Pop all queued alerts, record each in session, then render it.
 
-    Returns the number of alerts rendered.
+    ``iter_pending`` has already popped every alert, so each one is recorded
+    before it is rendered: a render failure must not lose an alert the inbox
+    no longer holds. A record failure requeues the alert (``inbox.put``) so the
+    next drain retries it instead of silently dropping it, and every alert is
+    handled independently so one failure never aborts the drain. Returns the
+    number of alerts recorded.
     """
     alerts = inbox.iter_pending()
     count = 0
 
     for alert in alerts:
-        console.print(format_incoming_alert(alert), end="\n")
-        session.record_incoming_alert(alert)
+        try:
+            session.record_incoming_alert(alert)
+        except Exception as exc:
+            # Not in the inbox anymore: requeue so a later drain retries it.
+            logger.warning("Recording incoming alert failed; requeued: %s", exc)
+            if not inbox.put(alert):
+                logger.warning("Inbox full; requeued alert evicted an older alert")
+            continue
+        try:
+            console.print(format_incoming_alert(alert), end="\n")
+        except Exception as exc:
+            # Display-only failure: the alert is already recorded, and
+            # requeueing it here would record it a second time.
+            logger.warning("Rendering incoming alert failed (recorded): %s", exc)
         count += 1
 
     return count

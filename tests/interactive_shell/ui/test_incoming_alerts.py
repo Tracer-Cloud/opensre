@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from rich.console import Console
 
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.domain.alerts.inbox import AlertInbox, IncomingAlert
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui.alerts import (
@@ -321,3 +323,97 @@ class TestAlertInboxEventClearing:
 
         # After draining all, event should be cleared
         assert not inbox2.pending_event.is_set()
+
+
+class _StoreFailingForTexts(InMemorySessionStore):
+    """In-memory session store whose ``append_turn`` fails for chosen texts.
+
+    Simulates a transient store failure (e.g. a locked session file) while
+    successful appends stay observable for state assertions.
+    """
+
+    def __init__(self, fail_texts: set[str]) -> None:
+        super().__init__()
+        self.fail_texts = set(fail_texts)
+        self.appended: list[str] = []
+
+    def append_turn(self, session: Any, kind: str, text: str) -> None:
+        if text in self.fail_texts:
+            raise OSError("session store temporarily unavailable")
+        self.appended.append(text)
+        super().append_turn(session, kind, text)
+
+
+class _ExplodingConsole(Console):
+    """Console whose ``print`` raises, simulating a dead render surface."""
+
+    def print(self, *_args: object, **_kwargs: object) -> None:
+        raise OSError("console closed")
+
+
+class TestDrainResilience:
+    """A drain failure must never silently discard popped alerts.
+
+    ``AlertInbox.iter_pending()`` destructively pops every pending alert, and
+    ``Session.record_incoming_alert()`` writes to the store before updating the
+    session facet — so an exception mid-drain used to leave already-popped
+    alerts recorded nowhere.
+    """
+
+    def test_record_failure_keeps_alert_recoverable_and_processes_rest(self) -> None:
+        """A record failure requeues its alert; later alerts still process."""
+        session = Session()
+        session.store = _StoreFailingForTexts({"first"})
+        inbox = AlertInbox(maxsize=10)
+        console = Console()
+
+        inbox.put(IncomingAlert(text="first"))
+        inbox.put(IncomingAlert(text="second"))
+
+        count = drain_and_render_incoming(session, console, inbox)
+
+        # "second" was recorded despite "first" failing (per-alert scoping).
+        assert count == 1
+        assert [alert.text for alert in session.alerts.entries] == ["second"]
+        assert session.store.appended == ["second"]
+        # "first" was NOT silently lost: it is back in the inbox, recoverable.
+        assert inbox.qsize == 1
+        assert inbox.pending_event.is_set()
+        assert inbox.peek_last(1)[0].text == "first"
+
+    def test_requeued_alert_is_recovered_by_next_drain(self) -> None:
+        """Once the transient store failure clears, the requeued alert records."""
+        session = Session()
+        store = _StoreFailingForTexts({"first"})
+        session.store = store
+        inbox = AlertInbox(maxsize=10)
+
+        inbox.put(IncomingAlert(text="first"))
+        assert drain_and_render_incoming(session, Console(), inbox) == 0
+        assert inbox.qsize == 1
+
+        store.fail_texts.clear()  # the transient failure is over
+        count = drain_and_render_incoming(session, Console(), inbox)
+
+        assert count == 1
+        assert store.appended == ["first"]
+        assert [alert.text for alert in session.alerts.entries] == ["first"]
+        assert inbox.qsize == 0
+        assert not inbox.pending_event.is_set()
+
+    def test_render_failure_keeps_alert_recorded(self) -> None:
+        """A render failure must not abort the drain or lose the alert."""
+        session = Session()
+        store = _StoreFailingForTexts(set())  # recording store; nothing fails
+        session.store = store
+        inbox = AlertInbox(maxsize=10)
+
+        inbox.put(IncomingAlert(text="first"))
+        inbox.put(IncomingAlert(text="second"))
+
+        count = drain_and_render_incoming(session, _ExplodingConsole(), inbox)
+
+        assert count == 2
+        assert [alert.text for alert in session.alerts.entries] == ["first", "second"]
+        assert store.appended == ["first", "second"]
+        assert inbox.qsize == 0
