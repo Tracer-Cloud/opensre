@@ -68,7 +68,7 @@ def test_repl_shutdown_refreshes_before_closing(
         def refresh_from_storage(self, _session: Session) -> None:
             events.append("refresh")
 
-        def close(self, _session: Session) -> None:
+        def close(self, _session: Session, **_kwargs: object) -> None:
             events.append("close")
 
     @contextmanager
