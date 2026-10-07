@@ -20,7 +20,6 @@ from surfaces.interactive_shell.ui.action_rendering import (
     tool_call_display,
 )
 from surfaces.interactive_shell.ui.input_prompt.rendering import (
-    _prompt_turn_number,
     render_submitted_prompt,
 )
 from tests.core.agent.orchestration.action_execution_test_harness import (
@@ -732,9 +731,6 @@ def test_literal_slash_command_records_single_history_entry(
     assert result.handled is True
     assert dispatched == ["/model show"]
     assert session.history == [{"type": "slash", "text": "/model show", "ok": True}]
-    # The turn's history recording must not advance the prompt number; only the
-    # submission itself does.
-    assert _prompt_turn_number(session) == 2
 
 
 def test_chat_turn_records_single_cli_agent_history_entry() -> None:
@@ -765,9 +761,6 @@ def test_chat_turn_records_single_cli_agent_history_entry() -> None:
     )
 
     assert session.history == [{"type": "cli_agent", "text": "what broke in prod?", "ok": True}]
-    # The turn's history recording must not advance the prompt number; only the
-    # submission itself does.
-    assert _prompt_turn_number(session) == 2
 
 
 def test_set_spinner_phase_does_not_activate_a_suppressed_spinner() -> None:

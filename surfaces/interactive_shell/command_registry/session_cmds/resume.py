@@ -14,10 +14,11 @@ from infrastructure.turn_host.session_lock import (
     session_execution_lock,
 )
 from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
+    render_resume_banner,
     render_resumed_session_history,
 )
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING
+from surfaces.interactive_shell.ui import DIM, ERROR, WARNING
 from surfaces.interactive_shell.ui.resume_picker import (
     ResumeMenuItem,
     choose_resume_session,
@@ -126,10 +127,9 @@ def _apply_resume_data_unlocked(
 
     existing = session.agent.messages
     if existing:
-        console.print(
-            f"[{WARNING}]current session has {len(existing)} messages — "
-            "they will be replaced by the resumed context.[/]"
-        )
+        # Not a warning: the outgoing session is flushed to its own file below,
+        # so nothing is lost and it can be resumed again.
+        console.print(f"[{DIM}]current session saved ({len(existing)} messages) — switching.[/]")
 
     manager = SessionManager.for_session(session)
     manager.rebind_for_resume(
@@ -139,18 +139,11 @@ def _apply_resume_data_unlocked(
     )
     manager.restore_context(session, data)
 
-    source = "snapshot" if has_snapshot else "turn records"
-    name_str = f" · {escape(name)}" if name else ""
-    restored_summary = (
-        f"{len(messages)} messages in context from {source}"
-        if messages
-        else f"{len(history)} prior turns restored"
-        if history
-        else "saved state restored"
-    )
-    console.print(
-        f"[{HIGHLIGHT}]resumed session {short_id}{name_str}[/] [{DIM}]({restored_summary})[/]"
-    )
+    render_resume_banner(console, short_id=short_id, name=name, turns=len(history))
+
+    # The live composer and ``/sessions`` both surface this; ``clear()`` wiped it
+    # and nothing set it again, so both affordances were dead.
+    session.resumed_from_name = name or short_id
 
     render_resumed_session_history(
         console,

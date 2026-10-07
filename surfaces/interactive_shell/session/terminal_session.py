@@ -224,13 +224,6 @@ class TerminalSession:
     metrics: TerminalMetrics = field(default_factory=TerminalMetrics)
     """Interactive-shell turn/intervention analytics counters (see ``/status``)."""
 
-    submitted_turn_count: int = 0
-    """Prompts the user has submitted this session; drives the ``[N]`` prompt label.
-
-    Deliberately independent of ``session.history``: one submitted request may
-    append many history rows (shell commands, tool executions), but it occupies
-    exactly one numbered prompt line."""
-
     _turn_outcome_hint: str | None = field(default=None, repr=False, compare=False)
     """Optional structured outcome set by a terminal handler for analytics."""
 
@@ -245,11 +238,6 @@ class TerminalSession:
     ``pop_pending_turn_error`` so it cannot leak into later turns."""
 
     # ── behavior over the fields above (Session delegates via ``session.terminal``) ──
-
-    def claim_turn_number(self) -> int:
-        """Advance and return the 1-based ``[N]`` number for a just-submitted prompt."""
-        self.submitted_turn_count += 1
-        return self.submitted_turn_count
 
     def has_collapsed_tool_output(self) -> bool:
         """True when Ctrl+O can expand at least one stashed peek."""

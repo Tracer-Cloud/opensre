@@ -23,22 +23,36 @@ if TYPE_CHECKING:
 class TranscriptRole(StrEnum):
     """Visible markers used to distinguish transcript rows."""
 
+    USER = "▌"
     ASSISTANT = "●"
     WORKING = "Working"
     TOOL = "Tool"
     ERROR = "Error"
 
 
-# Status rows share a body column, while replies keep the compact marker gutter.
+# Status rows share a body column, while marker rows keep the compact gutter.
 _STATUS_GUTTER_WIDTH = 9
-_ASSISTANT_GUTTER_WIDTH = 2
+_MARKER_GUTTER_WIDTH = 2
+_MARKER_ROLES = frozenset({TranscriptRole.USER, TranscriptRole.ASSISTANT})
 
 
 def _gutter_width(role: TranscriptRole) -> int:
     """Return the gutter width appropriate for *role*."""
-    if role is TranscriptRole.ASSISTANT:
-        return _ASSISTANT_GUTTER_WIDTH
+    if role in _MARKER_ROLES:
+        return _MARKER_GUTTER_WIDTH
     return _STATUS_GUTTER_WIDTH
+
+
+def is_internal_turn(text: str) -> bool:
+    """Whether ``text`` is an internal turn no transcript should ever show.
+
+    ``/choose`` drives an exclusive-stdin picker; the line is machinery, not
+    something the user typed. Lives here, in the leaf both the live echo and the
+    ``/resume`` replay import, so a restored session cannot surface what the
+    live echo deliberately hides — and so neither side imports the other.
+    """
+    stripped = text.strip()
+    return stripped == "/choose" or stripped.startswith("/choose ")
 
 
 def transcript_prefix(role: TranscriptRole) -> str:
@@ -69,10 +83,18 @@ def transcript_line(role: TranscriptRole, body: str) -> str:
 class _GutterRow:
     """Lay a renderable beside a fixed-width marker, emitting unpadded rows."""
 
-    def __init__(self, body: RenderableType, *, lead_cell: Text, gutter_width: int) -> None:
+    def __init__(
+        self,
+        body: RenderableType,
+        *,
+        lead_cell: Text,
+        gutter_width: int,
+        continuation_cell: Text | None = None,
+    ) -> None:
         self._body = body
         self._lead_cell = lead_cell
         self._gutter_width = gutter_width
+        self._continuation_cell = continuation_cell
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         # ``height=None`` so the body is never padded out to a fixed row count,
@@ -82,11 +104,16 @@ class _GutterRow:
             height=None,
             overflow="fold",
         )
-        lead = Segment(
-            self._lead_cell.plain,
-            console.get_style(self._lead_cell.style or "none", default="none"),
+
+        def _cell(text: Text) -> Segment:
+            return Segment(text.plain, console.get_style(text.style or "none", default="none"))
+
+        lead = _cell(self._lead_cell)
+        continuation = (
+            _cell(self._continuation_cell)
+            if self._continuation_cell is not None
+            else Segment(" " * self._gutter_width)
         )
-        continuation = Segment(" " * self._gutter_width)
         for index, line in enumerate(console.render_lines(self._body, body_options, pad=False)):
             yield from trim_row_padding([lead if index == 0 else continuation, *line])
             yield Segment.line()
@@ -98,19 +125,48 @@ def transcript_gutter(
     lead: bool,
     role: TranscriptRole = TranscriptRole.ASSISTANT,
     label_style: str = "",
+    repeat_lead: bool = False,
 ) -> _GutterRow:
-    """Lay a renderable in the gutter appropriate for its transcript role."""
+    """Lay a renderable in the gutter appropriate for its transcript role.
+
+    With ``repeat_lead`` the marker is drawn on every wrapped row instead of
+    the first only, which keeps a multi-row block legible after a reflow.
+    """
     gutter_width = _gutter_width(role)
     lead_cell = transcript_label(role, style=label_style) if lead else Text(" " * gutter_width)
-    return _GutterRow(body, lead_cell=lead_cell, gutter_width=gutter_width)
+    return _GutterRow(
+        body,
+        lead_cell=lead_cell,
+        gutter_width=gutter_width,
+        continuation_cell=lead_cell if repeat_lead and lead else None,
+    )
+
+
+def user_turn_renderable(text: str, *, marker_style: str, body_style: str) -> _GutterRow:
+    """Build the transcript row for one submitted user turn.
+
+    The accent repeats on every wrapped row (blockquote rhythm) so the turn
+    needs no padding to the terminal width, which is what let an earlier
+    full-width plate split on reflow. ``text`` is rendered verbatim: it is
+    untrusted input and must never be parsed as console markup.
+    """
+    return transcript_gutter(
+        Text(text, style=body_style),
+        lead=True,
+        role=TranscriptRole.USER,
+        label_style=marker_style,
+        repeat_lead=True,
+    )
 
 
 __all__ = [
     "TranscriptRole",
+    "is_internal_turn",
     "compact_transcript_prefix",
     "transcript_continuation",
     "transcript_gutter",
     "transcript_label",
     "transcript_line",
     "transcript_prefix",
+    "user_turn_renderable",
 ]

@@ -15,15 +15,12 @@ from infrastructure.scheduling.task_types import TaskKind
 from surfaces.interactive_shell.runtime.core import state as loop_state
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.input_prompt import completion as prompt_completion
-from surfaces.interactive_shell.ui.input_prompt import rendering as prompt_rendering
 from surfaces.interactive_shell.ui.input_prompt.completion import completion_preview_text
 from surfaces.interactive_shell.ui.input_prompt.layout import prompt_line_width
 from surfaces.interactive_shell.ui.input_prompt.refresh import wire_prompt_refresh
 from surfaces.interactive_shell.ui.input_prompt.rendering import (
     DEFAULT_PLACEHOLDER_TEXT,
-    _prompt_counter_text,
     _prompt_message,
-    _prompt_turn_number,
     composer_footer_ansi,
     render_submitted_prompt,
     resolve_idle_hint_ansi,
@@ -103,28 +100,17 @@ def _render_console() -> Console:
     return Console(file=io.StringIO(), force_terminal=False, highlight=False)
 
 
-class TestPromptTurnCounter:
-    def test_first_turn_is_numbered_one(self) -> None:
-        session = Session()
-        assert _prompt_turn_number(session) == 1
-        assert _prompt_counter_text(session) == "[1] "
+class TestUserTurnRow:
+    def test_user_row_carries_the_accent_and_never_pads_to_the_width(self) -> None:
+        """The row is a marker plus text — not a plate filled to the terminal width.
 
-    def test_counter_advances_per_submitted_prompt(self) -> None:
-        session = Session()
-        console = _render_console()
-        render_submitted_prompt(console, session, "hello")
-        assert _prompt_turn_number(session) == 2
-        assert _prompt_counter_text(session) == "[2] "
-        render_submitted_prompt(console, session, "and again")
-        assert _prompt_turn_number(session) == 3
+        Regression: the echo used to paint INPUT_SURFACE across ``terminal_columns()``
+        with manual padding. Those fixed-width trailing cells are what a terminal
+        re-wraps on its own terms, and were a named root cause in the #6425 resize
+        investigation. The row must now carry no trailing padding at any width.
+        """
+        from infrastructure.terminal.theme import reply_marker_hex
 
-    def test_user_prompt_row_has_warm_accent_on_full_width_surface(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Droid-style: orange ``▌`` lead-in and INPUT_SURFACE across the full row."""
-        from infrastructure.terminal.theme import get_active_theme, reply_marker_hex
-
-        monkeypatch.setattr(prompt_rendering, "terminal_columns", lambda: 40)
         session = Session()
         buf = io.StringIO()
         console = Console(
@@ -134,40 +120,67 @@ class TestPromptTurnCounter:
             highlight=False,
             legacy_windows=False,
             no_color=False,
+            width=40,
         )
         render_submitted_prompt(console, session, "why does it show that?")
         raw = buf.getvalue()
-        # A blank row precedes the echo (between-turns gap); the plate itself is
-        # the row after it.
-        assert re.sub(r"\x1b\[[0-9;]*m", "", raw).startswith("\n")
-        visible = re.sub(r"\x1b\[[0-9;]*m", "", raw).strip("\n")
-        assert "▌" in visible
+        visible = re.sub(r"\x1b\[[0-9;]*m", "", raw)
+        # A blank row precedes the echo (between-turns gap).
+        assert visible.startswith("\n")
+        rows = [row for row in visible.strip("\n").splitlines() if row]
+        assert rows == ["▌ why does it show that?"], rows
         assert "❯" not in visible
-        assert "why does it show that?" in visible
-        # Plate spans the live prompt width (spaces pad out the row).
-        assert len(visible) == 40, repr(visible)
-        assert visible.startswith("▌")
         accent = reply_marker_hex().lstrip("#")
         ar, ag, ab = (int(accent[i : i + 2], 16) for i in (0, 2, 4))
         assert f"{ar};{ag};{ab}" in raw
-        surface = get_active_theme().INPUT_SURFACE.lstrip("#")
-        sr, sg, sb = (int(surface[i : i + 2], 16) for i in (0, 2, 4))
-        assert f"{sr};{sg};{sb}" in raw
-        text = get_active_theme().TEXT.lstrip("#")
-        tr, tg, tb = (int(text[i : i + 2], 16) for i in (0, 2, 4))
-        assert f"{tr};{tg};{tb}" in raw
 
-    def test_long_user_row_keeps_the_whole_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A pasted path wider than the terminal stays in the plate, uncut."""
-        monkeypatch.setattr(prompt_rendering, "terminal_columns", lambda: 40)
+    def test_user_row_carries_no_turn_number(self) -> None:
+        """``[N]`` is gone: it reset on every /resume and /new, and ``/resume
+        <id>:<entry>`` already addresses an exact branch point."""
+        session = Session()
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, highlight=False, width=60)
+        render_submitted_prompt(console, session, "hello")
+        render_submitted_prompt(console, session, "and again")
+        assert "[1]" not in buf.getvalue()
+        assert "[2]" not in buf.getvalue()
+
+    def test_wrapped_user_row_repeats_the_accent_and_fits_every_width(self) -> None:
+        """Each wrapped row is self-identifying and inside the width, so a resize
+        redraw never leaves an orphaned continuation."""
+        session = Session()
+        for width in (72, 40, 22):
+            buf = io.StringIO()
+            console = Console(file=buf, force_terminal=False, highlight=False, width=width)
+            render_submitted_prompt(
+                console,
+                session,
+                "the deploy to prod-us-east failed at 03:12 with ImagePullBackOff",
+            )
+            rows = [row for row in buf.getvalue().splitlines() if row]
+            assert rows, width
+            for row in rows:
+                assert row.startswith("▌ "), (width, row)
+                assert len(row) <= width, (width, len(row), row)
+                assert row == row.rstrip(), (width, repr(row))
+
+    def test_long_user_row_keeps_every_character_of_a_pasted_path(self) -> None:
+        """A pasted path wider than the terminal folds across rows, never truncates.
+
+        Regression: the row once ellipsized its tail, so a copied path stopped
+        mid-token. Folding (the same overflow every other transcript row uses)
+        keeps all characters; cropping them would lose text in the full-screen
+        viewport, which does not soft-wrap an overflowing row.
+        """
         session = Session()
         buf = io.StringIO()
         console = Console(file=buf, force_terminal=False, highlight=False, width=40)
         path = "https://github.com/davincios/opensre-ci-repair-demo-20260915-epoch-7c92"
         render_submitted_prompt(console, session, f"use this repository: {path}")
-        visible = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
-        assert path in visible.replace("\n", "")
+        visible = buf.getvalue()
         assert "…" not in visible
+        body = "".join(row[2:] for row in visible.splitlines() if row.startswith("▌ "))
+        assert path in body
 
     def test_autosubmitted_goal_condition_gets_work_turn_marker(self) -> None:
         """``/goal set`` autosubmit must not look like part of the slash turn."""
@@ -178,7 +191,6 @@ class TestPromptTurnCounter:
         render_submitted_prompt(console, session, "How many Windows users in the last 7 days?")
         out = console.file.getvalue()  # type: ignore[union-attr]
         assert "↗ /goal — work turn" in out
-        assert "[1]" in out
         assert "How many Windows users" in out
         assert session.terminal.last_input_autosubmitted is False
 
@@ -196,29 +208,6 @@ class TestPromptTurnCounter:
         out = console.file.getvalue()  # type: ignore[union-attr]
         assert "/goal — work turn" not in out
         assert "/demo" in out
-
-    def test_history_rows_do_not_advance_counter(self) -> None:
-        """One request that runs many tools adds many history rows but one number.
-
-        Regression: the counter previously derived from ``len(session.history)``,
-        so a single request that executed seven shell commands jumped the next
-        prompt from ``[1]`` to ``[10]``.
-        """
-        session = Session()
-        render_submitted_prompt(_render_console(), session, "onboard me on the CI/CD fix")
-        for _ in range(7):
-            session.record("shell", "gh auth status")
-        session.record("chat", "loaded the skill")
-        session.record("cli_agent", "onboard me on the CI/CD fix")
-        assert _prompt_turn_number(session) == 2
-        assert _prompt_counter_text(session) == "[2] "
-
-    def test_clear_resets_counter(self) -> None:
-        """``/new`` and ``/resume`` go through ``Session.clear`` and restart at [1]."""
-        session = Session()
-        render_submitted_prompt(_render_console(), session, "hello")
-        session.clear()
-        assert _prompt_turn_number(session) == 1
 
 
 class TestResolveIdleHint:

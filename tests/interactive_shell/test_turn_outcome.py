@@ -5,6 +5,7 @@ from __future__ import annotations
 from surfaces.interactive_shell.telemetry.turn_outcome import (
     format_terminal_turn_outcome,
     format_wizard_cli_outcome,
+    parse_terminal_turn_outcome,
     slash_command_is_interactive_wizard,
     slash_command_is_summary_only,
     truncate_analytics_text,
@@ -122,3 +123,39 @@ def test_quit_is_summary_only_like_its_alias() -> None:
     # Assert
     assert slash_command_is_summary_only("/exit") is True
     assert slash_command_is_summary_only("/quit") is True
+
+
+def test_outcome_payload_round_trips_so_the_replay_cannot_drift() -> None:
+    """``/resume`` reads these payloads back to draw a ✓/✗ row, so the parse must
+    track the format. A drift would put ``slash /x (failed)`` on screen again."""
+    # Arrange
+    failed = format_terminal_turn_outcome(
+        "/model set",
+        kind="slash",
+        ok=False,
+        captured_output="Run /logout first.",
+        include_captured_on_summary_only=True,
+    )
+
+    # Act
+    parsed = parse_terminal_turn_outcome(failed)
+    succeeded = parse_terminal_turn_outcome(
+        format_terminal_turn_outcome("/version", kind="slash", ok=True)
+    )
+
+    # Assert
+    assert parsed is not None
+    assert (parsed.command_line, parsed.ok, parsed.detail) == (
+        "/model set",
+        False,
+        "Run /logout first.",
+    )
+    assert succeeded is not None and succeeded.ok is True and succeeded.detail == ""
+
+
+def test_a_handlers_outcome_hint_is_not_mistaken_for_a_payload() -> None:
+    """``outcome_hint`` short-circuits the formatter, so it has no ``(status)``
+    suffix — the replay must show it unchanged rather than parse it."""
+    # Assert
+    assert parse_terminal_turn_outcome("auto-approve: high") is None
+    assert parse_terminal_turn_outcome("") is None

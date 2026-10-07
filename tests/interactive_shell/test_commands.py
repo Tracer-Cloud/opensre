@@ -1538,7 +1538,7 @@ class TestResumeCommand:
         assert session.agent.messages == [("user", "hello"), ("assistant", "hi")]
         assert session.accumulated_context == {"service": "redis"}
         output = buf.getvalue()
-        assert "resumed session" in output
+        assert "✓ resumed " in output
         assert "old-abc" in output
 
     def test_apply_resume_noop_when_no_messages_or_context(self) -> None:
@@ -1747,13 +1747,37 @@ class TestResumeCommand:
             _apply_resume_data(data, session, console)
 
         output = buf.getvalue()
-        assert "❯" in output
-        assert "●" in output
-        assert "$ /status" in output
-        assert "you  " not in output
-        assert "sre  " not in output
-        assert "what is opensre?" in output
-        assert "OpenSRE is a tool" in output
+        # Replay uses the live renderers: the ``▌`` user row and the ``●`` reply
+        # gutter. The old ``❯``/``$`` replay-only markers are gone, and a slash
+        # turn is drawn once, not as a user row plus a shell-style echo.
+        assert "▌ what is opensre?" in output
+        assert "● OpenSRE is a tool" in output
+        assert "▌ /status" in output
+        assert "❯" not in output
+        assert "$ /status" not in output
+        assert output.count("/status") == 1
+
+    def test_apply_resume_names_the_session_it_came_from(self) -> None:
+        """``Session.clear`` wipes ``resumed_from_name`` and nothing set it again, so
+        the composer's ``resumed: <name>`` hint and ``/sessions``' ``↩`` marker both
+        had no value to show after a resume."""
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        data = {
+            "session_id": "named-session-abc123",
+            "name": "redis latency",
+            "cli_agent_messages": [("user", "why is redis slow?"), ("assistant", "pool")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        console, _ = _capture()
+
+        _apply_resume_data(data, session, console)
+
+        assert session.resumed_from_name == "redis latency"
 
     def test_apply_resume_no_history_keeps_user_assistant_pairs_with_duplicate_prompts(
         self,
@@ -1781,7 +1805,7 @@ class TestResumeCommand:
         _apply_resume_data(data, session, console)
 
         output = buf.getvalue()
-        assert output.count("❯ repeat") == 2
+        assert output.count("▌ repeat") == 2
         assert output.count("●") == 2
         assert "first answer" in output
         assert "second answer" in output

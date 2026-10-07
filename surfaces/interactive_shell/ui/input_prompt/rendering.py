@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import textwrap
-
 from prompt_toolkit.formatted_text import ANSI, FormattedText
 from rich.console import Console
 from rich.text import Text
@@ -16,51 +14,16 @@ from surfaces.interactive_shell.ui.handoff_questions import (
     render_ask_user_qa,
 )
 from surfaces.interactive_shell.ui.input_prompt.layout import _short_meta
-from surfaces.shared.terminal.prompt_layout import prompt_text_width, terminal_columns
+from surfaces.interactive_shell.ui.transcript import is_internal_turn, user_turn_renderable
+from surfaces.shared.terminal.components.rendering import print_repl_renderable
 
 DEFAULT_PLACEHOLDER_TEXT = "Drop a repo link. Watch it find your CI waste."
 _PLAN_CONTINUE_PLACEHOLDER = "continue the plan, or type a message"
-#: Warm vertical bar — same role as Droid's orange user-turn lead-in.
-_USER_TURN_ACCENT = "▌"
 
 
 def _placeholder_formatted(text: str) -> FormattedText:
     """Ghost text on the composer plate (style carries INPUT_SURFACE bg)."""
     return FormattedText([("class:placeholder", text)])
-
-
-def _prompt_turn_number(session: Session) -> int:
-    """1-based number for the prompt line currently being entered.
-
-    Derived from the count of accepted submissions, never from
-    ``session.history``: one request can append many history rows (shell
-    commands, tool executions) but must advance the ``[N]`` label only once.
-    """
-    return session.terminal.submitted_turn_count + 1
-
-
-def _counter_text(turn_number: int) -> str:
-    return f"[{turn_number}] "
-
-
-def _fold_plate_body(text: str, width: int) -> list[str]:
-    """Fold ``text`` onto rows without dropping characters.
-
-    A token longer than ``width`` stays whole. Replacing the tail with an
-    ellipsis meant a copied path or URL stopped mid-token.
-    """
-    if width < 1 or prompt_text_width(text) <= width:
-        return [text]
-    return textwrap.wrap(
-        text,
-        width=width,
-        break_long_words=False,
-        break_on_hyphens=False,
-    ) or [text]
-
-
-def _prompt_counter_text(session: Session) -> str:
-    return _counter_text(_prompt_turn_number(session))
 
 
 def _prompt_line_ansi(session: Session) -> ANSI:
@@ -76,19 +39,20 @@ def _prompt_message(session: Session) -> ANSI:
 def render_submitted_prompt(console: Console, session: Session, text: str) -> None:
     """Render the submitted user turn above the streamed assistant response.
 
-    Claims the turn's ``[N]`` number: every accepted submission (interactive or
-    startup replay) passes through here exactly once, so the counter advances
-    once per prompt line regardless of what the turn later records in history.
+    Shares :func:`user_turn_renderable` with the ``/resume`` replay so a
+    restored turn is indistinguishable from a live one, and routes through
+    ``print_repl_renderable`` so the full-screen transcript lays the row out
+    again at every width instead of keeping it as fixed-width bytes.
 
     Autosubmitted lines (e.g. ``/goal set`` queuing the condition) get a dim
     ``↗ /goal`` marker so the work turn is visually distinct from the slash
     that attached the goal.
     """
     stripped = text.strip()
-    # Internal exclusive-stdin turn — never echo ``/choose``. Clear the autosubmit
-    # flag the queued ``/choose`` carried so a genuine turn after a cancelled menu
-    # reads as a new workload (which resets the ask-user round counter).
-    if stripped == "/choose" or stripped.startswith("/choose "):
+    # Internal exclusive-stdin turn — never echo it. Clear the autosubmit flag the
+    # queued ``/choose`` carried so a genuine turn after a cancelled menu reads as
+    # a new workload (which resets the ask-user round counter).
+    if is_internal_turn(stripped):
         session.terminal.last_input_autosubmitted = False
         return
     # A turn is an answer to a hand-off only when a structured picker/Ask-User
@@ -101,10 +65,8 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
     session.terminal.handoff_recap_text = None
     ask_user_pairs = parse_ask_user_answers(stripped) if is_handoff_answer else []
     if len(ask_user_pairs) >= 2 and not recap_painted:
-        # Keep the Ask User block in the transcript (Q white, A brand). Claim the
-        # turn number so the next prompt still advances; do not paint a fake
-        # ``[N] ❯`` — leave this as the Ask User card.
-        session.terminal.claim_turn_number()
+        # Keep the Ask User block in the transcript (Q white, A brand) rather
+        # than repainting the raw answer text as an ordinary user row.
         render_ask_user_qa(console, ask_user_pairs)
         return
     autosubmitted = bool(session.terminal.last_input_autosubmitted)
@@ -119,8 +81,8 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
         )
         return
     if autosubmitted and session_goal_is_active(session):
-        # Keep this shorter than the condition — the ``[N] ❯`` line carries the
-        # full text; this only answers "is this still /goal set or real work?".
+        # Keep this shorter than the condition — the user row carries the full
+        # text; this only answers "is this still /goal set or real work?".
         # Other autosubmits (a queued picker, a demo prompt) get the plain row.
         console.print()
         console.print(
@@ -132,52 +94,14 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
     else:
         # Blank row between the previous turn and this one (Droid rhythm).
         console.print()
-    counter = _counter_text(session.terminal.claim_turn_number())
-    lines = text.splitlines() or [""]
-    # Full-width surface plate + warm left bar (Droid paints the user row
-    # edge-to-edge). Write palette ANSI directly — Rich Text/Style.parse on a
-    # _LazyRichStyle can fall through to default white under coverage.
-    # Full terminal width plate (Droid edge-to-edge). Trailing pad spaces stay
-    # inside the surface so the last column is never a glyph (soft-wrap safe).
-    row_width = max(terminal_columns(), 1)
-    accent_ansi = ui_theme.BOLD_REPLY_MARKER_ANSI
-    body_ansi = ui_theme.BRAND_ANSI if is_handoff_answer else ui_theme.TEXT_ANSI
-    counter_ansi = ui_theme.DIM_ANSI
-    surface = ui_theme.INPUT_SURFACE_BG_ANSI
-    parts: list[str] = []
-    hang = "  " + (" " * len(counter))
-    hang_cols = prompt_text_width(hang)
-    lead_prefix = f"{_USER_TURN_ACCENT} {counter}"
-    lead_cols = prompt_text_width(lead_prefix)
-
-    def _paint(body: str, *, lead: bool) -> None:
-        cols = lead_cols if lead else hang_cols
-        pad = max(0, row_width - cols - prompt_text_width(body))
-        if lead:
-            parts.append(
-                f"{surface}{accent_ansi}{_USER_TURN_ACCENT}{ui_theme.ANSI_RESET}"
-                f"{surface} {counter_ansi}{counter}{ui_theme.ANSI_RESET}"
-                f"{surface}{body_ansi}{body}{' ' * pad}{ui_theme.ANSI_RESET}"
-            )
-            return
-        parts.append(
-            f"{surface}{counter_ansi}{hang}{ui_theme.ANSI_RESET}"
-            f"{surface}{body_ansi}{body}{' ' * pad}{ui_theme.ANSI_RESET}"
-        )
-
-    for index, line in enumerate(lines):
-        if index:
-            parts.append("\n")
-        # First physical row carries ``▌ [N]``; every continuation hangs under it.
-        budget = max(1, row_width - (lead_cols if index == 0 else hang_cols))
-        for row_index, segment in enumerate(_fold_plate_body(line, budget)):
-            if row_index:
-                parts.append("\n")
-            _paint(segment, lead=index == 0 and row_index == 0)
-    # Single trailing newline — the reply path owns the blank row under the
-    # user plate so we do not stack two spacers (Droid: one row of margin).
-    console.file.write("".join(parts) + "\n")
-    console.file.flush()
+    print_repl_renderable(
+        console,
+        user_turn_renderable(
+            text,
+            marker_style=ui_theme.reply_marker_style(),
+            body_style=str(ui_theme.BRAND if is_handoff_answer else ui_theme.TEXT),
+        ),
+    )
 
 
 def resolve_prompt_prefix_ansi(*, inline_spinner: str, idle_hint: str) -> str:
