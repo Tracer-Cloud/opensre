@@ -15,12 +15,15 @@ from rich.console import Console
 from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
     render_resumed_session_history,
 )
+from surfaces.interactive_shell.ui.transcript_view.store import _RENDER_HEIGHT
 
 
 def _render(history: list[dict], turn_details: list[dict], *, width: int = 78) -> str:
     buffer = io.StringIO()
     render_resumed_session_history(
-        Console(file=buffer, force_terminal=False, highlight=False, width=width),
+        Console(
+            file=buffer, force_terminal=False, highlight=False, height=_RENDER_HEIGHT, width=width
+        ),
         history=history,
         turn_details=turn_details,
         messages=[],
@@ -38,6 +41,7 @@ def _render_raw(history: list[dict], turn_details: list[dict], *, width: int) ->
             color_system="truecolor",
             highlight=False,
             no_color=False,
+            height=_RENDER_HEIGHT,
             width=width,
         ),
         history=history,
@@ -137,6 +141,7 @@ def test_a_replayed_turn_renders_exactly_like_a_live_one() -> None:
             color_system="truecolor",
             highlight=False,
             no_color=False,
+            height=_RENDER_HEIGHT,
             width=64,
         ),
         Session(),

@@ -27,6 +27,7 @@ from surfaces.interactive_shell.ui.input_prompt.rendering import (
     resolve_prompt_placeholder,
     resolve_prompt_prefix_ansi,
 )
+from surfaces.interactive_shell.ui.transcript_view.store import _RENDER_HEIGHT
 
 
 def _strip_ansi(text: str) -> str:
@@ -133,6 +134,7 @@ class TestUserTurnRow:
                 highlight=False,
                 legacy_windows=False,
                 no_color=False,
+                height=_RENDER_HEIGHT,
                 width=width,
             ).print(row)
             raw = buf.getvalue()
@@ -151,7 +153,9 @@ class TestUserTurnRow:
         <id>:<entry>`` already addresses an exact branch point."""
         session = Session()
         buf = io.StringIO()
-        console = Console(file=buf, force_terminal=False, highlight=False, width=60)
+        console = Console(
+            file=buf, force_terminal=False, highlight=False, height=_RENDER_HEIGHT, width=60
+        )
         render_submitted_prompt(console, session, "hello")
         render_submitted_prompt(console, session, "and again")
         assert "[1]" not in buf.getvalue()
@@ -164,7 +168,9 @@ class TestUserTurnRow:
         session = Session()
         for width in (72, 40, 22):
             buf = io.StringIO()
-            console = Console(file=buf, force_terminal=False, highlight=False, width=width)
+            console = Console(
+                file=buf, force_terminal=False, highlight=False, height=_RENDER_HEIGHT, width=width
+            )
             render_submitted_prompt(
                 console,
                 session,
@@ -188,7 +194,9 @@ class TestUserTurnRow:
         """
         session = Session()
         buf = io.StringIO()
-        console = Console(file=buf, force_terminal=False, highlight=False, width=40)
+        console = Console(
+            file=buf, force_terminal=False, highlight=False, height=_RENDER_HEIGHT, width=40
+        )
         path = "https://github.com/davincios/opensre-ci-repair-demo-20260915-epoch-7c92"
         render_submitted_prompt(console, session, f"use this repository: {path}")
         visible = buf.getvalue()

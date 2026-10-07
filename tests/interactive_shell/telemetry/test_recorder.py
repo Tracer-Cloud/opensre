@@ -350,7 +350,45 @@ def test_prompt_fallback_never_reaches_the_session_conversation(
     recorder.set_response("   ")
     recorder.flush()
 
-    assert written == [None]
+    assert written == []
+
+
+def test_a_reply_less_turn_leaves_no_orphan_user_message(monkeypatch, tmp_path: Path) -> None:
+    """`append_turn_detail` writes the prompt unconditionally and the reply only
+    if present, so persisting a reply-less turn left an unpaired user message —
+    adjacent user roles in `cli_agent_messages` on the next resume, and a
+    bookkeeping line such as `/resume` handed back to the model as context.
+    """
+    cfg = PromptLogConfig(
+        enabled=True,
+        local_enabled=False,
+        posthog_enabled=False,
+        redact=False,
+        max_chars=1000,
+        log_path=tmp_path / "prompt_log.jsonl",
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
+    )
+    monkeypatch.setattr(
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
+        lambda _session: {},
+    )
+    session = Session()
+
+    recorder = PromptRecorder.start(session=session, text="/resume", turn_kind="agent")
+    assert recorder is not None
+    recorder.flush()
+
+    assert session.agent.messages == []
+
+    answered = PromptRecorder.start(session=session, text="why is redis slow?", turn_kind="agent")
+    assert answered is not None
+    answered.set_response("Pool exhaustion.")
+    answered.flush()
+
+    roles = [role for role, _ in session.agent.messages]
+    assert roles == [] or roles == ["user", "assistant"]
 
 
 def test_prompt_recorder_set_error_adds_structured_properties(monkeypatch, tmp_path: Path) -> None:
