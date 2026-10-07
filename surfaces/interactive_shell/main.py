@@ -154,7 +154,7 @@ async def run_repl_async(
             # Nested, because the drains above can block and a teardown Ctrl+C
             # now raises wherever it lands. True end-of-run teardown persists
             # and releases the session, and that is not the user's to skip.
-            close_repl_session(session, runtime_context.state, console=out)
+            close_repl_session(session, runtime_context.state)
 
 
 def _prepare_shell_start(

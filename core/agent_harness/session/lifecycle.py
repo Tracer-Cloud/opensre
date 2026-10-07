@@ -396,11 +396,13 @@ class SessionManager:
         the session releases its own resources (:meth:`SessionCore.release_resources`)
         to prevent per-session leaks. Long-term memory extraction also runs in
         the background every few recorded turns; this close path runs a final
-        pass after release when ``extract_memory`` is true. Process exit
-        (default) waits for extraction to finish so durable facts are not
-        dropped; gateway rotation passes ``wait_for_memory_extraction=False`` so
-        inbound handling stays responsive, and skips extraction entirely unless
-        gateway memory is opted in.
+        pass after release when ``extract_memory`` is true. That pass is an LLM
+        call, so ``wait_for_memory_extraction`` decides whether the caller is
+        held for it: the interactive shell and gateway rotation pass False to
+        keep teardown and inbound handling responsive, which leaves the pass to
+        the daemon worker and loses it if the process exits first. Gateway
+        rotation also skips extraction entirely unless gateway memory is opted
+        in.
         """
         self._flush(session)
         # Snapshot messages before release/clear; the background extractor must

@@ -1534,13 +1534,13 @@ async def test_running_dispatch_keeps_a_completed_plan() -> None:
             _ = await task
 
 
-def test_an_interrupted_exit_skips_the_closing_memory_pass(
+def test_shell_teardown_never_waits_on_the_closing_memory_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ctrl+C during teardown still persists the session but drops the LLM pass.
+    """The shell schedules the closing pass and leaves; an interrupt skips it entirely.
 
-    Without this the user has to interrupt every blocking stage of the exit in
-    turn, which is what made leaving the shell take several presses.
+    Waiting held the terminal for seconds — longer on a resumed session, whose
+    transcript the pass reads in full — with nothing on screen but a spinner.
     """
     import surfaces.interactive_shell.runtime.session_shutdown as session_shutdown
     from core.agent_harness.session import SessionManager
@@ -1557,6 +1557,7 @@ def test_an_interrupted_exit_skips_the_closing_memory_pass(
     monkeypatch.setattr(session_shutdown, "ctrl_c_exit_interrupted", lambda: False)
     session_shutdown.close_repl_session(Session(), ReplState())
     assert captured["extract_memory"] is True
+    assert captured["wait_for_memory_extraction"] is False
 
     monkeypatch.setattr(session_shutdown, "ctrl_c_exit_interrupted", lambda: True)
     session_shutdown.close_repl_session(Session(), ReplState())

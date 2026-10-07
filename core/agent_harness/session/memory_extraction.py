@@ -9,8 +9,9 @@ When it runs: every :data:`~core.agent_harness.session.memory_turns.EXTRACTION_T
 non-demo turns, and once more when a session closes or rotates. Mid-session
 passes coalesce per session onto a single daemon worker: a session's newest
 pass replaces only its own unprocessed one, so concurrent sessions never drop
-each other's facts. Process-exit close waits for its pass to finish
-(interruptible by Ctrl+C) so durable facts always persist.
+each other's facts. A caller may wait for its pass (``wait_for_completion``,
+interruptible by Ctrl+C); the hosts that hold a terminal or an inbound turn do
+not, so a close pass they schedule lands only if the process outlives it.
 
 A session's passes never overlap: the close pass first waits for the one the
 worker may already be running, so an older result never lands after the final

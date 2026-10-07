@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
-
-from rich.console import Console
 
 from core.agent_harness import SessionManager
 from core.agent_harness.spi.cancel import HostCancelReason
@@ -16,34 +12,11 @@ from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.runtime.exit_control import record_inflight_shell_exit
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.ui import DIM
 
 logger = logging.getLogger(__name__)
 
-# The closing memory pass is an LLM call, so this runs for seconds with the
-# prompt already off screen. Say so, or the shell reads as hung and the user
-# starts pressing Ctrl+C at a terminal that looks dead.
-_CLOSING_TEXT = "finishing up… (Ctrl+C to skip)"
 
-
-@contextmanager
-def _closing_status(console: Console | None) -> Iterator[None]:
-    """Spin while final persistence blocks; silent off a TTY or with no console."""
-    if console is None or not console.is_terminal:
-        yield
-        return
-    # Interpolated per call, not at import: the shell picks the user's theme
-    # while booting, long after this module loads.
-    with console.status(f"[{DIM}]{_CLOSING_TEXT}[/]", spinner="dots", spinner_style=DIM):
-        yield
-
-
-def close_repl_session(
-    session: Session,
-    state: ReplState,
-    *,
-    console: Console | None = None,
-) -> None:
+def close_repl_session(session: Session, state: ReplState) -> None:
     """Persist final state unless forced exit left a worker owning the session."""
     if state.has_detached_turn_worker():
         logger.warning(
@@ -58,15 +31,20 @@ def close_repl_session(
             if goal_control is not None:
                 apply_session_goal_control(session, goal_control)
         finally:
-            # ``close`` flushes and only then waits on the closing memory pass,
-            # so a teardown Ctrl+C could unwind with the transcript still
-            # unwritten. Persist here instead, before anything can block:
-            # ``flush`` waits on nothing and never raises.
+            # ``close`` flushes too, but a teardown Ctrl+C raises wherever it
+            # lands and could unwind before reaching it. Persist here, where a
+            # ``finally`` guarantees it: ``flush`` never raises.
             manager.flush(session)
-        with _closing_status(console):
-            # A Ctrl+C here means "stop waiting": the session is already
-            # persisted, so only the closing memory pass (an LLM call) is lost.
-            manager.close(session, extract_memory=not ctrl_c_exit_interrupted())
+        # Never wait on the closing memory pass: it is an LLM call over the whole
+        # transcript (seconds, and worse on a resumed session), and holding the
+        # user's terminal for a background nicety is not a trade worth making.
+        # It goes to the shared daemon worker, the way gateway rotation does it.
+        # An exit the user already interrupted does not even start one.
+        manager.close(
+            session,
+            extract_memory=not ctrl_c_exit_interrupted(),
+            wait_for_memory_extraction=False,
+        )
 
 
 def close_repl_session_after_detached_worker(
