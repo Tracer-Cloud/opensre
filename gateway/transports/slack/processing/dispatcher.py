@@ -30,6 +30,7 @@ from gateway.transports.slack.client import (
     mark_turn_failed,
     mark_turn_working,
 )
+from gateway.transports.slack.delivery.integration_links import configured_service_ids
 from gateway.transports.slack.delivery.turn_output import SlackTurnOutput
 from gateway.transports.slack.processing.events import SlackInboundFile, SlackInboundMessage
 from gateway.transports.slack.processing.principal import (
@@ -250,6 +251,8 @@ class SlackTurnDispatcher:
                 thread_ts=inbound.thread_ts,
                 update_interval_seconds=self._settings.status_update_interval_seconds,
                 tool_hooks=None,
+                user_text=inbound.text,
+                configured_services=lambda: configured_service_ids(session),
             )
             terminal = TerminalOutcomeArbiter()
             output.turn_cancel = terminal.cancel_event

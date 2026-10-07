@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from core.tool import ToolExecutionHooks
 from gateway.transports.slack.client import (
@@ -21,6 +21,11 @@ from gateway.transports.slack.client import (
     SlackMessagingClient,
 )
 from gateway.transports.slack.delivery.feedback import feedback_block
+from gateway.transports.slack.delivery.integration_links import (
+    SetupLink,
+    integration_setup_links,
+    setup_actions_block,
+)
 from infrastructure.text.markdown import tighten_markdown_emphasis
 from infrastructure.text.truncation import truncate
 from infrastructure.turn_host.status_messages import (
@@ -51,6 +56,8 @@ class SlackTurnOutput:
         thread_ts: str,
         update_interval_seconds: float = 3.0,
         tool_hooks: ToolExecutionHooks | None = None,
+        user_text: str = "",
+        configured_services: Callable[[], set[str]] | None = None,
     ) -> None:
         # Per-turn tool-execution hooks, read by TurnRunner. Slack leaves this
         # empty so write tools run without an Approve/Deny prompt.
@@ -62,6 +69,8 @@ class SlackTurnOutput:
         self._client = client
         self._channel_id = channel_id
         self._thread_ts = thread_ts
+        self._user_text = user_text
+        self._configured_services = configured_services
         self._started_at = time.monotonic()
         self._lock = threading.Lock()
         self._loading_detail = _LOADING_STATUS
@@ -159,8 +168,12 @@ class SlackTurnOutput:
             logger.debug("[slack-turn-output] clear loading status failed", exc_info=True)
 
     def _finalize(self, answer: str) -> bool:
+        links = self._setup_links(answer)
         final = truncate(markdown_to_slack_mrkdwn(answer), SLACK_MAX_MESSAGE_CHARS, suffix="…")
-        blocks = self._final_blocks(answer)
+        if links:
+            extra = "\n".join(f"{link.label}: {link.url}" for link in links)
+            final = truncate(f"{final}\n{extra}", SLACK_MAX_MESSAGE_CHARS, suffix="…")
+        blocks = self._final_blocks(answer, links)
         delivered = (
             self._client.post_message(
                 channel=self._channel_id,
@@ -187,20 +200,37 @@ class SlackTurnOutput:
         self._stop_loading()
         return delivered
 
-    def _final_blocks(self, answer: str) -> Blocks | None:
+    def _setup_links(self, answer: str) -> list[SetupLink]:
+        configured: set[str] = set()
+        if self._configured_services is not None:
+            try:
+                configured = self._configured_services()
+            except Exception:
+                logger.debug(
+                    "[slack-turn-output] configured integrations unavailable", exc_info=True
+                )
+        return integration_setup_links(self._user_text, answer, configured=configured)
+
+    def _final_blocks(self, answer: str, links: list[SetupLink]) -> Blocks | None:
         """Compose the final reply: a ``markdown`` block + a context footer.
 
         Slack built the markdown block for LLM output: standard markdown
         (headers, tables, fenced code) renders natively instead of being
         mangled through mrkdwn. The context footer is the provenance line
         (who answered, how long it took) rendered in Slack's muted small type.
-        Answers over the block's 12k-char limit stay text-only; the mrkdwn
-        text is always sent alongside as the notification/fallback rendering.
+        A configure request also gets a link button to that integration's page.
+        Answers over the block's 12k-char limit stay text-only unless a button
+        has to ride along; the mrkdwn text is always sent as the fallback.
         """
         body = tighten_markdown_emphasis(answer.strip())
+        closing = [*self._setup_blocks(links), *self._closing_blocks()]
         if not body or len(body) > SLACK_MAX_MARKDOWN_BLOCK_CHARS:
-            return None
-        return [{"type": "markdown", "text": body}, *self._closing_blocks()]
+            return closing or None
+        return [{"type": "markdown", "text": body}, *closing]
+
+    def _setup_blocks(self, links: list[SetupLink]) -> list[dict[str, object]]:
+        block = setup_actions_block(links)
+        return [block] if block is not None else []
 
     def _closing_blocks(self) -> list[dict[str, object]]:
         """Provenance footer + 👍/👎 feedback buttons, on every final reply."""

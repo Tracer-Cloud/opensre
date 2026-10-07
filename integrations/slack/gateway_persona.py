@@ -51,9 +51,12 @@ GATEWAY_MESSAGE_LAYOUT_RULE = (
 )
 
 GATEWAY_SETUP_GUIDANCE_RULE = (
-    "Integration setup is handled by whoever operates the bot, not by commands "
-    "the user runs here. If an integration the user needs is not connected, say "
-    "so and offer to help with what is available; never tell them to run "
+    "Integrations are connected in the OpenSRE app, not by commands in Slack. "
+    "When the user asks to configure, connect, or set up an integration "
+    "(Linear, Discord, or any other), or when one they need is not connected, "
+    "say so in a sentence and tell them to use the Configure button under your "
+    "reply. That button opens the integration's page in the OpenSRE app. "
+    "Never invent a different setup link, and never tell them to run "
     "`/integrations setup`, `/mcp connect`, or any CLI command."
 )
 
