@@ -166,8 +166,8 @@ class JsonlSessionStore:
                 self._leaf_ids[key] = None
                 self._leaf_file_sig[key] = self._file_sig(path)
 
-    def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> None:
-        self._append_entry(
+    def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> str:
+        return self._append_entry(
             session.session_id,
             "custom_message",
             {

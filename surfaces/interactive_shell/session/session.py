@@ -37,14 +37,24 @@ class Session(SessionCore):
     core-session consumers that never touch alerts don't see the field."""
 
     def record_incoming_alert(self, alert: IncomingAlert) -> None:
-        """Append a full IncomingAlert with all metadata to session history.
+        """Persist the alert, then mirror it into in-memory session state.
 
-        Also stores the alert in the ``alerts`` inbox facet (bounded FIFO), preserving
-        received_at, severity, source, and alert_name so /status displays accurate
-        timestamps and future uses have complete data.
+        Persistence comes first: a store that raises, or signals failure with
+        an empty record id (the JSONL backend suppresses write errors and
+        returns '' when the record was not persisted), must leave no history or
+        ``alerts``-facet entry behind — otherwise a retry would duplicate the
+        logical alert. On success there is exactly one durable record and one
+        logical history entry. Also stores the full IncomingAlert (received_at,
+        severity, source, alert_name) in the ``alerts`` facet for /status.
+
+        Raises:
+            OSError: when the store did not persist the record; the alert stays
+                recoverable by the caller (the inbox drain requeues it).
         """
+        entry_id = self.store.append_turn(self, "incoming_alert", alert.text)
+        if not entry_id:
+            raise OSError("session store did not persist the incoming alert")
         self.history.append({"type": "incoming_alert", "text": alert.text, "ok": True})
-        self.store.append_turn(self, "incoming_alert", alert.text)
         self.alerts.add(alert)
 
     def clear(self, *, rotate_identity: bool = True) -> None:
