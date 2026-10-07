@@ -203,7 +203,7 @@ class TestResumeScenarioMatrix:
         assert session.agent.messages[0] == ("user", "weekly review")
         if already_current:
             assert "current session" in output.getvalue()
-            assert "resumed " not in output.getvalue()
+            assert "↩ " not in output.getvalue()
 
     @pytest.mark.parametrize("current_name", ["weekly", "weekly planning"])
     def test_resume_name_search_ignores_current_session(
@@ -221,7 +221,7 @@ class TestResumeScenarioMatrix:
 
         assert session.session_id == target_id
         assert session.agent.messages[0] == ("user", "weekly notes")
-        assert "✓ resumed " in output.getvalue()
+        assert "↩ " in output.getvalue()
 
     def test_rename_persists_for_listing_and_resume_then_resets(
         self, isolated_sessions: Path
@@ -318,7 +318,7 @@ class TestResumeScenarioMatrix:
         assert dispatch_slash(f"/resume {target_id[:8]}", session, console) is True
 
         assert session.session_id == target_id
-        assert "✓ resumed " in buf.getvalue()
+        assert "↩ " in buf.getvalue()
 
         current_path = isolated_sessions / f"{current_id}.jsonl"
         if current_path.exists():
@@ -388,7 +388,7 @@ class TestResumeScenarioMatrix:
         dispatch_slash("/resume OOM", session, console)
 
         assert session.session_id == target_id
-        assert "✓ resumed " in buf.getvalue()
+        assert "↩ " in buf.getvalue()
         target_turns = _read_turns(isolated_sessions / f"{target_id}.jsonl")
         assert any(t.get("text") == "/resume OOM" for t in target_turns)
 
@@ -409,7 +409,7 @@ class TestResumeScenarioMatrix:
 
         assert resume_session_by_prefix("OOM", session, console)
         assert session.session_id == target_id
-        assert "✓ resumed " in buf.getvalue()
+        assert "↩ " in buf.getvalue()
 
     def test_scenario_resume_not_found_records_on_current(
         self,
@@ -519,7 +519,7 @@ class TestResumeScenarioMatrix:
         dispatch_slash("/sessions", session, console)
 
         assert session.session_id == target_id
-        assert "✓ resumed " in buf.getvalue()
+        assert "↩ " in buf.getvalue()
         target_turns = _read_turns(isolated_sessions / f"{target_id}.jsonl")
         assert any(turn["text"] == f"/sessions {target_id[:8]}" for turn in target_turns)
         source_turns = _read_turns(isolated_sessions / f"{current_id}.jsonl")
@@ -613,7 +613,7 @@ class TestResumeScenarioMatrix:
 
         assert session.session_id == target_id
         output = buf.getvalue()
-        assert "✓ resumed " in output
+        assert "↩ " in output
         assert "interrupted mid-turn" in output
         note = session.pending_recovery_note
         assert note is not None
@@ -689,7 +689,7 @@ class TestResumeLiveRepl:
 
             repl.reset_output()
             repl.send(f"/resume {target_id[:8]}", wait=1.0)
-            assert repl.wait_until_contains("✓ resumed ", timeout=60.0)
+            assert repl.wait_until_contains("↩ ", timeout=60.0)
             assert repl.wait_until_contains("live redis investigation", timeout=10.0)
 
             repl.reset_output()

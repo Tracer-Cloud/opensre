@@ -27,6 +27,7 @@ from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, TEXT
 from surfaces.interactive_shell.ui.transcript import (
     TranscriptRole,
     is_internal_turn,
+    is_navigation_turn,
     transcript_gutter,
     user_turn_renderable,
 )
@@ -59,17 +60,29 @@ def _collapse_turns(history: list[dict]) -> list[_ReplayTurn]:
     for record in history:
         kind = str(record.get("kind") or "")
         text = str(record.get("text") or "")
-        is_slash = kind == _SLASH_KIND
-        if not text or (not is_slash and kind not in _HISTORY_DISPLAY_CHAT_KINDS):
+        if not text or (kind != _SLASH_KIND and kind not in _HISTORY_DISPLAY_CHAT_KINDS):
             continue
-        if is_internal_turn(text):
+        if is_internal_turn(text) or is_navigation_turn(text):
             continue
+        # Decide from the text, not the row: a dispatched slash writes a ``slash``
+        # stub and a ``cli_agent`` stub, and only one of them may reach a given
+        # branch. Reading the kind alone replayed the surviving row as prose and
+        # painted its analytics payload in the assistant gutter.
+        is_slash = text.startswith("/")
         if turns and turns[-1].text == text:
-            if is_slash and not turns[-1].is_slash:
-                turns[-1] = _ReplayTurn(text=text, is_slash=True)
             continue
         turns.append(_ReplayTurn(text=text, is_slash=is_slash))
     return turns
+
+
+def replayable_turn_count(history: list[dict]) -> int:
+    """How many turns the replay will actually draw.
+
+    The banner must count what the reader is about to see, not raw history
+    rows: bookkeeping duplicates and filtered navigation would otherwise
+    promise turns that never appear.
+    """
+    return len(_collapse_turns(history))
 
 
 def _assistant_replies_by_prompt(messages: list[tuple[str, str]]) -> dict[str, deque[str]]:
@@ -104,19 +117,36 @@ def _status_row(text: str, *, ok: bool) -> RenderableType:
     )
 
 
-def render_resume_banner(console: Console, *, short_id: str, name: str, turns: int) -> None:
-    """Announce the resumed session as the ``/resume`` turn's own outcome row.
+def render_resume_banner(
+    console: Console,
+    *,
+    short_id: str,
+    name: str,
+    turns: int,
+    last_activity: str | None = None,
+) -> None:
+    """Open the replayed block with what was resumed and how stale it is.
 
-    Names only what the reader can act on: which session, and how much of it
-    came back. Which persistence tier it was rebuilt from is an implementation
-    detail they cannot use.
+    Names only what the reader can act on: which session, how much of it came
+    back, and how long ago it was live. Which persistence tier it was rebuilt
+    from is an implementation detail they cannot use.
     """
-    parts = [f"resumed {short_id}"]
-    if name:
-        parts.append(" ".join(name.split()))
+    parts = [" ".join(name.split())] if name else []
+    parts.append(short_id)
     if turns:
         parts.append(f"{turns} turn{'s' if turns != 1 else ''}")
-    print_repl_renderable(console, _status_row(" · ".join(parts), ok=True))
+    gap = _format_gap(last_activity)
+    if gap:
+        parts.append(gap)
+    console.print()
+    print_repl_renderable(
+        console,
+        transcript_gutter(
+            Text(f"↩ {' · '.join(parts)}", style=str(DIM)),
+            lead=False,
+            role=TranscriptRole.ASSISTANT,
+        ),
+    )
 
 
 def _render_slash_outcome(console: Console, response: str) -> None:
@@ -153,16 +183,14 @@ def _format_gap(timestamp: str | None) -> str:
         return "just now"
     for seconds, suffix in _SECONDS_PER:
         if elapsed >= seconds:
-            return f"{int(elapsed // seconds)}{suffix} gap"
+            return f"{int(elapsed // seconds)}{suffix} ago"
     return ""
 
 
-def _render_seam(console: Console, timestamp: str | None) -> None:
-    """Close the replay with one rule that re-sizes itself at any width."""
-    gap = _format_gap(timestamp)
-    title = f"resumed · {gap}" if gap else "resumed"
+def _render_seam(console: Console) -> None:
+    """Close the replay with one rule marking where the live session starts again."""
     console.print()
-    print_repl_renderable(console, Rule(Text(title, style=str(DIM)), style=str(DIM), align="right"))
+    print_repl_renderable(console, Rule(Text("now", style=str(DIM)), style=str(DIM), align="right"))
 
 
 def render_resumed_session_history(
@@ -200,7 +228,7 @@ def render_resumed_session_history(
                 _render_slash_outcome(console, response)
             elif response:
                 render_reply_block(console, response)
-        _render_seam(console, str(history[-1].get("timestamp") or "") or None)
+        _render_seam(console)
         return
 
     for role, text in messages:
@@ -208,7 +236,11 @@ def render_resumed_session_history(
             _render_user_row(console, text)
         elif role == "assistant":
             render_reply_block(console, text)
-    _render_seam(console, None)
+    _render_seam(console)
 
 
-__all__ = ["render_resume_banner", "render_resumed_session_history"]
+__all__ = [
+    "render_resume_banner",
+    "render_resumed_session_history",
+    "replayable_turn_count",
+]

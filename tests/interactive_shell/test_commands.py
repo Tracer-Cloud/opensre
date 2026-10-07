@@ -1538,7 +1538,7 @@ class TestResumeCommand:
         assert session.agent.messages == [("user", "hello"), ("assistant", "hi")]
         assert session.accumulated_context == {"service": "redis"}
         output = buf.getvalue()
-        assert "✓ resumed " in output
+        assert "↩ " in output
         assert "old-abc" in output
 
     def test_apply_resume_noop_when_no_messages_or_context(self) -> None:
@@ -1750,9 +1750,9 @@ class TestResumeCommand:
         # Replay uses the live renderers: the ``▌`` user row and the ``●`` reply
         # gutter. The old ``❯``/``$`` replay-only markers are gone, and a slash
         # turn is drawn once, not as a user row plus a shell-style echo.
-        assert "▌ what is opensre?" in output
+        assert "> what is opensre?" in output
         assert "● OpenSRE is a tool" in output
-        assert "▌ /status" in output
+        assert "> /status" in output
         assert "❯" not in output
         assert "$ /status" not in output
         assert output.count("/status") == 1
@@ -1805,7 +1805,7 @@ class TestResumeCommand:
         _apply_resume_data(data, session, console)
 
         output = buf.getvalue()
-        assert output.count("▌ repeat") == 2
+        assert output.count("> repeat") == 2
         assert output.count("●") == 2
         assert "first answer" in output
         assert "second answer" in output

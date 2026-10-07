@@ -101,8 +101,8 @@ def _render_console() -> Console:
 
 
 class TestUserTurnRow:
-    def test_user_row_carries_the_accent_and_never_pads_to_the_width(self) -> None:
-        """The row is a marker plus text — not a plate filled to the terminal width.
+    def test_user_row_carries_the_role_marker_and_never_pads_to_the_width(self) -> None:
+        """The row is a role marker plus text — not a plate filled to the width.
 
         Regression: the echo used to paint INPUT_SURFACE across ``terminal_columns()``
         with manual padding. Those fixed-width trailing cells are what a terminal
@@ -128,8 +128,8 @@ class TestUserTurnRow:
         # A blank row precedes the echo (between-turns gap).
         assert visible.startswith("\n")
         rows = [row for row in visible.strip("\n").splitlines() if row]
-        assert rows == ["▌ why does it show that?"], rows
-        assert "❯" not in visible
+        assert rows == ["> why does it show that?"], rows
+        assert "▌" not in visible
         accent = reply_marker_hex().lstrip("#")
         ar, ag, ab = (int(accent[i : i + 2], 16) for i in (0, 2, 4))
         assert f"{ar};{ag};{ab}" in raw
@@ -145,9 +145,10 @@ class TestUserTurnRow:
         assert "[1]" not in buf.getvalue()
         assert "[2]" not in buf.getvalue()
 
-    def test_wrapped_user_row_repeats_the_accent_and_fits_every_width(self) -> None:
-        """Each wrapped row is self-identifying and inside the width, so a resize
-        redraw never leaves an orphaned continuation."""
+    def test_wrapped_user_row_hangs_under_its_marker_and_fits_every_width(self) -> None:
+        """``>`` opens the turn once and continuations hang under it, so a wrapped
+        prompt reads as one turn rather than several. No row may exceed the width
+        or carry padding, or a resize redraw splits it."""
         session = Session()
         for width in (72, 40, 22):
             buf = io.StringIO()
@@ -159,8 +160,10 @@ class TestUserTurnRow:
             )
             rows = [row for row in buf.getvalue().splitlines() if row]
             assert rows, width
+            assert rows[0].startswith("> "), (width, rows[0])
+            for row in rows[1:]:
+                assert row.startswith("  "), (width, row)
             for row in rows:
-                assert row.startswith("▌ "), (width, row)
                 assert len(row) <= width, (width, len(row), row)
                 assert row == row.rstrip(), (width, repr(row))
 
@@ -179,7 +182,7 @@ class TestUserTurnRow:
         render_submitted_prompt(console, session, f"use this repository: {path}")
         visible = buf.getvalue()
         assert "…" not in visible
-        body = "".join(row[2:] for row in visible.splitlines() if row.startswith("▌ "))
+        body = "".join(row[2:] for row in visible.splitlines() if row.strip())
         assert path in body
 
     def test_autosubmitted_goal_condition_gets_work_turn_marker(self) -> None:

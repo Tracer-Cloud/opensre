@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class TranscriptRole(StrEnum):
     """Visible markers used to distinguish transcript rows."""
 
-    USER = "▌"
+    USER = ">"
     ASSISTANT = "●"
     WORKING = "Working"
     TOOL = "Tool"
@@ -53,6 +53,22 @@ def is_internal_turn(text: str) -> bool:
     """
     stripped = text.strip()
     return stripped == "/choose" or stripped.startswith("/choose ")
+
+
+#: Commands that move between sessions. They belong to the live turn that ran
+#: them, never to a replayed transcript: a session's file records the navigation
+#: *into* it, so replaying those rows shows the command that opened the very
+#: conversation you are reading.
+_NAVIGATION_COMMANDS = ("/resume", "/sessions")
+
+
+def is_navigation_turn(text: str) -> bool:
+    """Whether ``text`` is session navigation, which no replay should show."""
+    stripped = text.strip()
+    return any(
+        stripped == command or stripped.startswith(f"{command} ")
+        for command in _NAVIGATION_COMMANDS
+    )
 
 
 def transcript_prefix(role: TranscriptRole) -> str:
@@ -145,23 +161,26 @@ def transcript_gutter(
 def user_turn_renderable(text: str, *, marker_style: str, body_style: str) -> _GutterRow:
     """Build the transcript row for one submitted user turn.
 
-    The accent repeats on every wrapped row (blockquote rhythm) so the turn
-    needs no padding to the terminal width, which is what let an earlier
-    full-width plate split on reflow. ``text`` is rendered verbatim: it is
-    untrusted input and must never be parsed as console markup.
+    ``>`` pairs with the assistant's ``●`` as the other half of a role, and
+    matches the composer's own prompt character — what you said and where you
+    say it are one role. It is drawn on the first row only: repeating it down a
+    wrapped turn reads as several prompts rather than one.
+
+    ``text`` is rendered verbatim: it is untrusted input and must never be
+    parsed as console markup.
     """
     return transcript_gutter(
         Text(text, style=body_style),
         lead=True,
         role=TranscriptRole.USER,
         label_style=marker_style,
-        repeat_lead=True,
     )
 
 
 __all__ = [
     "TranscriptRole",
     "is_internal_turn",
+    "is_navigation_turn",
     "compact_transcript_prefix",
     "transcript_continuation",
     "transcript_gutter",

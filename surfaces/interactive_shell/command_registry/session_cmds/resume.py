@@ -16,6 +16,7 @@ from infrastructure.turn_host.session_lock import (
 from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
     render_resume_banner,
     render_resumed_session_history,
+    replayable_turn_count,
 )
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import DIM, ERROR, WARNING
@@ -139,7 +140,14 @@ def _apply_resume_data_unlocked(
     )
     manager.restore_context(session, data)
 
-    render_resume_banner(console, short_id=short_id, name=name, turns=len(history))
+    last_activity = str(history[-1].get("timestamp") or "") if history else ""
+    render_resume_banner(
+        console,
+        short_id=short_id,
+        name=name,
+        turns=replayable_turn_count(history),
+        last_activity=last_activity or None,
+    )
 
     # The live composer and ``/sessions`` both surface this; ``clear()`` wiped it
     # and nothing set it again, so both affordances were dead.

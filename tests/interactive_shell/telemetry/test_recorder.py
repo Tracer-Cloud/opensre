@@ -314,6 +314,45 @@ def test_prompt_recorder_uses_prompt_fallback_when_response_empty(
     assert captured[0]["$ai_output_choices"][0]["content"] == "terminal turn handled: /help"
 
 
+def test_prompt_fallback_never_reaches_the_session_conversation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Analytics wants a response on every row; the conversation must not take it.
+
+    The fallback was written to the session file as the assistant's reply, so
+    ``/resume`` replayed "terminal turn handled: /resume" as model prose and fed
+    it back to the model as its own prior turn.
+    """
+    cfg = PromptLogConfig(
+        enabled=True,
+        local_enabled=False,
+        posthog_enabled=False,
+        redact=False,
+        max_chars=1000,
+        log_path=tmp_path / "prompt_log.jsonl",
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
+    )
+    monkeypatch.setattr(
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
+        lambda _session: {},
+    )
+    written: list[str | None] = []
+
+    def _append_turn_detail(_session_id, _kind, _prompt, *, response=None, **_kwargs):
+        written.append(response)
+
+    session = Session()
+    monkeypatch.setattr(session.store, "append_turn_detail", _append_turn_detail)
+    recorder = PromptRecorder.start(session=session, text="/resume", turn_kind="agent")
+    assert recorder is not None
+    recorder.set_response("   ")
+    recorder.flush()
+
+    assert written == [None]
+
+
 def test_prompt_recorder_set_error_adds_structured_properties(monkeypatch, tmp_path: Path) -> None:
     captured: list[dict[str, object]] = []
     cfg = PromptLogConfig(
