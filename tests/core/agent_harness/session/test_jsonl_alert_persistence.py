@@ -80,6 +80,53 @@ def test_append_turn_signals_failure_without_raising_when_fsync_fails(
     assert store.append_turn(src, "incoming_alert", "disk pressure")
 
 
+def test_append_turn_recovers_when_session_file_missing(
+    storage_home: Path,
+) -> None:
+    """A missing session file is created on demand, never a silent '' forever.
+
+    ``open_session`` swallows transient startup failures; if the file never
+    materialized, the first ``append_turn`` self-heals by creating it with its
+    header instead of returning '' for the life of the session (Greptile P1).
+    """
+    store = JsonlSessionStore()
+    src = _source("sess-alert-selfheal")
+    session_file = storage_home / "sessions" / "sess-alert-selfheal.jsonl"
+
+    # Simulate the swallowed open failure: no file exists.
+    assert not session_file.exists()
+    first = store.append_turn(src, "incoming_alert", "disk pressure")
+
+    # The write succeeded by creating (not restoring) the file.
+    assert first
+    assert session_file.exists()
+    on_disk = session_file.read_text(encoding="utf-8")
+    assert '"type": "session"' in on_disk  # header written first
+    assert '"kind": "incoming_alert"' in on_disk  # then the record
+
+    # Later appends keep working on the recovered file.
+    assert store.append_turn(src, "incoming_alert", "cpu spike")
+    assert session_file.read_text(encoding="utf-8").count("disk pressure") == 1
+
+
+def test_self_heal_never_touches_an_existing_session_file(
+    storage_home: Path,
+) -> None:
+    """When the file exists, the missing-file path is never taken."""
+    store = JsonlSessionStore()
+    src = _source("sess-alert-existing")
+    store.open_session(src)
+    session_file = storage_home / "sessions" / "sess-alert-existing.jsonl"
+    before = session_file.read_text(encoding="utf-8")
+
+    assert store.append_turn(src, "incoming_alert", "disk pressure")
+
+    after = session_file.read_text(encoding="utf-8")
+    # The original header survived untouched (same created_at), one record added.
+    assert before in after
+    assert after.count('"type": "session"') == 1
+
+
 def test_record_incoming_alert_chain_with_real_store(
     storage_home: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -150,23 +150,23 @@ class JsonlSessionStore:
             path = session_path(session.session_id)
             with self._locked(path):
                 path.parent.mkdir(parents=True, exist_ok=True)
-                record = {
-                    "type": "session",
-                    "version": 2,
-                    "id": session.session_id,
-                    "created_at": datetime.fromtimestamp(session.started_at, tz=UTC).isoformat(),
-                    "cwd": str(Path.cwd()),
-                    "opensre_version": get_opensre_version(),
-                }
-                with path.open("w", encoding="utf-8") as fh:
-                    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    fh.flush()
-                    os.fsync(fh.fileno())
+                self._write_session_header(session, path)
                 key = (session.session_id, str(path))
                 self._leaf_ids[key] = None
                 self._leaf_file_sig[key] = self._file_sig(path)
 
     def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> str:
+        path = session_path(session.session_id)
+        if not path.exists():
+            # Self-heal a session whose ``open_session`` was swallowed by a
+            # transient startup failure: without the file every append would
+            # silently return '' for the life of the session (incoming alerts
+            # would stay hidden even after storage recovers). Failure to create
+            # keeps today's '' signal so the alert drain requeues.
+            try:
+                self._ensure_session_file(session, path)
+            except Exception:
+                return ""
         return self._append_entry(
             session.session_id,
             "custom_message",
@@ -177,6 +177,39 @@ class JsonlSessionStore:
                 "display": False,
             },
         )
+
+    def _write_session_header(self, session: SessionPersistenceSource, path: Path) -> None:
+        """Write the v2 session header (same record ``open_session`` writes)."""
+        record = {
+            "type": "session",
+            "version": 2,
+            "id": session.session_id,
+            "created_at": datetime.fromtimestamp(session.started_at, tz=UTC).isoformat(),
+            "cwd": str(Path.cwd()),
+            "opensre_version": get_opensre_version(),
+        }
+        with path.open("w", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+
+    def _ensure_session_file(self, session: SessionPersistenceSource, path: Path) -> None:
+        """Create the session file with its header when it is missing.
+
+        Self-heals a session whose ``open_session`` was swallowed by a
+        transient startup failure (e.g. storage briefly unavailable): without
+        this, ``_append_entry`` returns ``''`` forever and incoming alerts stay
+        hidden until a new session is started. Only called when the file does
+        not exist, so an existing file (with its data) is never touched.
+        """
+        with self._locked(path):
+            if path.exists():
+                return  # created meanwhile by another process; keep its data
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._write_session_header(session, path)
+            key = (session.session_id, str(path))
+            self._leaf_ids[key] = None
+            self._leaf_file_sig[key] = self._file_sig(path)
 
     def append_session_name(self, session_id: str, name: str) -> str:
         return self._append_entry(

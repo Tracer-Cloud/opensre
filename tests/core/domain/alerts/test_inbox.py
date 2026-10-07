@@ -114,3 +114,27 @@ class TestAlertInboxRetryQueue:
 
         assert [a.text for a in inbox.iter_pending()] == ["b"]
         assert inbox.pending_retries == 0
+
+    def test_ready_retry_not_blocked_behind_longer_delay(self) -> None:
+        """An already-ready retry must promote even when enqueued first.
+
+        Requeue order is not deadline order: a later requeue with a shorter
+        delay becomes due first, and the promotion scan must release it
+        instead of stopping at the not-yet-due head (Greptile P2).
+        """
+        inbox = AlertInbox(maxsize=5)
+        # "slow" is enqueued first but due much later; "fast" is due almost
+        # immediately, so without a full scan it would wait behind "slow".
+        assert inbox.requeue(IncomingAlert(text="slow"), delay_seconds=30.0)
+        assert inbox.requeue(IncomingAlert(text="fast"), delay_seconds=0.05)
+        assert inbox.pending_retries == 2
+
+        time.sleep(0.1)
+
+        assert [a.text for a in inbox.iter_pending()] == ["fast"]
+        assert inbox.pending_retries == 1  # "slow" still waiting its 30 s
+
+        # Once "slow" is due too, it promotes as well.
+        inbox._retry_queue[0] = (time.monotonic() - 1, inbox._retry_queue[0][1])
+        assert [a.text for a in inbox.iter_pending()] == ["slow"]
+        assert inbox.pending_retries == 0

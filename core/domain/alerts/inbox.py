@@ -88,9 +88,17 @@ class AlertInbox:
     def iter_pending(self) -> list[IncomingAlert]:
         with self._lock:
             now = time.monotonic()
-            while self._retry_queue and self._retry_queue[0][0] <= now:
-                _, alert = self._retry_queue.popleft()
-                self._queue.append(alert)
+            # Promote every retry whose delay has passed, not just the head of
+            # the requeue order — otherwise a longer delay can sit ahead of an
+            # already-ready retry and hold it back.
+            remaining: deque[tuple[float, IncomingAlert]] = deque()
+            while self._retry_queue:
+                ready_at, alert = self._retry_queue.popleft()
+                if ready_at <= now:
+                    self._queue.append(alert)
+                else:
+                    remaining.append((ready_at, alert))
+            self._retry_queue = remaining
             items: list[IncomingAlert] = []
             while True:
                 try:
