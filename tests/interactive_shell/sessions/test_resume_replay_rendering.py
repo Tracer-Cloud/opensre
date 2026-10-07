@@ -70,13 +70,19 @@ def test_internal_choose_turn_is_not_replayed() -> None:
 
 
 def test_a_handlers_own_outcome_prose_survives_the_replay() -> None:
-    """An ``outcome_hint`` is user-facing text, not a parseable analytics payload."""
+    """An ``outcome_hint`` is user-facing text, not a parseable analytics payload.
+
+    It is shown verbatim and without a verdict: the hint carries no status and
+    the persisted row's ``ok`` is not restored, so neither tick nor cross can be
+    justified from what the replay can see.
+    """
     output = _render(
         _slash_rows("/auto"),
         [{"prompt": "/auto", "response": "auto-approve: high"}],
     )
 
-    assert "✓ auto-approve: high" in output
+    assert "auto-approve: high" in output
+    assert "✓" not in output
 
 
 def test_replayed_rows_fit_every_width_and_carry_no_padding() -> None:
@@ -151,3 +157,56 @@ def test_the_banner_counts_only_the_turns_that_replay() -> None:
     ]
 
     assert replayable_turn_count(history) == 2
+
+
+def test_two_identical_submissions_replay_as_two_turns() -> None:
+    """Only the bookkeeping pair of one submission collapses.
+
+    Regression: the fold matched any neighbouring row with the same text, so
+    running `/model set` twice replayed once and the banner undercounted.
+    """
+    from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
+        replayable_turn_count,
+    )
+
+    history = _slash_rows("/model set") + _slash_rows("/model set")
+
+    assert replayable_turn_count(history) == 2
+    assert _render(history, []).count("/model set") == 2
+
+
+def test_two_identical_chat_turns_both_replay() -> None:
+    """A repeated question is two turns; only slash rows come in pairs."""
+    history = [
+        {"kind": "cli_agent", "text": "retry the deploy"},
+        {"kind": "cli_agent", "text": "retry the deploy"},
+    ]
+
+    output = _render(
+        history,
+        [{"prompt": "retry the deploy", "response": "Redeploying."}],
+    )
+
+    assert output.count("❱ retry the deploy") == 2
+
+
+def test_an_unreadable_outcome_is_not_labelled_a_success() -> None:
+    """`format_wizard_cli_outcome` emits prose with no status marker, and the
+    persisted row's `ok` is not restored — so the result cannot be known here.
+
+    Regression: unrecognised payloads defaulted to `ok`, putting a success tick
+    on `interactive wizard failed (exit 2)`.
+    """
+    output = _render(
+        _slash_rows("/onboard"),
+        [
+            {
+                "prompt": "/onboard",
+                "response": "opensre onboard: interactive wizard failed (exit 2)",
+            }
+        ],
+    )
+
+    assert "interactive wizard failed (exit 2)" in output
+    assert "✓" not in output
+    assert "✗" not in output
