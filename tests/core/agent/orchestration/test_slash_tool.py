@@ -157,6 +157,22 @@ def test_interactive_picker_runs_inline_when_exclusive_stdin_active() -> None:
     assert buf.getvalue() == ""
 
 
+def test_a_typed_command_is_not_announced_under_its_own_prompt_row() -> None:
+    """A typed ``/rename`` printed twice: once as the user row, once as ``$ /rename``.
+
+    Only a handful of commands reserve exclusive stdin, so that check alone left
+    every other typed command announcing itself a second time.
+    """
+    ctx, buf, session, ports = _ctx(ports=FakeSlashPorts(tty=True))
+    ctx = replace(ctx, turn_user_message="/rename release-candidate")
+
+    slash_tool.execute_slash_tool({"command": "/rename", "args": ["release-candidate"]}, ctx)
+
+    assert ports.dispatched == ["/rename release-candidate"]
+    assert session.terminal.exclusive_stdin_active is False
+    assert buf.getvalue() == ""
+
+
 def test_agent_resolved_slash_announces_itself() -> None:
     """Free text resolved into a slash has no prompt echo, so it must announce."""
     ctx, buf, session, ports = _ctx(ports=FakeSlashPorts(tty=True))

@@ -291,13 +291,14 @@ def execute_slash_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dic
             "instruction": _DECLINED_INSTRUCTION,
         }
 
-    # Announce the command unless the input line already did. Exclusive stdin is
-    # only reserved for a *literally typed* slash command (see
-    # ``turn_needs_exclusive_stdin``), so when it is active the prompt above
-    # already shows this command and a banner would repeat it. On every other
+    # Announce the command unless the user's own prompt row already shows it:
+    # either this turn reserved exclusive stdin, or the user typed this exact
+    # command. Exclusive stdin alone was too narrow — only a handful of commands
+    # reserve it, so every other typed command (``/rename``, ``/cron``, …)
+    # printed itself a second time one row below its own prompt. On every other
     # path the agent resolved free text into a slash — nothing was echoed, and
     # this banner is the only indication of what is about to run.
-    if not exclusive_stdin_active(ctx.session):
+    if not exclusive_stdin_active(ctx.session) and ctx.turn_user_message.strip() != stripped:
         ctx.console.print(f"[bold]$ {escape(stripped)}[/bold]")
     return _dispatch_and_translate_exit(
         stripped,
