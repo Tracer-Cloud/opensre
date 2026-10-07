@@ -236,7 +236,7 @@ def _run_integrations_setup(session: Session, console: Console, args: list[str])
 
     service = args[1]
     if headless:
-        from gateway.transports.slack.delivery.integration_links import headless_setup_message
+        from integrations.hosted_setup import headless_setup_message
 
         message = headless_setup_message(service)
         repl_print(console, escape(message))
