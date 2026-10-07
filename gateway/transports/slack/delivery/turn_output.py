@@ -225,7 +225,9 @@ class SlackTurnOutput:
         body = tighten_markdown_emphasis(answer.strip())
         closing = [*self._setup_blocks(links), *self._closing_blocks()]
         if not body or len(body) > SLACK_MAX_MARKDOWN_BLOCK_CHARS:
-            return closing or None
+            # An oversized markdown block is rejected and drops the message.
+            # Text-only, unless a configure button still has to go out.
+            return closing if links else None
         return [{"type": "markdown", "text": body}, *closing]
 
     def _setup_blocks(self, links: list[SetupLink]) -> list[dict[str, object]]:
