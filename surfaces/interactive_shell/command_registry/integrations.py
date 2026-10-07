@@ -235,16 +235,11 @@ def _run_integrations_setup(session: Session, console: Console, args: list[str])
         return True
 
     service = args[1]
-    cli_cmd = " ".join(["uv run opensre integrations setup", service, *args[2:]]).strip()
     if headless:
-        message = (
-            f"{escape(service)} setup needs interactive credentials (API keys, URLs, tokens) "
-            f"and cannot finish in Telegram.\n\n"
-            f"Run on the server:\n  {cli_cmd}\n\n"
-            "Then check status with `/integrations list` or "
-            f"`/integrations verify {escape(service)}`."
-        )
-        repl_print(console, message)
+        from gateway.transports.slack.delivery.integration_links import headless_setup_message
+
+        message = headless_setup_message(service)
+        repl_print(console, escape(message))
         publish_headless_slash_response(session, message=message, ok=True)
         session.refresh_integration_state()
         return True

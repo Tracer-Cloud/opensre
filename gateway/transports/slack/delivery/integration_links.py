@@ -153,6 +153,48 @@ _INTEGRATIONS: tuple[_Integration, ...] = tuple(
 _BY_ID = {integration.id: integration for integration in _INTEGRATIONS}
 
 
+def integration_display_name(service: str) -> str:
+    """Catalog name for ``service``, or the id itself when it has no page."""
+    integration_id = service.strip().lower().replace("-", "_")
+    known = _BY_ID.get(integration_id)
+    if known is not None:
+        return known.name
+    return service.strip() or "That integration"
+
+
+def integration_page_url(service: str) -> str | None:
+    """Webapp page for ``service``, or None when this process has no webapp."""
+    origin = webapp_origin()
+    if origin is None:
+        return None
+    integration_id = service.strip().lower().replace("-", "_")
+    known = _BY_ID.get(integration_id)
+    slug = (known.id if known is not None else integration_id).replace("_", "-")
+    if not slug:
+        return f"{origin}/integrations"
+    return f"{origin}/integrations/{slug}"
+
+
+def headless_setup_message(service: str) -> str:
+    """What Slack (and other chat) should say instead of a server setup command.
+
+    The interactive shell runs the setup steps itself. Chat cannot, so the
+    reply points at the Configure button and the same page in the app.
+    """
+    name = integration_display_name(service)
+    url = integration_page_url(service)
+    if url:
+        return (
+            f"Connect {name} in the OpenSRE app. "
+            f"Use the Configure {name} button under this reply, or open {url}. "
+            "In the interactive shell, the setup steps run there instead."
+        )
+    return (
+        f"Connect {name} from the integrations page in the OpenSRE app, "
+        "or walk through the setup steps in the interactive shell."
+    )
+
+
 def webapp_origin() -> str | None:
     """https origin of the OpenSRE app, or None when this process has no webapp."""
     raw = (os.getenv(WEBAPP_URL_ENV) or "").strip()

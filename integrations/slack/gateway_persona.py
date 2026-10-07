@@ -56,8 +56,11 @@ GATEWAY_SETUP_GUIDANCE_RULE = (
     "(Linear, Discord, or any other), or when one they need is not connected, "
     "say so in a sentence and tell them to use the Configure button under your "
     "reply. That button opens the integration's page in the OpenSRE app. "
-    "Never invent a different setup link, and never tell them to run "
-    "`/integrations setup`, `/mcp connect`, or any CLI command."
+    "Never invent a different setup link. If a tool result says setup requires "
+    "an interactive terminal, a server command, or `uv run opensre integrations "
+    "setup`, do not repeat that. Tell them to use the Configure button under "
+    "your reply, which opens the integration in the OpenSRE app. Never tell "
+    "them to run `/integrations setup`, `/mcp connect`, or any CLI command."
 )
 
 
