@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # The closing memory pass is an LLM call, so this runs for seconds with the
 # prompt already off screen. Say so, or the shell reads as hung and the user
 # starts pressing Ctrl+C at a terminal that looks dead.
-_CLOSING_STATUS = f"[{DIM}]finishing up… (Ctrl+C to skip)[/]"
+_CLOSING_TEXT = "finishing up… (Ctrl+C to skip)"
 
 
 @contextmanager
@@ -32,7 +32,9 @@ def _closing_status(console: Console | None) -> Iterator[None]:
     if console is None or not console.is_terminal:
         yield
         return
-    with console.status(_CLOSING_STATUS, spinner="dots", spinner_style=DIM):
+    # Interpolated per call, not at import: the shell picks the user's theme
+    # while booting, long after this module loads.
+    with console.status(f"[{DIM}]{_CLOSING_TEXT}[/]", spinner="dots", spinner_style=DIM):
         yield
 
 

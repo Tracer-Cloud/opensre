@@ -9,6 +9,8 @@ from prompt_toolkit.input.defaults import create_pipe_input  # type: ignore[impo
 from prompt_toolkit.output import DummyOutput  # type: ignore[import-not-found]
 
 from infrastructure.terminal.prompt_support import (
+    _exit_in_progress,
+    _exit_interrupted,
     _last_ctrl_c,
     ctrl_c_exit_interrupted,
     handle_ctrl_c_press,
@@ -22,10 +24,22 @@ from infrastructure.terminal.prompt_support import (
 
 @pytest.fixture(autouse=True)
 def _isolate_ctrl_c_gate() -> Iterator[None]:
-    """Reset the process-wide Ctrl+C gate around every test in this module."""
-    repl_reset_ctrl_c_gate()
+    """Reset the process-wide Ctrl+C state around every test in this module.
+
+    ``repl_reset_ctrl_c_gate`` deliberately leaves an accepted exit standing —
+    it runs during teardown in production — so the flags are cleared directly
+    here. Without this an exit accepted in one test makes the next test's first
+    press raise and aborts the pytest session.
+    """
+    _restore()
     yield
+    _restore()
+
+
+def _restore() -> None:
     repl_reset_ctrl_c_gate()
+    _exit_in_progress[0] = False
+    _exit_interrupted[0] = False
 
 
 def test_print_session_resume_hint_includes_repl_and_cli_commands(
@@ -271,6 +285,24 @@ def test_ctrl_c_exit_from_the_signal_handler_also_arms_teardown(capsys) -> None:
     with pytest.raises(SystemExit):
         handle_ctrl_c_press()
     assert "Goodbye" in capsys.readouterr().out
+
+    with pytest.raises(KeyboardInterrupt):
+        handle_ctrl_c_press()
+    assert capsys.readouterr().out == ""
+
+
+def test_resetting_the_gate_keeps_an_accepted_exit(capsys) -> None:
+    """The prompt re-arms its gate on the way out; that must not undo the exit.
+
+    The Ctrl+C binding ends the prompt with an empty result, which the reader
+    treats as an accepted line and follows with ``repl_reset_ctrl_c_gate``.
+    Controller cleanup runs after that and can block, so the exit has to stand.
+    """
+    assert repl_prompt_ctrl_c_should_exit() is False
+    assert repl_prompt_ctrl_c_should_exit() is True
+
+    repl_reset_ctrl_c_gate()
+    capsys.readouterr()
 
     with pytest.raises(KeyboardInterrupt):
         handle_ctrl_c_press()
