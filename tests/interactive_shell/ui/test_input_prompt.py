@@ -101,38 +101,50 @@ def _render_console() -> Console:
 
 
 class TestUserTurnRow:
-    def test_user_row_carries_the_role_marker_and_never_pads_to_the_width(self) -> None:
-        """The row is a role marker plus text — not a plate filled to the width.
+    def test_user_row_fill_is_painted_at_the_render_width_not_the_submit_width(
+        self,
+    ) -> None:
+        """The plate must be sized by the paint, never frozen when Enter was pressed.
 
-        Regression: the echo used to paint INPUT_SURFACE across ``terminal_columns()``
-        with manual padding. Those fixed-width trailing cells are what a terminal
-        re-wraps on its own terms, and were a named root cause in the #6425 resize
-        investigation. The row must now carry no trailing padding at any width.
+        Regression (#6425): the row used to be written as ANSI padded to
+        ``terminal_columns()`` at submit time. Those trailing cells were sized
+        for whatever width the terminal had then, and the terminal re-wrapped
+        them on its own terms after a resize. One renderable must therefore
+        produce correct rows at *any* width it is later painted at.
         """
-        from infrastructure.terminal.theme import reply_marker_hex
+        from infrastructure.terminal.theme import get_active_theme, reply_marker_hex
+        from surfaces.interactive_shell.ui.transcript import user_turn_renderable
 
-        session = Session()
-        buf = io.StringIO()
-        console = Console(
-            file=buf,
-            force_terminal=True,
-            color_system="truecolor",
-            highlight=False,
-            legacy_windows=False,
-            no_color=False,
-            width=40,
+        row = user_turn_renderable(
+            "why does it show that?",
+            marker_style=str(get_active_theme().HIGHLIGHT),
+            body_style=str(get_active_theme().TEXT),
+            background=f"on {get_active_theme().INPUT_SURFACE}",
         )
-        render_submitted_prompt(console, session, "why does it show that?")
-        raw = buf.getvalue()
-        visible = re.sub(r"\x1b\[[0-9;]*m", "", raw)
-        # A blank row precedes the echo (between-turns gap).
-        assert visible.startswith("\n")
-        rows = [row for row in visible.strip("\n").splitlines() if row]
-        assert rows == ["❯ why does it show that?"], rows
-        assert "▌" not in visible
-        accent = reply_marker_hex().lstrip("#")
-        ar, ag, ab = (int(accent[i : i + 2], 16) for i in (0, 2, 4))
-        assert f"{ar};{ag};{ab}" in raw
+        surface = get_active_theme().INPUT_SURFACE.lstrip("#")
+        sr, sg, sb = (int(surface[i : i + 2], 16) for i in (0, 2, 4))
+
+        for width in (40, 72, 28):
+            buf = io.StringIO()
+            Console(
+                file=buf,
+                force_terminal=True,
+                color_system="truecolor",
+                highlight=False,
+                legacy_windows=False,
+                no_color=False,
+                width=width,
+            ).print(row)
+            raw = buf.getvalue()
+            assert f"48;2;{sr};{sg};{sb}" in raw, width
+            visible = [
+                line for line in re.sub(r"\x1b\[[0-9;]*m", "", raw).splitlines() if line.strip()
+            ]
+            assert visible, width
+            assert visible[0].startswith("❱ "), (width, visible[0])
+            for line in visible:
+                assert len(line) == width, (width, len(line), repr(line))
+        assert reply_marker_hex()  # palette still resolves the reply accent
 
     def test_user_row_carries_no_turn_number(self) -> None:
         """``[N]`` is gone: it reset on every /resume and /new, and ``/resume
@@ -158,14 +170,13 @@ class TestUserTurnRow:
                 session,
                 "the deploy to prod-us-east failed at 03:12 with ImagePullBackOff",
             )
-            rows = [row for row in buf.getvalue().splitlines() if row]
+            rows = [row for row in buf.getvalue().splitlines() if row.strip()]
             assert rows, width
-            assert rows[0].startswith("❯ "), (width, rows[0])
+            assert rows[0].startswith("❱ "), (width, rows[0])
             for row in rows[1:]:
                 assert row.startswith("  "), (width, row)
             for row in rows:
                 assert len(row) <= width, (width, len(row), row)
-                assert row == row.rstrip(), (width, repr(row))
 
     def test_long_user_row_keeps_every_character_of_a_pasted_path(self) -> None:
         """A pasted path wider than the terminal folds across rows, never truncates.
@@ -182,7 +193,7 @@ class TestUserTurnRow:
         render_submitted_prompt(console, session, f"use this repository: {path}")
         visible = buf.getvalue()
         assert "…" not in visible
-        body = "".join(row[2:] for row in visible.splitlines() if row.strip())
+        body = "".join(row[2:].rstrip() for row in visible.splitlines() if row.strip())
         assert path in body
 
     def test_autosubmitted_goal_condition_gets_work_turn_marker(self) -> None:

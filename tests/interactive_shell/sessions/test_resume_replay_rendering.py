@@ -37,7 +37,7 @@ def _slash_rows(text: str) -> list[dict]:
 
 
 def test_slash_turn_replays_once_and_never_shows_its_analytics_payload() -> None:
-    """The headline defect: ``$ /version`` + ``❯ /version`` + ``● slash … (succeeded)``.
+    """The headline defect: ``$ /version`` + ``❱ /version`` + ``● slash … (succeeded)``.
 
     A failure keeps its message, because that is the part the reader can act on;
     a success with nothing to add stays silent rather than echoing the command.
@@ -66,7 +66,7 @@ def test_internal_choose_turn_is_not_replayed() -> None:
     output = _render(_slash_rows("/choose") + _slash_rows("/version"), [])
 
     assert "/choose" not in output
-    assert "❯ /version" in output
+    assert "❱ /version" in output
 
 
 def test_a_handlers_own_outcome_prose_survives_the_replay() -> None:
@@ -119,7 +119,7 @@ def test_session_navigation_is_not_replayed_as_conversation() -> None:
     assert "/resume" not in output
     assert "/sessions" not in output
     assert "terminal turn handled" not in output
-    assert "❯ why is redis slow?" in output
+    assert "❱ why is redis slow?" in output
 
 
 def test_a_slash_turn_is_recognised_by_its_text_not_its_bookkeeping_row() -> None:

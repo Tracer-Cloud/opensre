@@ -224,8 +224,11 @@ def render_resumed_session_history(
             _render_user_row(console, turn.text)
             response = _response_for(turn.text)
             if turn.is_slash:
+                # A status belongs to the command above it, so it stays tight —
+                # the live path prints it the same way.
                 _render_slash_outcome(console, response)
             elif response:
+                console.print()
                 render_reply_block(console, response)
         _render_seam(console)
         return
@@ -234,6 +237,7 @@ def render_resumed_session_history(
         if role == "user" and not is_internal_turn(text):
             _render_user_row(console, text)
         elif role == "assistant":
+            console.print()
             render_reply_block(console, text)
     _render_seam(console)
 

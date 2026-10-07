@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class TranscriptRole(StrEnum):
     """Visible markers used to distinguish transcript rows."""
 
-    USER = "❯"
+    USER = "❱"
     ASSISTANT = "●"
     WORKING = "Working"
     TOOL = "Tool"
@@ -106,11 +106,13 @@ class _GutterRow:
         lead_cell: Text,
         gutter_width: int,
         continuation_cell: Text | None = None,
+        background: str = "",
     ) -> None:
         self._body = body
         self._lead_cell = lead_cell
         self._gutter_width = gutter_width
         self._continuation_cell = continuation_cell
+        self._background = background
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         # ``height=None`` so the body is never padded out to a fixed row count,
@@ -121,17 +123,34 @@ class _GutterRow:
             overflow="fold",
         )
 
+        fill = console.get_style(self._background, default="none") if self._background else None
+
         def _cell(text: Text) -> Segment:
-            return Segment(text.plain, console.get_style(text.style or "none", default="none"))
+            style = console.get_style(text.style or "none", default="none")
+            return Segment(text.plain, fill + style if fill else style)
 
         lead = _cell(self._lead_cell)
         continuation = (
             _cell(self._continuation_cell)
             if self._continuation_cell is not None
-            else Segment(" " * self._gutter_width)
+            else Segment(" " * self._gutter_width, fill)
         )
-        for index, line in enumerate(console.render_lines(self._body, body_options, pad=False)):
-            yield from trim_row_padding([lead if index == 0 else continuation, *line])
+        rendered = console.render_lines(self._body, body_options, pad=False, style=fill)
+        for index, line in enumerate(rendered):
+            row = [lead if index == 0 else continuation, *line]
+            if fill is None:
+                yield from trim_row_padding(row)
+                yield Segment.line()
+                continue
+            # Pad at paint time, never at write time: the transcript store
+            # re-renders each entry at the current width, so the fill is always
+            # the right length. Baking it in at submit time left trailing cells
+            # sized for whatever width the terminal had then, which the terminal
+            # re-wrapped on its own terms (a named cause in the #6425 ghosting).
+            pad = max(0, options.max_width - Segment.get_line_length(row))
+            yield from row
+            if pad:
+                yield Segment(" " * pad, fill)
             yield Segment.line()
 
 
@@ -142,6 +161,7 @@ def transcript_gutter(
     role: TranscriptRole = TranscriptRole.ASSISTANT,
     label_style: str = "",
     repeat_lead: bool = False,
+    background: str = "",
 ) -> _GutterRow:
     """Lay a renderable in the gutter appropriate for its transcript role.
 
@@ -155,17 +175,21 @@ def transcript_gutter(
         lead_cell=lead_cell,
         gutter_width=gutter_width,
         continuation_cell=lead_cell if repeat_lead and lead else None,
+        background=background,
     )
 
 
-def user_turn_renderable(text: str, *, marker_style: str, body_style: str) -> _GutterRow:
+def user_turn_renderable(
+    text: str, *, marker_style: str, body_style: str, background: str = ""
+) -> _GutterRow:
     """Build the transcript row for one submitted user turn.
 
-    ``❯`` pairs with the assistant's ``●`` as the other half of a role: both
-    are solid marks, so neither side of the exchange outweighs the other. It is
-    the glyph the palette already names for a prompt (see ``theme.HIGHLIGHT``).
-    Drawn on the first row only — repeating it down a wrapped turn reads as
-    several prompts rather than one.
+    ``❱`` is the heavy *bracket* ornament rather than the heavy *quotation
+    mark* (``❯``) — the same chevron, drawn taller, so it holds its own beside
+    the assistant's ``●`` instead of thinning out in a light terminal font.
+    Single-cell width, so the gutter holds where ``▶``/``◆`` (ambiguous width)
+    would shift every continuation row. Drawn on the first row only — repeating
+    it down a wrapped turn reads as several prompts rather than one.
 
     ``text`` is rendered verbatim: it is untrusted input and must never be
     parsed as console markup.
@@ -175,6 +199,7 @@ def user_turn_renderable(text: str, *, marker_style: str, body_style: str) -> _G
         lead=True,
         role=TranscriptRole.USER,
         label_style=marker_style,
+        background=background,
     )
 
 

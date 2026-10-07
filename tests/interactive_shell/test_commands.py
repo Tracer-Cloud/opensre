@@ -1747,13 +1747,13 @@ class TestResumeCommand:
             _apply_resume_data(data, session, console)
 
         output = buf.getvalue()
-        # Replay uses the live renderers: ``❯`` for the user and ``●`` for the
+        # Replay uses the live renderers: ``❱`` for the user and ``●`` for the
         # reply, the same pair a live turn draws. The replay-only ``$`` echo is
         # gone, so a slash turn appears once rather than as a user row plus a
         # shell-style duplicate.
-        assert "❯ what is opensre?" in output
+        assert "❱ what is opensre?" in output
         assert "● OpenSRE is a tool" in output
-        assert "❯ /status" in output
+        assert "❱ /status" in output
         assert "$ /status" not in output
         assert output.count("/status") == 1
 
@@ -1805,7 +1805,7 @@ class TestResumeCommand:
         _apply_resume_data(data, session, console)
 
         output = buf.getvalue()
-        assert output.count("❯ repeat") == 2
+        assert output.count("❱ repeat") == 2
         assert output.count("●") == 2
         assert "first answer" in output
         assert "second answer" in output
