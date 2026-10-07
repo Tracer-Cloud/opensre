@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -37,9 +38,6 @@ def _rgb(hex_color: str) -> str:
     return f"{int(h[0:2], 16)};{int(h[2:4], 16)};{int(h[4:6], 16)}"
 
 
-from prompt_toolkit.data_structures import Point
-from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
-
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.runtime.core import confirmation as controller_runtime
 from surfaces.interactive_shell.runtime.core import state as loop_state
@@ -50,7 +48,8 @@ from surfaces.interactive_shell.ui import input_prompt
 from surfaces.interactive_shell.ui.input_prompt import completion as prompt_completion
 from surfaces.interactive_shell.ui.input_prompt.alternate_scroll import (
     ALTERNATE_SCROLL_OFF,
-    ALTERNATE_SCROLL_ON,
+    ALTERNATE_SCROLL_RESTORE,
+    ALTERNATE_SCROLL_SAVE,
     alternate_scroll_disabled,
 )
 from surfaces.interactive_shell.ui.input_prompt.completion import ShellCompleter
@@ -183,7 +182,13 @@ def test_build_prompt_session_uses_persistent_history(
 
 
 def test_full_screen_transcript_takes_the_wheel_through_mouse_reporting() -> None:
-    """Without reporting the terminal turns the wheel into Up and recalls history."""
+    """The terminal only emits wheel events while reporting is on.
+
+    This is what decides which bytes arrive: with reporting off the terminal
+    falls back to alternate scroll and sends Up instead, which the composer
+    answers with history recall. No input-level test can stand in for it —
+    prompt_toolkit parses an injected mouse sequence either way.
+    """
     with create_app_session(input=DummyInput(), output=DummyOutput()):
         prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
 
@@ -191,41 +196,73 @@ def test_full_screen_transcript_takes_the_wheel_through_mouse_reporting() -> Non
 
 
 def test_a_bare_composer_leaves_mouse_reporting_off() -> None:
-    """No transcript means no scrollback to drive, so selection stays unclaimed."""
+    """No transcript means no viewport to drive, so selection stays unclaimed."""
     with create_app_session(input=DummyInput(), output=DummyOutput()):
         prompt = input_prompt.build_prompt_session()
 
     assert prompt.app.renderer.mouse_support() is False
 
 
-def test_wheel_events_scroll_the_transcript_rather_than_the_composer() -> None:
-    """The wheel must move the viewport; history recall is what the bug produced."""
-    control = TranscriptControl(TranscriptStore())
-
-    def wheel(event_type: MouseEventType) -> MouseEvent:
-        return MouseEvent(
-            position=Point(x=0, y=0),
-            event_type=event_type,
-            button=MouseButton.NONE,
-            modifiers=frozenset(),
-        )
-
-    control.mouse_handler(wheel(MouseEventType.SCROLL_UP))
-    assert control.scrolled_back is True
-
-    control.mouse_handler(wheel(MouseEventType.SCROLL_DOWN))
-    assert control.scrolled_back is False
+# SGR wheel-up over the transcript window: button 64, column 10, row 3.
+_WHEEL_UP_OVER_TRANSCRIPT = "\x1b[<64;10;3M"
 
 
-def test_shell_turns_off_alternate_scroll_so_the_wheel_cannot_recall_history() -> None:
-    """DECSET 1007 turns wheel notches into Up keys, and Up rewrites the composer."""
+async def _settle(predicate: Callable[[], bool], timeout: float = 5.0) -> bool:
+    """Poll until the app reaches a state, rather than racing a fixed sleep."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        await asyncio.sleep(0.01)
+    return False
+
+
+@pytest.mark.asyncio
+async def test_a_wheel_notch_scrolls_the_transcript_and_leaves_the_composer_alone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Routed to the composer instead, a notch recalled history over the input."""
+    import config.constants as const_module
+
+    monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    # A history entry the composer would show if the wheel reached it as Up.
+    (tmp_path / "interactive_history").write_text("\n# 2026-10-07 00:00:00.000000\n+4 5 6 7\n")
+
+    store = TranscriptStore()
+    for row in range(200):
+        store.append_text(f"transcript line {row}")
+    control = TranscriptControl(store)
+
+    with (
+        create_pipe_input() as pipe_input,
+        create_app_session(input=pipe_input, output=DummyOutput()),
+    ):
+        prompt = input_prompt.build_prompt_session(transcript=control)
+        app = prompt.app
+        task = asyncio.ensure_future(prompt.prompt_async())
+        try:
+            assert await _settle(lambda: app.is_running and bool(app.renderer.mouse_handlers))
+
+            pipe_input.send_text(_WHEEL_UP_OVER_TRANSCRIPT)
+
+            assert await _settle(lambda: control.scrolled_back), "the wheel never reached it"
+            assert app.current_buffer.text == ""
+        finally:
+            app.exit(result="")
+            await asyncio.gather(task, return_exceptions=True)
+
+
+def test_the_alternate_scroll_guard_restores_what_the_terminal_had() -> None:
+    """Forcing the mode back on would enable it where the terminal had it off."""
     stream = io.StringIO()
     stream.isatty = lambda: True  # type: ignore[method-assign]
 
     with alternate_scroll_disabled(stream):
-        assert stream.getvalue() == ALTERNATE_SCROLL_OFF
+        assert stream.getvalue() == ALTERNATE_SCROLL_SAVE + ALTERNATE_SCROLL_OFF
 
-    assert stream.getvalue() == ALTERNATE_SCROLL_OFF + ALTERNATE_SCROLL_ON
+    assert stream.getvalue().endswith(ALTERNATE_SCROLL_RESTORE)
 
 
 def test_alternate_scroll_guard_leaves_a_non_tty_untouched() -> None:

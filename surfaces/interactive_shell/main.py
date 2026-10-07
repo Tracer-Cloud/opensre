@@ -124,9 +124,9 @@ async def run_repl_async(
         tools_ready()
 
     try:
-        # The composer keeps mouse reporting off for native text selection, so the
-        # terminal would otherwise turn wheel notches into Up/Down keys and recall
-        # history into the input box on every scroll.
+        # Mouse reporting carries the wheel to the transcript wherever it reaches
+        # us. Where it does not (tmux with ``mouse off``), the terminal would turn
+        # wheel notches into Up keys and recall history into the composer instead.
         with alternate_scroll_disabled():
             with record_startup_output(transcript):
                 started = _prepare_shell_start(session, out, resume_session_id, startup_work)
