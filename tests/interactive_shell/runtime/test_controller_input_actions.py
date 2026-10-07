@@ -1532,3 +1532,32 @@ async def test_running_dispatch_keeps_a_completed_plan() -> None:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             _ = await task
+
+
+def test_an_interrupted_exit_skips_the_closing_memory_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ctrl+C during teardown still persists the session but drops the LLM pass.
+
+    Without this the user has to interrupt every blocking stage of the exit in
+    turn, which is what made leaving the shell take several presses.
+    """
+    import surfaces.interactive_shell.runtime.session_shutdown as session_shutdown
+    from core.agent_harness.session import SessionManager
+    from surfaces.interactive_shell.runtime.core.state import ReplState
+    from surfaces.interactive_shell.session import Session
+
+    captured: dict[str, object] = {}
+
+    def _close(_self: object, _session: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(SessionManager, "close", _close)
+
+    monkeypatch.setattr(session_shutdown, "ctrl_c_exit_interrupted", lambda: False)
+    session_shutdown.close_repl_session(Session(), ReplState())
+    assert captured["extract_memory"] is True
+
+    monkeypatch.setattr(session_shutdown, "ctrl_c_exit_interrupted", lambda: True)
+    session_shutdown.close_repl_session(Session(), ReplState())
+    assert captured["extract_memory"] is False

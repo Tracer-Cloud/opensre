@@ -15,6 +15,7 @@ from infrastructure.analytics.capture import capture_interactive_shell_rendered
 from infrastructure.analytics.github_identity import identify_saved_github_username
 from infrastructure.analytics.usage_context import claim_process_session_id
 from infrastructure.logging import install_shell_log_handler, quiet_noisy_third_party_loggers
+from infrastructure.terminal.prompt_support import begin_ctrl_c_exit
 from infrastructure.terminal.theme import set_active_theme
 from surfaces.interactive_shell.controller import InteractiveShellController
 from surfaces.interactive_shell.runtime.context import create_repl_runtime
@@ -141,10 +142,15 @@ async def run_repl_async(
             ).start_interactive_shell()
         return 0
     finally:
+        # The exit is settled however it was asked for (Ctrl+C, Ctrl+D, /exit),
+        # and the prompt is off screen, so SIGINT reaches the process handler
+        # again: one press must end the run rather than re-open the
+        # double-press gate on an exit the user already confirmed.
+        begin_ctrl_c_exit()
         startup_work.close()
         join_first_turn_warmup()
         # True end-of-run teardown: persist and release the session's resources.
-        close_repl_session(session, runtime_context.state)
+        close_repl_session(session, runtime_context.state, console=out)
 
 
 def _prepare_shell_start(

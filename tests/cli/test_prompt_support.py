@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 
 import pytest
 import questionary
@@ -9,11 +10,22 @@ from prompt_toolkit.output import DummyOutput  # type: ignore[import-not-found]
 
 from infrastructure.terminal.prompt_support import (
     _last_ctrl_c,
+    ctrl_c_exit_interrupted,
     handle_ctrl_c_press,
     install_questionary_ctrl_c_double_exit,
     install_questionary_escape_cancel,
     print_session_resume_hint,
+    repl_prompt_ctrl_c_should_exit,
+    repl_reset_ctrl_c_gate,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ctrl_c_gate() -> Iterator[None]:
+    """Reset the process-wide Ctrl+C gate around every test in this module."""
+    repl_reset_ctrl_c_gate()
+    yield
+    repl_reset_ctrl_c_gate()
 
 
 def test_print_session_resume_hint_includes_repl_and_cli_commands(
@@ -230,3 +242,36 @@ def test_questionary_ask_inside_running_event_loop_does_not_raise() -> None:
 
     result = asyncio.run(_run())
     assert result == "a"
+
+
+def test_ctrl_c_during_shell_teardown_does_not_ask_for_a_second_press(capsys) -> None:
+    """Once the REPL accepts the exit, a press interrupts teardown instead of re-arming.
+
+    The shell leaves the prompt and then blocks for seconds on final
+    persistence, so SIGINT reaches the process handler again. It used to start
+    its own double-press dance there — "(Press Ctrl+C again to exit)", then
+    "Goodbye!" — for an exit the user had already confirmed.
+    """
+    assert repl_prompt_ctrl_c_should_exit() is False
+    assert repl_prompt_ctrl_c_should_exit() is True
+    capsys.readouterr()
+
+    with pytest.raises(KeyboardInterrupt):
+        handle_ctrl_c_press()
+
+    assert capsys.readouterr().out == ""
+    assert ctrl_c_exit_interrupted() is True
+
+
+def test_ctrl_c_exit_from_the_signal_handler_also_arms_teardown(capsys) -> None:
+    """The handler's own confirmed exit runs the same teardown, so arm it there too."""
+    handle_ctrl_c_press()
+    assert "(Press Ctrl+C again to exit)" in capsys.readouterr().out
+
+    with pytest.raises(SystemExit):
+        handle_ctrl_c_press()
+    assert "Goodbye" in capsys.readouterr().out
+
+    with pytest.raises(KeyboardInterrupt):
+        handle_ctrl_c_press()
+    assert capsys.readouterr().out == ""

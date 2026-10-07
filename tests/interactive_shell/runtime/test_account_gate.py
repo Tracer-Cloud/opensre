@@ -311,7 +311,7 @@ def test_run_repl_async_is_the_already_gated_shell_body(monkeypatch: Any) -> Non
         def refresh_from_storage(self, _session: object) -> None:
             return
 
-        def close(self, _session: object) -> None:
+        def close(self, _session: object, **_kwargs: object) -> None:
             return
 
     monkeypatch.setattr(main_entrypoint.SessionManager, "for_session", lambda _s: _SessionStore())
@@ -336,7 +336,7 @@ def _boot_repl_without_prompt(monkeypatch: Any) -> None:
         def refresh_from_storage(self, _session: object) -> None:
             return
 
-        def close(self, _session: object) -> None:
+        def close(self, _session: object, **_kwargs: object) -> None:
             return
 
     monkeypatch.setattr(main_entrypoint, "identify_saved_github_username", lambda: None)

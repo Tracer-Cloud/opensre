@@ -85,7 +85,7 @@ class _SessionStore:
     def refresh_from_storage(self, _session: object) -> None:
         return
 
-    def close(self, _session: object) -> None:
+    def close(self, _session: object, **_kwargs: object) -> None:
         return
 
 

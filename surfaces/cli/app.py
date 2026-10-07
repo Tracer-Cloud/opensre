@@ -369,10 +369,19 @@ def main(argv: list[str] | None = None, *, host: CliHost | None = None) -> int:
         # resolve the git version and fingerprint just to ask if a flush
         # is needed.
         if not fast_help:
-            if analytics_needs_flush():
-                shutdown_analytics(flush=True, timeout=_ANALYTICS_FLUSH_TIMEOUT_SECONDS)
-            else:
-                shutdown_analytics(flush=False)
+            # Local: the package facade keeps prompt_toolkit out of a bare CLI
+            # import, and ``startup.run`` has already loaded it on this path.
+            from infrastructure.terminal.prompt_support import ctrl_c_exit_interrupted
+
+            # Ctrl+C during a shell teardown raises here (the shell arms the
+            # process handler once an exit is settled). Draining telemetry is
+            # the least of what the user is waiting on: never start the drain
+            # after they interrupted, and stop it if they interrupt now.
+            with suppress(KeyboardInterrupt):
+                if analytics_needs_flush() and not ctrl_c_exit_interrupted():
+                    shutdown_analytics(flush=True, timeout=_ANALYTICS_FLUSH_TIMEOUT_SECONDS)
+                else:
+                    shutdown_analytics(flush=False)
     return 0
 
 
