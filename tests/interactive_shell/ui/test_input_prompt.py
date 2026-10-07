@@ -128,7 +128,7 @@ class TestUserTurnRow:
         # A blank row precedes the echo (between-turns gap).
         assert visible.startswith("\n")
         rows = [row for row in visible.strip("\n").splitlines() if row]
-        assert rows == ["> why does it show that?"], rows
+        assert rows == ["❯ why does it show that?"], rows
         assert "▌" not in visible
         accent = reply_marker_hex().lstrip("#")
         ar, ag, ab = (int(accent[i : i + 2], 16) for i in (0, 2, 4))
@@ -160,7 +160,7 @@ class TestUserTurnRow:
             )
             rows = [row for row in buf.getvalue().splitlines() if row]
             assert rows, width
-            assert rows[0].startswith("> "), (width, rows[0])
+            assert rows[0].startswith("❯ "), (width, rows[0])
             for row in rows[1:]:
                 assert row.startswith("  "), (width, row)
             for row in rows:

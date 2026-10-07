@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class TranscriptRole(StrEnum):
     """Visible markers used to distinguish transcript rows."""
 
-    USER = ">"
+    USER = "❯"
     ASSISTANT = "●"
     WORKING = "Working"
     TOOL = "Tool"
@@ -161,10 +161,11 @@ def transcript_gutter(
 def user_turn_renderable(text: str, *, marker_style: str, body_style: str) -> _GutterRow:
     """Build the transcript row for one submitted user turn.
 
-    ``>`` pairs with the assistant's ``●`` as the other half of a role, and
-    matches the composer's own prompt character — what you said and where you
-    say it are one role. It is drawn on the first row only: repeating it down a
-    wrapped turn reads as several prompts rather than one.
+    ``❯`` pairs with the assistant's ``●`` as the other half of a role: both
+    are solid marks, so neither side of the exchange outweighs the other. It is
+    the glyph the palette already names for a prompt (see ``theme.HIGHLIGHT``).
+    Drawn on the first row only — repeating it down a wrapped turn reads as
+    several prompts rather than one.
 
     ``text`` is rendered verbatim: it is untrusted input and must never be
     parsed as console markup.

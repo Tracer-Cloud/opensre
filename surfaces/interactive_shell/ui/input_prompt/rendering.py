@@ -98,7 +98,7 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
         console,
         user_turn_renderable(
             text,
-            marker_style=ui_theme.reply_marker_style(),
+            marker_style=str(ui_theme.HIGHLIGHT),
             body_style=str(ui_theme.BRAND if is_handoff_answer else ui_theme.TEXT),
         ),
     )

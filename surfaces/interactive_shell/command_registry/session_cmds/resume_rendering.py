@@ -21,7 +21,6 @@ from rich.console import Console, RenderableType
 from rich.rule import Rule
 from rich.text import Text
 
-from infrastructure.terminal.theme import reply_marker_style
 from surfaces.interactive_shell.telemetry import parse_terminal_turn_outcome
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, TEXT
 from surfaces.interactive_shell.ui.transcript import (
@@ -103,7 +102,7 @@ def _render_user_row(console: Console, text: str) -> None:
     console.print()
     print_repl_renderable(
         console,
-        user_turn_renderable(text, marker_style=reply_marker_style(), body_style=str(TEXT)),
+        user_turn_renderable(text, marker_style=str(HIGHLIGHT), body_style=str(TEXT)),
     )
 
 
