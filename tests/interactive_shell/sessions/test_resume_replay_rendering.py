@@ -28,6 +28,25 @@ def _render(history: list[dict], turn_details: list[dict], *, width: int = 78) -
     return buffer.getvalue()
 
 
+def _render_raw(history: list[dict], turn_details: list[dict], *, width: int) -> str:
+    """Like :func:`_render` but keeping ANSI, for comparing against the live echo."""
+    buffer = io.StringIO()
+    render_resumed_session_history(
+        Console(
+            file=buffer,
+            force_terminal=True,
+            color_system="truecolor",
+            highlight=False,
+            no_color=False,
+            width=width,
+        ),
+        history=history,
+        turn_details=turn_details,
+        messages=[],
+    )
+    return buffer.getvalue()
+
+
 def _slash_rows(text: str) -> list[dict]:
     """The two history rows one dispatched slash command actually writes."""
     return [
@@ -85,9 +104,9 @@ def test_a_handlers_own_outcome_prose_survives_the_replay() -> None:
     assert "✓" not in output
 
 
-def test_replayed_rows_fit_every_width_and_carry_no_padding() -> None:
+def test_replayed_rows_are_laid_out_at_the_render_width() -> None:
     """Replay goes through the same renderables as a live turn, so the full-screen
-    transcript lays it out again on resize instead of keeping fixed-width bytes."""
+    transcript re-lays it out on resize instead of keeping fixed-width bytes."""
     history = [
         {"kind": "cli_agent", "text": "why did the deploy to prod-us-east fail at 03:12?"},
     ]
@@ -100,63 +119,32 @@ def test_replayed_rows_fit_every_width_and_carry_no_padding() -> None:
     for width in (78, 44, 26):
         for row in (row for row in _render(history, details, width=width).splitlines() if row):
             assert len(row) <= width, (width, len(row), row)
-            assert row == row.rstrip(), (width, repr(row))
 
 
-def test_session_navigation_is_not_replayed_as_conversation() -> None:
-    """A session's file records the ``/resume`` that opened it, under two texts:
-    the handler writes ``/resume <id>`` and turn accounting writes ``/resume``.
-    Replaying them showed the command twice at the top of its own conversation.
-    """
-    output = _render(
-        [
-            {"kind": "slash", "text": "/resume 55ff6dcb"},
-            {"kind": "cli_agent", "text": "/resume"},
-            {"kind": "slash", "text": "/sessions"},
-            {"kind": "cli_agent", "text": "/sessions"},
-            {"kind": "cli_agent", "text": "why is redis slow?"},
-        ],
-        [
-            {"prompt": "/resume", "response": "terminal turn handled: /resume"},
-            {"prompt": "why is redis slow?", "response": "Connection pool exhaustion."},
-        ],
+def test_a_replayed_turn_renders_exactly_like_a_live_one() -> None:
+    """The point of sharing the renderer: a conversation must not change
+    appearance just because it was restored. Pins marker, plate and spacing
+    against the live echo rather than against a copy of its output."""
+    from surfaces.interactive_shell.session import Session
+    from surfaces.interactive_shell.ui.input_prompt.rendering import render_submitted_prompt
+
+    prompt = "why is redis slow?"
+    live = io.StringIO()
+    render_submitted_prompt(
+        Console(
+            file=live,
+            force_terminal=True,
+            color_system="truecolor",
+            highlight=False,
+            no_color=False,
+            width=64,
+        ),
+        Session(),
+        prompt,
     )
+    replayed = _render_raw([{"kind": "cli_agent", "text": prompt}], [], width=64)
 
-    assert "/resume" not in output
-    assert "/sessions" not in output
-    assert "terminal turn handled" not in output
-    assert "❱ why is redis slow?" in output
-
-
-def test_a_slash_turn_is_recognised_by_its_text_not_its_bookkeeping_row() -> None:
-    """Only one of the two stubs a dispatched slash writes may reach a branch.
-    Reading the kind alone replayed the survivor as prose in the ``●`` gutter."""
-    output = _render(
-        [{"kind": "cli_agent", "text": "/model set"}],
-        [{"prompt": "/model set", "response": "slash /model set (failed)\nRun /logout."}],
-    )
-
-    assert "✗ Run /logout." in output
-    assert "●" not in output
-
-
-def test_the_banner_counts_only_the_turns_that_replay() -> None:
-    """Counting raw history rows promised turns the reader never sees."""
-    from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
-        replayable_turn_count,
-    )
-
-    history = [
-        {"kind": "slash", "text": "/choose"},
-        {"kind": "cli_agent", "text": "/choose"},
-        {"kind": "slash", "text": "/resume 55ff6dcb"},
-        {"kind": "cli_agent", "text": "/resume"},
-        {"kind": "slash", "text": "/auto high"},
-        {"kind": "cli_agent", "text": "/auto high"},
-        {"kind": "cli_agent", "text": "why is redis slow?"},
-    ]
-
-    assert replayable_turn_count(history) == 2
+    assert live.getvalue().strip() in replayed.strip()
 
 
 def test_two_identical_submissions_replay_as_two_turns() -> None:

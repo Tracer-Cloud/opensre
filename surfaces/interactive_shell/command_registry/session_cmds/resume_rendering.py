@@ -22,7 +22,7 @@ from rich.rule import Rule
 from rich.text import Text
 
 from surfaces.interactive_shell.telemetry import parse_terminal_turn_outcome
-from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, TEXT
+from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, INPUT_SURFACE, TEXT
 from surfaces.interactive_shell.ui.transcript import (
     TranscriptRole,
     is_internal_turn,
@@ -114,11 +114,21 @@ def _assistant_replies_by_prompt(messages: list[tuple[str, str]]) -> dict[str, d
 
 
 def _render_user_row(console: Console, text: str) -> None:
-    """Draw a replayed prompt with the same renderable the live echo uses."""
+    """Draw a replayed prompt exactly as the live echo draws it.
+
+    Same renderable, same marker, same plate: a restored turn that looked
+    different from a live one would be the very thing this module exists to
+    stop, and the plate is what marks a row as something the user said.
+    """
     console.print()
     print_repl_renderable(
         console,
-        user_turn_renderable(text, marker_style=str(HIGHLIGHT), body_style=str(TEXT)),
+        user_turn_renderable(
+            text,
+            marker_style=str(HIGHLIGHT),
+            body_style=str(TEXT),
+            background=f"on {INPUT_SURFACE}",
+        ),
     )
 
 
