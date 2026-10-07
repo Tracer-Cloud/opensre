@@ -198,3 +198,59 @@ def test_an_unreadable_outcome_is_not_labelled_a_success() -> None:
     assert "interactive wizard failed (exit 2)" in output
     assert "✓" not in output
     assert "✗" not in output
+
+
+def test_session_navigation_is_not_replayed_as_conversation() -> None:
+    """A session's file records the ``/resume`` that opened it, under two texts:
+    the handler writes ``/resume <id>`` and turn accounting writes ``/resume``.
+    Replaying them showed the command twice at the top of its own conversation.
+    """
+    output = _render(
+        [
+            {"kind": "slash", "text": "/resume 55ff6dcb"},
+            {"kind": "cli_agent", "text": "/resume"},
+            {"kind": "slash", "text": "/sessions"},
+            {"kind": "cli_agent", "text": "/sessions"},
+            {"kind": "cli_agent", "text": "why is redis slow?"},
+        ],
+        [
+            {"prompt": "/resume", "response": "terminal turn handled: /resume"},
+            {"prompt": "why is redis slow?", "response": "Connection pool exhaustion."},
+        ],
+    )
+
+    assert "/resume" not in output
+    assert "/sessions" not in output
+    assert "terminal turn handled" not in output
+    assert "❱ why is redis slow?" in output
+
+
+def test_a_slash_turn_is_recognised_by_its_text_not_its_bookkeeping_row() -> None:
+    """Only one of the two stubs a dispatched slash writes may reach a branch.
+    Reading the kind alone replayed the survivor as prose in the ``●`` gutter."""
+    output = _render(
+        [{"kind": "cli_agent", "text": "/model set"}],
+        [{"prompt": "/model set", "response": "slash /model set (failed)\nRun /logout."}],
+    )
+
+    assert "✗ Run /logout." in output
+    assert "●" not in output
+
+
+def test_the_banner_counts_only_the_turns_that_replay() -> None:
+    """Counting raw history rows promised turns the reader never sees."""
+    from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
+        replayable_turn_count,
+    )
+
+    history = [
+        {"kind": "slash", "text": "/choose"},
+        {"kind": "cli_agent", "text": "/choose"},
+        {"kind": "slash", "text": "/resume 55ff6dcb"},
+        {"kind": "cli_agent", "text": "/resume"},
+        {"kind": "slash", "text": "/auto high"},
+        {"kind": "cli_agent", "text": "/auto high"},
+        {"kind": "cli_agent", "text": "why is redis slow?"},
+    ]
+
+    assert replayable_turn_count(history) == 2
