@@ -37,6 +37,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         "daily_update.py",
         "effective_models.py",
         "harness_adapters.py",
+        # Chat setup reply: the webapp page for every catalog integration,
+        # not one vendor's package.
+        "hosted_setup.py",
         # Shared MCP transport lifecycle and result normalization for MCP vendor
         # packages, not a vendor integration itself.
         "mcp_client.py",
