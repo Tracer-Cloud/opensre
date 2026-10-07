@@ -153,24 +153,40 @@ def test_interactive_picker_runs_inline_when_exclusive_stdin_active() -> None:
     assert session.terminal.pending_prompt_autosubmit is False
     # Exclusive stdin means the user typed this slash literally, so the prompt
     # line already shows it — announcing it again would be the third rendering
-    # of one command.
-    assert buf.getvalue() == ""
+    # of one command. Only the blank row that separates it from the output.
+    assert buf.getvalue() == "\n"
 
 
-def test_a_typed_command_is_not_announced_under_its_own_prompt_row() -> None:
+@pytest.mark.parametrize(
+    ("typed", "args"),
+    [
+        ("/rename release-candidate", ["release-candidate"]),
+        # Rebuilt as ``/rename 'release candidate'``, so only matching on tokens
+        # recognises it as the line the user typed.
+        ('/rename "release candidate"', ["release candidate"]),
+        ("/rename   release-candidate", ["release-candidate"]),
+    ],
+    ids=["plain", "requoted", "extra-spaces"],
+)
+def test_a_typed_command_is_not_announced_under_its_own_prompt_row(
+    typed: str, args: list[str]
+) -> None:
     """A typed ``/rename`` printed twice: once as the user row, once as ``$ /rename``.
 
     Only a handful of commands reserve exclusive stdin, so that check alone left
-    every other typed command announcing itself a second time.
+    every other typed command announcing itself a second time. The command line
+    is rebuilt from parsed arguments, so the match is on tokens: a quoted or
+    loosely spaced spelling is still the line the prompt row already shows.
     """
     ctx, buf, session, ports = _ctx(ports=FakeSlashPorts(tty=True))
-    ctx = replace(ctx, turn_user_message="/rename release-candidate")
+    ctx = replace(ctx, turn_user_message=typed)
 
-    slash_tool.execute_slash_tool({"command": "/rename", "args": ["release-candidate"]}, ctx)
+    slash_tool.execute_slash_tool({"command": "/rename", "args": args}, ctx)
 
-    assert ports.dispatched == ["/rename release-candidate"]
+    assert len(ports.dispatched) == 1
     assert session.terminal.exclusive_stdin_active is False
-    assert buf.getvalue() == ""
+    # Just the blank row that separates the command's output from the prompt.
+    assert buf.getvalue() == "\n"
 
 
 def test_agent_resolved_slash_announces_itself() -> None:

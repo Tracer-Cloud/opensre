@@ -210,6 +210,18 @@ def _slash_line_parts(stripped: str) -> list[str]:
         return stripped.split()
 
 
+def _user_typed_this_command(ctx: ActionToolScope, parts: list[str]) -> bool:
+    """True when this turn's user message *is* this command, so the prompt row shows it.
+
+    Compares tokens rather than raw text: the command line is rebuilt from the
+    parsed arguments, so a typed ``/rename "release candidate"`` comes back as
+    ``/rename 'release candidate'``. Byte equality would miss that, and every
+    other equivalent spelling (repeated spaces, swapped quote style).
+    """
+    typed = ctx.turn_user_message.strip()
+    return bool(typed) and _slash_line_parts(typed) == parts
+
+
 def execute_slash_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dict[str, Any]:
     if ctx.slash_ports is None:
         raise RuntimeError("slash tool requires slash runtime ports")
@@ -291,14 +303,18 @@ def execute_slash_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dic
             "instruction": _DECLINED_INSTRUCTION,
         }
 
+    # One row of air under the prompt row that asked for this, so the output does
+    # not butt up against it. Above the banner rather than below it, so banner
+    # and output stay one block (same rhythm as the ``$`` shell header).
+    ctx.console.print()
     # Announce the command unless the user's own prompt row already shows it:
-    # either this turn reserved exclusive stdin, or the user typed this exact
-    # command. Exclusive stdin alone was too narrow — only a handful of commands
-    # reserve it, so every other typed command (``/rename``, ``/cron``, …)
-    # printed itself a second time one row below its own prompt. On every other
-    # path the agent resolved free text into a slash — nothing was echoed, and
-    # this banner is the only indication of what is about to run.
-    if not exclusive_stdin_active(ctx.session) and ctx.turn_user_message.strip() != stripped:
+    # either this turn reserved exclusive stdin, or the user typed this command.
+    # Exclusive stdin alone was too narrow — only a handful of commands reserve
+    # it, so every other typed command (``/rename``, ``/cron``, …) printed itself
+    # a second time one row below its own prompt. On every other path the agent
+    # resolved free text into a slash — nothing was echoed, and this banner is
+    # the only indication of what is about to run.
+    if not exclusive_stdin_active(ctx.session) and not _user_typed_this_command(ctx, parts):
         ctx.console.print(f"[bold]$ {escape(stripped)}[/bold]")
     return _dispatch_and_translate_exit(
         stripped,
