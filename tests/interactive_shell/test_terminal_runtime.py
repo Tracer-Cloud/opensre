@@ -45,6 +45,11 @@ from surfaces.interactive_shell.runtime.startup import initial_input as startup_
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import input_prompt
 from surfaces.interactive_shell.ui.input_prompt import completion as prompt_completion
+from surfaces.interactive_shell.ui.input_prompt.alternate_scroll import (
+    ALTERNATE_SCROLL_OFF,
+    ALTERNATE_SCROLL_ON,
+    alternate_scroll_disabled,
+)
 from surfaces.interactive_shell.ui.input_prompt.completion import ShellCompleter
 from surfaces.interactive_shell.ui.input_prompt.key_bindings import (
     _SHIFT_ENTER_SEQUENCE,
@@ -180,6 +185,27 @@ def test_full_screen_transcript_keeps_native_mouse_selection_available() -> None
         prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
 
     assert prompt.app.renderer.mouse_support() is False
+
+
+def test_shell_turns_off_alternate_scroll_so_the_wheel_cannot_recall_history() -> None:
+    """DECSET 1007 turns wheel notches into Up keys, and Up rewrites the composer."""
+    stream = io.StringIO()
+    stream.isatty = lambda: True  # type: ignore[method-assign]
+
+    with alternate_scroll_disabled(stream):
+        assert stream.getvalue() == ALTERNATE_SCROLL_OFF
+
+    assert stream.getvalue() == ALTERNATE_SCROLL_OFF + ALTERNATE_SCROLL_ON
+
+
+def test_alternate_scroll_guard_leaves_a_non_tty_untouched() -> None:
+    """Piped output must not collect escape sequences."""
+    stream = io.StringIO()
+
+    with alternate_scroll_disabled(stream):
+        pass
+
+    assert stream.getvalue() == ""
 
 
 def test_build_prompt_session_installs_growing_bordered_composer() -> None:

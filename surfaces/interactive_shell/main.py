@@ -33,6 +33,9 @@ from surfaces.interactive_shell.runtime.startup.tool_registry_prewarm import (
     start_tool_registry_prewarm,
 )
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.input_prompt.alternate_scroll import (
+    alternate_scroll_disabled,
+)
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
 from surfaces.interactive_shell.ui.transcript_view import TranscriptStore, record_startup_output
 from surfaces.shared.terminal.banner import ResponsiveLaunchBanner, animate_launch_wordmark
@@ -121,17 +124,21 @@ async def run_repl_async(
         tools_ready()
 
     try:
-        with record_startup_output(transcript):
-            started = _prepare_shell_start(session, out, resume_session_id, startup_work)
-        if not started:
-            return 1
-        await InteractiveShellController(
-            runtime_context,
-            config=cfg,
-            console=out,
-            startup_work=startup_work,
-            transcript=transcript,
-        ).start_interactive_shell()
+        # The composer keeps mouse reporting off for native text selection, so the
+        # terminal would otherwise turn wheel notches into Up/Down keys and recall
+        # history into the input box on every scroll.
+        with alternate_scroll_disabled():
+            with record_startup_output(transcript):
+                started = _prepare_shell_start(session, out, resume_session_id, startup_work)
+            if not started:
+                return 1
+            await InteractiveShellController(
+                runtime_context,
+                config=cfg,
+                console=out,
+                startup_work=startup_work,
+                transcript=transcript,
+            ).start_interactive_shell()
         return 0
     finally:
         startup_work.close()
