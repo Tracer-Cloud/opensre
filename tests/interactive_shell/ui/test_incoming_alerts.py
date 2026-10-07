@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any, TypeVar
+from typing import Any
 
 from rich.console import Console
 
@@ -29,10 +29,10 @@ def _session_with_store() -> tuple[Session, InMemorySessionStore]:
     return session, store
 
 
-_FakeStore = TypeVar("_FakeStore", bound=InMemorySessionStore)
-
-
-def _attach_store(session: Session, store: _FakeStore) -> _FakeStore:
+def _attach_store[StoreT: InMemorySessionStore](
+    session: Session,
+    store: StoreT,
+) -> StoreT:
     """Replace the session's store and open it (an unopened store signals '')."""
     session.store = store
     store.open_session(session)
