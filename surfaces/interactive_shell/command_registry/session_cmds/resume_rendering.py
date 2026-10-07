@@ -6,9 +6,10 @@ indistinguishable from one just typed. Holds no lookup or orchestration logic,
 so the resume command module stays focused on the resume flow.
 
 The input is an append-only *bookkeeping* log, not a transcript: one submission
-can write several rows, and a slash turn's paired "response" is an analytics
-payload rather than prose. This module collapses that log back into the turns a
-user took before handing them to the renderers.
+can write several rows, a slash turn's paired "response" is an analytics
+payload rather than prose, and a menu answer is stored in the ``@json:``
+framing its parser needs. This module collapses that log back into the turns a
+user took, in the form they were shown, before handing them to the renderers.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from rich.console import Console, RenderableType
 from rich.rule import Rule
 from rich.text import Text
 
+from core.agent_harness.spi.handoff import parse_framed_ask_user_answers
 from surfaces.interactive_shell.telemetry import parse_terminal_turn_outcome
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, INPUT_SURFACE, TEXT
 from surfaces.interactive_shell.ui.transcript import (
@@ -119,7 +121,21 @@ def _render_user_row(console: Console, text: str) -> None:
     Same renderable, same marker, same plate: a restored turn that looked
     different from a live one would be the very thing this module exists to
     stop, and the plate is what marks a row as something the user said.
+
+    A menu answer is drawn as its Ask User card instead, since that — not a
+    prompt plate — is what the live run left in scrollback. Only the current
+    ``@json:`` framing counts as one: with no hand-off provenance to consult
+    here, the lenient parser would claim an ordinary numbered request.
     """
+    from surfaces.interactive_shell.ui.handoff_questions import render_ask_user_qa
+
+    answers = parse_framed_ask_user_answers(text)
+    if answers:
+        # The card owns no margin of its own — live, the erased menu leaves
+        # one behind — so the replay supplies it here.
+        console.print()
+        render_ask_user_qa(console, answers)
+        return
     console.print()
     print_repl_renderable(
         console,

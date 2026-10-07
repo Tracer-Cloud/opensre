@@ -3,7 +3,9 @@
 Session history is append-only *bookkeeping*: one slash command writes a
 ``slash`` stub, a ``cli_agent`` stub, and an analytics payload as its
 "response". Replaying those rows verbatim showed each command three times, the
-last of them in the assistant gutter as if the model had said it.
+last of them in the assistant gutter as if the model had said it. A menu
+answer has the same problem in the other direction: it is stored in the
+``@json:`` framing its parser needs, never in the form the user saw.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import io
 
 from rich.console import Console
 
+from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
 from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
     render_resumed_session_history,
 )
@@ -259,3 +262,46 @@ def test_the_banner_counts_only_the_turns_that_replay() -> None:
     ]
 
     assert replayable_turn_count(history) == 2
+
+
+def test_a_menu_answer_replays_as_its_card_not_as_the_json_the_parser_reads() -> None:
+    """``@json:`` framing keeps a custom answer from impersonating a question header.
+
+    It is wire format: live, the user picked from a menu that erased itself and
+    scrollback kept an Ask User card. Replaying the stored text as a prompt
+    plate put the framing on screen instead.
+    """
+    answer = format_ask_user_answers(
+        (
+            AskUserQuestion(label="", title="Which repository should I analyze?", options=()),
+            AskUserQuestion(label="", title="How far back?", options=()),
+        ),
+        ("acme/app", "30 days"),
+    )
+
+    output = _render([{"kind": "cli_agent", "text": answer}], [])
+
+    assert "@json:" not in output
+    assert "Ask User" in output
+    assert "Which repository should I analyze?" in output
+    assert "acme/app" in output
+    assert "How far back?" in output
+    assert "30 days" in output
+
+
+def test_a_multiline_numbered_request_is_not_mistaken_for_a_menu_answer() -> None:
+    """The replay has no hand-off provenance, so only the ``@json:`` framing counts.
+
+    ``parse_ask_user_answers`` also accepts the legacy unframed format, which a
+    numbered request over two lines satisfies by accident; the live renderer can
+    afford that because it gates on ``awaiting_handoff_answer`` first. Reading
+    the text alone, as the replay must, that leniency turns a typed request into
+    somebody else's question.
+    """
+    output = _render(
+        [{"kind": "cli_agent", "text": "1. Investigate the outage\nCheck the logs"}], []
+    )
+
+    assert "Ask User" not in output
+    assert "Investigate the outage" in output
+    assert "Check the logs" in output

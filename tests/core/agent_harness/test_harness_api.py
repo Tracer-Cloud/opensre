@@ -225,6 +225,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "apply_pending_user_choice_state",
             "format_ask_user_answers",
             "parse_ask_user_answers",
+            "parse_framed_ask_user_answers",
             "pending_user_choice_state_snapshot",
             "question_key",
         }

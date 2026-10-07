@@ -1014,3 +1014,47 @@ def test_session_rotates_id_on_clear() -> None:
     s.clear()
     assert s.session_id != original_id
     assert s.started_at <= time.time()
+
+
+# ── Session list titles ───────────────────────────────────────────────────
+
+
+def test_a_menu_answer_titles_the_session_with_the_picked_label(tmp_path: Path) -> None:
+    """A menu-driven session's first message is a menu answer, stored as wire format.
+
+    ``conversation_title`` names the session in ``/sessions`` and the
+    ``/resume`` picker; unparsed, those rows read
+    ``1. Which demo…? @json:"Explore a repo…"``.
+    """
+    from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
+
+    session = _make_session()
+    answer = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Which demo would you like me to run?", options=()),),
+        ("Explore a repo and analyze its CI/CD performance",),
+    )
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(session)
+        SessionStore.append_message(session.session_id, role="user", content=answer)
+        SessionStore.flush(session)
+
+        results = SessionStore.load_recent()
+
+    assert results[0]["conversation_title"] == "Explore a repo and analyze its CI/CD performance"
+
+
+def test_a_multiline_numbered_request_keeps_its_own_words_as_the_title(tmp_path: Path) -> None:
+    """Legacy unframed parsing would title this ``Check the payment logs``."""
+    session = _make_session()
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(session)
+        SessionStore.append_message(
+            session.session_id,
+            role="user",
+            content="1. Investigate the outage\nCheck the payment logs",
+        )
+        SessionStore.flush(session)
+
+        results = SessionStore.load_recent()
+
+    assert results[0]["conversation_title"] == "1. Investigate the outage Check the payment logs"

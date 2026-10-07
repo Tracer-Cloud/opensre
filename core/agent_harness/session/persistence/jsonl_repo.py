@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import core.agent_harness.session.persistence.paths as storage_paths
+from core.agent_harness.session.pending_choice import parse_framed_ask_user_answers
 from core.agent_harness.session.persistence.contracts import (
     CHAT_KINDS,
     SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
@@ -134,8 +135,7 @@ class JsonlSessionRepo:
                 title
                 for rec in branch
                 if rec.get("type") == "message" and rec.get("role") == "user"
-                if (title := " ".join(str(rec.get("content") or "").split()))
-                and not title.startswith("/")
+                if (title := _conversation_title(str(rec.get("content") or "")))
             ),
             "",
         )
@@ -296,6 +296,21 @@ def _turn_evidence_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, An
             if isinstance(content, dict):
                 records.append(content)
     return records
+
+
+def _conversation_title(content: str) -> str:
+    """Title a user message contributes to a session row, or ``""`` when it contributes none.
+
+    A menu answer titles the row with its picked labels rather than the
+    ``@json:`` framing stored for the parser; only that framing counts as one,
+    since no hand-off provenance is available here. Slash commands name the
+    command, not the conversation, so they title nothing.
+    """
+    answers = parse_framed_ask_user_answers(content)
+    if answers:
+        return " · ".join(" ".join(answer.split()) for _question, answer in answers)
+    title = " ".join(content.split())
+    return "" if title.startswith("/") else title
 
 
 def _history_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, Any]]:

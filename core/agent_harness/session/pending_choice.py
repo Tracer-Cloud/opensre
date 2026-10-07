@@ -279,6 +279,21 @@ def parse_ask_user_answers(text: str) -> list[tuple[str, str]]:
     return _parse_legacy_answer_blocks(stripped)
 
 
+def parse_framed_ask_user_answers(text: str) -> list[tuple[str, str]]:
+    """Parse only the current ``@json:`` framing; ``[]`` for anything else.
+
+    :func:`parse_ask_user_answers` also accepts the legacy unframed format,
+    which an ordinary numbered request (``1. Investigate the outage`` over a
+    second line) satisfies by accident. A caller that knows a menu issued the
+    question can afford that leniency; one deciding from text alone — a
+    replayed transcript, a session-list title — must require the framing.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return []
+    return _parse_json_answer_blocks(stripped) or []
+
+
 def _parse_json_answer_blocks(text: str) -> list[tuple[str, str]] | None:
     """Parse the unambiguous current answer framing, or signal legacy input."""
     cursor = 0
@@ -344,6 +359,7 @@ __all__ = [
     "apply_pending_user_choice_state",
     "format_ask_user_answers",
     "parse_ask_user_answers",
+    "parse_framed_ask_user_answers",
     "pending_user_choice_state_snapshot",
     "question_key",
     "should_persist_pending_user_choice_state",
