@@ -147,10 +147,14 @@ async def run_repl_async(
         # again: one press must end the run rather than re-open the
         # double-press gate on an exit the user already confirmed.
         begin_ctrl_c_exit()
-        startup_work.close()
-        join_first_turn_warmup()
-        # True end-of-run teardown: persist and release the session's resources.
-        close_repl_session(session, runtime_context.state, console=out)
+        try:
+            startup_work.close()
+            join_first_turn_warmup()
+        finally:
+            # Nested, because the drains above can block and a teardown Ctrl+C
+            # now raises wherever it lands. True end-of-run teardown persists
+            # and releases the session, and that is not the user's to skip.
+            close_repl_session(session, runtime_context.state, console=out)
 
 
 def _prepare_shell_start(

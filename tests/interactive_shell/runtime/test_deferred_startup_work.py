@@ -85,6 +85,9 @@ class _SessionStore:
     def refresh_from_storage(self, _session: object) -> None:
         return
 
+    def flush(self, _session: object) -> None:
+        return
+
     def close(self, _session: object, **_kwargs: object) -> None:
         return
 
@@ -239,3 +242,30 @@ def test_tools_ready_returns_only_after_the_registry_load_finished(
     prewarm.ToolRegistryPrewarm().start().wait()
 
     assert loaded == ["registry"]
+
+
+def test_an_interrupted_warmup_drain_still_closes_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A teardown Ctrl+C in the drains must not carry past the session close.
+
+    ``begin_ctrl_c_exit`` makes the next press raise wherever it lands, and the
+    warm-up join is one of the places that blocks long enough to be hit.
+    """
+    closed: list[bool] = []
+
+    def _interrupted_join() -> None:
+        raise KeyboardInterrupt
+
+    def _close(_session: object, _state: object, **_kwargs: object) -> None:
+        closed.append(True)
+
+    _boot(monkeypatch, Session(), lambda _work: None)
+    monkeypatch.setattr(main_entrypoint, "offer_demo", lambda *_a, **_k: False)
+    monkeypatch.setattr(main_entrypoint, "join_first_turn_warmup", _interrupted_join)
+    monkeypatch.setattr(main_entrypoint, "close_repl_session", _close)
+
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(main_entrypoint.run_repl_async())
+
+    assert closed == [True]

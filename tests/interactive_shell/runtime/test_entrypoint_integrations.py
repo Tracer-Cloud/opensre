@@ -249,7 +249,10 @@ def test_run_repl_async_failed_resume_flushes_starter_session(
     exit_code = asyncio.run(main_entrypoint.run_repl_async(resume_session_id="missing-session"))
 
     assert exit_code == 1
-    assert flushed == [session.session_id]
+    # Teardown persists before the blocking close, and ``close`` flushes again;
+    # the repeat is a documented no-op (no second leaf). What this pins is that
+    # the starter session — and only it — reached the store.
+    assert flushed and set(flushed) == {session.session_id}
     assert not (sessions_dir / f"{session.session_id}.jsonl").exists()
 
 

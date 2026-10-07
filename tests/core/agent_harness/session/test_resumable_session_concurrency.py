@@ -57,7 +57,12 @@ def test_rotate_in_place_retains_the_fresh_session_lease(
 def test_repl_shutdown_refreshes_before_closing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Idle-shell teardown reconciles state while the shared execution lease is held."""
+    """Idle-shell teardown reconciles, persists, then closes under the shared lease.
+
+    The flush sits between the two so a teardown Ctrl+C, which raises wherever
+    it lands once the exit is armed, cannot reach the blocking close with the
+    transcript still unwritten.
+    """
     events: list[str] = []
     session = Session(session_id="session-123")
 
@@ -67,6 +72,9 @@ def test_repl_shutdown_refreshes_before_closing(
 
         def refresh_from_storage(self, _session: Session) -> None:
             events.append("refresh")
+
+        def flush(self, _session: Session) -> None:
+            events.append("flush")
 
         def close(self, _session: Session, **_kwargs: object) -> None:
             events.append("close")
@@ -95,4 +103,4 @@ def test_repl_shutdown_refreshes_before_closing(
     monkeypatch.setattr(session_shutdown, "session_execution_lock", _lease)
 
     assert asyncio.run(main_entrypoint.run_repl_async()) == 0
-    assert events == ["lock", "refresh", "close"]
+    assert events == ["lock", "refresh", "flush", "close"]

@@ -1561,3 +1561,38 @@ def test_an_interrupted_exit_skips_the_closing_memory_pass(
     monkeypatch.setattr(session_shutdown, "ctrl_c_exit_interrupted", lambda: True)
     session_shutdown.close_repl_session(Session(), ReplState())
     assert captured["extract_memory"] is False
+
+
+def test_a_teardown_interrupt_still_persists_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Ctrl+C during teardown may cost the memory pass, never the transcript.
+
+    The press raises wherever it lands once the exit is armed, so the flush has
+    to sit in a finally ahead of the only call that blocks.
+    """
+    import surfaces.interactive_shell.runtime.session_shutdown as session_shutdown
+    from core.agent_harness.session import SessionManager
+    from surfaces.interactive_shell.runtime.core.state import ReplState
+    from surfaces.interactive_shell.session import Session
+
+    flushed: list[str] = []
+
+    def _refresh(_self: object, _session: object) -> None:
+        raise KeyboardInterrupt
+
+    def _flush(_self: object, session: Session) -> None:
+        flushed.append(session.session_id)
+
+    def _close(_self: object, _session: object, **_kwargs: object) -> None:
+        pytest.fail("close() must not run once the interrupt has unwound past it")
+
+    monkeypatch.setattr(SessionManager, "refresh_from_storage", _refresh)
+    monkeypatch.setattr(SessionManager, "flush", _flush)
+    monkeypatch.setattr(SessionManager, "close", _close)
+
+    session = Session()
+    with pytest.raises(KeyboardInterrupt):
+        session_shutdown.close_repl_session(session, ReplState())
+
+    assert flushed == [session.session_id]

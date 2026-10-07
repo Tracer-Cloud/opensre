@@ -51,12 +51,19 @@ def close_repl_session(
     goal_control = state.requested_goal_control()
     manager = SessionManager.for_session(session)
     with session_execution_lock(session.session_id):
-        manager.refresh_from_storage(session)
-        if goal_control is not None:
-            apply_session_goal_control(session, goal_control)
+        try:
+            manager.refresh_from_storage(session)
+            if goal_control is not None:
+                apply_session_goal_control(session, goal_control)
+        finally:
+            # ``close`` flushes and only then waits on the closing memory pass,
+            # so a teardown Ctrl+C could unwind with the transcript still
+            # unwritten. Persist here instead, before anything can block:
+            # ``flush`` waits on nothing and never raises.
+            manager.flush(session)
         with _closing_status(console):
-            # A Ctrl+C here means "stop waiting": persist what the session holds
-            # and skip the closing memory pass, which is an LLM call.
+            # A Ctrl+C here means "stop waiting": the session is already
+            # persisted, so only the closing memory pass (an LLM call) is lost.
             manager.close(session, extract_memory=not ctrl_c_exit_interrupted())
 
 
