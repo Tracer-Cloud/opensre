@@ -7,6 +7,7 @@ import pytest
 
 from core.llm.types import ToolCall
 from core.tool.execution import execute_tool_calls
+from infrastructure.harness_providers import bound_github_connection
 from integrations.catalog import classify_integrations, merge_integrations_by_service
 from integrations.github import app_connection, filter_github_connected_services
 from integrations.github.rest_token import github_rest_token
@@ -100,6 +101,26 @@ def test_background_connection_is_refreshed_and_never_replaced_by_another_grant(
     assert app_connection.refreshed_github_token("chosen") == "fresh-token"
     rows[:] = [_record("other", "other-token")]
     assert app_connection.refreshed_github_token("chosen") == ""
+
+
+def test_direct_report_schedule_preserves_request_scoped_selection(monkeypatch):
+    rows = [_record("chosen", "chosen-token"), _record("default", "default-token")]
+    rows[1]["instances"][0]["tags"]["is_default"] = "true"
+    monkeypatch.setattr("integrations.webapp_vault.webapp_vault_configured", lambda: False)
+    monkeypatch.setattr(app_connection, "load_account_integrations", lambda **_kwargs: rows)
+    with bound_github_connection("chosen"):
+        inputs = app_connection.github_schedule_inputs(
+            "reporting-github-ci-failures", {"owner": "acme", "repo": "api"}
+        )
+    assert inputs["github_connection_id"] == "chosen"
+    assert app_connection.refreshed_github_token(inputs["github_connection_id"]) == "chosen-token"
+    rows.pop(0)
+    with bound_github_connection("chosen"):
+        unavailable = app_connection.github_schedule_inputs(
+            "reporting-github-ci-failures", {"owner": "acme", "repo": "api"}
+        )
+    assert unavailable["github_connection_id"] == "chosen"
+    assert app_connection.refreshed_github_token(unavailable["github_connection_id"]) == ""
 
 
 def test_background_sweep_binds_refreshed_connection_and_blocks_without_it(monkeypatch):

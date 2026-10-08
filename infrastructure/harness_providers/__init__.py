@@ -69,6 +69,10 @@ from infrastructure.harness_providers.integration_resolution import (
 from infrastructure.harness_providers.integration_resolution import (
     reset as _reset_integration_resolution,
 )
+from infrastructure.harness_providers.integration_selection import (
+    bound_github_connection,
+    current_github_connection_id,
+)
 from infrastructure.harness_providers.message_context import (
     MessageContextPrefixStripper,
     clear_message_context_prefix_strippers,
@@ -242,6 +246,8 @@ __all__ = [
     "registered_skill_prerequisite_checks",
     "reset_harness_providers",
     "resolve_integrations",
+    "bound_github_connection",
+    "current_github_connection_id",
     "resolve_integrations_with_metadata",
     "select_github_connection",
     "resolve_runbook_source",

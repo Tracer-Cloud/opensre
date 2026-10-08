@@ -10,6 +10,7 @@ from config.constants.account import OPENSRE_APP_URL_DEFAULT, OPENSRE_APP_URL_EN
 from config.constants.billing import WEBAPP_URL_ENV
 from config.constants.github import GITHUB_CONNECTION_ID_PARAM
 from config.constants.skills import REPORTING_GITHUB_CI_FAILURES_SKILL_NAME
+from infrastructure.harness_providers import current_github_connection_id
 from integrations.account_integrations import account_setup_url, load_account_integrations
 from integrations.github.rest_token import resolved_github_rest_token
 
@@ -73,7 +74,9 @@ def github_schedule_inputs(
                 "--github-connection-id is only valid for reporting-github-ci-failures."
             )
         return inputs
-    selected = _github_schedule_connection_id(connection_id.strip() or None)
+    selected = _github_schedule_connection_id(
+        connection_id.strip() or current_github_connection_id()
+    )
     return {**inputs, GITHUB_CONNECTION_ID_PARAM: selected} if selected else inputs
 
 
