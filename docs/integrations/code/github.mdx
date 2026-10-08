@@ -24,6 +24,7 @@ Once GitHub is connected, the interactive-shell **action agent** uses **`github_
 
 - GitHub account with repository access
 - An authorized GitHub connection created in the OpenSRE app
+- For agent fetches and pushes from an existing checkout, HTTPS GitHub remotes; SSH keys do not replace the app connection
 - For chat `github_cli`: the `gh` binary on `PATH` (OpenSRE supplies the token). If it is missing, follow the [GitHub CLI installation guide](https://cli.github.com/).
 
 ## Setup

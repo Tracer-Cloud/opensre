@@ -383,3 +383,24 @@ def test_a_remote_whose_head_is_a_feature_branch_is_not_merged_by_default(tmp_pa
     assert out["success"] is False and out["error_kind"] == "no_merge_in_progress"
     assert "name the branch" in out["error"]
     assert head_sha(str(work)) == before
+
+
+def test_github_push_remote_cannot_use_local_credentials_from_a_non_github_origin(
+    tmp_path: Path,
+) -> None:
+    work = _diverged_repo(tmp_path)
+    _git(work, "config", "remote.origin.pushurl", "git@github.com:acme/app.git")
+    out = resolve_merge_conflicts.run(workspace=str(work))
+    assert out["work_outcome"]["status"] == "blocked"
+    assert "OpenSRE app" in out["response_text"]
+    assert not merge_in_progress(str(work))
+
+
+def test_selected_github_token_is_not_sent_to_another_push_host(tmp_path: Path) -> None:
+    work = _diverged_repo(tmp_path)
+    _git(work, "remote", "set-url", "origin", "https://github.com/acme/app.git")
+    _git(work, "config", "remote.origin.pushurl", "https://gitlab.com/acme/app.git")
+    out = resolve_merge_conflicts.run(workspace=str(work), github_token="app-token")
+    assert out["success"] is False
+    assert out["error_kind"] == "github_transport_mismatch"
+    assert not merge_in_progress(str(work))

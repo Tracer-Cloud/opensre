@@ -49,7 +49,6 @@ from integrations.git import (
     merge_head_sha,
     merge_in_progress,
     merge_ref,
-    origin_url,
     paths_with_conflict_markers,
     push_destination,
     push_head_to_upstream,
@@ -62,9 +61,9 @@ from integrations.git import (
 from integrations.github import (
     CHECKS_NOT_WATCHED,
     ChecksOutcome,
+    github_workspace_git_token,
     missing_token_envelope,
     watch_pull_request_checks,
-    workspace_public_repository_source,
 )
 from tools.cross_vendor.resolve_merge_conflicts.errors import (
     ERR_AWAITING_DECISIONS,
@@ -214,14 +213,14 @@ def _resolve(
     )
     try:
         ensure_git_repo(ws)
-        if (
-            workspace_public_repository_source({"workspace_repo": origin_url(ws)}).get("github")
-            and not github_token
-        ):
+        selected = github_workspace_git_token(ws, github_token)
+        if selected is None:
             return missing_token_envelope(
                 "Connect GitHub in the OpenSRE app before updating this repository.",
                 blocked="the repository cannot be fetched or pushed",
             )
+        github_token = selected
+        finish = replace(finish, github_token=selected)
         branch = current_branch(ws) or "HEAD"
         already_merging = merge_in_progress(ws)
         if not already_merging:
@@ -681,13 +680,18 @@ def _default_base(ws: str, github_token: str = "") -> str | None:
     than merging whatever stale copy of the branch the clone holds.
     """
     try:
-        name = default_branch(ws, token=github_token or None)
+        selected = github_workspace_git_token(ws, github_token)
+        if selected is None:
+            raise GitCommandError(
+                "github_connection_required", "Refresh the GitHub app connection."
+            )
+        name = default_branch(ws, token=selected or None)
     except GitCommandError:
         return None
     if not name or not is_base_branch(name):
         return None
     try:
-        fetch_remote_branch(ws, name, token=github_token or None)
+        fetch_remote_branch(ws, name, token=selected or None)
     except GitCommandError as exc:
         raise ResolveMergeError(
             ERR_EXECUTION, f"Could not update origin/{name} before merging it: {exc.message}"
@@ -697,7 +701,12 @@ def _default_base(ws: str, github_token: str = "") -> str | None:
 
 def _push(ws: str, github_token: str = "") -> tuple[str, GitCommandError | None]:
     try:
-        return push_head_to_upstream(ws, token=github_token or None), None
+        selected = github_workspace_git_token(ws, github_token)
+        if selected is None:
+            raise GitCommandError(
+                "github_connection_required", "Refresh the GitHub app connection."
+            )
+        return push_head_to_upstream(ws, token=selected or None), None
     except GitCommandError as exc:
         return "", exc
 

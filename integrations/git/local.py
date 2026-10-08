@@ -564,6 +564,19 @@ def _push_remote(workspace: str, branch: str) -> str:
     )
 
 
+def remote_transport_urls(workspace: str) -> tuple[str, ...]:
+    """Return the raw origin and effective fetch/push URLs for the current branch."""
+    fetch = _run_git(workspace, "remote", "get-url", "origin")
+    raw = _config(workspace, "remote.origin.url")
+    destination, _branch = _push_destination(workspace, current_branch(workspace))
+    if _is_url(destination):
+        push = [destination]
+    else:
+        result = _run_git(workspace, "remote", "get-url", "--push", "--all", destination)
+        push = result.stdout.splitlines() if result.returncode == 0 else []
+    return tuple(url for url in (raw, fetch.stdout.strip(), *push) if url)
+
+
 def _push_label(destination: str, remote_branch: str) -> str:
     if not _is_url(destination):
         return f"{destination}/{remote_branch}"

@@ -15,6 +15,7 @@ from integrations.github.client import GitHubApiError, GitHubRestClient, resolve
 
 #: Public name -> the submodule that defines it, imported on first access.
 _LAZY_EXPORTS: dict[str, str] = {
+    "github_workspace_git_token": "integrations.github.workspace_credentials",
     "workspace_public_repository_source": "integrations.github.identity",
     "missing_token_envelope": "integrations.github.envelope",
     "filter_github_connected_services": "integrations.github.connections",
@@ -131,9 +132,11 @@ if TYPE_CHECKING:
     from integrations.github.tools.ci_repair_demo.seed import fresh_demo_repo_name
     from integrations.github.tools.ci_repair_loop.credentials import effective_github_token
     from integrations.github.tools.ci_repair_loop.worker import run_ci_repair_worker
+    from integrations.github.workspace_credentials import github_workspace_git_token
 
 
 __all__ = [
+    "github_workspace_git_token",
     "filter_github_connected_services",
     "workspace_public_repository_source",
     "missing_token_envelope",
