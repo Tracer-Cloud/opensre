@@ -18,8 +18,8 @@ class TestGpt56ContextWindow:
     """GPT-5.6 ships a 1M-token window, unlike the 128k-pinned gpt-5 family (#3931)."""
 
     def test_sol_reclaims_the_million_token_window(self) -> None:
-        # 1_000_000 window - 16_000 response headroom.
-        assert context_budget_ceiling_for_model("gpt-5.6-sol") == 984_000
+        # 1_000_000 window - 25_000 response headroom.
+        assert context_budget_ceiling_for_model("gpt-5.6-sol") == 975_000
 
     def test_all_tiers_share_the_family_window(self) -> None:
         sol = context_budget_ceiling_for_model("gpt-5.6-sol")
@@ -36,17 +36,17 @@ class TestGpt56ContextWindow:
         )
 
     def test_older_gpt5_models_keep_their_conservative_pin(self) -> None:
-        # 128_000 window - 16_000 response headroom.
-        assert context_budget_ceiling_for_model("gpt-5.5") == 112_000
-        assert context_budget_ceiling_for_model("gpt-5") == 112_000
+        # 128_000 window - 25_000 response headroom.
+        assert context_budget_ceiling_for_model("gpt-5.5") == 103_000
+        assert context_budget_ceiling_for_model("gpt-5") == 103_000
 
 
 class TestGpt54ContextWindow:
     """GPT-5.4 is the hosted OpenAI default and must not inherit the 128k gpt-5 pin."""
 
     def test_default_mini_reclaims_the_million_token_window(self) -> None:
-        assert context_budget_ceiling_for_model("gpt-5.4-mini") == 984_000
-        assert context_budget_ceiling_for_model("gpt-5.4") == 984_000
+        assert context_budget_ceiling_for_model("gpt-5.4-mini") == 975_000
+        assert context_budget_ceiling_for_model("gpt-5.4") == 975_000
 
     def test_gpt54_is_not_shadowed_by_the_gpt5_catch_all(self) -> None:
         assert context_budget_ceiling_for_model("gpt-5.4-mini") > context_budget_ceiling_for_model(
@@ -58,9 +58,9 @@ class TestGeminiContextWindow:
     """Gemini 1.5+ ships a 1M-token window; unknown models used to pin 128k."""
 
     def test_hosted_and_vertex_gemini_reclaim_the_million_token_window(self) -> None:
-        # 1_000_000 window - 16_000 response headroom.
+        # 1_000_000 window - 25_000 response headroom.
         ceiling = context_budget_ceiling_for_model("gemini-3.1-pro-preview")
-        assert ceiling == 984_000
+        assert ceiling == 975_000
         assert context_budget_ceiling_for_model("gemini-2.5-pro") == ceiling
         assert context_budget_ceiling_for_model("gemini-3-flash-preview") == ceiling
 

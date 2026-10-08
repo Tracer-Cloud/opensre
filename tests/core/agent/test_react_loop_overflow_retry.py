@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from core.agent import Agent
+from core.context_budget import estimate_message_tokens
 from core.llm.types import AgentLLMResponse
 
 _TOO_LARGE = (
@@ -51,6 +52,11 @@ class _RejectingLLM:
         return {"role": "tool", "content": "[]"}
 
 
+class _BudgetedLLM(_RejectingLLM):
+    _model = "gpt-4o"
+    _max_tokens = 32_000
+
+
 def _agent(llm: _RejectingLLM) -> Agent:
     return Agent(
         llm=llm,
@@ -82,3 +88,12 @@ def test_a_second_too_large_rejection_propagates() -> None:
     with pytest.raises(RuntimeError, match="request_too_large"):
         _agent(llm).run([{"role": "user", "content": "hello"}])
     assert len(llm.calls) == 2
+
+
+def test_input_trimming_reserves_the_active_client_output_budget() -> None:
+    llm = _BudgetedLLM(failures=0)
+
+    _agent(llm).run([{"role": "user", "content": "x" * 220_000}])
+
+    assert len(llm.calls) == 1
+    assert estimate_message_tokens(llm.calls[0], system="sys") + llm._max_tokens <= 128_000

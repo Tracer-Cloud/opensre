@@ -7,6 +7,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from config.llm_models import DEFAULT_MAX_TOKENS
+
 logger = logging.getLogger(__name__)
 
 # Prompt windows are substring-matched against provider model ids. Unknown
@@ -29,8 +31,7 @@ _MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 }
 _DEFAULT_CONTEXT_WINDOW = 128_000
 
-_RESPONSE_HEADROOM_TOKENS = 16_000
-_TOKEN_BUDGET_CEILING = _DEFAULT_CONTEXT_WINDOW - _RESPONSE_HEADROOM_TOKENS
+_TOKEN_BUDGET_CEILING = _DEFAULT_CONTEXT_WINDOW - DEFAULT_MAX_TOKENS
 
 # Conservative char-to-token estimate for JSON-heavy tool payloads.
 _TOKENS_PER_CHAR = 0.50
@@ -196,8 +197,10 @@ def _eviction_priority(exchange: _ToolExchange) -> tuple[int, int, int]:
     return (duplicate_rank, -exchange.token_estimate, exchange.start)
 
 
-def context_budget_ceiling_for_model(model: str | None) -> int:
-    """Trim ceiling for the active model = its context window − response headroom.
+def context_budget_ceiling_for_model(
+    model: str | None, *, max_output_tokens: int = DEFAULT_MAX_TOKENS
+) -> int:
+    """Trim ceiling after reserving at least the configured output budget.
 
     Substring match (case-insensitive) so dated snapshots and provider prefixes
     resolve to the right family. Unknown → conservative default, which only ever
@@ -210,7 +213,8 @@ def context_budget_ceiling_for_model(model: str | None) -> int:
             if family in key:
                 window = family_window
                 break
-    return max(window - _RESPONSE_HEADROOM_TOKENS, _RESPONSE_HEADROOM_TOKENS)
+    response_headroom = max(DEFAULT_MAX_TOKENS, max_output_tokens)
+    return max(window - response_headroom, 0)
 
 
 def _message_token_estimate(message: dict[str, Any]) -> int:

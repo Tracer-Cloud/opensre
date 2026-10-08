@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 from hashlib import sha256
 from typing import Any
 
+from config.llm_models import DEFAULT_MAX_TOKENS
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.loop_host import LoopHost
 from core.agent.run_io import AgentRunInput, AgentRunResult
@@ -226,7 +227,12 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         )
         self._runtime_tools = list(host._filter_tools(initial_tools))
         self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
-        self._ceiling = context_budget_ceiling_for_model(getattr(self._llm, "_model", None))
+        max_output_tokens = getattr(self._llm, "_max_tokens", DEFAULT_MAX_TOKENS)
+        if not isinstance(max_output_tokens, int):
+            max_output_tokens = DEFAULT_MAX_TOKENS
+        self._ceiling = context_budget_ceiling_for_model(
+            getattr(self._llm, "_model", None), max_output_tokens=max_output_tokens
+        )
         # Provider-counted tokens per estimated token, learned from the last call.
         self._token_scale = 1.0
         self._calibrate_budget = True
