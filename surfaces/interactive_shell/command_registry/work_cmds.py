@@ -184,7 +184,8 @@ def _cmd_work(session: Session, console: Console, args: list[str]) -> bool:
     if sub == "add":
         if can_collect_input(session, WORK_ADD_INPUT, args):
             _, options, _ = _split_options(args[1:])
-            values = run_command_input(build_work_form(options))
+            projects = [item.project for item in list_work_items(status=None)]
+            values = run_command_input(build_work_form(options, projects=projects))
             if values is None:
                 return True
             return _create_work(console, values["title"], values)

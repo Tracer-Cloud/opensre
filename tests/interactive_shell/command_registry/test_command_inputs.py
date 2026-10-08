@@ -60,7 +60,7 @@ def test_work_form_preserves_options_and_persists_once(
     monkeypatch: pytest.MonkeyPatch, via_help: bool
 ) -> None:
     def collect(app: Any) -> Any:
-        return run_keys(app, "Investigate checkout latency\x13")
+        return run_keys(app, "Investigate checkout latency\r\r")
 
     monkeypatch.setattr(work_cmds, "run_command_input", collect)
     command = '/work add --project "Payments API" --priority high --owner Anwesh --due 2026-10-12'
@@ -87,8 +87,8 @@ def test_work_form_validation_retains_title_and_cancellation_is_nonmutating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def collect(app: Any) -> Any:
-        # Invalid prefilled priority focuses that field; Ctrl-A/Ctrl-K repairs it without losing the title.
-        return run_keys(app, "Keep this title\x13\x01\x0bhigh\x13")
+        # Invalid supplied priority opens the selector; choose High without retyping the title.
+        return run_keys(app, "Keep this title\r\r\x1b[B\x1b[B\r\r")
 
     monkeypatch.setattr(work_cmds, "run_command_input", collect)
     with create_app_session(output=DummyOutput()):
@@ -173,6 +173,60 @@ def test_picker_no_match_enter_and_escape_do_not_select() -> None:
 def test_form_requires_title_before_accepting() -> None:
     with create_app_session(output=DummyOutput()):
         app = build_work_form({})
-        result = run_keys(app, "\x13Valid title\x13")
+        result = run_keys(app, "\rValid title\r\r")
     assert result is not None
     assert result["title"] == "Valid title"
+
+
+def test_work_rows_select_priority_and_existing_project_without_typing_values() -> None:
+    with create_app_session(output=DummyOutput()):
+        app = build_work_form({}, projects=["payments", "platform"])
+        # After the title, Create is selected. Move to Priority, choose High,
+        # then select the first existing project after None.
+        keys = "Checkout\r" + "\x1b[A" * 4 + "\r\x1b[B\r\x1b[B\r\x1b[B\r\x13"
+        result = run_keys(app, keys)
+    assert result is not None
+    assert result == {
+        "title": "Checkout",
+        "priority": "high",
+        "project": "payments",
+        "owner": "",
+        "due": "",
+    }
+
+
+def test_work_project_custom_and_date_validation_preserve_other_fields() -> None:
+    with create_app_session(output=DummyOutput()):
+        app = build_work_form({}, projects=["payments"])
+        # Search has no existing match: select New after None, preserving query.
+        keys = "Checkout\r" + "\x1b[A" * 3 + "\rnew-project\x1b[B\r\r"
+        # Due: select Custom, reject invalid date, correct it, then save.
+        keys += "\x1b[B" * 2 + "\r" + "\x1b[B" * 3 + "\rbad-date\r\x01\x0b2026-10-12\r\x13"
+        result = run_keys(app, keys)
+    assert result is not None
+    assert result["project"] == "new-project"
+    assert result["due"] == "2026-10-12"
+    assert result["title"] == "Checkout"
+
+
+def test_work_edit_back_discards_draft_and_optional_fields_stay_unset() -> None:
+    with create_app_session(output=DummyOutput()):
+        app = build_work_form({})
+        keys = "Checkout\r" + "\x1b[A" * 2 + "\rdraft owner\x1b\x13"
+        result = run_keys(app, keys)
+    assert result is not None
+    assert result["owner"] == result["project"] == result["due"] == ""
+    assert result["priority"] == "normal"
+
+
+def test_reopening_supplied_project_and_custom_date_keeps_their_selection() -> None:
+    with create_app_session(output=DummyOutput()):
+        app = build_work_form({"project": "new project", "due": "2040-01-02"})
+        # Project absent from known names remains selected; a custom date opens
+        # its existing value, rather than defaulting to None and clearing it.
+        keys = "Checkout\r" + "\x1b[A" * 3 + "\r\r"
+        keys += "\x1b[B" * 2 + "\r\r\r\x13"
+        result = run_keys(app, keys)
+    assert result is not None
+    assert result["project"] == "new project"
+    assert result["due"] == "2040-01-02"
