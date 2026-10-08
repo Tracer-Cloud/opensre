@@ -108,9 +108,6 @@ first-party fields to exclude automated environments from product funnels.
 A random install ID is stored under `~/.opensre/anonymous_id`. Telemetry is off
 in GitHub Actions and pytest.
 
-When a user signs in to GitHub (wizard or `/integrations setup`), OpenSRE emits
-`github_username` on subsequent product events.
-
 ### Kill-switch matrix
 
 | Env var                        | Product analytics | Sentry     |

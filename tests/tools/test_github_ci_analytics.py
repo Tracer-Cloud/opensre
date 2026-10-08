@@ -1716,13 +1716,7 @@ def test_same_repository_analyzes_after_github_is_connected() -> None:
         merged_prs=(),
         coverage_notices=[],
     )
-    blocked = analyze_github_ci_reliability(
-        github_connection_origin="webapp",
-        github_token="app-token",
-        owner="acme",
-        repo="widget",
-        days=30,
-    )
+    blocked = analyze_github_ci_reliability(owner="acme", repo="widget", days=30)
     assert blocked["available"] is False
     assert "OpenSRE app" in blocked["response_text"]
 

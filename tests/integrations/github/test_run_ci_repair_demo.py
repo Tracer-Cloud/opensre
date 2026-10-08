@@ -11,6 +11,7 @@ import pytest
 
 from core.agent_harness.turns.display_text import is_outcome_report
 from infrastructure.text.data_blob import is_data_blob
+from integrations.github.agent_tools import require_webapp_github
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 from integrations.github.tools.ci_repair_run import tool as run_tool
@@ -165,11 +166,11 @@ def _install(
             return RepairEvidence()
         return read_repair_evidence(task_id, store=store)
 
-    monkeypatch.setattr(run_tool, "seed_ci_repair_demo", _seed)
+    monkeypatch.setattr(run_tool, "seed_ci_repair_demo", require_webapp_github(_seed))
     monkeypatch.setattr(run_tool, "read_repair_evidence", _evidence)
-    monkeypatch.setattr(run_tool, "schedule_ci_repair_loop", _schedule)
-    monkeypatch.setattr(run_tool, "get_ci_repair_loop", _get)
-    monkeypatch.setattr(run_tool, "finish_ci_repair_demo", _finish)
+    monkeypatch.setattr(run_tool, "schedule_ci_repair_loop", require_webapp_github(_schedule))
+    monkeypatch.setattr(run_tool, "get_ci_repair_loop", require_webapp_github(_get))
+    monkeypatch.setattr(run_tool, "finish_ci_repair_demo", require_webapp_github(_finish))
     monkeypatch.setattr(run_tool, "run_gh_json", _pull)
 
 
@@ -180,7 +181,11 @@ def test_run_schedules_the_seeded_pr_once_then_waits_and_finishes(
     _install(monkeypatch, record)
 
     result = run_tool.run_ci_repair_demo(
-        _OWNER, _REQUESTED_REPO, github_connection_origin="webapp", github_token="app-token"
+        _OWNER,
+        _REQUESTED_REPO,
+        github_connection_origin="webapp",
+        github_token="app-token",
+        github_connection_id="selected-app",
     )
 
     assert record.seeds == 1
@@ -198,6 +203,7 @@ def test_run_schedules_the_seeded_pr_once_then_waits_and_finishes(
     ]
     assert len(record.finishes) == 1
     finished = record.finishes[0]
+    assert finished["github_connection_id"] == "selected-app"
     assert finished["repo"] == f"{_OWNER}/{_SEEDED_REPO}"
     assert finished["pr_number"] == _PR_NUMBER
     assert finished["loop_id"] == _TASK_ID
@@ -524,7 +530,7 @@ def test_an_empty_owner_seeds_under_the_token_login(monkeypatch: pytest.MonkeyPa
             assert (method, path) == ("GET", "user")
             return {"login": _OWNER}
 
-    monkeypatch.setattr(run_tool, "seed_ci_repair_demo", _seed)
+    monkeypatch.setattr(run_tool, "seed_ci_repair_demo", require_webapp_github(_seed))
     monkeypatch.setattr(run_tool, "GitHubRestClient", _Client)
     monkeypatch.setattr(run_tool, "configured_token", lambda _explicit=None: "ghp_demo")
 

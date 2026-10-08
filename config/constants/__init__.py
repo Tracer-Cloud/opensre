@@ -533,6 +533,9 @@ if TYPE_CHECKING:
         WEB_STOP_TIMEOUT_SECONDS as WEB_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.git import (
+        GIT_ALLOW_PROTOCOL_ENV as GIT_ALLOW_PROTOCOL_ENV,
+    )
+    from config.constants.git import (
         GIT_OPTIONAL_LOCKS_ENV as GIT_OPTIONAL_LOCKS_ENV,
     )
     from config.constants.git import (

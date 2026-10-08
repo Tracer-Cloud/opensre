@@ -37,7 +37,7 @@ def fetch_remote_branch(
 ) -> None:
     """Update ``refs/remotes/<remote>/<branch>`` without touching local branches."""
     base = _remote_https_base(workspace, remote) if token else ""
-    env = _token_auth_env(token, base) if token and base else None
+    env = _token_auth_env(token, base) if token else None
     result = _run_git(
         workspace, "fetch", remote, f"refs/heads/{branch}:refs/remotes/{remote}/{branch}", env=env
     )

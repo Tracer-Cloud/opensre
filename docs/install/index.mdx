@@ -68,8 +68,9 @@ Keep my CI/CD healthy automatically
 Choose **A** to see what OpenSRE does with a repository on your machine: it
 reads the last 30 days of GitHub Actions history and reports how reliable your
 CI is and how much developer time it costs. It needs GitHub access: connect it
-first with `opensre integrations setup github` (authorize in the browser, or
-paste a token). Without it the flow stops and names that command. See
+in the OpenSRE app through OAuth or its token-entry form. Run
+`opensre account login` to load that connection on this machine. If it is
+missing, the flow offers the app setup link. See
 [CI/CD analytics demo](/cicd/cicd-analytics-demo).
 
 Choose **C** to go straight to the prompt. Type `/demo` to open the menu again at

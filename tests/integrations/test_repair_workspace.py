@@ -9,6 +9,7 @@ import pytest
 
 from integrations.coding_agent import CodingResult
 from integrations.git import GitCommandError, changed_paths, ensure_head_revision
+from integrations.git import local as git_local
 from integrations.github.repair_workspace import repair_workspace
 from integrations.github.tools.ci_fix.tool import fix_github_pr_ci
 from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
@@ -127,6 +128,27 @@ def test_changed_checkout_revision_cannot_be_repaired(remote: Path, tmp_path: Pa
 def test_ci_repair_from_an_unrelated_directory_pushes_and_verifies_target(
     remote: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # This test exercises repair ownership and replay against a local Git fixture.
+    # HTTPS authentication itself is covered by the transport regressions.
+    monkeypatch.setattr(
+        git_local, "_remote_https_base", lambda *_args, **_kw: "https://github.com/"
+    )
+    monkeypatch.setattr(
+        "integrations.git.checkout._remote_https_base", lambda *_args, **_kw: "https://github.com/"
+    )
+    monkeypatch.setattr(
+        "integrations.git.merge._remote_https_base", lambda *_args, **_kw: "https://github.com/"
+    )
+    authenticate = git_local._token_auth_env
+
+    def fixture_auth(token: str, base: str) -> dict[str, str]:
+        env = authenticate(token, base)
+        env.pop("GIT_ALLOW_PROTOCOL", None)
+        return env
+
+    monkeypatch.setattr(git_local, "_token_auth_env", fixture_auth)
+    monkeypatch.setattr("integrations.git.checkout._token_auth_env", fixture_auth)
+    monkeypatch.setattr("integrations.git.merge._token_auth_env", fixture_auth)
     ctx = replace(
         _CTX,
         owner="acme",

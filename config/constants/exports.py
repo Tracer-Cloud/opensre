@@ -229,6 +229,7 @@ EXPORTS: dict[str, str] = {
     "USER_STOP_MESSAGE": "gateway",
     "WEB_STOP_TIMEOUT_SECONDS": "gateway",
     # git
+    "GIT_ALLOW_PROTOCOL_ENV": "git",
     "GIT_OPTIONAL_LOCKS_ENV": "git",
     "GIT_TERMINAL_PROMPT_ENV": "git",
     "MERGE_RESOLUTION_TIMEOUT_SECONDS": "git",

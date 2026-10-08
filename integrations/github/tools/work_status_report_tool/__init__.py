@@ -78,16 +78,23 @@ def generate_work_status_report(
     work_items: list[dict[str, Any]] | None = None,
     pull_requests: list[dict[str, Any]] | None = None,
     github_token: str | None = None,
+    github_connection_origin: str = "",
+    github_connection_id: str = "",
     **_kwargs: Any,
 ) -> dict[str, Any]:
+    credentials: dict[str, Any] = {
+        "github_token": github_token,
+        "github_connection_origin": github_connection_origin,
+        "github_connection_id": github_connection_id,
+    }
     errors: list[str] = []
     if work_items is None and owner and repo:
-        work_result = list_github_work_items(owner=owner, repo=repo, github_token=github_token)
+        work_result = list_github_work_items(owner=owner, repo=repo, **credentials)
         if not work_result.get("available", False):
             errors.append(f"work_items: {work_result.get('error', 'unavailable')}")
         work_items = list(work_result.get("items", []))
     if pull_requests is None and owner and repo:
-        pr_result = summarize_github_pr_status(owner=owner, repo=repo, github_token=github_token)
+        pr_result = summarize_github_pr_status(owner=owner, repo=repo, **credentials)
         if not pr_result.get("available", False):
             errors.append(f"pull_requests: {pr_result.get('error', 'unavailable')}")
         pull_requests = list(pr_result.get("pull_requests", []))

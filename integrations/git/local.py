@@ -20,6 +20,7 @@ from collections.abc import Mapping, Sequence
 from urllib.parse import urlsplit
 
 from config.constants.git import (
+    GIT_ALLOW_PROTOCOL_ENV,
     OPENSRE_COMMIT_COAUTHOR_EMAIL,
     OPENSRE_COMMIT_COAUTHOR_NAME,
     OPENSRE_COMMIT_COAUTHOR_TRAILER,
@@ -120,21 +121,20 @@ def _run_git(
         ) from exc
 
 
-def _remote_https_base(workspace: str, remote: str = "origin") -> str:
-    """``https://host/`` of *remote* when it uses HTTPS, else "" (http/SSH/file/etc.).
-
-    Only HTTPS qualifies: injecting the token for a plaintext ``http://`` remote
-    would send the credential in cleartext on the wire.
-    """
-    result = _run_git(workspace, "remote", "get-url", remote)
+def _remote_https_base(workspace: str, remote: str = "origin", *, push: bool = False) -> str:
+    """Resolve the transport and require one HTTPS host for every push destination."""
+    result = _run_git(
+        workspace, "remote", "get-url", *(("--push", "--all") if push else ()), remote
+    )
     if result.returncode != 0:
         return ""
-    return _https_base(result.stdout.strip())
+    bases = {_https_base(url) for url in result.stdout.splitlines()}
+    return next(iter(bases)) if len(bases) == 1 else ""
 
 
 def _https_base(url: str) -> str:
     parsed = urlsplit(url)
-    if parsed.scheme == "https" and parsed.hostname:
+    if parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password:
         return f"https://{parsed.hostname}/"
     return ""
 
@@ -158,8 +158,13 @@ def _token_auth_env(token: str, base_url: str) -> dict[str, str]:
     *provided* token instead of whatever stale credential the local git credential
     helper might have cached (the usual cause of a 403 on push).
     """
+    if not base_url:
+        raise GitCommandError(
+            "unsupported_auth_transport", "App token authentication requires an HTTPS remote."
+        )
     basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
     env = dict(os.environ)
+    env[GIT_ALLOW_PROTOCOL_ENV] = "https"
     # Append at the next free index rather than clobbering an existing
     # GIT_CONFIG_COUNT / GIT_CONFIG_KEY_* the caller may already rely on.
     try:
@@ -230,7 +235,7 @@ def _remote_default_branch(workspace: str, token: str | None) -> str:
     unreachable remote never stalls or aborts the caller — they fall back locally.
     """
     base = _remote_https_base(workspace, "origin")
-    env = _token_auth_env(token, base) if (token and base) else None
+    env = _token_auth_env(token, base) if token else None
     try:
         result = _run_git(
             workspace,
@@ -503,9 +508,9 @@ def push_head_to_upstream(workspace: str, *, token: str | None = None) -> str:
     base = (
         _https_base(destination)
         if _is_url(destination)
-        else _remote_https_base(workspace, destination)
+        else _remote_https_base(workspace, destination, push=True)
     )
-    env = _token_auth_env(token, base) if token and base else None
+    env = _token_auth_env(token, base) if token else None
     result = _run_git(workspace, "push", destination, f"HEAD:refs/heads/{remote_branch}", env=env)
     if result.returncode != 0:
         raise GitCommandError(PUSH_FAILED, push_failure_message(label, result.stderr, base))
@@ -588,8 +593,7 @@ def push_branch(
 
     When *token* is given and *remote* is an HTTPS URL, the push authenticates with
     that token (via an ephemeral, host-scoped HTTP header) instead of the machine's
-    cached git credentials. For SSH/other remotes the token is not injected (the
-    transport authenticates itself).
+    cached git credentials. Explicit token authentication rejects other transports.
 
     ``allow_protected`` skips the protected-branch guard. Reserve it for
     approval-gated flows where the user explicitly requested a direct push to
@@ -598,8 +602,8 @@ def push_branch(
     """
     if not allow_protected:
         assert_not_protected(branch, protected_extra=base_default)
-    base = _remote_https_base(workspace, remote)
-    env = _token_auth_env(token, base) if token and base else None
+    base = _remote_https_base(workspace, remote, push=True)
+    env = _token_auth_env(token, base) if token else None
     result = _run_git(workspace, "push", "--set-upstream", remote, branch, env=env)
     if result.returncode != 0:
         raise GitCommandError(

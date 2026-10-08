@@ -69,6 +69,8 @@ def require_webapp_github[**P](
                 "Connect GitHub in the OpenSRE app, then refresh the connection before retrying.",
                 blocked=f"GitHub work for {scope} cannot run",
             )
+        if accepts_kwargs or GITHUB_CONNECTION_ORIGIN_PARAM in parameters:
+            supplied[GITHUB_CONNECTION_ORIGIN_PARAM] = origin
         if accepts_token:
             supplied["github_token"] = token
         else:

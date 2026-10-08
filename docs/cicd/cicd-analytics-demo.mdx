@@ -25,7 +25,8 @@ how much developer time does flaky CI cost us
 ## Prerequisites
 
 - `git` on `PATH`
-- A GitHub token that can read Actions history (`opensre integrations setup github`, or `GITHUB_TOKEN`)
+- A GitHub connection in the OpenSRE app that can read Actions history
+- `opensre account login` on local machines to load app connections
 
 ## What happens
 
@@ -133,6 +134,6 @@ the last 7 days; use `/loops run <id>` to run it now.
 
 | Symptom | Fix |
 | --- | --- |
-| **"GitHub token is required"** | Run `opensre integrations setup github` and rerun the demo |
+| **GitHub connection missing or rejected** | Connect or reconnect GitHub in the OpenSRE app, then select **I’ve connected GitHub — continue** |
 | **No repositories offered** | None of the checkouts under your home directory has a GitHub origin and a `.github/workflows` folder; pick the example repository |
 | **The picker did not appear** | It needs an interactive TTY. Run `uv run opensre` in a terminal, or type `/demo` |

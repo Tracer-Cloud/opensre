@@ -1,9 +1,7 @@
 """Authenticated remote reads and revision checks for isolated repair checkouts."""
 
-from urllib.parse import urlsplit
-
 from integrations.git.errors import BRANCH_FAILED, GitCommandError
-from integrations.git.local import _run_git, _token_auth_env
+from integrations.git.local import _remote_https_base, _run_git, _token_auth_env
 
 
 def origin_url(workspace: str) -> str:
@@ -20,12 +18,7 @@ def origin_push_urls(workspace: str) -> list[str]:
 
 def remote_branch_sha(workspace: str, branch: str, *, token: str | None = None) -> str:
     """Read the current remote branch head before publishing a repair."""
-    parsed = urlsplit(origin_url(workspace))
-    env = (
-        _token_auth_env(token, f"https://{parsed.netloc}/")
-        if token and parsed.scheme == "https"
-        else None
-    )
+    env = _token_auth_env(token, _remote_https_base(workspace)) if token else None
     result = _run_git(workspace, "ls-remote", "origin", f"refs/heads/{branch}", env=env)
     if result.returncode:
         raise GitCommandError(BRANCH_FAILED, "Could not verify the remote branch head.")
@@ -35,12 +28,7 @@ def remote_branch_sha(workspace: str, branch: str, *, token: str | None = None) 
 
 def fetch_local_branch(workspace: str, branch: str, *, token: str | None = None) -> None:
     """Fetch a branch into a local ref using the request's credentials."""
-    parsed = urlsplit(origin_url(workspace))
-    env = (
-        _token_auth_env(token, f"https://{parsed.netloc}/")
-        if token and parsed.scheme == "https"
-        else None
-    )
+    env = _token_auth_env(token, _remote_https_base(workspace)) if token else None
     result = _run_git(
         workspace, "fetch", "origin", f"refs/heads/{branch}:refs/heads/{branch}", env=env
     )

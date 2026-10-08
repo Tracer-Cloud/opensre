@@ -30,7 +30,7 @@ configured, and the Pi CLI installed. Opening a PR needs a **second** switch,
 - Sentry configured (org + auth token) — see [Sentry](/integrations/incidents/sentry)
 - Pi coding agent CLI installed and authenticated
 - `PI_ISSUE_FIX_ENABLED=1` to allow the fix step
-- For PRs: `PI_ISSUE_FIX_SHIP_ENABLED=1` and `GITHUB_TOKEN` / `GH_TOKEN` with
+- For PRs: `PI_ISSUE_FIX_SHIP_ENABLED=1` and a GitHub connection in the OpenSRE app with
   `repo` / `pull_request` write access
 
 ## Setup
@@ -54,14 +54,14 @@ export PI_CODING_MODEL=anthropic/claude-haiku-4-5   # optional
 
 ```bash
 export PI_ISSUE_FIX_SHIP_ENABLED=1
-opensre integrations setup github        # token with PR-create access to the repo
+opensre integrations setup github        # connect in the app with PR-create access
 ```
 
 | Env var | What it does |
 | --- | --- |
 | `PI_ISSUE_FIX_ENABLED` | Opt-in for the fix step. Set to `1` to enable. Off by default. |
 | `PI_ISSUE_FIX_SHIP_ENABLED` | Second opt-in required to open a PR (`open_pr`). Off by default. |
-| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub token used to open the pull request. |
+| GitHub app connection | Requires permission to open pull requests in the repository. |
 | `SENTRY_ORG_SLUG` / `SENTRY_AUTH_TOKEN` | Sentry org + token (`SENTRY_URL` for self-hosted). |
 | `PI_CODING_MODEL` | Pi model used for the fix (shared with the Pi coding tool). |
 | `PI_CODING_WORKSPACE` | Repository Pi edits. Defaults to the current directory. |
@@ -113,7 +113,7 @@ with the read-only Sentry tools instead.
 | Symptom | Fix |
 | --- | --- |
 | Tool disabled | Set `PI_ISSUE_FIX_ENABLED=1` |
-| PR not opened | Set `PI_ISSUE_FIX_SHIP_ENABLED=1` and a valid `GITHUB_TOKEN` / `GH_TOKEN` |
+| PR not opened | Set `PI_ISSUE_FIX_SHIP_ENABLED=1` and connect GitHub in the OpenSRE app |
 | Unsupported URL | Use a supported Sentry issue URL shape (see Extras) |
 | Sentry unconfigured | Configure [Sentry](/integrations/incidents/sentry) first |
 | Pi missing | Install `@earendil-works/pi-coding-agent` and authenticate |

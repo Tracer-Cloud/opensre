@@ -374,6 +374,28 @@ def test_summarize_github_pr_status_reports_unknown_mergeability() -> None:
     assert "mergeability unknown" in result["pull_requests"][0]["blocking_reasons"]
 
 
+def test_status_report_preserves_app_authority_through_inner_tools() -> None:
+    def paginate(client: GitHubRestClient, path: str, **_kwargs: Any) -> list[dict[str, Any]]:
+        assert client._token == "selected-token"
+        if path.endswith("/issues"):
+            return [{"number": 1, "title": "Fix CI", "state": "open"}]
+        assert path.endswith("/pulls")
+        return []
+
+    with patch.object(GitHubRestClient, "paginate", paginate):
+        result = generate_work_status_report(
+            owner="o",
+            repo="r",
+            github_token="selected-token",
+            github_connection_origin="webapp",
+            github_connection_id="selected-app",
+        )
+
+    assert result["available"] is True
+    assert result["incomplete"] is False
+    assert "Fix CI" in result["slack_markdown"]
+
+
 def test_generate_work_status_report_surfaces_fetch_errors() -> None:
     with (
         patch(

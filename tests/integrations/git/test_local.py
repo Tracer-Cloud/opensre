@@ -316,14 +316,17 @@ def test_push_branch_scopes_token_header_to_https_origin_host(tmp_path: Path) ->
         "/srv/repos/app.git",  # local/file
     ],
 )
-def test_push_branch_skips_token_header_for_non_https_origin(
+def test_push_branch_rejects_token_auth_for_non_https_origin(
     tmp_path: Path, origin_url: str
 ) -> None:
     work = _init_repo(tmp_path)
     captured: dict[str, Any] = {}
-    with patch.object(gitlocal, "_run_git", _fake_run_git_factory(captured, origin_url)):
+    with (
+        patch.object(gitlocal, "_run_git", _fake_run_git_factory(captured, origin_url)),
+        pytest.raises(GitCommandError, match="HTTPS"),
+    ):
         gitlocal.push_branch(str(work), "opensre/sentry-fix-1-x", base_default="main", token="tok")
-    assert captured["env"] is None
+    assert "args" not in captured
 
 
 def test_push_branch_no_env_without_token(tmp_path: Path) -> None:
@@ -450,3 +453,33 @@ def test_a_clone_waits_for_a_heavy_work_slot_and_refuses_with_a_git_error(
     assert excinfo.value.kind == HEAVY_WORK_BUSY
     assert excinfo.value.message == HEAVY_WORK_BUSY_MESSAGE
     assert git_calls == []
+
+
+def test_authenticated_clone_never_invokes_ssh_after_a_url_rewrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "ssh-invoked"
+    ssh = tmp_path / "ssh.sh"
+    ssh.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n")
+    ssh.chmod(0o700)
+    monkeypatch.setenv("GIT_SSH_COMMAND", str(ssh))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "url.git@github.com:.insteadOf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "https://github.com/")
+    with pytest.raises(GitCommandError):
+        gitlocal.clone_repository(
+            "https://github.com/acme/app.git", str(tmp_path / "clone"), token="app-token"
+        )
+    assert not marker.exists()
+
+
+def test_selected_token_rejects_ssh_pushurl_on_https_fetch_remote(tmp_path: Path) -> None:
+    work = _init_repo(tmp_path)
+    _git(work, "remote", "set-url", "origin", "https://github.com/acme/app.git")
+    _git(work, "config", "remote.origin.pushurl", "git@github.com:acme/app.git")
+    with (
+        patch.object(gitlocal.subprocess, "run", wraps=subprocess.run) as run,
+        pytest.raises(GitCommandError, match="HTTPS"),
+    ):
+        gitlocal.push_branch(str(work), "feature", token="app-token")
+    assert not any("push" in call.args[0] for call in run.call_args_list)

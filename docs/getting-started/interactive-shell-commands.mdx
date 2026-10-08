@@ -584,7 +584,9 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 | `setup &lt;service&gt;` | Guided setup with sign-in instructions, discovery, and verification |
 | `remove &lt;service&gt;` | Remove from local store **elevated** |
 
-You can ask “Can you configure Telegram/GitHub/PostHog for me?” to start the same guided flow. It explains each human action before requesting input, discovers IDs where possible, and lets you retry failed checks. Enter credentials only in the setup flow's hidden input.
+GitHub setup opens the OpenSRE app, where you connect through OAuth or enter a token. Opening the app leaves setup pending until the connection is refreshed.
+
+You can ask “Can you configure Telegram/PostHog for me?” to start the same guided flow. It explains each human action before requesting input, discovers IDs where possible, and lets you retry failed checks. Enter credentials only in the setup flow's hidden input.
 
 `/integrations list` opens a configured-integration browser in a TTY. Use **↑↓** to browse, **Enter** to verify the selected connection when supported, **a** to add, **s** to run setup for the selected integration, and **r** to remove it with confirmation. **Esc** closes without changes. Choosing an action returns to the conversation when it finishes.
 
