@@ -452,6 +452,20 @@ def test_build_argv_uses_non_interactive_flags(
     mock_which.assert_called()
 
 
+def test_build_passes_prompt_via_stdin() -> None:
+    adapter = CopilotAdapter()
+
+    inv = adapter.build(
+        prompt="x" * 170_000,
+        model=None,
+        workspace="",
+    )
+
+    assert len(inv.stdin or "") == 170_000
+    assert all(len(arg) < 1000 for arg in inv.argv)
+    assert "-p" not in inv.argv
+
+
 @patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/copilot")
 def test_build_uses_workspace_when_provided(
     _mock_which: MagicMock,

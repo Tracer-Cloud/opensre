@@ -207,7 +207,7 @@ def _fallback_copilot_paths() -> list[str]:
 
 
 class CopilotAdapter:
-    """Non-interactive GitHub Copilot CLI (``copilot -p``, programmatic mode)."""
+    """Non-interactive GitHub Copilot CLI (programmatic mode via stdin)."""
 
     name = "copilot"
     streams_plain_stdout = True
@@ -284,13 +284,12 @@ class CopilotAdapter:
         ws = (workspace or "").strip()
         cwd = str(Path(ws).expanduser()) if ws else os.getcwd()
 
-        # Each flag is required for a non-interactive run; do not drop these
-        # without checking `copilot --help`:
-        #   -p PROMPT       enters one-shot mode (without it, copilot opens a TUI).
-        #   --no-color      strips ANSI so stdout is parseable.
-        #   --no-ask-user   disables the agent's `ask_user` tool, otherwise the
-        #                   agent can pause waiting for input even with -p.
-        #   --silent        emits only the agent response, not stats / banner.
+                # The prompt is piped through stdin for a non-interactive run.
+        # These flags keep the output non-interactive and parseable:
+        #   --no-color     strips ANSI so stdout is parseable.
+        #   --no-ask-user  disables the agent's `ask_user` tool, otherwise the
+        #                  agent can pause waiting for input.
+        #   --silent       emits only the agent response, not stats / banner.
         argv: list[str] = [
             binary,
             "--no-color",
@@ -337,7 +336,7 @@ class CopilotAdapter:
         )
         extra = (_AUTH_HINT,) if any(marker in text for marker in auth_markers) else ()
         return explain_cli_failure(
-            exit_label="copilot -p",
+            exit_label="copilot",
             stdout=stdout,
             stderr=stderr,
             returncode=returncode,
