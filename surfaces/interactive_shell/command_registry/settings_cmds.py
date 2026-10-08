@@ -34,10 +34,10 @@ from surfaces.interactive_shell.ui import (
     resolve_provider_models,
 )
 from surfaces.shared.terminal.components.choice_menu import (
-    repl_choose_one,
     repl_section_break,
     repl_tty_interactive,
 )
+from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 
 _TRUST_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("on", "enable trust mode (skip approval prompts)"),
@@ -98,12 +98,8 @@ _EFFORT_FIRST_ARGS: tuple[tuple[str, str], ...] = tuple(
 
 def _interactive_trust_menu(session: Session, console: Console) -> bool:
     while True:
-        mode = repl_choose_one(
-            title="trust",
-            breadcrumb="/trust",
-            choices=[("on", "on"), ("off", "off"), ("done", "done")],
-        )
-        if mode is None or mode == "done":
+        mode = repl_choose_subcommand(parent="/trust", options=_TRUST_FIRST_ARGS)
+        if mode is None:
             return True
         _cmd_trust(session, console, [mode])
         repl_section_break(console)
@@ -172,12 +168,8 @@ def _cmd_effort(session: Session, console: Console, args: list[str]) -> bool:
 
 def _interactive_verbose_menu(_session: Session, console: Console) -> bool:
     while True:
-        mode = repl_choose_one(
-            title="verbose",
-            breadcrumb="/verbose",
-            choices=[("on", "on"), ("off", "off"), ("done", "done")],
-        )
-        if mode is None or mode == "done":
+        mode = repl_choose_subcommand(parent="/verbose", options=_VERBOSE_FIRST_ARGS)
+        if mode is None:
             return True
         _cmd_verbose(_session, console, [mode])
         repl_section_break(console)

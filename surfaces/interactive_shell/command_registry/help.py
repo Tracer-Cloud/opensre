@@ -10,9 +10,9 @@ from rich.markup import escape
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import ERROR
-from surfaces.interactive_shell.ui.help.help_menu import (
+from surfaces.interactive_shell.ui.help import (
     HelpSection,
-    choose_help_command,
+    browse_help_commands,
     render_command_detail,
     render_help_index,
     render_section_detail,
@@ -184,7 +184,7 @@ def _cmd_help(_session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     if repl_tty_interactive():
-        selected = choose_help_command(sections)
+        selected = browse_help_commands(sections)
         if selected:
             # Re-dispatch the selected slash command so Enter in the help picker
             # runs the command directly instead of only opening details.

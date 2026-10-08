@@ -33,8 +33,16 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_section_break,
     repl_tty_interactive,
 )
+from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 
 _ROOT = "/model"  # breadcrumb root label
+
+_MODEL_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("show", "show active provider and models"),
+    ("set", "switch provider  ·  /model set <provider> [model]"),
+    ("restore", "restore the active provider's default reasoning model"),
+    ("toolcall", "manage toolcall model for the active provider"),
+)
 _SET_USAGE = "/model set <provider> [model] [--toolcall-model <model>]"
 
 
@@ -248,18 +256,10 @@ def _interactive_set_toolcall(console: Console) -> bool | None:
 
 def _interactive_model_menu(session: Session, console: Console) -> bool:
     while True:
-        action = repl_choose_one(
-            title="Select Model and Effort",
-            breadcrumb=f"{_ROOT}",
-            choices=[
-                ("show", "show"),
-                ("set", "set"),
-                ("restore", "restore"),
-                ("toolcall", "toolcall"),
-                ("done", "done"),
-            ],
-        )
-        if action is None or action == "done":
+        # Same catalog the composer tray lists, so bare ``/model`` and a typed
+        # ``/model `` show one set of subcommands with one set of descriptions.
+        action = repl_choose_subcommand(parent=_ROOT, options=_MODEL_FIRST_ARGS)
+        if action is None:
             return True
         if action == "show":
             repl_section_break(console)
@@ -444,13 +444,6 @@ def _cmd_model(session: Session, console: Console, args: list[str]) -> bool:
     )
     return True
 
-
-_MODEL_FIRST_ARGS: tuple[tuple[str, str], ...] = (
-    ("show", "show active provider and models"),
-    ("set", "switch provider  ·  /model set <provider> [model]"),
-    ("restore", "restore the active provider's default reasoning model"),
-    ("toolcall", "manage toolcall model for the active provider"),
-)
 
 COMMANDS: list[SlashCommand] = [
     SlashCommand(

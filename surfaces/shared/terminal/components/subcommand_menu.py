@@ -1,0 +1,222 @@
+"""Composer-tray-styled picker for a slash command's subcommands.
+
+Typing ``/model `` in the composer lists that command's subcommands with their
+descriptions in a bounded tray inside the rounded composer frame. Running the
+command bare — ``/model`` plus Enter, or Enter on it in ``/help`` — used to open
+a different, numbered menu that repeated the same names with no descriptions,
+from a second hand-written copy of the list. This paints that picker as the same
+framed tray and reads the same ``first_arg_completions`` catalog, so one list
+reaches the user one way.
+
+Chrome mirrors ``CommandTrayControl`` and ``rounded_composer_frame``: keep the
+row order (border, header, blank, options, blank, hint, border) in step with
+them, or the two surfaces drift apart again.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from shutil import get_terminal_size
+
+import infrastructure.terminal.theme as ui_theme
+from infrastructure.safety.terminal_output import strip_terminal_controls
+from surfaces.shared.terminal.components.choice_menu import (
+    enter_inline_menu,
+    erase_menu_lines,
+    leave_inline_menu,
+    menu_columns,
+    read_menu_action,
+    repl_tty_interactive,
+    write_menu_line,
+)
+from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_text_width
+
+# The composer tray's own bounds, so both surfaces scroll at the same point.
+MAX_VISIBLE_SUBCOMMANDS = 6
+# Below this width the description column is dropped rather than wrapped.
+_DESCRIPTION_MIN_WIDTH = 60
+_MAX_NAME_WIDTH = 24
+_HINT = "↑↓ navigate   Enter select   Esc close"
+_NARROW_HINT = "↑↓ move  Enter select  Esc close"
+_NARROW_HINT_WIDTH = 44
+# Top border, header, blank, options, blank, hint, bottom border.
+_CHROME_ROWS = 6
+# The frame's two border columns plus a column of air on each side.
+_FRAME_COLUMNS = 4
+
+
+def _border_style() -> str:
+    return f"{ui_theme.INPUT_SURFACE_BG_ANSI}{ui_theme.SECONDARY_ANSI}"
+
+
+def _rule(left: str, right: str, width: int) -> str:
+    inner = max(0, width - 2)
+    return f"{_border_style()}{left}{'─' * inner}{right}{ui_theme.ANSI_RESET}"
+
+
+def _framed(text: str, style: str, width: int) -> str:
+    """One tray row: ``text`` on the composer plate between the frame's edges."""
+    inner = max(0, width - 2)
+    content = " " + clip_prompt_text(text, max(0, inner - 1))
+    return _framed_runs([(style, content)], prompt_text_width(content), width)
+
+
+def _framed_runs(runs: list[tuple[str, str]], used: int, width: int) -> str:
+    """Frame pre-styled runs, padding the plate out to the right edge.
+
+    Rows that style the name and its description differently cannot go through
+    a single style string, so the caller hands over the runs and the visible
+    width it already spent.
+    """
+    inner = max(0, width - 2)
+    tail = runs[-1][0] if runs else ui_theme.INPUT_SURFACE_BG_ANSI
+    body = "".join(f"{style}{text}{ui_theme.ANSI_RESET}" for style, text in runs)
+    padding = f"{tail}{' ' * max(0, inner - used)}{ui_theme.ANSI_RESET}"
+    edge = f"{_border_style()}│{ui_theme.ANSI_RESET}"
+    return f"{edge}{body}{padding}{edge}"
+
+
+def _name_width(options: Sequence[tuple[str, str]], width: int) -> int:
+    longest = max((prompt_text_width(name) for name, _meta in options), default=0)
+    return min(_MAX_NAME_WIDTH, longest, max(1, width - _FRAME_COLUMNS - 2))
+
+
+def _header_row(parent: str, selected: int, total: int, width: int) -> str:
+    title = f"Subcommands · {parent}" if parent else "Subcommands"
+    counter = f"{selected + 1} / {total}"
+    gap = " " * max(
+        1, width - _FRAME_COLUMNS - prompt_text_width(title) - prompt_text_width(counter)
+    )
+    return _framed(f"{title}{gap}{counter}", _border_style(), width)
+
+
+def _option_row(
+    name: str,
+    meta: str,
+    *,
+    selected: bool,
+    name_width: int,
+    width: int,
+) -> str:
+    background = ui_theme.menu_selection_bg_ansi() if selected else ui_theme.INPUT_SURFACE_BG_ANSI
+    name_style = (
+        f"{background}\x1b[1m{ui_theme.HIGHLIGHT_ANSI}"
+        if selected
+        else f"{background}{ui_theme.TEXT_ANSI}"
+    )
+    # The focused row's description stays unbolded body text, like the tray's
+    # ``command-tray.current.description``; an unfocused one is secondary.
+    meta_style = (
+        f"{background}\x1b[22m{ui_theme.TEXT_ANSI}"
+        if selected
+        else f"{background}{ui_theme.SECONDARY_ANSI}"
+    )
+    marker = "› " if selected else "  "
+    label = clip_prompt_text(name, name_width)
+    head = f" {marker}{label}"
+    runs = [(name_style, head)]
+    used = prompt_text_width(head)
+    if width >= _DESCRIPTION_MIN_WIDTH and meta:
+        gap = " " * (name_width - prompt_text_width(label) + 2)
+        body = clip_prompt_text(meta, max(0, width - _FRAME_COLUMNS - used - len(gap)))
+        runs.append((meta_style, gap + body))
+        used += len(gap) + prompt_text_width(body)
+    return _framed_runs(runs, used, width)
+
+
+def _hint_row(*, more: bool, width: int) -> str:
+    hint = _HINT if width >= _NARROW_HINT_WIDTH else _NARROW_HINT
+    if more and width >= _DESCRIPTION_MIN_WIDTH:
+        hint += " " * max(2, width - _FRAME_COLUMNS - prompt_text_width(hint) - 6) + "↓ more"
+    return _framed(hint, _border_style(), width)
+
+
+def _visible_rows(total: int) -> int:
+    room = max(1, get_terminal_size(fallback=(80, 24)).lines - _CHROME_ROWS - 1)
+    return max(1, min(MAX_VISIBLE_SUBCOMMANDS, total, room))
+
+
+def _draw(
+    parent: str,
+    options: Sequence[tuple[str, str]],
+    *,
+    selected: int,
+    top: int,
+    erase_lines: int,
+) -> tuple[int, int]:
+    """Paint one frame; return its row count and the window top it settled on."""
+    width = menu_columns()
+    rows = _visible_rows(len(options))
+    top = max(0, min(top, len(options) - rows, selected))
+    top = max(top, selected - rows + 1)
+    name_width = _name_width(options, width)
+    if erase_lines:
+        erase_menu_lines(erase_lines)
+
+    write_menu_line(_rule("╭", "╮", width))
+    write_menu_line(_header_row(parent, selected, len(options), width))
+    write_menu_line(_framed("", ui_theme.INPUT_SURFACE_BG_ANSI, width))
+    for index in range(top, top + rows):
+        name, meta = options[index]
+        write_menu_line(
+            _option_row(
+                name,
+                meta,
+                selected=index == selected,
+                name_width=name_width,
+                width=width,
+            )
+        )
+    write_menu_line(_framed("", ui_theme.INPUT_SURFACE_BG_ANSI, width))
+    write_menu_line(_hint_row(more=top + rows < len(options), width=width))
+    write_menu_line(_rule("╰", "╯", width))
+    return _CHROME_ROWS + rows, top
+
+
+def repl_choose_subcommand(
+    *,
+    parent: str,
+    options: Sequence[tuple[str, str]],
+    initial_value: str | None = None,
+) -> str | None:
+    """Pick one subcommand of ``parent``; return its name, or ``None`` on Esc.
+
+    ``options`` is a command's ``first_arg_completions``: ``(name, description)``
+    pairs. Pass the same constant the :class:`SlashCommand` registers so the tray
+    and this picker can never drift apart. Only call when
+    :func:`repl_tty_interactive` is True.
+    """
+    cleaned = [
+        (strip_terminal_controls(name), strip_terminal_controls(meta))
+        for name, meta in options
+        if name.strip()
+    ]
+    if not cleaned or not repl_tty_interactive():
+        return None
+    selected = 0
+    if initial_value is not None:
+        for index, (name, _meta) in enumerate(cleaned):
+            if name == initial_value:
+                selected = index
+                break
+    top = 0
+    drawn = 0
+    enter_inline_menu()
+    try:
+        while True:
+            drawn, top = _draw(parent, cleaned, selected=selected, top=top, erase_lines=drawn)
+            action = read_menu_action()
+            if action == "up":
+                selected = (selected - 1) % len(cleaned)
+            elif action == "down":
+                selected = (selected + 1) % len(cleaned)
+            elif action == "enter":
+                return cleaned[selected][0]
+            elif action in ("cancel", "eof"):
+                return None
+    finally:
+        erase_menu_lines(drawn, delete=True)
+        leave_inline_menu()
+
+
+__all__ = ["MAX_VISIBLE_SUBCOMMANDS", "repl_choose_subcommand"]

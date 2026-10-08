@@ -216,7 +216,7 @@ class TestDispatchSlash:
         picker_called: list[bool] = []
         monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
         monkeypatch.setattr(
-            help_cmd, "choose_help_command", lambda _sections: picker_called.append(True)
+            help_cmd, "browse_help_commands", lambda _sections: picker_called.append(True)
         )
 
         assert dispatch_slash("/help", session, console) is True
@@ -239,7 +239,7 @@ class TestDispatchSlash:
 
         dispatched: list[str] = []
         monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
-        monkeypatch.setattr(help_cmd, "choose_help_command", lambda _sections: selected)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: selected)
         monkeypatch.setattr(
             command_registry,
             "dispatch_slash",
@@ -850,9 +850,11 @@ class TestModelCommand:
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        selections = iter(
-            ["set", model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"]
-        )
+        # The root list is the tray-styled subcommand picker; the provider and
+        # model submenus below it are still plain choice menus.
+        roots = iter(["set", None])
+        selections = iter([model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"])
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(roots))
         monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
 
@@ -876,8 +878,8 @@ class TestModelCommand:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        picks = iter(["show", "done"])
-        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(picks))
+        picks = iter(["show", None])
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(picks))
         console, buf = _capture()
         session = Session()
         session.terminal.exclusive_stdin_active = True
@@ -914,16 +916,21 @@ class TestModelCommand:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        selections = iter(
+        roots = iter(
             [
                 "set",  # root -> set
+                None,  # Esc at root -> close menu
+            ]
+        )
+        selections = iter(
+            [
                 model_cmd.OTHER_PROVIDER_SELECTION,  # provider submenu selected
                 "anthropic",  # provider selected
                 None,  # Esc from model selection -> back to provider list
                 None,  # Esc from provider list -> back to root action list
-                None,  # Esc at root -> close menu
             ]
         )
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(roots))
         monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
         session = Session()
         session.terminal.exclusive_stdin_active = True
