@@ -33,6 +33,8 @@ _HELP_HINT = "↑↓/j/k navigate  ·  Enter run command  ·  Space toggle detai
 _HELP_PAGED_HINT = (
     "←→ page details  ·  ↑↓/j/k navigate  ·  Enter run  ·  Space close  ·  Esc/q close"
 )
+_HELP_NARROW_HINT = "↑↓ nav · Enter run · Space · Esc/q"
+_HELP_NARROW_PAGED_HINT = "←→page · ↑↓nav · Enter · Space · Esc/q"
 
 
 @dataclass(frozen=True)
@@ -404,6 +406,15 @@ def _help_menu_height(viewport_height: int) -> int:
     return _HELP_CHROME_ROWS + viewport_height
 
 
+def _help_hint(*, width: int, detail_pages: int) -> str:
+    """Controls that fit on one physical terminal row."""
+    full = _HELP_PAGED_HINT if detail_pages > 1 else _HELP_HINT
+    if len(full) <= width:
+        return full
+    narrow = _HELP_NARROW_PAGED_HINT if detail_pages > 1 else _HELP_NARROW_HINT
+    return _clip(narrow, width)
+
+
 def _detail_page(
     rows: Sequence[HelpDisplayRow],
     *,
@@ -481,8 +492,8 @@ def _draw_help_menu(
     for _ in range(max(0, effective_viewport_height - len(visible))):
         write_menu_line()
     write_menu_line()
-    hint = _HELP_PAGED_HINT if detail_pages > 1 else _HELP_HINT
-    write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{_clip(hint, width)}{ui_theme.ANSI_RESET}")
+    hint = _help_hint(width=width, detail_pages=detail_pages)
+    write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{hint}{ui_theme.ANSI_RESET}")
     sys.stdout.flush()
     return height
 

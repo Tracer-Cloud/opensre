@@ -450,3 +450,22 @@ def test_choose_help_command_pages_oversized_expanded_details(monkeypatch) -> No
     plain = _ANSI_RE.sub("", out.getvalue())
     assert "/loops action 0" in plain
     assert "/loops action 19" in plain
+
+
+def test_draw_help_menu_keeps_detail_and_close_controls_in_a_narrow_hint(
+    monkeypatch,
+) -> None:
+    rows = help_menu._flatten_help_rows([("Session", [_cmd("/status")])])
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "40")
+    monkeypatch.setenv("LINES", "20")
+
+    help_menu._draw_help_menu(rows, selected=1, expanded=None, erase_lines=0)
+
+    hint = _ANSI_RE.sub("", out.getvalue()).splitlines()[-1]
+    assert len(hint) <= 39
+    assert "↑↓" in hint
+    assert "Enter" in hint
+    assert "Space" in hint
+    assert "Esc/q" in hint
