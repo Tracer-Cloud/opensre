@@ -7,12 +7,12 @@ from collections.abc import Sequence
 
 import click
 from rich.console import Console
-from rich.table import Table
 
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
     AmbiguousWorkItemDatetimeError,
+    WorkItem,
     WorkItemChannelTarget,
     add_work_item,
     complete_work_items,
@@ -26,6 +26,7 @@ from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from surfaces.shared.terminal.tables.work_items import next_work_table, work_items_table
 
 _console = Console(highlight=False)
 
@@ -209,21 +210,7 @@ def work_next(project: str, owner: str, limit: int) -> None:
     if not ranked:
         _console.print("[dim]No open work items found.[/dim]")
         return
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Rank", justify="right")
-    table.add_column("ID", style="cyan")
-    table.add_column("Score", justify="right")
-    table.add_column("Title")
-    table.add_column("Why")
-    for index, scored in enumerate(ranked, start=1):
-        table.add_row(
-            str(index),
-            scored.item.display_id,
-            str(scored.score),
-            scored.item.title,
-            ", ".join(scored.reasons),
-        )
-    _console.print(table)
+    _console.print(next_work_table(ranked))
 
 
 @work_command.command(name="schedule-checkin")
@@ -284,30 +271,11 @@ def work_path() -> None:
     _console.print(str(work_items_path()))
 
 
-def _render_items(rows: Sequence[object]) -> None:
-    from core.domain.work_items import WorkItem
-
+def _render_items(rows: Sequence[WorkItem]) -> None:
     if not rows:
         _console.print(f"[dim]No matching work items. Store: {work_items_path()}[/dim]")
         return
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", style="cyan")
-    table.add_column("Priority")
-    table.add_column("Status")
-    table.add_column("Project")
-    table.add_column("Title")
-    table.add_column("Due")
-    for row in rows:
-        item = row if isinstance(row, WorkItem) else row.item  # type: ignore[attr-defined]
-        table.add_row(
-            item.display_id,
-            item.priority.value,
-            item.status.value,
-            item.project,
-            item.title,
-            item.due_at[:16],
-        )
-    _console.print(table)
+    _console.print(work_items_table(rows))
     _console.print(f"[dim]Store: {work_items_path()}[/dim]")
 
 

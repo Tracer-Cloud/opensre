@@ -325,10 +325,10 @@ def test_cron_list_surfaces_legacy_task_migration_status(
     assert "opensre cron add --kind" in output
 
 
-def test_cron_list_prints_structured_bullets(
+def test_cron_list_keeps_identifiers_outside_summary_columns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """List tasks as bullets so a narrow terminal never splits a table cell.
+    """Keep actionable identifiers outside columns so narrow tables cannot truncate them.
 
     ``/cron remove <id>`` chains on the id, which a squeezed table used to
     return as ``ecf7c2580b…``.
@@ -359,15 +359,13 @@ def test_cron_list_prints_structured_bullets(
     result = CliRunner().invoke(cron_module.cron_command, ["list"])
     assert result.exit_code == 0
     assert "┏" not in result.output
-    assert "• CI repair: davincios/opensre-ci-fix-demo-9YaBJ" in result.output
-    assert "• ID: ecf7c2580b83" in result.output
-    assert "• Kind: manual_loop" in result.output
-    assert "• Cron: */30 * * * * *" in result.output
-    assert "• Timezone: UTC" in result.output
-    assert "• Provider: interactive_shell" in result.output
-    assert "• Channels: interactive_shell" in result.output
-    assert "• Next run: 2026-09-16 12:17:30 UTC" in result.output
-    assert "• Last run: 2026-09-16 11:54:47 UTC" in result.output
+    assert "CI repair:" in result.output
+    assert "ID: ecf7c2580b83deadbeef" in result.output
+    assert "*/30 * * * * *" in result.output
+    assert "TZ: UTC" in result.output
+    assert "interactive_shell" in result.output
+    assert "2026-09-16 12:17:30" in result.output
+    assert "Last run: 2026-09-16 11:54:47 UTC" in result.output
     assert "347779" not in result.output
 
 
@@ -534,9 +532,11 @@ def test_cron_logs_rejects_non_positive_limit() -> None:
 
 
 def test_cron_log_status_identifies_reclaimed_attempts() -> None:
-    assert cron_module._run_status_label(TaskRun(task_id="t", fire_time="f")) == "pending"
+    from surfaces.cli.commands.cron_results import _run_status_label
+
+    assert _run_status_label(TaskRun(task_id="t", fire_time="f")) == "pending"
     assert (
-        cron_module._run_status_label(
+        _run_status_label(
             TaskRun(
                 task_id="t",
                 fire_time="f",
@@ -547,9 +547,7 @@ def test_cron_log_status_identifies_reclaimed_attempts() -> None:
         == "reclaimed/success"
     )
     assert (
-        cron_module._run_status_label(
-            TaskRun(task_id="t", fire_time="f", status=TaskStatus.ABANDONED)
-        )
+        _run_status_label(TaskRun(task_id="t", fire_time="f", status=TaskStatus.ABANDONED))
         == "abandoned"
     )
 

@@ -60,6 +60,7 @@ def _captured_child_env(console: Console, *, headless: bool) -> dict[str, str]:
             columns=console.size.width,
             lines=console.size.height,
             prefix_width=COMMAND_OUTPUT_GUTTER_WIDTH,
+            minimum_columns=1,
         )
     )
 
@@ -342,6 +343,7 @@ def run_cli_command(
             print_command_output(
                 console,
                 captured_result.stdout or "",
+                collapse=args[:2] != ["cron", "list"],
                 on_collapse=lambda body: _stash_collapsed_output(session, body),
             )
             print_command_output(

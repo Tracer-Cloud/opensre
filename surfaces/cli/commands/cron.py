@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import click
-from rich.console import Console
-from rich.table import Table
+from rich.console import Console, Group
+from rich.text import Text
 
 if TYPE_CHECKING:
     from infrastructure.scheduling.scheduler.loops import LoopSummary
@@ -36,10 +36,10 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_TEMPLATE_PARAM,
 )
 from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_reference
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
-from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.terminal.theme import BOLD_BRAND, DIM
+from surfaces.cli.commands.schedule_listing import print_loop_schedules
 from surfaces.cli.commands.scheduling import validate_cron_and_timezone
-from surfaces.shared.terminal.components import format_repl_timestamp
 
 _console = Console()
 
@@ -413,32 +413,6 @@ def _recurring_skill_inputs(
     return validate_skill_inputs(params)
 
 
-def _print_cron_task(loop: LoopSummary) -> None:
-    """Print one scheduled task as a headed bullet with one field per line."""
-    from rich.markup import escape
-
-    title = escape(loop.name.strip() or loop.id[:12])
-    enabled = GLYPH_SUCCESS if loop.enabled else GLYPH_ERROR
-    fields = (
-        ("Kind", escape(loop.kind.value)),
-        ("Cron", escape(loop.cron)),
-        ("Timezone", escape(loop.timezone)),
-        ("Provider", escape(loop.provider.value)),
-        ("Channels", escape(", ".join(loop.channels)) or "—"),
-        ("Enabled", enabled),
-        ("Next run", format_repl_timestamp(loop.next_run, style="utc")),
-        ("Last run", format_repl_timestamp(loop.last_run, style="utc")),
-    )
-    _console.print(f"[bold]• {title}[/bold]")
-    _console.print(f"  • ID: [cyan]{escape(loop.id[:12])}[/cyan]")
-    if loop.description:
-        _console.print(f"  • What it does: {escape(loop.description)}")
-    for label, value in fields:
-        _console.print(f"  • {label}: {value}")
-    if loop.schedule_error:
-        _console.print(f"  [yellow]• Requires action: {escape(loop.schedule_error)}[/yellow]")
-
-
 def _cron_task_json(loop: LoopSummary) -> dict[str, object]:
     """Return the stable machine-readable view of a scheduled loop."""
     return {
@@ -476,10 +450,7 @@ def cron_list() -> None:
         _console.print("[dim]No scheduled tasks configured.[/dim]")
         return
 
-    for index, loop in enumerate(loops):
-        if index:
-            _console.print()
-        _print_cron_task(loop)
+    print_loop_schedules(_console, loops)
 
 
 def _unknown_backlog_status(as_json: bool, error: str) -> click.exceptions.Exit:
@@ -548,13 +519,17 @@ def cron_status(as_json: bool) -> None:
         )
         return
 
-    table = Table(show_header=False)
-    table.add_column("Metric", style="bold")
-    table.add_column("Value")
-    table.add_row("Pending runs", str(snapshot.pending_count))
-    table.add_row("Oldest pending", oldest_pending_at or "—")
-    table.add_row("Oldest pending age", _format_duration(snapshot.oldest_pending_age_seconds))
-    _console.print(table)
+    _console.print(
+        Group(
+            Text("Scheduler status", style=BOLD_BRAND),
+            Text(f"Pending runs: {snapshot.pending_count}"),
+            Text(f"Oldest pending: {oldest_pending_at or '—'}", style=DIM),
+            Text(
+                f"Oldest pending age: {_format_duration(snapshot.oldest_pending_age_seconds)}",
+                style=DIM,
+            ),
+        )
+    )
 
 
 @cron_command.command(name="remove")
@@ -663,22 +638,6 @@ def cron_run(task_id: str, failed_only: bool) -> None:
         raise SystemExit(1)
 
 
-def _delivered_targets(run: TaskRun) -> str:
-    """How many of a run's destinations were delivered to (``2/3``)."""
-    if not run.targets:
-        return "—"
-    return f"{sum(1 for outcome in run.targets if outcome.ok)}/{len(run.targets)}"
-
-
-def _run_status_label(run: TaskRun) -> str:
-    """Describe whether a run was abandoned or recovered by a later attempt."""
-    if run.status is TaskStatus.ABANDONED:
-        return "abandoned"
-    if run.attempt > 1:
-        return f"reclaimed/{run.status.value}"
-    return run.status.value
-
-
 @cron_command.command(name="logs")
 @click.argument("task_id")
 @click.option(
@@ -700,7 +659,7 @@ def cron_logs(task_id: str, limit: int, run_id: int | None, as_json: bool) -> No
 
     from infrastructure.scheduling.scheduler.loop_results import restore_legacy_reports
     from infrastructure.scheduling.scheduler.storage import get_group_run, get_runs
-    from surfaces.cli.commands.cron_results import print_run_result
+    from surfaces.cli.commands.cron_results import print_run_history, print_run_result
 
     selected = get_group_run((task_id,), run_id) if run_id is not None else None
     runs = (
@@ -716,31 +675,7 @@ def cron_logs(task_id: str, limit: int, run_id: int | None, as_json: bool) -> No
         _console.print(f"[dim]No execution history for task {task_id}.[/dim]")
         return
 
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Run")
-    table.add_column("Started")
-    table.add_column("Attempt")
-    table.add_column("Execution")
-    table.add_column("Work")
-    table.add_column("Delivery")
-    table.add_column("Targets")
-    table.add_column("Message ID")
-    table.add_column("Error")
-
-    for run in runs:
-        table.add_row(
-            str(run.run_id or "—"),
-            run.started_at,
-            str(run.attempt),
-            _run_status_label(run),
-            run.work_status.value,
-            run.delivery_status.value if run.delivery_status is not None else "none",
-            _delivered_targets(run),
-            run.posted_message_id or "—",
-            run.error[:50] if run.error else "—",
-        )
-
-    _console.print(table)
+    print_run_history(_console, runs)
     print_run_result(_console, runs[0])
 
 

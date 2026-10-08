@@ -72,6 +72,13 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         # Bare ``/model set`` opens the provider picker; with a provider it may
         # prompt for a missing key and prints the models table.
         ("/model", "set"),
+        ("/cron", "list"),
+        ("/cron", "logs"),
+        ("/cron", "status"),
+        ("/work", "list"),
+        ("/work", "ls"),
+        ("/work", "next"),
+        ("/work", "prioritize"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),

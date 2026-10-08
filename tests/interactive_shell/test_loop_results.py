@@ -47,7 +47,7 @@ def _loop() -> LoopSummary:
 
 
 @pytest.mark.parametrize("width", [40, 80, 114])
-def test_compact_table_limits_rows_and_prioritizes_findings(
+def test_schedule_records_preserve_findings_and_full_report_navigation(
     width: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Rich renders "dumb" terminals at a fixed 80 columns regardless of the
@@ -77,13 +77,12 @@ def test_compact_table_limits_rows_and_prioritizes_findings(
     assert "1 fix" in text
     assert "Done" in text
     assert "Mon 08:00" in text
-    assert "hidden-id" not in text
+    assert "ID: hidden-id" in text
     assert "Report title" not in text
-    assert "slack" not in text
-    assert "0 8 * * *" not in text
-    # The data area is exactly two lines at every supported terminal width.
-    rows = [line for line in text.splitlines() if "│" in line]
-    assert len(rows) == 3  # header plus two data lines
+    assert "slack" in text
+    assert "0 8 * * *" in text
+    # Secondary fields reflow below the summary instead of squeezing table cells.
+    assert "/loops show <name-or-id>" in text
     assert all(len(line) <= width for line in text.splitlines())
 
 
@@ -232,3 +231,31 @@ def test_picker_disambiguates_duplicate_names_and_noninteractive_show_gives_a_co
     loop_show.show_loop(session, console, [])
     assert "Second report" in output.getvalue()
     assert "First report" not in output.getvalue()
+
+
+@pytest.mark.parametrize("width", [40, 80, 120])
+def test_loop_list_uses_responsive_schedule_records(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    from rich.cells import cell_len
+
+    monkeypatch.setenv("COLUMNS", str(width))
+    loop = replace(
+        _loop(), description="Fix failing checkout workflows.", next_run="2026-10-09T08:00:00Z"
+    )
+    output = io.StringIO()
+    render_loops(
+        Console(file=output, width=width),
+        [loop],
+        {},
+        now=datetime(2026, 10, 9, tzinfo=UTC),
+        local_timezone=UTC,
+    )
+    text = output.getvalue()
+    assert "ID: hidden-id" in text
+    assert "0 8 * * *" in text
+    assert "Fix failing checkout workflows." in " ".join(text.split())
+    assert "Active" in text
+    assert "Not run yet" in text
+    assert "/loops show" in text
+    assert max(cell_len(line) for line in text.splitlines()) <= width

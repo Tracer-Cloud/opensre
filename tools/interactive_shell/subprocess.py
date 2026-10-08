@@ -217,14 +217,16 @@ def subprocess_env_with_width(
     columns: int,
     lines: int | None = None,
     prefix_width: int = TASK_OUTPUT_PREFIX_WIDTH,
+    minimum_columns: int = MIN_SUBPROCESS_TERMINAL_WIDTH,
 ) -> dict[str, str]:
     """Return ``os.environ`` patched so a piped Rich subprocess wraps to fit.
 
     ``prefix_width`` is what the parent prepends to every replayed line — the
     task-relay prefix by default, or the ``↳`` command-output gutter — so a
     child table row plus prefix still fits in ``columns`` without folding.
+    Responsive CLI output can opt out of the streaming relay's minimum width.
     """
-    available = max(MIN_SUBPROCESS_TERMINAL_WIDTH, columns - prefix_width - 1)
+    available = max(minimum_columns, columns - prefix_width - 1)
     env = _piped_rich_env(columns=available)
     env.setdefault(TERMINAL_LINES_ENV, str(max(20, lines or 24)))
     return env

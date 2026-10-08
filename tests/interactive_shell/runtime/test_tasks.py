@@ -257,7 +257,7 @@ class TestSlashTaskCommands:
         out = buf.getvalue()
         assert t.task_id in out
         assert "cli_command" in out
-        assert "completed" in out
+        assert "completed" in out.lower()
 
     def test_cancel_usage_without_id(self) -> None:
         session = Session()

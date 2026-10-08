@@ -9,6 +9,7 @@ from rich.markup import escape
 
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
+    WorkItem,
     add_work_item,
     complete_work_items,
     ensure_work_items_store,
@@ -19,13 +20,12 @@ from core.domain.work_items import (
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
-    BOLD_BRAND,
     DIM,
     ERROR,
     HIGHLIGHT,
-    print_repl_table,
-    repl_table,
 )
+from surfaces.shared.terminal.components.rendering import print_repl_renderable
+from surfaces.shared.terminal.tables.work_items import next_work_table, work_items_table
 
 _STATUSES = frozenset({"open", "completed", "blocked", "deferred", "active", "all"})
 _OPTION_NAMES = frozenset({"--project", "--owner", "--priority", "--due"})
@@ -74,33 +74,14 @@ def _split_options(args: list[str]) -> tuple[list[str], dict[str, str], str | No
     return remaining, options, None
 
 
-def _render_work_table(console: Console, rows: Sequence[object], *, title: str) -> bool:
-    from core.domain.work_items import WorkItem
-
+def _render_work_table(console: Console, rows: Sequence[WorkItem], *, title: str) -> bool:
     if not rows:
         console.print(
             f"[{DIM}]no matching work items. Add one with[/] [{HIGHLIGHT}]/work add <title>[/][{DIM}].[/]"
         )
         return True
 
-    table = repl_table(title=f"{title}\n", title_style=BOLD_BRAND)
-    table.add_column("id", style="cyan")
-    table.add_column("priority")
-    table.add_column("status")
-    table.add_column("project", overflow="fold")
-    table.add_column("title", overflow="fold")
-    table.add_column("due", style=DIM)
-    for row in rows:
-        item = row if isinstance(row, WorkItem) else row.item  # type: ignore[attr-defined]
-        table.add_row(
-            escape(item.display_id),
-            escape(item.priority.value),
-            escape(item.status.value),
-            escape(item.project),
-            escape(item.title),
-            escape(item.due_at[:16]),
-        )
-    print_repl_table(console, table)
+    print_repl_renderable(console, work_items_table(rows, title=title))
     console.print(f"[{DIM}]store: {work_items_path()}[/]")
     return True
 
@@ -176,21 +157,7 @@ def _next(console: Console, args: list[str]) -> bool:
     if not ranked:
         console.print(f"[{DIM}]no open work items found.[/]")
         return True
-    table = repl_table(title="Recommended next work\n", title_style=BOLD_BRAND)
-    table.add_column("rank", justify="right")
-    table.add_column("id", style="cyan")
-    table.add_column("score", justify="right")
-    table.add_column("title", overflow="fold")
-    table.add_column("why", overflow="fold")
-    for index, scored in enumerate(ranked, start=1):
-        table.add_row(
-            str(index),
-            escape(scored.item.display_id),
-            str(scored.score),
-            escape(scored.item.title),
-            escape(", ".join(scored.reasons)),
-        )
-    print_repl_table(console, table)
+    print_repl_renderable(console, next_work_table(ranked))
     return True
 
 

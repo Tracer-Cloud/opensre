@@ -251,11 +251,12 @@ def print_command_output(
     *,
     style: str | None = None,
     on_collapse: Callable[[str], None] | None = None,
+    collapse: bool = True,
 ) -> None:
     if not output:
         return
     text = _collapse_traceback(output.rstrip()) or output.rstrip()
-    preview, folded = cap_output_for_display(text)
+    preview, folded = cap_output_for_display(text) if collapse else (text, None)
     if folded is not None and on_collapse is not None:
         on_collapse(folded)
     lines = preview.split("\n")
