@@ -116,6 +116,38 @@ def test_minimum_height_leaves_room_to_delete_the_whole_block() -> None:
     assert painted <= height - 1
 
 
+def _drive_sized(keys: list[str], heights: list[int]) -> tuple[str | None, list[str]]:
+    """Run the picker against a scripted key stream and a changing terminal height."""
+    pressed: Iterator[str] = iter(keys)
+    sizes: Iterator[int] = iter(heights)
+    painted: list[str] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(subcommand_menu, "repl_tty_interactive", lambda: True)
+        patch.setattr(subcommand_menu, "enter_inline_menu", lambda: None)
+        patch.setattr(subcommand_menu, "leave_inline_menu", lambda: None)
+        patch.setattr(subcommand_menu, "erase_menu_lines", lambda *_a, **_k: None)
+        patch.setattr(subcommand_menu, "write_menu_line", lambda row="": painted.append(row))
+        patch.setattr(subcommand_menu, "menu_columns", lambda: 80)
+        patch.setattr(
+            subcommand_menu,
+            "get_terminal_size",
+            lambda **_k: os.terminal_size((80, next(sizes))),
+        )
+        patch.setattr(subcommand_menu, "read_menu_action", lambda: next(pressed))
+        return subcommand_menu.repl_choose_subcommand(parent="/trust", options=_OPTIONS), painted
+
+
+def test_enter_after_a_resize_repaints_instead_of_running_an_unseen_option() -> None:
+    # The terminal can grow between the paint and the keypress. Judging that key
+    # against a freshly measured size would select option one — for /trust that
+    # is "on", which turns off future approval prompts — without ever showing it.
+    picked, painted = _drive_sized(["enter", "cancel"], heights=[5, 40])
+
+    assert picked is None
+    assert any("Resize to at least" in _plain(row) for row in painted)
+    assert any("Subcommands · /trust" in _plain(row) for row in painted)
+
+
 def test_enter_cannot_commit_a_row_the_resize_notice_hides() -> None:
     pressed: Iterator[str] = iter(["enter", "cancel"])
     with pytest.MonkeyPatch.context() as patch:

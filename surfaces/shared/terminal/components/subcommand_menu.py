@@ -14,6 +14,7 @@ TTY — or DEC autowrap reflows the block on the next resize.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from shutil import get_terminal_size
 
 import infrastructure.terminal.theme as ui_theme
@@ -159,6 +160,20 @@ def _notice_rows(width: int, height: int) -> list[str]:
     ]
 
 
+@dataclass(frozen=True)
+class _Painted:
+    """What the last frame actually put on screen.
+
+    ``showed_options`` gates selection: the terminal can be resized between a
+    paint and the keypress that follows it, so a key must be judged against the
+    frame the user was looking at, never against a freshly measured size.
+    """
+
+    height: int
+    top: int
+    showed_options: bool
+
+
 def _draw(
     parent: str,
     options: Sequence[tuple[str, str]],
@@ -166,8 +181,8 @@ def _draw(
     selected: int,
     top: int,
     erase_lines: int,
-) -> tuple[int, int]:
-    """Paint one frame; return its row count and the window top it settled on."""
+) -> _Painted:
+    """Paint one frame and report its height, window top, and what it showed."""
     width = menu_columns()
     height = get_terminal_size(fallback=(80, 24)).lines
     if erase_lines:
@@ -176,7 +191,7 @@ def _draw(
         rows_painted = _notice_rows(width, height)
         for row in rows_painted:
             write_menu_line(row)
-        return len(rows_painted), top
+        return _Painted(len(rows_painted), top, showed_options=False)
 
     rows = _visible_rows(len(options), height)
     top = max(0, min(top, len(options) - rows, selected))
@@ -200,7 +215,7 @@ def _draw(
     write_menu_line(_framed("", ui_theme.INPUT_SURFACE_BG_ANSI, width))
     write_menu_line(_hint_row(more=top + rows < len(options), width=width))
     write_menu_line(_rule("╰", "╯", width))
-    return _CHROME_ROWS + rows, top
+    return _Painted(_CHROME_ROWS + rows, top, showed_options=True)
 
 
 def repl_choose_subcommand(
@@ -234,12 +249,14 @@ def repl_choose_subcommand(
     enter_inline_menu()
     try:
         while True:
-            drawn, top = _draw(parent, cleaned, selected=selected, top=top, erase_lines=drawn)
+            painted = _draw(parent, cleaned, selected=selected, top=top, erase_lines=drawn)
+            drawn, top = painted.height, painted.top
             action = read_menu_action()
             if action in ("cancel", "eof"):
                 return None
-            if too_small(menu_columns(), get_terminal_size(fallback=(80, 24)).lines):
-                # Only the resize notice is on screen; no row is selectable.
+            if not painted.showed_options:
+                # The resize notice was on screen, so no row was selectable and
+                # none is now: repaint at the current size before taking a key.
                 continue
             if action == "up":
                 selected = (selected - 1) % len(cleaned)
