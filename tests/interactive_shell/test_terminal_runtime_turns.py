@@ -48,6 +48,9 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
     # same row in /help (which reserves stdin for the whole turn) opens a picker.
     assert loop_input_policy.turn_needs_exclusive_stdin("/model toolcall", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/history retention", session) is True
+    # ``/history show`` prints a table; without the reservation its redraw
+    # fires DSR queries whose CPR replies land in the composer as keystrokes.
+    assert loop_input_policy.turn_needs_exclusive_stdin("/history show", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops active", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops messages", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show", session) is True

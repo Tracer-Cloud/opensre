@@ -79,6 +79,9 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         # chosen in /help.
         ("/model", "toolcall"),
         ("/history", "retention"),
+        # ``/history show`` prints a table, so it needs the prompt suspended for
+        # the same reason the commands below do.
+        ("/history", "show"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),
