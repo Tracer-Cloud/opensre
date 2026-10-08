@@ -343,7 +343,6 @@ def run_cli_command(
             print_command_output(
                 console,
                 captured_result.stdout or "",
-                collapse=args[:2] != ["cron", "list"],
                 on_collapse=lambda body: _stash_collapsed_output(session, body),
             )
             print_command_output(

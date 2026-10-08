@@ -56,7 +56,7 @@ def test_tasks_list_keeps_cancel_id_and_error(monkeypatch: pytest.MonkeyPatch, w
     assert max(cell_len(line) for line in text.splitlines()) <= width
 
 
-def test_cron_replay_reserves_narrow_gutter_and_keeps_all_ids(
+def test_cron_replay_reserves_narrow_gutter_and_keeps_ids_in_pager(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import subprocess
@@ -81,9 +81,27 @@ def test_cron_replay_reserves_narrow_gutter_and_keeps_all_ids(
         )
 
     monkeypatch.setattr(cli_parity.subprocess, "run", run_child)
-    cli_parity._cmd_cron(Session(), console, ["list"])
+    session = Session()
+    cli_parity._cmd_cron(session, console, ["list"])
     assert child_widths == [35]
     text = output.getvalue()
-    assert "final-task-id" in text
-    assert "Ctrl+O" not in text
+    assert "final-task-id" not in text
+    assert "Ctrl+O" in text
+    assert "final-task-id" in (session.terminal.collapsed_tool_output or "")
     assert max(cell_len(line) for line in text.splitlines()) <= 40
+
+
+def test_tasks_list_bounds_multiline_error_and_command() -> None:
+    session = Session()
+    task = session.task_registry.create(
+        TaskKind.CLI_COMMAND, command="opensre " + "x" * 2000 + "command-tail"
+    )
+    task.mark_failed("\x1b[31m[literal] " + "e" * 2000 + "error-tail\nsecond-error-line")
+    output = io.StringIO()
+    tasks_cmds._cmd_tasks(session, Console(file=output, width=80), [])
+    text = output.getvalue()
+    assert task.task_id in text and "[literal]" in text
+    assert "command-tail" not in text
+    assert "error-tail" not in text and "second-error-line" not in text
+    assert "…" in text and "\x1b" not in text
+    assert len(text) < 800

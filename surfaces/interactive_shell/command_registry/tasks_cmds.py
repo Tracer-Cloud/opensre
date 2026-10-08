@@ -48,26 +48,19 @@ def _kind_label(task: TaskRecord) -> str:
     return task.kind.value
 
 
-def _task_detail_label(task: TaskRecord) -> str:
-    if task.status == TaskStatus.RUNNING and task.progress:
-        line = _clean_first_line(task.progress)
-        if len(line) > _MAX_DETAIL_CHARS:
-            return line[:_MAX_DETAIL_CHARS] + "…"
-        return line or "—"
-
-    # Show error > result > command, first line, truncated.
-    if task.error:
-        raw = task.error
-    elif task.result:
-        raw = task.result
-    elif task.command:
-        raw = task.command
-    else:
-        return "—"
-    first_line = _clean_first_line(raw)
+def _bounded_first_line(text: str) -> str:
+    first_line = _clean_first_line(text)
     if len(first_line) > _MAX_DETAIL_CHARS:
         return first_line[:_MAX_DETAIL_CHARS] + "…"
     return first_line or "—"
+
+
+def _task_detail_label(task: TaskRecord) -> str:
+    if task.status == TaskStatus.RUNNING and task.progress:
+        return _bounded_first_line(task.progress)
+
+    # Show error > result > command, first line, truncated.
+    return _bounded_first_line(task.error or task.result or task.command or "")
 
 
 def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
@@ -89,19 +82,14 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
         rows.append(
             RecordRow(
                 (
-                    Text(task.command or _kind_label(task), style="bold"),
+                    Text(_bounded_first_line(task.command or _kind_label(task)), style="bold"),
                     Text(task.status.value.capitalize(), style=st),
                     Text(_task_duration_label(task)),
                 ),
                 (
                     Text(f"ID: {task.task_id} · Kind: {_kind_label(task)}", style=DIM),
                     Text(f"Started: {_task_started_label(task)}", style=DIM),
-                    Text(
-                        _ANSI_ESCAPE.sub("", task.error)
-                        if task.error
-                        else _task_detail_label(task),
-                        style=st,
-                    ),
+                    Text(_task_detail_label(task), style=st),
                 ),
             )
         )
