@@ -32,6 +32,7 @@ def connect_github_app(monkeypatch: pytest.MonkeyPatch, token: str = "app-token"
 
     monkeypatch.setattr(ports, "_installed_adapters", ports._installed_adapters)
     register_harness_adapters()
+    monkeypatch.setattr("integrations.webapp_vault.webapp_vault_configured", lambda: False)
     monkeypatch.setattr(
         "integrations.account_integrations.load_account_integrations", load_connections
     )

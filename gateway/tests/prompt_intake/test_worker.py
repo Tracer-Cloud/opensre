@@ -145,7 +145,9 @@ class _ToolCatalogHandler(_Handler):
             tools = provider.action_tools(
                 confirm_fn=None,
                 is_tty=False,
-                resolved_integrations={"github": {"token": "test-token"}},
+                resolved_integrations={
+                    "github": {"auth_token": "test-token", "connection_origin": "webapp"}
+                },
             )
             snapshots.append({tool.name for tool in tools})
         return super().run(text, session, output, logger, **kwargs)
