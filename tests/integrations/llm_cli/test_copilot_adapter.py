@@ -441,13 +441,12 @@ def test_build_argv_uses_non_interactive_flags(
     inv = CopilotAdapter().build(prompt="hello world", model=None, workspace="")
 
     assert inv.argv[0] == "/usr/bin/copilot"
-    assert "-p" in inv.argv
-    idx = inv.argv.index("-p")
-    assert inv.argv[idx + 1] == "hello world"
+    assert "-p" not in inv.argv
+    assert inv.stdin == "hello world"
+
     assert "--no-color" in inv.argv
     assert "--no-ask-user" in inv.argv
     assert "--silent" in inv.argv
-    assert inv.stdin is None
     assert inv.cwd
     assert inv.env is None
     mock_which.assert_called()

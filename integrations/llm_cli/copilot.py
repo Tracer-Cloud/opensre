@@ -293,8 +293,6 @@ class CopilotAdapter:
         #   --silent        emits only the agent response, not stats / banner.
         argv: list[str] = [
             binary,
-            "-p",
-            prompt,
             "--no-color",
             "--no-ask-user",
             "--silent",
@@ -314,7 +312,7 @@ class CopilotAdapter:
         }
         return CLIInvocation(
             argv=tuple(argv),
-            stdin=None,
+            stdin=prompt,
             cwd=cwd,
             env=env or None,
             timeout_sec=self.default_exec_timeout_sec,
