@@ -938,8 +938,15 @@ def test_without_slack_the_slack_demo_connects_it_in_the_app_then_resumes(
         monkeypatch.setattr(module, "load_account_record", lambda: account)
         monkeypatch.setattr(module, "resolve_account_token", lambda: "osre_pat_test")
 
-    def app_get(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
+    def app_get(
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: float,
+        params: dict[str, str],
+    ) -> httpx.Response:
         _ = (url, headers, timeout)
+        assert params == {"include": "personal"}
         return httpx.Response(200, json={"success": True, "data": app_records})
 
     monkeypatch.setattr(
