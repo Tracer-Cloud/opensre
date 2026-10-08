@@ -555,3 +555,37 @@ def test_choose_help_command_pages_details_in_a_one_row_viewport(monkeypatch) ->
     assert help_menu.choose_help_command([("Models", [command])]) is None
 
     assert "/model action" in _ANSI_RE.sub("", out.getvalue())
+
+
+def test_draw_help_menu_keeps_a_safety_row_in_a_seven_row_terminal(monkeypatch) -> None:
+    rows = help_menu._flatten_help_rows([("Session", [_cmd("/status")])])
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "80")
+    monkeypatch.setenv("LINES", "7")
+
+    height = help_menu._draw_help_menu(rows, selected=1, expanded=None, erase_lines=0)
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert height <= 6
+    assert out.getvalue().count("\r\n") == height
+    assert "Slash commands" in plain
+    assert "1/1" in plain
+    assert ">   /status" in plain
+
+
+def test_draw_help_menu_uses_a_one_line_fallback_in_a_three_row_terminal(
+    monkeypatch,
+) -> None:
+    rows = help_menu._flatten_help_rows([("Session", [_cmd("/status")])])
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "80")
+    monkeypatch.setenv("LINES", "3")
+
+    height = help_menu._draw_help_menu(rows, selected=1, expanded=None, erase_lines=0)
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert height == 1
+    assert out.getvalue().count("\r\n") == height
+    assert "Slash commands 1/1: /status" in plain

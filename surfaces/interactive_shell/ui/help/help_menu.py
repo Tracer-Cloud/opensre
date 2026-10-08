@@ -29,6 +29,7 @@ from surfaces.shared.terminal.components.rendering import (
 HelpSection = tuple[str, Sequence[SlashCommand]]
 _HELP_VIEW_ROWS = 21
 _HELP_CHROME_ROWS = 6
+_HELP_COMPACT_CHROME_ROWS = 2
 _HELP_HINT = "↑↓/j/k navigate  ·  Enter run command  ·  Space toggle details  ·  Esc/q close"
 _HELP_PAGED_HINT = (
     "←→ page details  ·  ↑↓/j/k navigate  ·  Enter run  ·  Space close  ·  Esc/q close"
@@ -393,17 +394,41 @@ def _render_display_row(
     )
 
 
+def _help_layout() -> Literal["regular", "compact", "tiny"]:
+    """Choose chrome that leaves a row below the menu for terminal redraws."""
+    rows = shutil.get_terminal_size(fallback=(80, 24)).lines
+    if rows <= 3:
+        return "tiny"
+    if rows <= _HELP_CHROME_ROWS + 1:
+        return "compact"
+    return "regular"
+
+
 def _help_viewport_height() -> int:
     """Rows the help list may use without scrolling its title or controls away."""
     rows = shutil.get_terminal_size(fallback=(80, 24)).lines
+    layout = _help_layout()
+    if layout == "tiny":
+        return 1
+    chrome_rows = {
+        "regular": _HELP_CHROME_ROWS,
+        "compact": _HELP_COMPACT_CHROME_ROWS,
+    }[layout]
     # Leave one row below the menu so a redraw or the prompt does not force the
     # title off-screen when the cursor is already on the terminal's last line.
-    return min(_HELP_VIEW_ROWS, max(1, rows - _HELP_CHROME_ROWS - 1))
+    return min(_HELP_VIEW_ROWS, max(1, rows - chrome_rows - 1))
 
 
-def _help_menu_height(viewport_height: int) -> int:
-    # leading blank, title, counter, rule, rows, blank, hint
-    return _HELP_CHROME_ROWS + viewport_height
+def _help_menu_height(
+    viewport_height: int, *, layout: Literal["regular", "compact", "tiny"]
+) -> int:
+    if layout == "regular":
+        # leading blank, title, counter, rule, rows, blank, hint
+        return _HELP_CHROME_ROWS + viewport_height
+    if layout == "compact":
+        # combined title/counter, rows, hint
+        return _HELP_COMPACT_CHROME_ROWS + viewport_height
+    return viewport_height
 
 
 def _help_hint(*, width: int, detail_pages: int) -> str:
@@ -465,6 +490,7 @@ def _draw_help_menu(
     detail_page: int = 0,
 ) -> int:
     width = menu_columns()
+    layout = _help_layout()
     display = _display_rows(rows, expanded)
     display_selected = _display_index_for_source(display, selected)
     available_viewport_height = _help_viewport_height()
@@ -486,35 +512,50 @@ def _draw_help_menu(
     )
     if paged_visible is not None:
         visible = paged_visible
-    height = _help_menu_height(effective_viewport_height)
+    height = _help_menu_height(effective_viewport_height, layout=layout)
     if erase_lines:
         erase_menu_lines(erase_lines)
 
     selected_count = sum(1 for row in rows[: selected + 1] if row.selectable)
     total_count = sum(1 for row in rows if row.selectable)
 
-    write_menu_line()
-    write_menu_line(
-        f"{ui_theme.PROMPT_ACCENT_ANSI}{_center('Slash commands', width)}{ui_theme.ANSI_RESET}"
-    )
-    write_menu_line(
-        f"{ui_theme.DIM_COUNTER_ANSI}{selected_count}/{total_count}{ui_theme.ANSI_RESET}"
-    )
-    write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{_separator_rule(width)}{ui_theme.ANSI_RESET}")
-    for row in visible:
-        write_menu_line(
-            _render_display_row(
-                row,
-                selected=(row.source_index == selected),
-                expanded=(row.source_index == expanded),
-                width=width,
-            )
-        )
-    for _ in range(max(0, effective_viewport_height - len(visible))):
+    if layout == "regular":
         write_menu_line()
-    write_menu_line()
-    hint = _help_hint(width=width, detail_pages=detail_pages)
-    write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{hint}{ui_theme.ANSI_RESET}")
+        write_menu_line(
+            f"{ui_theme.PROMPT_ACCENT_ANSI}{_center('Slash commands', width)}{ui_theme.ANSI_RESET}"
+        )
+        write_menu_line(
+            f"{ui_theme.DIM_COUNTER_ANSI}{selected_count}/{total_count}{ui_theme.ANSI_RESET}"
+        )
+        write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{_separator_rule(width)}{ui_theme.ANSI_RESET}")
+    elif layout == "compact":
+        title = _clip(f"Slash commands  {selected_count}/{total_count}", width)
+        write_menu_line(f"{ui_theme.PROMPT_ACCENT_ANSI}{title}{ui_theme.ANSI_RESET}")
+    else:
+        command = rows[selected].command
+        title = _clip(
+            f"Slash commands {selected_count}/{total_count}: {command.name if command else ''}",
+            width,
+        )
+        write_menu_line(f"{ui_theme.PROMPT_ACCENT_ANSI}{title}{ui_theme.ANSI_RESET}")
+        visible = []
+    if layout != "tiny":
+        for row in visible:
+            write_menu_line(
+                _render_display_row(
+                    row,
+                    selected=(row.source_index == selected),
+                    expanded=(row.source_index == expanded),
+                    width=width,
+                )
+            )
+        for _ in range(max(0, effective_viewport_height - len(visible))):
+            write_menu_line()
+    if layout != "tiny":
+        if layout == "regular":
+            write_menu_line()
+        hint = _help_hint(width=width, detail_pages=detail_pages)
+        write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{hint}{ui_theme.ANSI_RESET}")
     sys.stdout.flush()
     return height
 
