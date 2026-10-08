@@ -21,12 +21,22 @@ OPENSRE_ACCOUNT_EXCHANGE_PATH = "/api/auth/cli/exchange"
 OPENSRE_ACCOUNT_SESSION_PATH = "/api/auth/cli/session"
 OPENSRE_ACCOUNT_CREDITS_PATH = "/api/credits/balance"
 OPENSRE_ACCOUNT_USAGE_PATH = "/usage"
-#: The organization's connected integrations, served to any signed-in member.
+#: Connections authorized for the signed-in user and active organization.
 OPENSRE_ACCOUNT_INTEGRATIONS_PATH = "/api/auth/cli/integrations"
+#: Query asking that route for the caller's personal connections too, each
+#: record tagged with its ``owner``. Older apps ignore it.
+OPENSRE_ACCOUNT_INTEGRATIONS_PERSONAL_PARAMS: Mapping[str, str] = MappingProxyType(
+    {"include": "personal"}
+)
 #: The app's own service id -> the CLI integration it is. The app stores its
 #: Slack OAuth install as ``slack_bot`` (bot token only; events reach the
 #: hosted gateway over HTTP), which is the CLI's ``slack`` integration.
 OPENSRE_ACCOUNT_SERVICE_NAMES: Mapping[str, str] = MappingProxyType({"slack_bot": "slack"})
+#: Store-instance tags carrying a hosted connection's owner (``user`` or
+#: ``organization`` plus its Clerk id) and whether it is that owner's default.
+INTEGRATION_OWNER_KIND_TAG = "owner_kind"
+INTEGRATION_OWNER_ID_TAG = "owner_id"
+INTEGRATION_IS_DEFAULT_TAG = "is_default"
 #: How long one fetched remote-integration snapshot stays fresh in-process.
 OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS = 60.0
 #: Short fetch timeout so an offline laptop never stalls a turn on this call.

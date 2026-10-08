@@ -220,8 +220,9 @@ def configured_integration_services() -> list[str]:
     they never disagree about which integrations are connected. Covers
     environment-variable configuration, integrations saved to ``~/.opensre``
     (e.g. via ``opensre integrations setup ...``), and the signed-in account's
-    organization integrations from the OpenSRE app. Never raises; returns an
-    empty list on any failure so callers can treat it as best-effort.
+    authorized personal and workspace integrations from the OpenSRE app. Never
+    raises; returns an empty list on any failure so callers can treat it as
+    best-effort.
     """
     try:
         store_records = load_integrations()

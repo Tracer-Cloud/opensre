@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,10 +16,15 @@ from integrations.catalog import resolve_effective_integrations
 _TOKEN = "osre_pat_secret_value"
 
 
-def _signed_in(monkeypatch: pytest.MonkeyPatch, app_url: str = "https://app.test") -> None:
+def _signed_in(
+    monkeypatch: pytest.MonkeyPatch,
+    app_url: str = "https://app.test",
+    *,
+    organization_id: str | None = "org-1",
+) -> None:
     record = AccountRecord(
         user_id="user-1",
-        organization_id="org-1",
+        organization_id=organization_id,
         email=None,
         app_url=app_url,
         signed_in_at="2026-01-01T00:00:00Z",
@@ -42,9 +47,21 @@ def _respond_with(
     """Serve queued responses from a fake ``httpx``; return the requests seen."""
     seen: list[dict[str, str]] = []
 
-    def get(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
+    def get(
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: float,
+        params: Mapping[str, str] | None = None,
+    ) -> httpx.Response:
         _ = timeout
-        seen.append({"url": url, "authorization": headers.get("Authorization", "")})
+        query = "&".join(f"{key}={value}" for key, value in (params or {}).items())
+        seen.append(
+            {
+                "url": f"{url}?{query}" if query else url,
+                "authorization": headers.get("Authorization", ""),
+            }
+        )
         answer = responses.pop(0)
         if isinstance(answer, Exception):
             raise answer
@@ -67,6 +84,25 @@ def _vault_payload(service: str = "github", token: str = "remote-tok") -> dict[s
                 "credentials": {"auth_token": token},
             }
         ],
+    }
+
+
+def _owned_connection(
+    connection_id: str,
+    *,
+    owner_kind: str,
+    owner_id: str,
+    token: str,
+    is_default: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": connection_id,
+        "service": "github",
+        "status": "active",
+        "name": connection_id,
+        "owner": {"kind": owner_kind, "id": owner_id},
+        "is_default": is_default,
+        "credentials": {"auth_token": token},
     }
 
 
@@ -182,6 +218,8 @@ def test_a_network_error_is_fail_open_too(monkeypatch: pytest.MonkeyPatch) -> No
 def test_the_request_carries_the_bearer_token_to_the_cli_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Without ``include=personal`` the app serves workspace rows only, so a
+    member's personal connections would silently never reach their CLI."""
     # Arrange
     _signed_in(monkeypatch)
     seen = _respond_with(monkeypatch, [httpx.Response(200, json=_vault_payload())])
@@ -192,12 +230,109 @@ def test_the_request_carries_the_bearer_token_to_the_cli_route(
     # Assert
     assert seen == [
         {
-            "url": "https://app.test/api/auth/cli/integrations",
+            "url": "https://app.test/api/auth/cli/integrations?include=personal",
             "authorization": f"Bearer {_TOKEN}",
         }
     ]
     assert records[0]["service"] == "github"
     assert records[0]["instances"][0]["credentials"]["auth_token"] == "remote-tok"
+
+
+def test_personal_and_active_workspace_connections_are_kept_but_other_owners_are_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _signed_in(monkeypatch)
+    payload = {
+        "success": True,
+        "data": [
+            _owned_connection(
+                "github-personal",
+                owner_kind="user",
+                owner_id="user-1",
+                token="personal-token",
+            ),
+            _owned_connection(
+                "github-team",
+                owner_kind="organization",
+                owner_id="org-1",
+                token="team-token",
+                is_default=True,
+            ),
+            _owned_connection(
+                "github-other-team",
+                owner_kind="organization",
+                owner_id="org-2",
+                token="must-not-escape",
+            ),
+        ],
+    }
+    _respond_with(monkeypatch, [httpx.Response(200, json=payload)])
+
+    records = acct.load_account_integrations()
+
+    assert [record["id"] for record in records] == ["github-personal", "github-team"]
+    assert records[0]["instances"][0]["tags"] == {
+        "owner_kind": "user",
+        "owner_id": "user-1",
+    }
+    assert records[1]["instances"][0]["tags"]["is_default"] == "true"
+
+    effective = resolve_effective_integrations(
+        store_integrations=[], env_integrations=[], remote_integrations=records
+    )
+    assert effective["github"]["config"]["auth_token"] == "team-token"
+    assert len(effective["github"]["instances"]) == 2
+
+
+def test_a_workspace_switch_never_reuses_the_previous_workspaces_cached_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = [
+        AccountRecord(
+            user_id="user-1",
+            organization_id="org-1",
+            email=None,
+            app_url="https://app.test",
+            signed_in_at="2026-01-01T00:00:00Z",
+            token_expires_at="2027-01-01T00:00:00Z",
+        ),
+        AccountRecord(
+            user_id="user-1",
+            organization_id="org-2",
+            email=None,
+            app_url="https://app.test",
+            signed_in_at="2026-01-01T00:00:00Z",
+            token_expires_at="2027-01-01T00:00:00Z",
+        ),
+    ]
+    current = [records[0]]
+    monkeypatch.setattr(acct, "load_account_record", lambda: current[0])
+    monkeypatch.setattr(acct, "resolve_account_token", lambda: _TOKEN)
+    _respond_with(
+        monkeypatch,
+        [
+            httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": [
+                        _owned_connection(
+                            "github-team-one",
+                            owner_kind="organization",
+                            owner_id="org-1",
+                            token="org-one-token",
+                        )
+                    ],
+                },
+            ),
+            httpx.Response(503),
+        ],
+    )
+    assert acct.load_account_integrations()[0]["id"] == "github-team-one"
+
+    current[0] = records[1]
+
+    assert acct.load_account_integrations() == []
 
 
 def test_a_fresh_snapshot_is_served_without_a_second_request(
@@ -266,6 +401,14 @@ def test_the_setup_page_is_the_signed_in_organizations_home(
     _signed_in(monkeypatch)
 
     assert acct.account_setup_url() == "https://app.test/home?org_id=org-1"
+
+
+def test_a_personal_account_uses_the_unscoped_integrations_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _signed_in(monkeypatch, organization_id=None)
+
+    assert acct.account_setup_url() == "https://app.test/home"
 
 
 def test_a_refresh_moves_the_generation_forward_and_survives_an_outage(

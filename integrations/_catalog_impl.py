@@ -584,9 +584,9 @@ def _parse_instances_env(env_name: str, service: str) -> dict[str, Any] | None:
     var is unset, empty, invalid JSON, or not a non-empty list (logs a
     warning on parse failure so callers can fall through to legacy vars).
 
-    Critical: always returns a SINGLE record with multiple instances inside,
-    never multiple records — otherwise ``merge_integrations_by_service``
-    would drop all but one (PR #527 bug #2).
+    Returns one record with multiple instances because one env var is one
+    connection source; hosted APIs may represent connections as separate
+    records and the merge layer preserves those too.
     """
     raw = os.getenv(env_name, "").strip()
     if not raw:
@@ -1987,16 +1987,20 @@ def merge_local_integrations(
 def merge_integrations_by_service(
     *integration_groups: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Merge integration records by service, letting later groups override earlier ones."""
+    """Merge connection sets by service, letting later sources override earlier ones.
+
+    A source may contain several records for any service. Replacing happens at
+    the service boundary, while every connection in the winning source is kept.
+    """
     merged_by_service: dict[str, list[dict[str, Any]]] = {}
     for integration_group in integration_groups:
         grouped: dict[str, dict[str, dict[str, Any]]] = {}
         for integration in integration_group:
             service = str(integration.get("service", "")).strip()
-            if service == "github":
-                grouped.setdefault(service, {})[str(integration.get("id", ""))] = integration
-            elif service:
-                grouped[service] = {service: integration}
+            if not service:
+                continue
+            record_id = str(integration.get("id", "")).strip() or service
+            grouped.setdefault(service, {})[record_id] = integration
         for service, records in grouped.items():
             merged_by_service[service] = list(records.values())
     return [record for records in merged_by_service.values() for record in records]

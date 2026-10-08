@@ -27,6 +27,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from config.account import account_metadata_stamp
 from config.constants.paths import integrations_store_stamp
 from config.strict_config import StrictConfigModel
 
@@ -193,14 +194,18 @@ def configured_integration_services() -> tuple[str, ...]:
     return _adapters().configured_services()
 
 
-def integration_sources_stamp() -> tuple[int, int]:
+def integration_sources_stamp() -> tuple[int, int, int]:
     """A value that changes when any integration source behind a session changes.
 
-    Combines the local store file's stamp with the signed-in account's
-    remote-set generation, so a credential saved either locally or in the web
-    app invalidates a session's resolved cache on its next turn.
+    Combines the local store and account metadata stamps with the signed-in
+    account's remote-set generation, so credentials and workspace switches
+    invalidate a session's resolved cache on its next turn.
     """
-    return (integrations_store_stamp(), _adapters().account_integrations_generation())
+    return (
+        integrations_store_stamp(),
+        account_metadata_stamp(),
+        _adapters().account_integrations_generation(),
+    )
 
 
 def setupable_integration_services() -> tuple[str, ...]:

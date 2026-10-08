@@ -12,6 +12,21 @@ from typing import Any
 from integrations import catalog
 
 
+def test_merge_preserves_multiple_connections_for_every_service() -> None:
+    remote = [
+        {"id": "grafana-personal", "service": "grafana", "status": "active"},
+        {"id": "grafana-team", "service": "grafana", "status": "active"},
+    ]
+
+    merged = catalog.merge_integrations_by_service(
+        [{"id": "grafana-env", "service": "grafana", "status": "active"}],
+        [],
+        remote,
+    )
+
+    assert [record["id"] for record in merged] == ["grafana-personal", "grafana-team"]
+
+
 def test_returns_lowercase_service_keys_deduplicated(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         catalog,

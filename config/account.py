@@ -1,4 +1,4 @@
-"""Owner-only, non-secret metadata for a personal OpenSRE account."""
+"""Owner-only, non-secret metadata for a Clerk-backed OpenSRE account."""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from config.constants.billing import USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from config.constants.hosted_gateway import HOSTED_GATEWAY_LOOPBACK_HOSTS
 from config.constants.llm import OPENAI_API_KEY_ENV, OPENAI_BASE_URL_ENV
 from config.constants.paths import host_home
+from config.principal import Principal
 from config.secrets.store import (
     delete_secret,
     resolve_secret,
@@ -41,16 +42,23 @@ _LOCK_TIMEOUT_SECONDS = 10.0
 
 @dataclass(frozen=True)
 class AccountRecord:
-    """Non-secret identity associated with the local OpenSRE login."""
+    """Non-secret identity and active workspace for the local OpenSRE login."""
 
     user_id: str
-    organization_id: str
+    organization_id: str | None
     email: str | None
     app_url: str
     signed_in_at: str
     token_expires_at: str
     llm_provider: str = "openai"
     llm_model: str = _DEFAULT_ACCOUNT_LLM_MODEL
+
+    @property
+    def principal(self) -> Principal:
+        """Return the active integration owner without replacing user identity."""
+        if self.organization_id:
+            return Principal.org(self.organization_id)
+        return Principal.individual(self.user_id)
 
 
 @dataclass(frozen=True)
@@ -101,6 +109,14 @@ def account_metadata_path() -> Path:
     return host_home() / OPENSRE_ACCOUNT_FILENAME
 
 
+def account_metadata_stamp() -> int:
+    """Return a cache stamp that changes when account scope is rewritten."""
+    try:
+        return account_metadata_path().stat().st_mtime_ns
+    except OSError:
+        return -1
+
+
 def _lock_path(path: Path) -> Path:
     return path.with_suffix(path.suffix + ".lock")
 
@@ -135,7 +151,6 @@ def _parse_record(value: object) -> AccountRecord | None:
         return None
     required = (
         "user_id",
-        "organization_id",
         "app_url",
         "signed_in_at",
         "token_expires_at",
@@ -145,13 +160,18 @@ def _parse_record(value: object) -> AccountRecord | None:
     email = value.get("email")
     if email is not None and not isinstance(email, str):
         return None
+    organization_id = value.get("organization_id")
+    if organization_id is not None and (
+        not isinstance(organization_id, str) or not organization_id.strip()
+    ):
+        return None
     llm_provider = value.get("llm_provider", "openai")
     llm_model = value.get("llm_model", "gpt-5.4-mini")
     if llm_provider != "openai" or not isinstance(llm_model, str) or not llm_model.strip():
         return None
     return AccountRecord(
         user_id=str(value["user_id"]),
-        organization_id=str(value["organization_id"]),
+        organization_id=organization_id.strip() if isinstance(organization_id, str) else None,
         email=email,
         app_url=str(value["app_url"]),
         signed_in_at=str(value["signed_in_at"]),
@@ -269,6 +289,7 @@ __all__ = [
     "agent_bearer_token",
     "account_llm_route",
     "account_metadata_path",
+    "account_metadata_stamp",
     "delete_account_record",
     "delete_account_token",
     "hosted_openai_env",

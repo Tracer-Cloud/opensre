@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import stat
+from dataclasses import replace
 from io import StringIO
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -14,6 +15,7 @@ from click.testing import CliRunner
 from rich.console import Console
 
 from config.account import AccountRecord, load_account_record, save_account_record
+from config.principal import PrincipalKind
 from integrations import store
 from surfaces.cli import account_auth
 from surfaces.cli.account_auth import AccountLoginResult
@@ -70,6 +72,29 @@ def test_account_record_is_owner_only_and_contains_no_tokens(
     content = path.read_text(encoding="utf-8")
     assert "access_token" not in content
     assert "osre_pat_" not in content
+
+
+def test_personal_account_record_uses_the_clerk_user_as_its_principal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = tmp_path / "account.json"
+    monkeypatch.setenv("OPENSRE_ACCOUNT_METADATA_PATH", str(path))
+    personal = AccountRecord(
+        user_id="user_123",
+        organization_id=None,
+        email="octocat@example.com",
+        app_url="https://app.opensre.com",
+        signed_in_at="2026-09-01T10:00:00+00:00",
+        token_expires_at="2026-12-01T10:00:00+00:00",
+    )
+
+    save_account_record(personal)
+
+    loaded = load_account_record()
+    assert loaded == personal
+    assert loaded is not None
+    assert loaded.principal.kind is PrincipalKind.INDIVIDUAL
+    assert loaded.principal.id == "user_123"
 
 
 def test_login_uses_state_and_pkce_without_putting_tokens_in_browser_url(
@@ -157,6 +182,21 @@ def test_exchange_accepts_email_account_without_github() -> None:
 
     assert exchange.email == "octocat@example.com"
     assert exchange.user_id == "user_123"
+
+
+def test_exchange_accepts_a_clerk_user_without_an_organization() -> None:
+    payload = {
+        "access_token": "osre_pat_secret",
+        "expires_at": "2026-12-01T10:00:00+00:00",
+        "user": {"id": "user_123", "email": "octocat@example.com"},
+        "organization": None,
+        "llm": {"provider": "openai", "model": "gpt-5.4-mini"},
+    }
+
+    exchange = account_auth._decode_exchange(payload)
+
+    assert exchange.user_id == "user_123"
+    assert exchange.organization_id is None
 
 
 def test_login_warns_when_env_token_would_override_and_does_not_revoke_it(
@@ -302,6 +342,15 @@ def test_login_presenter_success_shows_hosted_model_and_store() -> None:
     assert "hosted by OpenSRE" in output
     assert "store" in output
     assert "credits" not in output.lower()
+
+
+def test_login_presenter_names_a_personal_workspace() -> None:
+    console, buf = _capture_console()
+    presenter = AccountLoginPresenter(console)
+
+    presenter.success(AccountLoginResult(record=replace(_record(), organization_id=None)))
+
+    assert "Personal" in buf.getvalue()
 
 
 def test_login_presenter_success_shows_hosted_credits() -> None:

@@ -71,22 +71,28 @@ def _mapping(value: object, key: str) -> Mapping[str, object] | None:
 
 
 def _refreshed_record(payload: object, record: AccountRecord) -> AccountRecord | None:
-    """Return current server-owned account metadata when the response is usable."""
+    """Return current identity and active workspace when the response is usable."""
+    if not isinstance(payload, Mapping):
+        return None
     user = _mapping(payload, "user")
     organization = _mapping(payload, "organization")
     llm = _mapping(payload, "llm")
-    if user is None or organization is None or llm is None or not isinstance(payload, Mapping):
+    if user is None or llm is None:
+        return None
+    if payload.get("organization") is not None and organization is None:
         return None
     user_id = user.get("id")
-    organization_id = organization.get("id")
+    organization_id = organization.get("id") if organization is not None else None
     provider = llm.get("provider")
     model = llm.get("model")
     expires_at = payload.get("expires_at")
     if (
         not isinstance(user_id, str)
         or not user_id
-        or not isinstance(organization_id, str)
-        or not organization_id
+        or (
+            organization_id is not None
+            and (not isinstance(organization_id, str) or not organization_id.strip())
+        )
         or provider != "openai"
         or not isinstance(model, str)
         or not model.strip()
@@ -94,10 +100,11 @@ def _refreshed_record(payload: object, record: AccountRecord) -> AccountRecord |
         or not expires_at
     ):
         return None
-    if user_id != record.user_id or organization_id != record.organization_id:
+    if user_id != record.user_id:
         return None
     return replace(
         record,
+        organization_id=(organization_id.strip() if isinstance(organization_id, str) else None),
         token_expires_at=expires_at,
         llm_provider=provider,
         llm_model=model.strip(),

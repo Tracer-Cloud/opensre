@@ -26,11 +26,13 @@ from typing import Any
 import httpx
 
 from config.account import agent_bearer_token
+from config.constants.account import INTEGRATION_OWNER_ID_TAG, INTEGRATION_OWNER_KIND_TAG
 from config.constants.billing import (
     CREDITS_HTTP_TIMEOUT_SECONDS,
     WEBAPP_URL_ENV,
 )
 from config.constants.organization import organization_id
+from integrations.credentials_api import connection_visible
 
 logger = logging.getLogger(__name__)
 
@@ -209,14 +211,17 @@ def fetch_webapp_org_integrations() -> list[dict[str, Any]] | None:
         logger.warning("[webapp-vault] non-JSON response")
         return None
 
-    return records_from_vault_payload(payload)
+    return records_from_vault_payload(payload, organization_id=org)
 
 
-def records_from_vault_payload(payload: object) -> list[dict[str, Any]] | None:
+def records_from_vault_payload(
+    payload: object, *, organization_id: str
+) -> list[dict[str, Any]] | None:
     """Parse a vault JSON body into integration records.
 
-    Shared by the silo client and the signed-in CLI client. ``None`` means the
-    body is not a successful vault response.
+    ``None`` means the body is not a successful vault response. Connections
+    owned by anyone other than ``organization_id`` (a member's personal grant)
+    are dropped: this store is shared by every member the silo serves.
     """
     if not isinstance(payload, dict) or not payload.get("success"):
         return None
@@ -232,6 +237,8 @@ def records_from_vault_payload(payload: object) -> list[dict[str, Any]] | None:
         credentials = item.get("credentials")
         if not service or not isinstance(credentials, dict):
             continue
+        if not connection_visible(_owner_tags(item), user_id=None, organization_id=organization_id):
+            continue
         records.append(
             {
                 "id": str(item.get("id") or ""),
@@ -242,3 +249,14 @@ def records_from_vault_payload(payload: object) -> list[dict[str, Any]] | None:
             }
         )
     return records
+
+
+def _owner_tags(item: dict[str, Any]) -> dict[str, object]:
+    """The vault item's ``owner`` object as store-instance owner tags."""
+    owner = item.get("owner")
+    if not isinstance(owner, dict):
+        return {}
+    return {
+        INTEGRATION_OWNER_KIND_TAG: owner.get("kind"),
+        INTEGRATION_OWNER_ID_TAG: owner.get("id"),
+    }

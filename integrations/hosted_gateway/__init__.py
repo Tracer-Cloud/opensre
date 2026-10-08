@@ -1,4 +1,4 @@
-"""OpenSRE hosted gateway: the organization's managed Fargate gateway, reached through the app."""
+"""OpenSRE hosted gateway for the signed-in account scope, reached through the app."""
 
 from integrations.hosted_gateway.client import (
     ERR_ALREADY_ANSWERED,

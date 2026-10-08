@@ -79,6 +79,51 @@ def test_webapp_validation_activates_account_and_hosted_model(
     assert status.credits is None
 
 
+def test_clerk_user_without_an_organization_can_enter_the_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    personal = replace(_record(), organization_id=None)
+    payload = _session_payload()
+    payload["organization"] = None
+    monkeypatch.setattr(account_session, "load_account_record", lambda: personal)
+    monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
+    monkeypatch.setattr(
+        account_session.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=payload),
+    )
+
+    status = account_session.account_status()
+
+    assert status.authenticated is True
+    assert status.record is not None
+    assert status.record.organization_id is None
+
+
+def test_active_organization_can_change_without_replacing_clerk_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saved: list[AccountRecord] = []
+    payload = _session_payload()
+    payload["organization"] = {"id": "org_456"}
+    monkeypatch.setattr(account_session, "load_account_record", _record)
+    monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
+    monkeypatch.setattr(account_session, "save_account_record", saved.append)
+    monkeypatch.setattr(
+        account_session.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=payload),
+    )
+
+    status = account_session.account_status()
+
+    assert status.authenticated is True
+    assert status.record is not None
+    assert status.record.user_id == "user_123"
+    assert status.record.organization_id == "org_456"
+    assert saved == [status.record]
+
+
 def test_webapp_session_credits_are_attached_to_active_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

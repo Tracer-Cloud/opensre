@@ -1,9 +1,9 @@
-"""The signed-in account's view of its organization's hosted gateway.
+"""The signed-in account's view of its active hosted runtime.
 
 Every call goes to the OpenSRE app with the account token from
-``opensre account login``. The app maps the token to the user's organization
-and that organization to its Fargate gateway; nothing here names an
-organization or a gateway, so a caller can only ever reach its own.
+``opensre account login``. The app resolves the Clerk user, its active
+organization when present, and the corresponding Fargate gateway; nothing
+here accepts an owner or gateway id from the caller.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ ERR_UNAUTHORIZED = "unauthorized"
 ERR_INVALID_RESPONSE = "invalid_response"
 # The app is older than this CLI and has no hosted-gateway routes yet.
 ERR_NOT_SUPPORTED = "not_supported"
-# The organization has no gateway to start or stop.
+# The active account scope has no gateway to start or stop.
 ERR_NOT_PROVISIONED = "not_provisioned"
 # The gateway exists but no task of it is running, so it cannot take a prompt.
 ERR_NOT_RUNNING = "not_running"
@@ -124,7 +124,7 @@ class HostedGatewayError(RuntimeError):
 
 @dataclass(frozen=True)
 class GatewayHealth:
-    """Whether the organization's gateway exists and is serving.
+    """Whether the active account scope's gateway exists and is serving.
 
     ``healthy`` is the app's reading of the Fargate service: its desired task
     count is met and nothing is pending.
@@ -172,7 +172,7 @@ class PromptProgress:
 
 @dataclass(frozen=True)
 class PromptRecord:
-    """One prompt on the organization's gateway, as the app reports it."""
+    """One prompt on the account's gateway, as the app reports it."""
 
     prompt_id: str
     state: str
@@ -244,17 +244,17 @@ class HostedGatewayClient:
         self._http.close()
 
     def health(self) -> GatewayHealth:
-        """Ask the app whether this account's organization has a gateway and it is serving."""
+        """Ask whether this account's active hosted runtime is serving."""
         return _gateway_health(self._request("GET", HOSTED_GATEWAY_HEALTH_PATH, _REFUSALS))
 
     def start(self) -> GatewayHealth:
-        """Ask the app to start the organization's gateway."""
+        """Ask the app to start the active account scope's gateway."""
         return _gateway_health(
             self._request("POST", HOSTED_GATEWAY_START_PATH, _LIFECYCLE_REFUSALS)
         )
 
     def stop(self) -> GatewayHealth:
-        """Ask the app to stop the organization's gateway; its state and credentials are kept."""
+        """Ask the app to stop this account's gateway while preserving its state."""
         return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH, _LIFECYCLE_REFUSALS))
 
     def send_prompt(
@@ -265,7 +265,7 @@ class HostedGatewayClient:
         request_id: str = "",
         conversation: str = "",
     ) -> PromptRecord:
-        """Queue a prompt on the organization's running gateway.
+        """Queue a prompt on the active account scope's running gateway.
 
         With a ``request_id`` the gateway queues the prompt at most once, so a
         submission whose response was lost is sent once more with the same id.
@@ -418,7 +418,7 @@ _REFUSALS: dict[int, str] = {
     HTTPStatus.NOT_FOUND: ERR_NOT_SUPPORTED,
 }
 
-#: Start and stop also refuse organizations without a gateway.
+#: Start and stop also refuse account scopes without a gateway.
 _LIFECYCLE_REFUSALS: dict[int, str] = {
     **_REFUSALS,
     HTTPStatus.CONFLICT: ERR_NOT_PROVISIONED,

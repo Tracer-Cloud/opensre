@@ -267,13 +267,8 @@ def _entry_integrations(
 
 
 def _signed_in() -> bool:
-    """True when this machine is signed in to an OpenSRE organization."""
-    record = load_account_record()
-    return (
-        record is not None
-        and bool(record.organization_id.strip())
-        and bool(resolve_account_token())
-    )
+    """True when this machine is signed in to an OpenSRE account, personal or workspace."""
+    return load_account_record() is not None and bool(resolve_account_token())
 
 
 def _blocked_result(

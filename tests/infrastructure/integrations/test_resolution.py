@@ -241,14 +241,15 @@ def test_the_sources_stamp_tracks_the_account_generation(monkeypatch: Any) -> No
         return generation["value"]
 
     monkeypatch.setattr(harness_providers, "integrations_store_stamp", lambda: 7)
+    monkeypatch.setattr(harness_providers, "account_metadata_stamp", lambda: 11)
     _install_adapters(monkeypatch, account_integrations_generation=_generation)
 
     before = harness_providers.integration_sources_stamp()
     generation["value"] = 1
     after = harness_providers.integration_sources_stamp()
 
-    assert before == (7, 0)
-    assert after == (7, 1)
+    assert before == (7, 11, 0)
+    assert after == (7, 11, 1)
 
 
 def test_resolve_without_sources_reports_empty_local_lookup(monkeypatch: Any) -> None:

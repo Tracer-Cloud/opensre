@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.account import (
+    INTEGRATION_IS_DEFAULT_TAG,
+    INTEGRATION_OWNER_ID_TAG,
+    INTEGRATION_OWNER_KIND_TAG,
+)
 from integrations.github.mcp import classify, github_mcp_is_usably_configured
 
 
@@ -12,6 +17,8 @@ def classify_github_connections(records: list[dict[str, Any]], resolved: dict[st
     github = [record for record in records if record.get("service") == "github"]
     managed = any(
         "is_default" in instance.get("credentials", {})
+        or INTEGRATION_IS_DEFAULT_TAG in instance.get("tags", {})
+        or INTEGRATION_OWNER_KIND_TAG in instance.get("tags", {})
         for record in github
         for instance in _instances(record)
     )
@@ -22,6 +29,8 @@ def classify_github_connections(records: list[dict[str, Any]], resolved: dict[st
         record_id = str(record.get("id", ""))
         for instance in _instances(record):
             credentials = instance.get("credentials", {})
+            tags = instance.get("tags", {})
+            tags = tags if isinstance(tags, dict) else {}
             config, _ = classify(credentials, record_id)
             usable = (
                 record.get("status") == "active"
@@ -31,10 +40,15 @@ def classify_github_connections(records: list[dict[str, Any]], resolved: dict[st
             connections.append(
                 {
                     "name": instance.get("name", record_id),
-                    "tags": instance.get("tags", {}),
+                    "tags": tags,
                     "integration_id": record_id,
                     "connection_id": record_id,
-                    "is_default": str(credentials.get("is_default", "false")).lower() == "true",
+                    "owner_kind": str(tags.get(INTEGRATION_OWNER_KIND_TAG, "")),
+                    "owner_id": str(tags.get(INTEGRATION_OWNER_ID_TAG, "")),
+                    "is_default": str(
+                        tags.get(INTEGRATION_IS_DEFAULT_TAG, credentials.get("is_default", "false"))
+                    ).lower()
+                    == "true",
                     "config": config.model_dump() if usable and config else {},
                     "available": usable,
                 }
@@ -58,6 +72,7 @@ def select_github_connection(resolved: dict[str, Any], connection_id: str | None
     An id that is not in this process's grants is ignored only when exactly one
     grant is available. A matched grant that is not available, or several grants
     with no single default, disables GitHub without falling back to another account.
+    A personal default outranks a workspace default.
     """
     selected = dict(resolved)
     instances = list(resolved.get("_all_github_instances", []))
@@ -95,7 +110,10 @@ def _matching_grants(
         return [item for item in instances if _connection_id(item) == connection_id]
     defaults = [item for item in instances if item.get("is_default") is True]
     if defaults:
-        return defaults
+        # Each owner may mark one default; the user's own choice outranks the
+        # workspace's, so a personal default never makes the pick ambiguous.
+        personal = [item for item in defaults if item.get("owner_kind") == "user"]
+        return personal or defaults
     available = [item for item in instances if _grant_available(item)]
     if len(available) == 1:
         return available

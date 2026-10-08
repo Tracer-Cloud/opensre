@@ -66,6 +66,10 @@ whoever connected Datadog, every member investigates with it. Sessions and
 memory sit under the user because conversation history is personal, the same
 way it is on a laptop.
 
+Personal connections are different: the OpenSRE app authorizes them against
+the signed-in Clerk user and returns them only to that user. They are never
+materialized into an organization's shared `integrations.json`.
+
 A deployed silo can also point integrations at ephemeral storage with
 `OPENSRE_INTEGRATIONS_STORE_PATH` (credentials re-hydrated at boot rather than
 kept on the shared mount).
@@ -158,7 +162,7 @@ rows.
 ## Non-goals
 
 - CLI emulation of a Slack or Discord member
-- Per-user integration credentials or LLM auth
+- Materializing personal webapp connections into a shared organization file
 - Nesting `opensre.json`, sessions, or REPL history under member homes
 - Changing local CLI individual home layout
 - A database of any kind: bindings are a JSON file

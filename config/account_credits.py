@@ -1,4 +1,4 @@
-"""Read the signed-in organization's OpenSRE hosted credit balance.
+"""Read the signed-in account scope's OpenSRE hosted credit balance.
 
 The ledger lives on the webapp. This module only reads it over the existing
 CLI bearer token — never a query parameter, never a shared fleet secret.
@@ -57,7 +57,7 @@ class HostedCreditsKindValue(StrEnum):
 
 @dataclass(frozen=True)
 class AccountCredits:
-    """Spendable hosted credits for the signed-in organization."""
+    """Spendable hosted credits for the signed-in account scope."""
 
     total: int
     monthly: int | None

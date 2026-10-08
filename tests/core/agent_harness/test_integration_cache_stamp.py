@@ -15,8 +15,8 @@ def _store_versions(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """The sources as the resolver sees them: a stamp and the credentials they resolve to."""
     state: dict[str, Any] = {"stamp": 1, "token": "token-one", "resolutions": 0}
 
-    def stamp() -> tuple[int, int]:
-        return (int(state["stamp"]), 0)
+    def stamp() -> tuple[int, int, int]:
+        return (int(state["stamp"]), 0, 0)
 
     def resolve() -> dict[str, Any]:
         state["resolutions"] += 1
@@ -131,6 +131,41 @@ def test_a_changed_account_integration_set_reaches_a_session_that_already_resolv
     # Assert
     assert first["github"]["auth_token"] == "remote-one"
     assert second["github"]["auth_token"] == "remote-two"
+    assert state["resolutions"] == 2
+
+
+def test_a_workspace_switch_drops_a_sessions_resolved_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rewriting account metadata must invalidate credentials from the prior workspace."""
+    from dataclasses import replace
+
+    from infrastructure.harness_providers import integration_resolution as harness_providers
+
+    state: dict[str, Any] = {"account_stamp": 1, "token": "org-one", "resolutions": 0}
+
+    def resolve() -> dict[str, Any]:
+        state["resolutions"] += 1
+        return {"github": {"auth_token": state["token"]}}
+
+    monkeypatch.setattr(harness_providers, "integrations_store_stamp", lambda: 7)
+    monkeypatch.setattr(
+        harness_providers, "account_metadata_stamp", lambda: int(state["account_stamp"])
+    )
+    monkeypatch.setattr(
+        harness_providers,
+        "_installed_adapters",
+        replace(harness_providers._adapters(), account_integrations_generation=lambda: 0),
+    )
+    monkeypatch.setattr(integration_resolution, "resolve_integrations", resolve)
+    session = SessionCore()
+    first = resolve_and_cache_integrations(session)
+    state.update(account_stamp=2, token="org-two")
+
+    second = resolve_and_cache_integrations(session)
+
+    assert first["github"]["auth_token"] == "org-one"
+    assert second["github"]["auth_token"] == "org-two"
     assert state["resolutions"] == 2
 
 

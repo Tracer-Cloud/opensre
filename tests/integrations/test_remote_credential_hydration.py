@@ -108,6 +108,66 @@ def test_existing_webapp_vault_response_is_adapted_to_store_v2() -> None:
     }
 
 
+def test_webapp_connection_ownership_is_preserved_as_non_secret_metadata() -> None:
+    payload = {
+        "success": True,
+        "data": [
+            {
+                "id": "github-personal",
+                "service": "github",
+                "status": "active",
+                "name": "My GitHub",
+                "owner": {"kind": "user", "id": "user_123"},
+                "is_default": True,
+                "credentials": {"auth_token": "test-only"},
+            }
+        ],
+    }
+
+    validated = validate_integration_store_v2(payload)
+
+    instance = validated.as_store_data()["integrations"][0]["instances"][0]
+    assert instance["name"] == "My GitHub"
+    assert instance["tags"] == {
+        "owner_kind": "user",
+        "owner_id": "user_123",
+        "is_default": "true",
+    }
+
+
+def test_silo_fetch_never_hydrates_a_members_personal_connection() -> None:
+    """The silo store is shared by the whole org; personal grants stay out of it."""
+
+    def _vault_record(record_id: str, owner: dict[str, str] | None) -> dict[str, object]:
+        record: dict[str, object] = {
+            "id": record_id,
+            "service": "github",
+            "status": "active",
+            "name": record_id,
+            "credentials": {"auth_token": f"tok-{record_id}"},
+        }
+        if owner is not None:
+            record["owner"] = owner
+        return record
+
+    payload = {
+        "success": True,
+        "data": [
+            _vault_record("team", {"kind": "organization", "id": "org_1"}),
+            _vault_record("legacy", None),
+            _vault_record("mine", {"kind": "user", "id": "user_1"}),
+            _vault_record("other-org", {"kind": "organization", "id": "org_2"}),
+        ],
+    }
+    client = _client_with_transport(
+        httpx.MockTransport(lambda _request: httpx.Response(200, json=payload))
+    )
+
+    fetched = client.fetch("org_1")
+
+    assert [record.id for record in fetched.integrations] == ["team", "legacy"]
+
+
 @pytest.mark.parametrize(
     "payload",
     [

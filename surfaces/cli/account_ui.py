@@ -202,7 +202,7 @@ def _print_account_fields(
         _print_kv(console, "email", record.email)
     else:
         _print_kv(console, "user", record.user_id)
-    _print_kv(console, "org", record.organization_id)
+    _print_kv(console, "workspace", record.organization_id or "Personal")
     _print_kv(
         console,
         "llm",

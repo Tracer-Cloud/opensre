@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
+
+from config.constants.account import (
+    INTEGRATION_IS_DEFAULT_TAG,
+    INTEGRATION_OWNER_ID_TAG,
+    INTEGRATION_OWNER_KIND_TAG,
+)
 
 
 class CredentialsApiError(RuntimeError):
@@ -60,9 +67,65 @@ class IntegrationStoreV2(BaseModel):
         """Return JSON-compatible data suitable for ``integrations.store``."""
         return self.model_dump(mode="json")
 
+    def visible_to(self, *, user_id: str | None, organization_id: str | None) -> IntegrationStoreV2:
+        """Keep only connections owned by ``user_id`` or ``organization_id``.
+
+        Records left with no visible connection are dropped, so a personal
+        grant never travels alongside a workspace one it happens to share a
+        record with.
+        """
+        integrations: list[IntegrationRecordV2] = []
+        for record in self.integrations:
+            instances = [
+                instance
+                for instance in record.instances
+                if connection_visible(
+                    instance.tags, user_id=user_id, organization_id=organization_id
+                )
+            ]
+            if instances or not record.instances:
+                integrations.append(record.model_copy(update={"instances": instances}))
+        return self.model_copy(update={"integrations": integrations})
+
+
+def connection_visible(
+    tags: Mapping[str, object], *, user_id: str | None, organization_id: str | None
+) -> bool:
+    """Whether a connection's owner tags admit this caller.
+
+    Untagged connections predate ownership and stay server-authorized. A tagged
+    one is visible only to the Clerk user or organization it names; an unknown
+    owner kind fails closed.
+    """
+    kind = tags.get(INTEGRATION_OWNER_KIND_TAG)
+    if not kind:
+        return True
+    owner_id = tags.get(INTEGRATION_OWNER_ID_TAG)
+    if kind == "user":
+        return user_id is not None and owner_id == user_id
+    if kind == "organization":
+        return organization_id is not None and owner_id == organization_id
+    return False
+
+
+class IntegrationOwner(BaseModel):
+    """Principal that owns one hosted integration connection."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kind: Literal["user", "organization"]
+    id: str = Field(min_length=1)
+
+    @field_validator("id")
+    @classmethod
+    def _id_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("id must not be blank")
+        return value
+
 
 class AgentVaultRecord(BaseModel):
-    """One decrypted integration returned by the existing webapp vault."""
+    """One decrypted connection returned by the webapp account vault."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -71,6 +134,18 @@ class AgentVaultRecord(BaseModel):
     status: str = Field(min_length=1)
     name: str = Field(min_length=1)
     credentials: dict[str, JsonValue]
+    owner: IntegrationOwner | None = None
+    is_default: bool = False
+
+    def tags(self) -> dict[str, str]:
+        """Owner and default flag as store-instance tags."""
+        tags: dict[str, str] = {}
+        if self.owner is not None:
+            tags[INTEGRATION_OWNER_KIND_TAG] = self.owner.kind
+            tags[INTEGRATION_OWNER_ID_TAG] = self.owner.id
+        if self.is_default:
+            tags[INTEGRATION_IS_DEFAULT_TAG] = "true"
+        return tags
 
 
 class AgentVaultResponse(BaseModel):
@@ -93,7 +168,7 @@ class AgentVaultResponse(BaseModel):
                     instances=[
                         IntegrationInstanceV2(
                             name=record.name,
-                            tags={},
+                            tags=record.tags(),
                             credentials=record.credentials,
                         )
                     ],
@@ -156,7 +231,11 @@ class CredentialsApiClient:
             payload = response.json()
         except (httpx.HTTPError, ValueError):
             raise CredentialsApiError("Unable to retrieve organization credentials") from None
-        return validate_integration_store_v2(payload)
+        # A silo serves the whole organization; a member's personal grant must
+        # never be materialized into its shared store.
+        return validate_integration_store_v2(payload).visible_to(
+            user_id=None, organization_id=organization_id
+        )
 
     def close(self) -> None:
         """Close the internally-created HTTP client."""

@@ -128,7 +128,7 @@ def _resolve_for_connection(connection_id: str | None) -> dict[str, Any]:
     return select_github_connection(resolved, connection_id)
 
 
-def _built_from_another_store(state: Any, stamp: tuple[int, int]) -> bool:
+def _built_from_another_store(state: Any, stamp: tuple[int, int, int]) -> bool:
     if not isinstance(state, IntegrationState) or state.store_stamp is None:
         return False
     return state.store_stamp != stamp
@@ -156,7 +156,7 @@ class IntegrationState:
     conversational assistant can call registered tools without
     waiting for the first user message to trigger a visible "Loading integrations"
     pass. Cleared by :meth:`refresh` when integrations change."""
-    store_stamp: tuple[int, int] | None = None
+    store_stamp: tuple[int, int, int] | None = None
     """Stamp of the integration sources the resolved cache was built from."""
     vcs_repo_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Active per-vendor repo scopes used for unqualified VCS tool calls."""
@@ -213,7 +213,9 @@ class IntegrationState:
             return
         self._store(resolved, generation=generation, stamp=stamp)
 
-    def _store(self, resolved: dict[str, Any], *, generation: int, stamp: tuple[int, int]) -> None:
+    def _store(
+        self, resolved: dict[str, Any], *, generation: int, stamp: tuple[int, int, int]
+    ) -> None:
         if not resolved:
             return
         with self._warm_lock:
