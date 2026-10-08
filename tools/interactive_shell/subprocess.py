@@ -274,12 +274,15 @@ def watch_subprocess_until_exit(
     timeout_seconds: float,
     poll_seconds: float = TASK_POLL_SECONDS,
     owned_tree: OwnedProcessTree | None = None,
+    process_group_id: int | None = None,
 ) -> SubprocessWatchResult:
     """Poll a child and its process group until exit, cancellation, or timeout."""
     started = time.monotonic()
     timed_out = False
     terminated_by_watcher = False
-    group_pid = None if owned_tree is not None else _process_group_leader_pid(proc)
+    group_pid = (
+        None if owned_tree is not None else (process_group_id or _process_group_leader_pid(proc))
+    )
     while proc.poll() is None or (
         owned_tree.is_alive() if owned_tree is not None else _process_group_is_alive(group_pid)
     ):

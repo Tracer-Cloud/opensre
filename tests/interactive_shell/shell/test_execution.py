@@ -222,7 +222,18 @@ def test_execute_shell_command_stops_on_cancel_and_reaps_grandchild(
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
 def test_execute_shell_command_times_out_and_reaps_background_child(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from tools.interactive_shell.shell import execution
+
+    watch = execution.watch_subprocess_until_exit
+
+    def watch_after_parent_exit(proc, **kwargs):
+        # Pin the real race: the shell exits before ownership is inspected.
+        proc.wait(timeout=5)
+        return watch(proc, **kwargs)
+
+    monkeypatch.setattr(execution, "watch_subprocess_until_exit", watch_after_parent_exit)
     marker = tmp_path / "background.pid"
     command = f"sleep 60 >/dev/null 2>&1 & echo $! > {shlex.quote(str(marker))}"
     background_pid: int | None = None

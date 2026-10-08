@@ -177,6 +177,8 @@ def _collect_shell_result(
         cancel_event=watch_cancel,
         timeout_seconds=timeout_seconds,
         owned_tree=owned_tree,
+        # start_new_session owns this group even if its leader has already exited.
+        process_group_id=proc.pid if os.name != "nt" else None,
     )
     for reader in readers:
         reader.join(timeout=2.0)
