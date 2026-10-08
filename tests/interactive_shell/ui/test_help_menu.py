@@ -347,6 +347,22 @@ def test_choose_help_command_enter_selects_command_without_details(monkeypatch) 
     assert "No additional usage." not in plain
 
 
+def test_choose_help_command_right_arrow_selects_when_details_are_closed(monkeypatch) -> None:
+    sections = [("Session", [_cmd("/status")])]
+    actions = iter(["right"])
+    horizontal_flags: list[bool] = []
+
+    def _read_action(*, horizontal: bool = False) -> str:
+        horizontal_flags.append(horizontal)
+        next(actions)
+        return "right" if horizontal else "enter"
+
+    monkeypatch.setattr(help_menu, "read_menu_action", _read_action)
+
+    assert help_menu.choose_help_command(sections) == "/status"
+    assert horizontal_flags == [False]
+
+
 def test_choose_help_command_ignores_unknown_actions(monkeypatch) -> None:
     sections = [("Session", [_cmd("/status")])]
     out = io.StringIO()
@@ -452,6 +468,27 @@ def test_choose_help_command_pages_oversized_expanded_details(monkeypatch) -> No
     assert "/loops action 19" in plain
 
 
+def test_choose_help_command_stops_at_the_last_detail_page(monkeypatch) -> None:
+    command = SlashCommand(
+        "/loops",
+        "Inspect loops.",
+        lambda *_args: True,
+        usage=tuple(f"/loops action {index}" for index in range(20)),
+    )
+    out = io.StringIO()
+    actions = iter(["space", "right", "right", "right", "left", "cancel"])
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "80")
+    monkeypatch.setenv("LINES", "24")
+    monkeypatch.setattr(help_menu, "read_menu_action", lambda **_kwargs: next(actions))
+
+    assert help_menu.choose_help_command([("Session", [command])]) is None
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert plain.count("/loops action 0") == 2
+    assert plain.count("/loops action 19") == 3
+
+
 def test_draw_help_menu_keeps_detail_and_close_controls_in_a_narrow_hint(
     monkeypatch,
 ) -> None:
@@ -471,7 +508,7 @@ def test_draw_help_menu_keeps_detail_and_close_controls_in_a_narrow_hint(
     assert "Esc/q" in hint
 
 
-def test_draw_help_menu_keeps_expanded_details_inside_a_one_row_viewport(
+def test_draw_help_menu_pages_expanded_details_inside_a_one_row_viewport(
     monkeypatch,
 ) -> None:
     command = SlashCommand(
@@ -486,10 +523,35 @@ def test_draw_help_menu_keeps_expanded_details_inside_a_one_row_viewport(
     monkeypatch.setenv("COLUMNS", "80")
     monkeypatch.setenv("LINES", "8")
 
-    height = help_menu._draw_help_menu(rows, selected=1, expanded=1, erase_lines=0)
+    height = help_menu._draw_help_menu(
+        rows,
+        selected=1,
+        expanded=1,
+        erase_lines=0,
+        detail_page=2,
+    )
 
     plain = _ANSI_RE.sub("", out.getvalue())
     assert height == 7
     assert out.getvalue().count("\r\n") == height
-    assert "> ▾ /model" in plain
-    assert "/model action" not in plain
+    assert "> ▾ /model" not in plain
+    assert "/model action" in plain
+
+
+def test_choose_help_command_pages_details_in_a_one_row_viewport(monkeypatch) -> None:
+    command = SlashCommand(
+        "/model",
+        "Configure models.",
+        lambda *_args: True,
+        usage=("/model action",),
+    )
+    out = io.StringIO()
+    actions = iter(["space", "right", "right", "cancel"])
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "80")
+    monkeypatch.setenv("LINES", "8")
+    monkeypatch.setattr(help_menu, "read_menu_action", lambda **_kwargs: next(actions))
+
+    assert help_menu.choose_help_command([("Models", [command])]) is None
+
+    assert "/model action" in _ANSI_RE.sub("", out.getvalue())

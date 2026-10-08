@@ -425,8 +425,12 @@ def _detail_page(
     """Return the selected command and one page of oversized expanded details."""
     detail_end = _detail_end_index(rows, selected)
     detail_count = detail_end - selected - 1
-    if detail_count and viewport_height == 1:
-        return [rows[selected]], 0
+    if not detail_count:
+        return None, 0
+    if viewport_height == 1:
+        pages = detail_count + 1
+        current_page = min(max(0, page), pages - 1)
+        return [rows[selected + current_page]], pages
     page_size = max(1, viewport_height - 1)
     pages = (detail_count + page_size - 1) // page_size
     if pages <= 1:
@@ -434,6 +438,21 @@ def _detail_page(
     current_page = min(max(0, page), pages - 1)
     detail_start = selected + 1 + current_page * page_size
     return [rows[selected], *rows[detail_start : detail_start + page_size]], pages
+
+
+def _detail_page_count(
+    rows: Sequence[HelpDisplayRow],
+    *,
+    selected: int,
+    viewport_height: int,
+) -> int:
+    """Return the number of pages required for the selected command's details."""
+    detail_count = _detail_end_index(rows, selected) - selected - 1
+    if not detail_count:
+        return 0
+    if viewport_height == 1:
+        return detail_count + 1
+    return (detail_count + viewport_height - 2) // (viewport_height - 1)
 
 
 def _draw_help_menu(
@@ -518,7 +537,7 @@ def choose_help_command(sections: Sequence[HelpSection]) -> str | None:
             erase_lines=erase_lines,
             detail_page=detail_page,
         )
-        action = read_menu_action(horizontal=True)
+        action = read_menu_action(horizontal=expanded is not None)
         if action == "space":
             command = rows[selected].command
             if command is not None and has_help_details(command):
@@ -537,7 +556,14 @@ def choose_help_command(sections: Sequence[HelpSection]) -> str | None:
         if action == "left" and expanded is not None:
             detail_page = max(0, detail_page - 1)
         elif action == "right" and expanded is not None:
-            detail_page += 1
+            display = _display_rows(rows, expanded)
+            display_selected = _display_index_for_source(display, selected)
+            page_count = _detail_page_count(
+                display,
+                selected=display_selected,
+                viewport_height=_help_viewport_height(),
+            )
+            detail_page = min(detail_page + 1, max(0, page_count - 1))
         elif action == "up":
             selected = _next_selectable_index(rows, selected, -1)
             expanded = None
