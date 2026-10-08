@@ -404,3 +404,24 @@ def test_selected_github_token_is_not_sent_to_another_push_host(tmp_path: Path) 
     assert out["success"] is False
     assert out["error_kind"] == "github_transport_mismatch"
     assert not merge_in_progress(str(work))
+
+
+def test_local_relative_push_path_works_with_an_unrelated_app_connection(tmp_path: Path) -> None:
+    work = _stopped_merge(tmp_path)
+    (work / "repos").mkdir()
+    target = work / "repos" / "publish.git"
+    _git(work, "init", "--bare", str(target))
+    (work / ".git" / "info" / "exclude").write_text("repos/\n")
+    _git(work, "config", "remote.origin.pushurl", "repos/publish.git")
+
+    def resolve(_task: str, **_kwargs: object) -> CodingResult:
+        (work / "app.py").write_text("greeting = 'hi, world'\n")
+        return CodingResult(success=True, summary="Combined greetings")
+
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=resolve):
+        out = resolve_merge_conflicts.run(
+            workspace=str(work), github_token="app-token", wait_for_checks=False
+        )
+
+    assert out["success"] is True, out
+    assert _git(target, "rev-parse", "feature") == head_sha(str(work))

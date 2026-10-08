@@ -34,6 +34,15 @@ def _workspace_repository_path(value: str) -> str:
     return value.strip("/")
 
 
+def is_github_remote_url(value: str) -> bool:
+    """Recognize a GitHub transport host, excluding bare names and local paths."""
+    if "://" in value:
+        parsed = urlsplit(value)
+        return (parsed.hostname or "").lower() in _GITHUB_HOSTS and parsed.scheme != "file"
+    match = _SCP_REPOSITORY_RE.fullmatch(value)
+    return match is not None and match.group("host").lower() in _GITHUB_HOSTS
+
+
 def workspace_public_repository_source(
     runtime_metadata: Mapping[str, Any],
 ) -> dict[str, dict[str, str | bool]]:
