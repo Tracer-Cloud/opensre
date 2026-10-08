@@ -16,6 +16,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from config.constants.github import GITHUB_CONNECTION_ID_PARAM
 from config.constants.scheduler import WEEKDAY_CRON_FIELD
 from config.constants.slash_commands import INTEGRATIONS_SETUP_PREFIX
 from core.agent_harness.session.want_me_to import offer_from_assistant_content
@@ -97,6 +98,7 @@ class PendingScheduleOffer:
                     ("repo", "--repo"),
                     ("branch", "--branch"),
                     ("pr_number", "--pr"),
+                    (GITHUB_CONNECTION_ID_PARAM, "--github-connection-id"),
                 ):
                     value = self.skill_inputs.get(key, "").strip()
                     if value:

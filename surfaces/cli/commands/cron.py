@@ -202,6 +202,12 @@ def cron_command() -> None:
 @click.option("--repo", type=str, default="", help="GitHub repository name.")
 @click.option("--branch", type=str, default="", help="Optional GitHub branch filter.")
 @click.option(
+    "--github-connection-id",
+    type=str,
+    default="",
+    help="App connection used by the GitHub CI report.",
+)
+@click.option(
     "--pr", "pr_number", type=click.IntRange(min=1), default=None, help="Optional GitHub PR filter."
 )
 @click.option(
@@ -224,6 +230,7 @@ def cron_add(
     owner: str,
     repo: str,
     branch: str,
+    github_connection_id: str,
     pr_number: int | None,
     city: str,
 ) -> None:
@@ -315,6 +322,13 @@ def cron_add(
         )
     if task_kind is TaskKind.MANUAL_LOOP:
         cron_expr = cap_cron_at_most_hourly(cron_expr, timezone)
+
+    from integrations.github import github_schedule_inputs
+
+    try:
+        skill_inputs = github_schedule_inputs(pinned_name, skill_inputs, github_connection_id)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
 
     task = ScheduledTask(
         name=name.strip(),

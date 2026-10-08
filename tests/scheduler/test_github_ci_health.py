@@ -2,19 +2,29 @@
 
 from __future__ import annotations
 
+import shlex
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
+from click.testing import CliRunner
 
 from core.agent_harness import pin_recurring_skill
+from core.agent_harness.session import SessionCore
+from core.agent_harness.tools import ActionToolScope
 from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from integrations.catalog import classify_integrations
+from integrations.github import app_connection
 from integrations.github.ci_health_runner import (
     MAX_CHECK_RUNS_PER_SHA,
     MAX_OPEN_PRS,
     run_github_ci_health,
+)
+from surfaces.cli.commands.cron import cron_command
+from tools.interactive_shell.actions.propose_scheduled_delivery import (
+    execute_propose_scheduled_delivery_tool,
 )
 
 
@@ -126,6 +136,78 @@ def test_two_repository_schedule_scopes_are_persisted_separately(tmp_path: Path)
         {"owner": "acme", "repo": "web"},
     ]
     assert all(task.skill_revision for task in tasks)
+
+
+def test_schedule_confirmation_and_run_preserve_selected_app_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from infrastructure.scheduling.scheduler.storage import task_store
+    from integrations.github import ci_health_runner
+
+    def grant(connection: str, token: str, *, default: bool = False) -> dict[str, Any]:
+        return {
+            "id": connection,
+            "service": "github",
+            "status": "active",
+            "origin": "webapp",
+            "instances": [
+                {
+                    "name": connection,
+                    "tags": {"connection_origin": "webapp", "is_default": str(default).lower()},
+                    "credentials": {
+                        "auth_token": token,
+                        "url": "https://api.githubcopilot.com/mcp/",
+                        "mode": "streamable-http",
+                    },
+                }
+            ],
+        }
+
+    records = [grant("selected", "initial-token"), grant("other", "other-token", default=True)]
+    session = SessionCore()
+    session.resolved_integrations_cache = classify_integrations(records)
+    session.integrations.github_connection_id = "selected"
+    offered = execute_propose_scheduled_delivery_tool(
+        {
+            "kind": "recurring_skill",
+            "skill_name": "reporting-github-ci-failures",
+            "cron": "0 8 * * 1-5",
+            "provider": "interactive_shell",
+            "owner": "acme",
+            "repo": "api",
+            "github_connection_id": "model-override",
+        },
+        ActionToolScope(session=session, console=object()),
+    )
+    assert offered["ok"] is True
+    assert session.pending_schedule_offer is not None
+    assert session.pending_schedule_offer.skill_inputs["github_connection_id"] == "selected"
+
+    store = tmp_path / "tasks.json"
+    monkeypatch.setattr(task_store, "default_task_store_path", lambda: store)
+    monkeypatch.setattr(app_connection, "load_account_integrations", lambda **_kwargs: records)
+    monkeypatch.setattr("integrations.webapp_vault.webapp_vault_configured", lambda: False)
+    command = session.pending_schedule_offer.to_slash_command().removeprefix("/cron ")
+    created = CliRunner().invoke(cron_command, shlex.split(command))
+    assert created.exit_code == 0, created.output
+    task = list_tasks(store)[0]
+    assert task.skill_inputs["github_connection_id"] == "selected"
+
+    client = _FakeGitHubClient({"api": _repository(branch="main", sha="head", checks=[])})
+    tokens: list[str] = []
+
+    def build_client(token: str) -> _FakeGitHubClient:
+        tokens.append(token)
+        return client
+
+    monkeypatch.setattr(ci_health_runner, "GitHubRestClient", build_client)
+    records[0] = grant("selected", "rotated-token")
+    assert "No failing checks" in run_github_ci_health(task.skill_inputs)
+    assert tokens == ["rotated-token"]
+    records.pop(0)
+    blocked = run_github_ci_health(task.skill_inputs)
+    assert blocked.outcome.status == "blocked"
+    assert tokens == ["rotated-token"]
 
 
 def test_two_repository_schedules_keep_results_isolated() -> None:

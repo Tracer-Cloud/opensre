@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 from integrations.github import setup_github
 from integrations.registry import SUPPORTED_SETUP_SERVICES, resolve_management_service
 from integrations.setup import (
+    SetupPending,
+)
+from integrations.setup import (
     confirm as _confirm,
 )
 from integrations.setup import (
@@ -593,7 +596,7 @@ def setup_services() -> tuple[str, ...]:
     return tuple(service for service in SUPPORTED_SETUP_SERVICES if service in _HANDLERS)
 
 
-def cmd_setup(service: str | None) -> str:
+def cmd_setup(service: str | None) -> str | SetupPending:
     available = setup_services()
     if not service:
         try:
@@ -610,9 +613,10 @@ def cmd_setup(service: str | None) -> str:
     if not service or service not in available:
         _die(f"Usage: setup <service>. Supported: {', '.join(available)}")
     print(f"\n  Setting up {_B}{service}{_R}\n")
-    _HANDLERS[service]()
-    if service != "github":
-        print(f"\n  {GLYPH_SUCCESS} Saved → {resolve_store_path()}\n")
+    outcome = _HANDLERS[service]()
+    if isinstance(outcome, SetupPending):
+        return outcome
+    print(f"\n  {GLYPH_SUCCESS} Saved → {resolve_store_path()}\n")
     return service
 
 

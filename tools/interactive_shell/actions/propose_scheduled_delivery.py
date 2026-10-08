@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.github import GITHUB_CONNECTION_ID_PARAM
 from core.agent_harness import is_recurring_skill, normalize_skill_name, validate_skill_inputs
+from core.agent_harness.spi.integrations import resolve_and_cache_integrations
 from core.agent_harness.spi.session_state import (
     PendingScheduleOffer,
     clear_competing_pending_offers,
@@ -201,6 +203,12 @@ def execute_propose_scheduled_delivery_tool(
             except ValueError:
                 return {"ok": False, "error": "pr_number must be a positive integer."}
         skill_inputs = {"owner": owner, "repo": repo}
+        resolved = resolve_and_cache_integrations(ctx.session)
+        connection_id = resolved.get("github", {}).get("connection_id") or getattr(
+            getattr(ctx.session, "integrations", None), "github_connection_id", None
+        )
+        if connection_id:
+            skill_inputs[GITHUB_CONNECTION_ID_PARAM] = connection_id
         if branch:
             skill_inputs["branch"] = branch
         if pr_number:

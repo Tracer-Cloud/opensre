@@ -20,6 +20,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "missing_token_envelope": "integrations.github.envelope",
     "filter_github_connected_services": "integrations.github.connections",
     "github_setup_url": "integrations.github.app_connection",
+    "github_schedule_inputs": "integrations.github.app_connection",
     "refreshed_github_token": "integrations.github.app_connection",
     "setup_github": "integrations.github.cli_setup",
     "run_ci_repair_worker": "integrations.github.tools.ci_repair_loop.worker",
@@ -78,7 +79,11 @@ def __getattr__(name: str) -> object:
 
 
 if TYPE_CHECKING:
-    from integrations.github.app_connection import github_setup_url, refreshed_github_token
+    from integrations.github.app_connection import (
+        github_schedule_inputs,
+        github_setup_url,
+        refreshed_github_token,
+    )
     from integrations.github.cli_setup import setup_github
     from integrations.github.connections import filter_github_connected_services
     from integrations.github.envelope import missing_token_envelope
@@ -141,6 +146,7 @@ __all__ = [
     "workspace_public_repository_source",
     "missing_token_envelope",
     "github_setup_url",
+    "github_schedule_inputs",
     "refreshed_github_token",
     "setup_github",
     "PullRequestCheckout",

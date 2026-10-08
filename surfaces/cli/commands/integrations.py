@@ -52,7 +52,7 @@ class IntegrationServiceChoice(click.Choice):
 
 @click.group(name="integrations")
 def integrations() -> None:
-    """Manage local integration credentials."""
+    """Manage integration connections."""
 
 
 @integrations.command(name="setup")
@@ -60,16 +60,19 @@ def integrations() -> None:
     "service", required=False, default=None, type=IntegrationServiceChoice("SETUP_SERVICES")
 )
 def setup_integration(service: str | None) -> None:
-    """Connect a service with guided instructions and verify it before saving."""
+    """Set up a service locally or continue setup in the app."""
     from integrations.cli import cmd_setup
+    from integrations.setup import SetupPending
 
     normalized_service = service or "prompt"
     capture_integration_setup_started(normalized_service)
     resolved_service = cmd_setup(service)
-    capture_integration_setup_completed(resolved_service)
     from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
 
     capture_github_connection_snapshot()
+    if isinstance(resolved_service, SetupPending):
+        return
+    capture_integration_setup_completed(resolved_service)
 
     if resolved_service in constants.VERIFY_SERVICES:
         capture_integration_verified(resolved_service)

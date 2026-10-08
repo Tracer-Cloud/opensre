@@ -6,9 +6,10 @@ import webbrowser
 
 from config.account import load_account_record
 from integrations.github.app_connection import github_setup_url
+from integrations.setup.result import SetupPending
 
 
-def setup_github() -> None:
+def setup_github() -> SetupPending:
     """Open or print the app setup page and leave setup pending."""
     url = github_setup_url()
     try:
@@ -20,3 +21,4 @@ def setup_github() -> None:
     if load_account_record() is None:
         print("Run `opensre account login` to load your app connections on this machine.")
     print("After connecting, return to OpenSRE and refresh your connections.")
+    return SetupPending(service="github", setup_url=url)
