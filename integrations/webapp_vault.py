@@ -26,7 +26,11 @@ from typing import Any
 import httpx
 
 from config.account import agent_bearer_token
-from config.constants.account import INTEGRATION_OWNER_ID_TAG, INTEGRATION_OWNER_KIND_TAG
+from config.constants.account import (
+    INTEGRATION_IS_DEFAULT_TAG,
+    INTEGRATION_OWNER_ID_TAG,
+    INTEGRATION_OWNER_KIND_TAG,
+)
 from config.constants.billing import (
     CREDITS_HTTP_TIMEOUT_SECONDS,
     WEBAPP_URL_ENV,
@@ -237,18 +241,41 @@ def records_from_vault_payload(
         credentials = item.get("credentials")
         if not service or not isinstance(credentials, dict):
             continue
-        if not connection_visible(_owner_tags(item), user_id=None, organization_id=organization_id):
+        tags = _instance_tags(item, credentials)
+        if not connection_visible(tags, user_id=None, organization_id=organization_id):
             continue
+        normalized_credentials = {
+            str(key): str(value) for key, value in credentials.items() if value is not None
+        }
+        name = str(item.get("name") or "default")
         records.append(
             {
                 "id": str(item.get("id") or ""),
                 "service": service,
                 "status": str(item.get("status") or "active"),
-                "name": str(item.get("name") or "default"),
-                "credentials": {str(k): str(v) for k, v in credentials.items() if v is not None},
+                "name": name,
+                "credentials": normalized_credentials,
+                "instances": [
+                    {
+                        "name": name,
+                        "tags": tags,
+                        "credentials": normalized_credentials,
+                    }
+                ],
             }
         )
     return records
+
+
+def _instance_tags(item: dict[str, Any], credentials: dict[object, object]) -> dict[str, object]:
+    """Owner and default metadata in the v2 instance shape."""
+    tags = _owner_tags(item)
+    is_default = item.get("is_default")
+    if is_default is True or (
+        is_default is None and str(credentials.get("is_default", "")).lower() == "true"
+    ):
+        tags[INTEGRATION_IS_DEFAULT_TAG] = "true"
+    return tags
 
 
 def _owner_tags(item: dict[str, Any]) -> dict[str, object]:

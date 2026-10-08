@@ -15,6 +15,7 @@ from config.constants.billing import (
     USAGE_SECRET_ENV,
     WEBAPP_URL_ENV,
 )
+from integrations.catalog import classify_integrations
 
 
 class _FakeResponse:
@@ -376,3 +377,35 @@ def test_turn_time_vault_read_drops_personal_connections(
 
     assert records is not None
     assert [record["id"] for record in records] == ["team"]
+
+
+def test_turn_time_vault_selects_the_workspace_default() -> None:
+    def _item(record_id: str, *, is_default: bool) -> dict[str, Any]:
+        return {
+            "id": record_id,
+            "service": "github",
+            "status": "active",
+            "name": record_id,
+            "owner": {"kind": "organization", "id": "org_1"},
+            "is_default": is_default,
+            "credentials": {
+                "auth_token": f"tok-{record_id}",
+                "is_default": str(is_default).lower(),
+            },
+        }
+
+    records = vault.records_from_vault_payload(
+        {
+            "success": True,
+            "data": [
+                _item("first", is_default=False),
+                _item("second", is_default=True),
+            ],
+        },
+        organization_id="org_1",
+    )
+
+    assert records is not None
+    resolved = classify_integrations(records)
+    assert resolved["github"]["auth_token"] == "tok-second"
+    assert resolved["github"]["connection_id"] == "second"
