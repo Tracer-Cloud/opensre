@@ -14,6 +14,7 @@ from surfaces.interactive_shell.ui.prompt_visibility import (
     typing_box_hidden,
 )
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
+from surfaces.interactive_shell.ui.transcript import TranscriptRole
 
 
 def _plain(ansi: str) -> str:
@@ -28,7 +29,7 @@ def test_typing_box_hidden_while_awaiting_confirmation() -> None:
 
     assert typing_box_hidden(session, confirming) is True
     rendered = _plain(render_prompt_region(session, confirming, SpinnerState()).value)
-    assert ">" not in rendered
+    assert TranscriptRole.USER.value not in rendered
     assert "Approve this action?" in rendered
 
 
@@ -45,7 +46,7 @@ def test_typing_box_hidden_while_ask_user_options_pending() -> None:
 
     assert typing_box_hidden(session, ReplState()) is True
     rendered = _plain(render_prompt_region(session, ReplState(), SpinnerState()).value)
-    assert ">" not in rendered
+    assert TranscriptRole.USER.value not in rendered
 
 
 def test_typing_box_hidden_during_plan_with_ask_user_pending() -> None:
@@ -70,7 +71,7 @@ def test_typing_box_hidden_during_plan_with_ask_user_pending() -> None:
 
     assert typing_box_hidden(session, ReplState()) is True
     rendered = _plain(render_prompt_region(session, ReplState(), SpinnerState()).value)
-    assert ">" not in rendered
+    assert TranscriptRole.USER.value not in rendered
     assert "Clarify blockers" in rendered or "Plan" in rendered
 
 
@@ -79,14 +80,14 @@ def test_typing_box_hidden_while_exclusive_stdin_menu_active() -> None:
     session.terminal.exclusive_stdin_active = True
     assert typing_box_hidden(session, ReplState()) is True
     rendered = _plain(render_prompt_region(session, ReplState(), SpinnerState()).value)
-    assert ">" not in rendered
+    assert TranscriptRole.USER.value not in rendered
 
 
 def test_idle_prompt_still_shows_typing_box() -> None:
     session = Session()
     assert typing_box_hidden(session, ReplState()) is False
     rendered = _plain(render_prompt_region(session, ReplState(), SpinnerState()).value)
-    assert "❱" in rendered
+    assert TranscriptRole.USER.value in rendered
 
 
 def test_confirmation_region_height_is_stable_across_selection_changes() -> None:
@@ -151,7 +152,7 @@ def test_prompt_region_idle_is_just_the_composer() -> None:
     assert not idle.startswith("\n")
     assert "\n" not in idle
     assert "Auto (High)" not in idle
-    assert idle.startswith(" ❱")
+    assert idle.startswith(f" {TranscriptRole.USER.value}")
 
 
 def test_prompt_region_thinking_leads_with_a_blank_row() -> None:
@@ -172,7 +173,7 @@ def test_prompt_region_thinking_leads_with_a_blank_row() -> None:
     assert lines[1].startswith("  ")
     # The seam: one blank row between the live region and the composer.
     assert lines[2] == ""
-    assert lines[3].startswith(" ❱")
+    assert lines[3].startswith(f" {TranscriptRole.USER.value}")
 
 
 def test_idle_prompt_has_no_recurring_ready_hint() -> None:
@@ -197,7 +198,7 @@ def test_confirmation_region_shows_stacked_yes_no_choice() -> None:
     assert "[b] No" in rendered
     # The selected row (No) carries the arrow; the typing box is hidden.
     assert "❯ [b] No" in rendered
-    assert ">" not in rendered
+    assert TranscriptRole.USER.value not in rendered
 
 
 def test_clear_live_prompt_paint_erases_only_the_app_region() -> None:
