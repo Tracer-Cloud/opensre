@@ -425,6 +425,8 @@ def _detail_page(
     """Return the selected command and one page of oversized expanded details."""
     detail_end = _detail_end_index(rows, selected)
     detail_count = detail_end - selected - 1
+    if detail_count and viewport_height == 1:
+        return [rows[selected]], 0
     page_size = max(1, viewport_height - 1)
     pages = (detail_count + page_size - 1) // page_size
     if pages <= 1:

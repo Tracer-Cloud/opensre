@@ -469,3 +469,27 @@ def test_draw_help_menu_keeps_detail_and_close_controls_in_a_narrow_hint(
     assert "Enter" in hint
     assert "Space" in hint
     assert "Esc/q" in hint
+
+
+def test_draw_help_menu_keeps_expanded_details_inside_a_one_row_viewport(
+    monkeypatch,
+) -> None:
+    command = SlashCommand(
+        "/model",
+        "Configure models.",
+        lambda *_args: True,
+        usage=("/model action",),
+    )
+    rows = help_menu._flatten_help_rows([("Models", [command])])
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "80")
+    monkeypatch.setenv("LINES", "8")
+
+    height = help_menu._draw_help_menu(rows, selected=1, expanded=1, erase_lines=0)
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert height == 7
+    assert out.getvalue().count("\r\n") == height
+    assert "> ▾ /model" in plain
+    assert "/model action" not in plain
