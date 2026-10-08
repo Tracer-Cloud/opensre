@@ -102,12 +102,21 @@ def _history_pause(session: Session, console: Console, *, paused: bool) -> bool:
 _RETENTION_CAPS: tuple[str, ...] = ("100", "500", "1000", "5000")
 
 
+_RETENTION_CUSTOM_LABEL = "enter a number"
+
+
 def _prompt_retention_cap() -> str | None:
-    """Ask for a retention cap; ``None`` when the picker is dismissed."""
+    """Ask for a retention cap; ``None`` when the picker is dismissed.
+
+    The presets cover the common caps; the last row types any other number in
+    place, so the picker never blocks a value ``/history retention <N>`` allows.
+    """
     return repl_choose_one(
         title="retention cap",
         breadcrumb=f"/history{CRUMB_SEP}retention",
-        choices=[(cap, cap) for cap in _RETENTION_CAPS],
+        choices=[(cap, cap) for cap in _RETENTION_CAPS]
+        + [(_RETENTION_CUSTOM_LABEL, _RETENTION_CUSTOM_LABEL)],
+        custom_label=_RETENTION_CUSTOM_LABEL,
     )
 
 

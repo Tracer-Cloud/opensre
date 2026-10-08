@@ -72,6 +72,13 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         # Bare ``/model set`` opens the provider picker; with a provider it may
         # prompt for a missing key and prints the models table.
         ("/model", "set"),
+        # These two ask for the value they are missing, so they need stdin the
+        # same way their parent menu does. Without the reservation the handler
+        # sees no exclusive stdin and falls back to printing usage, which is
+        # how a typed subcommand came to behave differently from the same row
+        # chosen in /help.
+        ("/model", "toolcall"),
+        ("/history", "retention"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),
