@@ -72,7 +72,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "integrations",
-        "Manage local integration credentials.",
+        "Manage integration connections.",
         "surfaces.cli.commands.integrations:integrations",
     ),
     CommandSpec(
