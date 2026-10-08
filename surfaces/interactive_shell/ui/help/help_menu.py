@@ -531,26 +531,17 @@ def _draw_help_menu(
     elif layout == "compact":
         title = _clip(f"Slash commands  {selected_count}/{total_count}", width)
         write_menu_line(f"{ui_theme.PROMPT_ACCENT_ANSI}{title}{ui_theme.ANSI_RESET}")
-    else:
-        command = rows[selected].command
-        title = _clip(
-            f"Slash commands {selected_count}/{total_count}: {command.name if command else ''}",
-            width,
-        )
-        write_menu_line(f"{ui_theme.PROMPT_ACCENT_ANSI}{title}{ui_theme.ANSI_RESET}")
-        visible = []
-    if layout != "tiny":
-        for row in visible:
-            write_menu_line(
-                _render_display_row(
-                    row,
-                    selected=(row.source_index == selected),
-                    expanded=(row.source_index == expanded),
-                    width=width,
-                )
+    for row in visible:
+        write_menu_line(
+            _render_display_row(
+                row,
+                selected=(row.source_index == selected),
+                expanded=(row.source_index == expanded),
+                width=width,
             )
-        for _ in range(max(0, effective_viewport_height - len(visible))):
-            write_menu_line()
+        )
+    for _ in range(max(0, effective_viewport_height - len(visible))):
+        write_menu_line()
     if layout != "tiny":
         if layout == "regular":
             write_menu_line()

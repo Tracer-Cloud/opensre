@@ -588,4 +588,25 @@ def test_draw_help_menu_uses_a_one_line_fallback_in_a_three_row_terminal(
     plain = _ANSI_RE.sub("", out.getvalue())
     assert height == 1
     assert out.getvalue().count("\r\n") == height
-    assert "Slash commands 1/1: /status" in plain
+    assert ">   /status" in plain
+
+
+def test_choose_help_command_pages_details_in_a_three_row_terminal(monkeypatch) -> None:
+    command = SlashCommand(
+        "/model",
+        "Configure models.",
+        lambda *_args: True,
+        usage=("/model action",),
+    )
+    out = io.StringIO()
+    actions = iter(["space", "right", "right", "cancel"])
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "80")
+    monkeypatch.setenv("LINES", "3")
+    monkeypatch.setattr(help_menu, "read_menu_action", lambda **_kwargs: next(actions))
+
+    assert help_menu.choose_help_command([("Models", [command])]) is None
+
+    rendered = out.getvalue()
+    assert rendered.count("\r\n") == 4
+    assert "/model action" in _ANSI_RE.sub("", rendered)
