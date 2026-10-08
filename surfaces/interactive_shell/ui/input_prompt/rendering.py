@@ -14,7 +14,11 @@ from surfaces.interactive_shell.ui.handoff_questions import (
     render_ask_user_qa,
 )
 from surfaces.interactive_shell.ui.input_prompt.layout import _short_meta
-from surfaces.interactive_shell.ui.transcript import is_internal_turn, user_turn_renderable
+from surfaces.interactive_shell.ui.transcript import (
+    TranscriptRole,
+    is_internal_turn,
+    user_turn_renderable,
+)
 from surfaces.shared.terminal.components.rendering import print_repl_renderable
 
 DEFAULT_PLACEHOLDER_TEXT = "Drop a repo link. Watch it find your CI waste."
@@ -28,7 +32,7 @@ def _placeholder_formatted(text: str) -> FormattedText:
 
 def _prompt_line_ansi(session: Session) -> ANSI:
     del session
-    return ANSI(f" {ui_theme.PROMPT_ACCENT_ANSI}>{ui_theme.ANSI_RESET} ")
+    return ANSI(f" {ui_theme.PROMPT_ACCENT_ANSI}{TranscriptRole.USER.value}{ui_theme.ANSI_RESET} ")
 
 
 def _prompt_message(session: Session) -> ANSI:

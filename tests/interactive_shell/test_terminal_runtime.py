@@ -64,6 +64,7 @@ from surfaces.interactive_shell.ui.input_prompt.rendering import _prompt_message
 from surfaces.interactive_shell.ui.input_prompt.style import _build_prompt_style
 from surfaces.interactive_shell.ui.streaming import _CHARS_PER_TOKEN
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
+from surfaces.interactive_shell.ui.transcript import TranscriptRole
 from surfaces.interactive_shell.ui.transcript_view import TranscriptControl, TranscriptStore
 from surfaces.shared.terminal.components.cpr_stdin import (
     strip_cpr_escape_sequences,
@@ -227,6 +228,7 @@ async def test_a_wheel_notch_scrolls_the_transcript_and_leaves_the_composer_alon
 
     monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
     monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.setenv("TERM", "xterm-256color")
     # A history entry the composer would show if the wheel reached it as Up.
     (tmp_path / "interactive_history").write_text("\n# 2026-10-07 00:00:00.000000\n+4 5 6 7\n")
 
@@ -250,7 +252,8 @@ async def test_a_wheel_notch_scrolls_the_transcript_and_leaves_the_composer_alon
             assert await _settle(lambda: control.scrolled_back), "the wheel never reached it"
             assert app.current_buffer.text == ""
         finally:
-            app.exit(result="")
+            if app.is_running and not app.is_done:
+                app.exit(result="")
             await asyncio.gather(task, return_exceptions=True)
 
 
@@ -374,12 +377,12 @@ def test_repl_session_prompt_history_backend_matches_prompt_toolkit_history(
     assert session.terminal.prompt_history_backend is prompt.history
 
 
-def test_prompt_message_uses_accent_glyph() -> None:
+def test_prompt_message_uses_accented_user_marker() -> None:
     set_active_theme("blue")
     rendered = _prompt_message(Session()).value
 
     assert ui_theme.PROMPT_ACCENT_ANSI in rendered
-    assert ">" in rendered
+    assert TranscriptRole.USER.value in rendered
     assert ANSI_RESET in rendered
 
 

@@ -27,6 +27,7 @@ from surfaces.interactive_shell.ui.input_prompt.rendering import (
     resolve_prompt_placeholder,
     resolve_prompt_prefix_ansi,
 )
+from surfaces.interactive_shell.ui.transcript import TranscriptRole
 from surfaces.interactive_shell.ui.transcript_view.store import _RENDER_HEIGHT
 
 
@@ -253,8 +254,8 @@ class TestComposerFooter:
 
 
 class TestPromptMessage:
-    def test_uses_minimal_greater_than_prompt(self) -> None:
-        assert _strip_ansi(_prompt_message(Session()).value) == " > "
+    def test_reuses_the_transcript_user_marker(self) -> None:
+        assert _strip_ansi(_prompt_message(Session()).value) == f" {TranscriptRole.USER.value} "
 
 
 class TestResolvePromptPlaceholder:

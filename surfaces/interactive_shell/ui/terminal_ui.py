@@ -4,7 +4,7 @@ The terminal UI has three pieces, all composed from this module:
 
 1. compact launch banner (wordmark + install health)
 2. Thinking / Invoking (when busy) plus the Auto permission line
-3. bordered ``>`` composer (job-shaped placeholder; no help footer)
+3. bordered ``❱`` composer (job-shaped placeholder; no help footer)
 
 Piece 1 is static chrome printed once by :func:`render_terminal_ui`.
 Pieces 2–3 form the live prompt region: prompt-toolkit re-evaluates them on

@@ -9,6 +9,7 @@ from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerStat
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.task_plan import task_plan_overlay_ansi
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
+from surfaces.interactive_shell.ui.transcript import TranscriptRole
 
 
 def _strip_ansi(text: str) -> str:
@@ -149,7 +150,7 @@ def test_idle_prompt_region_shows_plan_without_thinking_or_ready_hint() -> None:
     # One blank row separates the pinned plan from the composer it sits above;
     # Auto chrome renders on its own row under the box, not in this string.
     assert "Auto (High)" not in rendered
-    assert "  ○ Confirm checkout returns 2xx\n\n >" in rendered
+    assert f"  ○ Confirm checkout returns 2xx\n\n {TranscriptRole.USER.value}" in rendered
     # Blank row above the plan separates it from scrollback notes (Droid blocks).
     assert rendered.lstrip().startswith("Plan · 2/3") or "\nPlan · 2/3" in rendered
 
