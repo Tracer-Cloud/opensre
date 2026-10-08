@@ -22,6 +22,7 @@ from core.domain.work_items import (
     resolve_work_item_datetime,
     work_items_path,
 )
+from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
@@ -58,7 +59,7 @@ def work_list(status: str, project: str, owner: str, json_out: bool) -> None:
         rows = list_work_items(
             status=None if status == "all" else status, project=project, owner=owner
         )
-    if json_out:
+    if json_out or is_json_output():
         click.echo(json.dumps([item.to_dict() for item in rows], indent=2, ensure_ascii=False))
         return
     _render_items(rows)
@@ -128,6 +129,8 @@ def work_add(
                 "timezone must be a valid IANA timezone", param_hint="--tz"
             ) from None
     delivery_targets = _parse_delivery_targets(provider, chat_id, targets)
+    if remind_at and not delivery_targets:
+        raise click.BadParameter("--remind-at requires --target or --provider/--chat-id")
     item = add_work_item(
         title=title_text,
         project=project,
@@ -143,8 +146,6 @@ def work_add(
     )
     scheduled_id = ""
     if remind_at:
-        if not delivery_targets:
-            raise click.BadParameter("--remind-at requires --target or --provider/--chat-id")
         parsed_remind_at = parse_work_item_datetime(remind_at)
         remind_dt = resolve_work_item_datetime(remind_at, reminder_timezone)
         if remind_dt is not None and parsed_remind_at is not None:

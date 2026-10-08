@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -29,6 +30,7 @@ from core.agent_harness.spi.skill_releases import (
     trusted_release_keys,
     verify_release,
 )
+from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.skills_registry import (
     PackageStatus,
     PullStatus,
@@ -125,15 +127,40 @@ def skills_status() -> None:
     """Show which skills catalog this machine runs and the latest published release."""
     snapshot = active_skill_catalog().current()
     state = read_state()
+    stored = latest_stored_seq()
+    checked = state.get("checked_at")
+    last_check_seconds_ago = (
+        int(time.time() - checked) if isinstance(checked, int | float) else None
+    )
+    if is_json_output():
+        payload: dict[str, object] = {
+            "active": {
+                "release": snapshot.release,
+                "source": snapshot.source,
+                "skills_count": len(snapshot.skills),
+            },
+            "auto_update": skills_auto_update_enabled(),
+            "cached": stored,
+            "last_check_seconds_ago": last_check_seconds_ago,
+            "rejected_seq": state.get("rejected_seq"),
+            "diagnostics": list(snapshot.diagnostics),
+            "published": None,
+        }
+        try:
+            latest = fetch_release(_app_url())
+        except SkillsApiError as exc:
+            payload["published_error"] = str(exc)
+        else:
+            payload["published"] = latest.release.seq if latest.release is not None else None
+        click.echo(json.dumps(payload))
+        return
     click.echo(
         f"Active:      {snapshot.release} ({snapshot.source}, {len(snapshot.skills)} skills)"
     )
     click.echo(f"Auto-update: {'on' if skills_auto_update_enabled() else 'off'}")
-    stored = latest_stored_seq()
     click.echo(f"Cached:      {f'#{stored}' if stored else 'none'}")
-    checked = state.get("checked_at")
-    if isinstance(checked, int | float):
-        click.echo(f"Last check:  {int(time.time() - checked)}s ago")
+    if last_check_seconds_ago is not None:
+        click.echo(f"Last check:  {last_check_seconds_ago}s ago")
     if state.get("rejected_seq"):
         click.echo(f"Rejected:    #{state['rejected_seq']} (signature or compatibility)")
     for diagnostic in snapshot.diagnostics:

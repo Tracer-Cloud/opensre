@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from contextlib import suppress
 from typing import TextIO, cast
@@ -29,6 +30,7 @@ from infrastructure.filestorage.setup import (
     save_remote_sync_settings,
 )
 from infrastructure.process.exit_codes import ERROR, SUCCESS
+from infrastructure.process.runtime_flags import is_json_output
 from surfaces.cli.commands.remote_sync_progress import CliProgress
 from surfaces.cli.telemetry import capture_exception
 
@@ -45,13 +47,54 @@ def remote_sync_command(ctx: click.Context) -> None:
 def status_command() -> None:
     """Show whether sync is on, and what would be mirrored."""
     try:
-        lines = format_status_lines(get_sync_status())
+        status = get_sync_status()
     except RemoteSyncError as exc:
         click.echo(str(exc), err=True)
         raise SystemExit(ERROR) from exc
+    if is_json_output():
+        click.echo(json.dumps(_status_json(status)))
+        raise SystemExit(SUCCESS)
+    lines = format_status_lines(status)
     for line in lines:
         click.echo(line)
     raise SystemExit(SUCCESS)
+
+
+def _status_json(status: object) -> dict[str, object]:
+    """Serialize the shared status view without coupling it to terminal formatting."""
+    from infrastructure.filestorage.operations import SyncStatus
+
+    assert isinstance(status, SyncStatus)
+    config = status.config
+    return {
+        "enabled": status.enabled,
+        "config": (
+            None
+            if config is None
+            else {
+                "provider": str(config.provider),
+                "bucket": config.bucket,
+                "prefix": config.prefix,
+                "region": config.region,
+                "profile": config.profile,
+                "exclusions": list(config.exclude.patterns),
+            }
+        ),
+        "roots": [
+            {
+                "name": str(root.name),
+                "path": str(root.path),
+                "exists": root.exists,
+                "excluded": root.excluded,
+            }
+            for root in status.roots
+        ],
+        "exposure": (
+            None
+            if status.exposure is None
+            else {"status": status.exposure.exposure.value, "detail": status.exposure.detail}
+        ),
+    }
 
 
 @remote_sync_command.command(name=RemoteSyncSubcommand.SYNC.value)

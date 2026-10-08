@@ -439,12 +439,39 @@ def _print_cron_task(loop: LoopSummary) -> None:
         _console.print(f"  [yellow]• Requires action: {escape(loop.schedule_error)}[/yellow]")
 
 
+def _cron_task_json(loop: LoopSummary) -> dict[str, object]:
+    """Return the stable machine-readable view of a scheduled loop."""
+    return {
+        "id": loop.id,
+        "task_ids": list(loop.task_ids),
+        "name": loop.name,
+        "description": loop.description,
+        "kind": loop.kind.value,
+        "cron": loop.cron,
+        "timezone": loop.timezone,
+        "provider": loop.provider.value,
+        "chat_id": loop.chat_id,
+        "channels": list(loop.channels),
+        "enabled": loop.enabled,
+        "status": loop.status,
+        "last_run": loop.last_run,
+        "next_run": loop.next_run,
+        "schedule_error": loop.schedule_error,
+        "mode": loop.mode,
+    }
+
+
 @cron_command.command(name="list")
 def cron_list() -> None:
     """List all scheduled delivery tasks."""
+    import json
+
     from infrastructure.scheduling.scheduler.loops import list_loop_summaries
 
     loops = list_loop_summaries()
+    if is_json_output():
+        _console.print_json(json.dumps([_cron_task_json(loop) for loop in loops]))
+        return
     if not loops:
         _console.print("[dim]No scheduled tasks configured.[/dim]")
         return

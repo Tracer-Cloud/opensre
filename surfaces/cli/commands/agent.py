@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import click
 from rich.console import Console
 from rich.markup import escape
 
+from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.terminal.theme import BOLD_BRAND, DIM, HIGHLIGHT
 from surfaces.shared.terminal.components.rendering import repl_table
 from tools.system.fleet_monitoring.discovery import (
@@ -42,8 +44,12 @@ def list_agents() -> None:
     """List registered and auto-discovered local agents."""
     from surfaces.shared.terminal.agents.agents_view import render_agents_table
 
+    agents = registered_and_discovered_agents(AgentRegistry())
+    if is_json_output():
+        click.echo(json.dumps([agent.to_dict() for agent in agents], indent=2))
+        return
     console = Console()
-    render_agents_table(console, registered_and_discovered_agents(AgentRegistry()))
+    render_agents_table(console, agents)
 
 
 @fleet.command(name="register")
