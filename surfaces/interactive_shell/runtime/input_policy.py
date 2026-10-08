@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shlex
+
+from config.command_inputs import needs_command_input
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 
@@ -137,9 +140,14 @@ def turn_needs_exclusive_stdin(text: str, _session: Session) -> bool:
     if dispatch_text is None:
         return False
 
-    parts = dispatch_text.split()
+    try:
+        parts = shlex.split(dispatch_text)
+    except ValueError:
+        parts = dispatch_text.split()
     if not parts:
         return False
+    if needs_command_input(parts[0], parts[1:]):
+        return True
     name = parts[0].lower()
     args = [arg.lower() for arg in parts[1:]]
 

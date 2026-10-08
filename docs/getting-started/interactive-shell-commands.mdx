@@ -798,6 +798,12 @@ Shows up to **50** recent tasks, newest first. Use the **id** column (short pref
 /work path
 ```
 
+In an interactive terminal, `/work add` without a title opens an editable form.
+Use **Options** for project, priority, owner and due date; values already supplied
+as flags are preserved. Tab moves between fields, Ctrl-S creates the item, and
+Esc cancels. `/work done` without an ID opens a searchable list of unfinished
+items. Fully specified commands still execute directly.
+
 `/work add` creates durable human todos; it does not schedule reminder delivery.
 For reminders, use the destination-aware `opensre work add` command with
 `--remind-at` and `--target provider:chat-id`, or ask from a connected chat whose

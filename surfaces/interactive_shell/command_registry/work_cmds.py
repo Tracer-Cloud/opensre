@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from rich.console import Console
 from rich.markup import escape
 
+from config.command_inputs import WORK_ADD_INPUT, WORK_DONE_INPUT
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
     WorkItem,
@@ -17,6 +18,7 @@ from core.domain.work_items import (
     prioritize_work_items,
     work_items_path,
 )
+from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -24,11 +26,13 @@ from surfaces.interactive_shell.ui import (
     ERROR,
     HIGHLIGHT,
 )
+from surfaces.interactive_shell.ui.work_input import build_work_form
+from surfaces.shared.terminal.components.command_input import build_search_picker, run_command_input
 from surfaces.shared.terminal.components.rendering import print_repl_renderable
 from surfaces.shared.terminal.tables.work_items import next_work_table, work_items_table
 
 _STATUSES = frozenset({"open", "completed", "blocked", "deferred", "active", "all"})
-_OPTION_NAMES = frozenset({"--project", "--owner", "--priority", "--due"})
+_OPTION_NAMES = WORK_ADD_INPUT.value_options
 _REMINDER_OPTIONS = frozenset({"--remind", "--remind-at"})
 _REMINDER_ERROR = (
     f"[{ERROR}]reminder not scheduled:[/] /work has no delivery target. "
@@ -114,6 +118,10 @@ def _add(console: Console, args: list[str]) -> bool:
             f"[{ERROR}]usage:[/] /work add <title> [--project <name>] [--priority <low|normal|high|urgent>]"
         )
         return True
+    return _create_work(console, title, options)
+
+
+def _create_work(console: Console, title: str, options: dict[str, str]) -> bool:
     priority = options.get("priority", "normal").lower()
     if priority not in WORK_ITEM_PRIORITIES:
         console.print(f"[{ERROR}]priority must be one of[/] {', '.join(WORK_ITEM_PRIORITIES)}")
@@ -167,15 +175,37 @@ def _path(console: Console) -> bool:
     return True
 
 
-def _cmd_work(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+def _cmd_work(session: Session, console: Console, args: list[str]) -> bool:
     if not args:
         return _show_list(console, [])
     sub = args[0].lower()
     if sub in {"list", "ls"}:
         return _show_list(console, args[1:])
     if sub == "add":
+        if can_collect_input(session, WORK_ADD_INPUT, args):
+            _, options, _ = _split_options(args[1:])
+            values = run_command_input(build_work_form(options))
+            if values is None:
+                return True
+            return _create_work(console, values["title"], values)
         return _add(console, args[1:])
     if sub in {"done", "complete"}:
+        if can_collect_input(session, WORK_DONE_INPUT, args):
+            items = [item for item in list_work_items(status=None) if item.is_active]
+            if not items:
+                console.print(f"[{DIM}]No unfinished work items. Add one with /work add.[/]")
+                return True
+            selected = run_command_input(
+                build_search_picker(
+                    title="/work done",
+                    choices=[
+                        (item.id, f"{item.display_id} · {item.title} · {item.priority.value}")
+                        for item in items
+                    ],
+                    action="complete",
+                )
+            )
+            return True if selected is None else _done(console, [selected])
         return _done(console, args[1:])
     if sub in {"next", "prioritize"}:
         return _next(console, args[1:])
