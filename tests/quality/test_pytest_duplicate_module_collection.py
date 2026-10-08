@@ -9,6 +9,7 @@ become ``test_enums`` and collection fails with ``import file mismatch``.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +28,8 @@ def test_pytest_ini_uses_importlib_import_mode() -> None:
 
 
 def test_duplicate_test_enums_modules_collect_together() -> None:
+    env = os.environ.copy()
+    env.pop("PYTEST_ADDOPTS", None)
     result = subprocess.run(
         [
             sys.executable,
@@ -39,6 +42,7 @@ def test_duplicate_test_enums_modules_collect_together() -> None:
             "no:xdist",
         ],
         cwd=_REPO_ROOT,
+        env=env,
         capture_output=True,
         text=True,
         check=False,
