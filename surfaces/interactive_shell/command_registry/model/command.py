@@ -373,11 +373,14 @@ def _cmd_model(session: Session, console: Console, args: list[str]) -> bool:
         if len(args) >= 2 and args[1].lower() == "show":
             render_current_models(console)
             return True
-        if len(args) >= 2 and args[1].lower() in ("set", "use", "switch"):
-            if len(args) < 3:
-                console.print(f"[{DIM}]usage:[/] /model toolcall set <model>")
-                return True
+        if len(args) >= 3 and args[1].lower() in ("set", "use", "switch"):
             switch_toolcall_model(args[2], console)
+            return True
+        # No model named. A turn that owns stdin collects one the way the menu
+        # does, so "/model toolcall" asks instead of printing usage and closing.
+        if repl_tty_interactive() and exclusive_stdin_active(session):
+            if _interactive_set_toolcall(console) is False:
+                session.mark_latest(ok=False, kind="slash")
             return True
         console.print(
             f"[{DIM}]usage:[/] /model toolcall set <model> "

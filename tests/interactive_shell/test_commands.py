@@ -953,6 +953,57 @@ class TestModelCommand:
         dispatch_slash("/model", session, console)
         assert "anthropic" in buf.getvalue()
 
+    def test_toolcall_without_a_model_asks_instead_of_printing_usage(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A subcommand that needs a value collects it when the turn owns stdin.
+
+        ``/model toolcall`` reached from /help, from the menu, or typed must all
+        land on the same picker rather than closing on a usage line.
+        """
+        self._patch_llm(monkeypatch)
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        asked: list[bool] = []
+
+        def _collect(_console: object) -> bool:
+            asked.append(True)
+            return True
+
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(model_cmd, "_interactive_set_toolcall", _collect)
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        console, buf = _capture()
+        dispatch_slash("/model toolcall", session, console)
+
+        assert asked == [True]
+        assert "usage:" not in buf.getvalue()
+
+    def test_toolcall_without_exclusive_stdin_still_prints_usage(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Agent slash_invoke has no stdin to own, so a picker would race it."""
+        self._patch_llm(monkeypatch)
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(
+            model_cmd,
+            "_interactive_set_toolcall",
+            lambda _console: pytest.fail("no picker without exclusive stdin"),
+        )
+        session = Session()
+        assert session.terminal.exclusive_stdin_active is False
+
+        console, buf = _capture()
+        dispatch_slash("/model toolcall", session, console)
+
+        assert "usage:" in buf.getvalue()
+
     def test_bare_model_without_exclusive_stdin_shows_table_not_menu(
         self,
         monkeypatch: pytest.MonkeyPatch,

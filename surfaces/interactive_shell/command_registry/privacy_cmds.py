@@ -6,6 +6,7 @@ from prompt_toolkit.history import FileHistory, InMemoryHistory
 from rich.console import Console
 from rich.markup import escape
 
+from core.agent_harness.spi.session_state import exclusive_stdin_active
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.prompt_history import (
     clear_persisted_history,
@@ -98,10 +99,29 @@ def _history_pause(session: Session, console: Console, *, paused: bool) -> bool:
     return True
 
 
+_RETENTION_CAPS: tuple[str, ...] = ("100", "500", "1000", "5000")
+
+
+def _prompt_retention_cap() -> str | None:
+    """Ask for a retention cap; ``None`` when the picker is dismissed."""
+    return repl_choose_one(
+        title="retention cap",
+        breadcrumb=f"/history{CRUMB_SEP}retention",
+        choices=[(cap, cap) for cap in _RETENTION_CAPS],
+    )
+
+
 def _history_retention(session: Session, console: Console, args: list[str]) -> bool:
     if not args:
-        console.print(f"[{ERROR}]usage:[/] /history retention <N>")
-        return True
+        # A turn that owns stdin asks for the cap rather than closing on usage.
+        if repl_tty_interactive() and exclusive_stdin_active(session):
+            cap = _prompt_retention_cap()
+            if cap is None:
+                return True
+            args = [cap]
+        else:
+            console.print(f"[{ERROR}]usage:[/] /history retention <N>")
+            return True
     try:
         n = int(args[0])
         if n < 0:
@@ -154,19 +174,8 @@ def _interactive_history_menu(session: Session, console: Console) -> bool:
             _history_pause(session, console, paused=False)
             show_section_break = True
         elif sub == "retention":
-            cap = repl_choose_one(
-                title="retention cap",
-                breadcrumb=f"{root}{CRUMB_SEP}retention",
-                choices=[
-                    ("100", "100"),
-                    ("500", "500"),
-                    ("1000", "1000"),
-                    ("5000", "5000"),
-                ],
-            )
-            if cap:
-                _history_retention(session, console, [cap])
-                show_section_break = True
+            # One owner for the cap prompt: the handler asks when none is given.
+            show_section_break = _history_retention(session, console, [])
         if show_section_break:
             repl_section_break(console)
 
