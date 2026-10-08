@@ -9,6 +9,11 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -58,10 +63,11 @@ def _community_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
         },
         "required": [],
     },
-    is_available=github_repository_source_available,
-    extract_params=_community_extract_params,
+    is_available=github_tool_available(github_repository_source_available),
+    extract_params=github_tool_params(_community_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def summarize_community_followups(
     owner: str = "",
     repo: str = "",

@@ -84,7 +84,14 @@ def run_errors(monkeypatch: pytest.MonkeyPatch) -> list[Exception]:
 
 def _analyze(**kwargs: Any) -> dict[str, Any]:
     return tool_module.analyze_github_ci_reliability(
-        **{"owner": _OWNER, "repo": _REPO, "days": 30, **kwargs}
+        **{
+            "owner": _OWNER,
+            "repo": _REPO,
+            "days": 30,
+            "github_token": "ghp_session",
+            "github_connection_origin": "webapp",
+            **kwargs,
+        }
     )
 
 
@@ -93,7 +100,13 @@ def test_a_prefetched_analysis_answers_the_matching_call_once_like_a_direct_call
 ) -> None:
     # Arrange: a direct call to compare against, then the prefetch.
     direct = _analyze()
-    assert prefetch_ci_analysis(_OWNER, _REPO, resolved_integrations={})
+    assert prefetch_ci_analysis(
+        _OWNER,
+        _REPO,
+        resolved_integrations={
+            "github": {"auth_token": "ghp_session", "connection_origin": "webapp"}
+        },
+    )
 
     # Act
     joined = _analyze()
@@ -115,7 +128,13 @@ def test_another_window_token_or_a_stale_prefetch_reads_live(
         name="test", max_age_seconds=300.0, max_entries=4, clock=clock
     )
     monkeypatch.setattr(prefetch_module, "_ANALYSES", registry)
-    assert prefetch_ci_analysis(_OWNER, _REPO, resolved_integrations={})
+    assert prefetch_ci_analysis(
+        _OWNER,
+        _REPO,
+        resolved_integrations={
+            "github": {"auth_token": "ghp_session", "connection_origin": "webapp"}
+        },
+    )
 
     for entry in list(registry._entries.values()):
         assert entry.done.wait(5.0)
@@ -135,7 +154,13 @@ def test_a_failed_prefetch_leaves_the_call_to_read_and_report_on_its_own(
 ) -> None:
     # Arrange: the background read fails; the call's own read succeeds.
     github.failures_left = 1
-    assert prefetch_ci_analysis(_OWNER, _REPO, resolved_integrations={})
+    assert prefetch_ci_analysis(
+        _OWNER,
+        _REPO,
+        resolved_integrations={
+            "github": {"auth_token": "ghp_session", "connection_origin": "webapp"}
+        },
+    )
 
     # Act
     result = _analyze()

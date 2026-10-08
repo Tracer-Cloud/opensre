@@ -3,7 +3,7 @@
 Other tiers import GitHub behavior through this module, not the files inside it.
 The client names load eagerly; the rest are re-exported lazily through
 ``__getattr__`` so importing the package does not pull heavier submodules (the
-login device-flow and its dependencies) until a caller actually needs them.
+MCP transport and repair workers) until a caller actually needs them.
 """
 
 from __future__ import annotations
@@ -15,6 +15,11 @@ from integrations.github.client import GitHubApiError, GitHubRestClient, resolve
 
 #: Public name -> the submodule that defines it, imported on first access.
 _LAZY_EXPORTS: dict[str, str] = {
+    "workspace_public_repository_source": "integrations.github.identity",
+    "missing_token_envelope": "integrations.github.envelope",
+    "filter_github_connected_services": "integrations.github.connections",
+    "github_setup_url": "integrations.github.app_connection",
+    "refreshed_github_token": "integrations.github.app_connection",
     "setup_github": "integrations.github.cli_setup",
     "run_ci_repair_worker": "integrations.github.tools.ci_repair_loop.worker",
     "effective_github_token": "integrations.github.tools.ci_repair_loop.credentials",
@@ -25,8 +30,6 @@ _LAZY_EXPORTS: dict[str, str] = {
     "has_github_rest_token": "integrations.github.rest_token",
     "saved_github_username": "integrations.github.identity",
     "fresh_demo_repo_name": "integrations.github.tools.ci_repair_demo.seed",
-    "GitHubLoginResult": "integrations.github.login",
-    "authenticate_and_configure_github": "integrations.github.login",
     "PullRequestCheckout": "integrations.github.pull_request_checkout",
     "checkout_pull_request": "integrations.github.pull_request_checkout",
     "parse_pull_request": "integrations.github.pull_request_checkout",
@@ -44,12 +47,8 @@ _LAZY_EXPORTS: dict[str, str] = {
     "GitHubMcpDisplayDetailLevel": "integrations.github.mcp",
     "build_github_mcp_config": "integrations.github.mcp",
     "format_github_mcp_validation_cli_report": "integrations.github.mcp",
-    "github_integration_is_configured": "integrations.github.mcp",
     "print_github_mcp_validation_report": "integrations.github.mcp",
     "validate_github_mcp_config": "integrations.github.mcp",
-    "GitHubDeviceCode": "integrations.github.mcp_oauth",
-    "GitHubDeviceFlowError": "integrations.github.mcp_oauth",
-    "authorize_github_via_device_flow": "integrations.github.mcp_oauth",
     "disconnect_personal_github": "integrations.github.personal_account",
     "Analysis": "integrations.github.tools.ci_analytics.analysis",
     "analyze_repository": "integrations.github.tools.ci_analytics.analysis",
@@ -78,10 +77,15 @@ def __getattr__(name: str) -> object:
 
 
 if TYPE_CHECKING:
+    from integrations.github.app_connection import github_setup_url, refreshed_github_token
     from integrations.github.cli_setup import setup_github
+    from integrations.github.connections import filter_github_connected_services
+    from integrations.github.envelope import missing_token_envelope
     from integrations.github.helpers import github_creds
-    from integrations.github.identity import saved_github_username
-    from integrations.github.login import GitHubLoginResult, authenticate_and_configure_github
+    from integrations.github.identity import (
+        saved_github_username,
+        workspace_public_repository_source,
+    )
     from integrations.github.mcp import (
         DEFAULT_GITHUB_MCP_MODE,
         DEFAULT_GITHUB_MCP_URL,
@@ -89,14 +93,8 @@ if TYPE_CHECKING:
         GitHubMCPValidationResult,
         build_github_mcp_config,
         format_github_mcp_validation_cli_report,
-        github_integration_is_configured,
         print_github_mcp_validation_report,
         validate_github_mcp_config,
-    )
-    from integrations.github.mcp_oauth import (
-        GitHubDeviceCode,
-        GitHubDeviceFlowError,
-        authorize_github_via_device_flow,
     )
     from integrations.github.personal_account import disconnect_personal_github
     from integrations.github.pull_request_checkout import (
@@ -136,6 +134,11 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "filter_github_connected_services",
+    "workspace_public_repository_source",
+    "missing_token_envelope",
+    "github_setup_url",
+    "refreshed_github_token",
     "setup_github",
     "PullRequestCheckout",
     "checkout_pull_request",
@@ -148,9 +151,6 @@ __all__ = [
     "DEFAULT_LOOP_TIME",
     "ERR_GITHUB_TOKEN",
     "GitHubApiError",
-    "GitHubDeviceCode",
-    "GitHubDeviceFlowError",
-    "GitHubLoginResult",
     "GitHubMCPValidationResult",
     "GitHubMcpDisplayDetailLevel",
     "GitHubPullRequestError",
@@ -159,8 +159,6 @@ __all__ = [
     "PullRequest",
     "ScheduledLoop",
     "analyze_repository",
-    "authenticate_and_configure_github",
-    "authorize_github_via_device_flow",
     "build_github_mcp_config",
     "ci_report_headline",
     "count_ci_fixes",
@@ -170,7 +168,6 @@ __all__ = [
     "format_github_mcp_validation_cli_report",
     "get_ci_fix_counter",
     "github_creds",
-    "github_integration_is_configured",
     "github_rest_token",
     "has_github_rest_token",
     "local_timezone",

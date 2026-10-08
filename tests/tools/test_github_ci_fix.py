@@ -140,7 +140,7 @@ def test_clean_pr_is_a_successful_noop_in_tool_analytics(monkeypatch: pytest.Mon
             )
         ],
         [_registered(fix_github_pr_ci)],
-        {},
+        {"github": {"connection_origin": "webapp", "auth_token": "app-token"}},
     )[0]
     assert result.is_error is False
     assert tool_result_is_error(result.details) is False
@@ -226,7 +226,7 @@ def test_available_when_github_token_present(monkeypatch) -> None:
     assert _github_ci_fix_available({}) is False
 
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
-    assert _github_ci_fix_available({}) is True
+    assert _github_ci_fix_available({}) is False
 
 
 def test_gather_ci_fix_context_builds_task_with_failing_logs() -> None:
@@ -976,7 +976,9 @@ def test_tool_passes_shell_confirmation_function() -> None:
     with patch(
         "integrations.github.tools.ci_fix.tool.run_ci_fix", return_value={"success": True}
     ) as runner:
-        result = fix_github_pr_ci(context=agent_context)
+        result = fix_github_pr_ci(
+            github_connection_origin="webapp", github_token="app-token", context=agent_context
+        )
 
     assert result["success"] is True
     assert result["work_outcome"]["status"] == "succeeded"

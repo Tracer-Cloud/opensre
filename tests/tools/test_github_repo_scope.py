@@ -154,8 +154,20 @@ def test_apply_github_repo_scope_merges_into_github_mcp_config() -> None:
 
 
 def test_apply_github_repo_scope_noop_without_github() -> None:
-    resolved = {"datadog": {"connection_verified": True}}
-    assert apply_github_repo_scope(resolved, "o", "r") == {"datadog": {"connection_verified": True}}
+    resolved = {
+        "datadog": {
+            "connection_origin": "webapp",
+            "auth_token": "app-token",
+            "connection_verified": True,
+        }
+    }
+    assert apply_github_repo_scope(resolved, "o", "r") == {
+        "datadog": {
+            "connection_origin": "webapp",
+            "auth_token": "app-token",
+            "connection_verified": True,
+        }
+    }
 
 
 def test_workspace_scope_adds_public_github_source_without_integration() -> None:
@@ -203,11 +215,18 @@ def test_workspace_scope_keeps_configured_github_authenticated() -> None:
     assert scope is not None
 
     resolved = GITHUB_VCS_REPO_SCOPE_PROVIDER.apply(
-        {"github": {"connection_verified": True, "auth_token": "secret"}},
+        {
+            "github": {
+                "connection_origin": "webapp",
+                "connection_verified": True,
+                "auth_token": "secret",
+            }
+        },
         scope,
     )
 
     assert resolved["github"] == {
+        "connection_origin": "webapp",
         "connection_verified": True,
         "auth_token": "secret",
         "owner": "Tracer-Cloud",

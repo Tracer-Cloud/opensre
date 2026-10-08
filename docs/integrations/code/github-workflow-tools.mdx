@@ -32,9 +32,9 @@ opensre integrations verify github
 
 | Requirement | Details |
 | --- | --- |
-| **Token** | `GITHUB_MCP_AUTH_TOKEN`, or browser sign-in via `opensre integrations setup github` |
+| **Token** | Connect GitHub in the OpenSRE app |
 | **Scopes** | `repo` minimum; add security alert scopes for `list_github_security_alerts` |
-| **Alternate env** | `GITHUB_TOKEN` / `GH_TOKEN` accepted by some workflow tools |
+| **Alternate env** | Local environment tokens do not authorize these tools |
 
 ### Example REPL turn
 
@@ -45,7 +45,7 @@ opensre integrations verify github
 
 ## Credentials
 
-Set a GitHub token through the configured GitHub integration, `GITHUB_TOKEN`, or `GH_TOKEN`.
+Connect or reconnect GitHub in the OpenSRE app.
 
 Security alert endpoints require token scopes that GitHub enforces separately. If the token cannot read one alert class, the tool returns an error for that alert type while still returning any alert classes it can read.
 
@@ -142,7 +142,7 @@ There is no separate `github-workflow` verify target. Workflow tools become avai
 
 | Symptom | Fix |
 | --- | --- |
-| **Tools unavailable** | Run `opensre integrations setup github` and verify |
+| **Tools unavailable** | Connect GitHub in the OpenSRE app, then refresh the connection |
 | **Security alerts error for one class** | Token lacks that alert scope — other alert classes may still return |
 | **False "no blockers" concern** | If report reads fail, expect `available: false` / `incomplete: true` rather than an empty green report |
 | **Mutation not executing** | Headless/non-approved runs can propose only — execute needs the runtime approval path |

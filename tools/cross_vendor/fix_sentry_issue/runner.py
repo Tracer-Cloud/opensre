@@ -26,7 +26,7 @@ from integrations.git import (
     file_fingerprints,
     is_git_repo,
 )
-from integrations.github import resolve_github_token
+from integrations.github import github_rest_token, github_setup_url
 from tools.cross_vendor.fix_sentry_issue.context import IssueContext
 from tools.cross_vendor.fix_sentry_issue.errors import (
     ERR_CLI_UNAVAILABLE,
@@ -84,18 +84,30 @@ def is_ship_enabled(env: Mapping[str, str] | None = None) -> bool:
     return source.get("PI_ISSUE_FIX_SHIP_ENABLED", "").strip().lower() in _TRUTHY
 
 
-def ensure_ship_ready(workspace: str) -> None:
+def extract_github_params(sources: dict[str, dict]) -> dict[str, Any]:
+    github = sources.get("github", {})
+    return {
+        "github_token": github_rest_token(sources),
+        "github_connection_origin": github.get("connection_origin", ""),
+    }
+
+
+def eligible_github_token(token: str, origin: str | None) -> str:
+    return github_rest_token(explicit=token, connection_origin=origin)
+
+
+def ensure_ship_ready(workspace: str, github_token: str) -> None:
     """Fail fast (before the Pi run) if a requested PR can't possibly be opened."""
     if not is_ship_enabled():
         raise FixIssueError(
             ERR_SHIP_DISABLED,
-            "Opening a PR is disabled. Set PI_ISSUE_FIX_SHIP_ENABLED=1 (and GITHUB_TOKEN) "
+            "Opening a PR is disabled. Set PI_ISSUE_FIX_SHIP_ENABLED=1 (and an authorized GitHub app connection) "
             "to let OpenSRE ship the fix as a pull request.",
         )
-    if not resolve_github_token():
+    if not github_token:
         raise FixIssueError(
             ERR_GITHUB_TOKEN,
-            "A GitHub token is required to open a PR. Set GITHUB_TOKEN or GH_TOKEN.",
+            f"Connect GitHub in the OpenSRE app before opening a PR: {github_setup_url()}",
         )
     try:
         ensure_git_repo(workspace)
@@ -125,9 +137,15 @@ def run_ship(
     result: CodingResult,
     workspace: str,
     baseline: Mapping[str, str] | None = None,
+    github_token: str = "",
 ) -> ShipResult:
     return ship_fix(
-        workspace, issue_id=issue_id, sentry_url=sentry_url, result=result, baseline=baseline
+        workspace,
+        issue_id=issue_id,
+        sentry_url=sentry_url,
+        result=result,
+        baseline=baseline,
+        github_token=github_token,
     )
 
 

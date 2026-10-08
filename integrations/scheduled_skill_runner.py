@@ -30,7 +30,7 @@ or change any external system.
 """
 
 
-def _prefetched_context(skill_name: str, inputs: dict[str, str]) -> str:
+def _prefetched_context(skill_name: str, inputs: dict[str, str]) -> str | TaskReport:
     """Fetch integration-owned context without reversing core dependency direction."""
     if skill_name == "reporting-github-ci-failures":
         from integrations.github.ci_health_runner import run_github_ci_health
@@ -61,6 +61,8 @@ def run_scheduled_recurring_skill(payload: AgentPayload) -> TaskReport:
         rendered = "\n".join(f"- {key}: {value}" for key, value in sorted(inputs.items()))
         input_block = f"\nValidated inputs:\n{rendered}\n"
     fetch_block = _prefetched_context(resolved.name, inputs)
+    if isinstance(fetch_block, TaskReport):
+        return fetch_block
     if resolved.name == "reporting-github-ci-failures":
         # The prefetcher renders the complete final report. Returning it
         # directly preserves every scoped failure instead of sending it

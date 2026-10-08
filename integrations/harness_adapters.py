@@ -71,6 +71,7 @@ def register_harness_adapters() -> None:
         merge_integrations_by_service,
         merge_local_integrations,
     )
+    from integrations.github import github_setup_url
     from integrations.github.connections import select_github_connection
     from integrations.store import load_integrations, resolve_store_path
 
@@ -84,6 +85,7 @@ def register_harness_adapters() -> None:
         merge_integrations_by_service=merge_integrations_by_service,
         configured_services=lambda: tuple(configured_integration_services()),
         setupable_services=_setupable_services,
+        setup_url=github_setup_url,
         fetch_webapp_vault=_fetch_webapp_vault,
         fleet_vault_configured=_fleet_vault_configured,
         fetch_account_integrations=_fetch_account_integrations,

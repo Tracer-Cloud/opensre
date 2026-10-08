@@ -47,13 +47,13 @@ def test_includes_active_store_integrations_and_dedupes_with_env(monkeypatch: An
         catalog,
         "load_integrations",
         lambda: [
-            {"service": "GitHub", "status": "active"},  # store-only (e.g. first-launch login)
+            {"service": "slack", "status": "active"},  # store-only
             {"service": "gitlab", "status": "active"},  # duplicate of env entry
             {"service": "datadog", "status": "disabled"},  # inactive — ignored
             {"service": "", "status": "active"},  # ignored
         ],
     )
-    assert catalog.configured_integration_services() == ["sentry", "gitlab", "github"]
+    assert catalog.configured_integration_services() == ["sentry", "gitlab", "slack"]
 
 
 def test_unsupported_active_store_integration_is_not_advertised(monkeypatch: Any) -> None:
@@ -105,9 +105,9 @@ def test_store_only_when_env_loader_raises(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         catalog,
         "load_integrations",
-        lambda: [{"service": "github", "status": "active"}],
+        lambda: [{"service": "gitlab", "status": "active"}],
     )
-    assert catalog.configured_integration_services() == ["github"]
+    assert catalog.configured_integration_services() == ["gitlab"]
 
 
 def test_empty_when_no_integrations(monkeypatch: Any) -> None:
@@ -255,9 +255,9 @@ class TestConfiguredIntegrationHealth:
     def test_non_mcp_empty_token_field_is_not_flagged(self, monkeypatch: Any) -> None:
         # Only the hosted-MCP token rule applies; an unrelated service that
         # classified successfully stays "ok" even if it lacks an auth_token key.
-        monkeypatch.setattr(catalog, "load_env_integration_services", lambda: ["github"])
+        monkeypatch.setattr(catalog, "load_env_integration_services", lambda: ["gitlab"])
         monkeypatch.setattr(catalog, "load_integrations", list)
-        assert catalog.configured_integration_health() == [("github", "ok")]
+        assert catalog.configured_integration_health() == [("gitlab", "ok")]
 
     def test_empty_when_no_integrations(self, monkeypatch: Any) -> None:
         monkeypatch.setattr(catalog, "load_env_integration_services", list)
@@ -292,13 +292,13 @@ class TestConfiguredIntegrationHealth:
             calls += 1
             return [
                 {
-                    "service": "github",
+                    "service": "gitlab",
                     "status": "active",
                     "instances": [
                         {
                             "name": "default",
                             "tags": {},
-                            "credentials": {"token": "ghp_test"},
+                            "credentials": {"token": "gitlab_test"},
                         }
                     ],
                 }
@@ -307,5 +307,5 @@ class TestConfiguredIntegrationHealth:
         monkeypatch.setattr(catalog, "load_env_integration_services", list)
         monkeypatch.setattr(catalog, "load_integrations", counting_load)
 
-        assert catalog.configured_integration_health() == [("github", "ok")]
+        assert catalog.configured_integration_health() == [("gitlab", "ok")]
         assert calls == 1

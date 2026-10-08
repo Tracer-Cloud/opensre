@@ -26,7 +26,7 @@ OPENSRE_ACCOUNT_INTEGRATIONS_PATH = "/api/auth/cli/integrations"
 #: Query asking that route for the caller's personal connections too, each
 #: record tagged with its ``owner``. Older apps ignore it.
 OPENSRE_ACCOUNT_INTEGRATIONS_PERSONAL_PARAMS: Mapping[str, str] = MappingProxyType(
-    {"include": "personal"}
+    {"include": "personal", "github_provenance": "1"}
 )
 #: The app's own service id -> the CLI integration it is. The app stores its
 #: Slack OAuth install as ``slack_bot`` (bot token only; events reach the
@@ -46,6 +46,10 @@ OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS = 15.0
 OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS: tuple[float, ...] = (0.5, 2.0)
 #: Most time the session check and its retries may take before the app counts as unreachable.
 OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS = 20.0
+INTEGRATION_RETRIEVAL_ORIGIN_FIELD = "origin"
+INTEGRATION_LOCAL_ORIGIN = "local"
+INTEGRATION_APP_ORIGIN = "webapp"
+
 OPENSRE_APP_URL_DEFAULT = "https://app.opensre.com"
 OPENSRE_APP_URL_DEV = "http://localhost:3000"
 OPENSRE_APP_URL_ENV = "OPENSRE_APP_URL"
@@ -72,6 +76,9 @@ __all__ = [
     "OPENSRE_ACCOUNT_CREDITS_PATH",
     "OPENSRE_ACCOUNT_USAGE_PATH",
     "OPENSRE_APP_URL_DEFAULT",
+    "INTEGRATION_RETRIEVAL_ORIGIN_FIELD",
+    "INTEGRATION_LOCAL_ORIGIN",
+    "INTEGRATION_APP_ORIGIN",
     "OPENSRE_APP_URL_DEV",
     "OPENSRE_APP_URL_ENV",
     "OPENSRE_GATEWAY_LLM_MODEL_DEFAULT",

@@ -274,7 +274,9 @@ def _configured_service_names(
             services.append(service)
         services.extend(_pipedream_app_services(record))
 
-    return list(dict.fromkeys(services))
+    from integrations.github import filter_github_connected_services
+
+    return filter_github_connected_services(list(dict.fromkeys(services)), remote_records or [])
 
 
 def _record_credentials(record: dict[str, Any]) -> dict[str, Any]:

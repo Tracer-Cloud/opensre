@@ -91,7 +91,9 @@ def _install_source(
 
 
 def _context() -> AgentToolContext:
-    return AgentToolContext(resolved_integrations={"github": {"connection_verified": True}})
+    return AgentToolContext(
+        resolved_integrations={"github": {"connection_origin": "webapp", "auth_token": "app-token"}}
+    )
 
 
 def test_tool_is_discoverable_on_the_shared_chat_surface() -> None:

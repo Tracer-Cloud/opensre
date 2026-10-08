@@ -72,6 +72,7 @@ def _app_grants(monkeypatch: pytest.MonkeyPatch, grants: dict[str, dict[str, str
                 "status": "active",
                 "name": "default",
                 "credentials": credentials,
+                "connection_origin": "webapp",
             }
             for grant_id, credentials in grants.items()
         ],
@@ -122,8 +123,8 @@ def _two_grants_and_an_env_token(monkeypatch: pytest.MonkeyPatch) -> None:
     [
         (_account_token, None, "app-tok"),
         (_account_record_without_token, None, None),
-        (_local_store_token, None, "local-tok"),
-        (_gh_token_env, None, "env-tok"),
+        (_local_store_token, None, None),
+        (_gh_token_env, None, None),
         (_nothing, None, None),
         (_two_grants_and_an_env_token, "gh-unknown", None),
         (_two_grants_and_an_env_token, "gh-unusable", None),

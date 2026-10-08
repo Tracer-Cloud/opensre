@@ -31,6 +31,7 @@ class RepairRun(BaseModel):
     owner: str
     repo: str
     actor: str
+    github_connection_id: str = ""
     # Legacy records remain readable locally but cannot authorize an account.
     actor_id: int = Field(default=0, ge=0, strict=True)
     #: Set only on records of the retired fixed-repository demo. Such a record still

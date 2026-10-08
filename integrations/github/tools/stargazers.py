@@ -13,7 +13,12 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -32,15 +37,7 @@ def _github_star_history_available(sources: dict[str, dict]) -> bool:
     if sources.get("github", {}).get("connection_selection_error"):
         return False
     gh = sources.get("github", {})
-    return bool(
-        (
-            github_source_available(sources)
-            or gh.get("public_repository")
-            or resolve_github_token(None)
-        )
-        and gh.get("owner")
-        and gh.get("repo")
-    )
+    return bool((github_source_available(sources)) and gh.get("owner") and gh.get("repo"))
 
 
 def _github_star_history_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -161,9 +158,10 @@ def _map_get_github_star_history(
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_star_history_available,
-    extract_params=_github_star_history_extract_params,
+    is_available=github_tool_available(_github_star_history_available),
+    extract_params=github_tool_params(_github_star_history_extract_params),
     injected_params=(
+        "github_connection_origin",
         *GITHUB_INJECTED_PARAMS,
         "owner",
         "repo",
@@ -171,6 +169,7 @@ def _map_get_github_star_history(
     ),
     evidence_mapper=_map_get_github_star_history,
 )
+@require_webapp_github
 def get_github_star_history(
     owner: str,
     repo: str,

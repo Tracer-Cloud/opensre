@@ -611,7 +611,8 @@ def cmd_setup(service: str | None) -> str:
         _die(f"Usage: setup <service>. Supported: {', '.join(available)}")
     print(f"\n  Setting up {_B}{service}{_R}\n")
     _HANDLERS[service]()
-    print(f"\n  {GLYPH_SUCCESS} Saved → {resolve_store_path()}\n")
+    if service != "github":
+        print(f"\n  {GLYPH_SUCCESS} Saved → {resolve_store_path()}\n")
     return service
 
 

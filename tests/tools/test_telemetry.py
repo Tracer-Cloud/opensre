@@ -140,8 +140,15 @@ def _ci_repair_demo_case(tool_name: str) -> ToolFailureCase:
         from integrations.github.tools.ci_repair_demo import tool as mod
 
         if tool_name == "seed_ci_repair_demo":
-            return mod.seed_ci_repair_demo(owner="octocat", repo="opensre-ci-repair-demo")
+            return mod.seed_ci_repair_demo(
+                github_connection_origin="webapp",
+                github_token="app-token",
+                owner="octocat",
+                repo="opensre-ci-repair-demo",
+            )
         return mod.finish_ci_repair_demo(
+            github_connection_origin="webapp",
+            github_token="app-token",
             repo="octocat/opensre-ci-repair-demo",
             pr_number=1,
             loop_id="abc",
@@ -170,7 +177,10 @@ def _probe_github_repair_access_case() -> ToolFailureCase:
     def invoke() -> dict[str, Any]:
         from integrations.github.tools.repair_access import tool as mod
 
-        return mod.probe_github_repair_access()
+        return mod.probe_github_repair_access(
+            github_connection_origin="webapp",
+            github_token="app-token",
+        )
 
     return ToolFailureCase(
         "probe_github_repair_access",
@@ -193,7 +203,12 @@ def _run_ci_repair_demo_case() -> ToolFailureCase:
     def invoke() -> dict[str, Any]:
         from integrations.github.tools.ci_repair_run import tool as mod
 
-        return mod.run_ci_repair_demo(owner="octocat", repo="opensre-ci-repair-demo")
+        return mod.run_ci_repair_demo(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="octocat",
+            repo="opensre-ci-repair-demo",
+        )
 
     return ToolFailureCase(
         "run_ci_repair_demo",
@@ -214,8 +229,16 @@ def _ci_repair_case(tool_name: str) -> ToolFailureCase:
         from integrations.github.tools.ci_repair_loop import tool as mod
 
         if tool_name == "schedule_ci_repair_loop":
-            return mod.schedule_ci_repair_loop(owner="octocat", repo="service", pr_number=1)
-        return mod.get_ci_repair_loop(task_id="a" * 12)
+            return mod.schedule_ci_repair_loop(
+                github_connection_origin="webapp",
+                github_token="app-token",
+                owner="octocat",
+                repo="service",
+                pr_number=1,
+            )
+        return mod.get_ci_repair_loop(
+            github_connection_origin="webapp", github_token="app-token", task_id="a" * 12
+        )
 
     return ToolFailureCase(tool_name, patch, invoke, tool_name, "github")
 
@@ -367,7 +390,9 @@ def _github_repository_case() -> ToolFailureCase:
     def invoke() -> dict[str, Any]:
         from integrations.github.tools.repository import get_github_repository
 
-        return get_github_repository(owner="o", repo="r", github_token="tok")
+        return get_github_repository(
+            github_connection_origin="webapp", owner="o", repo="r", github_token="tok"
+        )
 
     return ToolFailureCase(
         "github_repository",
@@ -395,7 +420,9 @@ def _github_star_history_case() -> ToolFailureCase:
     def invoke() -> dict[str, Any]:
         from integrations.github.tools.stargazers import get_github_star_history
 
-        return get_github_star_history(owner="o", repo="r", github_token="tok")
+        return get_github_star_history(
+            github_connection_origin="webapp", owner="o", repo="r", github_token="tok"
+        )
 
     return ToolFailureCase(
         "github_star_history",
@@ -416,7 +443,9 @@ def _github_ci_analytics_case() -> ToolFailureCase:
     def invoke() -> dict[str, Any]:
         from integrations.github.tools.ci_analytics.tool import analyze_github_ci_reliability
 
-        return analyze_github_ci_reliability(owner="o", repo="r", github_token="tok")
+        return analyze_github_ci_reliability(
+            github_connection_origin="webapp", owner="o", repo="r", github_token="tok"
+        )
 
     return ToolFailureCase(
         "github_ci_analytics",
@@ -437,7 +466,9 @@ def _github_ci_health_scan_case() -> ToolFailureCase:
     def invoke() -> dict[str, Any]:
         from integrations.github.tools.ci_health_scan.tool import scan_github_ci_health
 
-        return scan_github_ci_health(owners=["o"], github_token="tok")
+        return scan_github_ci_health(
+            github_connection_origin="webapp", owners=["o"], github_token="tok"
+        )
 
     return ToolFailureCase(
         "github_ci_health_scan",

@@ -63,11 +63,11 @@ def test_resolve_github_token_prefers_explicit_then_env(monkeypatch: pytest.Monk
     monkeypatch.setenv("GITHUB_TOKEN", "env-token")
     monkeypatch.setenv("GH_TOKEN", "gh-token")
     assert resolve_github_token("explicit") == "explicit"
-    assert resolve_github_token(None) == "mcp-token"
+    assert resolve_github_token(None) == ""
     monkeypatch.delenv("GITHUB_MCP_AUTH_TOKEN")
-    assert resolve_github_token(None) == "env-token"
+    assert resolve_github_token(None) == ""
     monkeypatch.delenv("GITHUB_TOKEN")
-    assert resolve_github_token(None) == "gh-token"
+    assert resolve_github_token(None) == ""
 
 
 def test_missing_token_raises_typed_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,7 +80,7 @@ def test_missing_token_raises_typed_error(monkeypatch: pytest.MonkeyPatch) -> No
         client.request("GET", "/repos/o/r/issues")
 
     assert exc.value.status_code is None
-    assert "GitHub token is required" in str(exc.value)
+    assert "GitHub app connection is required" in str(exc.value)
 
 
 def test_public_read_can_omit_authorization(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,7 +108,7 @@ def test_public_read_mode_still_rejects_unauthenticated_writes(
     monkeypatch.delenv("GH_TOKEN", raising=False)
     client = GitHubRestClient(github_token=None, allow_unauthenticated_read=True)
 
-    with pytest.raises(GitHubApiError, match="GitHub token is required"):
+    with pytest.raises(GitHubApiError, match="GitHub app connection is required"):
         client.request("POST", "/repos/Tracer-Cloud/opensre/issues", body={"title": "x"})
 
 

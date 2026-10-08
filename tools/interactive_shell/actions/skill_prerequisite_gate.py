@@ -51,6 +51,7 @@ from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_skill_prerequisite_missing
 from infrastructure.harness_providers import (
     integration_setup_command,
+    integration_setup_url,
     registered_skill_prerequisite_checks,
     skill_prerequisite_met,
     skill_prerequisite_verdict,
@@ -178,13 +179,14 @@ def prerequisite_menu(
     """
     label = prerequisite_service_label(service)
     commands: dict[str, str] = {}
-    if _signed_in():
+    if service == "github" or _signed_in():
         commands[PREREQUISITE_OPEN_APP_OPTION.format(service=label)] = prerequisite_action(
             PREREQUISITE_OPEN_APP_ACTION, service
         )
-    commands[PREREQUISITE_LOCAL_SETUP_OPTION.format(service=label)] = integration_setup_command(
-        service
-    )
+    if service != "github":
+        commands[PREREQUISITE_LOCAL_SETUP_OPTION.format(service=label)] = integration_setup_command(
+            service
+        )
     commands[PREREQUISITE_CONTINUE_OPTION.format(service=label)] = prerequisite_action(
         PREREQUISITE_CONTINUE_ACTION, service
     )
@@ -193,6 +195,10 @@ def prerequisite_menu(
         commands[fallback.option] = prerequisite_action(PREREQUISITE_FALLBACK_ACTION, service)
     commands[PREREQUISITE_SKIP_OPTION] = prerequisite_action(PREREQUISITE_SKIP_ACTION, service)
     note = PREREQUISITE_STILL_MISSING_NOTE if still_missing else PREREQUISITE_MENU_NOTE
+    if service == "github":
+        note = "An authorized GitHub connection in the OpenSRE app is required. Connect there, then continue."
+        if not _signed_in():
+            note += " Run `opensre account login` to load your app connections on this machine."
     return PendingUserChoice(
         title=PREREQUISITE_MENU_TITLE.format(service=label),
         options=tuple(commands),
@@ -276,6 +282,13 @@ def _blocked_result(
 ) -> dict[str, Any]:
     label = prerequisite_service_label(missing.service)
     instruction = template.format(skill=skill_name, service=label, service_id=missing.service)
+    if missing.service == "github" and menu == "unavailable":
+        instruction = (
+            f"{skill_name} requires an authorized GitHub app connection. "
+            f"Connect or reconnect GitHub at {integration_setup_url()}. "
+            "For a signed-out local session, run `opensre account login` to load app connections. "
+            "End the turn without starting or retrying the workflow."
+        )
     # ``summary`` is what the user sees; ``content`` replaces the skill body.
     return {
         "ok": True,

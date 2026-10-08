@@ -62,7 +62,10 @@ def _client_with_transport(
 def test_client_sends_bootstrap_auth_and_escapes_organization_id() -> None:
     def _handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer bootstrap-secret"
-        assert request.url.raw_path == b"/api/agent/integrations?organizationId=org%2Ftenant"
+        assert (
+            request.url.raw_path
+            == b"/api/agent/integrations?organizationId=org%2Ftenant&github_provenance=1"
+        )
         return httpx.Response(200, json=_valid_payload())
 
     client = _client_with_transport(httpx.MockTransport(_handler))
@@ -129,6 +132,7 @@ def test_webapp_connection_ownership_is_preserved_as_non_secret_metadata() -> No
     instance = validated.as_store_data()["integrations"][0]["instances"][0]
     assert instance["name"] == "My GitHub"
     assert instance["tags"] == {
+        "connection_origin": "unknown",
         "owner_kind": "user",
         "owner_id": "user_123",
         "is_default": "true",

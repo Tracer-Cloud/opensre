@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import quote
 
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.github import GitHubApiError, GitHubRestClient
 
 CI_HEALTH_SKILL_NAME = "reporting-github-ci-failures"
@@ -274,7 +275,7 @@ def run_github_ci_health(
     *,
     client: GitHubRestClient | None = None,
     now: datetime | None = None,
-) -> str:
+) -> str | TaskReport:
     """Fetch scoped CI health using GET requests only and render skill context."""
     owner = _required_text(payload, "owner")
     repo = _required_text(payload, "repo")
@@ -289,7 +290,18 @@ def run_github_ci_health(
     if pr_number is not None and pr_number < 1:
         raise RuntimeError("GitHub CI health pr_number must be a positive integer.")
 
-    github = client or GitHubRestClient()
+    if client is None:
+        from integrations.github.app_connection import github_setup_url, refreshed_github_token
+
+        token = refreshed_github_token(str(payload.get("github_connection_id") or "") or None)
+        if not token:
+            return TaskReport(
+                f"GitHub CI health blocked for {owner}/{repo}. Connect or reconnect GitHub in the OpenSRE app: {github_setup_url()}",
+                work_status="blocked",
+                error_kind="github_connection_required",
+            )
+        client = GitHubRestClient(token)
+    github = client
     checked_at = now or datetime.now(UTC)
     coverage_notices: list[str] = []
     try:

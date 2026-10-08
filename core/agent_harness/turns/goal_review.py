@@ -43,6 +43,7 @@ from core.agent_harness.turns.gather_discovery_budget import (
 from core.agent_harness.turns.work_outcome import (
     ExecutedToolOutcome,
     format_outcomes_for_review,
+    last_work_blocked,
     last_work_classified,
     last_work_needs_setup,
     last_work_ok,
@@ -297,6 +298,8 @@ class _LLMGoalReviewer:
             names = [name for name, _ in self.executed_tool_calls]
         if any(name in self.skip_tool_names for name in names):
             return self._decision(observation, True, "unreviewable_tool")
+        if last_work_blocked(observation.tool_results):
+            return self._decision(observation, True, "work_tool_blocked")
         # Host gates. ``build_goal_reviewer``'s nudge checks them in this same
         # order, so it names the gate that rejected the stop.
         if (

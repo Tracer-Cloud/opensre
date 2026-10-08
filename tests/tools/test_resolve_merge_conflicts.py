@@ -310,13 +310,14 @@ def test_a_pull_request_is_merged_in_its_own_clone_not_in_the_current_directory(
     checkout = PullRequestCheckout(str(clone), "Acme", "widgets", 12, "feature", reused=False)
     asked: list[tuple[str, str]] = []
 
-    def checkout_pull_request(selector: str, *, cwd: str) -> PullRequestCheckout:
+    def checkout_pull_request(selector: str, *, cwd: str, token: str) -> PullRequestCheckout:
+        assert token == "app-token"
         asked.append((selector, cwd))
         return checkout
 
     # Act
     with patch(_CHECKOUT, checkout_pull_request):
-        out = resolve_merge_conflicts.run(pull_request="Acme/widgets#12")
+        out = resolve_merge_conflicts.run(pull_request="Acme/widgets#12", github_token="app-token")
 
     # Assert
     assert asked == [("Acme/widgets#12", str(elsewhere))]
@@ -333,13 +334,14 @@ def test_a_pull_request_that_cannot_be_checked_out_is_reported_without_a_merge(
     # Arrange
     monkeypatch.chdir(tmp_path)
 
-    def checkout_pull_request(selector: str, *, cwd: str) -> PullRequestCheckout:
+    def checkout_pull_request(selector: str, *, cwd: str, token: str) -> PullRequestCheckout:
         del selector, cwd
+        assert token == "app-token"
         raise GitCommandError("pr_not_found", "pull request 99 was not found; no push was made.")
 
     # Act
     with patch(_CHECKOUT, checkout_pull_request):
-        out = resolve_merge_conflicts.run(pull_request="99")
+        out = resolve_merge_conflicts.run(pull_request="99", github_token="app-token")
 
     # Assert
     assert out["success"] is False and out["error_kind"] == "pr_not_found"

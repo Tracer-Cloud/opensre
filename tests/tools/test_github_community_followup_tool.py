@@ -23,7 +23,13 @@ def test_run_scopes_the_comments_query_to_since_days() -> None:
         "integrations.github.tools.community_followup_tool.GitHubRestClient",
         return_value=mock_client,
     ):
-        summarize_community_followups(owner="org", repo="repo", since_days=7, github_token="tok")
+        summarize_community_followups(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            since_days=7,
+            github_token="tok",
+        )
 
     mock_client.paginate.assert_called_once()
     args, kwargs = mock_client.paginate.call_args
@@ -34,6 +40,8 @@ def test_run_scopes_the_comments_query_to_since_days() -> None:
 
 def test_run_skips_the_api_call_when_comments_are_supplied() -> None:
     result = summarize_community_followups(
+        github_connection_origin="webapp",
+        github_token="app-token",
         owner="org",
         repo="repo",
         comments=[{"id": 1, "body": "any questions?", "user": {"login": "someone"}}],
@@ -54,7 +62,11 @@ def test_run_clamps_absurd_since_days_instead_of_overflowing() -> None:
         return_value=mock_client,
     ):
         result = summarize_community_followups(
-            owner="org", repo="repo", since_days=10**18, github_token="tok"
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            since_days=10**18,
+            github_token="tok",
         )
 
     assert result["available"] is True

@@ -49,6 +49,7 @@ from integrations.git import (
     merge_head_sha,
     merge_in_progress,
     merge_ref,
+    origin_url,
     paths_with_conflict_markers,
     push_destination,
     push_head_to_upstream,
@@ -58,7 +59,13 @@ from integrations.git import (
     take_side,
     unresolved_conflicts,
 )
-from integrations.github import CHECKS_NOT_WATCHED, ChecksOutcome, watch_pull_request_checks
+from integrations.github import (
+    CHECKS_NOT_WATCHED,
+    ChecksOutcome,
+    missing_token_envelope,
+    watch_pull_request_checks,
+    workspace_public_repository_source,
+)
 from tools.cross_vendor.resolve_merge_conflicts.errors import (
     ERR_AWAITING_DECISIONS,
     ERR_CANCELLED,
@@ -133,6 +140,7 @@ def resolve_merge(
     wait_for_checks: bool = True,
     cancelled: Cancelled | None = None,
     ask: Ask | None = None,
+    github_token: str = "",
 ) -> dict[str, Any]:
     """Resolve the merge in *workspace*, then commit and push it once *approve* allows.
 
@@ -166,6 +174,7 @@ def resolve_merge(
             wait_for_checks=wait_for_checks,
             cancelled=cancelled,
             ask=ask,
+            github_token=github_token,
         )
     except ResolveMergeError as exc:
         rendered = _paint(console, ws, exc.conflicts)
@@ -194,19 +203,29 @@ def _resolve(
     wait_for_checks: bool,
     cancelled: Cancelled | None,
     ask: Ask | None,
+    github_token: str = "",
 ) -> dict[str, Any]:
     finish = _Finish(
         console=console,
         approve=approve,
         wait_for_checks=wait_for_checks,
         cancelled=cancelled or _never,
+        github_token=github_token,
     )
     try:
         ensure_git_repo(ws)
+        if (
+            workspace_public_repository_source({"workspace_repo": origin_url(ws)}).get("github")
+            and not github_token
+        ):
+            return missing_token_envelope(
+                "Connect GitHub in the OpenSRE app before updating this repository.",
+                blocked="the repository cannot be fetched or pushed",
+            )
         branch = current_branch(ws) or "HEAD"
         already_merging = merge_in_progress(ws)
         if not already_merging:
-            ref = ref or _default_base(ws)
+            ref = ref or _default_base(ws, github_token)
             if not ref:
                 raise ResolveMergeError(
                     ERR_NO_MERGE_IN_PROGRESS,
@@ -512,6 +531,7 @@ class _Finish:
     approve: Approve | None
     wait_for_checks: bool
     cancelled: Cancelled
+    github_token: str = ""
 
 
 def _never() -> bool:
@@ -627,10 +647,16 @@ def _cancelled_before_push(
 def _push_and_watch(
     ws: str, sha: str, finish: _Finish
 ) -> tuple[str, GitCommandError | None, ChecksOutcome | None]:
-    pushed_to, push_error = _push(ws)
+    pushed_to, push_error = _push(ws, finish.github_token)
     if not pushed_to or not finish.wait_for_checks:
         return pushed_to, push_error, None
-    return pushed_to, None, watch_pull_request_checks(ws, pushed_to=pushed_to, commit_sha=sha)
+    return (
+        pushed_to,
+        None,
+        watch_pull_request_checks(
+            ws, pushed_to=pushed_to, commit_sha=sha, github_token=finish.github_token
+        ),
+    )
 
 
 def _error_kind(push_error: GitCommandError | None, checks: ChecksOutcome | None) -> str | None:
@@ -647,7 +673,7 @@ def _checks_error(checks: ChecksOutcome | None) -> str | None:
     return f"The pull request checks did not pass: {checks.detail}."
 
 
-def _default_base(ws: str) -> str | None:
+def _default_base(ws: str, github_token: str = "") -> str | None:
     """``origin/<default branch>``, freshly fetched, when that is a base branch.
 
     A remote whose HEAD points at some feature branch is not merged silently;
@@ -655,13 +681,13 @@ def _default_base(ws: str) -> str | None:
     than merging whatever stale copy of the branch the clone holds.
     """
     try:
-        name = default_branch(ws)
+        name = default_branch(ws, token=github_token or None)
     except GitCommandError:
         return None
     if not name or not is_base_branch(name):
         return None
     try:
-        fetch_remote_branch(ws, name)
+        fetch_remote_branch(ws, name, token=github_token or None)
     except GitCommandError as exc:
         raise ResolveMergeError(
             ERR_EXECUTION, f"Could not update origin/{name} before merging it: {exc.message}"
@@ -669,9 +695,9 @@ def _default_base(ws: str) -> str | None:
     return f"origin/{name}"
 
 
-def _push(ws: str) -> tuple[str, GitCommandError | None]:
+def _push(ws: str, github_token: str = "") -> tuple[str, GitCommandError | None]:
     try:
-        return push_head_to_upstream(ws), None
+        return push_head_to_upstream(ws, token=github_token or None), None
     except GitCommandError as exc:
         return "", exc
 

@@ -17,10 +17,31 @@ class TestGetGitHubRepositoryToolContract(BaseToolContract):
 def test_is_available_requires_connection_verified_owner_repo() -> None:
     rt = get_github_repository.__opensre_registered_tool__
     assert (
-        rt.is_available({"github": {"connection_verified": True, "owner": "org", "repo": "repo"}})
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                    "owner": "org",
+                    "repo": "repo",
+                }
+            }
+        )
         is True
     )
-    assert rt.is_available({"github": {"connection_verified": True}}) is False
+    assert (
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                }
+            }
+        )
+        is False
+    )
     assert rt.is_available({}) is False
 
 
@@ -28,6 +49,7 @@ def test_extract_params_maps_classified_credentials() -> None:
     rt = get_github_repository.__opensre_registered_tool__
     sources = mock_agent_state()
     sources["github"] = {
+        "connection_origin": "webapp",
         "connection_verified": True,
         "owner": "Tracer-Cloud",
         "repo": "opensre",
@@ -66,7 +88,12 @@ def test_run_happy_path() -> None:
         "integrations.github.tools.repository.GitHubRestClient.request",
         return_value=payload,
     ):
-        result = get_github_repository(owner="Tracer-Cloud", repo="opensre", github_token="tok")
+        result = get_github_repository(
+            github_connection_origin="webapp",
+            owner="Tracer-Cloud",
+            repo="opensre",
+            github_token="tok",
+        )
     assert result["available"] is True
     assert result["stargazers_count"] == 42
     assert result["repository"]["forks_count"] == 7
@@ -82,6 +109,8 @@ def test_run_api_error() -> None:
         "integrations.github.tools.repository.GitHubRestClient.request",
         side_effect=GitHubApiError("not found", status_code=404, path="/repos/o/r"),
     ):
-        result = get_github_repository(owner="o", repo="r", github_token="tok")
+        result = get_github_repository(
+            github_connection_origin="webapp", owner="o", repo="r", github_token="tok"
+        )
     assert result["available"] is False
     assert "404" in result["error"]

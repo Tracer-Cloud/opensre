@@ -10,16 +10,16 @@ from typing import Any
 
 from rich.markup import escape
 
-from config.constants.github import (
-    GITHUB_INTEGRATION_SETUP_CLI,
-    GITHUB_SETUP_SLASH_INVOKE,
-)
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from integrations.github.agent_tools import (
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.client import GitHubApiError
 from integrations.github.envelope import missing_token_envelope
 from integrations.github.helpers import (
@@ -28,8 +28,6 @@ from integrations.github.helpers import (
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.rest_token import (
-    github_rest_token,
-    github_selection_failed,
     resolved_github_rest_token,
 )
 from integrations.github.tools.ci_analytics.analysis import analyze_repository
@@ -73,15 +71,9 @@ _MIN_WINDOW_DAYS = 1
 _MAX_WINDOW_DAYS = 90
 
 
-def _available(sources: dict[str, dict]) -> bool:
-    """Stay listed when GitHub is not connected yet.
-
-    A fresh onboarding session has no token. Hiding this tool removes the
-    result that tells the agent to open setup, so the demo cannot finish.
-    The call itself returns that setup handoff when no token resolves. A
-    chosen connection that is missing or unusable withdraws the tool.
-    """
-    return not github_selection_failed(sources)
+def _available(_sources: dict[str, dict]) -> bool:
+    """Keep recovery available; execution enforces the app connection."""
+    return True
 
 
 def _window(days: int | None) -> int:
@@ -123,13 +115,7 @@ def prefetch_ci_analysis(
 
 
 def _missing_token_message(repository: str) -> str:
-    return (
-        f"A GitHub token is required to read the Actions history of {repository}. "
-        f"Run `{GITHUB_INTEGRATION_SETUP_CLI}`. "
-        f"Open the wizard with `{GITHUB_SETUP_SLASH_INVOKE}` and end the turn. "
-        f"After they finish, call analyze_github_ci_reliability again for {repository}. "
-        "Do not leave the analysis blocked and do not ask them to retry in a new session."
-    )
+    return f"Connect or reconnect GitHub in the OpenSRE app before analyzing {repository}. End the turn without retrying."
 
 
 def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -323,10 +309,11 @@ def _result(report: CiAnalyticsReport, owner: str, repo: str, window: int) -> di
         "additionalProperties": False,
     },
     is_available=_available,
-    extract_params=_extract_params,
+    extract_params=github_tool_params(_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_evidence,
 )
+@require_webapp_github
 def analyze_github_ci_reliability(
     owner: str | None = None,
     repo: str | None = None,
@@ -359,7 +346,7 @@ def analyze_github_ci_reliability(
         )
     now = datetime.now(UTC)
     console = _console(context)
-    token = github_rest_token(explicit=github_token)
+    token = (github_token or "").strip()
     if not token:
         repository = f"{repo_owner}/{repo_name}"
         return missing_token_envelope(

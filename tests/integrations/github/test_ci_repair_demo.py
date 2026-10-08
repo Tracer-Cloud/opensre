@@ -523,7 +523,9 @@ def test_a_non_404_repository_error_does_not_create(monkeypatch: pytest.MonkeyPa
         lambda _token: "token",
     )
 
-    result = seed_ci_repair_demo(_OWNER, _REPO)
+    result = seed_ci_repair_demo(
+        _OWNER, _REPO, github_connection_origin="webapp", github_token="app-token"
+    )
 
     assert result["ok"] is False
     assert "private-api-detail" not in result["error"]
@@ -571,7 +573,9 @@ def test_a_rejected_branch_update_names_the_github_call(
         lambda _token: "token",
     )
 
-    result = seed_ci_repair_demo(_OWNER, _REPO)
+    result = seed_ci_repair_demo(
+        _OWNER, _REPO, github_connection_origin="webapp", github_token="app-token"
+    )
 
     assert result["ok"] is False
     assert "PATCH" in result["error"]
@@ -701,6 +705,8 @@ def test_finish_keeps_an_unsuffixed_repository_and_removes_the_loop(
     analysis = "**Root cause analysis**\n- What failed: Check `test` failed on commit abc0000."
 
     result = finish_ci_repair_demo(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo="Tracer-Cloud/opensre-ci-repair-demo",
         pr_number=4,
         loop_id="9f4ed7a7a92f",
@@ -739,6 +745,8 @@ def test_finish_reports_a_loop_that_is_still_listed(
     )
 
     result = finish_ci_repair_demo(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo="Tracer-Cloud/opensre-ci-repair-demo",
         pr_number=4,
         loop_id="9f4ed7a7a92f",
@@ -765,6 +773,8 @@ def test_finish_refuses_a_schedule_that_is_not_this_demo(
     )
 
     result = finish_ci_repair_demo(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo="Tracer-Cloud/opensre-ci-repair-demo",
         pr_number=4,
         loop_id="other",
@@ -800,6 +810,8 @@ def test_finish_removes_the_loop_when_evidence_cannot_be_saved(
     monkeypatch.setattr("integrations.github.tools.ci_repair_demo.tool.list_tasks", lambda: [])
 
     result = finish_ci_repair_demo(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo="Tracer-Cloud/opensre-ci-repair-demo",
         pr_number=4,
         loop_id="9f4ed7a7a92f",
@@ -827,6 +839,8 @@ def test_finish_refuses_success_without_evidence(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("integrations.github.tools.ci_repair_demo.tool.list_tasks", lambda: [])
 
     result = finish_ci_repair_demo(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo="Tracer-Cloud/opensre-ci-repair-demo",
         pr_number=4,
         loop_id="9f4ed7a7a92f",

@@ -30,10 +30,17 @@ def test_repair_tools_are_discovered_without_inheriting_an_unselected_repo() -> 
                 "owner": "unselected",
                 "repo": "production",
                 "github_token": "test-token",
+                "connection_origin": "webapp",
             }
         }
     )
-    assert injected == {"github_token": "test-token"}
-    assert schedule.is_available({"github": {"connection_verified": True}})
+    assert injected == {
+        "github_token": "test-token",
+        "github_connection_origin": "webapp",
+        "github_connection_id": "",
+    }
+    assert schedule.is_available(
+        {"github": {"connection_origin": "webapp", "auth_token": "test-token"}}
+    )
     assert not schedule.is_available({})
     clear_tool_registry_cache()

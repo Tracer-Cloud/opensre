@@ -19,11 +19,10 @@ This is mutating. OpenSRE asks before editing files, then asks again before comm
 
 ## Setup
 
-There is no dedicated `integrations setup` target for this tool. Configure the workspace and token:
+There is no dedicated `integrations setup` target for this tool. Connect GitHub in the OpenSRE app with repository write and security-alert read access. Configure the workspace:
 
 ```bash
 export CODING_WORKSPACE=/path/to/repo  # optional; defaults to cwd
-export GITHUB_TOKEN=... # repo write access plus security-alert read access
 ```
 
 OpenSRE has built-in local fixers for some Code Quality findings, such as unused imports and unused local variables. For findings that need broader code reasoning, it automatically uses the first coding agent CLI it finds installed and logged in: Pi, Claude Code, Codex, or Cursor. No configuration is needed when one of those CLIs already works on your machine.
@@ -92,7 +91,7 @@ A scheduled loop that opens PRs on a public repository should pass `quality_only
 
 There is no dedicated `integrations verify` target. Confirm readiness by:
 
-1. Valid `GITHUB_TOKEN` / `GH_TOKEN` (or `opensre integrations verify github`) with the scopes above
+1. An authorized GitHub connection in the OpenSRE app with the scopes above
 2. Local checkout `origin` matches the target repository
 3. A coding agent CLI is available when built-in fixers do not cover the finding
 

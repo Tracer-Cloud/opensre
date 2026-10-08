@@ -7,6 +7,11 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.tools.ci_analytics import loop as ci_loop
 from integrations.github.tools.ci_analytics.tool import report_text_from_snapshot
 
@@ -73,7 +78,11 @@ TOOL_NAME = "schedule_ci_reliability_loop"
         "additionalProperties": False,
     },
     tags=("safe",),
+    extract_params=github_tool_params(),
+    injected_params=("github_token", "github_connection_origin", "github_connection_id"),
+    is_available=github_tool_available(),
 )
+@require_webapp_github
 def schedule_ci_reliability_loop(
     owner: str,
     repo: str,
@@ -92,6 +101,7 @@ def schedule_ci_reliability_loop(
             repo,
             time_text=(time or ci_loop.DEFAULT_LOOP_TIME).strip() or ci_loop.DEFAULT_LOOP_TIME,
             weekdays=True if weekdays is None else weekdays,
+            github_connection_id=str(_kwargs.get("github_connection_id") or ""),
         )
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}

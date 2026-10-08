@@ -14,6 +14,7 @@ from infrastructure.analytics.provider import shutdown_analytics
 from infrastructure.process.tree import start_watchdog
 from integrations.coding_agent import reuse_coding_agent_choice, select_coding_agent
 from integrations.git import clone_repository
+from integrations.github.app_connection import refreshed_github_token
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_fix.context import CiFixContext
 from integrations.github.tools.ci_fix.errors import (
@@ -32,7 +33,7 @@ from integrations.github.tools.ci_fix.verification import (
     wait_for_pr_checks,
 )
 from integrations.github.tools.ci_repair_loop import telemetry
-from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
+from integrations.github.tools.ci_repair_loop.credentials import account_id
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
 from integrations.github.tools.ci_repair_loop.responses import object_response
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
@@ -337,7 +338,11 @@ def _execute_repair(run: RepairRun, store: RepairStore, phases: PhaseTimer) -> N
     if backend is None:
         raise ValueError("Configure and authenticate a coding agent before starting the repair.")
     run.coding_agent = backend
-    token = configured_token()
+    token = refreshed_github_token(run.github_connection_id or None)
+    if not token:
+        raise ValueError(
+            "Connect or reconnect GitHub in the OpenSRE app before continuing the repair."
+        )
     with phases.phase("github_user"):
         user = object_response(GitHubRestClient(token).request("GET", "user"))
     if not run.actor_id or account_id(user) != run.actor_id:

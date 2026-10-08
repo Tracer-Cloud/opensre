@@ -48,8 +48,8 @@ def test_local_github_onboarding_opens_setup_without_waiting_on_mcp() -> None:
     ):
         body = skills.load_skill_body(name)
         assert body.startswith(CONNECT_INTEGRATIONS_HEADING)
-        assert GITHUB_SETUP_SLASH_INVOKE in body
-        assert "does not block them" in body
+        assert GITHUB_SETUP_SLASH_INVOKE not in body
+        assert "does not require GitHub MCP verification" in body
         assert "only after verify reports" not in body
         assert "slash_invoke with `/integrations setup github`" not in body
         assert 'args=["setup", "<service>"]' in body

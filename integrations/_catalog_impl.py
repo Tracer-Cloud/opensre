@@ -2003,7 +2003,10 @@ def merge_integrations_by_service(
             grouped.setdefault(service, {})[record_id] = integration
         for service, records in grouped.items():
             merged_by_service[service] = list(records.values())
-    return [record for records in merged_by_service.values() for record in records]
+    from integrations.github.connections import preserve_app_github_records
+
+    merged = [record for records in merged_by_service.values() for record in records]
+    return preserve_app_github_records(merged, *integration_groups)
 
 
 def _effective_entry(source: str, config: dict[str, Any]) -> dict[str, Any]:

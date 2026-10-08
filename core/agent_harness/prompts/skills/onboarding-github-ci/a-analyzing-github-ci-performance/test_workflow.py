@@ -15,7 +15,6 @@ from config.constants import (
     OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     OPENSRE_MEMORY_DIR_ENV,
 )
-from config.constants.github import GITHUB_INTEGRATION_SETUP_SLASH
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
@@ -42,6 +41,7 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
     no_tool_response,
     tool_response,
 )
+from tests.utils.github_connections import connect_github_app
 
 _REPOSITORY_QUESTION = "Which repository should I analyze?"
 _NEXT_QUESTION = "What would you like to do next?"
@@ -143,7 +143,7 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
     # GitHub is ready, so the hand-off to the scheduling demo passes its gate.
-    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
+    connect_github_app(monkeypatch)
     skill = next(
         skill
         for skill in list_action_skills()
@@ -153,7 +153,7 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     session = _Session(
         active_skill=skill.name,
         configured_integrations_known=True,
-        resolved_integrations_cache={},
+        resolved_integrations_cache=None,
     )
     calls: list[tuple[str, dict[str, Any]]] = []
 
@@ -319,17 +319,10 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     assert output.streamed.count(_REPORT) == 1
 
 
-def test_a_token_lost_before_step_3_resumes_the_same_repository_after_setup(
+def test_a_connection_lost_before_step_3_resumes_the_same_repository_after_app_recovery(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Step 3's backstop: setup queued mid-skill parks the repository answer.
-
-    The entry gate normally keeps a demo without GitHub from starting. When the
-    analyzer still finds no token at step 3, the model queues the setup wizard;
-    the shell parks the repository answer that turn was answering and, after
-    setup, resubmits it, so step 3 runs again for the same repository instead of
-    the user picking it again.
-    """
+    """A blocked analysis ends with app recovery and resumes the same repository."""
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
     for name in (GITHUB_TOKEN_ENV, GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV):
@@ -343,8 +336,9 @@ def test_a_token_lost_before_step_3_resumes_the_same_repository_after_setup(
     missing_token = tool_unavailable(
         "github",
         "A GitHub token is required to read the Actions history of acme/widget.",
-        response_text="GitHub isn't connected yet.",
-        setup_command=GITHUB_INTEGRATION_SETUP_SLASH,
+        response_text="Connect GitHub in the OpenSRE app: https://app.opensre.ai/home",
+        setup_url="https://app.opensre.ai/home",
+        work_outcome={"status": "blocked", "reason": "github_connection_required"},
     )
     results = [missing_token, {"success": True, "headline": "Report ready.", "key_results": []}]
 
@@ -366,7 +360,6 @@ def test_a_token_lost_before_step_3_resumes_the_same_repository_after_setup(
 
     ask_user_choice = _real_action_tool("ask_user_choice")
     update_plan = _real_action_tool("update_plan")
-    slash_invoke = _real_action_tool("slash_invoke")
     analyze_args = {"owner": "acme", "repo": "widget", "days": 30}
     repository_menu = tool_response(
         ask_user_choice.name,
@@ -383,9 +376,7 @@ def test_a_token_lost_before_step_3_resumes_the_same_repository_after_setup(
                 tool_response(update_plan.name, {"plan": _plan(completed=2, in_progress=3)}),
                 tool_response("analyze_github_ci_reliability", analyze_args),
             ),
-            tool_response(
-                slash_invoke.name, {"command": "/integrations", "args": ["setup", "github"]}
-            ),
+            no_tool_response("Connect GitHub in the OpenSRE app: https://app.opensre.ai/home"),
             # The resubmitted repository answer: step 3 again, then the next menu.
             tool_response("analyze_github_ci_reliability", analyze_args),
             tool_response(
@@ -403,7 +394,6 @@ def test_a_token_lost_before_step_3_resumes_the_same_repository_after_setup(
             registered("analyze_github_ci_reliability", analyze),
             ask_user_choice,
             update_plan,
-            slash_invoke,
         ],
         slash_ports_factory=FakeSlashPorts,
     )
@@ -419,22 +409,16 @@ def test_a_token_lost_before_step_3_resumes_the_same_repository_after_setup(
     )
     repository_answer = _answer(session, title=_REPOSITORY_QUESTION, option="acme/widget")
 
-    # Act 1: step 3 finds no token; the model queues the setup wizard.
+    # The blocked turn gives app recovery without queuing local setup or retrying.
+    result = agent.handle(repository_answer, binding)
+    assert "OpenSRE app" in result.primary_response_text
+    assert session.terminal.pending_prompt_default is None
+    assert take_setup_resume(session) is None
+    assert analyze_calls == [analyze_args]
+
+    # After reconnecting, the user resumes the same repository analysis.
+    connect_github_app(monkeypatch)
     agent.handle(repository_answer, binding)
-
-    # Assert: the wizard waits as the next turn, with the repository answer parked.
-    assert session.terminal.pending_prompt_default == GITHUB_INTEGRATION_SETUP_SLASH
-    parked = take_setup_resume(session)
-    assert parked == SetupResume(
-        text=repository_answer,
-        as_answer=True,
-        skill=ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
-        service="github",
-    )
-
-    # Act 2: setup succeeded; the host resubmits the parked answer.
-    session.terminal.pending_prompt_default = None
-    agent.handle(parked.text, binding)
 
     # Assert: step 3 ran again for the same repository, without asking for it.
     assert analyze_calls == [analyze_args, analyze_args]

@@ -80,6 +80,7 @@ def _vault_payload(service: str = "github", token: str = "remote-tok") -> dict[s
             {
                 "id": f"{service}-org-1",
                 "service": service,
+                **({"connection_origin": "webapp"} if service == "github" else {}),
                 "status": "active",
                 "name": "default",
                 "credentials": {"auth_token": token},
@@ -99,6 +100,7 @@ def _owned_connection(
     return {
         "id": connection_id,
         "service": "github",
+        "connection_origin": "webapp",
         "status": "active",
         "name": connection_id,
         "owner": {"kind": owner_kind, "id": owner_id},
@@ -122,6 +124,7 @@ def test_the_remote_record_wins_over_the_local_store(monkeypatch: pytest.MonkeyP
         {
             "id": "github-local",
             "service": "github",
+            "connection_origin": "webapp",
             "status": "active",
             "credentials": {"auth_token": "local-tok"},
         }
@@ -231,7 +234,7 @@ def test_the_request_carries_the_bearer_token_to_the_cli_route(
     # Assert
     assert seen == [
         {
-            "url": "https://app.test/api/auth/cli/integrations?include=personal",
+            "url": "https://app.test/api/auth/cli/integrations?include=personal&github_provenance=1",
             "authorization": f"Bearer {_TOKEN}",
         }
     ]
@@ -273,6 +276,7 @@ def test_personal_and_active_workspace_connections_are_kept_but_other_owners_are
 
     assert [record["id"] for record in records] == ["github-personal", "github-team"]
     assert records[0]["instances"][0]["tags"] == {
+        "connection_origin": "webapp",
         "owner_kind": "user",
         "owner_id": "user-1",
     }

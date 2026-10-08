@@ -116,6 +116,14 @@ def last_work_classified(tool_results: Sequence[tuple[ToolCall, ToolExecutionRes
     return str(raw.get("status") or "") in _CLASSIFIED_WORK_STATUSES
 
 
+def last_work_blocked(tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]]) -> bool:
+    """Allow a tool-classified blocker to end a turn even with an unfinished plan."""
+    result = _last_work_result(tool_results)
+    details = result.details if result is not None else None
+    raw = details.get("work_outcome") if isinstance(details, Mapping) else None
+    return isinstance(raw, Mapping) and raw.get("status") == "blocked"
+
+
 def last_work_needs_setup(tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]]) -> bool:
     """True when the last work tool returned a ``tool_unavailable`` envelope naming a setup.
 

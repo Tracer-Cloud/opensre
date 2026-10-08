@@ -469,13 +469,11 @@ def test_tool_reports_missing_token_without_calling_github(monkeypatch: pytest.M
     monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
     result = scan_github_ci_health()
     assert result["available"] is False
-    assert result["setup_command"] == "/integrations setup github"
-    # The model's instructions stay in ``error``; the user reads only what to run.
-    assert 'slash_invoke(command="/integrations", args=["setup", "github"])' in result["error"]
-    assert result["response_text"] == (
-        "GitHub isn't connected yet, so repositories can't be scanned. "
-        "Set it up with `opensre integrations setup github`."
-    )
+    assert "setup_command" not in result
+    assert result["work_outcome"]["status"] == "blocked"
+    assert "OpenSRE app" in result["response_text"]
+    assert "setup_command" not in result
+    assert result["setup_url"].startswith("https://")
 
 
 def test_tool_turns_an_exhausted_graphql_budget_into_one_clear_error(
@@ -490,7 +488,9 @@ def test_tool_turns_an_exhausted_graphql_budget_into_one_clear_error(
         }
 
     _install_client(monkeypatch, respond)
-    result = scan_github_ci_health(owners=["acme"])
+    result = scan_github_ci_health(
+        github_connection_origin="webapp", github_token="app-token", owners=["acme"]
+    )
     assert result["available"] is False
     assert "rate limit" in result["error"].lower()
 
@@ -532,7 +532,9 @@ def test_tool_returns_counts_notices_and_timing(monkeypatch: pytest.MonkeyPatch)
         }
 
     _install_client(monkeypatch, respond)
-    result = scan_github_ci_health(owners=["acme"], since_days=0)
+    result = scan_github_ci_health(
+        github_connection_origin="webapp", github_token="app-token", owners=["acme"], since_days=0
+    )
     assert result["success"] is True
     assert result["repos_scanned"] == 2 and result["owners"] == ["acme"]
     assert result["counts"] == {

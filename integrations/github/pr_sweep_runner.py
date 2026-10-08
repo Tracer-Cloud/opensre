@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 
-from core.agent_harness import AgentSession
-from infrastructure.harness_providers import configured_integration_services
+from core.agent_harness import AgentSession, SessionCore
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from infrastructure.scheduling.scheduler.schedule_cancel import cancel_requested_for_payload
 from infrastructure.scheduling.scheduler.types import TaskReport
+from integrations.github.app_connection import github_setup_url, refreshed_github_token
 from integrations.scheduled_outcomes import ScheduledOutcomes
 
 logger = logging.getLogger(__name__)
@@ -21,20 +21,23 @@ _PR_SWEEP_PROMPT = (
 )
 
 
-def _require_github_configured() -> None:
-    if "github" not in configured_integration_services():
-        raise RuntimeError(
-            "GitHub is not configured. Run `opensre integrations setup github` and verify "
-            "with `opensre integrations verify github` before scheduling a PR sweep."
-        )
-
-
 def run_github_pr_sweep(payload: AgentPayload) -> TaskReport:
     """Run one headless turn that produces a PR sweep digest."""
-    _require_github_configured()
+    connection_id = str(payload.get("github_connection_id") or "") or None
+    if not refreshed_github_token(connection_id):
+        return TaskReport(
+            f"GitHub PR sweep blocked. Connect or reconnect GitHub in the OpenSRE app: {github_setup_url()}",
+            work_status="blocked",
+            error_kind="github_connection_required",
+        )
+
+    def prepare_session(session: SessionCore) -> None:
+        session.integrations.github_connection_id = connection_id
+        session.integrations.resolved_cache = None
 
     result = AgentSession.run_headless_turn(
         _PR_SWEEP_PROMPT,
+        prepare_session=prepare_session,
         logger=logger,
         is_tty=False,
         cancel_requested=cancel_requested_for_payload(payload),

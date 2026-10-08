@@ -23,29 +23,16 @@ Once GitHub is connected, the interactive-shell **action agent** uses **`github_
 ## Prerequisites
 
 - GitHub account with repository access
-- One of: browser sign-in (recommended), a personal access token, or GitHub Copilot MCP access
+- An authorized GitHub connection created in the OpenSRE app
 - For chat `github_cli`: the `gh` binary on `PATH` (OpenSRE supplies the token). If it is missing, follow the [GitHub CLI installation guide](https://cli.github.com/).
 
 ## Setup
 
-<Info>
-If your organization has connected GitHub at
-[app.opensre.com](https://app.opensre.com) → Integrations, every signed-in
-shell and CLI uses that connection automatically — skip the setup below. The
-app connection takes precedence over a local one; disconnect it in the web app
-if you want a locally configured credential to apply.
-</Info>
+Connect GitHub at [app.opensre.com](https://app.opensre.com) → Integrations.
+Every signed-in shell and CLI loads your authorized personal and workspace connections.
 
-<Note>
-The onboarding demos that read GitHub (**Analyze & improve a repo** and **Run
-continuously on this machine**) need a GitHub token before they start. Any of
-these works: the OpenSRE app's GitHub connection, `opensre integrations setup
-github` on this machine, or `GITHUB_TOKEN`, `GH_TOKEN`, or
-`GITHUB_MCP_AUTH_TOKEN` in the environment. Without one, the shell opens a setup
-menu instead of the demo: connecting GitHub in the OpenSRE app is recommended,
-and setting it up on this machine works too. Once GitHub is connected, the demo
-picks up where it stopped.
-</Note>
+The onboarding demos open a setup menu until an eligible app connection is available.
+After connecting, choose **I've connected GitHub — continue** to refresh and resume.
 
 ### Choose among personal and workspace connections
 
@@ -65,62 +52,23 @@ requests. If a matching connection exists but is unavailable, or several
 connections leave the choice ambiguous, OpenSRE disables GitHub tools instead
 of guessing.
 
-### Option 1: Interactive CLI (browser sign-in)
+### Connect in the OpenSRE app
+
+Connect GitHub in the OpenSRE app using browser sign-in or the app's token form.
+Personal and workspace connections are supported. A connection uploaded by an older
+CLI, or whose origin cannot be verified, must be reconnected in the app.
 
 ```bash
 opensre integrations setup github
 ```
 
-In the interactive shell, use `/integrations setup github` or ask “Can you configure GitHub for me?”
+The command, `/integrations setup github`, and onboarding open or print the app setup
+page. Setup stays pending until OpenSRE refreshes an authorized app connection.
+On a signed-out machine, run `opensre account login` to load your app connections.
+In the setup menu, choose **I've connected GitHub — continue** after connecting.
 
-1. Choose **Sign in with GitHub**. OpenSRE opens GitHub's device authorization page and prints a one-time code. Enter the code and approve OpenSRE; no personal access token is required.
-2. OpenSRE discovers your account and checks repository access. If GitHub or your organization has not granted access yet, approve it and retry the check without restarting setup.
-3. OpenSRE saves the verified connection and reports the signed-in account and repository access. Press Ctrl+C to cancel at any point.
-
-This uses GitHub's OAuth device flow, which has no client secret. The public OAuth App client id ships with OpenSRE; override it with `OPENSRE_GITHUB_OAUTH_CLIENT_ID` if you register your own app.
-
-If you prefer, the same prompt lets you **paste a token (PAT)** instead.
-
-### Option 2: Environment variables
-
-```bash
-GITHUB_MCP_AUTH_TOKEN=ghp_your_personal_access_token
-GITHUB_MCP_URL=https://api.githubcopilot.com/mcp/   # default
-GITHUB_MCP_MODE=streamable-http                      # default
-GITHUB_MCP_TOOLSETS=repos,issues,pull_requests,actions  # default
-```
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `GITHUB_MCP_AUTH_TOKEN` | — | GitHub personal access token. Required unless you authorize in the browser (Option 1) |
-| `GITHUB_TOKEN` / `GH_TOKEN` | — | Alternate token env names also accepted by `github_cli` and some workflow tools |
-| `GITHUB_MCP_URL` | `https://api.githubcopilot.com/mcp/` | GitHub MCP server URL |
-| `GITHUB_MCP_MODE` | `streamable-http` | Transport mode: `streamable-http`, `sse`, or `stdio` |
-| `GITHUB_MCP_TOOLSETS` | `repos,issues,pull_requests,actions` | Comma-separated toolsets to enable |
-| `GITHUB_MCP_COMMAND` | — | Command to run (required for `stdio` mode only) |
-| `GITHUB_MCP_ARGS` | — | Space-separated args for `stdio` mode |
-| `OPENSRE_GITHUB_OAUTH_CLIENT_ID` | _(built-in)_ | OAuth App client id for browser sign-in (device flow). Override to use your own app |
-
-### Option 3: Persistent store
-
-```json
-{
-  "version": 1,
-  "integrations": [
-    {
-      "id": "github-prod",
-      "service": "github",
-      "status": "active",
-      "credentials": {
-        "url": "https://api.githubcopilot.com/mcp/",
-        "mode": "streamable-http",
-        "auth_token": "ghp_your_token",
-        "toolsets": ["repos", "issues", "pull_requests", "actions"]
-      }
-    }
-  ]
-}
-```
+Local credential-store entries and `GITHUB_TOKEN`, `GH_TOKEN`, and
+`GITHUB_MCP_AUTH_TOKEN` do not authorize agent GitHub tools or their background work.
 
 ## Credentials
 
@@ -129,19 +77,7 @@ GITHUB_MCP_TOOLSETS=repos,issues,pull_requests,actions  # default
 1. Open [New fine-grained personal access token](https://github.com/settings/personal-access-tokens/new).
 2. Name it **OpenSRE**, choose an expiry, and select the owner and repositories OpenSRE may use.
 3. Grant read access to Contents, Metadata, Issues, Pull requests, and Actions. Add write access only for operations you want OpenSRE to perform.
-4. Generate and copy the token. If your organization requires approval, approve the token before retrying setup.
-
-<Info>
-For GitHub Enterprise Server, set `GITHUB_MCP_URL` to your enterprise MCP endpoint.
-</Info>
-
-### Transport modes
-
-| Mode | When to use |
-| --- | --- |
-| `streamable-http` | Default. Works with GitHub Copilot MCP and most hosted instances |
-| `sse` | For older MCP servers using Server-Sent Events |
-| `stdio` | For running a local MCP server process (`npx @modelcontextprotocol/server-github`) |
+4. Generate and copy the token into the OpenSRE app. If your organization requires approval, approve it before reconnecting.
 
 ## Tools
 
@@ -178,15 +114,14 @@ Inside the REPL: `/integrations verify github` or `/verify github`. Alias: `gith
 
 | Symptom | Fix |
 | --- | --- |
-| **Authentication failed** | Check that the token has `repo` scope and is not expired |
+| **Authentication failed** | Reconnect GitHub or review repository access in the OpenSRE app |
 | **Wrong workspace GitHub account** | Run `opensre integrations list`, copy the UUID from the remote GitHub row, then start the shell with `opensre --github-connection-id <UUID>` |
 | **Required tools missing** | Ensure toolsets include `repos` — it provides `get_file_contents`, `list_commits`, etc. |
-| **`github_cli` fails / gh not found** | Install [GitHub CLI](https://cli.github.com/) so `gh` is on `PATH`; confirm token via verify |
-| **Connection refused** | Verify `GITHUB_MCP_URL` is reachable and the MCP server is running |
-| **Browser sign-in unavailable** | Set `OPENSRE_GITHUB_OAUTH_CLIENT_ID` to a device-flow-enabled OAuth App, or fall back to pasting a PAT |
+| **`github_cli` fails / gh not found** | Install [GitHub CLI](https://cli.github.com/) so `gh` is on `PATH`; review access in the OpenSRE app |
+| **Connection refused** | Check that GitHub and the app connection are reachable |
 
 ## Security
 
 - Prefer the **least privilege** that matches how you use OpenSRE (read-only if you only ask questions; write scopes if you want chat to create/edit issues and PRs).
 - Limit token scope to the repositories OpenSRE needs.
-- Store the token in `.env`, not in source code.
+- Enter tokens only in the OpenSRE app; keep them out of source code.

@@ -153,7 +153,7 @@ def observe(monkeypatch, tmp_path):
         def client(_token):
             return history
 
-        monkeypatch.setattr(ci_epochs, "_github_token", token)
+        monkeypatch.setattr(ci_epochs, "refreshed_github_token", token)
         monkeypatch.setattr(ci_epochs, "GitHubRestClient", client)
         return ci_epochs.Observer("owner", "repo", 1, tmp_path)
 

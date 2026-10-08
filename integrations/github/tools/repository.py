@@ -9,7 +9,12 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -21,11 +26,7 @@ def _github_repository_available(sources: dict[str, dict]) -> bool:
     if sources.get("github", {}).get("connection_selection_error"):
         return False
     gh = sources.get("github", {})
-    return bool(
-        (github_source_available(sources) or resolve_github_token(None))
-        and gh.get("owner")
-        and gh.get("repo")
-    )
+    return bool((github_source_available(sources)) and gh.get("owner") and gh.get("repo"))
 
 
 def _github_repository_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -107,11 +108,12 @@ def _map_get_github_repository(
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_repository_available,
-    extract_params=_github_repository_extract_params,
+    is_available=github_tool_available(_github_repository_available),
+    extract_params=github_tool_params(_github_repository_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_get_github_repository,
 )
+@require_webapp_github
 def get_github_repository(
     owner: str,
     repo: str,

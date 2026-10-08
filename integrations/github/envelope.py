@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from config.constants.github import GITHUB_INTEGRATION_SETUP_CLI, GITHUB_INTEGRATION_SETUP_SLASH
 from core.tool_framework.utils import tool_unavailable
+from integrations.github.app_connection import github_setup_url
 
 
 def _structured_content_or_text_fallback(result: dict[str, Any]) -> Any:
@@ -59,20 +59,17 @@ def normalize_github_tool_result(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def missing_token_envelope(instruction: str, *, blocked: str) -> dict[str, Any]:
-    """The ``tool_unavailable`` envelope for a GitHub tool that found no token.
-
-    ``instruction`` tells the model how to hand the user the setup and stays in
-    ``error``. ``response_text`` is the user's line — what is ``blocked`` and
-    the command that connects GitHub, never tool calls or turn instructions — and
-    closes a turn that ends on the queued wizard. ``setup_command`` marks the
-    failure as waiting on that setup, so the turn may stop instead of retrying.
-    """
+    """Block a GitHub operation with app recovery and the existing retry-stop contract."""
+    url = github_setup_url()
+    message = f"GitHub needs an authorized app connection, so {blocked}. Connect or reconnect GitHub in the OpenSRE app: {url}"
     return tool_unavailable(
         "github",
-        instruction,
-        response_text=(
-            f"GitHub isn't connected yet, so {blocked}. "
-            f"Set it up with `{GITHUB_INTEGRATION_SETUP_CLI}`."
-        ),
-        setup_command=GITHUB_INTEGRATION_SETUP_SLASH,
+        f"{instruction} End the turn without retrying or invoking setup through slash_invoke.",
+        response_text=message,
+        setup_url=url,
+        work_outcome={
+            "status": "blocked",
+            "reason": "github_connection_required",
+            "summary": message,
+        },
     )

@@ -47,7 +47,11 @@ def test_tool_completion_updates_prompt_from_memory_even_when_save_fails(
     monkeypatch.setattr(ledger, "append_fix_ids", fail_save)
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            result = executor.submit(ci_fix_tool.fix_github_pr_ci).result(timeout=10)
+            result = executor.submit(
+                ci_fix_tool.fix_github_pr_ci,
+                github_connection_origin="webapp",
+                github_token="app-token",
+            ).result(timeout=10)
         # The tool returns the repair output with its work outcome attached, nothing else changed.
         assert {key: result[key] for key in outcome} == outcome
         assert result["work_outcome"]["status"] == "succeeded"
@@ -56,7 +60,10 @@ def test_tool_completion_updates_prompt_from_memory_even_when_save_fails(
         assert "CI/CD fixes (1) ✓" in text
         assert "Auto (High)" in text
         assert load_launch_status().ci_fix_count == 1
-        ci_fix_tool.fix_github_pr_ci()
+        ci_fix_tool.fix_github_pr_ci(
+            github_connection_origin="webapp",
+            github_token="app-token",
+        )
         assert changes == [1]
     finally:
         cleanup()

@@ -11,7 +11,6 @@ import argparse
 import hashlib
 import json
 import re
-import subprocess
 import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass
@@ -23,8 +22,8 @@ from config.constants.git import OPENSRE_COMMIT_COAUTHOR_EMAIL
 from infrastructure.analytics.events import Event
 from infrastructure.analytics.provider import get_analytics, shutdown_analytics
 from infrastructure.observability.errors.sentry import capture_exception
+from integrations.github.app_connection import refreshed_github_token
 from integrations.github.client import GitHubRestClient
-from integrations.github.tools.ci_repair_loop.credentials import configured_token
 
 _FAILED = {
     "failure",
@@ -155,7 +154,9 @@ class Observer:
     ) -> None:
         self.repo = f"{owner}/{repo}"
         self.number = number
-        self.client = GitHubRestClient(github_token or _github_token())
+        self.client = GitHubRestClient(
+            github_token if github_token is not None else refreshed_github_token()
+        )
         self.path = out_dir / f"{owner}__{repo}__pr{number}.json" if out_dir else None
         self.epochs: list[Epoch] = []
         self.commits: list[Commit] = []
@@ -292,15 +293,6 @@ def publish_repair_epoch(
         observer.publish(fixing_sha=fixing_sha)
     except Exception as exc:
         capture_exception(exc)
-
-
-def _github_token() -> str:
-    try:
-        return configured_token()
-    except ValueError:
-        return subprocess.run(
-            ["gh", "auth", "token"], capture_output=True, text=True, check=True
-        ).stdout.strip()
 
 
 def main() -> None:

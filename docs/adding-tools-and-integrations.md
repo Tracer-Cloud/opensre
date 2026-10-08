@@ -148,7 +148,7 @@ Keep this contract when adding or changing an integration.
 - Webhook / `*_URL` values are **never** written to the credentials file (wizard routes them to store/`.env`, not `sync_env_secret`). Read with store → plain `os.getenv` only. Webhook URLs often **embed** a secret token — treat them like passwords for logging/masking.
 - Leave `load_env_integration_services` plain-env-only (startup-safe; no credentials-file read at boot).
 - Store still wins in `resolve_effective` / merge — env/credentials-file is the fallback tier only.
-- Tools receive credentials through `extract_params` (resolved integration state), never their own env reads. At execution, keys listed in the tool's `injected_params` override model-supplied values, so the verified source wins even when the model passes a token. A tool's resolver may read env only as the final fallback when nothing was injected — `integrations/github/tools/github_cli/credentials.py` is the reference: explicit/injected token first, then `GITHUB_MCP_AUTH_TOKEN`, then `GITHUB_TOKEN`/`GH_TOKEN`.
+- Tools receive credentials through `extract_params` (resolved integration state), never their own env reads. At execution, keys listed in the tool's `injected_params` override model-supplied values, so the verified source wins even when the model passes a token. GitHub tools require an attested app grant and preserve explicitly empty tokens without environment fallback.
 - Set `OPENSRE_DISABLE_KEYRING=1` to skip local-file reads/writes (env and store still work).
 
 Canonical helpers: `resolve_env_credential` (env → credentials file), `sync_env_secret` / `save_credential` (secret writes to the credentials file and `.env`), `sync_env_values` (`.env` keys, including secrets).

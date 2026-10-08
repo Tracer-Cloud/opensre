@@ -557,9 +557,6 @@ if TYPE_CHECKING:
         GITHUB_API_BASE_URL as GITHUB_API_BASE_URL,
     )
     from config.constants.github import (
-        GITHUB_CLI_REQUIRED_SCOPES as GITHUB_CLI_REQUIRED_SCOPES,
-    )
-    from config.constants.github import (
         GITHUB_MCP_ARGS_ENV as GITHUB_MCP_ARGS_ENV,
     )
     from config.constants.github import (

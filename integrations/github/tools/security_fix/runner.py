@@ -47,7 +47,7 @@ def ensure_ship_ready(workspace: str, github_token: str | None = None) -> None:
     if not resolve_github_token(github_token):
         raise GitHubSecurityFixError(
             ERR_GITHUB_TOKEN,
-            "A GitHub token is required to open a PR. Set GITHUB_TOKEN or GH_TOKEN.",
+            "A GitHub token is required to open a PR. Connect or reconnect GitHub in the OpenSRE app.",
         )
     try:
         ensure_git_repo(workspace)

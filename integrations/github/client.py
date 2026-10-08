@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import http.client
 import json
-import os
 import random
 import ssl
 import time
@@ -15,10 +14,7 @@ from typing import Any
 from urllib import error, parse, request
 
 from config.constants import (
-    GH_TOKEN_ENV,
     GITHUB_API_BASE_URL,
-    GITHUB_MCP_AUTH_TOKEN_ENV,
-    GITHUB_TOKEN_ENV,
 )
 from integrations.github.rate_limit import PauseNotice, RateLimitGate, RateLimitPauseTooLong
 
@@ -123,14 +119,8 @@ def github_failure_kind(exc: BaseException) -> GitHubFailureKind:
 
 
 def resolve_github_token(github_token: str | None = None) -> str:
-    """Resolve a GitHub token: explicit → MCP env → GITHUB_TOKEN → GH_TOKEN."""
-
-    return (
-        (github_token or "").strip()
-        or os.getenv(GITHUB_MCP_AUTH_TOKEN_ENV, "").strip()
-        or os.getenv(GITHUB_TOKEN_ENV, "").strip()
-        or os.getenv(GH_TOKEN_ENV, "").strip()
-    )
+    """Return an explicit token without falling back to local or environment credentials."""
+    return (github_token or "").strip()
 
 
 def next_page_url(headers: Any) -> str | None:
@@ -410,7 +400,7 @@ class GitHubRestClient:
         """One REST call, returning the JSON body and the response headers."""
         if not self._token and not (self._allow_unauthenticated_read and method.upper() == "GET"):
             raise GitHubApiError(
-                "GitHub token is required. Configure github_token, GITHUB_TOKEN, or GH_TOKEN.",
+                "An authorized GitHub app connection is required. Connect or reconnect GitHub in the OpenSRE app.",
                 kind=GitHubFailureKind.UNAUTHORIZED,
             )
 
@@ -451,7 +441,7 @@ class GitHubRestClient:
         """
         if not self._token and not self._allow_unauthenticated_read:
             raise GitHubApiError(
-                "GitHub token is required. Configure github_token, GITHUB_TOKEN, or GH_TOKEN.",
+                "An authorized GitHub app connection is required. Connect or reconnect GitHub in the OpenSRE app.",
                 kind=GitHubFailureKind.UNAUTHORIZED,
             )
 

@@ -53,6 +53,12 @@ AccountIntegrationsGenerationFn = Callable[[], int]
 FleetVaultConfiguredFn = Callable[[], bool]
 
 
+def _default_setup_url() -> str:
+    from config.constants.account import OPENSRE_APP_URL_DEFAULT
+
+    return f"{OPENSRE_APP_URL_DEFAULT}/home"
+
+
 def _default_fetch_remote(org_id: str, auth_token: str) -> list[dict[str, Any]]:
     _ = (org_id, auth_token)
     return []
@@ -137,6 +143,7 @@ class IntegrationResolutionAdapters:
     merge_integrations_by_service: MergeIntegrationsByServiceFn = _default_merge_by_service
     configured_services: ConfiguredIntegrationServicesFn = _default_configured_services
     setupable_services: SetupableIntegrationServicesFn = _default_setupable_services
+    setup_url: Callable[[], str] = _default_setup_url
     fetch_webapp_vault: WebappVaultFetcherFn = _default_fetch_webapp_vault
     fleet_vault_configured: FleetVaultConfiguredFn = _default_fleet_vault_configured
     fetch_account_integrations: AccountIntegrationsFetcherFn = _default_fetch_account_integrations
@@ -211,6 +218,11 @@ def integration_sources_stamp() -> tuple[int, int, int]:
 def setupable_integration_services() -> tuple[str, ...]:
     """Service ids that have a real setup handler (never invent outside this set)."""
     return _adapters().setupable_services()
+
+
+def integration_setup_url() -> str:
+    """Return the host app page for connecting integrations."""
+    return _adapters().setup_url()
 
 
 def integration_setup_command(service_id: str) -> str:
@@ -325,8 +337,8 @@ def _resolve_integrations_request(
 def _resolve_from_webapp_vault_or_local() -> IntegrationResolutionResult:
     """Silo path: pull org vault from opensre-webapp, else account/local sources.
 
-    Merge order is vault → store → env so ops can still override a vault
-    secret with ``GITHUB_MCP_AUTH_TOKEN`` (etc.) on the task definition.
+    Other integrations retain vault → store → env precedence. The integrations
+    adapter preserves live app GitHub grants before classifying them.
     On a signed-in laptop (no fleet vault) the account's organization
     integrations fill the remote role instead, and there they win over the
     local store and env.
@@ -477,6 +489,7 @@ __all__ = [
     "configured_integration_services",
     "fetch_remote_integrations",
     "integration_setup_command",
+    "integration_setup_url",
     "integration_sources_stamp",
     "resolve_integrations",
     "resolve_integrations_with_metadata",

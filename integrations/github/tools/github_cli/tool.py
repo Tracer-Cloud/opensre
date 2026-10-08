@@ -7,11 +7,15 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import CALL_SIDE_EFFECT_LEVEL_KEY, SideEffectLevel
 from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.tools.github_cli.credentials import (
     GITHUB_CLI_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    resolve_github_token,
 )
 from integrations.github.tools.github_cli.effects import gh_call_only_reads
 from integrations.github.tools.github_cli.runner import MAX_GH_OUTPUT_CHARS, run_gh
@@ -57,9 +61,7 @@ def _github_cli_available(sources: dict[str, dict]) -> bool:
     gh = sources.get("github", {})
     if gh.get("connection_selection_error"):
         return False
-    return bool(
-        github_source_available(sources) or resolve_github_token(None) or gh.get("github_token")
-    )
+    return github_source_available(sources)
 
 
 def _github_cli_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -121,10 +123,11 @@ def _normalize_args(args: list[str] | None) -> list[str]:
     side_effect_level=SideEffectLevel.MUTATING,
     requires_approval=False,
     input_schema=_ARGS_SCHEMA,
-    is_available=_github_cli_available,
-    extract_params=_github_cli_extract_params,
+    is_available=github_tool_available(_github_cli_available),
+    extract_params=github_tool_params(_github_cli_extract_params),
     injected_params=GITHUB_CLI_INJECTED_PARAMS,
 )
+@require_webapp_github
 def github_cli(
     args: list[str],
     repo: str | None = None,

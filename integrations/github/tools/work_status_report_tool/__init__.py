@@ -8,6 +8,11 @@ from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -60,11 +65,12 @@ def _map_generate_work_status_report(
         },
         "required": [],
     },
-    is_available=github_repository_source_available,
-    extract_params=_report_extract_params,
+    is_available=github_tool_available(github_repository_source_available),
+    extract_params=github_tool_params(_report_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_generate_work_status_report,
 )
+@require_webapp_github
 def generate_work_status_report(
     owner: str = "",
     repo: str = "",

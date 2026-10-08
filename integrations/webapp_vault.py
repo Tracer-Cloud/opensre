@@ -27,13 +27,20 @@ import httpx
 
 from config.account import agent_bearer_token
 from config.constants.account import (
+    INTEGRATION_APP_ORIGIN,
     INTEGRATION_IS_DEFAULT_TAG,
     INTEGRATION_OWNER_ID_TAG,
     INTEGRATION_OWNER_KIND_TAG,
+    INTEGRATION_RETRIEVAL_ORIGIN_FIELD,
 )
 from config.constants.billing import (
     CREDITS_HTTP_TIMEOUT_SECONDS,
     WEBAPP_URL_ENV,
+)
+from config.constants.github import (
+    GITHUB_CONNECTION_ORIGIN_TAG,
+    GITHUB_PROVENANCE_PARAM,
+    GITHUB_UNKNOWN_ORIGIN,
 )
 from config.constants.organization import organization_id
 from integrations.credentials_api import connection_visible
@@ -97,6 +104,8 @@ def push_webapp_org_integration(service: str, credentials: dict[str, Any]) -> bo
     the mirror, so a failure here is logged and never fails the connect flow the
     operator is running. Returns whether the webapp accepted the change.
     """
+    if service.strip().lower() == "github":
+        return False
     target = _write_target()
     if target is None or not service.strip():
         return False
@@ -194,7 +203,7 @@ def fetch_webapp_org_integrations() -> list[dict[str, Any]] | None:
     try:
         response = httpx.get(
             url,
-            params={"organizationId": org},
+            params={"organizationId": org, GITHUB_PROVENANCE_PARAM: "1"},
             headers={"Authorization": f"Bearer {token}"},
             timeout=CREDITS_HTTP_TIMEOUT_SECONDS,
         )
@@ -253,6 +262,7 @@ def records_from_vault_payload(
         name = str(item.get("name") or "default")
         records.append(
             {
+                INTEGRATION_RETRIEVAL_ORIGIN_FIELD: INTEGRATION_APP_ORIGIN,
                 "id": str(item.get("id") or ""),
                 "service": service,
                 "status": str(item.get("status") or "active"),
@@ -277,7 +287,11 @@ def _instance_tags(
     owner_tags: dict[str, object],
 ) -> dict[str, object]:
     """Owner and default metadata in the v2 instance shape."""
-    tags = owner_tags
+    tags = dict(owner_tags)
+    if item.get("service") == "github":
+        tags[GITHUB_CONNECTION_ORIGIN_TAG] = item.get(
+            GITHUB_CONNECTION_ORIGIN_TAG, GITHUB_UNKNOWN_ORIGIN
+        )
     is_default = item.get("is_default")
     if is_default is True or (
         is_default is None and str(credentials.get("is_default", "")).lower() == "true"

@@ -33,6 +33,8 @@ from config.account import (
     resolve_account_token,
 )
 from config.constants.account import (
+    INTEGRATION_APP_ORIGIN,
+    INTEGRATION_RETRIEVAL_ORIGIN_FIELD,
     OPENSRE_ACCOUNT_INTEGRATIONS_PATH,
     OPENSRE_ACCOUNT_INTEGRATIONS_PERSONAL_PARAMS,
     OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS,
@@ -209,7 +211,11 @@ def _fetch(*, record: AccountRecord | None, token: str) -> _FetchOutcome:
 
     visible = store.visible_to(user_id=record.user_id, organization_id=record.organization_id)
     data: Any = visible.as_store_data()["integrations"]
-    records = [_with_cli_service_name(item) for item in data if isinstance(item, dict)]
+    records = [
+        {**_with_cli_service_name(item), INTEGRATION_RETRIEVAL_ORIGIN_FIELD: INTEGRATION_APP_ORIGIN}
+        for item in data
+        if isinstance(item, dict)
+    ]
     return _FetchOutcome(kind="records", records=records, fingerprint=_fingerprint(records))
 
 

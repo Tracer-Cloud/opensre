@@ -164,15 +164,15 @@ class TestPythonExecutionToolRestrictions:
 
 
 class TestPythonExecutionToolCredentials:
-    def test_github_token_from_env_is_available_and_redacted(self, monkeypatch) -> None:
+    def test_github_token_from_env_is_not_available(self, monkeypatch) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret_token")
         result = execute_python_code.run(
             code=("import os\nprint('token=' + str(os.environ.get('GITHUB_TOKEN')))\n")
         )
         assert result["success"] is True
-        assert result["credentials_available"] == ["github"]
+        assert result["credentials_available"] == []
         assert "ghp_secret_token" not in result["stdout"]
-        assert "[redacted]" in result["stdout"]
+        assert "ghp_env_secret" not in result["stdout"]
 
     def test_explicit_github_token_is_available_and_redacted(self, monkeypatch) -> None:
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)

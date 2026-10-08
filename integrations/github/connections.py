@@ -5,23 +5,24 @@ from __future__ import annotations
 from typing import Any
 
 from config.constants.account import (
+    INTEGRATION_APP_ORIGIN,
     INTEGRATION_IS_DEFAULT_TAG,
     INTEGRATION_OWNER_ID_TAG,
     INTEGRATION_OWNER_KIND_TAG,
+    INTEGRATION_RETRIEVAL_ORIGIN_FIELD,
 )
-from integrations.github.mcp import classify, github_mcp_is_usably_configured
+from config.constants.github import (
+    GITHUB_CONNECTION_ORIGIN_TAG,
+    GITHUB_LOCAL_ORIGIN,
+    GITHUB_UNKNOWN_ORIGIN,
+    GITHUB_WEBAPP_ORIGIN,
+)
+from integrations.github.mcp import classify
 
 
 def classify_github_connections(records: list[dict[str, Any]], resolved: dict[str, Any]) -> None:
     """Index local grants and managed inactive markers by their record identity."""
     github = [record for record in records if record.get("service") == "github"]
-    managed = any(
-        "is_default" in instance.get("credentials", {})
-        or INTEGRATION_IS_DEFAULT_TAG in instance.get("tags", {})
-        or INTEGRATION_OWNER_KIND_TAG in instance.get("tags", {})
-        for record in github
-        for instance in _instances(record)
-    )
     if not github:
         return
     connections: list[dict[str, Any]] = []
@@ -32,13 +33,20 @@ def classify_github_connections(records: list[dict[str, Any]], resolved: dict[st
             tags = instance.get("tags", {})
             tags = tags if isinstance(tags, dict) else {}
             config, _ = classify(credentials, record_id)
+            origin = (
+                tags.get(GITHUB_CONNECTION_ORIGIN_TAG, GITHUB_UNKNOWN_ORIGIN)
+                if record.get(INTEGRATION_RETRIEVAL_ORIGIN_FIELD) == INTEGRATION_APP_ORIGIN
+                else GITHUB_LOCAL_ORIGIN
+            )
             usable = (
-                record.get("status") == "active"
+                origin == GITHUB_WEBAPP_ORIGIN
+                and record.get("status") == "active"
                 and config is not None
-                and github_mcp_is_usably_configured(config)
+                and bool(config.auth_token.strip())
             )
             connections.append(
                 {
+                    GITHUB_CONNECTION_ORIGIN_TAG: origin,
                     "name": instance.get("name", record_id),
                     "tags": tags,
                     "integration_id": record_id,
@@ -54,16 +62,25 @@ def classify_github_connections(records: list[dict[str, Any]], resolved: dict[st
                 }
             )
     resolved["_all_github_instances"] = connections
-    if managed:
-        resolved["_github_managed_connections"] = True
-        resolved.update(select_github_connection(resolved, None))
+    resolved["_github_managed_connections"] = True
+    resolved.update(select_github_connection(resolved, None))
 
 
 def _instances(record: dict[str, Any]) -> list[dict[str, Any]]:
     instances = record.get("instances")
     if isinstance(instances, list):
         return [dict(instance) for instance in instances if isinstance(instance, dict)]
-    return [{"name": "default", "credentials": record.get("credentials", {})}]
+    return [
+        {
+            "name": "default",
+            "tags": {
+                GITHUB_CONNECTION_ORIGIN_TAG: record.get(
+                    GITHUB_CONNECTION_ORIGIN_TAG, GITHUB_UNKNOWN_ORIGIN
+                )
+            },
+            "credentials": record.get("credentials", {}),
+        }
+    ]
 
 
 def select_github_connection(resolved: dict[str, Any], connection_id: str | None) -> dict[str, Any]:
@@ -75,17 +92,31 @@ def select_github_connection(resolved: dict[str, Any], connection_id: str | None
     A personal default outranks a workspace default.
     """
     selected = dict(resolved)
+    if "_all_github_instances" not in resolved:
+        return selected
     instances = list(resolved.get("_all_github_instances", []))
+    rejected = [
+        item for item in instances if item.get(GITHUB_CONNECTION_ORIGIN_TAG) != GITHUB_WEBAPP_ORIGIN
+    ]
+    if connection_id and _has_connection(rejected, connection_id):
+        selected["github"] = {
+            "connection_verified": False,
+            "connection_selection_error": "github_connection_required",
+            "connection_id": connection_id,
+        }
+        return selected
+    instances = [
+        item for item in instances if item.get(GITHUB_CONNECTION_ORIGIN_TAG) == GITHUB_WEBAPP_ORIGIN
+    ]
     if connection_id and not _has_connection(instances, connection_id):
         available = [item for item in instances if _grant_available(item)]
         if len(available) == 1:
             connection_id = None
-    if not connection_id and not resolved.get("_github_managed_connections"):
-        return selected
     matches = _matching_grants(instances, connection_id)
     if len(matches) == 1 and _grant_available(matches[0]):
         selected["github"] = {
             **matches[0]["config"],
+            GITHUB_CONNECTION_ORIGIN_TAG: GITHUB_WEBAPP_ORIGIN,
             "connection_id": matches[0].get("connection_id", matches[0].get("integration_id", "")),
         }
     else:
@@ -125,4 +156,36 @@ def _connection_id(item: dict[str, Any]) -> str:
 
 
 def _grant_available(item: dict[str, Any]) -> bool:
-    return bool(item.get("available", bool(item.get("config"))))
+    return item.get(GITHUB_CONNECTION_ORIGIN_TAG) == GITHUB_WEBAPP_ORIGIN and bool(
+        item.get("available", bool(item.get("config")))
+    )
+
+
+def preserve_app_github_records(
+    merged: list[dict[str, Any]], *groups: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Keep live remote GitHub records ahead of local service-level overrides."""
+    remote = {
+        str(record.get("id", "")): record
+        for group in groups
+        for record in group
+        if record.get("service") == "github"
+        and record.get(INTEGRATION_RETRIEVAL_ORIGIN_FIELD) == INTEGRATION_APP_ORIGIN
+    }
+    if not remote:
+        return merged
+    return [record for record in merged if record.get("service") != "github"] + list(
+        remote.values()
+    )
+
+
+def filter_github_connected_services(
+    services: list[str], records: list[dict[str, Any]]
+) -> list[str]:
+    """Advertise GitHub only when the same app selection used by tools qualifies."""
+    from integrations.github.rest_token import github_rest_token
+
+    resolved: dict[str, Any] = {}
+    classify_github_connections(records, resolved)
+    eligible = bool(github_rest_token(resolved))
+    return [service for service in services if service != "github" or eligible]

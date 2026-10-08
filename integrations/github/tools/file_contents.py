@@ -8,6 +8,11 @@ from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -88,11 +93,12 @@ def _map_get_github_file_contents(
         },
         "required": ["owner", "repo", "path"],
     },
-    is_available=_get_github_file_contents_available,
-    extract_params=_get_github_file_contents_extract_params,
+    is_available=github_tool_available(_get_github_file_contents_available),
+    extract_params=github_tool_params(_get_github_file_contents_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_get_github_file_contents,
 )
+@require_webapp_github
 def get_github_file_contents(
     owner: str,
     repo: str,

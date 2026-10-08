@@ -17,17 +17,16 @@ This is mutating: OpenSRE checks out the branch, edits files, commits, and pushe
 
 - Git installed on the machine running OpenSRE
 - `gh` on `PATH` for checks and logs
-- GitHub token with repo write access plus workflow/check read access (`GITHUB_TOKEN` / `GH_TOKEN`)
+- GitHub connected in the OpenSRE app with repository write access and workflow/check read access
 - A coding-agent backend available (`CODING_AGENT=auto` by default)
 
 ## Setup
 
-There is no dedicated `integrations setup` target for this tool. Configure GitHub access. A named repository or PR URL uses an isolated checkout.
+There is no dedicated `integrations setup` target for this tool. Connect GitHub in the OpenSRE app with repository write and workflow/check read access. A named repository or PR URL uses an isolated checkout.
 For requests about your current checkout, you can set the coding workspace:
 
 ```bash
 export CODING_WORKSPACE=/path/to/repo  # optional, for current-checkout requests
-export GITHUB_TOKEN=... # repo write access plus workflow/check read access
 # optional:
 # export CODING_AGENT=auto   # pi | claude-code | codex | cursor
 # export CODING_MODEL=...
@@ -90,7 +89,7 @@ In branch mode OpenSRE reads the failing workflow runs on the branch's head comm
 
 There is no dedicated `integrations verify` target. Confirm readiness by:
 
-1. `opensre integrations verify github` (or a valid `GITHUB_TOKEN` / `GH_TOKEN`)
+1. An authorized GitHub connection in the OpenSRE app
 2. `gh` available on `PATH`
 3. If supplying a checkout explicitly, its `origin` matches the PR repository
 4. A coding agent CLI is installed/logged in if auto mode needs one

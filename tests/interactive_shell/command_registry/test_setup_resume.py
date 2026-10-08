@@ -33,6 +33,7 @@ from surfaces.interactive_shell.command_registry.setup_resume import (
 from surfaces.interactive_shell.runtime.input.actions import SubmitTurn
 from surfaces.interactive_shell.session import Session
 from tests.core.agent.orchestration.action_execution_test_harness import FakeSlashPorts
+from tests.utils.github_connections import connect_github_app as _connect_app
 from tools.interactive_shell.actions.slash import execute_slash_tool
 
 _SKILL = ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME
@@ -76,7 +77,8 @@ def test_the_parked_turn_is_replayed_once_after_the_token_resolves(
 ) -> None:
     """A menu answer goes back as ``/choose`` submits it, so it keeps its skill context."""
     session = _session(parked)
-    monkeypatch.setenv(GH_TOKEN_ENV, "env-tok")
+    _connect_app(monkeypatch)
+    session.refresh_integration_state()
     terminal = session.terminal
 
     first = resume_after_setup(session, _console(), service="github")
@@ -142,7 +144,10 @@ def test_only_a_setup_a_check_can_confirm_brings_the_skill_back(
     """
     session = _setup_queued_mid_skill(skill, service)
     if env is not None:
-        monkeypatch.setenv(env, "xoxb-env-tok" if env == SLACK_BOT_TOKEN_ENV else "env-tok")
+        if service == "github":
+            _connect_app(monkeypatch)
+        else:
+            monkeypatch.setenv(env, "xoxb-env-tok")
     session.refresh_integration_state()  # as the wizard's slash command does
 
     assert resume_after_setup(session, _console(), service=service) is outcome
@@ -171,7 +176,7 @@ def test_a_parked_turn_no_check_can_confirm_is_dropped_not_replayed() -> None:
 
 def test_a_queued_autosubmit_is_never_replaced(monkeypatch: pytest.MonkeyPatch) -> None:
     session = _session(_ANSWER)
-    monkeypatch.setenv(GH_TOKEN_ENV, "env-tok")
+    _connect_app(monkeypatch)
     session.terminal.set_auto_command("/integrations verify github")
 
     outcome = resume_after_setup(session, _console(), service="github")
@@ -190,7 +195,7 @@ def test_a_setup_that_left_no_token_keeps_the_turn_parked_and_asks_again() -> No
     assert pending_setup_resume(session) is not None
     pending = session.pending_user_choice
     assert pending is not None
-    assert pending.note == "GitHub is still not connected: no usable token was found."
+    assert "authorized GitHub connection in the OpenSRE app" in pending.note
     assert session.terminal.pending_prompt_default == "/choose"
 
 

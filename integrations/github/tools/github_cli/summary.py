@@ -75,7 +75,7 @@ def summarize_gh_result(
         if error_type == "missing_binary":
             return "GitHub CLI (`gh`) is not installed or not on PATH."
         if error_type == "configuration_error":
-            return "GitHub token is missing; configure GitHub integration or GH_TOKEN."
+            return "GitHub token is missing; connect or reconnect GitHub in the OpenSRE app."
         if error_type == "timeout":
             return err or "gh timed out."
         return f"GitHub action failed to run: {err or 'unknown error'}"

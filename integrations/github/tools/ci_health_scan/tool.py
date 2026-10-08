@@ -8,17 +8,24 @@ from typing import Any
 
 from rich.markup import escape
 
-from config.constants.github import (
-    GITHUB_INTEGRATION_SETUP_CLI,
-    GITHUB_SETUP_SLASH_INVOKE,
-)
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.agent_tools import (
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.app_connection import github_setup_url
+from integrations.github.client import (
+    GitHubApiError,
+    GitHubFailureKind,
+    GitHubRestClient,
+    github_failure_kind,
+    resolve_github_token,
+)
 from integrations.github.envelope import missing_token_envelope
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -40,13 +47,9 @@ DEFAULT_SINCE_DAYS = 365
 _VISIBILITIES = ("all", "private", "public")
 
 
-def _available(sources: dict[str, dict]) -> bool:
-    """Stay listed when GitHub is not connected yet.
-
-    Onboarding asks this scan to pick a repository. Hiding it on a fresh
-    install leaves that step with no tool and no setup handoff.
-    """
-    return not bool(sources.get("github", {}).get("connection_selection_error"))
+def _available(_sources: dict[str, dict]) -> bool:
+    """Keep recovery available; execution enforces the app connection."""
+    return True
 
 
 def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -76,7 +79,11 @@ def _is_rate_limited(exc: Exception) -> bool:
     # GraphQL reports an exhausted budget as HTTP 200 with a RATE_LIMIT error,
     # so the message is the only signal; REST answers 403 or 429 instead.
     status = getattr(exc, "status_code", None)
-    return status == HTTPStatus.TOO_MANY_REQUESTS or "rate limit" in str(exc).lower()
+    return (
+        github_failure_kind(exc) is GitHubFailureKind.RATE_LIMITED
+        or status == HTTPStatus.TOO_MANY_REQUESTS
+        or "rate limit" in str(exc).lower()
+    )
 
 
 def _failure_message(exc: Exception) -> str:
@@ -85,9 +92,8 @@ def _failure_message(exc: Exception) -> str:
     status = getattr(exc, "status_code", None)
     if status in {HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN}:
         return (
-            "GitHub rejected the token; the scan needs read access to repositories, pull "
-            "requests, checks, and organization membership (repo, read:org). "
-            "Run `opensre integrations setup github` and try again."
+            f"GitHub rejected the app connection for this CI scan. Reconnect or review access "
+            f"to repositories, pull requests, checks, and membership in the OpenSRE app: {github_setup_url()}"
         )
     return f"Could not list the repositories to scan ({type(exc).__name__})."
 
@@ -95,7 +101,7 @@ def _failure_message(exc: Exception) -> str:
 def _all_failed_message(errors: list[dict[str, str]]) -> str:
     if any("rate limit" in e.get("error", "").lower() for e in errors):
         return _RATE_LIMIT_MESSAGE
-    return "No repository could be read with this token; check its access and try again."
+    return f"No repository in this CI scan could be read with the app connection. Reconnect GitHub or review repository access in the OpenSRE app: {github_setup_url()}"
 
 
 def _map_evidence(evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]) -> None:
@@ -205,10 +211,11 @@ def _clean_owners(owners: Any) -> list[str]:
         "additionalProperties": False,
     },
     is_available=_available,
-    extract_params=_extract_params,
+    extract_params=github_tool_params(_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_evidence,
 )
+@require_webapp_github
 def scan_github_ci_health(
     owners: list[str] | None = None,
     visibility: str = "all",
@@ -224,8 +231,7 @@ def scan_github_ci_health(
     if not token:
         instruction = (
             "A GitHub token is required to scan repositories. "
-            f"Run `{GITHUB_INTEGRATION_SETUP_CLI}`. "
-            f"Open the wizard with `{GITHUB_SETUP_SLASH_INVOKE}` and end the turn. "
+            "Connect GitHub in the OpenSRE app and end the turn. "
             "After they finish, call this tool again."
         )
         return missing_token_envelope(instruction, blocked="repositories can't be scanned")
@@ -258,10 +264,22 @@ def scan_github_ci_health(
             extras={"owners": owner_list},
         )
         message = _failure_message(exc)
-        return tool_unavailable(_SOURCE, message, response_text=message)
+        return tool_unavailable(
+            _SOURCE,
+            message,
+            response_text=message,
+            setup_url=github_setup_url(),
+            work_outcome={"status": "blocked", "reason": "github_scan_blocked", "summary": message},
+        )
     if not scope.owners:
         message = "The token does not identify a GitHub account; nothing to scan."
-        return tool_unavailable(_SOURCE, message, response_text=message)
+        return tool_unavailable(
+            _SOURCE,
+            message,
+            response_text=message,
+            setup_url=github_setup_url(),
+            work_outcome={"status": "blocked", "reason": "github_scan_blocked", "summary": message},
+        )
     if console is not None:
         console.print(
             f"  [dim]Scanning {len(scope.repos)} repositories under "
@@ -281,7 +299,13 @@ def scan_github_ci_health(
         # Every batch failed the same way (typically the hourly GraphQL budget
         # is spent); 150 identical error rows would only bury that.
         message = _all_failed_message(report.errors)
-        return tool_unavailable(_SOURCE, message, response_text=message)
+        return tool_unavailable(
+            _SOURCE,
+            message,
+            response_text=message,
+            setup_url=github_setup_url(),
+            work_outcome={"status": "blocked", "reason": "github_scan_blocked", "summary": message},
+        )
     if console is not None:
         console.print(f"  [dim]{escape(report.summary())}[/dim]")
         console.print()

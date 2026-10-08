@@ -85,7 +85,13 @@ def test_happy_path_returns_daily_rows() -> None:
         "integrations.github.tools.stargazers.GitHubRestClient.request",
         side_effect=fake_request,
     ):
-        result = get_github_star_history(owner="opensre", repo="opensre", days=7)
+        result = get_github_star_history(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="opensre",
+            repo="opensre",
+            days=7,
+        )
 
     assert result["available"] is True
     assert result["stargazers_count"] == 2
@@ -110,7 +116,13 @@ def test_missing_starred_at_returns_unavailable() -> None:
         "integrations.github.tools.stargazers.GitHubRestClient.request",
         side_effect=fake_request,
     ):
-        result = get_github_star_history(owner="opensre", repo="opensre", days=7)
+        result = get_github_star_history(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="opensre",
+            repo="opensre",
+            days=7,
+        )
 
     assert result["available"] is False
     assert "timestamps" in result.get("error", "").lower()
@@ -128,7 +140,13 @@ def test_repo_fetch_error_returns_unavailable() -> None:
         "integrations.github.tools.stargazers.GitHubRestClient.request",
         side_effect=fake_request,
     ):
-        result = get_github_star_history(owner="bad", repo="repo", days=7)
+        result = get_github_star_history(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="bad",
+            repo="repo",
+            days=7,
+        )
 
     assert result["available"] is False
     assert result["daily"] == []
@@ -152,7 +170,13 @@ def test_stargazers_fetch_error_returns_unavailable() -> None:
         "integrations.github.tools.stargazers.GitHubRestClient.request",
         side_effect=fake_request,
     ):
-        result = get_github_star_history(owner="opensre", repo="opensre", days=7)
+        result = get_github_star_history(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="opensre",
+            repo="opensre",
+            days=7,
+        )
 
     assert result["available"] is False
     assert result["stargazers_count"] == 3
@@ -170,7 +194,13 @@ def test_zero_stars_returns_empty_daily_rows() -> None:
         "integrations.github.tools.stargazers.GitHubRestClient.request",
         side_effect=fake_request,
     ):
-        result = get_github_star_history(owner="opensre", repo="opensre", days=7)
+        result = get_github_star_history(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="opensre",
+            repo="opensre",
+            days=7,
+        )
 
     assert result["available"] is True
     assert result["stars_in_window"] == 0
@@ -187,6 +217,12 @@ def test_unexpected_repo_payload_returns_unavailable() -> None:
         "integrations.github.tools.stargazers.GitHubRestClient.request",
         side_effect=fake_request,
     ):
-        result = get_github_star_history(owner="opensre", repo="opensre", days=7)
+        result = get_github_star_history(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="opensre",
+            repo="opensre",
+            days=7,
+        )
 
     assert result["available"] is False

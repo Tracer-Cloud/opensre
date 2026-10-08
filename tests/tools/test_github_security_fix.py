@@ -131,7 +131,7 @@ def test_available_when_github_token_present(monkeypatch) -> None:
     assert _github_security_fix_available({}) is False
 
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
-    assert _github_security_fix_available({}) is True
+    assert _github_security_fix_available({}) is False
 
 
 def test_available_with_configured_auth_token(monkeypatch) -> None:
@@ -139,7 +139,12 @@ def test_available_with_configured_auth_token(monkeypatch) -> None:
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_MCP_AUTH_TOKEN", raising=False)
 
-    assert _github_security_fix_available({"github": {"auth_token": "store-token"}}) is True
+    assert (
+        _github_security_fix_available(
+            {"github": {"connection_origin": "webapp", "auth_token": "store-token"}}
+        )
+        is True
+    )
 
 
 def test_ship_gate_uses_injected_token(monkeypatch) -> None:
@@ -534,7 +539,12 @@ def test_auto_select_with_every_finding_in_flight_is_a_noop() -> None:
         ),
     ):
         result = fix_github_security_alert(
-            owner="acme", repo="app", alert_type="code_scanning", open_pr=True, github_token="tok"
+            github_connection_origin="webapp",
+            owner="acme",
+            repo="app",
+            alert_type="code_scanning",
+            open_pr=True,
+            github_token="tok",
         )
 
     assert result["error_kind"] == ERR_NO_ELIGIBLE_ALERT
@@ -981,7 +991,9 @@ def test_tool_passes_repl_confirmation_function() -> None:
         "integrations.github.tools.security_fix.tool.run_security_fix",
         return_value={"success": True},
     ) as runner:
-        result = fix_github_security_alert(context=agent_context)
+        result = fix_github_security_alert(
+            github_connection_origin="webapp", github_token="app-token", context=agent_context
+        )
 
     assert result["success"] is True
     assert result["work_outcome"]["status"] == "succeeded"

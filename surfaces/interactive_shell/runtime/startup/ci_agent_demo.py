@@ -17,6 +17,7 @@ from core.agent_harness.spi.grounding import (
     GETTING_STARTED_CUSTOM,
     getting_started_skills,
 )
+from core.agent_harness.spi.integrations import resolve_and_cache_integrations
 from infrastructure.scheduling.scheduler.background_service import (
     background_service_state,
     install_background_service,
@@ -27,7 +28,8 @@ from infrastructure.terminal.markdown import ReplyMarkdown
 from infrastructure.terminal.theme import WARNING
 from integrations.github import (
     DEFAULT_LOOP_TIME,
-    effective_github_token,
+    github_rest_token,
+    github_setup_url,
     local_timezone,
     loop_card,
     report_looks_complete,
@@ -65,10 +67,7 @@ _LOOP_TIME_TITLE = "When should it run?"
 _LOOP_TIME_CUSTOM_LABEL = "Or type a time like 07:30..."
 _LOOP_WEEKDAYS = "weekdays"
 _LOOP_DAILY = "daily"
-_LOOP_TOKEN_MISSING = (
-    "The agent reads GitHub Actions history on every run, which needs a GitHub token. "
-    "Run `opensre integrations setup github`, then `/demo` to continue."
-)
+
 _LOOP_FIRST_PASS_FAILED = (
     "The first pass did not produce the report; the schedule stays in place. "
     "Retry with `/loops run {task_id}` or check `/cron logs {task_id}`."
@@ -123,11 +122,16 @@ def start_ci_agent_demo(
     repository: str | None = None,
 ) -> bool:
     """Scan, choose a repository and time, then schedule and run the reliability loop."""
+    resolved = resolve_and_cache_integrations(session)
+    if not github_rest_token(resolved):
+        _warn(
+            console,
+            f"Connect GitHub in the OpenSRE app, then refresh your connection: {github_setup_url()}",
+        )
+        return False
+    connection_id = str(resolved.get("github", {}).get("connection_id") or "")
     if repository is None:
         snapshot = scan_and_show(console)
-        if not effective_github_token():
-            _warn(console, _LOOP_TOKEN_MISSING)
-            return False
         repository = choose_repository(snapshot, title=_LOOP_REPOSITORY_TITLE)
     if repository is None:
         return False
@@ -141,7 +145,12 @@ def start_ci_agent_demo(
             return False
         time_text, weekdays = schedule
         scheduled = schedule_ci_reliability_loop(
-            owner, repo, time_text=time_text, weekdays=weekdays, timezone=local_timezone()
+            owner,
+            repo,
+            time_text=time_text,
+            weekdays=weekdays,
+            timezone=local_timezone(),
+            github_connection_id=connection_id,
         )
     except ValueError as exc:
         _warn(console, f"Could not schedule the check: {exc}")

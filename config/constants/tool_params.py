@@ -21,6 +21,8 @@ CONFIG_ONLY_TOOL_PARAMS: Final[frozenset[str]] = frozenset(
         "bearer_token",
         "coralogix_api_key",
         "github_token",
+        "github_connection_origin",
+        "github_connection_id",
         "honeycomb_api_key",
         "jenkins_token",
         "jenkins_user",

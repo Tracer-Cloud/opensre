@@ -12,6 +12,11 @@ from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
@@ -771,11 +776,12 @@ def _map_list_github_actions_workflow_runs(
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_actions_is_available,
-    extract_params=_github_actions_repo_params,
+    is_available=github_tool_available(_github_actions_is_available),
+    extract_params=github_tool_params(_github_actions_repo_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_actions_workflow_runs,
 )
+@require_webapp_github
 def list_github_actions_workflow_runs(
     owner: str,
     repo: str,
@@ -945,11 +951,12 @@ def _map_list_github_actions_active_runs(
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_actions_is_available,
-    extract_params=_github_actions_repo_params,
+    is_available=github_tool_available(_github_actions_is_available),
+    extract_params=github_tool_params(_github_actions_repo_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_actions_active_runs,
 )
+@require_webapp_github
 def list_github_actions_active_runs(
     owner: str,
     repo: str,
@@ -1074,11 +1081,12 @@ def _map_list_github_actions_run_jobs(
         },
         "required": ["owner", "repo", "run_id"],
     },
-    is_available=_github_actions_is_available,
-    extract_params=_github_actions_run_params,
+    is_available=github_tool_available(_github_actions_is_available),
+    extract_params=github_tool_params(_github_actions_run_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_actions_run_jobs,
 )
+@require_webapp_github
 def list_github_actions_run_jobs(
     owner: str,
     repo: str,
@@ -1212,11 +1220,12 @@ def _map_get_github_actions_step_log(
         },
         "required": ["owner", "repo", "run_id", "job_id"],
     },
-    is_available=_github_actions_is_available,
-    extract_params=_github_actions_run_params,
+    is_available=github_tool_available(_github_actions_is_available),
+    extract_params=github_tool_params(_github_actions_run_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_get_github_actions_step_log,
 )
+@require_webapp_github
 def get_github_actions_step_log(
     owner: str,
     repo: str,

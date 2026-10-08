@@ -204,9 +204,28 @@ def _mcp_response(_config: object, tool: str, arguments: dict[str, Any]) -> dict
 def test_is_available_requires_github_source_owner_and_repo() -> None:
     rt = _registered_tool(list_github_actions_workflow_runs)
     assert rt.is_available(
-        {"github": {"connection_verified": True, "owner": "org", "repo": "repo"}}
+        {
+            "github": {
+                "connection_origin": "webapp",
+                "auth_token": "app-token",
+                "connection_verified": True,
+                "owner": "org",
+                "repo": "repo",
+            }
+        }
     )
-    assert rt.is_available({"github": {"connection_verified": True}}) is False
+    assert (
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                }
+            }
+        )
+        is False
+    )
     assert rt.is_available({}) is False
 
 
@@ -227,7 +246,9 @@ def test_list_workflow_runs_happy_path() -> None:
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp_response),
     ):
-        result = workflow_tool(owner="org", repo="repo", github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp", owner="org", repo="repo", github_token="tok"
+        )
     assert result["available"] is True
     assert result["workflow_runs"][0]["id"] == 101
 
@@ -246,6 +267,7 @@ def test_list_workflow_runs_passes_head_sha_filter() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_capture),
     ):
         result = workflow_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             head_sha="abc123def",
@@ -373,7 +395,13 @@ def test_head_sha_history_comes_from_the_rest_filter_first() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp),
         patch.object(actions_module, "GitHubRestClient", _RestRuns),
     ):
-        result = workflow_tool(owner="org", repo="repo", head_sha=_FULL, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            head_sha=_FULL,
+            github_token="tok",
+        )
 
     assert mcp_calls == []
     assert _RestRuns.calls[0]["params"] == {"head_sha": _FULL, "per_page": 100}
@@ -400,7 +428,13 @@ def test_head_sha_history_falls_back_to_mcp_paging_when_rest_fails() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp),
         patch.object(actions_module, "GitHubRestClient", _RestRuns),
     ):
-        result = workflow_tool(owner="org", repo="repo", head_sha="abc123", github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            head_sha="abc123",
+            github_token="tok",
+        )
 
     assert "history_source" not in result
     assert [row["name"] for row in result["workflow_runs"]] == ["CI"]
@@ -429,6 +463,7 @@ def test_head_sha_history_pages_until_the_commit_cluster_is_past() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
         result = workflow_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             head_sha="abc123",
@@ -459,6 +494,7 @@ def test_head_sha_history_is_incomplete_when_the_page_cap_is_hit() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
         result = workflow_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             head_sha="abc123",
@@ -494,6 +530,7 @@ def test_a_later_page_failure_keeps_fetched_runs_and_says_incomplete() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
         result = workflow_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             head_sha="abc123",
@@ -513,7 +550,9 @@ def test_list_active_runs_happy_path() -> None:
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp_response),
     ):
-        result = active_tool(owner="org", repo="repo", github_token="tok")
+        result = active_tool(
+            github_connection_origin="webapp", owner="org", repo="repo", github_token="tok"
+        )
     assert result["available"] is True
     assert result["workflow_runs"][0]["status"] == "in_progress"
 
@@ -524,7 +563,13 @@ def test_list_run_jobs_happy_path() -> None:
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp_response),
     ):
-        result = jobs_tool(owner="org", repo="repo", run_id=101, github_token="tok")
+        result = jobs_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            run_id=101,
+            github_token="tok",
+        )
     assert result["available"] is True
     assert result["jobs"][0]["name"] == "deploy"
 
@@ -536,6 +581,7 @@ def test_get_step_log_happy_path() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp_response),
     ):
         result = log_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             run_id=101,
@@ -673,7 +719,14 @@ def test_get_step_log_reports_truncated_when_original_lines_exceeds_returned() -
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp_response),
     ):
-        result = log_tool(owner="org", repo="repo", run_id=101, job_id=9001, github_token="tok")
+        result = log_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            run_id=101,
+            job_id=9001,
+            github_token="tok",
+        )
     assert result["truncated"] is True
     assert result["original_lines"] == 2000
     assert result["returned_lines"] < result["original_lines"]
@@ -702,7 +755,14 @@ def test_get_step_log_no_retry_when_original_length_field_missing() -> None:
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
-        result = log_tool(owner="org", repo="repo", run_id=101, job_id=9001, github_token="tok")
+        result = log_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            run_id=101,
+            job_id=9001,
+            github_token="tok",
+        )
 
     assert result["original_lines"] is None
     assert result["truncated"] is False
@@ -740,6 +800,7 @@ def test_get_step_log_retries_with_larger_tail_when_step_missing() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
         result = log_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             run_id=101,
@@ -791,6 +852,7 @@ def test_get_step_log_reports_retry_error_when_retry_fetch_fails() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
         result = log_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             run_id=101,
@@ -837,6 +899,7 @@ def test_get_step_log_keeps_small_body_when_retry_also_misses_the_step() -> None
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
         result = log_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             run_id=101,
@@ -874,7 +937,14 @@ def test_get_step_log_does_not_report_complete_log_with_blank_lines_as_truncated
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
-        result = log_tool(owner="org", repo="repo", run_id=101, job_id=9001, github_token="tok")
+        result = log_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            run_id=101,
+            job_id=9001,
+            github_token="tok",
+        )
 
     assert result["returned_lines"] == 5
     assert result["truncated"] is False
@@ -914,6 +984,7 @@ def test_get_step_log_retry_without_original_length_keeps_known_line_count() -> 
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
     ):
         result = log_tool(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             run_id=101,
@@ -932,7 +1003,14 @@ def test_get_step_log_unavailable_payload_carries_truncation_keys() -> None:
     never have to key-check before reading them."""
     log_tool = cast(Any, get_github_actions_step_log)
     with patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=None):
-        result = log_tool(owner="org", repo="repo", run_id=101, job_id=9001)
+        result = log_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            run_id=101,
+            job_id=9001,
+            github_token="tok",
+        )
 
     assert result["available"] is False
     assert result["truncated"] is False
@@ -960,7 +1038,13 @@ def test_head_sha_history_states_a_verdict_per_workflow() -> None:
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
     ):
-        result = workflow_tool(owner="org", repo="repo", head_sha=sha, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            head_sha=sha,
+            github_token="tok",
+        )
 
     verdicts = {item["workflow"]: item for item in result["workflow_verdicts"]}
     assert set(verdicts) == {"CI", "CodeQL", "Release"}
@@ -1002,7 +1086,13 @@ def test_workflows_that_share_a_name_keep_separate_verdicts() -> None:
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
     ):
-        result = workflow_tool(owner="org", repo="repo", head_sha=sha, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            head_sha=sha,
+            github_token="tok",
+        )
 
     verdicts = {item["workflow_id"]: item for item in result["workflow_verdicts"]}
     assert set(verdicts) == {11, 22}
@@ -1037,7 +1127,13 @@ def test_the_latest_run_is_the_newest_run_not_the_highest_attempt() -> None:
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
     ):
-        result = workflow_tool(owner="org", repo="repo", head_sha=sha, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            head_sha=sha,
+            github_token="tok",
+        )
 
     assert result["workflow_verdicts"] == [
         {
@@ -1069,7 +1165,12 @@ def test_head_sha_history_pages_at_the_api_maximum_and_flags_an_unreached_commit
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
     ):
         result = workflow_tool(
-            owner="org", repo="repo", head_sha="abc123", per_page=30, github_token="tok"
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            head_sha="abc123",
+            per_page=30,
+            github_token="tok",
         )
 
     assert seen_sizes and all(size == _GITHUB_RUNS_PER_PAGE_MAX for size in seen_sizes)
@@ -1097,7 +1198,13 @@ def test_a_rest_timeout_falls_back_to_mcp_paging() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp),
         patch.object(actions_module, "GitHubRestClient", _RestRuns),
     ):
-        result = workflow_tool(owner="org", repo="repo", head_sha=_FULL, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            head_sha=_FULL,
+            github_token="tok",
+        )
 
     assert "history_source" not in result
     assert [row["name"] for row in result["workflow_runs"]] == ["CI"]
@@ -1116,7 +1223,13 @@ def test_rest_history_at_the_page_cap_is_not_marked_complete() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=AssertionError),
         patch.object(actions_module, "GitHubRestClient", _RestRuns),
     ):
-        result = workflow_tool(owner="org", repo="repo", head_sha=_FULL, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            head_sha=_FULL,
+            github_token="tok",
+        )
 
     assert _RestRuns.calls[0]["max_pages"] == _HEAD_SHA_MAX_PAGES
     assert result["history_source"] == "rest"
@@ -1146,7 +1259,14 @@ def test_listing_without_head_sha_returns_the_newest_runs_first() -> None:
         patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
     ):
-        result = workflow_tool(owner="org", repo="repo", branch="main", per_page=3)
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            branch="main",
+            per_page=3,
+            github_token="tok",
+        )
 
     assert sent[0]["page"] == 1
     assert sent[0]["perPage"] == 3
@@ -1195,7 +1315,12 @@ def test_stale_mcp_listing_is_flagged_and_replaced_by_the_newest_rest_page() -> 
         patch.object(actions_module, "GitHubRestClient", _RestListing),
     ):
         result = workflow_tool(
-            owner="Tracer-Cloud", repo="opensre", branch="main", per_page=2, github_token="tok"
+            github_connection_origin="webapp",
+            owner="Tracer-Cloud",
+            repo="opensre",
+            branch="main",
+            per_page=2,
+            github_token="tok",
         )
 
     assert [call["params"] for call in _RestListing.calls] == [{"branch": "main", "per_page": 2}]
@@ -1227,7 +1352,13 @@ def test_mcp_page_with_the_newest_run_but_a_gap_is_replaced() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
         patch.object(actions_module, "GitHubRestClient", _RestListing),
     ):
-        result = workflow_tool(owner="org", repo="repo", per_page=2, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            per_page=2,
+            github_token="tok",
+        )
 
     assert [row["id"] for row in result["workflow_runs"]] == [30, 20]
     assert result["listing_source"] == "rest"
@@ -1252,7 +1383,13 @@ def test_fresh_mcp_listing_is_kept_after_the_rest_check() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
         patch.object(actions_module, "GitHubRestClient", _RestListing),
     ):
-        result = workflow_tool(owner="org", repo="repo", per_page=2, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            per_page=2,
+            github_token="tok",
+        )
 
     assert len(_RestListing.calls) == 1
     assert result["listing_source"] == "mcp"
@@ -1279,7 +1416,13 @@ def test_mcp_page_with_runs_github_no_longer_lists_is_replaced() -> None:
         patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
         patch.object(actions_module, "GitHubRestClient", _RestListing),
     ):
-        result = workflow_tool(owner="org", repo="repo", per_page=2, github_token="tok")
+        result = workflow_tool(
+            github_connection_origin="webapp",
+            owner="org",
+            repo="repo",
+            per_page=2,
+            github_token="tok",
+        )
 
     assert [row["id"] for row in result["workflow_runs"]] == [30]
     assert result["listing_source"] == "rest"

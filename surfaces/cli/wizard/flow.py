@@ -32,10 +32,6 @@ from surfaces.cli.wizard.components import (
     prompt_value,
     step_header,
 )
-from surfaces.cli.wizard.configurators.github import (
-    DEFAULT_GITHUB_MCP_MODE,
-    DEFAULT_GITHUB_MCP_URL,
-)
 from surfaces.cli.wizard.custom_endpoints import (
     onboarding_provider_choices,
     onboarding_provider_default,
@@ -83,8 +79,6 @@ WIZARD_TOTAL_STEPS = 2
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "DEFAULT_GITHUB_MCP_MODE",
-    "DEFAULT_GITHUB_MCP_URL",
     "IntegrationHealthResult",
     "build_demo_action_response",
     "questionary",

@@ -111,7 +111,9 @@ def test_fetches_and_normalizes_records(monkeypatch: pytest.MonkeyPatch) -> None
                 "data": [
                     {
                         "id": "int_gh",
+                        "origin": "webapp",
                         "service": "github",
+                        "connection_origin": "webapp",
                         "status": "active",
                         "name": "default",
                         "credentials": {
@@ -176,7 +178,9 @@ def test_resolve_integrations_merges_webapp_vault(monkeypatch: pytest.MonkeyPatc
         lambda: [
             {
                 "id": "int_gh",
+                "origin": "webapp",
                 "service": "github",
+                "connection_origin": "webapp",
                 "status": "active",
                 "name": "default",
                 "credentials": {
@@ -220,14 +224,8 @@ def test_push_sends_the_org_scoped_record(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(vault.httpx, "post", _post)
 
-    assert vault.push_webapp_org_integration("github", {"token": "ghp_x"}) is True
-    assert calls[0]["url"] == "https://app.example.com/api/agent/integrations"
-    assert calls[0]["json"] == {
-        "organizationId": "org_1",
-        "service": "github",
-        "credentials": {"token": "ghp_x"},
-    }
-    assert calls[0]["headers"]["Authorization"] == "Bearer shared"
+    assert vault.push_webapp_org_integration("github", {"token": "ghp_x"}) is False
+    assert calls == []
 
 
 def test_delete_sends_service_and_org(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -288,7 +286,7 @@ def test_list_credentials_survive_the_round_trip(monkeypatch: pytest.MonkeyPatch
     quotes — a silo would then request toolsets that do not exist.
     """
     # Arrange
-    from integrations.github.mcp import DEFAULT_GITHUB_MCP_TOOLSETS, GitHubMCPConfig
+    from integrations.github.mcp import DEFAULT_GITHUB_MCP_TOOLSETS
 
     monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example.com")
     monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_1")
@@ -306,11 +304,8 @@ def test_list_credentials_survive_the_round_trip(monkeypatch: pytest.MonkeyPatch
         "github", {"toolsets": list(DEFAULT_GITHUB_MCP_TOOLSETS)}
     )
 
-    # Assert: every value is text, and the reader restores the original list.
-    assert ok is True
-    stored = sent[0]["json"]["credentials"]["toolsets"]
-    assert all(isinstance(value, str) for value in sent[0]["json"]["credentials"].values())
-    assert list(GitHubMCPConfig._normalize_toolsets(stored)) == list(DEFAULT_GITHUB_MCP_TOOLSETS)
+    assert ok is False
+    assert sent == []
 
 
 def test_read_is_bound_to_this_silos_own_organization(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -353,6 +348,7 @@ def test_turn_time_vault_read_drops_personal_connections(
         return {
             "id": record_id,
             "service": "github",
+            "connection_origin": "webapp",
             "status": "active",
             "name": record_id,
             "owner": owner,
@@ -397,6 +393,7 @@ def test_turn_time_vault_read_rejects_malformed_owners(owner: object) -> None:
                 {
                     "id": "unsafe",
                     "service": "github",
+                    "connection_origin": "webapp",
                     "status": "active",
                     "name": "default",
                     "owner": owner,
@@ -415,6 +412,7 @@ def test_turn_time_vault_selects_the_workspace_default() -> None:
         return {
             "id": record_id,
             "service": "github",
+            "connection_origin": "webapp",
             "status": "active",
             "name": record_id,
             "owner": {"kind": "organization", "id": "org_1"},

@@ -24,10 +24,31 @@ class TestGitDeployTimelineToolContract(BaseToolContract):
 def test_is_available_requires_connection_owner_repo() -> None:
     rt = get_git_deploy_timeline.__opensre_registered_tool__
     assert (
-        rt.is_available({"github": {"connection_verified": True, "owner": "org", "repo": "repo"}})
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                    "owner": "org",
+                    "repo": "repo",
+                }
+            }
+        )
         is True
     )
-    assert rt.is_available({"github": {"connection_verified": True}}) is False
+    assert (
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                }
+            }
+        )
+        is False
+    )
     assert rt.is_available({}) is False
 
 
@@ -42,7 +63,9 @@ def test_extract_params_maps_fields() -> None:
 
 def test_run_returns_unavailable_when_no_config() -> None:
     with patch("integrations.github.helpers.github_mcp_config_from_env", return_value=None):
-        result = get_git_deploy_timeline(owner="org", repo="repo")
+        result = get_git_deploy_timeline(
+            github_connection_origin="webapp", github_token="app-token", owner="org", repo="repo"
+        )
     assert result["available"] is False
     assert result["commits"] == []
 
@@ -88,6 +111,7 @@ def test_run_happy_path_summarizes_commits() -> None:
         ),
     ):
         result = get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             github_url="http://mcp",
@@ -133,6 +157,7 @@ def test_run_passes_time_window_and_branch_to_mcp() -> None:
         ),
     ):
         get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             branch="release",
@@ -174,6 +199,7 @@ def test_run_empty_result_returns_zero_commits() -> None:
         ),
     ):
         result = get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             github_url="http://mcp",
@@ -212,6 +238,7 @@ def test_run_defensive_against_non_list_structured_content() -> None:
         ),
     ):
         result = get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             github_url="http://mcp",
@@ -242,6 +269,7 @@ def test_run_passes_per_page_to_mcp() -> None:
         ),
     ):
         get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             per_page=50,
@@ -277,6 +305,7 @@ def test_run_clamps_per_page_to_api_maximum() -> None:
         ),
     ):
         result = get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             per_page=500,
@@ -324,6 +353,7 @@ def test_run_flags_window_truncated_when_page_is_full() -> None:
         ),
     ):
         result = get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             per_page=5,
@@ -366,6 +396,7 @@ def test_run_flags_window_not_truncated_when_fewer_than_page() -> None:
         ),
     ):
         result = get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             per_page=30,
@@ -421,6 +452,7 @@ def _run_with_shared_window(
         ),
     ):
         result = get_git_deploy_timeline(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             since=since,

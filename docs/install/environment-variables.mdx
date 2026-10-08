@@ -622,7 +622,7 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | `GITHUB_MCP_URL` |  | GitHub MCP server URL |
 | `GITHUB_MCP_COMMAND` |  | GitHub MCP command to execute |
 | `GITHUB_MCP_ARGS` |  | GitHub MCP command arguments |
-| `GITHUB_MCP_AUTH_TOKEN` |  | GitHub MCP auth token |
+| `GITHUB_MCP_AUTH_TOKEN` |  | Does not authorize agent GitHub tools |
 | `GITHUB_MCP_TOOLSETS` | `repos,issues,pull_requests,actions,search` | Enabled GitHub MCP toolsets |
 | `OPENSRE_GITHUB_MCP_REPO_PROBE_LIMIT` | `50` | Max repos to probe (5-500) |
 | `GITLAB_BASE_URL` |  | GitLab instance URL |
@@ -816,8 +816,8 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | --- | --- | --- |
 | `GITHUB_EVENT_PATH` |  | GitHub Actions event payload path |
 | `GITHUB_REPOSITORY` |  | GitHub repository (owner/repo) |
-| `GITHUB_TOKEN` |  | GitHub personal access token |
-| `GH_TOKEN` |  | Alias for `GITHUB_TOKEN` |
+| `GITHUB_TOKEN` |  | Does not authorize agent GitHub tools; connect GitHub in the OpenSRE app |
+| `GH_TOKEN` |  | Does not authorize agent GitHub tools |
 
 
   </Accordion>

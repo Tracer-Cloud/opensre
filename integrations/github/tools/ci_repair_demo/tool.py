@@ -10,6 +10,11 @@ from core.domain.types.tools import ToolSurface
 from core.tool import ERROR_KIND_REFUSED, SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from infrastructure.scheduling.scheduler.storage import get_task, list_tasks, remove_task
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -111,8 +116,8 @@ def _failed(exc: Exception, *, tool_name: str, method: str, action: str) -> dict
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    is_available=github_source_available,
-    extract_params=_credentials,
+    is_available=github_tool_available(github_source_available),
+    extract_params=github_tool_params(_credentials),
     injected_params=GITHUB_INJECTED_PARAMS,
     input_schema={
         "type": "object",
@@ -124,6 +129,7 @@ def _failed(exc: Exception, *, tool_name: str, method: str, action: str) -> dict
         "additionalProperties": False,
     },
 )
+@require_webapp_github
 def seed_ci_repair_demo(
     owner: str,
     repo: str,
@@ -160,8 +166,8 @@ def seed_ci_repair_demo(
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    is_available=github_source_available,
-    extract_params=_credentials,
+    is_available=github_tool_available(github_source_available),
+    extract_params=github_tool_params(_credentials),
     injected_params=GITHUB_INJECTED_PARAMS,
     input_schema={
         "type": "object",
@@ -184,6 +190,7 @@ def seed_ci_repair_demo(
         "additionalProperties": False,
     },
 )
+@require_webapp_github
 def finish_ci_repair_demo(
     repo: str,
     pr_number: int,

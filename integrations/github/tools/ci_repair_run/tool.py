@@ -8,6 +8,11 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -426,8 +431,8 @@ def _finish_scheduled(
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
     accepts_runtime_context=True,
-    is_available=github_source_available,
-    extract_params=_credentials,
+    is_available=github_tool_available(github_source_available),
+    extract_params=github_tool_params(_credentials),
     injected_params=GITHUB_INJECTED_PARAMS,
     input_schema={
         "type": "object",
@@ -442,6 +447,7 @@ def _finish_scheduled(
         "additionalProperties": False,
     },
 )
+@require_webapp_github
 def run_ci_repair_demo(
     owner: str = "",
     repo: str = "",

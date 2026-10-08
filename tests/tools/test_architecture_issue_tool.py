@@ -67,6 +67,8 @@ def test_architecture_tools_are_action_surface_only() -> None:
 
 def test_architecture_clone_repo_local_path(tmp_path: Path) -> None:
     result = architecture_clone_repo(
+        github_connection_origin="webapp",
+        github_token="app-token",
         owner="org",
         repo="repo",
         local_path=str(tmp_path),
@@ -86,52 +88,31 @@ def test_architecture_clone_repo_prefers_injected_token_over_env(
     )
 
     # Act
-    architecture_clone_repo(owner="org", repo="repo", github_token="store-token")
+    architecture_clone_repo(
+        github_connection_origin="webapp", owner="org", repo="repo", github_token="store-token"
+    )
 
     # Assert: the configured-source token reaches the clone, not the env token
     assert clone_mock.call_args.kwargs["token"] == "store-token"
 
 
-def test_architecture_clone_repo_falls_back_to_env_token(
+def test_architecture_clone_repo_env_token_does_not_allow_a_clone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Arrange: no injected token, env-only local setup
     monkeypatch.setenv("GITHUB_TOKEN", "env-token")
-    monkeypatch.delenv("GH_TOKEN", raising=False)
-    monkeypatch.delenv("GITHUB_MCP_AUTH_TOKEN", raising=False)
-    clone_mock = MagicMock(side_effect=WorkspaceError("stop before network"))
+    clone_mock = MagicMock(side_effect=AssertionError("unauthorized clone"))
     monkeypatch.setattr(
         "integrations.github.tools.architecture_issue_tool.tool.clone_github_repo", clone_mock
     )
-
-    # Act
-    architecture_clone_repo(owner="org", repo="repo")
-
-    # Assert: the env token is used for the clone
-    assert clone_mock.call_args.kwargs["token"] == "env-token"
-
-
-def test_architecture_clone_repo_no_token_clones_unauthenticated(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Arrange: neither an injected token nor env vars
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.delenv("GH_TOKEN", raising=False)
-    monkeypatch.delenv("GITHUB_MCP_AUTH_TOKEN", raising=False)
-    clone_mock = MagicMock(side_effect=WorkspaceError("stop before network"))
-    monkeypatch.setattr(
-        "integrations.github.tools.architecture_issue_tool.tool.clone_github_repo", clone_mock
-    )
-
-    # Act
-    architecture_clone_repo(owner="org", repo="repo")
-
-    # Assert: clone proceeds with no token (public-repo path)
-    assert clone_mock.call_args.kwargs["token"] is None
+    result = architecture_clone_repo(owner="org", repo="repo")
+    assert result["work_outcome"]["status"] == "blocked"
+    clone_mock.assert_not_called()
 
 
 def test_architecture_cleanup_refuses_outside_path(tmp_path: Path) -> None:
-    result = architecture_cleanup_repo(workspace_root=str(tmp_path))
+    result = architecture_cleanup_repo(
+        github_connection_origin="webapp", github_token="app-token", workspace_root=str(tmp_path)
+    )
     assert result["ok"] is False
     assert "not an audit directory" in result["error"]
 
@@ -179,6 +160,8 @@ def test_architecture_save_observations_tool_uses_explicit_session(
         partial(save_architecture_observations, home_dir=tmp_path),
     )
     result = architecture_save_observations(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo_name="opensre",
         observations="- placement: tools under wrong tree",
         session_id="ae4c7934-747e-4ffc-9f62-3143cd1ad5af",
@@ -215,6 +198,8 @@ def test_architecture_save_observations_tool_reads_session_from_context(
         },
     )
     result = architecture_save_observations(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo_name="envoy",
         observations="- size: abi.h (14255)",
         context=context,
@@ -279,7 +264,14 @@ def test_architecture_clone_waiting_on_a_full_heavy_work_gate_ends_with_the_turn
 
     try:
         # Act
-        result = architecture_clone_repo(owner="org", repo="repo", ref="main", context=context)
+        result = architecture_clone_repo(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="org",
+            repo="repo",
+            ref="main",
+            context=context,
+        )
     finally:
         reset_process_heavy_work_gate_for_tests()
 

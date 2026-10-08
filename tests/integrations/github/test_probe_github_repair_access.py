@@ -88,7 +88,10 @@ def test_probe_uses_one_organizations_query_and_reports_can_create(
     client = _Client(headers)
     _install(monkeypatch, client)
 
-    result = repair_access.probe_github_repair_access()
+    result = repair_access.probe_github_repair_access(
+        github_connection_origin="webapp",
+        github_token="app-token",
+    )
 
     user_reads = [call for call in client.calls if call[0] == "GET" and call[1] == "user"]
     graphql = [call for call in client.calls if call[0] == "POST"]
@@ -118,6 +121,9 @@ def test_a_classic_pat_without_repo_scope_cannot_create(
     client = _Client({"X-OAuth-Scopes": "read:org"})
     _install(monkeypatch, client)
 
-    result = repair_access.probe_github_repair_access()
+    result = repair_access.probe_github_repair_access(
+        github_connection_origin="webapp",
+        github_token="app-token",
+    )
 
     assert result["owners"][0]["can_create_repositories"] is False

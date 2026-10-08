@@ -359,7 +359,7 @@ def test_worker_retries_then_credits_only_the_verified_head(
 
     store = RepairStore(tmp_path)
     run = _run(pr_number=1, fast_checks=True)
-    monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
+    monkeypatch.setattr(worker, "refreshed_github_token", lambda _connection=None: "test-token")
     monkeypatch.setattr(worker, "select_coding_agent", lambda: ("codex", "ready"))
     monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: _RepairApi())
 
@@ -426,7 +426,7 @@ def test_attempt_record_adds_the_backend_and_phase_times_to_the_repair_output(
     run = _run(pr_number=1, fast_checks=True)
     ticks = count()
     timer = PhaseTimer(clock=lambda: float(next(ticks)))
-    monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
+    monkeypatch.setattr(worker, "refreshed_github_token", lambda _connection=None: "test-token")
     monkeypatch.setattr(worker, "select_coding_agent", lambda: ("codex", "ready"))
     monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(worker, "clone_repository", lambda _url, ws, **_kw: Path(ws).mkdir())
@@ -490,7 +490,7 @@ def test_a_repair_probes_the_coding_agents_once_for_all_its_attempts(
     monkeypatch.setitem(_BACKENDS, "codex", (codex_run, codex_probe))
     store = RepairStore(tmp_path)
     run = _run(pr_number=1, fast_checks=True)
-    monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
+    monkeypatch.setattr(worker, "refreshed_github_token", lambda _connection=None: "test-token")
     monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(worker, "clone_repository", lambda _url, ws, **_kw: Path(ws).mkdir())
     monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
@@ -567,7 +567,7 @@ def test_account_change_stops_before_any_remote_write(
     from integrations.github.tools.ci_repair_loop import worker
 
     api = _RepairApi()
-    monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
+    monkeypatch.setattr(worker, "refreshed_github_token", lambda _connection=None: "test-token")
     monkeypatch.setattr(worker, "select_coding_agent", lambda: ("codex", "ready"))
     monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: api)
     run = _run().model_copy(update={"actor_id": 456})
@@ -729,14 +729,20 @@ def test_reports_require_the_recorded_github_account(
 
     reader = Reader()
     monkeypatch.setattr(tool, "GitHubRestClient", lambda _token: reader, raising=False)
-    rejected = tool.get_ci_repair_loop(run.id)
+    rejected = tool.get_ci_repair_loop(
+        run.id, github_connection_origin="webapp", github_token="app-token"
+    )
     assert not rejected["ok"] and run.repo not in str(rejected) and run.pr_url not in str(rejected)
     reader.actor = "renamed-alice"
     reader.account_id = 123
-    allowed = tool.get_ci_repair_loop(run.id)
+    allowed = tool.get_ci_repair_loop(
+        run.id, github_connection_origin="webapp", github_token="app-token"
+    )
     assert allowed["ok"] and allowed["pr_url"] == run.pr_url
     store.save(run.model_copy(update={"actor_id": 0}))
-    assert not tool.get_ci_repair_loop(run.id)["ok"]
+    assert not tool.get_ci_repair_loop(
+        run.id, github_connection_origin="webapp", github_token="app-token"
+    )["ok"]
 
 
 def test_the_report_without_an_id_is_this_accounts_newest_run(
@@ -766,7 +772,10 @@ def test_the_report_without_an_id_is_this_accounts_newest_run(
     monkeypatch.setattr(tool, "GitHubRestClient", lambda _token: Reader(), raising=False)
 
     # Act
-    report = tool.get_ci_repair_loop()
+    report = tool.get_ci_repair_loop(
+        github_connection_origin="webapp",
+        github_token="app-token",
+    )
 
     # Assert: the newest of this account's runs, never another account's
     assert report["ok"] and report["pr_url"] == newer.pr_url
@@ -788,7 +797,10 @@ def test_the_report_without_an_id_says_when_there_are_no_runs(
     monkeypatch.setattr(tool, "GitHubRestClient", lambda _token: Reader(), raising=False)
 
     # Act
-    report = tool.get_ci_repair_loop()
+    report = tool.get_ci_repair_loop(
+        github_connection_origin="webapp",
+        github_token="app-token",
+    )
 
     # Assert
     assert report["ok"] is False and "no CI repair runs yet" in report["error"]
@@ -1090,7 +1102,11 @@ def test_the_scheduling_tool_returns_the_refusal_reason(monkeypatch: pytest.Monk
 
     # Act
     result = repair_tool.schedule_ci_repair_loop(
-        owner="Tracer-Cloud", repo="opensre", pr_number=6408, github_token="t"
+        github_connection_origin="webapp",
+        owner="Tracer-Cloud",
+        repo="opensre",
+        pr_number=6408,
+        github_token="t",
     )
 
     # Assert: the reason is in the error too, which is all the model and telemetry read
@@ -1123,9 +1139,13 @@ def test_a_failed_repair_read_names_its_cause_not_a_generic_hint(
     monkeypatch.setattr(repair_tool, "GitHubRestClient", _RefusingClient)
 
     # Act
-    unauthorized = repair_tool.get_ci_repair_loop(task_id="a" * 12, github_token="t")
+    unauthorized = repair_tool.get_ci_repair_loop(
+        github_connection_origin="webapp", task_id="a" * 12, github_token="t"
+    )
     monkeypatch.setattr(repair_tool, "GitHubRestClient", _signed_in_api)
-    unknown = repair_tool.get_ci_repair_loop(task_id="not-a-run", github_token="t")
+    unknown = repair_tool.get_ci_repair_loop(
+        github_connection_origin="webapp", task_id="not-a-run", github_token="t"
+    )
 
     # Assert
     assert unauthorized["ok"] is False
@@ -1440,7 +1460,7 @@ def _repair_on_the_second_attempt(
     from integrations.github.tools.ci_repair_loop import worker
 
     store = RepairStore(tmp_path)
-    monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
+    monkeypatch.setattr(worker, "refreshed_github_token", lambda _connection=None: "test-token")
     monkeypatch.setattr(worker, "select_coding_agent", lambda: ("codex", "ready"))
     monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(
@@ -1596,7 +1616,12 @@ def test_wait_until_terminal_returns_when_the_run_finishes(
 
     monkeypatch.setattr(tool.time, "sleep", sleep)
 
-    result = tool.get_ci_repair_loop(run.id, wait_until_terminal=True)
+    result = tool.get_ci_repair_loop(
+        run.id,
+        github_connection_origin="webapp",
+        github_token="app-token",
+        wait_until_terminal=True,
+    )
 
     assert result["ok"] is True
     assert result["terminal"] is True
@@ -1625,7 +1650,12 @@ def test_wait_until_terminal_stops_at_the_repair_deadline(
 
     monkeypatch.setattr(tool.time, "sleep", sleep)
 
-    result = tool.get_ci_repair_loop(run.id, wait_until_terminal=True)
+    result = tool.get_ci_repair_loop(
+        run.id,
+        github_connection_origin="webapp",
+        github_token="app-token",
+        wait_until_terminal=True,
+    )
 
     assert result["ok"] is True
     assert result["terminal"] is False

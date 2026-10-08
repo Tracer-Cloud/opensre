@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+GITHUB_CONNECTION_ORIGIN_TAG = "connection_origin"
+GITHUB_WEBAPP_ORIGIN = "webapp"
+GITHUB_LOCAL_ORIGIN = "local"
+GITHUB_UNKNOWN_ORIGIN = "unknown"
+GITHUB_CONNECTION_ORIGIN_PARAM = "github_connection_origin"
+GITHUB_PROVENANCE_PARAM = "github_provenance"
+
 GITHUB_API_BASE_URL = "https://api.github.com"
 GITHUB_MCP_MODE_ENV = "GITHUB_MCP_MODE"
 GITHUB_MCP_URL_ENV = "GITHUB_MCP_URL"
@@ -12,10 +19,9 @@ GITHUB_MCP_TOOLSETS_ENV = "GITHUB_MCP_TOOLSETS"
 # Distinct ecosystem names: GitHub Actions injects GITHUB_TOKEN; the gh CLI reads GH_TOKEN.
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 GH_TOKEN_ENV = "GH_TOKEN"
-GITHUB_CLI_REQUIRED_SCOPES = frozenset({"read:org", "repo", "security_events", "workflow"})
-#: Shell command that opens the GitHub setup wizard.
+#: Shell command that hands GitHub setup to the app.
 GITHUB_INTEGRATION_SETUP_SLASH = "/integrations setup github"
-#: Same wizard from a terminal that is not already inside the interactive shell.
+#: Same app handoff from a terminal that is not already inside the interactive shell.
 GITHUB_INTEGRATION_SETUP_CLI = "opensre integrations setup github"
 #: ``slash_invoke`` accepts ``/integrations`` as the command and the rest as args.
 GITHUB_SETUP_SLASH_INVOKE = 'slash_invoke(command="/integrations", args=["setup", "github"])'
@@ -37,10 +43,15 @@ GITHUB_TOKEN_CHECKLIST = (
 )
 
 __all__ = [
+    "GITHUB_CONNECTION_ORIGIN_TAG",
+    "GITHUB_WEBAPP_ORIGIN",
+    "GITHUB_LOCAL_ORIGIN",
+    "GITHUB_UNKNOWN_ORIGIN",
+    "GITHUB_CONNECTION_ORIGIN_PARAM",
+    "GITHUB_PROVENANCE_PARAM",
     "GITHUB_TOKEN_CHECKLIST",
     "GH_TOKEN_ENV",
     "GITHUB_API_BASE_URL",
-    "GITHUB_CLI_REQUIRED_SCOPES",
     "GITHUB_INTEGRATION_SETUP_CLI",
     "GITHUB_INTEGRATION_SETUP_SLASH",
     "GITHUB_SETUP_SLASH_INVOKE",

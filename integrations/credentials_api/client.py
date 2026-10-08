@@ -14,6 +14,7 @@ from config.constants.account import (
     INTEGRATION_OWNER_ID_TAG,
     INTEGRATION_OWNER_KIND_TAG,
 )
+from config.constants.github import GITHUB_CONNECTION_ORIGIN_TAG, GITHUB_PROVENANCE_PARAM
 
 
 class CredentialsApiError(RuntimeError):
@@ -136,10 +137,13 @@ class AgentVaultRecord(BaseModel):
     credentials: dict[str, JsonValue]
     owner: IntegrationOwner | None = None
     is_default: bool = False
+    connection_origin: Literal["webapp", "cli", "unknown"] = "unknown"
 
     def tags(self) -> dict[str, str]:
         """Owner and default flag as store-instance tags."""
         tags: dict[str, str] = {}
+        if self.service == "github":
+            tags[GITHUB_CONNECTION_ORIGIN_TAG] = self.connection_origin
         if self.owner is not None:
             tags[INTEGRATION_OWNER_KIND_TAG] = self.owner.kind
             tags[INTEGRATION_OWNER_ID_TAG] = self.owner.id
@@ -222,6 +226,7 @@ class CredentialsApiClient:
         if not organization_id.strip():
             raise ValueError("organization_id must not be blank")
         path = self._endpoint_template.format(organization_id=quote(organization_id, safe=""))
+        path = str(httpx.URL(path).copy_merge_params({GITHUB_PROVENANCE_PARAM: "1"}))
         try:
             response = self._client.get(
                 path,

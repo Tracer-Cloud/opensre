@@ -24,15 +24,8 @@ opensre integrations verify github
 
 Ensure the GitHub MCP toolsets include `actions`.
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `GITHUB_MCP_AUTH_TOKEN` | Yes\* | GitHub token (or browser sign-in via setup) |
-| `GITHUB_MCP_URL` | No | Custom MCP endpoint (default `https://api.githubcopilot.com/mcp/`) |
-| `GITHUB_MCP_MODE` / `GITHUB_MCP_COMMAND` / `GITHUB_MCP_ARGS` | No | For stdio-based MCP setups |
-
-\*Unless you authorized in the browser during `opensre integrations setup github`.
-
-If no token is configured, GitHub Actions tools report that the GitHub integration is unavailable.
+GitHub access comes from your selected connection in the OpenSRE app. Reconnect or
+review repository and Actions access there when a request is rejected.
 
 ## Credentials
 
@@ -100,7 +93,7 @@ Confirm the verify output mentions Actions tools. Then test from the REPL:
 
 | Symptom | Fix |
 | --- | --- |
-| **GitHub integration unavailable** | Run `opensre integrations setup github` and verify token scopes include `repo` |
+| **GitHub integration unavailable** | Reconnect GitHub or review repository access in the OpenSRE app |
 | **No workflow runs returned** | Confirm `owner`/`repo` match the repository; check token access to private repos |
 | **Step log empty** | Use `job_id` and exact `step_name` from `list_github_actions_run_jobs` |
 | **MCP connection failed** | Verify `GITHUB_MCP_URL` is reachable; see [GitHub troubleshooting](/integrations/code/github#troubleshooting) |

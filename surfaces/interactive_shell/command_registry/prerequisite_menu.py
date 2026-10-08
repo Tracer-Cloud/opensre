@@ -30,6 +30,7 @@ from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_browser_open_requested
 from infrastructure.terminal import theme as ui_theme
 from integrations.account_integrations import account_setup_url, load_account_integrations
+from integrations.github import github_setup_url
 from surfaces.interactive_shell.command_registry.setup_resume import (
     ResumeOutcome,
     resume_after_setup,
@@ -78,7 +79,7 @@ def run_prerequisite_action(
 
 def _open_app(console: Console, service: str) -> None:
     label = escape(prerequisite_service_label(service))
-    url = account_setup_url()
+    url = github_setup_url() if service == "github" else account_setup_url()
     if not url:
         console.print(
             f"[{ui_theme.WARNING}]Could not build the OpenSRE app link. "

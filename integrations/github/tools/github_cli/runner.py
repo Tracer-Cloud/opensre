@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from typing import Any
 
-from integrations.github.tools.github_cli.credentials import resolve_github_token
+from integrations.github.client import resolve_github_token
 
 DEFAULT_TIMEOUT_SECONDS = 60
 MAX_TIMEOUT_SECONDS = 120
@@ -208,7 +208,7 @@ def run_gh(
             "ok": False,
             "error": (
                 "GitHub token is required. Configure the GitHub integration, or set "
-                "GITHUB_MCP_AUTH_TOKEN, GITHUB_TOKEN, or GH_TOKEN."
+                "an authorized GitHub connection in the OpenSRE app."
             ),
             "error_type": "configuration_error",
             "argv": build_gh_argv(args=args, repo=repo),

@@ -571,7 +571,7 @@ class _SeededGitHub:
 def _observer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, github: _SeededGitHub) -> Any:
     import integrations.github.ci_epochs as ci_epochs
 
-    monkeypatch.setattr(ci_epochs, "_github_token", lambda: "unused")
+    monkeypatch.setattr(ci_epochs, "refreshed_github_token", lambda: "unused")
     monkeypatch.setattr(ci_epochs, "GitHubRestClient", lambda _token: github)
     return ci_epochs.Observer("tester", "opensre-ci-repair-demo-poll", 1, tmp_path)
 

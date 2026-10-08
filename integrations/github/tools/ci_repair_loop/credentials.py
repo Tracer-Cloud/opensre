@@ -4,46 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from config.constants import GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV, GITHUB_TOKEN_ENV
-from config.llm_credentials import resolve_env_credential
-from integrations.catalog import resolve_effective_integrations
-from integrations.github.helpers import github_creds
+from integrations.github.app_connection import refreshed_github_token
 
 
 def configured_token(explicit: str | None = None) -> str:
-    """Prefer injected credentials, then the effective integration and env fallback."""
+    """Use a vetted injected token or freshly resolve the app connection."""
     token = effective_github_token(explicit)
     if token:
         return token
-    raise ValueError("Configure GitHub with `opensre integrations setup github` before scheduling.")
+    raise ValueError("Connect or reconnect GitHub in the OpenSRE app before scheduling.")
 
 
 def effective_github_token(explicit: str | None = None) -> str:
-    """Resolve a GitHub token from any configured source; ``""`` when absent.
-
-    Order: explicit → the effective GitHub integration (remote, store) → env
-    (``GITHUB_MCP_AUTH_TOKEN``, ``GITHUB_TOKEN``, ``GH_TOKEN``). Never raises.
-    """
-    if explicit:
-        return explicit
-    token = stored_github_token()
-    if token:
-        return token
-    for name in (GITHUB_MCP_AUTH_TOKEN_ENV, GITHUB_TOKEN_ENV, GH_TOKEN_ENV):
-        token = resolve_env_credential(name)
-        if token:
-            return token
-    return ""
-
-
-def stored_github_token() -> str:
-    """Token of the effective GitHub integration; its entry wraps the classified config."""
-    github = resolve_effective_integrations().get("github", {})
-    config = github.get("config")
-    if not isinstance(config, dict):
-        return ""
-    creds = github_creds(config)
-    return str(creds.get("github_token") or "")
+    """Use an explicit token without fallback, or re-resolve an app grant."""
+    return explicit.strip() if explicit is not None else refreshed_github_token()
 
 
 def account_id(user: Mapping[str, object]) -> int:

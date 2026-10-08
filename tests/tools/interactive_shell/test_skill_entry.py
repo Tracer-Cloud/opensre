@@ -223,12 +223,12 @@ def test_a_skill_without_its_github_token_queues_setup_instead_of_starting(
     assert pending.title == "Connect GitHub to continue"
     # The analysis demo can also go on without GitHub, on the user's local repositories.
     assert pending.options == (
-        "Set up GitHub on this machine",
+        "Connect GitHub in the OpenSRE app (recommended)",
         "I've connected GitHub — continue",
         "Use my local repos instead (no GitHub needed)",
         "Not now",
     )
-    assert pending.commands["Set up GitHub on this machine"] == "/integrations setup github"
+    assert pending.commands[pending.options[0]] == "prerequisite:open-app:github"
     assert pending.custom_answer is False
     assert session.terminal.pending_prompt_default == "/choose"
     # Nothing a replay depends on has moved.
@@ -264,7 +264,8 @@ def test_without_a_terminal_the_gate_answers_in_text_and_parks_nothing() -> None
     )
 
     assert result["prerequisite"]["menu"] == "unavailable"
-    assert "opensre integrations setup github" in result["content"]
+    assert "https://app.opensre.com/home" in result["content"]
+    assert "opensre integrations setup github" not in result["content"]
     assert skills.load_skill_body(_GATED) not in result["content"]
     assert session.pending_user_choice is None
     assert session.active_skill is None
@@ -297,7 +298,7 @@ def test_a_signed_in_machine_is_offered_the_opensre_app_first(
     assert pending is not None
     assert pending.options[:2] == (
         "Connect GitHub in the OpenSRE app (recommended)",
-        "Set up GitHub on this machine",
+        "I've connected GitHub — continue",
     )
     assert pending.commands[pending.options[0]] == "prerequisite:open-app:github"
 
@@ -316,16 +317,18 @@ def test_the_skill_starts_when_its_check_passes_or_cannot_run(
     condition: str,
 ) -> None:
     """A token lets the skill start; a wiring gap or a check bug fails open."""
-    if condition == "token":
-        monkeypatch.setenv(GH_TOKEN_ENV, "env-tok")
-    else:
+    if condition != "token":
         clear_skill_prerequisite_checks()
         if condition == "raising check":
             register_skill_prerequisite_check(GITHUB_REST_TOKEN_CHECK, _raise)
     session = Session()
 
     result = enter_skill(
-        _GATED, _scope(session, turn_message="analyze my CI"), resolved_integrations={}
+        _GATED,
+        _scope(session, turn_message="analyze my CI"),
+        resolved_integrations={"github": {"auth_token": "app-token", "connection_origin": "webapp"}}
+        if condition == "token"
+        else {},
     )
 
     assert "prerequisite" not in result
@@ -497,3 +500,9 @@ def test_demo_menu_and_handoffs_follow_current_child_metadata(demo_catalog: Path
     assert refreshed.pending_user_choice.options[:2] == ("Second demo", "Renamed demo")
     assert '"Renamed demo": call `skill_view(name="first")`' in result["content"]
     assert "First demo" not in result["content"]
+
+
+def test_an_env_token_does_not_start_github_skill(monkeypatch):
+    monkeypatch.setenv(GH_TOKEN_ENV, "local-token")
+    result = enter_skill(_GATED, _scope(Session()), resolved_integrations={})
+    assert result["prerequisite"]["menu"] == "queued"

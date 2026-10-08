@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-from config.constants.github import GITHUB_INTEGRATION_SETUP_SLASH
 from config.constants.llm import OPENSRE_REACT_GOAL_LLM_REVIEW_ENV
 from core.agent.goals import GoalObservation
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
@@ -70,13 +69,12 @@ _TOKEN_REQUIRED = "A GitHub token is required to read the Actions history of acm
 
 
 def _analyzer_needs_setup() -> tuple[ExecutedToolOutcome, tuple[ToolCall, ToolExecutionResult]]:
-    """The analyzer's missing-token reply as the reviewer sees it, and as the loop recorded it.
-
-    The outcome tap keeps only the error text (the compat payload); the
-    ``setup_command`` survives only in the loop's raw result.
-    """
+    """Preserve the analyzer's blocked outcome without a setup slash command."""
     envelope = tool_unavailable(
-        "github", _TOKEN_REQUIRED, setup_command=GITHUB_INTEGRATION_SETUP_SLASH
+        "github",
+        _TOKEN_REQUIRED,
+        setup_url="https://app.opensre.ai/home",
+        work_outcome={"status": "blocked", "reason": "github_connection_required"},
     )
     call = ToolCall(id="call-analyzer", name=_ANALYZER, input={"owner": "acme", "repo": "app"})
     result = ToolExecutionResult(content=_TOKEN_REQUIRED, details=envelope, is_error=True)
@@ -512,6 +510,7 @@ def test_goal_reviewer_accepts_a_stop_when_the_failed_tool_needs_the_user_to_set
         "analyze CI reliability for acme/app",
         executed_tool_names=[_ANALYZER],
         executed_outcomes=[outcome],
+        plan_incomplete=lambda: True,
     )
     assert goal.verify is not None
 

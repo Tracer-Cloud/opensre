@@ -9,6 +9,12 @@ from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import resolve_github_token
 from integrations.github.tools.architecture_issue_tool.repo_workspace import (
     WorkspaceError,
     cleanup_architecture_workspace,
@@ -22,14 +28,13 @@ from integrations.github.tools.github_cli.credentials import (
     GITHUB_CLI_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    resolve_github_token,
 )
 
 
 def _github_clone_available(sources: dict[str, dict]) -> bool:
     if sources.get("github", {}).get("connection_selection_error"):
         return False
-    return bool(github_source_available(sources) or resolve_github_token(None))
+    return bool(github_source_available(sources))
 
 
 def _github_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -118,10 +123,11 @@ def _session_id_from_runtime(context: Any, explicit: str = "") -> str:
         "required": ["owner", "repo"],
         "additionalProperties": False,
     },
-    is_available=_github_clone_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_clone_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_CLI_INJECTED_PARAMS,
 )
+@require_webapp_github
 def architecture_clone_repo(
     owner: str,
     repo: str,
@@ -186,9 +192,12 @@ def architecture_clone_repo(
         "required": ["workspace_root"],
         "additionalProperties": False,
     },
-    is_available=_always_available,
+    is_available=github_tool_available(_always_available),
     accepts_runtime_context=True,
+    extract_params=github_tool_params(),
+    injected_params=("github_token", "github_connection_origin", "github_connection_id"),
 )
+@require_webapp_github
 def architecture_cleanup_repo(
     workspace_root: str,
     context: Any = None,
@@ -251,8 +260,11 @@ def architecture_cleanup_repo(
         "required": ["repo_name", "observations"],
         "additionalProperties": False,
     },
-    is_available=_always_available,
+    is_available=github_tool_available(_always_available),
+    extract_params=github_tool_params(),
+    injected_params=("github_token", "github_connection_origin", "github_connection_id"),
 )
+@require_webapp_github
 def architecture_save_observations(
     repo_name: str,
     observations: str,

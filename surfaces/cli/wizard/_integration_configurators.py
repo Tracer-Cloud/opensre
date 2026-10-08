@@ -21,9 +21,7 @@ from surfaces.cli.wizard.configurators.chat_notifications import (
 )
 from surfaces.cli.wizard.configurators.dagster import _configure_dagster
 from surfaces.cli.wizard.configurators.github import (
-    DEFAULT_GITHUB_MCP_MODE,
-    DEFAULT_GITHUB_MCP_URL,
-    _configure_github_mcp,
+    _configure_github_app,
 )
 from surfaces.cli.wizard.configurators.gitlab import _configure_gitlab
 from surfaces.cli.wizard.configurators.jenkins import _configure_jenkins
@@ -53,8 +51,6 @@ from surfaces.cli.wizard.onboard_integrations import (
 )
 
 __all__ = [
-    "DEFAULT_GITHUB_MCP_MODE",
-    "DEFAULT_GITHUB_MCP_URL",
     "_configure_selected_integrations",
 ]
 
@@ -92,7 +88,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "rocketchat": _configure_rocketchat,
         "buzz": _configure_buzz,
         "aws": _configure_aws,
-        "github": _configure_github_mcp,
+        "github": _configure_github_app,
         "sentry": _configure_sentry,
         "gitlab": _configure_gitlab,
         "jenkins": _configure_jenkins,
@@ -154,8 +150,9 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         )
     try:
         label, env_path = handlers[selected_service]()
-        configured.append(label)
-        last_env_path = env_path
+        if label:
+            configured.append(label)
+            last_env_path = env_path
     except KeyboardInterrupt:
         console.print(
             f"[{WARNING}]{_SERVICE_LABELS.get(selected_service, selected_service)} setup skipped.[/]"

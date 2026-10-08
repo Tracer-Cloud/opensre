@@ -1,21 +1,12 @@
-"""The GitHub token a GitHub REST tool runs with, and whether any resolves.
-
-``analyze_github_ci_reliability`` is listed only while the session's chosen
-GitHub grant is usable, receives that grant's token through ``extract_params``,
-and falls back to the environment. The host's skill prerequisite gate asks the
-same question before a GitHub demo starts. Both go through this module, so the
-gate can never pass a demo the analyzer would then refuse, or hold back one it
-would run.
-"""
+"""The eligible app token shared by GitHub tools and skill prerequisites."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
 
+from config.constants.github import GITHUB_CONNECTION_ORIGIN_TAG, GITHUB_WEBAPP_ORIGIN
 from core.tool import availability_view
-from integrations.github.client import resolve_github_token
-from integrations.github.helpers import github_creds
 
 
 def github_selection_failed(sources: Mapping[str, Any]) -> bool:
@@ -29,21 +20,24 @@ def github_selection_failed(sources: Mapping[str, Any]) -> bool:
 
 
 def github_rest_token(
-    sources: Mapping[str, Any] | None = None, *, explicit: str | None = None
+    sources: Mapping[str, Any] | None = None,
+    *,
+    explicit: str | None = None,
+    connection_origin: str | None = None,
 ) -> str:
-    """Return ``explicit``, else the selected grant's token, else the env token; ``""`` when none.
-
-    ``sources`` is the tool-facing view (``availability_view``) the runtime
-    builds ``extract_params`` from, so this is the token the tool is handed.
-    A failed connection selection in ``sources`` yields ``""``: no fallback.
-    """
-    if sources is not None and github_selection_failed(sources):
+    """Return an attested app token, preserving an explicitly empty token."""
+    if sources is not None:
+        if github_selection_failed(sources):
+            return ""
+        github = sources.get("github")
+        if not isinstance(github, Mapping):
+            return ""
+        connection_origin = github.get(GITHUB_CONNECTION_ORIGIN_TAG)
+        if explicit is None:
+            explicit = str(github.get("github_token") or github.get("auth_token") or "")
+    if connection_origin != GITHUB_WEBAPP_ORIGIN:
         return ""
-    configured: str | None = None
-    github = (sources or {}).get("github")
-    if not explicit and isinstance(github, dict) and github:
-        configured = github_creds(github).get("github_token")
-    return resolve_github_token(explicit or configured)
+    return (explicit or "").strip()
 
 
 def resolved_github_rest_token(resolved_integrations: Mapping[str, Any]) -> str:

@@ -6,10 +6,10 @@ import math
 from datetime import datetime, timedelta
 from typing import Any
 
-from config.constants.github import GITHUB_INTEGRATION_SETUP_CLI
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 from infrastructure.scheduling.scheduler.types import TaskReport
+from integrations.github.app_connection import github_setup_url
 from integrations.github.client import GitHubApiError, GitHubFailureKind, github_failure_kind
 
 _SOURCE = "github"
@@ -38,7 +38,7 @@ _NEXT_STEP = {
         "lifts and offer to run it then."
     ),
     GitHubFailureKind.UNAUTHORIZED: (
-        "The same token fails the same way: hand the user the setup command instead of retrying."
+        "The same token fails the same way: hand the user the app setup URL instead of retrying."
     ),
     GitHubFailureKind.NOT_FOUND: (
         "The same owner/repo fails the same way: confirm the repository with the user."
@@ -90,8 +90,8 @@ def analysis_failure_line(exc: Exception, *, repository: str, now: datetime) -> 
         )
     if kind is GitHubFailureKind.UNAUTHORIZED:
         return (
-            f"GitHub rejected the token for {repository}; it needs read access to Actions and "
-            f"pull requests. Run `{GITHUB_INTEGRATION_SETUP_CLI}` and try again."
+            f"GitHub rejected the app connection for {repository}. Reconnect GitHub or review "
+            f"Actions and pull request access in the OpenSRE app: {github_setup_url()}"
         )
     if kind is GitHubFailureKind.NOT_FOUND:
         return f"GitHub repository {repository} was not found, or this token can't see it."
@@ -143,6 +143,7 @@ def analysis_failure(exc: Exception, *, owner: str, repo: str, now: datetime) ->
         f"{line} {_NEXT_STEP.get(kind, _DEFAULT_NEXT_STEP)}",
         response_text=line,
         error_kind=kind.value,
+        setup_url=github_setup_url(),
         work_outcome=outcome.model_dump(mode="json"),
         **timing,
     )

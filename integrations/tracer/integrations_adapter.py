@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.account import INTEGRATION_APP_ORIGIN, INTEGRATION_RETRIEVAL_ORIGIN_FIELD
 from integrations.tracer import get_tracer_client_for_org
 
 
@@ -23,4 +24,7 @@ def fetch_tracer_remote_integrations(org_id: str, auth_token: str) -> list[dict[
     ``resolve_integrations`` already has the try/except + local
     fall-through logic.
     """
-    return get_tracer_client_for_org(org_id, auth_token).get_all_integrations()
+    return [
+        {**record, INTEGRATION_RETRIEVAL_ORIGIN_FIELD: INTEGRATION_APP_ORIGIN}
+        for record in get_tracer_client_for_org(org_id, auth_token).get_all_integrations()
+    ]

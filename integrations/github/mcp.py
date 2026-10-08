@@ -473,29 +473,6 @@ def github_mcp_is_usably_configured(config: GitHubMCPConfig) -> bool:
     return bool(config.url.strip())
 
 
-def github_integration_is_configured() -> bool:
-    """Return True when GitHub MCP is configured with usable store or env credentials."""
-    from integrations.store import get_integration
-
-    record = get_integration("github")
-    if record is not None:
-        credentials = record.get("credentials") or {}
-        try:
-            if github_mcp_is_usably_configured(build_github_mcp_config(credentials)):
-                return True
-        except Exception:
-            logger.warning(
-                "Ignoring invalid GitHub integration credentials in store",
-                exc_info=True,
-            )
-    try:
-        env_config = github_mcp_config_from_env()
-    except Exception:
-        logger.warning("Ignoring invalid GitHub MCP env configuration", exc_info=True)
-        return False
-    return env_config is not None and github_mcp_is_usably_configured(env_config)
-
-
 @asynccontextmanager
 async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[ClientSession]:
     from mcp.client.session import ClientSession  # type: ignore[import-not-found]
@@ -1290,9 +1267,7 @@ def validate_github_mcp_config(
             detail=(
                 "GitHub MCP is configured without an auth token, so the hosted "
                 "GitHub Copilot MCP endpoint cannot be reached (it requires "
-                "authentication). Run `opensre integrations setup` to add a token, "
-                "set GITHUB_MCP_AUTH_TOKEN, or remove it with "
-                "`opensre integrations remove github`."
+                "authentication). Connect or reconnect GitHub in the OpenSRE app."
             ),
             failure_category="not_configured",
         )

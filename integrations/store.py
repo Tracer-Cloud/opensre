@@ -46,6 +46,7 @@ from typing import Any
 
 from filelock import FileLock, Timeout
 
+from config.constants.account import INTEGRATION_LOCAL_ORIGIN, INTEGRATION_RETRIEVAL_ORIGIN_FIELD
 from config.constants.paths import integrations_store_path
 
 logger = logging.getLogger(__name__)
@@ -251,7 +252,12 @@ def _locked_update(mutator: Callable[[dict[str, Any]], bool]) -> tuple[dict[str,
 
 def load_integrations() -> list[dict[str, Any]]:
     """Return all active local integrations (v2 shape)."""
-    return list(_load_raw().get("integrations", []))
+    return [
+        {**record, INTEGRATION_RETRIEVAL_ORIGIN_FIELD: INTEGRATION_LOCAL_ORIGIN}
+        if record.get("service") == "github"
+        else record
+        for record in _load_raw().get("integrations", [])
+    ]
 
 
 def replace_integrations(integrations: list[dict[str, Any]]) -> None:

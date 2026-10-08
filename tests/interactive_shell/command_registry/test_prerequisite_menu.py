@@ -36,10 +36,10 @@ from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.spi.session_state import arm_setup_resume, pending_setup_resume
 from surfaces.interactive_shell.session import Session
+from tests.utils.github_connections import connect_github_app
 
 _APP_URL = "https://app.test/home?org_id=org-1"
 _OPEN_APP = "Connect GitHub in the OpenSRE app (recommended)"
-_LOCAL_SETUP = "Set up GitHub on this machine"
 _CONTINUE = "I've connected GitHub — continue"
 _NOT_NOW = "Not now"
 _LOCAL_REPOS = "Use my local repos instead (no GitHub needed)"
@@ -143,7 +143,7 @@ def test_continue_replays_the_parked_answer_once_github_is_connected(
         return []
 
     monkeypatch.setattr(prerequisite_menu, "load_account_integrations", load_app_integrations)
-    monkeypatch.setenv(GH_TOKEN_ENV, "env-tok")  # connected while the menu was open
+    connect_github_app(monkeypatch)  # connected while the menu was open
     console, _buffer = _console()
 
     assert choice_prompt._cmd_choose(session, console, []) is True
@@ -166,9 +166,7 @@ def test_continue_without_a_connection_asks_again_in_the_same_turn(
 
     choice_prompt._cmd_choose(session, console, [])
 
-    assert [menu["note"] for menu in shown][1] == (
-        "GitHub is still not connected: no usable token was found."
-    )
+    assert "authorized GitHub connection in the OpenSRE app" in shown[1]["note"]
     assert session.terminal.pending_prompt_default is None
 
 
@@ -184,10 +182,10 @@ def test_the_app_row_opens_the_organization_home_and_asks_again(
         opened.append(url)
         return True
 
-    monkeypatch.setattr(prerequisite_menu, "account_setup_url", lambda: _APP_URL)
+    monkeypatch.setattr(prerequisite_menu, "github_setup_url", lambda: _APP_URL)
     monkeypatch.setattr(prerequisite_menu.webbrowser, "open", browser_open)
     monkeypatch.setattr(prerequisite_menu, "load_account_integrations", lambda **_kw: [])
-    monkeypatch.setenv(GH_TOKEN_ENV, "app-tok")  # the app connection reached this machine
+    connect_github_app(monkeypatch)
     console, buffer = _console()
 
     choice_prompt._cmd_choose(session, console, [])
@@ -212,21 +210,6 @@ def test_not_now_ends_cleanly_and_drops_the_parked_turn(
     assert session.active_skill is None
     assert session.terminal.pending_prompt_default is None
     assert session.terminal.awaiting_handoff_answer is False
-    assert onboarding_choices == []
-
-
-def test_local_setup_runs_the_wizard_and_keeps_the_turn_parked(
-    monkeypatch: pytest.MonkeyPatch, onboarding_choices: list[str | None]
-) -> None:
-    session = _held_demo()
-    _pick(monkeypatch, _LOCAL_SETUP)
-    console, _buffer = _console()
-
-    choice_prompt._cmd_choose(session, console, [])
-
-    assert session.terminal.pending_prompt_default == "/integrations setup github"
-    assert session.terminal.awaiting_handoff_answer is False
-    assert pending_setup_resume(session) is not None
     assert onboarding_choices == []
 
 

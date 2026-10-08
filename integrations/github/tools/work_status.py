@@ -13,7 +13,12 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -46,7 +51,7 @@ _REPO_PROPERTY: dict[str, str] = {"type": "string", "description": "Repository n
 def _github_available(sources: dict[str, dict]) -> bool:
     if sources.get("github", {}).get("connection_selection_error"):
         return False
-    return bool(github_source_available(sources) or resolve_github_token(None))
+    return bool(github_source_available(sources))
 
 
 def _github_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -171,10 +176,11 @@ def _map_summarize_github_pr_status(
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def list_github_work_items(
     owner: str,
     repo: str,
@@ -384,10 +390,11 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def summarize_github_pr_status(
     owner: str,
     repo: str,
@@ -545,11 +552,12 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_security_alerts,
 )
+@require_webapp_github
 def list_github_security_alerts(
     owner: str,
     repo: str,
@@ -624,10 +632,11 @@ def list_github_security_alerts(
         },
         "required": ["owner", "repo", "operation", "slack_text"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def propose_github_issue_mutation_from_slack(
     owner: str,
     repo: str,
@@ -828,10 +837,11 @@ def _marker_exists_on_issue(
         },
         "required": ["owner", "repo", "proposal"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def execute_github_issue_mutation(
     owner: str,
     repo: str,

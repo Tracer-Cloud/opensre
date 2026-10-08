@@ -1,8 +1,4 @@
-"""Lightweight GitHub identity helpers for UI, analytics, and public sources.
-
-Kept separate from :mod:`integrations.github.login` so callers can read saved
-identity data or derive public repository scope without importing GitHub MCP.
-"""
+"""Read saved GitHub identity without running authentication."""
 
 from __future__ import annotations
 

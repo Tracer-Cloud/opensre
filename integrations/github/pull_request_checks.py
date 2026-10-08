@@ -50,6 +50,7 @@ def watch_pull_request_checks(
     pushed_to: str,
     commit_sha: str,
     wait: Waiter = wait_for_pr_checks,
+    github_token: str | None = None,
 ) -> ChecksOutcome:
     """Wait for the checks of the open pull request whose head is the pushed branch."""
     owner, repo = _github_repository(workspace)
@@ -57,14 +58,14 @@ def watch_pull_request_checks(
         return ChecksOutcome(CHECKS_NOT_WATCHED, "the origin is not a GitHub repository")
     branch = _pushed_branch(pushed_to)
     try:
-        pull = _open_pull_request(owner, repo, branch)
+        pull = _open_pull_request(owner, repo, branch, github_token)
         if pull is None:
             return ChecksOutcome(CHECKS_NOT_WATCHED, f"no open pull request has head {branch}")
         verification = wait(
             _context(
                 owner, repo, pull, branch, previous_head=_previous_head(workspace, commit_sha)
             ),
-            github_token=None,
+            github_token=github_token,
             expected_head_sha=commit_sha,
         )
     except GitHubCiFixError as exc:
@@ -91,11 +92,13 @@ def _github_repository(workspace: str) -> tuple[str, str]:
     return str(github.get("owner") or ""), str(github.get("repo") or "")
 
 
-def _open_pull_request(owner: str, repo: str, branch: str) -> dict[str, Any] | None:
+def _open_pull_request(
+    owner: str, repo: str, branch: str, github_token: str | None
+) -> dict[str, Any] | None:
     raw = run_gh_text(
         ["pr", "list", "--head", branch, "--state", "open", "--limit", "1", "--json", _PR_FIELDS],
         repo=f"{owner}/{repo}",
-        github_token=None,
+        github_token=github_token,
     )
     try:
         pulls = json.loads(raw or "[]")

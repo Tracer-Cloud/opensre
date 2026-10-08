@@ -36,7 +36,6 @@ from integrations.betterstack.setup import BETTERSTACK_SETUP
 from integrations.coralogix.setup import CORALOGIX_SETUP
 from integrations.dagster.setup import DAGSTER_SETUP
 from integrations.datadog.setup import DATADOG_SETUP
-from integrations.github.setup import GITHUB_SETUP
 from integrations.gitlab.setup import GITLAB_SETUP
 from integrations.google_docs import GOOGLE_DOCS_SETUP
 from integrations.grafana.setup import GRAFANA_SETUP
@@ -356,7 +355,6 @@ _SPECS = [
     RDS_SETUP,
     SLACK_SETUP,
     AWS_SETUP,
-    GITHUB_SETUP,
     KUBERNETES_SETUP,
 ]
 

@@ -16,7 +16,6 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import NamedTuple
 
-from config.constants.github import GITHUB_SETUP_SLASH_INVOKE
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME,
@@ -34,9 +33,7 @@ class SkillPrerequisite(NamedTuple):
     service: str
 
 
-#: A GitHub REST token resolves for the turn's integrations: the OpenSRE app's
-#: GitHub connection, the local integration, or ``GITHUB_TOKEN`` / ``GH_TOKEN`` /
-#: ``GITHUB_MCP_AUTH_TOKEN``.
+#: A REST token from an authorized GitHub app connection resolves for the turn.
 GITHUB_REST_TOKEN_CHECK = "github_rest_token"
 
 _GITHUB_REST_TOKEN = SkillPrerequisite(check=GITHUB_REST_TOKEN_CHECK, service="github")
@@ -119,18 +116,14 @@ CONNECT_INTEGRATIONS_HEADING = "## Connect integrations first"
 _SECTION_BY_CHECK: Mapping[str, str] = MappingProxyType(
     {
         GITHUB_REST_TOKEN_CHECK: (
-            "The host checks for a usable GitHub token before this skill starts, so "
-            "it normally begins with GitHub connected. CI tools in this skill read "
-            "GitHub with that token (the OpenSRE app's GitHub connection, the local "
-            "integration, `GITHUB_TOKEN`, or `GH_TOKEN`). `integrations verify github` "
-            "checks the GitHub MCP endpoint, which these tools do not use. A verify "
-            "result other than `passed` does not block them.\n"
-            "\n"
-            "If a GitHub tool still reports a missing token, call "
-            f"`{GITHUB_SETUP_SLASH_INVOKE}` and end the turn so the shell opens "
-            "setup. Once GitHub is connected, the shell resubmits the message you "
-            "were answering; continue the same step from it. Do not wait for MCP "
-            "verification to pass first.\n"
+            "The host requires an authorized GitHub connection created in the OpenSRE app. "
+            "Local credentials and environment tokens do not qualify. REST analysis does "
+            "not require GitHub MCP verification.\n\n"
+            "If a GitHub tool reports a missing or rejected connection, send the user to "
+            "the app setup URL supplied by the host or tool to connect, reconnect, or "
+            "review repository access. End the turn without retrying or invoking GitHub "
+            "setup through slash_invoke. Resume the same analysis after the app connection "
+            "is refreshed.\n"
         ),
         SLACK_CONNECTED_CHECK: (
             "The host checks for a Slack connection before this skill starts, so it "

@@ -13,6 +13,7 @@ from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.storage import list_tasks
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskReport
+from integrations.github import app_connection
 from integrations.github.tools.ci_analytics import loop as ci_loop
 from integrations.github.tools.ci_analytics import loop_tool
 
@@ -140,8 +141,16 @@ def test_tool_returns_the_card_and_reports_a_bad_time(monkeypatch: pytest.Monkey
     monkeypatch.setattr(ci_loop, "schedule_ci_reliability_loop", fake_schedule)
 
     # Act
-    ok = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app")
-    bad = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app", time="noon-ish")
+    ok = loop_tool.schedule_ci_reliability_loop(
+        github_connection_origin="webapp", github_token="app-token", owner="acme", repo="app"
+    )
+    bad = loop_tool.schedule_ci_reliability_loop(
+        github_connection_origin="webapp",
+        github_token="app-token",
+        owner="acme",
+        repo="app",
+        time="noon-ish",
+    )
 
     # Assert
     assert ok["ok"] is True
@@ -233,14 +242,19 @@ def test_tool_puts_todays_snapshot_report_above_the_schedule_card(
 
     now = _write_report_snapshot(tmp_path, window_days=30)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "github_rest_token", lambda **_kw: "")
 
     def _schedule(*_a: object, **_k: object) -> ci_loop.ScheduledLoop:
         return _scheduled_stub("acme", "app")
 
     monkeypatch.setattr(ci_loop, "schedule_ci_reliability_loop", _schedule)
 
-    result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app", include_report=True)
+    result = loop_tool.schedule_ci_reliability_loop(
+        github_connection_origin="webapp",
+        github_token="app-token",
+        owner="acme",
+        repo="app",
+        include_report=True,
+    )
 
     assert result["ok"] is True
     assert result["report_as_of"].startswith(str(now.year))
@@ -310,11 +324,10 @@ def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
     # Arrange: GitHub answers with no runs; the token is present.
     import json
 
-    from integrations.github import client as github_client
     from integrations.github.tools.ci_analytics import analysis
     from integrations.github.tools.ci_analytics.collector import CollectedRuns
 
-    monkeypatch.setattr(github_client, "resolve_github_token", lambda _t: "tok")
+    monkeypatch.setattr(app_connection, "refreshed_github_token", lambda _connection=None: "tok")
     monkeypatch.setattr(
         analysis,
         "collect_runs",
@@ -360,10 +373,9 @@ def test_a_blocked_read_reaches_the_loops_channels_as_a_blocked_report(
     )
     from infrastructure.scheduling.scheduler.outcomes import WorkStatus
     from integrations import manual_loop_runner
-    from integrations.github import client as github_client
     from integrations.github.tools.ci_analytics import analysis
 
-    monkeypatch.setattr(github_client, "resolve_github_token", lambda _t: "tok")
+    monkeypatch.setattr(app_connection, "refreshed_github_token", lambda _connection=None: "tok")
     monkeypatch.setattr(analysis, "collect_runs", _rate_limited)
 
     report = manual_loop_runner.run_manual_prompt_loop(
@@ -383,12 +395,12 @@ def test_a_blocked_read_reaches_the_loops_channels_as_a_blocked_report(
 def test_build_report_without_a_token_raises_a_generic_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from integrations.github import client as github_client
 
-    monkeypatch.setattr(github_client, "resolve_github_token", lambda _t: "")
+    monkeypatch.setattr(app_connection, "refreshed_github_token", lambda _connection=None: "")
 
-    with pytest.raises(RuntimeError, match="No GitHub token"):
-        ci_loop.build_report({"owner": "acme", "repo": "app"})
+    report = ci_loop.build_report({"owner": "acme", "repo": "app"})
+    assert "OpenSRE app" in report
+    assert report.outcome.status.value == "blocked"
 
 
 def test_tool_never_reads_github_live_when_no_snapshot_exists(
@@ -411,7 +423,13 @@ def test_tool_never_reads_github_live_when_no_snapshot_exists(
     )
 
     # Act
-    result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app", include_report=True)
+    result = loop_tool.schedule_ci_reliability_loop(
+        github_connection_origin="webapp",
+        github_token="app-token",
+        owner="acme",
+        repo="app",
+        include_report=True,
+    )
 
     # Assert: the card alone, and GitHub was never contacted.
     assert live_calls == []
@@ -445,7 +463,13 @@ def test_tool_uses_the_loops_seven_day_snapshot_when_no_thirty_day_one_exists(
     )
 
     # Act
-    result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app", include_report=True)
+    result = loop_tool.schedule_ci_reliability_loop(
+        github_connection_origin="webapp",
+        github_token="app-token",
+        owner="acme",
+        repo="app",
+        include_report=True,
+    )
 
     # Assert: the loop's report is used and says which window it covers.
     assert result["report_as_of"] != ""
@@ -465,7 +489,6 @@ def test_analyze_keeps_the_details_beside_the_comparison(
 
     report = _sample_report(window_days=30, now=datetime.now(UTC))
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "github_rest_token", lambda **_kw: "tok")
 
     def _analyze(_owner: str, _repo: str, **_kwargs: Any) -> Any:
         return type("A", (), {"report": report, "runs_read": 3})()
@@ -474,7 +497,12 @@ def test_analyze_keeps_the_details_beside_the_comparison(
 
     # Act
     result = tool_module.analyze_github_ci_reliability(
-        owner="acme", repo="app", days=30, context=None
+        github_connection_origin="webapp",
+        github_token="app-token",
+        owner="acme",
+        repo="app",
+        days=30,
+        context=None,
     )
 
     # Assert: benchmarks add a payload; they do not remove the analysis details.
@@ -499,7 +527,9 @@ def test_the_card_says_how_to_run_the_loop_at_another_time(
     )
 
     # Act
-    result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app")
+    result = loop_tool.schedule_ci_reliability_loop(
+        github_connection_origin="webapp", github_token="app-token", owner="acme", repo="app"
+    )
 
     # Assert
     assert "delete to reschedule" in result["response_text"].lower()

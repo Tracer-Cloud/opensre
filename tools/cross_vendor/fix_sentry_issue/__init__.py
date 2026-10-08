@@ -22,7 +22,7 @@ Package layout (separation of concerns):
 
 Gating: ``is_available`` is True only when ``PI_ISSUE_FIX_ENABLED`` is set (the fix
 capability). Opening a PR requires a **second** opt-in, ``PI_ISSUE_FIX_SHIP_ENABLED``,
-plus a GitHub token. Secrets (Sentry/GitHub tokens) never enter the coding-agent
+plus an authorized GitHub app connection. Secrets (Sentry/GitHub tokens) never enter the coding-agent
 prompt, the commit, the PR body, or the returned output — the issue context is masked.
 """
 
@@ -36,10 +36,12 @@ from tools.cross_vendor.fix_sentry_issue.context import gather_issue_context
 from tools.cross_vendor.fix_sentry_issue.errors import FixIssueError
 from tools.cross_vendor.fix_sentry_issue.runner import (
     SOURCE,
+    eligible_github_token,
     ensure_cli_ready,
     ensure_enabled,
     ensure_ship_ready,
     error_output,
+    extract_github_params,
     is_issue_fix_enabled,
     pre_pi_changes,
     resolve_workspace,
@@ -62,7 +64,7 @@ class FixSentryIssueTool(BaseTool):
     description = (
         "Given a Sentry issue URL, fetch the issue context and run a coding agent to "
         "propose a fix in the current repository, returning a summary plus the git diff. "
-        "With open_pr=true (and PI_ISSUE_FIX_SHIP_ENABLED=1 plus a GitHub token) it commits "
+        "With open_pr=true (and PI_ISSUE_FIX_SHIP_ENABLED=1 plus an authorized GitHub app connection) it commits "
         "the fix to a fresh branch, pushes it, and opens a pull request into the base branch "
         "— never pushing to main. Disabled unless PI_ISSUE_FIX_ENABLED=1, Sentry is "
         "configured, and a coding agent is installed."
@@ -129,13 +131,21 @@ class FixSentryIssueTool(BaseTool):
         """Only available when explicitly opted in (cheap flag check)."""
         return is_issue_fix_enabled()
 
+    injected_params = ("github_token", "github_connection_origin")
+
+    def extract_params(self, sources: dict[str, dict]) -> dict[str, Any]:
+        return extract_github_params(sources)
+
     def run(
         self,
         sentry_url: str,
         workspace: str | None = None,
         model: str | None = None,
         open_pr: bool = False,
+        github_token: str = "",
+        github_connection_origin: str | None = None,
     ) -> dict[str, Any]:
+        token = eligible_github_token(github_token, github_connection_origin)
         ws = resolve_workspace(workspace)
         try:
             ensure_enabled()
@@ -148,7 +158,7 @@ class FixSentryIssueTool(BaseTool):
             ensure_cli_ready()
             if open_pr:
                 # Fail fast before spending a Pi run if a PR could never be opened.
-                ensure_ship_ready(ws)
+                ensure_ship_ready(ws, token)
         except FixIssueError as exc:
             # The issue is resolved; keep its id in the error output.
             return error_output(exc.kind, exc.message, ctx.issue_id)
@@ -164,7 +174,9 @@ class FixSentryIssueTool(BaseTool):
             return output
 
         try:
-            ship = run_ship(ctx.issue_id, sentry_url, result, ws, baseline=baseline)
+            ship = run_ship(
+                ctx.issue_id, sentry_url, result, ws, baseline=baseline, github_token=token
+            )
         except FixIssueError as exc:
             # The fix is in the working tree; report why shipping failed but keep the diff.
             return ship_error_output(output, exc)

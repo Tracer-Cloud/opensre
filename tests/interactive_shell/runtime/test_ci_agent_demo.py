@@ -96,7 +96,13 @@ def _agent_demo_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[d
     from infrastructure.scheduling.scheduler.local_delivery import LocalLoopMessage
 
     monkeypatch.setattr(ci_agent_demo, "scan_workspace", lambda *_a, **_kw: _SNAPSHOT)
-    monkeypatch.setattr(ci_agent_demo, "effective_github_token", lambda: "tok")
+    monkeypatch.setattr(
+        ci_agent_demo,
+        "resolve_and_cache_integrations",
+        lambda _session: {
+            "github": {"connection_origin": "webapp", "auth_token": "tok", "connection_id": "app-1"}
+        },
+    )
     monkeypatch.setattr(ci_agent_demo, "marker_path", lambda: tmp_path / "onboarding_demo.json")
     calls: list[dict[str, object]] = []
 
@@ -143,7 +149,14 @@ def test_agent_demo_schedules_the_loop_runs_it_once_and_shows_the_report(
     # Assert: loop created for the pick, weekdays at 08:00, card and first report shown.
     assert queued is False
     assert calls == [
-        {"owner": "me", "repo": "mine", "time_text": "08:00", "weekdays": True, "timezone": "UTC"}
+        {
+            "owner": "me",
+            "repo": "mine",
+            "time_text": "08:00",
+            "weekdays": True,
+            "timezone": "UTC",
+            "github_connection_id": "app-1",
+        }
     ]
     titles = [menu["title"] for menu in menus]
     assert titles == [
@@ -256,7 +269,7 @@ def test_agent_demo_stops_with_setup_hint_when_no_github_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls = _agent_demo_ready(monkeypatch, tmp_path)
-    monkeypatch.setattr(ci_agent_demo, "effective_github_token", lambda: "")
+    monkeypatch.setattr(ci_agent_demo, "resolve_and_cache_integrations", lambda _session: {})
     _answers(monkeypatch)
     session = Session()
     console, buf = _capture()
@@ -265,4 +278,4 @@ def test_agent_demo_stops_with_setup_hint_when_no_github_token(
 
     assert queued is False
     assert calls == []
-    assert "opensre integrations setup github" in " ".join(buf.getvalue().split())
+    assert "OpenSRE app" in " ".join(buf.getvalue().split())

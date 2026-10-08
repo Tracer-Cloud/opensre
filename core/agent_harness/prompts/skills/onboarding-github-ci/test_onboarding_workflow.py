@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 
 from config.constants import (
-    GITHUB_TOKEN_ENV,
     OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     OPENSRE_MEMORY_DIR_ENV,
 )
@@ -34,6 +33,7 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
     tool_response,
 )
+from tests.utils.github_connections import connect_github_app
 
 
 @dataclass
@@ -74,9 +74,9 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
     # GitHub is ready, so the chosen child passes its prerequisite gate.
-    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
+    connect_github_app(monkeypatch)
     skill = next(s for s in list_action_skills() if s.path == Path(__file__).with_name("SKILL.md"))
-    session = _Session(configured_integrations_known=True, resolved_integrations_cache={})
+    session = _Session(configured_integrations_known=True, resolved_integrations_cache=None)
     work: list[str] = []
 
     def scan() -> dict[str, Any]:

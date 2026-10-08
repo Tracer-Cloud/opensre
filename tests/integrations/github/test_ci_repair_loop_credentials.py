@@ -29,7 +29,7 @@ def test_the_stored_token_is_used_when_no_env_token_is_set(
         monkeypatch.delenv(name, raising=False)
 
     # Act
-    token = configured_token()
+    with pytest.raises(ValueError, match="OpenSRE app"):
+        configured_token()
 
     # Assert
-    assert token == "ghp_stored"

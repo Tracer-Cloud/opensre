@@ -22,7 +22,7 @@ from core.agent_harness.tools import ActionToolScope, action_context_from_agent_
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
 from integrations.git import GitCommandError, merge_in_progress, unmerged_paths
-from integrations.github import checkout_pull_request
+from integrations.github import checkout_pull_request, github_rest_token, missing_token_envelope
 from tools.cross_vendor.resolve_merge_conflicts.runner import (
     SOURCE,
     FileChoice,
@@ -308,6 +308,11 @@ class ResolveMergeConflictsTool(BaseTool):
         """Always offered; a missing coding agent is reported by the run itself."""
         return True
 
+    injected_params = ("github_token",)
+
+    def extract_params(self, sources: dict[str, dict]) -> dict[str, Any]:
+        return {"github_token": github_rest_token(sources)}
+
     def run(
         self,
         workspace: str | None = None,
@@ -318,12 +323,18 @@ class ResolveMergeConflictsTool(BaseTool):
         wait_for_checks: bool | None = True,
         pull_request: str | None = None,
         context: Any = None,
+        github_token: str = "",
     ) -> dict[str, Any]:
         scope = _action_scope(context)
         label = ""
         if pull_request:
+            if not github_token:
+                return missing_token_envelope(
+                    "Connect GitHub in the OpenSRE app before checking out a pull request.",
+                    blocked="the pull request cannot be checked out",
+                )
             try:
-                checkout = checkout_pull_request(pull_request, cwd=os.getcwd())
+                checkout = checkout_pull_request(pull_request, cwd=os.getcwd(), token=github_token)
             except GitCommandError as exc:
                 return {
                     **failure_output(workspace or os.getcwd(), exc.kind, exc.message),
@@ -342,6 +353,7 @@ class ResolveMergeConflictsTool(BaseTool):
             wait_for_checks=wait_for_checks is not False,
             cancelled=_cancellation(scope),
             ask=_ask(scope),
+            github_token=github_token,
         )
         return {**output, "pull_request": label}
 

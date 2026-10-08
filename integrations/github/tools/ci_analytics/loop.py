@@ -96,6 +96,7 @@ def schedule_ci_reliability_loop(
     repo: str,
     *,
     time_text: str = DEFAULT_LOOP_TIME,
+    github_connection_id: str = "",
     weekdays: bool = True,
     timezone: str = "",
     store_path: Path | None = None,
@@ -109,7 +110,13 @@ def schedule_ci_reliability_loop(
     cannot parse.
     """
     prompt = loop_prompt(owner, repo)
-    report_args = {"owner": owner, "repo": repo, "days": str(LOOP_WINDOW_DAYS)}
+    report_args = {
+        "owner": owner,
+        "repo": repo,
+        "days": str(LOOP_WINDOW_DAYS),
+    }
+    if github_connection_id:
+        report_args["github_connection_id"] = github_connection_id
     existing = next(
         (
             task
@@ -119,7 +126,9 @@ def schedule_ci_reliability_loop(
         None,
     )
     if existing is not None:
-        if existing.params.get(LOOP_REPORT_PARAM) != REPORT_NAME:
+        if existing.params.get(LOOP_REPORT_PARAM) != REPORT_NAME or existing.params.get(
+            LOOP_REPORT_ARGS_PARAM
+        ) != json.dumps(report_args, sort_keys=True):
             existing.params[LOOP_REPORT_PARAM] = REPORT_NAME
             existing.params[LOOP_REPORT_ARGS_PARAM] = json.dumps(report_args, sort_keys=True)
             update_task(existing, store_path)
@@ -155,7 +164,6 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
     from integrations.github.client import (
         GitHubApiError,
         github_failure_kind,
-        resolve_github_token,
     )
     from integrations.github.tools.ci_analytics.analysis import analyze_repository
     from integrations.github.tools.ci_analytics.failure import (
@@ -170,10 +178,14 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
     days = int(args.get("days", LOOP_WINDOW_DAYS) or LOOP_WINDOW_DAYS)
     if not owner or not repo:
         raise RuntimeError("The CI reliability loop needs owner and repo.")
-    token = resolve_github_token(None)
+    from integrations.github.app_connection import github_setup_url, refreshed_github_token
+
+    token = refreshed_github_token(args.get("github_connection_id"))
     if not token:
-        raise RuntimeError(
-            f"No GitHub token to read {owner}/{repo}; run `opensre integrations setup github`."
+        return TaskReport(
+            f"CI analysis blocked for {owner}/{repo}. Connect or reconnect GitHub in the OpenSRE app: {github_setup_url()}",
+            work_status="blocked",
+            error_kind="github_connection_required",
         )
     now = datetime.now(UTC)
     try:
