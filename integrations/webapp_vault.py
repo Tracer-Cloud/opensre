@@ -241,7 +241,10 @@ def records_from_vault_payload(
         credentials = item.get("credentials")
         if not service or not isinstance(credentials, dict):
             continue
-        tags = _instance_tags(item, credentials)
+        owner_tags = _owner_tags(item)
+        if owner_tags is None:
+            continue
+        tags = _instance_tags(item, credentials, owner_tags=owner_tags)
         if not connection_visible(tags, user_id=None, organization_id=organization_id):
             continue
         normalized_credentials = {
@@ -267,9 +270,14 @@ def records_from_vault_payload(
     return records
 
 
-def _instance_tags(item: dict[str, Any], credentials: dict[object, object]) -> dict[str, object]:
+def _instance_tags(
+    item: dict[str, Any],
+    credentials: dict[object, object],
+    *,
+    owner_tags: dict[str, object],
+) -> dict[str, object]:
     """Owner and default metadata in the v2 instance shape."""
-    tags = _owner_tags(item)
+    tags = owner_tags
     is_default = item.get("is_default")
     if is_default is True or (
         is_default is None and str(credentials.get("is_default", "")).lower() == "true"
@@ -278,12 +286,23 @@ def _instance_tags(item: dict[str, Any], credentials: dict[object, object]) -> d
     return tags
 
 
-def _owner_tags(item: dict[str, Any]) -> dict[str, object]:
-    """The vault item's ``owner`` object as store-instance owner tags."""
-    owner = item.get("owner")
-    if not isinstance(owner, dict):
+def _owner_tags(item: dict[str, Any]) -> dict[str, object] | None:
+    """Return owner tags, preserving only absent-owner legacy records."""
+    if "owner" not in item:
         return {}
+    owner = item["owner"]
+    if not isinstance(owner, dict):
+        return None
+    kind = owner.get("kind")
+    owner_id = owner.get("id")
+    if (
+        not isinstance(kind, str)
+        or kind not in {"user", "organization"}
+        or not isinstance(owner_id, str)
+        or not owner_id.strip()
+    ):
+        return None
     return {
-        INTEGRATION_OWNER_KIND_TAG: owner.get("kind"),
-        INTEGRATION_OWNER_ID_TAG: owner.get("id"),
+        INTEGRATION_OWNER_KIND_TAG: kind,
+        INTEGRATION_OWNER_ID_TAG: owner_id,
     }

@@ -199,6 +199,18 @@ def test_exchange_accepts_a_clerk_user_without_an_organization() -> None:
     assert exchange.organization_id is None
 
 
+def test_exchange_rejects_a_missing_organization_field() -> None:
+    payload = {
+        "access_token": "osre_pat_secret",
+        "expires_at": "2026-12-01T10:00:00+00:00",
+        "user": {"id": "user_123", "email": "octocat@example.com"},
+        "llm": {"provider": "openai", "model": "gpt-5.4-mini"},
+    }
+
+    with pytest.raises(account_auth.AccountAuthError):
+        account_auth._decode_exchange(payload)
+
+
 def test_login_warns_when_env_token_would_override_and_does_not_revoke_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -379,6 +379,37 @@ def test_turn_time_vault_read_drops_personal_connections(
     assert [record["id"] for record in records] == ["team"]
 
 
+@pytest.mark.parametrize(
+    "owner",
+    [
+        None,
+        "organization",
+        {},
+        {"kind": "organization"},
+        {"kind": "organization", "id": " "},
+    ],
+)
+def test_turn_time_vault_read_rejects_malformed_owners(owner: object) -> None:
+    records = vault.records_from_vault_payload(
+        {
+            "success": True,
+            "data": [
+                {
+                    "id": "unsafe",
+                    "service": "github",
+                    "status": "active",
+                    "name": "default",
+                    "owner": owner,
+                    "credentials": {"auth_token": "must-not-escape"},
+                }
+            ],
+        },
+        organization_id="org_1",
+    )
+
+    assert records == []
+
+
 def test_turn_time_vault_selects_the_workspace_default() -> None:
     def _item(record_id: str, *, is_default: bool) -> dict[str, Any]:
         return {

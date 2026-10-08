@@ -100,6 +100,25 @@ def test_clerk_user_without_an_organization_can_enter_the_shell(
     assert status.record.organization_id is None
 
 
+def test_session_without_an_organization_field_is_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _session_payload()
+    del payload["organization"]
+    monkeypatch.setattr(account_session, "load_account_record", _record)
+    monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
+    monkeypatch.setattr(
+        account_session.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=payload),
+    )
+
+    status = account_session.account_status()
+
+    assert status.state is AccountSessionState.INVALID
+    assert status.record == _record()
+
+
 def test_active_organization_can_change_without_replacing_clerk_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

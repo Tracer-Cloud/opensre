@@ -221,6 +221,8 @@ def _mapping(value: Mapping[str, object], key: str) -> Mapping[str, object]:
 
 def _organization_id(payload: Mapping[str, object]) -> str | None:
     """Read the optional active Clerk organization from an auth response."""
+    if "organization" not in payload:
+        raise AccountAuthError("The OpenSRE app returned an invalid login response.")
     organization = payload.get("organization")
     if organization is None:
         return None

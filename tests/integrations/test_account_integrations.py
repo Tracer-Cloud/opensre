@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -331,6 +332,35 @@ def test_a_workspace_switch_never_reuses_the_previous_workspaces_cached_credenti
     assert acct.load_account_integrations()[0]["id"] == "github-team-one"
 
     current[0] = records[1]
+
+    assert acct.load_account_integrations() == []
+
+
+def test_an_origin_switch_never_reuses_the_previous_origins_cached_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = [
+        AccountRecord(
+            user_id="user-1",
+            organization_id="org-1",
+            email=None,
+            app_url="https://first.test",
+            signed_in_at="2026-01-01T00:00:00Z",
+            token_expires_at="2027-01-01T00:00:00Z",
+        )
+    ]
+    monkeypatch.setattr(acct, "load_account_record", lambda: current[0])
+    monkeypatch.setattr(acct, "resolve_account_token", lambda: _TOKEN)
+    _respond_with(
+        monkeypatch,
+        [
+            httpx.Response(200, json=_vault_payload()),
+            httpx.Response(503),
+        ],
+    )
+    assert acct.load_account_integrations()
+
+    current[0] = replace(current[0], app_url="https://second.test")
 
     assert acct.load_account_integrations() == []
 

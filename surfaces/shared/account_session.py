@@ -74,6 +74,8 @@ def _refreshed_record(payload: object, record: AccountRecord) -> AccountRecord |
     """Return current identity and active workspace when the response is usable."""
     if not isinstance(payload, Mapping):
         return None
+    if "organization" not in payload:
+        return None
     user = _mapping(payload, "user")
     organization = _mapping(payload, "organization")
     llm = _mapping(payload, "llm")
