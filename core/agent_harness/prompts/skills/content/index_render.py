@@ -34,4 +34,24 @@ def render_skills_index(skills: tuple[ActionSkill, ...]) -> str:
     return "".join(("\n".join(lines), "\n\n"))
 
 
-__all__ = ["render_skills_index"]
+def render_skills_prompt_index(skills: tuple[ActionSkill, ...]) -> str:
+    """Return the small workflow-discovery block sent on every agent turn."""
+    if not skills:
+        return ""
+    names = ", ".join(
+        f"{skill.name}{' [recurring]' if skill.recurring else ''}" for skill in skills
+    )
+    return (
+        f"{SKILLS_HEADER}\n\n"
+        "Workflow details load on demand.\n"
+        "Available workflow names: "
+        f"{names}.\n"
+        "For a likely multi-step workflow, call skill_view with query set to the "
+        "user's desired outcome. Then load the best exact name and follow its returned "
+        "instructions. For a known exact name, call skill_view(name) directly. Do not "
+        "load a workflow for a simple factual answer. For capability questions, answer "
+        "first and offer /demo. An onboarding router delegates the live plan to its child.\n\n"
+    )
+
+
+__all__ = ["render_skills_index", "render_skills_prompt_index"]

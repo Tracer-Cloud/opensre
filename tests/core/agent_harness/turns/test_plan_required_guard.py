@@ -61,7 +61,7 @@ def _returned(
 
 def test_the_second_work_tool_is_refused_until_a_plan_is_stored() -> None:
     # Arrange: a fresh turn in which one work tool has returned.
-    session = Session()
+    session = Session(active_skill="repair-github-ci")
     hooks = with_task_plan_hooks(None, session)
     _returned(hooks, "shell_run")
 
@@ -111,7 +111,7 @@ def test_slash_commands_and_failed_calls_do_not_count_as_work() -> None:
 
 def test_an_open_plan_lets_work_continue_but_a_settled_one_does_not() -> None:
     # Arrange: one work tool already returned this turn.
-    session = Session()
+    session = Session(active_skill="repair-github-ci")
     hooks = with_task_plan_hooks(None, session)
     _returned(hooks, "shell_run")
 
@@ -125,7 +125,7 @@ def test_an_open_plan_lets_work_continue_but_a_settled_one_does_not() -> None:
 
 def test_a_base_refusal_wins_over_the_plan_rule() -> None:
     # Arrange: the wrapped hook already refuses the call for its own reason.
-    session = Session()
+    session = Session(active_skill="repair-github-ci")
     base = ToolExecutionHooks(
         before_tool_call=lambda _request: BeforeToolCallResult(blocked=True, reason="duplicate")
     )
@@ -182,7 +182,7 @@ def test_a_lone_plan_write_that_starts_a_step_is_stored() -> None:
 def test_the_refusal_prescribes_a_paired_write_that_runs_in_one_response() -> None:
     # Arrange: one work tool returned and no plan is open. The refusal used to
     # prescribe a lone update_plan first, which spent a model call on its own.
-    session = Session()
+    session = Session(active_skill="repair-github-ci")
     hooks = with_task_plan_hooks(None, session)
     _returned(hooks, "shell_run")
     scope = ActionToolScope(session=session, console=Console(file=io.StringIO()))
@@ -227,3 +227,16 @@ def test_the_refusal_prescribes_a_paired_write_that_runs_in_one_response() -> No
     # Assert: both ran in one response.
     assert [result.is_error for result in results] == [False, False]
     assert "in one response with update_plan listed before it" in PLAN_REQUIRED_REASON
+
+
+def test_ordinary_and_session_goal_turns_do_not_force_a_plan() -> None:
+    ordinary = Session()
+    ordinary_hooks = with_task_plan_hooks(None, ordinary)
+    _returned(ordinary_hooks, "shell_run")
+    assert ordinary_hooks.before_tool_call(_request("shell_run")) is None
+
+    goal = Session(active_skill="repair-github-ci")
+    goal.session_goal = object()  # type: ignore[assignment]
+    goal_hooks = with_task_plan_hooks(None, goal)
+    _returned(goal_hooks, "shell_run")
+    assert goal_hooks.before_tool_call(_request("shell_run")) is None

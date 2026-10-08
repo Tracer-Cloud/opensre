@@ -389,8 +389,9 @@ Two kinds of card, two homes, and a `name` exists in exactly one of them:
 - **Workflow** — a multi-step flow the agent follows (when to activate, sibling
   carve-outs, ordered steps, a report template, a schedule offer). Lives here:
   `skills/<name>/SKILL.md`, with the `metadata` block above. It gets one line
-  in the always-on skills index and its full body via `skill_view`. Workflow
-  cards keep the available tool catalog; they do not declare a tool filter.
+  in the always-on workflow-name index and its full body via `skill_view`.
+  Workflow cards keep discovery access to the available tool catalog through
+  `tool_search`; they do not declare a tool filter.
   List required tools in `metadata.requires`.
 - **Tool usage** — how to call one tool or one tool family correctly:
   parameter selection, refusals, what the tool owns so the agent does not run

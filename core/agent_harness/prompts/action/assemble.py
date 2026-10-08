@@ -30,7 +30,7 @@ from core.agent_harness.prompts.runtime_facts import (
     build_live_runtime_facts_block,
     render_static_runtime_facts,
 )
-from core.agent_harness.prompts.skills import load_skills_index
+from core.agent_harness.prompts.skills import load_skills_prompt_index
 from core.agent_harness.task_plan.prompt import (
     ask_user_answered_block,
     current_task_plan_block,
@@ -148,7 +148,7 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             filter(
                 None,
                 (
-                    load_skills_index(),
+                    load_skills_prompt_index(),
                     load_getting_started_block(surface=turn_snapshot.prompt_surface or ""),
                 ),
             )

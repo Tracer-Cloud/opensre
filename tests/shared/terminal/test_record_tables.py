@@ -22,7 +22,7 @@ def test_same_record_reflows_after_resize_without_losing_literal_content() -> No
     )
     for width in (120, 40, 80):
         output = io.StringIO()
-        Console(file=output, width=width, color_system=None).print(table)
+        Console(file=output, width=width, height=25, color_system=None).print(table)
         text = output.getvalue()
         assert "abc123def45678901234567890123456" in text
         assert "[bold]" in text

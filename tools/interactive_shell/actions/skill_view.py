@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -50,6 +51,9 @@ def execute_skill_view_tool(
     resolved_integrations: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     name = str(args.get("name", "")).strip()
+    query = str(args.get("query", "")).strip()
+    if query and not name:
+        return _search_skills(query)
     if not name:
         available = [skill.name for skill in list_action_skills()]
         return {
@@ -65,6 +69,34 @@ def execute_skill_view_tool(
         if guided_tools:
             return _already_loaded_guidance(name, guided_tools)
     return enter_skill(name, ctx, from_model=True, resolved_integrations=resolved_integrations)
+
+
+def _search_skills(query: str) -> dict[str, Any]:
+    """Return a bounded ranked workflow list without loading any skill body."""
+    terms = frozenset(re.findall(r"[a-z0-9]+", query.casefold()))
+    ranked: list[tuple[int, str, str]] = []
+    for skill in list_action_skills():
+        name_terms = frozenset(skill.name.split("-"))
+        description_terms = frozenset(re.findall(r"[a-z0-9]+", skill.description.casefold()))
+        score = 4 * len(terms & name_terms) + len(terms & description_terms)
+        if query.casefold() in skill.name.casefold():
+            score += 20
+        if score:
+            ranked.append((score, skill.name, skill.description))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    matches = [
+        {"name": name, "description": description} for _score, name, description in ranked[:5]
+    ]
+    return {
+        "ok": True,
+        "query": query,
+        "matches": matches,
+        "summary": (
+            "Load the best matching workflow with skill_view(name=...)."
+            if matches
+            else "No matching workflow. Continue without loading a skill."
+        ),
+    }
 
 
 def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[str, Any]:
@@ -83,7 +115,9 @@ def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[s
     }
 
 
-def run_skill_view(*, name: str, reference: str = "", context: Any) -> dict[str, Any]:
+def run_skill_view(
+    *, name: str = "", query: str = "", reference: str = "", context: Any
+) -> dict[str, Any]:
     # The prerequisite gate reads the integrations this turn's tools receive,
     # so it agrees with the tools it protects.
     resolved: Mapping[str, Any] | None = getattr(context, "resolved_integrations", None)
@@ -91,15 +125,18 @@ def run_skill_view(*, name: str, reference: str = "", context: Any) -> dict[str,
     def execute(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
         return execute_skill_view_tool(args, ctx, resolved_integrations=resolved)
 
-    return execute_with_action_context({"name": name, "reference": reference}, context, execute)
+    return execute_with_action_context(
+        {"name": name, "query": query, "reference": reference}, context, execute
+    )
 
 
 skill_view_tool = RegisteredTool(
     name=ActionToolName.SKILL_VIEW,
     description=(
         "Load the full body of one action-agent skill by name from the "
-        "SKILLS INDEX. Call this in the same turn when the user request matches "
-        "an indexed skill, then read the returned instructions before planning "
+        "workflow-name index. Search with query when the right workflow name is "
+        "not obvious; search results do not load a body. Call this in the same "
+        "turn when the user request matches a workflow, then read the returned instructions before planning "
         "or executing its workflow. A "
         "skill may open its own menu on load; the result then tells you to end "
         "the turn. A skill that is already active does not need to be loaded "
@@ -111,10 +148,15 @@ skill_view_tool = RegisteredTool(
         properties={
             "name": string_property(
                 description=(
-                    "Skill name from the SKILLS INDEX (kebab-case), e.g. "
+                    "Exact workflow name from discovery (kebab-case), e.g. "
                     "'delivering-morning-briefings' or 'repair-github-ci'."
                 ),
-                min_length=1,
+            ),
+            "query": string_property(
+                description=(
+                    "Desired multi-step outcome to search for when the exact workflow "
+                    "name is unknown. Search first, then call again with name."
+                ),
             ),
             "reference": string_property(
                 description=(
@@ -124,7 +166,7 @@ skill_view_tool = RegisteredTool(
                 ),
             ),
         },
-        required=("name",),
+        required=(),
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),

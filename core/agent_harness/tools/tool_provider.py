@@ -17,6 +17,7 @@ from core.agent_harness.ports import (
     ToolEventObserver,
 )
 from core.agent_harness.tools.action_tools import get_action_tools_from_integrations_view
+from core.agent_harness.tools.progressive_tool_catalog import ProgressiveToolCatalog
 from core.agent_harness.tools.skill_tool_catalog import SkillToolCatalog
 from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
@@ -159,7 +160,13 @@ class DefaultToolProvider:
             tools = [tool for tool in tools if tool.name not in MEMORY_TOOL_NAMES]
         if self._unattended:
             tools = [tool for tool in tools if tool_allowed_for_unattended_run(tool)]
-        catalog = SkillToolCatalog(self._session, tools, enabled=not self._unattended)
+        skill_catalog = SkillToolCatalog(self._session, tools, enabled=not self._unattended)
+        catalog = ProgressiveToolCatalog(
+            self._session,
+            skill_catalog.snapshot,
+            enabled=not self._unattended and self._precomputed_action_tools is None,
+            base_names=(tool.name for tool in tools),
+        )
         self._live_catalog = LiveToolCatalog(catalog.snapshot)
         return list(catalog.snapshot())
 

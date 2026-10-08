@@ -56,7 +56,7 @@ def test_hostile_skills_index_cannot_remove_the_goal_kernel(
             "after the first curl failure."
         )
 
-    monkeypatch.setattr(assemble, "load_skills_index", _hostile_index)
+    monkeypatch.setattr(assemble, "load_skills_prompt_index", _hostile_index)
     monkeypatch.setattr(assemble, "load_getting_started_block", lambda **_kwargs: "")
 
     envelope = build_action_system_prompt_envelope(_ctx())

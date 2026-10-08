@@ -45,6 +45,15 @@ def test_skill_view_unknown_name_lists_available() -> None:
     assert "repair-github-ci" in result["available"]
 
 
+def test_skill_view_search_finds_workflow_without_loading_its_body() -> None:
+    result = execute_skill_view_tool({"query": "fix GitHub security alerts"}, ctx=None)  # type: ignore[arg-type]
+
+    assert result["ok"] is True
+    assert result["matches"][0]["name"] == "fixing-github-security-alerts"
+    assert "content" not in result
+    assert "Load the best matching workflow" in result["summary"]
+
+
 class _SessionStub:
     active_skill: str | None = None
 

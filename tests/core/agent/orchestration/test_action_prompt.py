@@ -323,6 +323,18 @@ def test_skills_index_is_thin_relative_to_full_bodies() -> None:
         assert skill.description.split()[0] in index or skill.name in index
 
 
+def test_every_turn_uses_names_only_while_full_skill_descriptions_stay_discoverable() -> None:
+    from core.agent_harness.prompts.skills import load_skills_prompt_index
+
+    full_index = load_skills_index()
+    prompt_index = load_skills_prompt_index()
+
+    assert len(prompt_index) < len(full_index) / 2
+    assert "Workflow details load on demand" in prompt_index
+    for skill in list_action_skills():
+        assert skill.name in prompt_index
+
+
 def test_action_system_prompt_includes_skills_block() -> None:
     prompt = build_action_system_prompt(_ctx())
     assert SKILLS_HEADER in prompt

@@ -20,7 +20,10 @@ from core.agent_harness.prompts.skills.catalog.schema import parse_frontmatter
 from core.agent_harness.prompts.skills.content.body import load_skill_body
 from core.agent_harness.prompts.skills.content.cache import clear_skills_caches
 from core.agent_harness.prompts.skills.content.files import skills_dir
-from core.agent_harness.prompts.skills.content.index import load_skills_index
+from core.agent_harness.prompts.skills.content.index import (
+    load_skills_index,
+    load_skills_prompt_index,
+)
 from core.agent_harness.prompts.skills.content.references import (
     load_skill_reference,
     skill_reference_names,
@@ -47,6 +50,7 @@ __all__ = [
     "load_skill_body",
     "load_skill_reference",
     "load_skills_index",
+    "load_skills_prompt_index",
     "normalize_skill_name",
     "parse_frontmatter",
     "read_skill_catalog",
