@@ -8,7 +8,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from prompt_toolkit.history import FileHistory
@@ -33,6 +35,16 @@ from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 def _capture() -> tuple[Console, io.StringIO]:
     buf = io.StringIO()
     return Console(file=buf, force_terminal=False, highlight=False), buf
+
+
+def _recording_dispatch(dispatched: list[str]) -> Callable[[str, Any, Any], bool]:
+    """Record the slash text a handler re-dispatches, and report success."""
+
+    def _dispatch(command: str, _session: Any, _console: Any) -> bool:
+        dispatched.append(command)
+        return True
+
+    return _dispatch
 
 
 def _signed_out() -> None:
@@ -216,7 +228,7 @@ class TestDispatchSlash:
         picker_called: list[bool] = []
         monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
         monkeypatch.setattr(
-            help_cmd, "choose_help_command", lambda _sections: picker_called.append(True)
+            help_cmd, "browse_help_commands", lambda _sections: picker_called.append(True)
         )
 
         assert dispatch_slash("/help", session, console) is True
@@ -225,29 +237,84 @@ class TestDispatchSlash:
         assert buf.getvalue() == ""
 
     @pytest.mark.parametrize(
-        ("selected", "expected"),
+        ("selected", "subcommand", "expected"),
         [
-            ("/integrations", "/integrations list"),
-            ("/mcp", "/mcp list"),
+            ("/integrations", "list", "/integrations list"),
+            ("/mcp", "connect", "/mcp connect"),
+            ("/model", "restore", "/model restore"),
+            ("/work", "add", "/work add"),
         ],
     )
-    def test_tty_help_runs_explicit_connection_list_command(
-        self, monkeypatch: pytest.MonkeyPatch, selected: str, expected: str
+    def test_tty_help_offers_subcommands_before_running_a_command(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        selected: str,
+        subcommand: str,
+        expected: str,
+    ) -> None:
+        """A command with subcommands must ask which one, not pick a default."""
+        import surfaces.interactive_shell.command_registry as command_registry
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        dispatched: list[str] = []
+        offered: list[str] = []
+
+        def _pick(*, parent: str, options: tuple[tuple[str, str], ...]) -> str:
+            offered.append(parent)
+            assert subcommand in [name for name, _meta in options]
+            return subcommand
+
+        monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: selected)
+        monkeypatch.setattr(help_cmd, "repl_choose_subcommand", _pick)
+        monkeypatch.setattr(command_registry, "dispatch_slash", _recording_dispatch(dispatched))
+
+        assert dispatch_slash("/help", Session(), _capture()[0]) is True
+        assert offered == [selected]
+        assert dispatched == [expected]
+
+    def test_tty_help_runs_a_command_without_subcommands_directly(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import surfaces.interactive_shell.command_registry as command_registry
         from surfaces.interactive_shell.command_registry import help as help_cmd
 
         dispatched: list[str] = []
         monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
-        monkeypatch.setattr(help_cmd, "choose_help_command", lambda _sections: selected)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: "/status")
         monkeypatch.setattr(
-            command_registry,
-            "dispatch_slash",
-            lambda command, _session, _console: dispatched.append(command) or True,
+            help_cmd,
+            "repl_choose_subcommand",
+            lambda **_kwargs: pytest.fail("/status has no subcommands to offer"),
         )
+        monkeypatch.setattr(command_registry, "dispatch_slash", _recording_dispatch(dispatched))
 
         assert dispatch_slash("/help", Session(), _capture()[0]) is True
-        assert dispatched == [expected]
+        assert dispatched == ["/status"]
+
+    def test_tty_help_escaping_the_subcommand_picker_runs_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Esc in the subcommand picker backs out; it must not run a default."""
+        import surfaces.interactive_shell.command_registry as command_registry
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        dispatched: list[str] = []
+        monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: "/integrations")
+        monkeypatch.setattr(help_cmd, "repl_choose_subcommand", lambda **_kwargs: None)
+        monkeypatch.setattr(command_registry, "dispatch_slash", _recording_dispatch(dispatched))
+
+        assert dispatch_slash("/help", Session(), _capture()[0]) is True
+        assert dispatched == []
+
+    def test_a_flag_only_completion_list_opens_no_subcommand_picker(self) -> None:
+        # /rename completes "--reset", a flag rather than a subcommand; its
+        # normal use is "/rename <new name>", so a one-row picker is noise.
+        from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        assert help_cmd._subcommand_options(SLASH_COMMANDS["/rename"]) == ()
 
     def test_bare_slash_previews_all_commands(self) -> None:
         session = Session()
@@ -850,9 +917,11 @@ class TestModelCommand:
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        selections = iter(
-            ["set", model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"]
-        )
+        # The root list is the tray-styled subcommand picker; the provider and
+        # model submenus below it are still plain choice menus.
+        roots = iter(["set", None])
+        selections = iter([model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"])
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(roots))
         monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
 
@@ -876,13 +945,64 @@ class TestModelCommand:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        picks = iter(["show", "done"])
-        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(picks))
+        picks = iter(["show", None])
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(picks))
         console, buf = _capture()
         session = Session()
         session.terminal.exclusive_stdin_active = True
         dispatch_slash("/model", session, console)
         assert "anthropic" in buf.getvalue()
+
+    def test_toolcall_without_a_model_asks_instead_of_printing_usage(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A subcommand that needs a value collects it when the turn owns stdin.
+
+        ``/model toolcall`` reached from /help, from the menu, or typed must all
+        land on the same picker rather than closing on a usage line.
+        """
+        self._patch_llm(monkeypatch)
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        asked: list[bool] = []
+
+        def _collect(_console: object) -> bool:
+            asked.append(True)
+            return True
+
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(model_cmd, "_interactive_set_toolcall", _collect)
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        console, buf = _capture()
+        dispatch_slash("/model toolcall", session, console)
+
+        assert asked == [True]
+        assert "usage:" not in buf.getvalue()
+
+    def test_toolcall_without_exclusive_stdin_still_prints_usage(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Agent slash_invoke has no stdin to own, so a picker would race it."""
+        self._patch_llm(monkeypatch)
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(
+            model_cmd,
+            "_interactive_set_toolcall",
+            lambda _console: pytest.fail("no picker without exclusive stdin"),
+        )
+        session = Session()
+        assert session.terminal.exclusive_stdin_active is False
+
+        console, buf = _capture()
+        dispatch_slash("/model toolcall", session, console)
+
+        assert "usage:" in buf.getvalue()
 
     def test_bare_model_without_exclusive_stdin_shows_table_not_menu(
         self,
@@ -914,16 +1034,21 @@ class TestModelCommand:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        selections = iter(
+        roots = iter(
             [
                 "set",  # root -> set
+                None,  # Esc at root -> close menu
+            ]
+        )
+        selections = iter(
+            [
                 model_cmd.OTHER_PROVIDER_SELECTION,  # provider submenu selected
                 "anthropic",  # provider selected
                 None,  # Esc from model selection -> back to provider list
                 None,  # Esc from provider list -> back to root action list
-                None,  # Esc at root -> close menu
             ]
         )
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(roots))
         monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
         session = Session()
         session.terminal.exclusive_stdin_active = True

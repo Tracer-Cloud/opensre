@@ -6,6 +6,7 @@ from prompt_toolkit.history import FileHistory, InMemoryHistory
 from rich.console import Console
 from rich.markup import escape
 
+from core.agent_harness.spi.session_state import exclusive_stdin_active
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.prompt_history import (
     clear_persisted_history,
@@ -31,6 +32,7 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_section_break,
     repl_tty_interactive,
 )
+from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 
 
 def _show_history(console: Console) -> bool:
@@ -97,10 +99,38 @@ def _history_pause(session: Session, console: Console, *, paused: bool) -> bool:
     return True
 
 
+_RETENTION_CAPS: tuple[str, ...] = ("100", "500", "1000", "5000")
+
+
+_RETENTION_CUSTOM_LABEL = "enter a number"
+
+
+def _prompt_retention_cap() -> str | None:
+    """Ask for a retention cap; ``None`` when the picker is dismissed.
+
+    The presets cover the common caps; the last row types any other number in
+    place, so the picker never blocks a value ``/history retention <N>`` allows.
+    """
+    return repl_choose_one(
+        title="retention cap",
+        breadcrumb=f"/history{CRUMB_SEP}retention",
+        choices=[(cap, cap) for cap in _RETENTION_CAPS]
+        + [(_RETENTION_CUSTOM_LABEL, _RETENTION_CUSTOM_LABEL)],
+        custom_label=_RETENTION_CUSTOM_LABEL,
+    )
+
+
 def _history_retention(session: Session, console: Console, args: list[str]) -> bool:
     if not args:
-        console.print(f"[{ERROR}]usage:[/] /history retention <N>")
-        return True
+        # A turn that owns stdin asks for the cap rather than closing on usage.
+        if repl_tty_interactive() and exclusive_stdin_active(session):
+            cap = _prompt_retention_cap()
+            if cap is None:
+                return True
+            args = [cap]
+        else:
+            console.print(f"[{ERROR}]usage:[/] /history retention <N>")
+            return True
     try:
         n = int(args[0])
         if n < 0:
@@ -124,22 +154,20 @@ def _history_retention(session: Session, console: Console, args: list[str]) -> b
     return True
 
 
+_HISTORY_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("show", "print the persisted history"),
+    ("clear", "delete persisted history file"),
+    ("off", "pause history persistence for this session"),
+    ("on", "resume history persistence for this session"),
+    ("retention", "set max entries cap (e.g. /history retention 1000)"),
+)
+
+
 def _interactive_history_menu(session: Session, console: Console) -> bool:
     root = "/history"
     while True:
-        sub = repl_choose_one(
-            title="history",
-            breadcrumb=root,
-            choices=[
-                ("show", "show"),
-                ("clear", "clear"),
-                ("off", "off"),
-                ("on", "on"),
-                ("retention", "retention"),
-                ("done", "done"),
-            ],
-        )
-        if sub is None or sub == "done":
+        sub = repl_choose_subcommand(parent=root, options=_HISTORY_FIRST_ARGS)
+        if sub is None:
             return True
         show_section_break = False
         if sub == "show":
@@ -155,19 +183,8 @@ def _interactive_history_menu(session: Session, console: Console) -> bool:
             _history_pause(session, console, paused=False)
             show_section_break = True
         elif sub == "retention":
-            cap = repl_choose_one(
-                title="retention cap",
-                breadcrumb=f"{root}{CRUMB_SEP}retention",
-                choices=[
-                    ("100", "100"),
-                    ("500", "500"),
-                    ("1000", "1000"),
-                    ("5000", "5000"),
-                ],
-            )
-            if cap:
-                _history_retention(session, console, [cap])
-                show_section_break = True
+            # One owner for the cap prompt: the handler asks when none is given.
+            show_section_break = _history_retention(session, console, [])
         if show_section_break:
             repl_section_break(console)
 
@@ -180,6 +197,8 @@ def _cmd_history(session: Session, console: Console, args: list[str]) -> bool:
         return _show_history(console)
 
     sub = args[0].lower()
+    if sub == "show":
+        return _show_history(console)
     if sub == "clear":
         return _history_clear(session, console)
     if sub == "off":
@@ -189,7 +208,7 @@ def _cmd_history(session: Session, console: Console, args: list[str]) -> bool:
     if sub == "retention":
         return _history_retention(session, console, args[1:])
 
-    console.print(f"[{ERROR}]usage:[/] /history [clear|off|on|retention <N>]")
+    console.print(f"[{ERROR}]usage:[/] /history [show|clear|off|on|retention <N>]")
     return True
 
 
@@ -230,13 +249,6 @@ def _cmd_privacy(session: Session, console: Console, args: list[str]) -> bool:  
     )
     return True
 
-
-_HISTORY_FIRST_ARGS: tuple[tuple[str, str], ...] = (
-    ("clear", "delete persisted history file"),
-    ("off", "pause history persistence for this session"),
-    ("on", "resume history persistence for this session"),
-    ("retention", "set max entries cap (e.g. /history retention 1000)"),
-)
 
 COMMANDS: list[SlashCommand] = [
     SlashCommand(
