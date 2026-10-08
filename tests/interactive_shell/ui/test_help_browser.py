@@ -127,6 +127,28 @@ class TestFrame:
         assert "/status" in _ANSI_RE.sub("", selected_rows[0])
 
 
+class TestHints:
+    @pytest.mark.parametrize("width", [40, 55, 80, 120])
+    def test_a_multi_page_preview_advertises_paging_at_every_width(self, width: int) -> None:
+        # The narrow layout used to drop ←→ entirely, hiding usage, examples
+        # and notes past the first page with nothing to say they existed.
+        hint = _ANSI_RE.sub(
+            "",
+            help_browser._hint_row(query="", position="1/9", page=0, pages=3, width=width),
+        )
+
+        assert "←→" in hint
+        assert "1/3" in hint
+
+    def test_a_single_page_preview_shows_no_paging_control(self) -> None:
+        hint = _ANSI_RE.sub(
+            "",
+            help_browser._hint_row(query="", position="1/9", page=0, pages=1, width=40),
+        )
+
+        assert "←→" not in hint
+
+
 class TestWindow:
     def test_window_scrolls_the_minimum_needed_to_reveal_the_selection(self) -> None:
         lines, line_of = help_browser._lines(_entries(_sections(40)), grouped=True)

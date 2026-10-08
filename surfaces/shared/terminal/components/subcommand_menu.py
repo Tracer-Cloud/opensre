@@ -1,16 +1,14 @@
 """Composer-tray-styled picker for a slash command's subcommands.
 
-Typing ``/model `` in the composer lists that command's subcommands with their
-descriptions in a bounded tray inside the rounded composer frame. Running the
-command bare — ``/model`` plus Enter, or Enter on it in ``/help`` — used to open
-a different, numbered menu that repeated the same names with no descriptions,
-from a second hand-written copy of the list. This paints that picker as the same
-framed tray and reads the same ``first_arg_completions`` catalog, so one list
-reaches the user one way.
+Serves the window where ``CommandTrayControl`` cannot: a dispatching command
+holds stdin exclusively, so the prompt application is suspended and there is no
+live buffer to render a completion tray from. Chrome mirrors that control and
+``rounded_composer_frame`` row for row (border, header, blank, options, blank,
+hint, border); keep the two in step so the same catalog reads the same way on
+both surfaces.
 
-Chrome mirrors ``CommandTrayControl`` and ``rounded_composer_frame``: keep the
-row order (border, header, blank, options, blank, hint, border) in step with
-them, or the two surfaces drift apart again.
+Every painted row is exactly ``menu_columns()`` wide — one column short of the
+TTY — or DEC autowrap reflows the block on the next resize.
 """
 
 from __future__ import annotations
@@ -43,6 +41,10 @@ _NARROW_HINT_WIDTH = 44
 _CHROME_ROWS = 6
 # The frame's two border columns plus a column of air on each side.
 _FRAME_COLUMNS = 4
+# Chrome, one option row, and the spare row ``erase_menu_lines`` needs to delete
+# the block instead of clearing it in place.
+MIN_MENU_HEIGHT = _CHROME_ROWS + 2
+MIN_MENU_WIDTH = 24
 
 
 def _border_style() -> str:
@@ -131,9 +133,30 @@ def _hint_row(*, more: bool, width: int) -> str:
     return _framed(hint, _border_style(), width)
 
 
-def _visible_rows(total: int) -> int:
-    room = max(1, get_terminal_size(fallback=(80, 24)).lines - _CHROME_ROWS - 1)
-    return max(1, min(MAX_VISIBLE_SUBCOMMANDS, total, room))
+def _visible_rows(total: int, height: int) -> int:
+    return max(1, min(MAX_VISIBLE_SUBCOMMANDS, total, height - _CHROME_ROWS - 1))
+
+
+def too_small(width: int, height: int) -> bool:
+    """True when the frame cannot be painted and later deleted in full.
+
+    ``erase_menu_lines`` can only delete a block of at most ``lines - 1`` rows;
+    a taller one is cleared in place and leaves fragments behind. The smallest
+    frame is the chrome plus one option, so it needs one row more than that.
+    """
+    return width < MIN_MENU_WIDTH or height < MIN_MENU_HEIGHT
+
+
+def _notice_rows(width: int, height: int) -> list[str]:
+    notice = (
+        "Esc close",
+        f"Resize to at least {MIN_MENU_WIDTH}×{MIN_MENU_HEIGHT}",
+        "to pick a subcommand.",
+    )
+    return [
+        f"{ui_theme.DIM_COUNTER_ANSI}{clip_prompt_text(text, width)}{ui_theme.ANSI_RESET}"
+        for text in notice[: max(0, height - 1)]
+    ]
 
 
 def _draw(
@@ -146,12 +169,19 @@ def _draw(
 ) -> tuple[int, int]:
     """Paint one frame; return its row count and the window top it settled on."""
     width = menu_columns()
-    rows = _visible_rows(len(options))
+    height = get_terminal_size(fallback=(80, 24)).lines
+    if erase_lines:
+        erase_menu_lines(erase_lines)
+    if too_small(width, height):
+        rows_painted = _notice_rows(width, height)
+        for row in rows_painted:
+            write_menu_line(row)
+        return len(rows_painted), top
+
+    rows = _visible_rows(len(options), height)
     top = max(0, min(top, len(options) - rows, selected))
     top = max(top, selected - rows + 1)
     name_width = _name_width(options, width)
-    if erase_lines:
-        erase_menu_lines(erase_lines)
 
     write_menu_line(_rule("╭", "╮", width))
     write_menu_line(_header_row(parent, selected, len(options), width))
@@ -206,17 +236,26 @@ def repl_choose_subcommand(
         while True:
             drawn, top = _draw(parent, cleaned, selected=selected, top=top, erase_lines=drawn)
             action = read_menu_action()
+            if action in ("cancel", "eof"):
+                return None
+            if too_small(menu_columns(), get_terminal_size(fallback=(80, 24)).lines):
+                # Only the resize notice is on screen; no row is selectable.
+                continue
             if action == "up":
                 selected = (selected - 1) % len(cleaned)
             elif action == "down":
                 selected = (selected + 1) % len(cleaned)
             elif action == "enter":
                 return cleaned[selected][0]
-            elif action in ("cancel", "eof"):
-                return None
     finally:
         erase_menu_lines(drawn, delete=True)
         leave_inline_menu()
 
 
-__all__ = ["MAX_VISIBLE_SUBCOMMANDS", "repl_choose_subcommand"]
+__all__ = [
+    "MAX_VISIBLE_SUBCOMMANDS",
+    "MIN_MENU_HEIGHT",
+    "MIN_MENU_WIDTH",
+    "repl_choose_subcommand",
+    "too_small",
+]

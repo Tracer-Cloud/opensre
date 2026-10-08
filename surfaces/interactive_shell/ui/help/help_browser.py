@@ -216,11 +216,14 @@ def _too_small_frame(width: int, height: int) -> _Frame:
 
 def _hint_row(*, query: str, position: str, page: int, pages: int, width: int) -> str:
     dismiss = "Esc clear" if query else "Esc close"
+    # A multi-page preview must advertise ←→ at every width, or the narrow
+    # layout silently hides the usage, examples and notes past page one.
+    paging = f" ←→ {page + 1}/{pages}" if pages > 1 else ""
     if width < _PURPOSE_WIDTH:
-        return _styled(f"  ↑↓ · Enter run · {dismiss} · {position}", ui_theme.DIM_ANSI, width)
+        return _styled(f"  ↑↓ · Enter · {dismiss}{paging} · {position}", ui_theme.DIM_ANSI, width)
     controls = f"  ↑↓ browse   Enter run   {dismiss}   type to filter"
-    if pages > 1:
-        controls += f"   ←→ {page + 1}/{pages}"
+    if paging:
+        controls += f"  {paging}"
     pad = " " * max(2, width - prompt_text_width(controls) - prompt_text_width(position) - 2)
     return _styled(f"{controls}{pad}{position}", ui_theme.DIM_ANSI, width)
 

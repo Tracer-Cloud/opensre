@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Iterator
 
@@ -94,6 +95,41 @@ def test_header_counts_the_focused_option() -> None:
 def test_hint_advertises_more_rows_only_when_the_list_is_scrolled() -> None:
     assert "↓ more" in _plain(subcommand_menu._hint_row(more=True, width=80))
     assert "↓ more" not in _plain(subcommand_menu._hint_row(more=False, width=80))
+
+
+@pytest.mark.parametrize("height", [2, 4, 7])
+def test_short_terminal_shows_a_notice_that_fits_the_erasable_block(height: int) -> None:
+    # erase_menu_lines can only delete at most ``lines - 1`` rows; a taller
+    # block is cleared in place and leaves fragments in the scrollback.
+    assert subcommand_menu.too_small(80, height)
+    rows = subcommand_menu._notice_rows(80, height)
+
+    assert rows
+    assert len(rows) <= height - 1
+
+
+def test_minimum_height_leaves_room_to_delete_the_whole_block() -> None:
+    height = subcommand_menu.MIN_MENU_HEIGHT
+    painted = subcommand_menu._CHROME_ROWS + subcommand_menu._visible_rows(4, height)
+
+    assert not subcommand_menu.too_small(80, height)
+    assert painted <= height - 1
+
+
+def test_enter_cannot_commit_a_row_the_resize_notice_hides() -> None:
+    pressed: Iterator[str] = iter(["enter", "cancel"])
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(subcommand_menu, "repl_tty_interactive", lambda: True)
+        patch.setattr(subcommand_menu, "enter_inline_menu", lambda: None)
+        patch.setattr(subcommand_menu, "leave_inline_menu", lambda: None)
+        patch.setattr(subcommand_menu, "erase_menu_lines", lambda *_a, **_k: None)
+        patch.setattr(subcommand_menu, "write_menu_line", lambda *_a, **_k: None)
+        patch.setattr(subcommand_menu, "menu_columns", lambda: 80)
+        patch.setattr(subcommand_menu, "get_terminal_size", lambda **_k: os.terminal_size((80, 5)))
+        patch.setattr(subcommand_menu, "read_menu_action", lambda: next(pressed))
+        picked = subcommand_menu.repl_choose_subcommand(parent="/model", options=_OPTIONS)
+
+    assert picked is None
 
 
 def _drive(keys: list[str], options: tuple[tuple[str, str], ...] = _OPTIONS) -> str | None:
