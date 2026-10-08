@@ -359,3 +359,69 @@ def test_choose_help_command_ignores_unknown_actions(monkeypatch) -> None:
 
     rendered = out.getvalue()
     assert rendered.count("Slash commands") == 2
+
+
+def test_draw_help_menu_fits_a_short_terminal_and_keeps_the_selected_row_visible(
+    monkeypatch,
+) -> None:
+    rows = help_menu._flatten_help_rows(
+        [("Commands", [_cmd(f"/command-{index}") for index in range(24)])]
+    )
+    selected = next(
+        index for index, row in enumerate(rows) if row.command and row.command.name == "/command-12"
+    )
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "40")
+    monkeypatch.setenv("LINES", "20")
+
+    height = help_menu._draw_help_menu(
+        rows,
+        selected=selected,
+        expanded=None,
+        erase_lines=0,
+    )
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert height <= 19
+    assert "Slash commands" in plain
+    assert "13/24" in plain
+    assert ">   /command-12" in plain
+
+
+def test_draw_help_menu_keeps_expanded_details_within_a_short_terminal(
+    monkeypatch,
+) -> None:
+    command = SlashCommand(
+        "/model",
+        "Configure models.",
+        lambda *_args: True,
+        usage=tuple(f"/model action {index}" for index in range(20)),
+    )
+    rows = help_menu._flatten_help_rows([("Models", [command])])
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "40")
+    monkeypatch.setenv("LINES", "20")
+
+    height = help_menu._draw_help_menu(rows, selected=1, expanded=1, erase_lines=0)
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert height <= 19
+    assert "Slash commands" in plain
+    assert "> ▾ /model" in plain
+    assert "/model action 0" in plain
+    assert "/model action 19" not in plain
+
+
+def test_draw_help_menu_clips_its_hint_to_a_short_terminal_width(monkeypatch) -> None:
+    rows = help_menu._flatten_help_rows([("Session", [_cmd("/status")])])
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "40")
+    monkeypatch.setenv("LINES", "20")
+
+    help_menu._draw_help_menu(rows, selected=1, expanded=None, erase_lines=0)
+
+    plain_lines = _ANSI_RE.sub("", out.getvalue()).splitlines()
+    assert len(plain_lines[-1]) <= 39

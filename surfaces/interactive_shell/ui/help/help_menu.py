@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from surfaces.shared.terminal.components.rendering import (
 
 HelpSection = tuple[str, Sequence[SlashCommand]]
 _HELP_VIEW_ROWS = 21
+_HELP_CHROME_ROWS = 6
 _HELP_HINT = "↑↓/j/k navigate  ·  Enter run command  ·  Space toggle details  ·  Esc/q close"
 
 
@@ -386,9 +388,17 @@ def _render_display_row(
     )
 
 
+def _help_viewport_height() -> int:
+    """Rows the help list may use without scrolling its title or controls away."""
+    rows = shutil.get_terminal_size(fallback=(80, 24)).lines
+    # Leave one row below the menu so a redraw or the prompt does not force the
+    # title off-screen when the cursor is already on the terminal's last line.
+    return min(_HELP_VIEW_ROWS, max(1, rows - _HELP_CHROME_ROWS - 1))
+
+
 def _help_menu_height(viewport_height: int) -> int:
     # leading blank, title, counter, rule, rows, blank, hint
-    return 5 + viewport_height + 1
+    return _HELP_CHROME_ROWS + viewport_height
 
 
 def _draw_help_menu(
@@ -397,16 +407,20 @@ def _draw_help_menu(
     selected: int,
     expanded: int | None,
     erase_lines: int,
-    viewport_height: int = _HELP_VIEW_ROWS,
+    viewport_height: int | None = None,
 ) -> int:
     width = menu_columns()
     display = _display_rows(rows, expanded)
     display_selected = _display_index_for_source(display, selected)
+    available_viewport_height = _help_viewport_height()
+    base_viewport_height = available_viewport_height if viewport_height is None else viewport_height
     effective_viewport_height = _expanded_viewport_height(
         display,
         display_selected,
-        viewport_height,
+        base_viewport_height,
     )
+    if viewport_height is None:
+        effective_viewport_height = min(effective_viewport_height, available_viewport_height)
     start, end = _viewport_bounds(display, display_selected, effective_viewport_height)
     visible = display[start:end]
     height = _help_menu_height(effective_viewport_height)
@@ -436,7 +450,7 @@ def _draw_help_menu(
     for _ in range(max(0, effective_viewport_height - len(visible))):
         write_menu_line()
     write_menu_line()
-    write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{_HELP_HINT}{ui_theme.ANSI_RESET}")
+    write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{_clip(_HELP_HINT, width)}{ui_theme.ANSI_RESET}")
     sys.stdout.flush()
     return height
 
