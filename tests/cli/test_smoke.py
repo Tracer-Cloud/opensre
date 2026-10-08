@@ -27,6 +27,7 @@ from tests.utils.polling import wait_until
 
 _SCRIPT_NAME = "opensre.exe" if os.name == "nt" else "opensre"
 _ANSI_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+_CLI_STARTUP_TIMEOUT = 30.0
 _CLEARED_ENV_KEYS = (
     "ANTHROPIC_API_KEY",
     "AWS_ACCESS_KEY_ID",
@@ -384,8 +385,12 @@ def _run_cli_pty(
 
     buffer = bytearray()
     try:
-        for action in actions:
-            _wait_for_output(process, master_fd, buffer, action.expect, timeout=action.timeout)
+        for index, action in enumerate(actions):
+            # Cold CLI imports under parallel validation precede the first prompt.
+            prompt_timeout = (
+                max(action.timeout, _CLI_STARTUP_TIMEOUT) if index == 0 else action.timeout
+            )
+            _wait_for_output(process, master_fd, buffer, action.expect, timeout=prompt_timeout)
             if action.stagger_j:
                 for _ in range(action.stagger_j):
                     os.write(master_fd, action.stagger_key)
@@ -416,6 +421,9 @@ def _run_cli_pty(
             buffer.extend(chunk)
     finally:
         os.close(master_fd)
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=2.0)
 
     return CliResult(
         args=tuple(args),
