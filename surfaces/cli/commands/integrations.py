@@ -60,20 +60,19 @@ def integrations() -> None:
     "service", required=False, default=None, type=IntegrationServiceChoice("SETUP_SERVICES")
 )
 def setup_integration(service: str | None) -> None:
-    """Set up credentials for a service."""
-    from integrations.cli import cmd_setup, cmd_verify
+    """Connect a service with guided instructions and verify it before saving."""
+    from integrations.cli import cmd_setup
 
     normalized_service = service or "prompt"
     capture_integration_setup_started(normalized_service)
     resolved_service = cmd_setup(service)
     capture_integration_setup_completed(resolved_service)
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
 
     if resolved_service in constants.VERIFY_SERVICES:
-        click.echo(f"  Verifying {resolved_service}...\n")
-        exit_code = cmd_verify(resolved_service)
-        if exit_code == 0:
-            capture_integration_verified(resolved_service)
-        raise SystemExit(exit_code)
+        capture_integration_verified(resolved_service)
 
 
 @integrations.command(name="list")
@@ -102,6 +101,9 @@ def remove_integration(service: str) -> None:
 
     cmd_remove(service)
     capture_integration_removed(service)
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
 
 
 @integrations.command(name="verify")
@@ -124,4 +126,7 @@ def verify_integration(
     )
     if exit_code == 0:
         capture_integration_verified(service or "all")
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
     raise SystemExit(exit_code)

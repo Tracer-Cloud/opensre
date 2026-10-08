@@ -10,7 +10,14 @@ import pytest
 from rich.console import Console
 
 from core.agent_harness.session import InMemorySessionStore
+from core.agent_harness.session_goal.goal import (
+    SessionGoal,
+    SessionGoalStatus,
+    attach_session_goal,
+)
+from core.agent_harness.spi.session_goal import pause_active_session_goal
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
+from core.agent_harness.turns.host_cancel import HostCancelEvent, HostCancelReason
 from core.agent_harness.turns.orchestrator import run_turn
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from infrastructure.turn_host.turn_runner import TurnRunner
@@ -96,6 +103,31 @@ def test_gateway_turn_runner_does_not_finalize_answered_turn(
     handler("why", session, sink, logging.getLogger("test.gateway.module.answer"))
 
     sink.finalize.assert_not_called()
+
+
+def test_prestart_goal_pause_does_not_consume_admission_credit() -> None:
+    session = Session(store=InMemorySessionStore())
+    attach_session_goal(session, SessionGoal(condition="keep going", max_outer_turns=4))
+    pause_active_session_goal(session)
+    cancel = HostCancelEvent()
+    cancel.request(HostCancelReason.GOAL_PAUSE)
+    sink = MagicMock(turn_cancel=cancel)
+    admission = MagicMock(return_value=True)
+
+    result = TurnRunner(
+        console=Console(force_terminal=False),
+        admission_check=admission,
+    ).run(
+        "queued work",
+        session,
+        sink,
+        logging.getLogger("test.gateway.prestart-pause"),
+    )
+
+    assert result is None
+    admission.assert_not_called()
+    assert session.session_goal is not None
+    assert session.session_goal.status == SessionGoalStatus.PAUSED
 
 
 def test_run_turn_returns_agent_conclusion_directly() -> None:

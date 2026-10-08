@@ -127,8 +127,8 @@ def test_should_accept_nudges_until_ceiling() -> None:
         iteration=2,
         max_iterations=3,
     )
-    assert accept is True
-    assert nudge is None
+    assert accept is False
+    assert nudge is not None
 
 
 def test_should_accept_uses_goal_specific_nudge() -> None:
@@ -236,12 +236,10 @@ def test_agent_without_goal_accepts_first_conclusion() -> None:
 
 
 def test_goal_ceiling_uses_the_runtime_requests_budget() -> None:
-    """The ceiling must match the budget the loop is actually running.
+    """The loop's run budget is what the goal observes, not construction-time max.
 
-    ``ReactLoop`` iterates ``run_input.max_iterations``. A ``runtime_request``
-    carries its own budget, so reading the construction-time value means the
-    goal never yields on the real last lap — the loop exhausts with the goal
-    still refusing to accept, and the ceiling escape hatch never fires.
+    An unmet goal still refuses at that last lap; the loop then emits an
+    incomplete handoff instead of accepting an unsupported conclusion.
     """
     # Arrange: constructed for 10 laps, this run is budgeted 3.
     from unittest.mock import MagicMock
@@ -268,4 +266,4 @@ def test_goal_ceiling_uses_the_runtime_requests_budget() -> None:
     )
 
     # Assert
-    assert accept is True
+    assert accept is False

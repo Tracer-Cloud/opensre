@@ -8,13 +8,14 @@ import pytest
 
 from core.llm_invoke_errors import (
     LLM_PROVIDER_FAILURE_KINDS,
+    CommandSurface,
     ProviderFailureKind,
     _looks_like_timeout,
     classify_llm_invoke_failure,
     classify_llm_provider_failure,
     classify_provider_error_kind,
     is_cli_timeout_error,
-    remediate_missing_llm_credentials,
+    remediate_llm_setup_failure,
 )
 from integrations.llm_cli.errors import CLITimeoutError
 
@@ -123,6 +124,13 @@ def test_cli_auth_required_uses_unknown_provider_when_attr_missing() -> None:
             "not_configured",
         ),
         ("LLM provider 'anthropic' requires ANTHROPIC_API_KEY to be set.", "not_configured"),
+        # Dashboards keep counting required-setting failures as not_configured
+        # after they stopped being classified as missing keys.
+        (
+            "LLM provider 'custom-openai' requires CUSTOM_OPENAI_BASE_URL to be set.",
+            "not_configured",
+        ),
+        ("Bedrock requires AWS_REGION or AWS_DEFAULT_REGION to be set.", "not_configured"),
         (
             "Gemini model 'gemini-pro' is not configured or billing is not enabled: x",
             "not_configured",
@@ -172,29 +180,70 @@ _OPENAI_MISSING_KEY_MESSAGE = (
     "`admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` "
     "environment variable."
 )
+_CUSTOM_OPENAI_MISSING_BASE_URL = (
+    "LLM provider 'custom-openai' requires CUSTOM_OPENAI_BASE_URL to be set."
+)
 
 
-def test_remediate_missing_credentials_rewrites_sdk_message_with_login_command() -> None:
-    # Arrange / Act: the exact OpenAI SDK text a key-less shell turn surfaces.
-    text = remediate_missing_llm_credentials(_OPENAI_MISSING_KEY_MESSAGE, provider="openai")
-
-    # Assert: in-shell commands first; do not echo the provider exception.
+@pytest.mark.parametrize(
+    ("surface", "commands", "foreign_prefix"),
+    [
+        (CommandSurface.SHELL, ("`/auth login openai`", "`/onboard`"), "`opensre "),
+        (CommandSurface.CLI, ("`opensre auth login openai`", "`opensre onboard`"), "`/"),
+    ],
+)
+def test_missing_key_guidance_uses_only_the_readers_command_spelling(
+    surface: CommandSurface, commands: tuple[str, ...], foreign_prefix: str
+) -> None:
+    # A slash command cannot be typed into `opensre ask`; an `opensre` command is
+    # the wrong advice at the shell prompt.
+    text = remediate_llm_setup_failure(
+        _OPENAI_MISSING_KEY_MESSAGE, surface=surface, provider="openai"
+    )
 
     assert text is not None
     assert "No API key is set for openai" in text
-    assert "`/auth login openai`" in text
-    assert "`/onboard`" in text
-    assert "`opensre auth login openai`" in text
+    for command in commands:
+        assert command in text
+    assert foreign_prefix not in text
+    # The provider exception is replaced, not echoed.
     assert "Missing credentials" not in text
     assert "OPENAI_API_KEY" not in text
 
 
 def test_remediate_missing_credentials_without_provider_uses_placeholder() -> None:
-    text = remediate_missing_llm_credentials(_OPENAI_MISSING_KEY_MESSAGE, provider=None)
+    text = remediate_llm_setup_failure(
+        _OPENAI_MISSING_KEY_MESSAGE, surface=CommandSurface.SHELL, provider=None
+    )
 
     assert text is not None
     assert "No LLM API key is set" in text
     assert "/auth login <provider>" in text
+
+
+def test_signed_out_cli_guidance_offers_account_sign_in() -> None:
+    text = remediate_llm_setup_failure(
+        _OPENAI_MISSING_KEY_MESSAGE,
+        surface=CommandSurface.CLI,
+        provider="openai",
+        offer_account_login=True,
+    )
+
+    assert text is not None
+    assert "`opensre account login`" in text
+
+
+def test_missing_base_url_gets_endpoint_guidance_not_key_guidance() -> None:
+    """Regression: the bare "to be set" key pattern also caught the base-URL validator."""
+    text = remediate_llm_setup_failure(
+        _CUSTOM_OPENAI_MISSING_BASE_URL, surface=CommandSurface.CLI, provider="custom-openai"
+    )
+
+    assert text is not None
+    assert text.startswith("CUSTOM_OPENAI_BASE_URL is not set for custom-openai.")
+    assert "`opensre onboard`" in text
+    assert "API key" not in text
+    assert "auth login" not in text
 
 
 @pytest.mark.parametrize(
@@ -203,32 +252,28 @@ def test_remediate_missing_credentials_without_provider_uses_placeholder() -> No
         "Incorrect API key provided: sk-abc. You can find your key at platform.openai.com.",
         "Error code: 429 - rate limit exceeded",
         "The LLM request timed out after 300s.",
-        # Rejected-key wrappers cite *_API_KEY env names; they must keep their
+        # Rejected-key wrappers cite *_API_KEY names; they must keep their
         # real authentication message, never the no-key guidance.
         "AuthenticationError: invalid x-api-key. Check your ANTHROPIC_API_KEY.",
         "401 Unauthorized: the key from OPENAI_API_KEY was rejected.",
         "API key expired. Renew the key stored in GEMINI_API_KEY.",
+        # A required non-key, non-endpoint setting is not a setup we can name.
+        "Bedrock requires AWS_REGION or AWS_DEFAULT_REGION to be set.",
     ],
 )
 def test_remediate_missing_credentials_ignores_other_failures(message: str) -> None:
-    assert remediate_missing_llm_credentials(message) is None
+    assert remediate_llm_setup_failure(message, surface=CommandSurface.SHELL) is None
 
 
-def test_remediate_missing_credentials_matches_wrapper_requires_env_message() -> None:
-    text = remediate_missing_llm_credentials(
+@pytest.mark.parametrize(
+    "message",
+    [
         "LLM provider 'anthropic' requires ANTHROPIC_API_KEY to be set.",
-        provider="anthropic",
-    )
-
-    assert text is not None
-    assert "`/auth login anthropic`" in text
-
-
-def test_remediate_missing_credentials_matches_anthropic_absence_message() -> None:
-    text = remediate_missing_llm_credentials(
         "Could not resolve authentication method. Expected either api_key or auth_token to be set.",
-        provider="anthropic",
-    )
+    ],
+)
+def test_remediate_missing_credentials_matches_absence_wrappers(message: str) -> None:
+    text = remediate_llm_setup_failure(message, surface=CommandSurface.SHELL, provider="anthropic")
 
     assert text is not None
     assert "`/auth login anthropic`" in text
@@ -242,6 +287,11 @@ def test_remediate_missing_credentials_matches_anthropic_absence_message() -> No
             "Could not resolve authentication method. Expected either api_key "
             "or auth_token to be set.",
             ProviderFailureKind.MISSING_KEY,
+        ),
+        (_CUSTOM_OPENAI_MISSING_BASE_URL, ProviderFailureKind.MISSING_ENDPOINT),
+        (
+            "Bedrock requires AWS_REGION or AWS_DEFAULT_REGION to be set.",
+            ProviderFailureKind.NOT_CONFIGURED,
         ),
         (
             "AuthenticationError: invalid x-api-key. Check your ANTHROPIC_API_KEY.",
@@ -265,6 +315,8 @@ def test_classify_llm_provider_failure_rule_order(
         _OPENAI_MISSING_KEY_MESSAGE,
         "Could not resolve authentication method. Expected either api_key or auth_token to be set.",
         "LLM provider 'anthropic' requires ANTHROPIC_API_KEY to be set.",
+        _CUSTOM_OPENAI_MISSING_BASE_URL,
+        "Bedrock requires AWS_REGION or AWS_DEFAULT_REGION to be set.",
         "AuthenticationError: invalid x-api-key. Check your ANTHROPIC_API_KEY.",
         "401 Unauthorized: the key from OPENAI_API_KEY was rejected.",
         "Error code: 429 - rate limit exceeded",
@@ -277,11 +329,13 @@ def test_remediation_and_analytics_always_agree(message: str) -> None:
     Regression: the split classifiers disagreed on Anthropic's absence message
     (analytics said ``auth`` while the user saw missing-key guidance).
     """
-    remediated = remediate_missing_llm_credentials(message) is not None
+    remediated = remediate_llm_setup_failure(message, surface=CommandSurface.SHELL) is not None
     kind = classify_llm_provider_failure(message)
     analytics = classify_provider_error_kind(message)
 
-    assert remediated == (kind is ProviderFailureKind.MISSING_KEY)
+    assert remediated == (
+        kind in {ProviderFailureKind.MISSING_KEY, ProviderFailureKind.MISSING_ENDPOINT}
+    )
     if remediated:
         assert analytics == "not_configured"
         assert analytics != "auth"

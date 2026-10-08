@@ -16,7 +16,8 @@ from typing import NoReturn
 import httpx
 import pytest
 
-from infrastructure.analytics import install, install_state, provider
+from config.account import AccountRecord, delete_account_record, save_account_record
+from infrastructure.analytics import destination, install, install_state, provider
 from infrastructure.analytics.destination import AnalyticsDestination
 from infrastructure.analytics.events import Event
 
@@ -33,6 +34,7 @@ def _reset_anonymous_id_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     provider._pending_user_id_load_failures.clear()
     monkeypatch.setattr(provider, "_event_log_state", provider._EventLogState())
     monkeypatch.setattr(provider, "_FIRST_RUN_PATH", tmp_path / "installed")
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
     yield
     provider.shutdown_analytics(flush=False)
     provider._instance = None
@@ -44,6 +46,9 @@ class _StubAnalytics:
 
     def capture(self, event: Event, properties: provider.Properties | None = None) -> None:
         self.events.append((event, properties))
+
+    def _install_delivery_confirmed(self) -> bool:
+        return False
 
 
 def _stub_httpx_client(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
@@ -105,6 +110,7 @@ def test_installer_snapshot_survives_until_runtime_events_without_recounting_ins
         marker.touch()
     monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
     monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider, "_FIRST_RUN_PATH", marker)
     (tmp_path / "anonymous_id").write_text(str(uuid.uuid4()))
     monkeypatch.setattr(install, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setenv(
@@ -125,15 +131,22 @@ def test_installer_snapshot_survives_until_runtime_events_without_recounting_ins
     provider._instance = None
     provider._install_capture_state = provider._InstallCaptureState()
     provider.capture_install_detected_if_needed()
-    provider.get_analytics().capture(Event.CLI_INVOKED)
+    provider.get_analytics().capture("cli_command_opensre")
     provider.shutdown_analytics(flush=True, timeout=2)
 
     payloads = [request["json"] for request in posted]
-    assert [payload["event"] for payload in payloads] == (
-        [Event.CLI_INVOKED.value]
-        if prior_marker
-        else [Event.INSTALL_DETECTED.value, Event.CLI_INVOKED.value]
-    )
+    # A marker without a delivery receipt is an unverified legacy install and is
+    # recovered exactly once; the runtime process afterwards finds the receipt.
+    assert [payload["event"] for payload in payloads] == [
+        Event.INSTALL_DETECTED.value,
+        "cli_command_opensre",
+    ]
+    install_properties = payloads[0]["properties"]
+    if prior_marker:
+        assert install_properties["install_detection_reason"] == "unverified_marker"
+        assert payloads[0]["event_id"].endswith(":delivery-v1")
+    else:
+        assert "install_detection_reason" not in install_properties
     assert all(
         payload["properties"]["install_marker_state_before_install"]
         == ("present" if prior_marker else "absent")
@@ -271,7 +284,7 @@ def test_analytics_posts_versioned_event_contract_to_webapp(
     posted_payloads = _stub_httpx_client(monkeypatch)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED, {"entrypoint": "opensre"})
+    analytics.capture("cli_command_opensre_health", {"entrypoint": "opensre"})
     analytics.shutdown(flush=True)
 
     assert len(posted_payloads) == 1
@@ -285,11 +298,40 @@ def test_analytics_posts_versioned_event_contract_to_webapp(
     payload = posted["json"]
     assert payload["schema_version"] == 1
     assert payload["source"] == "opensre_runtime"
-    assert payload["event"] == Event.CLI_INVOKED.value
+    assert payload["event"] == "cli_command_opensre_health"
+    assert payload["properties"]["is_test"] is True
+    assert payload["properties"]["distribution"] == provider._BASE_PROPERTIES["distribution"]
     assert payload["anonymous_id"] == analytics._anonymous_id
     assert payload["event_id"]
     assert payload["occurred_at"]
     assert "api_key" not in payload
+
+
+def test_runtime_classification_applies_to_all_product_events_and_cannot_be_overridden(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider, "is_test_run", lambda: True)
+    monkeypatch.setattr(provider, "_BASE_PROPERTIES", {"distribution": "frozen_binary"})
+    monkeypatch.setattr(
+        provider,
+        "resolve_analytics_destination",
+        lambda: AnalyticsDestination("https://app.opensre.test/api/analytics/events"),
+    )
+    posted = _stub_httpx_client(monkeypatch)
+    analytics = provider.Analytics()
+    for event in ("cli_command_opensre_health", Event.ONBOARD_STARTED):
+        analytics.capture(event, {"distribution": "source_checkout", "is_test": False})
+    analytics.shutdown(flush=True, timeout=2)
+
+    assert len(posted) == 2
+    assert all(
+        request["json"]["properties"]["distribution"] == "frozen_binary" for request in posted
+    )
+    assert all(request["json"]["properties"]["is_test"] is True for request in posted)
 
 
 def test_queued_events_keep_the_destination_active_when_captured(
@@ -313,11 +355,157 @@ def test_queued_events_keep_the_destination_active_when_captured(
     queued: list[provider._Envelope] = []
     monkeypatch.setattr(analytics, "_enqueue", queued.append)
 
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
     analytics.refresh_destination()
     analytics.capture(Event.ACCOUNT_AUTHENTICATED)
 
     assert [item.destination for item in queued] == [anonymous, authenticated]
+
+
+def test_running_shell_follows_account_changes_made_by_another_process(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    account_path = tmp_path / "account.json"
+    token_path = tmp_path / "account-token"
+    monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
+    monkeypatch.delenv("OPENSRE_ACCOUNT_TOKEN", raising=False)
+    monkeypatch.setenv("OPENSRE_ACCOUNT_METADATA_PATH", str(account_path))
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+    monkeypatch.setattr(
+        destination,
+        "resolve_account_token",
+        lambda: token_path.read_text() if token_path.exists() else "",
+    )
+
+    resolutions: list[str | None] = []
+    resolve_destination = provider.resolve_analytics_destination
+
+    def _destination() -> AnalyticsDestination | None:
+        resolved = resolve_destination()
+        resolutions.append(resolved.bearer_token if resolved is not None else None)
+        return resolved
+
+    def _replace_account(token: str) -> None:
+        token_path.write_text(token)
+        save_account_record(
+            AccountRecord(
+                user_id=f"user_{token}",
+                organization_id="org_test",
+                email="test@example.com",
+                app_url="https://app.example",
+                signed_in_at="2026-09-29T10:00:00Z",
+                token_expires_at="2026-12-29T10:00:00Z",
+            )
+        )
+
+    monkeypatch.setattr(provider, "resolve_analytics_destination", _destination)
+    analytics = provider.Analytics()
+    queued: list[provider._Envelope] = []
+    monkeypatch.setattr(analytics, "_enqueue", queued.append)
+
+    analytics.capture(Event.INTERACTIVE_SHELL_RENDERED)
+    _replace_account("account-a")  # Child process completed login.
+    analytics.capture(Event.REACT_TURN_COMPLETED)
+    analytics.capture(Event.AGENT_TOOL_CALL_COMPLETED)
+    _replace_account("account-b")  # Another account replaced the login.
+    analytics.capture(Event.REACT_TURN_COMPLETED)
+    delete_account_record()  # Child process logged out.
+    token_path.unlink()
+    analytics.capture(Event.REACT_TURN_COMPLETED)
+
+    assert [item.destination.bearer_token for item in queued] == [
+        "",
+        "account-a",
+        "account-a",
+        "account-b",
+        "",
+    ]
+    assert resolutions == ["", "account-a", "account-b", ""]
+
+
+def test_refresh_rechecks_account_when_record_changes_during_resolution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    account_path = tmp_path / "account.json"
+    account_path.write_text("account-a")
+    monkeypatch.setattr(provider, "account_metadata_path", lambda: account_path)
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+    changed_during_resolution = False
+
+    def _destination() -> AnalyticsDestination:
+        nonlocal changed_during_resolution
+        token = account_path.read_text()
+        if changed_during_resolution:
+            replacement = account_path.with_suffix(".tmp")
+            replacement.write_text("account-b")
+            replacement.replace(account_path)
+            changed_during_resolution = False
+        return AnalyticsDestination("https://app.example/api/analytics/events", bearer_token=token)
+
+    monkeypatch.setattr(provider, "resolve_analytics_destination", _destination)
+    analytics = provider.Analytics()
+    queued: list[provider._Envelope] = []
+    monkeypatch.setattr(analytics, "_enqueue", queued.append)
+
+    changed_during_resolution = True
+    analytics.refresh_destination()
+    analytics.capture(Event.REACT_TURN_COMPLETED)
+
+    assert queued[0].destination is not None
+    assert queued[0].destination.bearer_token == "account-b"
+
+
+def test_group_identify_keeps_the_parent_events_account_during_login(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    account_path = tmp_path / "account.json"
+    account_path.write_text("account-a")
+    monkeypatch.setattr(provider, "account_metadata_path", lambda: account_path)
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+    monkeypatch.setattr(
+        provider,
+        "resolve_analytics_destination",
+        lambda: AnalyticsDestination(
+            "https://app.example/api/analytics/events",
+            bearer_token=account_path.read_text(),
+        ),
+    )
+    analytics = provider.Analytics()
+    queued: list[provider._Envelope] = []
+    monkeypatch.setattr(analytics, "_enqueue", queued.append)
+    original_merge = provider.merge_usage_enrichment
+    switch_during_merge = True
+
+    def _merge(*args, **kwargs) -> provider.Properties:
+        nonlocal switch_during_merge
+        properties = original_merge(*args, **kwargs)
+        if switch_during_merge:
+            replacement = account_path.with_suffix(".tmp")
+            replacement.write_text("account-b")
+            replacement.replace(account_path)
+            switch_during_merge = False
+        return properties
+
+    monkeypatch.setattr(provider, "merge_usage_enrichment", _merge)
+    analytics.capture(Event.REACT_TURN_COMPLETED, {"organization_id": "org_test"})
+    analytics.capture(Event.REACT_TURN_COMPLETED, {"organization_id": "org_test"})
+
+    assert [item.event for item in queued] == [
+        "$groupidentify",
+        Event.REACT_TURN_COMPLETED,
+        "$groupidentify",
+        Event.REACT_TURN_COMPLETED,
+    ]
+    assert [item.destination.bearer_token for item in queued if item.destination] == [
+        "account-a",
+        "account-a",
+        "account-b",
+        "account-b",
+    ]
 
 
 def test_opt_out_does_not_resolve_endpoint_or_account_credentials(monkeypatch) -> None:
@@ -347,7 +535,7 @@ def test_unresolved_destination_does_not_post_elsewhere(
     posted_payloads = _stub_httpx_client(monkeypatch)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
     analytics.shutdown(flush=True)
 
     assert posted_payloads == []
@@ -387,7 +575,7 @@ def test_analytics_send_failure_is_reported_to_sentry(
     monkeypatch.setattr(provider, "_capture_sentry_failure", captured_errors.append)
 
     analytics = provider.get_analytics()
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
     provider.shutdown_analytics(flush=True)
 
     assert captured_errors == [expected_error]
@@ -475,7 +663,7 @@ def test_analytics_capture_failure_releases_pending_counter(
     )
     monkeypatch.setattr(provider, "_capture_sentry_failure", captured_errors.append)
 
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
 
     assert analytics._pending == 0
     assert analytics._drained.is_set()
@@ -591,7 +779,7 @@ def test_analytics_events_from_same_instance_share_exact_distinct_id(
     posted_payloads = _stub_httpx_client(monkeypatch)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED, {"interactive": False})
+    analytics.capture("cli_command_opensre", {"interactive": False})
     analytics.capture(Event.ONBOARD_STARTED, {"entrypoint": "cli"})
     analytics.capture(Event.UPDATE_COMPLETED)
     analytics.shutdown(flush=True)
@@ -610,7 +798,7 @@ def test_analytics_events_from_same_instance_share_exact_distinct_id(
         assert properties["container_runtime"] == provider._ANALYTICS_RUNTIME.container_runtime
     log_lines = (tmp_path / "analytics_events.txt").read_text(encoding="utf-8").splitlines()
     assert len(log_lines) == 3
-    assert Event.CLI_INVOKED.value in log_lines[0]
+    assert "cli_command_opensre" in log_lines[0]
     assert f'distinct_id="{analytics._anonymous_id}"' in log_lines[0]
 
 
@@ -625,7 +813,7 @@ def test_set_persistent_property_merges_into_subsequent_captures(
     posted_payloads = _stub_httpx_client(monkeypatch)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
     analytics.set_persistent_property("github_username", "octocat")
     analytics.capture(Event.ONBOARD_STARTED, {"entrypoint": "cli"})
     analytics.capture(Event.TERMINAL_TURN_SUMMARIZED, {"turn": "agent"})
@@ -1033,7 +1221,7 @@ def test_recurring_events_do_not_get_insert_id(monkeypatch, tmp_path: Path) -> N
     posted_payloads = _stub_httpx_client(monkeypatch)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
     analytics.shutdown(flush=True)
 
     assert len(posted_payloads) == 1
@@ -1056,7 +1244,7 @@ def test_identity_persistence_property_marks_none_when_disk_unavailable(
     posted_payloads = _stub_httpx_client(monkeypatch)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
     analytics.shutdown(flush=True)
 
     assert len(posted_payloads) == 1
@@ -1184,7 +1372,7 @@ def test_analytics_needs_flush_true_when_events_pending(
     monkeypatch.setattr(provider.httpx, "Client", _SlowClient)
     analytics = provider.Analytics()
     provider._instance = analytics
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
     assert provider.analytics_needs_flush() is True
     analytics.shutdown(flush=False)
     assert provider.analytics_needs_flush() is False
@@ -1231,7 +1419,7 @@ def test_shutdown_flush_false_returns_without_waiting_on_slow_worker(
     monkeypatch.setattr(provider.httpx, "Client", _SlowClient)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED, {"interactive": True})
+    analytics.capture("cli_command_opensre", {"interactive": True})
 
     started = time.perf_counter()
     analytics.shutdown(flush=False)
@@ -1281,7 +1469,7 @@ def test_shutdown_flush_spends_one_budget_not_two(
     monkeypatch.setattr(provider.httpx, "Client", _SlowClient)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED, {"interactive": True})
+    analytics.capture("cli_command_opensre", {"interactive": True})
     budget = 0.25
 
     # Act
@@ -1328,7 +1516,7 @@ def test_atexit_registers_non_blocking_shutdown(
     monkeypatch.setattr(provider.httpx, "Client", _SlowClient)
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
 
     assert len(registered) == 1
     started = time.perf_counter()
@@ -1467,7 +1655,7 @@ def test_capture_coerces_invalid_property_values(
 
     analytics = provider.Analytics()
     analytics.capture(
-        Event.CLI_INVOKED,
+        "cli_command_opensre",
         {
             "ok_string": "value",
             "ok_bool": True,

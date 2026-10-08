@@ -33,6 +33,7 @@ ignore_imports =
     # surfaces -> gateway (cli + repl gateway commands)
     surfaces.cli.commands.gateway -> gateway.core.process
     surfaces.gateway_entry -> gateway.core.lifecycle.controller
+    surfaces.gateway_entry -> gateway.web.web_server
     surfaces.interactive_shell.command_registry.gateway_cmds -> gateway.core.process
     # tools -> integrations (T-4 debt — vendor tools / reporting)
     tools.cross_vendor.fix_sentry_issue.context -> integrations.sentry

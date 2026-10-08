@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from unittest.mock import MagicMock
 
 from integrations.grafana.mimir import MimirMixin
@@ -112,7 +113,7 @@ def test_query_mimir_http_exception_handling():
 
     # 1. Create a fake HTTP response object
     mock_response = MagicMock()
-    mock_response.status_code = 502
+    mock_response.status_code = HTTPStatus.BAD_GATEWAY
     mock_response.text = "Bad Gateway: Mimir database is unreachable"
 
     # 2. Create a generic exception, but attach our fake response to it
@@ -126,6 +127,52 @@ def test_query_mimir_http_exception_handling():
 
     # 4. Verify it hit lines 69-71 and correctly formatted the error
     assert result["success"] is False
-    assert result["error"] == "Mimir query failed: 502"
+    assert result["error"] == "Mimir query failed: 502: Bad Gateway: Mimir database is unreachable"
     assert result["response"] == "Bad Gateway: Mimir database is unreachable"
     assert result["metrics"] == []
+
+
+def _http_error(status: HTTPStatus, body: str) -> Exception:
+    response = MagicMock()
+    response.status_code = status
+    response.text = body
+    exc = Exception("HTTP Error")
+    exc.response = response  # type: ignore[attr-defined]
+    return exc
+
+
+def test_query_mimir_error_carries_prometheus_error_body():
+    # Production errors were a bare "Mimir query failed: 400" with no reason.
+    client = DummyMimirClient()
+    client._make_get_request.side_effect = _http_error(
+        HTTPStatus.BAD_REQUEST,
+        '{"status":"error","errorType":"bad_data","error":"invalid parameter \\"query\\": 1:5: parse error"}',
+    )
+
+    result = client.query_mimir("rate(x[5m])")
+
+    assert result["error"] == (
+        'Mimir query failed: 400: bad_data: invalid parameter "query": 1:5: parse error'
+    )
+
+
+def test_query_mimir_404_hints_at_the_datasource():
+    client = DummyMimirClient()
+    client._make_get_request.side_effect = _http_error(HTTPStatus.NOT_FOUND, "404 page not found")
+
+    result = client.query_mimir("cpu_usage_total")
+
+    assert result["error"].startswith("Mimir query failed: 404: 404 page not found")
+    assert "datasource UID" in result["error"]
+
+
+def test_query_mimir_refuses_service_name_with_a_promql_expression():
+    # Appending {service_name=...} to an expression yields invalid PromQL (a 400),
+    # and running it unfiltered would pass other services' series off as this one's.
+    client = DummyMimirClient()
+
+    result = client.query_mimir("sum(rate(http_requests_total[5m]))", service_name="api")
+
+    assert result["success"] is False
+    assert 'service_name="api"' in result["error"]
+    client._make_get_request.assert_not_called()

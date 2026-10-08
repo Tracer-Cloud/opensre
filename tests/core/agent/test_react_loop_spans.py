@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,8 @@ import pytest
 from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
 from core.agent import Agent
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
-from core.llm.types import AgentLLMResponse, ToolCall
+from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.tool import RuntimeTool
 from infrastructure.observability.operations_log import read_operations
 from infrastructure.observability.trace.spans import (
     NoopSessionTraceStore,
@@ -176,6 +178,54 @@ def test_agent_run_emits_llm_span_when_sink_active(
     assert iteration_span["attributes"]["should_stop"] is True
 
 
+class _UsageReportingLLM(_NoToolLLM):
+    def invoke(
+        self,
+        _messages: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AgentLLMResponse:
+        _ = (system, tools)
+        return AgentLLMResponse(
+            content="done",
+            input_tokens=29_000,
+            cache_read_tokens=26_000,
+            output_tokens=300,
+            reasoning_tokens=120,
+        )
+
+
+def test_llm_span_records_the_calls_usage_and_omits_unreported_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = "sess-llm-usage"
+    path = _activate_trace(tmp_path, monkeypatch, session_id=session_id)
+
+    for llm in (_UsageReportingLLM(), _NoToolLLM()):
+        agent = Agent(
+            llm=llm,
+            system="sys",
+            tools=[],
+            resolved_integrations={},
+            max_iterations=1,
+        )
+        with bind_session_trace(session_id):
+            agent.run([{"role": "user", "content": "hello"}])
+
+    reported, unreported = [
+        s["attributes"] for s in _trace_spans(path) if s.get("span_kind") == "llm"
+    ]
+    assert {key: reported[key] for key in reported if key.endswith("_tokens")} == {
+        "input_tokens": 29_000,
+        "cache_read_tokens": 26_000,
+        "output_tokens": 300,
+        "reasoning_tokens": 120,
+    }
+    # A provider that reported nothing must not read as a measured 0% cache hit.
+    assert not [key for key in unreported if key.endswith("_tokens")]
+
+
 def test_agent_run_skips_llm_span_when_noop() -> None:
     agent = Agent(
         llm=_NoToolLLM(),
@@ -255,3 +305,55 @@ def test_agent_run_emits_loop_iteration_outcomes_for_tool_round(
     assert loop["attributes"]["outcome"] == "completed"
     assert loop["attributes"]["iterations_used"] == 2
     assert loop["attributes"]["executed_count"] == 1
+
+
+class _FailingLLM:
+    """A provider whose every request raises ``message``."""
+
+    model_id: str | None = "test-model"
+
+    def __init__(self, message: str) -> None:
+        self._message = message
+
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
+        return [{"name": tool.name} for tool in tools]
+
+    def invoke(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AgentLLMResponse:
+        _ = (messages, system, tools)
+        raise RuntimeError(self._message)
+
+
+def test_a_failed_run_puts_the_redacted_exception_text_on_its_error_spans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: the provider call raises with a credential in its message.
+    session_id = "sess-react-loop-error"
+    path = _activate_trace(tmp_path, monkeypatch, session_id=session_id)
+    token = "ghp_" + "d" * 36
+    agent: Agent[RuntimeTool] = Agent(
+        llm=_FailingLLM(f"upstream rejected {token}"),
+        system="sys",
+        tools=[],
+        resolved_integrations={},
+        max_iterations=2,
+    )
+
+    # Act
+    with bind_session_trace(session_id), pytest.raises(RuntimeError):
+        agent.run([{"role": "user", "content": "hello"}])
+
+    # Assert: both the iteration and the loop span say what failed, redacted.
+    spans = _trace_spans(path)
+    for kind in ("loop_iteration", "loop"):
+        span = next(s for s in spans if s.get("span_kind") == kind)
+        assert span["status"] == "error"
+        assert span["attributes"]["exception_type"] == "RuntimeError"
+        assert span["attributes"]["exception_message"] == (
+            "upstream rejected [REDACTED:github_pat]"
+        )

@@ -10,11 +10,19 @@ from typing import Any
 from rich.console import Console
 
 from core.domain.alerts import inbox as _alert_inbox
+from infrastructure.scheduling.scheduler.background_service import (
+    restart_stale_background_service,
+)
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
+from surfaces.interactive_shell.runtime.startup.deferred_work import DeferredJob
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.alerts import drain_and_render_incoming
+from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
 
 log = logging.getLogger(__name__)
+
+#: Hands a one-shot thread job to whoever decides when it may start.
+DeferThreadJob = Callable[[str, DeferredJob], None]
 
 
 class BackgroundTaskPool:
@@ -27,6 +35,8 @@ class BackgroundTaskPool:
         spinner: SpinnerState,
         inbox: _alert_inbox.AlertInbox | None,
         prompt_invalidator: Callable[[], None],
+        *,
+        defer_thread_job: DeferThreadJob | None = None,
     ) -> None:
         self.session = session
         self.state = state
@@ -36,6 +46,7 @@ class BackgroundTaskPool:
         self.tasks: list[tuple[str, asyncio.Task[None]]] = []
         self._loop: asyncio.AbstractEventLoop | None = None
         self._sampler_started = False
+        self._defer_thread_job = defer_thread_job
 
     def start_all(
         self,
@@ -50,6 +61,18 @@ class BackgroundTaskPool:
             ("alert watcher", asyncio.create_task(self._alert_watcher())),
             ("spinner ticker", asyncio.create_task(self._spinner_ticker())),
         ]
+        session = self.session
+        thread_jobs: tuple[tuple[str, Callable[[], None]], ...] = (
+            # The scheduler check is cheap and finishes a deferred upgrade, so it
+            # runs first: an exit during the snapshot must not skip it.
+            ("scheduler build check", _restart_stale_scheduler),
+            ("GitHub connection snapshot", lambda: capture_github_connection_snapshot(session)),
+        )
+        for label, job in thread_jobs:
+            if self._defer_thread_job is not None:
+                self._defer_thread_job(label, job)
+            else:
+                self.tasks.append((label, asyncio.create_task(asyncio.to_thread(job))))
         return self.tasks
 
     def ensure_fleet_sampler_started(self) -> None:
@@ -120,3 +143,11 @@ class BackgroundTaskPool:
             if streaming or was_streaming:
                 self.prompt_invalidator()
             was_streaming = streaming
+
+
+def _restart_stale_scheduler() -> None:
+    """Finish a scheduler upgrade that was deferred while a run was in flight."""
+    try:
+        restart_stale_background_service()
+    except Exception:
+        log.debug("Scheduler build check failed", exc_info=True)

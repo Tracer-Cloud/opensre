@@ -11,6 +11,7 @@ Populated cluster-by-cluster as the #3690 split lands; theme is the first cluste
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -21,6 +22,10 @@ from surfaces.interactive_shell.session.terminal_metrics import TerminalMetrics
 
 if TYPE_CHECKING:
     from prompt_toolkit.history import History
+
+    from core.agent_harness.spi.session_state import SetupResume
+
+logger = logging.getLogger(__name__)
 
 
 #: How many capped tool peeks Ctrl+O can cycle through.
@@ -49,17 +54,19 @@ class ActionLogEntry:
     detail: str = ""
 
 
+def _autosubmit_label(text: str) -> str:
+    """Name a queued autosubmit for a log line without recording what the user wrote."""
+    stripped = text.strip()
+    if stripped.startswith("/"):
+        return stripped.split(maxsplit=1)[0]
+    return f"a {len(stripped)}-character message"
+
+
 @dataclass
 class TerminalSession:
     """Shell-surface session state, composed onto ``Session`` for the interactive shell."""
 
     active_theme_name: str = "green"
-
-    cli_command_group: Any = field(default=None, repr=False, compare=False)
-    """The ``opensre`` Click command group the shell documents to the model.
-
-    Handed in by the process entrypoint; ``None`` when the shell runs on its
-    own, in which case grounding covers slash commands only."""
     """Interactive shell palette name for this REPL session (``/theme``, prompts)."""
 
     pending_theme_refresh: bool = False
@@ -85,6 +92,12 @@ class TerminalSession:
     slash commands (e.g. ``/theme``) can refresh styles via ``call_soon_threadsafe`` on
     the main asyncio loop."""
 
+    transcript: Any = None
+    """The full-screen transcript store, when the shell runs full screen.
+
+    Screen resets (``/clear``, a theme change) reset it instead of clearing the
+    terminal, because the full-screen view draws from it."""
+
     main_loop: Any = None
     """The asyncio event loop for the main REPL coroutine.
 
@@ -103,6 +116,12 @@ class TerminalSession:
     Set by the interactive-shell controller so the sampler (and its ``psutil`` dependency)
     stays out of base REPL startup and only runs when fleet monitoring is actually
     requested. Thread-safe: the starter marshals task creation onto the REPL event loop."""
+
+    startup_work_release: Callable[[], None] | None = field(default=None, repr=False)
+    """Launch hook that starts work held back until the shell first waits on the user.
+
+    Set by the shell entry; ``/choose`` calls it as the first menu draws so
+    warm-ups and snapshots do not compete with that paint. Idempotent."""
 
     pending_prompt_default: str | None = None
     """When set, the next interactive prompt is pre-filled with this string (then cleared)."""
@@ -135,9 +154,26 @@ class TerminalSession:
     Set by ``ask_user_choice`` (and the ``/choose`` pick). Cleared when the
     submitted prompt is painted so the answer uses the brand colour."""
 
+    handoff_recap_text: str | None = None
+    """The auto-submitted ``/choose`` answer whose Ask User card is already painted.
+
+    ``/choose`` prints the recap of every question it asked, so the same answer
+    must not paint a second card when it is submitted. Matched by exact text and
+    cleared when the submitted prompt is painted."""
+
+    setup_resume: SetupResume | None = None
+    """The user turn parked behind an integration setup, resubmitted once setup succeeds.
+
+    Written through ``core.agent_harness.spi.session_state`` (``arm_setup_resume``);
+    dropped by a typed turn, a closed menu, a new demo, and ``/new``."""
+
     pending_choice_response: str | None = None
     goal_paint_signature: GoalPaintSignature | None = None
     """What the last session-goal block showed; unchanged goals repaint as one line."""
+
+    pending_inflight_goal_controls: dict[str, int] = field(default_factory=dict)
+    """Queued goal controls whose safe-boundary mutations were already applied."""
+
     """Selected label while its synthetic answer turn awaits a response.
 
     The response composer consumes the label to hide a pure acknowledgement
@@ -188,13 +224,6 @@ class TerminalSession:
     metrics: TerminalMetrics = field(default_factory=TerminalMetrics)
     """Interactive-shell turn/intervention analytics counters (see ``/status``)."""
 
-    submitted_turn_count: int = 0
-    """Prompts the user has submitted this session; drives the ``[N]`` prompt label.
-
-    Deliberately independent of ``session.history``: one submitted request may
-    append many history rows (shell commands, tool executions), but it occupies
-    exactly one numbered prompt line."""
-
     _turn_outcome_hint: str | None = field(default=None, repr=False, compare=False)
     """Optional structured outcome set by a terminal handler for analytics."""
 
@@ -209,11 +238,6 @@ class TerminalSession:
     ``pop_pending_turn_error`` so it cannot leak into later turns."""
 
     # ── behavior over the fields above (Session delegates via ``session.terminal``) ──
-
-    def claim_turn_number(self) -> int:
-        """Advance and return the 1-based ``[N]`` number for a just-submitted prompt."""
-        self.submitted_turn_count += 1
-        return self.submitted_turn_count
 
     def has_collapsed_tool_output(self) -> bool:
         """True when Ctrl+O can expand at least one stashed peek."""
@@ -316,12 +340,25 @@ class TerminalSession:
         self.pending_prompt_plain_turn = False
         return value
 
+    def _note_replaced_autosubmit(self, text: str) -> None:
+        """Count and log a queued autosubmit that is about to be replaced before it ran."""
+        pending = self.pending_prompt_default
+        if not (self.pending_prompt_autosubmit and pending) or pending == text:
+            return
+        self.metrics.autosubmit_overwrite_count += 1
+        logger.debug(
+            "Replacing a queued autosubmit before it ran: %s -> %s",
+            _autosubmit_label(pending),
+            _autosubmit_label(text),
+        )
+
     def set_auto_prompt(self, text: str) -> None:
         """Queue *text* to be submitted as an ordinary turn, as if the user typed it.
 
         Unlike :meth:`set_auto_command`, the controller does not suspend the
         prompt for the turn, so the pinned-layout spinner keeps showing progress.
         """
+        self._note_replaced_autosubmit(text)
         self.pending_prompt_default = text
         self.pending_prompt_autosubmit = True
         self.pending_prompt_plain_turn = True
@@ -336,6 +373,7 @@ class TerminalSession:
         through the normal exclusive-stdin dispatch path rather than spawning it
         mid-turn, where it would fight the live prompt for stdin.
         """
+        self._note_replaced_autosubmit(command)
         self.pending_prompt_default = command
         self.pending_prompt_autosubmit = True
         self.pending_prompt_plain_turn = False
@@ -345,6 +383,11 @@ class TerminalSession:
         """Redraw the active prompt (placeholder state and pending prefill)."""
         if self.prompt_refresh_fn is not None:
             self.prompt_refresh_fn()
+
+    def release_startup_work(self) -> None:
+        """Start launch work held for the first wait on the user (no-op when unwired)."""
+        if self.startup_work_release is not None:
+            self.startup_work_release()
 
     def ensure_fleet_sampler_started(self) -> None:
         """Request that the fleet sampler start (no-op if unwired or already running)."""

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import signal
+
 import pytest
 
 from infrastructure.process.release_version import (
@@ -321,6 +323,45 @@ def test_development_install_doctor_detail_uv_run(
     monkeypatch.setenv("UV_RUN_RECURSION_DEPTH", "1")
     detail = development_install_doctor_version_detail("2026.4.5")
     assert detail == "2026.4.5 (uv run; skipped comparing to latest main build)"
+
+
+def test_container_update_restarts_the_supervisor_without_prompting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A container child confirms nothing and signals the supervisor that installed it."""
+    monkeypatch.setenv("OPENSRE_SUPERVISOR_PID", "4242")
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.get_opensre_version", lambda: "1.0.0")
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.fetch_latest_version", lambda: "1.2.3")
+    monkeypatch.setattr("surfaces.cli.lifecycle.update._upgrade_via_install_script", lambda: 0)
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.os.getpid", lambda: 7)
+    signaled: list[tuple[int, int]] = []
+
+    def _kill(pid: int, sig: int) -> None:
+        signaled.append((pid, sig))
+
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.os.kill", _kill)
+
+    rc = run_update(yes=False)
+
+    assert rc == 0
+    assert signaled == [(4242, signal.SIGHUP)]
+
+
+def test_update_does_not_signal_when_it_is_the_supervisor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENSRE_SUPERVISOR_PID", "7")
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.get_opensre_version", lambda: "1.0.0")
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.fetch_latest_version", lambda: "1.2.3")
+    monkeypatch.setattr("surfaces.cli.lifecycle.update._upgrade_via_install_script", lambda: 0)
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.os.getpid", lambda: 7)
+
+    def _kill(*_args: object) -> None:
+        pytest.fail("signaled")
+
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.os.kill", _kill)
+
+    assert run_update(yes=True) == 0
 
 
 def test_development_install_doctor_detail_editable_and_uv_run(

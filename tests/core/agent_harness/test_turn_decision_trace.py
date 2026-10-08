@@ -68,6 +68,13 @@ def test_stop_trace_records_rejection_then_question_bypass_and_saved_answer(
 ) -> None:
     session, path = traced_session
     # No tool runs before the write, so no step may already be completed.
+    # An all-pending checklist is recorded and the host marks the first step
+    # in_progress.
+    requested = [
+        {"step": "Collect evidence", "status": "pending"},
+        {"step": "Display report", "status": "pending"},
+        {"step": "Offer next action", "status": "pending"},
+    ]
     plan = [
         {"step": "Collect evidence", "status": "in_progress"},
         {"step": "Display report", "status": "pending"},
@@ -77,7 +84,7 @@ def test_stop_trace_records_rejection_then_question_bypass_and_saved_answer(
     harness = ActionExecutionHarness(
         llm=FakeActionLLM(
             [
-                tool_response("update_plan", {"plan": plan}),
+                tool_response("update_plan", {"plan": requested}),
                 no_tool_response("The report is ready."),
                 no_tool_response(closing),
             ]
@@ -129,7 +136,7 @@ def test_trace_keeps_suppressed_closing_and_pending_question_with_secrets_redact
         + "Additional evidence. " * 100
         + secret
     )
-    counts = _TurnCounts([], 1, 1, 1, 1, True)
+    counts = _TurnCounts([], 1, 1, 1, True)
 
     response, chunks, use_final = _compose_response(
         _painted_result(final_text=closing),
@@ -147,7 +154,7 @@ def test_trace_keeps_suppressed_closing_and_pending_question_with_secrets_redact
     assert trace["pending_user_choice"]["title"] == "Which repository?"
 
 
-def test_trace_distinguishes_goal_rejection_from_iteration_ceiling_override(
+def test_trace_records_goal_rejection_even_at_the_iteration_ceiling(
     traced_session: tuple[Session, Path],
 ) -> None:
     session, path = traced_session
@@ -167,10 +174,11 @@ def test_trace_distinguishes_goal_rejection_from_iteration_ceiling_override(
         max_iterations=3,
     )
 
-    assert accepted and nudge is None
+    assert accepted is False
+    assert nudge is not None
     assert _decisions(path, "goal_review")[-1]["accepted"] is False
     assert _decisions(path, "conclusion")[-1] == {
-        "accepted": True,
-        "reason": "iteration_ceiling",
+        "accepted": False,
+        "reason": "goal_unmet",
         "iteration": 2,
     }

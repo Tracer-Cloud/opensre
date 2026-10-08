@@ -7,18 +7,32 @@ target checkout non-interactively (network stays disabled by Codex's sandbox
 default). The guarded task prompt forbids commits/pushes; branch/commit/PR
 mechanics stay with the caller.
 
-Env vars: ``CODEX_BIN`` (optional explicit binary path); OpenAI Platform auth
-env keys are forwarded to the subprocess.
+Env vars: ``CODEX_BIN`` (optional explicit binary path). A signed-in OpenSRE
+account supplies hosted OpenAI credentials through the child environment and,
+under Codex's own sandbox, a per-run minimal ``CODEX_HOME``; otherwise OpenAI
+Platform auth env keys are forwarded and the user's Codex home applies.
 """
 
 from __future__ import annotations
 
+from contextlib import ExitStack
+
+from config.constants import (
+    CODEX_HOME_ENV,
+    CODING_AGENT_SANDBOX_HOST,
+    OPENAI_API_KEY_ENV,
+    OPENAI_BASE_URL_ENV,
+)
 from integrations.coding_agent.backend_exec import (
     failure,
     resolve_workspace_dir,
     run_agentic_cli,
     workspace_error,
 )
+from integrations.coding_agent.codex_home import isolated_codex_home
+from integrations.coding_agent.config import coding_agent_sandbox
+from integrations.coding_agent.hosted_credentials import hosted_openai_subprocess_env
+from integrations.coding_agent.hosted_relay import HostedRouteRelay
 from integrations.coding_agent.models import CodingResult, Progress
 from integrations.llm_cli.agent_exec import build_guarded_task_prompt
 from integrations.llm_cli.binary_resolver import (
@@ -26,12 +40,22 @@ from integrations.llm_cli.binary_resolver import (
     default_cli_fallback_paths,
     resolve_cli_binary,
 )
-from integrations.llm_cli.codex import CodexAdapter
+from integrations.llm_cli.codex import CodexAdapter, hosted_provider_overrides
 from integrations.llm_cli.env_overrides import OPENAI_PLATFORM_ENV_KEYS, nonempty_env_values
 from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
 
 _INSTALL_HINT = "npm i -g @openai/codex"
 _WRITE_SANDBOX = "workspace-write"
+#: Codex's own sandbox needs user namespaces; an isolated host that lacks them is the boundary instead.
+_HOST_SANDBOX = "danger-full-access"
+#: Codex reads no AGENTS.md from the checkout when the checkout must not instruct it.
+_NO_PROJECT_DOCS = ("-c", "project_doc_max_bytes=0")
+
+
+def _sandbox_mode() -> str:
+    if coding_agent_sandbox() == CODING_AGENT_SANDBOX_HOST:
+        return _HOST_SANDBOX
+    return _WRITE_SANDBOX
 
 
 def _resolve_binary() -> str | None:
@@ -42,10 +66,47 @@ def _resolve_binary() -> str | None:
     )
 
 
-def _subprocess_env() -> dict[str, str]:
+def _subprocess_env(
+    hosted: dict[str, str] | None, *, codex_home: str | None = None
+) -> dict[str, str]:
     env: dict[str, str] = {"NO_COLOR": "1"}
-    env.update(nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS))
+    if hosted is not None:
+        # Hosted credentials replace local OpenAI keys so a signed-in session
+        # cannot silently bill a different provider account.
+        env.update(hosted)
+    else:
+        env.update(nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS))
+    if codex_home is not None:
+        env[CODEX_HOME_ENV] = codex_home
     return build_cli_subprocess_env(env)
+
+
+def _isolates_codex_home(hosted: dict[str, str] | None) -> bool:
+    """The hosted route needs nothing from the user's Codex home; the gateway's is already clean."""
+    return hosted is not None and _sandbox_mode() != _HOST_SANDBOX
+
+
+def _hosted_route_via(relay: HostedRouteRelay | None) -> tuple[dict[str, str] | None, str | None]:
+    """The hosted env and base URL Codex gets: the relay's when one runs, else the route's."""
+    hosted = hosted_openai_subprocess_env()
+    if hosted is None:
+        return None, None
+    if relay is not None:
+        return {
+            OPENAI_API_KEY_ENV: relay.run_token,
+            OPENAI_BASE_URL_ENV: relay.base_url,
+        }, relay.base_url
+    return hosted, hosted[OPENAI_BASE_URL_ENV]
+
+
+def _relay_for_host_sandbox() -> HostedRouteRelay | None:
+    """Without its own sandbox, Codex must not hold the account token: it gets a relay instead."""
+    if _sandbox_mode() != _HOST_SANDBOX:
+        return None
+    hosted = hosted_openai_subprocess_env()
+    if hosted is None:
+        return None
+    return HostedRouteRelay(hosted[OPENAI_BASE_URL_ENV], hosted[OPENAI_API_KEY_ENV])
 
 
 def run(
@@ -69,29 +130,43 @@ def run(
     if ws_error:
         return failure(ws_error)
 
-    argv: list[str] = [
-        binary,
-        "exec",
-        "--ephemeral",
-        "-s",
-        _WRITE_SANDBOX,
-        "--color",
-        "never",
-        "-C",
-        ws,
-    ]
+    relay = _relay_for_host_sandbox()
+    with ExitStack() as stack:
+        if relay is not None:
+            stack.enter_context(relay)
+        hosted, base_url = _hosted_route_via(relay)
+        codex_home = (
+            stack.enter_context(isolated_codex_home()) if _isolates_codex_home(hosted) else None
+        )
+        argv = _argv(binary, ws, model, task, hosted_base_url=base_url)
+        return run_agentic_cli(
+            argv,
+            workspace=ws,
+            env=_subprocess_env(hosted, codex_home=codex_home),
+            timeout_sec=timeout_sec,
+            agent_name="codex",
+        )
+
+
+def _argv(
+    binary: str, ws: str, model: str | None, task: str, *, hosted_base_url: str | None
+) -> list[str]:
+    sandbox = _sandbox_mode()
+    argv: list[str] = [binary, "exec", "--ephemeral", "-s", sandbox, "--color", "never", "-C", ws]
+    if hosted_base_url is not None:
+        argv.extend(hosted_provider_overrides(hosted_base_url))
+    host_sandbox = sandbox == _HOST_SANDBOX
+    if host_sandbox:
+        # The checkout is not trusted to instruct an agent that has the whole process.
+        argv.extend(_NO_PROJECT_DOCS)
     resolved_model = (model or "").strip()
     if resolved_model:
         argv.extend(["-m", resolved_model])
-    argv.append(build_guarded_task_prompt(task, agent_label="the Codex coding agent"))
-
-    return run_agentic_cli(
-        argv,
-        workspace=ws,
-        env=_subprocess_env(),
-        timeout_sec=timeout_sec,
-        agent_name="codex",
+    prompt = build_guarded_task_prompt(
+        task, agent_label="the Codex coding agent", trust_project_docs=not host_sandbox
     )
+    argv.append(prompt)
+    return argv
 
 
 def verify() -> tuple[bool, str]:
@@ -104,6 +179,8 @@ def verify() -> tuple[bool, str]:
     probe = CodexAdapter().detect()
     if not probe.installed:
         return False, probe.detail
+    if hosted_openai_subprocess_env() is not None:
+        return True, "OpenSRE hosted credentials"
     if probe.logged_in is False:
         return False, probe.detail
     return True, probe.detail

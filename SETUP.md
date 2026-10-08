@@ -9,7 +9,7 @@
 
 ## Supported platforms and architectures
 
-Release availability is separate from default CI coverage. Use the install path for your platform below, then follow the matching install guide for the first-run flow. The [Quickstart](docs/quickstart.mdx) has the same flow with screenshots.
+Release availability is separate from default CI coverage. Use the install path for your platform below, then follow the matching install guide for the first-run flow. The [Quickstart](docs/getting-started/quickstart.mdx) has the same flow with screenshots.
 
 Install the published CLI with curl, then run `opensre`:
 
@@ -23,13 +23,13 @@ opensre
 
 | OS | Architecture | Install guide | Notes |
 | --- | --- | --- | --- |
-| macOS | arm64, x86_64 | [macOS](https://www.opensre.com/docs/environments/macos) | The installer selects the matching binary. |
-| Linux | x86_64, arm64 | [Linux](https://www.opensre.com/docs/environments/linux-local) | Requires glibc 2.35+ (Ubuntu 22.04+ or comparable); Alpine/musl is unsupported. |
-| Windows (WSL) | x86_64, arm64 | [Windows with WSL](https://www.opensre.com/docs/environments/windows-local) | Run the curl installer inside a supported Linux distribution. |
+| macOS | arm64, x86_64 | [macOS](https://www.opensre.com/docs/install/macos) | The installer selects the matching binary. |
+| Linux | x86_64, arm64 | [Linux](https://www.opensre.com/docs/install/linux-local) | Requires glibc 2.35+ (Ubuntu 22.04+ or comparable); Alpine/musl is unsupported. |
+| Windows | x86_64 | [Windows](https://www.opensre.com/docs/install/windows-local) | In PowerShell: `irm https://install.opensre.com/install.ps1 \| iex` |
 
 The curl installer uses the rolling `main` build by default. The steps below are for contributors working from a source checkout.
 
-Main CI runs mostly on `ubuntu-latest`. Windows CI is optional and runs only when a PR has the `ci:windows` label, so it is useful signal rather than a guarantee that every platform is covered by default.
+Main CI runs mostly on `ubuntu-24.04`. Windows CI is optional and runs only when a PR has the `ci:windows` label, so it is useful signal rather than a guarantee that every platform is covered by default.
 
 ## Quick setup (all platforms)
 

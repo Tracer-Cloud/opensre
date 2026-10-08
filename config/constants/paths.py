@@ -33,6 +33,7 @@ PROJECT_ROOT = REPO_ROOT
 SYNTHETIC_SCENARIOS_DIR = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
 
 OPENSRE_HOME_ENV = "OPENSRE_HOME"
+WIZARD_STORE_PATH_ENV = "OPENSRE_WIZARD_STORE_PATH"
 
 
 def _resolve_opensre_home() -> Path:
@@ -202,11 +203,29 @@ def integrations_store_path() -> Path:
     return opensre_home() / "integrations.json"
 
 
+def integrations_store_stamp() -> int:
+    """A value that changes whenever the integrations store file is rewritten (0 when absent).
+
+    Sessions keep resolved credentials in a cache; comparing this stamp tells
+    them the store behind that cache has been replaced, for example by a
+    credential saved in the web app reaching the gateway.
+    """
+    try:
+        return integrations_store_path().stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
 def get_store_path() -> Path:
-    override = os.getenv("OPENSRE_WIZARD_STORE_PATH", "").strip()
+    override = os.getenv(WIZARD_STORE_PATH_ENV, "").strip()
     if override:
         return Path(override).expanduser()
     return OPENSRE_HOME_DIR / "opensre.json"
+
+
+def get_sessions_dir() -> Path:
+    """One JSONL file per session lives here."""
+    return session_home() / "sessions"
 
 
 def get_memory_dir() -> Path:
@@ -234,6 +253,7 @@ __all__ = [
     "CONTEXT_ROOT_ENV",
     "OPENSRE_HOME_DIR",
     "OPENSRE_HOME_ENV",
+    "WIZARD_STORE_PATH_ENV",
     "OPENSRE_TMP_DIR",
     "ORGS_DIR_NAME",
     "USERS_DIR_NAME",
@@ -246,10 +266,12 @@ __all__ = [
     "ci_fix_ledger_path",
     "ensure_opensre_tmp_dir",
     "get_memory_dir",
+    "get_sessions_dir",
     "get_store_path",
     "get_work_items_dir",
     "host_home",
     "integrations_store_path",
+    "integrations_store_stamp",
     "opensre_home",
     "session_home",
 ]

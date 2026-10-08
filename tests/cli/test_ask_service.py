@@ -10,6 +10,7 @@ import pytest
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.domain.types.tools import ToolSurface
+from core.llm.readiness import LLMReadiness
 from core.llm.types import ToolCall
 from core.tool.contracts import RegisteredTool, SideEffectLevel
 from core.tool.execution import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
@@ -22,6 +23,13 @@ from surfaces.cli.ask.file_input import AskFileInput
 from surfaces.cli.ask.service import AskExitCode, AskSignal, AskStatus
 
 _CHAT_ONLY_TOOL = "query_tempo"
+_LLM_CONFIGURED = LLMReadiness(provider="openai")
+
+
+@pytest.fixture(autouse=True)
+def _llm_route_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests fake the turn; the LLM preflight is pinned in test_ask_llm_setup.py."""
+    monkeypatch.setattr(service, "llm_ready", lambda: _LLM_CONFIGURED)
 
 
 def _turn(
@@ -360,6 +368,7 @@ def test_run_ask_leases_a_fresh_persisted_session_before_its_first_turn(monkeypa
 
     monkeypatch.setattr(service, "_ask_session_lock", _lock)
     monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+    monkeypatch.setattr(service, "claim_process_session_id", lambda: None)
     monkeypatch.setattr(service, "uuid4", lambda: "fresh-session-id")
 
     service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)

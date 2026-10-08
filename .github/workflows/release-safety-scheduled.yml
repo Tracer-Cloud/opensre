@@ -9,6 +9,7 @@ permissions:
   contents: read
 
 env:
+  OPENSRE_CICD: "1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
@@ -18,7 +19,7 @@ concurrency:
 jobs:
   release-safety:
     name: release-safety
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:

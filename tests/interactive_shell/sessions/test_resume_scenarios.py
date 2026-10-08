@@ -18,7 +18,7 @@ from config.llm_settings import (
     get_llm_provider_api_key_env,
     resolve_llm_settings_verbose,
 )
-from core.agent_harness.session import JsonlSessionStore
+from core.agent_harness.session import InMemorySessionStore, JsonlSessionRepo, JsonlSessionStore
 from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.session import Session
 
@@ -181,6 +181,130 @@ def _require_live_llm_for_repl_planner() -> None:
 class TestResumeScenarioMatrix:
     """Scenario coverage for /resume session adoption and JSONL persistence."""
 
+    @pytest.mark.parametrize("already_current", [False, True])
+    def test_resume_distinguishes_names_with_different_spacing(
+        self, isolated_sessions: Path, already_current: bool
+    ) -> None:
+        target_id = "aaaa1111-2222-3333-4444-555566667777"
+        other_id = "bbbb2222-3333-4444-5555-666677778888"
+        for session_id, name in ((target_id, "weekly review"), (other_id, "weekly  review")):
+            _write_finalized_session(isolated_sessions, session_id, chat_text=name)
+            SessionState.append_session_name(session_id, name)
+        session = Session()
+        _open_current(session)
+        console, _ = _capture()
+        if already_current:
+            dispatch_slash(f"/resume {target_id}", session, console)
+        console, output = _capture()
+
+        dispatch_slash("/resume weekly review", session, console)
+
+        assert session.session_id == target_id
+        assert session.agent.messages[0] == ("user", "weekly review")
+        if already_current:
+            assert "current session" in output.getvalue()
+            assert "↩ " not in output.getvalue()
+
+    @pytest.mark.parametrize("current_name", ["weekly", "weekly planning"])
+    def test_resume_name_search_ignores_current_session(
+        self, isolated_sessions: Path, current_name: str
+    ) -> None:
+        target_id = "aaaa1111-2222-3333-4444-555566667777"
+        _write_finalized_session(isolated_sessions, target_id, chat_text="weekly notes")
+        SessionState.append_session_name(target_id, "weekly notes")
+        session = Session()
+        _open_current(session)
+        SessionState.append_session_name(session.session_id, current_name)
+        console, output = _capture()
+
+        dispatch_slash("/resume weekly", session, console)
+
+        assert session.session_id == target_id
+        assert session.agent.messages[0] == ("user", "weekly notes")
+        assert "↩ " in output.getvalue()
+
+    def test_rename_persists_for_listing_and_resume_then_resets(
+        self, isolated_sessions: Path
+    ) -> None:
+        target_id = "aaaa1111-2222-3333-4444-555566667777"
+        path = _write_finalized_session(isolated_sessions, target_id)
+        other_id = "bbbb2222-3333-4444-5555-666677778888"
+        _write_finalized_session(isolated_sessions, other_id)
+        SessionState.append_session_name(other_id, "weekly planning")
+        session = Session()
+        _open_current(session)
+        console, _ = _capture()
+        dispatch_slash(f"/resume {target_id[:8]}", session, console)
+        messages = list(session.agent.messages)
+        context = dict(session.accumulated_context)
+        before = path.read_bytes()
+        history_size = len(session.history)
+        name = "[b]weekly  review[/b]"
+
+        dispatch_slash(f"/rename '{name}'", session, console)
+
+        assert len(session.history) == history_size + 1
+        assert session.session_id == target_id
+        assert session.agent.messages == messages
+        assert session.accumulated_context == context
+        assert path.read_bytes().startswith(before)
+        saved = JsonlSessionRepo().load_session(target_id)
+        assert saved is not None
+        assert saved["name"] == name
+        assert saved["cli_agent_messages"] == messages
+        assert saved["accumulated_context"] == context
+        assert sum(t["text"].startswith("/rename") for t in _read_turns(path)) == 1
+        list_console, output = _capture()
+        list_console.width = 120
+        with patch(
+            "surfaces.shared.terminal.components.rendering.shutil.get_terminal_size",
+            return_value=os.terminal_size((120, 24)),
+        ):
+            dispatch_slash("/sessions", session, list_console)
+        assert name in output.getvalue()
+
+        resumed = Session()
+        _open_current(resumed)
+        with (
+            patch(
+                "surfaces.interactive_shell.command_registry.session_cmds.resume.repl_tty_interactive",
+                return_value=True,
+            ),
+            patch(
+                "surfaces.interactive_shell.command_registry.session_cmds.resume.choose_resume_session",
+                return_value=None,
+            ) as picker,
+        ):
+            dispatch_slash("/resume", resumed, console)
+        assert picker.call_args.args[0][0].title == name
+        dispatch_slash("/resume weekly review", resumed, console)
+        assert resumed.session_id == target_id
+        assert resumed.agent.messages == messages
+        dispatch_slash("/rename --reset", resumed, console)
+        saved = JsonlSessionRepo().load_session(target_id)
+        assert saved is not None
+        assert saved["name"] == "why is redis slow?"
+
+    @pytest.mark.parametrize("opened", [True, False])
+    def test_rename_records_one_turn_with_the_storage_outcome(self, opened: bool) -> None:
+        storage = InMemorySessionStore()
+        session = Session(store=storage)
+        if opened:
+            storage.open_session(session)
+        console, output = _capture()
+
+        dispatch_slash("/rename checkout", session, console)
+
+        assert len(session.history) == 1
+        assert session.history[0]["ok"] is opened
+        if opened:
+            record = storage.read(session.session_id)[-1]
+            assert record["custom_type"] == "session_name"
+            assert record["sidecar"] is True
+            assert record["parent_id"] is None
+        else:
+            assert "could not save" in output.getvalue()
+
     def test_scenario_fresh_repl_resumes_prior_session(self, isolated_sessions: Path) -> None:
         """Fresh REPL session resumes a prior session: adopt ID, slash on target only."""
         target_id = "aaaa1111-2222-3333-4444-555566667777"
@@ -194,7 +318,7 @@ class TestResumeScenarioMatrix:
         assert dispatch_slash(f"/resume {target_id[:8]}", session, console) is True
 
         assert session.session_id == target_id
-        assert "resumed session" in buf.getvalue()
+        assert "↩ " in buf.getvalue()
 
         current_path = isolated_sessions / f"{current_id}.jsonl"
         if current_path.exists():
@@ -264,7 +388,7 @@ class TestResumeScenarioMatrix:
         dispatch_slash("/resume OOM", session, console)
 
         assert session.session_id == target_id
-        assert "resumed session" in buf.getvalue()
+        assert "↩ " in buf.getvalue()
         target_turns = _read_turns(isolated_sessions / f"{target_id}.jsonl")
         assert any(t.get("text") == "/resume OOM" for t in target_turns)
 
@@ -285,7 +409,7 @@ class TestResumeScenarioMatrix:
 
         assert resume_session_by_prefix("OOM", session, console)
         assert session.session_id == target_id
-        assert "resumed session" in buf.getvalue()
+        assert "↩ " in buf.getvalue()
 
     def test_scenario_resume_not_found_records_on_current(
         self,
@@ -350,6 +474,56 @@ class TestResumeScenarioMatrix:
 
         assert session.session_id == current_id
         assert "no conversation to resume" in buf.getvalue()
+
+    def test_sessions_picker_resumes_a_command_only_session(
+        self,
+        isolated_sessions: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A listed session with prior slash activity can be continued with Enter."""
+        from surfaces.interactive_shell.command_registry.session_cmds import list as list_command
+
+        target_id = "abab5555-6666-7777-8888-999900001111"
+        (isolated_sessions / f"{target_id}.jsonl").write_text(
+            "\n".join(
+                json.dumps(record)
+                for record in (
+                    {
+                        "type": "session",
+                        "version": 2,
+                        "id": target_id,
+                        "created_at": "2026-05-29T10:00:00+00:00",
+                        "cwd": "",
+                    },
+                    {
+                        "id": "entry1",
+                        "parent_id": None,
+                        "timestamp": "2026-05-29T10:00:01+00:00",
+                        "type": "custom_message",
+                        "custom_type": "turn_stub",
+                        "kind": "slash",
+                        "text": "/choose",
+                    },
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        session = Session()
+        current_id = session.session_id
+        _open_current(session)
+        console, buf = _capture()
+        monkeypatch.setattr(list_command, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(list_command, "choose_recent_session", lambda _items: target_id)
+
+        dispatch_slash("/sessions", session, console)
+
+        assert session.session_id == target_id
+        assert "↩ " in buf.getvalue()
+        target_turns = _read_turns(isolated_sessions / f"{target_id}.jsonl")
+        assert any(turn["text"] == f"/sessions {target_id[:8]}" for turn in target_turns)
+        source_turns = _read_turns(isolated_sessions / f"{current_id}.jsonl")
+        assert not any(turn["text"] == "/sessions" for turn in source_turns)
 
     def test_scenario_chain_resume_two_targets(
         self,
@@ -439,7 +613,7 @@ class TestResumeScenarioMatrix:
 
         assert session.session_id == target_id
         output = buf.getvalue()
-        assert "resumed session" in output
+        assert "↩ " in output
         assert "interrupted mid-turn" in output
         note = session.pending_recovery_note
         assert note is not None
@@ -515,7 +689,7 @@ class TestResumeLiveRepl:
 
             repl.reset_output()
             repl.send(f"/resume {target_id[:8]}", wait=1.0)
-            assert repl.wait_until_contains("resumed session", timeout=60.0)
+            assert repl.wait_until_contains("↩ ", timeout=60.0)
             assert repl.wait_until_contains("live redis investigation", timeout=10.0)
 
             repl.reset_output()

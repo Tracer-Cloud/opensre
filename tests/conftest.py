@@ -10,7 +10,6 @@ import pytest
 
 import config.constants.paths as paths
 from config.constants import (
-    OPENSRE_LANGFUSE_DISABLED_ENV,
     OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     OPENSRE_MEMORY_DIR_ENV,
 )
@@ -24,7 +23,6 @@ def pytest_configure(config: pytest.Config) -> None:
     _ = config
     _load_env()
     _disable_sentry()
-    _disable_langfuse()
     _mark_tests_for_analytics()
 
 
@@ -37,12 +35,6 @@ def _disable_sentry() -> None:
     os.environ["OPENSRE_SENTRY_DISABLED"] = "1"
 
 
-def _disable_langfuse() -> None:
-    # A developer ``.env`` may carry real Langfuse keys; boot-path tests must
-    # not export traces. Adapter tests re-enable it explicitly.
-    os.environ[OPENSRE_LANGFUSE_DISABLED_ENV] = "1"
-
-
 def _mark_tests_for_analytics() -> None:
     os.environ["OPENSRE_NO_TELEMETRY"] = "1"
     os.environ["OPENSRE_INVESTIGATION_SOURCE"] = "test"
@@ -50,7 +42,6 @@ def _mark_tests_for_analytics() -> None:
 
 _load_env()
 _disable_sentry()
-_disable_langfuse()
 _mark_tests_for_analytics()
 
 
@@ -177,6 +168,51 @@ def _isolate_ci_fix_counters() -> Iterator[None]:
         ledger = sys.modules.get("integrations.github.tools.ci_fix.ledger")
         if ledger is not None:
             ledger.reset_ci_fix_counters()
+
+    reset()
+    try:
+        yield
+    finally:
+        reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_account_integrations_cache() -> Iterator[None]:
+    """Forget the remote-integrations snapshot without importing the module eagerly.
+
+    The cache is process-global with a TTL, so a test that fakes the webapp
+    response would otherwise serve its snapshot to every later test on the
+    same xdist worker.
+    """
+
+    def reset() -> None:
+        module = sys.modules.get("integrations.account_integrations")
+        if module is not None:
+            module.reset_account_integrations_cache()
+
+    reset()
+    try:
+        yield
+    finally:
+        reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_tool_prefetches() -> Iterator[None]:
+    """Forget prefetched scans and analyses without importing their tools eagerly.
+
+    The registries are process-global, so a prefetch one test started would
+    otherwise answer a later test's tool call on the same xdist worker.
+    """
+
+    def reset() -> None:
+        for name, reset_name in (
+            ("tools.system.workspace_git_scan.prefetch", "reset_scan_prefetch"),
+            ("integrations.github.tools.ci_analytics.prefetch", "reset_analysis_prefetch"),
+        ):
+            module = sys.modules.get(name)
+            if module is not None:
+                getattr(module, reset_name)()
 
     reset()
     try:

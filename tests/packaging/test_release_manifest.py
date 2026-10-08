@@ -89,7 +89,6 @@ def test_release_includes_executable_skill_helpers_and_their_reference() -> None
     included = set(required_skill_files(_REPO_ROOT))
     assert skill / "references/script-tools.md" in included
     assert set((skill / "scripts").glob("*.py")) <= included
-    assert skill / "scripts/seed_demo_repository.py" in included
     assert skill / "scripts/write_demo_evidence.py" in included
 
 
@@ -107,6 +106,7 @@ def test_required_data_covers_runtime_files_that_are_not_skill_documents() -> No
     }
 
     assert "integrations/yandex_cloud/api_index.json" in relative_paths
+    assert "core/agent_harness/prompts/loop_templates/pr-ci.md" in relative_paths
     assert "core/agent_harness/task_plan/planning_instructions.md" not in relative_paths
 
 

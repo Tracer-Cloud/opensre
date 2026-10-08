@@ -15,6 +15,7 @@ from config.constants.ci_repair import (
 )
 from infrastructure.process.entrypoint import opensre_command
 from infrastructure.process.tree import stop_worker
+from infrastructure.process.turn_capacity import heavy_work_slot
 from infrastructure.scheduling.scheduler.storage import get_task
 from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
@@ -32,6 +33,7 @@ def finish_run(store: RepairStore, run: RepairRun) -> str:
     if not run.terminal:
         raise ValueError("An active repair cannot be finalized.")
     run.finished_at = run.finished_at or time.time()
+    store.discard_checkout(run)
     store.save(run)
     directory = store.directory(run.id)
     directory.mkdir(parents=True, exist_ok=True)
@@ -40,6 +42,42 @@ def finish_run(store: RepairStore, run: RepairRun) -> str:
     return TaskReport(
         report, summary=f"CI repair {run.status.value}: {run.owner}/{run.repo}", stop_schedule=True
     )
+
+
+def _never_started(store: RepairStore, run: RepairRun) -> str:
+    """Finish a run that got no heavy-work slot: it was stopped, or none freed in time."""
+    if _cancelled(run):
+        run.status, run.reason = RepairStatus.CANCELLED, "The repair loop was stopped."
+    else:
+        run.status, run.reason = (
+            RepairStatus.TIMED_OUT,
+            "Too many heavy operations were running to start the repair before its deadline.",
+        )
+    return finish_run(store, run)
+
+
+def _run_worker(store: RepairStore, run: RepairRun, cutoff: float) -> RepairStatus | None:
+    """Run the worker to its end; the status it was stopped with, or ``None`` if it exited."""
+    directory = store.directory(run.id)
+    directory.mkdir(parents=True, exist_ok=True)
+    command = opensre_command(CI_REPAIR_WORKER_COMMAND, str(store.root), run.id)
+    with (directory / "worker.log").open("a", encoding="utf-8") as log:
+        process = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=True)
+        stopped: RepairStatus | None = None
+        try:
+            while process.poll() is None:
+                if time.time() >= cutoff:
+                    stopped = RepairStatus.TIMED_OUT
+                    break
+                if _cancelled(run):
+                    stopped = RepairStatus.CANCELLED
+                    break
+                time.sleep(CI_REPAIR_POLL_SECONDS)
+        finally:
+            if process.poll() is None:
+                stop_worker(process.pid)
+            process.wait(timeout=5)
+    return stopped
 
 
 def _supervise(store: RepairStore, run: RepairRun) -> str:
@@ -61,34 +99,24 @@ def _supervise(store: RepairStore, run: RepairRun) -> str:
     if _cancelled(run):
         run.status, run.reason = RepairStatus.CANCELLED, "The repair loop was stopped."
         return finish_run(store, run)
-    directory = store.directory(run.id)
-    directory.mkdir(parents=True, exist_ok=True)
-    command = opensre_command(CI_REPAIR_WORKER_COMMAND, str(store.root), run.id)
-    with (directory / "worker.log").open("a", encoding="utf-8") as log:
-        process = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=True)
-        stopped: RepairStatus | None = None
-        try:
-            while process.poll() is None:
-                if time.time() >= cutoff:
-                    stopped = RepairStatus.TIMED_OUT
-                    break
-                if _cancelled(run):
-                    stopped = RepairStatus.CANCELLED
-                    break
-                time.sleep(CI_REPAIR_POLL_SECONDS)
-        finally:
-            if process.poll() is None:
-                stop_worker(process.pid)
-            process.wait(timeout=5)
+    # The worker clones the repository and runs a coding agent in a process of its
+    # own. A gate inside it would bound nothing here, so this process holds one
+    # heavy-work slot for as long as it supervises the worker, until the tree is killed.
+    with heavy_work_slot(
+        timeout_seconds=max(cutoff - time.time(), 0.0), stop=lambda: _cancelled(run)
+    ) as started:
+        stopped = _run_worker(store, run, cutoff) if started else None
+    if not started:
+        return _never_started(store, run)
     latest = store.get(run.id)
     if stopped is not None or not latest.terminal:
         latest.status = stopped or (
             RepairStatus.TIMED_OUT if time.time() >= cutoff else RepairStatus.FAILED
         )
         latest.reason = (
-            "Repair stopped at its original deadline; unfinished artifacts are retained."
+            "Repair stopped at its original deadline; its records are retained."
             if latest.status is RepairStatus.TIMED_OUT
-            else "The worker stopped; unfinished artifacts are retained."
+            else "The worker stopped; its records are retained."
         )
     return finish_run(store, latest)
 

@@ -10,7 +10,6 @@ from config.constants.gateway import (
     CREDITS_DENIED_MESSAGE,
     NO_ACTIVE_TURN_MESSAGE,
     TURN_ERROR_MESSAGE,
-    TURN_TIMEOUT_MESSAGE,
     UNAUTHORIZED_MESSAGE,
     USER_STOP_MESSAGE,
 )
@@ -19,7 +18,7 @@ from config.scope_context import bound_storage_scope
 from core.agent_harness import SessionCore
 from gateway.core.billing.turn_metering import bound_turn_metering
 from gateway.core.middleware.active_turns import ActiveTurnRegistry, is_stop_command
-from gateway.core.middleware.approvals import ApprovalBroker, approval_tool_hooks
+from gateway.core.middleware.approvals import ApprovalBroker
 from gateway.core.middleware.attention import GateDecision, ThreadAttentionGate
 from gateway.core.middleware.conversation_locks import ConversationLockRegistry
 from gateway.core.middleware.inbound_decision import apply_inbound_decision
@@ -31,7 +30,7 @@ from gateway.transports.slack.client import (
     mark_turn_failed,
     mark_turn_working,
 )
-from gateway.transports.slack.delivery.approvals import ThreadApprovalPrompter
+from gateway.transports.slack.delivery.integration_links import configured_service_ids
 from gateway.transports.slack.delivery.turn_output import SlackTurnOutput
 from gateway.transports.slack.processing.events import SlackInboundFile, SlackInboundMessage
 from gateway.transports.slack.processing.principal import (
@@ -75,6 +74,8 @@ class SlackTurnDispatcher:
         self._handler = handler
         self._logger = logger
         self._bot_user_id = bot_user_id
+        # Shared with the interactivity listener. Turns do not prompt, but a
+        # click on an older approval message still resolves through this broker.
         self._approvals = approvals if approvals is not None else ApprovalBroker()
         self._active_cancels = ActiveTurnRegistry()
         self._attention = ThreadAttentionGate()
@@ -242,20 +243,16 @@ class SlackTurnDispatcher:
                 channel=inbound.channel_id,
                 timestamp=inbound.ts,
             )
-            # Write tools declaring requires_approval get an Approve/Deny
-            # button prompt in this thread before they run (fail-closed).
-            prompter = ThreadApprovalPrompter(
-                client=self._messaging,
-                broker=self._approvals,
-                channel_id=inbound.channel_id,
-                thread_ts=inbound.thread_ts,
-            )
+            # No approval prompts in Slack for now. Button waits stalled the
+            # turn until the timeout and posted extra replies in the thread.
             output = SlackTurnOutput(
                 client=self._messaging,
                 channel_id=inbound.channel_id,
                 thread_ts=inbound.thread_ts,
                 update_interval_seconds=self._settings.status_update_interval_seconds,
-                tool_hooks=approval_tool_hooks(prompter),
+                tool_hooks=None,
+                user_text=inbound.text,
+                configured_services=lambda: configured_service_ids(session),
             )
             terminal = TerminalOutcomeArbiter()
             output.turn_cancel = terminal.cancel_event
@@ -267,10 +264,12 @@ class SlackTurnDispatcher:
                     inbound.channel_id,
                     session.session_id[:8],
                 )
+                # A timeout is not an answer. Posting it under the mention
+                # looks like the result and blocks the real reply.
                 try:
-                    output.finalize(TURN_TIMEOUT_MESSAGE)
+                    output.abandon()
                 except Exception:
-                    self._logger.debug("[slack-gateway] timeout finalize failed", exc_info=True)
+                    self._logger.debug("[slack-gateway] timeout abandon failed", exc_info=True)
                 mark_turn_failed(
                     self._messaging,
                     channel=inbound.channel_id,
@@ -348,6 +347,9 @@ class SlackTurnDispatcher:
                             surface=UsageSurface.SLACK,
                             session_id=session.session_id,
                             user_id=inbound.user_id or None,
+                            organization_id=scope.principal.id,
+                            slack_user_id=inbound.user_id or None,
+                            slack_team_id=inbound.team_id or None,
                         ),
                         bound_turn_metering(
                             organization_id=scope.principal.id,

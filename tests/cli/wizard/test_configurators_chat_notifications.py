@@ -111,7 +111,12 @@ def wizard(monkeypatch: pytest.MonkeyPatch) -> _Wizard:
     monkeypatch.setattr(
         chat_notifications,
         "TELEGRAM_SETUP",
-        replace(chat_notifications.TELEGRAM_SETUP, verify=_fake_verify, resolve=_fake_resolve),
+        replace(
+            chat_notifications.TELEGRAM_SETUP,
+            guide=None,
+            verify=_fake_verify,
+            resolve=_fake_resolve,
+        ),
     )
     monkeypatch.setattr(
         setup_flow,

@@ -1,0 +1,156 @@
+---
+title: "Fix a Sentry issue"
+description: "Paste a Sentry issue URL and have the Pi coding agent propose a fix — as a reviewable diff or a pull request."
+---
+
+## Overview
+
+The **Sentry issue-fix tool** lets you point OpenSRE at a [Sentry](https://sentry.io)
+issue and have the [Pi](https://pi.dev) coding agent propose a fix. OpenSRE
+fetches the issue context, runs Pi in your current repository, and returns a
+summary plus the git diff.
+
+By default it **only edits the working tree** so you can review the diff. When
+you ask it to `open_pr` (and enable the ship switch), it also commits the fix to
+a fresh branch, pushes it, and opens a **pull request** — it **never pushes to
+your base/`main` branch**.
+
+This is a **tool page**, not a full integration setup page. It depends on the
+[Sentry](/integrations/incidents/sentry) integration plus local Pi and opt-in env gates.
+
+<Warning>
+This is a **mutating** tool — it changes files on disk and can open a PR. It is
+**disabled by default**: the fix step needs `PI_ISSUE_FIX_ENABLED=1`, Sentry
+configured, and the Pi CLI installed. Opening a PR needs a **second** switch,
+`PI_ISSUE_FIX_SHIP_ENABLED=1`, plus a GitHub token. Enable each deliberately.
+</Warning>
+
+## Prerequisites
+
+- Sentry configured (org + auth token) — see [Sentry](/integrations/incidents/sentry)
+- Pi coding agent CLI installed and authenticated
+- `PI_ISSUE_FIX_ENABLED=1` to allow the fix step
+- For PRs: `PI_ISSUE_FIX_SHIP_ENABLED=1` and `GITHUB_TOKEN` / `GH_TOKEN` with
+  `repo` / `pull_request` write access
+
+## Setup
+
+1. Configure Sentry and install Pi:
+
+```bash
+export SENTRY_ORG_SLUG=your-org
+export SENTRY_AUTH_TOKEN=...           # token with issue read access
+npm i -g @earendil-works/pi-coding-agent
+```
+
+2. Turn the tool on:
+
+```bash
+export PI_ISSUE_FIX_ENABLED=1
+export PI_CODING_MODEL=anthropic/claude-haiku-4-5   # optional
+```
+
+3. (Optional) Allow OpenSRE to open a pull request:
+
+```bash
+export PI_ISSUE_FIX_SHIP_ENABLED=1
+export GITHUB_TOKEN=...        # token with PR-create access to the repo
+```
+
+| Env var | What it does |
+| --- | --- |
+| `PI_ISSUE_FIX_ENABLED` | Opt-in for the fix step. Set to `1` to enable. Off by default. |
+| `PI_ISSUE_FIX_SHIP_ENABLED` | Second opt-in required to open a PR (`open_pr`). Off by default. |
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub token used to open the pull request. |
+| `SENTRY_ORG_SLUG` / `SENTRY_AUTH_TOKEN` | Sentry org + token (`SENTRY_URL` for self-hosted). |
+| `PI_CODING_MODEL` | Pi model used for the fix (shared with the Pi coding tool). |
+| `PI_CODING_WORKSPACE` | Repository Pi edits. Defaults to the current directory. |
+| `PI_CODING_TIMEOUT_SECONDS` | Per-run timeout (default 600, clamped 60–1800). |
+
+## Credentials
+
+| System | What you need |
+| --- | --- |
+| Sentry | Org slug + auth token with issue read access |
+| Pi | Installed/authenticated Pi CLI |
+| GitHub (PR only) | Token with permission to create PRs on the target repo |
+
+Your Sentry token is **never** sent to Pi. OpenSRE builds a short masked task
+(title, error, culprit, location) for the coding agent.
+
+## Tools
+
+| Tool / action | What it does |
+| --- | --- |
+| `fix_sentry_issue` | Fetch issue context, run Pi, return summary + diff (optional PR) |
+| Shell action `fix_sentry_issue_start` | Interactive-shell path for natural-language fix requests |
+
+| Parameter | What it does |
+| --- | --- |
+| `sentry_url` | The Sentry issue URL to fix (**required**) |
+| `open_pr` | When `true`, commit to a fresh branch and open a PR. Defaults to `false` (diff only) |
+
+### Using it from the interactive shell
+
+Once enabled, ask in plain language in `opensre`:
+
+```
+fix this sentry issue https://your-org.sentry.io/issues/12345/ and open a pull request
+```
+
+Say "open a pull request" (or "ship it") to open a PR; leave it out to get the
+diff only. Use a *fix* verb — "diagnose" / "analyze" requests are answered
+with the read-only Sentry tools instead.
+
+## Verify
+
+1. `opensre integrations verify sentry` — Sentry REST config works
+2. Pi CLI available on `PATH`
+3. Env gates set (`PI_ISSUE_FIX_ENABLED=1`, and ship env if you need PRs)
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Tool disabled | Set `PI_ISSUE_FIX_ENABLED=1` |
+| PR not opened | Set `PI_ISSUE_FIX_SHIP_ENABLED=1` and a valid `GITHUB_TOKEN` / `GH_TOKEN` |
+| Unsupported URL | Use a supported Sentry issue URL shape (see Extras) |
+| Sentry unconfigured | Configure [Sentry](/integrations/incidents/sentry) first |
+| Pi missing | Install `@earendil-works/pi-coding-agent` and authenticate |
+| Fix OK but PR fails | You still get `diff` + `changed_files` plus `error_kind` to ship manually |
+
+## Security
+
+- Dual opt-in by design: fix and ship are separate switches, both off by default.
+- OpenSRE **never** commits to or force-pushes your base/`main` branch.
+- Sentry tokens stay on the OpenSRE side; Pi receives masked issue context only.
+- Review the diff before merging any PR.
+
+## Extras
+
+### How it works
+
+1. You paste a Sentry issue URL and ask OpenSRE to fix it.
+2. OpenSRE resolves the issue and builds a short, **masked** task for Pi.
+3. Pi edits the current repository to implement the fix.
+4. You get `success`, a `summary`, `changed_files`, and the `diff`.
+5. If you asked for `open_pr` (and shipping is enabled), OpenSRE commits to a
+   fresh `opensre/sentry-fix-<id>-<sha>` branch, pushes it, opens a PR into
+   your base branch, and returns `branch_name`, `pr_url`, and `pr_number`.
+
+### Opening a pull request
+
+- The fix always lands on a new namespaced branch and is proposed via PR.
+- The PR body links the Sentry issue and lists changed files.
+- If the fix succeeds but the PR cannot be opened, you still get the diff.
+
+### Supported URLs
+
+- `https://<org>.sentry.io/issues/<id>/`
+- `https://sentry.io/organizations/<org>/issues/<id>/`
+- Self-hosted `https://sentry.<company>.com/organizations/<org>/issues/<id>/`
+
+### Notes
+
+- Without `open_pr`, nothing is committed or pushed.
+- Failures return a clear `error_kind` instead of silently doing the wrong thing.

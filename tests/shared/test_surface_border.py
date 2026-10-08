@@ -42,6 +42,8 @@ _SURFACES_IMPORT_FROM_GATEWAY: frozenset[str] = frozenset(
         "gateway.core.process",
         # The console entry that constructs the process and starts it.
         "gateway.core.lifecycle.controller",
+        # Container MODE=web: `opensre gateway web` serves the health app.
+        "gateway.web.web_server",
     }
 )
 

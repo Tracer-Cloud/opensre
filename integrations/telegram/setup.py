@@ -17,6 +17,7 @@ from __future__ import annotations
 from config.constants.telegram import TELEGRAM_BOT_TOKEN_ENV, TELEGRAM_DEFAULT_CHAT_ID_ENV
 from integrations.setup_flow import IntegrationSetupSpec, ResolvedCredentials, SetupField
 from integrations.telegram.chat_lookup import resolve_chat_id
+from integrations.telegram.setup_guide import guide_telegram
 from integrations.telegram.verifier import verify_telegram
 
 BOT_TOKEN_FIELD = "bot_token"
@@ -39,6 +40,7 @@ def _resolve_default_chat_id(credentials: dict[str, str | None]) -> ResolvedCred
 
 TELEGRAM_SETUP = IntegrationSetupSpec(
     service="telegram",
+    guide=guide_telegram,
     fields=(
         SetupField(
             name=BOT_TOKEN_FIELD,

@@ -26,6 +26,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  OPENSRE_CICD: "1"
+
 concurrency:
   group: release-${{ github.event_name == 'workflow_run' && 'main' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'main' && 'main') || 'stable' }}
   cancel-in-progress: true
@@ -36,7 +39,7 @@ jobs:
       github.repository == 'Tracer-Cloud/opensre' &&
       (github.event_name != 'workflow_run' ||
       github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
       source_sha: ${{ steps.meta.outputs.source_sha }}
@@ -140,7 +143,7 @@ jobs:
           echo "version_name=${tag_name#v}" >> "$GITHUB_OUTPUT"
 
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: prepare
     if: github.event_name != 'workflow_run'
 
@@ -177,7 +180,7 @@ jobs:
 
   build-python-dist:
     if: needs.prepare.outputs.channel == 'release' && needs.verify.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [verify, prepare]
     env:
       TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
@@ -222,7 +225,7 @@ jobs:
             "dist/opensre-${VERSION}-py3-none-any.whl"
 
       - name: Upload Python distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-python-dist
           path: dist/*
@@ -345,7 +348,7 @@ jobs:
 
       - name: Install binary build dependencies
         shell: bash
-        run: uv sync --frozen --extra release-binary
+        run: uv sync --frozen --extra release-binary --extra postgresql
 
       - name: Build binary
         env:
@@ -545,7 +548,7 @@ jobs:
           Set-Content -Path "${assetBaseName}.zip.sha256" -Value "$hash  ${assetBaseName}.zip"
 
       - name: Upload binary archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.RELEASE_CHANNEL == 'main' && 'main-' || '' }}release-${{ matrix.target }}
           path: |
@@ -555,7 +558,7 @@ jobs:
 
   publish-release:
     if: needs.prepare.outputs.channel == 'release'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: read
@@ -567,11 +570,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ needs.prepare.outputs.source_sha }}
           fetch-depth: 0
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: release-assets
@@ -581,14 +584,14 @@ jobs:
         id: release_ctx
         env:
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
 
-          default_branch="${{ github.event.repository.default_branch }}"
-          git fetch origin "$default_branch" --tags --force
-          target_sha="$(git rev-parse "origin/$default_branch")"
+          git fetch origin --tags --force
+          target_sha="$(git rev-parse "${SOURCE_SHA}^{commit}")"
 
           previous_tag="$(
             git tag --list 'v0.1.[0-9][0-9][0-9][0-9].[0-9]*.[0-9]*' --sort=-v:refname \
@@ -669,7 +672,7 @@ jobs:
           {
             printf '## Install\n\n'
             printf '### cURL (macOS / Linux)\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash -s -- --release --version %s\n%s\n\n' "$CB" "${TAG_NAME#v}" "$CB"
-            printf 'Start OpenSRE:\n\n%sbash\nopensre\n%s\n\nOn Windows, use [WSL](https://www.opensre.com/docs/environments/windows-local).\n\n' "$CB" "$CB"
+            printf 'Start OpenSRE:\n\n%sbash\nopensre\n%s\n\nOn Windows, use [WSL](https://www.opensre.com/docs/install/windows-local).\n\n' "$CB" "$CB"
           } > RELEASE_NOTES.md
           cat GENERATED_CHANGELOG.md >> RELEASE_NOTES.md
 
@@ -682,6 +685,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          git fetch origin --tags --force
+          existing_tag_sha="$(git rev-parse -q --verify "refs/tags/${TAG_NAME}^{commit}" || true)"
+          if [ -n "$existing_tag_sha" ] && [ "$existing_tag_sha" != "$TARGET_SHA" ]; then
+            echo "Release tag $TAG_NAME points to $existing_tag_sha, expected $TARGET_SHA." >&2
+            exit 1
+          fi
 
           if gh release view "$TAG_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             echo "created=false" >> "$GITHUB_OUTPUT"
@@ -778,7 +788,7 @@ jobs:
   # PyPI publish is disabled: the nightly/main release was failing on this job.
   # publish-python-dist:
   #   name: Publish Python distributions to PyPI
-  #   runs-on: ubuntu-latest
+  #   runs-on: ubuntu-24.04
   #   needs:
   #     - build-python-dist
   #     - publish-release
@@ -802,7 +812,7 @@ jobs:
 
   publish-main-release:
     if: always() && needs.prepare.outputs.channel == 'main' && needs.build-binaries.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: read
@@ -831,7 +841,7 @@ jobs:
           persist-credentials: true
 
       - name: Download main release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: main-release-*
           path: main-release-assets
@@ -852,7 +862,7 @@ jobs:
             printf '## Main build\n\nRolling binary build from `main`.\n\n'
             printf -- '- Version: `%s`\n- Commit: `%s`\n- Built: %s\n\n' "$VERSION_NAME" "$short_sha" "$built_at"
             printf '### Install\n\nmacOS / Linux:\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash\n%s\n\n' "$CB" "$CB"
-            printf 'Start OpenSRE:\n\n%sbash\nopensre\n%s\n\nOn Windows, use [WSL](https://www.opensre.com/docs/environments/windows-local).\n' "$CB" "$CB"
+            printf 'Start OpenSRE:\n\n%sbash\nopensre\n%s\n\nOn Windows, use [WSL](https://www.opensre.com/docs/install/windows-local).\n' "$CB" "$CB"
           } > MAIN_RELEASE_NOTES.md
 
       - name: Publish rolling main release

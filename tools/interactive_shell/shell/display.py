@@ -20,12 +20,13 @@ def _closing_delimiter_line(line: str, *, delimiter: str, strip_tabs: bool) -> b
     return normalized == delimiter
 
 
-def summarize_shell_command(command: str, *, width: int = 96) -> str:
-    """One-line command entry for quiet runs: whitespace collapsed, cut with an ellipsis."""
-    one_line = " ".join(format_shell_command_for_display(command).split())
-    if len(one_line) <= width:
-        return one_line
-    return one_line[: width - 1].rstrip() + "…"
+def summarize_shell_command(command: str) -> str:
+    """One quiet ``$`` row: whitespace collapsed, the command left whole.
+
+    Cutting the row to a width and replacing the tail with an ellipsis made a
+    copied path or command stop mid-token.
+    """
+    return " ".join(format_shell_command_for_display(command).split())
 
 
 def format_shell_command_for_display(command: str) -> str:

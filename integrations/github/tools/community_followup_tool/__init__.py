@@ -9,25 +9,16 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
-    github_source_available,
+    github_repository_source_available,
 )
 from integrations.github.tools.community_followup_tool.mapper import (
     _map_summarize_community_followups,
 )
 from integrations.github.tools.workflow import summarize_community_followups_from_comments
-
-
-def _community_available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        (github_source_available(sources) or resolve_github_token(None))
-        and gh.get("owner")
-        and gh.get("repo")
-    )
 
 
 def _community_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -67,7 +58,7 @@ def _community_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
         },
         "required": [],
     },
-    is_available=_community_available,
+    is_available=github_repository_source_available,
     extract_params=_community_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
 )

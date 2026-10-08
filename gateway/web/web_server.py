@@ -13,6 +13,18 @@ from infrastructure.asgi_server import AsgiServerHandle, serve_asgi_in_thread
 WebAppServerHandle = AsgiServerHandle
 
 
+def serve_webapp_foreground() -> None:
+    """Serve the health and alert app on ``PORT`` until the process is signaled."""
+    import os
+
+    import uvicorn
+
+    from gateway.web.webapp import app
+
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
+
 def serve_webapp_in_thread(
     *, host: str = "127.0.0.1", port: int = 0, startup_timeout: float = 10.0
 ) -> AsgiServerHandle:
@@ -22,4 +34,4 @@ def serve_webapp_in_thread(
     return serve_asgi_in_thread(app, host=host, port=port, startup_timeout=startup_timeout)
 
 
-__all__ = ["WebAppServerHandle", "serve_webapp_in_thread"]
+__all__ = ["WebAppServerHandle", "serve_webapp_foreground", "serve_webapp_in_thread"]

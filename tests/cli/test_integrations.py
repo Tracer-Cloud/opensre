@@ -51,7 +51,7 @@ def test_integrations_setup_accepts_github() -> None:
 
     assert result.exit_code == 0
     mock_setup.assert_called_once_with("github")
-    mock_verify.assert_called_once_with("github")
+    mock_verify.assert_not_called()
 
 
 def test_integrations_setup_accepts_vercel() -> None:
@@ -61,7 +61,7 @@ def test_integrations_setup_accepts_vercel() -> None:
         patch("surfaces.cli.commands.integrations.capture_integration_setup_started"),
         patch("surfaces.cli.commands.integrations.capture_integration_setup_completed"),
         patch("surfaces.cli.commands.integrations.capture_integration_verified") as mock_capture,
-        patch("integrations.cli.cmd_setup") as mock_setup,
+        patch("integrations.cli.cmd_setup", side_effect=SystemExit(1)) as mock_setup,
         patch("integrations.cli.cmd_verify", return_value=1) as mock_verify,
     ):
         mock_setup.return_value = "vercel"
@@ -69,7 +69,7 @@ def test_integrations_setup_accepts_vercel() -> None:
 
     assert result.exit_code == 1
     mock_setup.assert_called_once_with("vercel")
-    mock_verify.assert_called_once_with("vercel")
+    mock_verify.assert_not_called()
     mock_capture.assert_not_called()
 
 
@@ -160,7 +160,7 @@ def test_integrations_setup_accepts_telegram() -> None:
 
     assert result.exit_code == 0
     mock_setup.assert_called_once_with("telegram")
-    mock_verify.assert_called_once_with("telegram")
+    mock_verify.assert_not_called()
 
 
 def test_integrations_setup_accepts_whatsapp() -> None:
@@ -178,7 +178,7 @@ def test_integrations_setup_accepts_whatsapp() -> None:
 
     assert result.exit_code == 0
     mock_setup.assert_called_once_with("whatsapp")
-    mock_verify.assert_called_once_with("whatsapp")
+    mock_verify.assert_not_called()
 
 
 def test_integrations_setup_accepts_twilio() -> None:
@@ -196,7 +196,7 @@ def test_integrations_setup_accepts_twilio() -> None:
 
     assert result.exit_code == 0
     mock_setup.assert_called_once_with("twilio")
-    mock_verify.assert_called_once_with("twilio")
+    mock_verify.assert_not_called()
 
 
 def test_integrations_setup_accepts_smtp() -> None:
@@ -214,7 +214,7 @@ def test_integrations_setup_accepts_smtp() -> None:
 
     assert result.exit_code == 0
     mock_setup.assert_called_once_with("smtp")
-    mock_verify.assert_called_once_with("smtp")
+    mock_verify.assert_not_called()
 
 
 def test_integrations_setup_skips_auto_verify_for_unverifiable_service() -> None:
@@ -290,7 +290,7 @@ def test_integrations_setup_accepts_helm() -> None:
 
     assert result.exit_code == 0
     mock_setup.assert_called_once_with("helm")
-    mock_verify.assert_called_once_with("helm")
+    mock_verify.assert_not_called()
     mock_capture.assert_called_once_with("helm")
 
 
@@ -346,7 +346,7 @@ def test_integrations_setup_accepts_servicenow() -> None:
 
     assert result.exit_code == 0
     mock_setup.assert_called_once_with("servicenow")
-    mock_verify.assert_called_once_with("servicenow")
+    mock_verify.assert_not_called()
 
 
 def test_verify_services_includes_previously_missing_integrations() -> None:

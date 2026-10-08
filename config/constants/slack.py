@@ -25,6 +25,18 @@ SLACK_USER_TOKEN_PREFIXES: tuple[str, ...] = ("xoxp-", "xoxe.xoxp-")
 # in-flight Slack turns keep the rest of the SIGTERM budget.
 SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS = 2.0
 
+# Socket Mode remembers handled ``event_id`` values in process. Slack's last
+# retry of an event lands minutes after the first delivery, so an hour outlives
+# every retry (and matches the shared store's retention); the size cap bounds
+# memory when a burst of events outruns the clock. The cap never drops an entry
+# younger than the retry window, so a burst can exceed it rather than let a retry
+# of a queued or running event through, but only up to the hard cap (a few MB),
+# past which the oldest entries go regardless.
+SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS = 60 * 60
+SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS = 10_000
+SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS = 50_000
+SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS = 10 * 60
+
 # File hosts we may fetch with the bot token. ``url_private`` points at
 # ``files.slack.com``; downloads redirect within Slack's own domains, and the
 # suffix match covers those. A hop anywhere else is rejected before opening a
@@ -44,6 +56,10 @@ __all__ = [
     "SLACK_GITHUB_ISSUES_WEBHOOK_URL_ENV",
     "SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS",
     "SLACK_SILO_TEAM_IDS_ENV",
+    "SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS",
+    "SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS",
+    "SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS",
+    "SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS",
     "SLACK_USER_TOKEN_PREFIXES",
     "SLACK_WEBHOOK_URL_ENV",
 ]

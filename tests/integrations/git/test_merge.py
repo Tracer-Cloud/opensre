@@ -12,6 +12,7 @@ from integrations.git import (
     GitCommandError,
     abort_merge,
     commit_merge,
+    commit_paths,
     describe_conflicts,
     fetch_remote_branch,
     head_sha,
@@ -109,6 +110,43 @@ def test_resolved_merge_commits_with_both_parents(tmp_path: Path) -> None:
     assert "# Conflicts:" not in message
     assert not (work / "doomed.txt").exists()
     assert (work / "only-main.txt").read_text() == "new on main\n"
+
+
+def test_a_tracked_package_under_an_ignore_rule_stages_and_commits(tmp_path: Path) -> None:
+    """A package an ``output/`` rule matches stays tracked; git refuses ``add <path>`` there.
+
+    Merging main into a live PR failed with "git add failed: ... is ignored by one
+    of your .gitignore files" because main changed such a package.
+    """
+    # Arrange: a tracked file under an ignored directory, changed on main.
+    work = _diverged_repo(tmp_path)
+    _git(work, "checkout", "main")
+    _git(work, "reset", "--hard", "origin/main")
+    (work / ".gitignore").write_text("output/\n")
+    (work / "pkg" / "output").mkdir(parents=True)
+    (work / "pkg" / "output" / "mod.py").write_text("v1\n")
+    _git(work, "add", ".gitignore")
+    _git(work, "add", "-f", "pkg/output/mod.py")
+    _git(work, "commit", "-m", "tracked package under output/")
+    (work / "pkg" / "output" / "mod.py").write_text("v2\n")
+    _git(work, "commit", "-am", "change the package")
+    _git(work, "push", "origin", "main")
+    _git(work, "checkout", "feature")
+    fetch_remote_branch(str(work), "main")
+    merge_ref(str(work), "origin/main", message="Merge main")
+    (work / "shared.txt").write_text("feature+main\n")
+    (work / "doomed.txt").unlink()
+
+    # Act
+    stage_paths(str(work), ["shared.txt", "doomed.txt", "pkg/output/mod.py"])
+    commit_merge(str(work))
+    (work / "pkg" / "output" / "mod.py").write_text("v3\n")
+    commit_paths(str(work), ["pkg/output/mod.py"], "edit the package")
+
+    # Assert
+    assert unmerged_paths(str(work)) == []
+    assert _git(work, "show", "HEAD:pkg/output/mod.py") == "v3"
+    assert _git(work, "status", "--porcelain") == ""
 
 
 def test_stage_paths_accepts_a_deletion_the_resolver_already_staged(tmp_path: Path) -> None:

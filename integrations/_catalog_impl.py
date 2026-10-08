@@ -326,6 +326,7 @@ from integrations.openobserve import classify as _classify_openobserve
 from integrations.opensearch import classify as _classify_opensearch
 from integrations.opsgenie import classify as _classify_opsgenie
 from integrations.pagerduty import classify as _classify_pagerduty
+from integrations.pipedream import classify as _classify_pipedream
 from integrations.postgresql import build_postgresql_config
 from integrations.postgresql import classify as _classify_postgresql
 from integrations.posthog import posthog_config_from_env
@@ -482,6 +483,9 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
             resolved[f"_all_{service}_instances"] = instances
 
     resolved["_all"] = active
+    from integrations.github.connections import classify_github_connections
+
+    classify_github_connections(integrations, resolved)
     return resolved
 
 
@@ -508,6 +512,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "vercel": _classify_vercel,
     "opsgenie": _classify_opsgenie,
     "pagerduty": _classify_pagerduty,
+    "pipedream": _classify_pipedream,
     "incident_io": _classify_incident_io,
     "jira": _classify_jira,
     "servicenow": _classify_servicenow,
@@ -1983,13 +1988,18 @@ def merge_integrations_by_service(
     *integration_groups: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Merge integration records by service, letting later groups override earlier ones."""
-    merged_by_service: dict[str, dict[str, Any]] = {}
+    merged_by_service: dict[str, list[dict[str, Any]]] = {}
     for integration_group in integration_groups:
+        grouped: dict[str, dict[str, dict[str, Any]]] = {}
         for integration in integration_group:
             service = str(integration.get("service", "")).strip()
-            if service:
-                merged_by_service[service] = integration
-    return list(merged_by_service.values())
+            if service == "github":
+                grouped.setdefault(service, {})[str(integration.get("id", ""))] = integration
+            elif service:
+                grouped[service] = {service: integration}
+        for service, records in grouped.items():
+            merged_by_service[service] = list(records.values())
+    return [record for records in merged_by_service.values() for record in records]
 
 
 def _effective_entry(source: str, config: dict[str, Any]) -> dict[str, Any]:
@@ -2045,9 +2055,11 @@ def _publish_classified_effective_service(
 def _service_metadata(
     store_integrations: list[dict[str, Any]],
     env_integrations: list[dict[str, Any]],
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+    """Source labels and the winning raw record per service (remote > store > env)."""
     source_by_service: dict[str, str] = {}
-    store_integration_by_service: dict[str, dict[str, Any]] = {}
+    record_by_service: dict[str, dict[str, Any]] = {}
 
     for integration in env_integrations:
         service = str(integration.get("service", "")).strip().lower()
@@ -2058,9 +2070,15 @@ def _service_metadata(
         service = str(integration.get("service", "")).strip().lower()
         if service:
             source_by_service[service] = "local store"
-            store_integration_by_service.setdefault(service, integration)
+            record_by_service.setdefault(service, integration)
 
-    return source_by_service, store_integration_by_service
+    for integration in remote_integrations or []:
+        service = str(integration.get("service", "")).strip().lower()
+        if service:
+            source_by_service[service] = "remote"
+            record_by_service[service] = integration
+
+    return source_by_service, record_by_service
 
 
 def _raw_credentials(config: dict[str, Any]) -> dict[str, Any]:
@@ -2113,17 +2131,30 @@ def resolve_effective_integrations(
     *,
     store_integrations: list[dict[str, Any]] | None = None,
     env_integrations: list[dict[str, Any]] | None = None,
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Resolve effective local integrations from ~/.opensre and environment variables."""
+    """Resolve effective integrations from the signed-in account, ~/.opensre, and env.
+
+    Per service the remote (web app) record wins over the local store, which
+    wins over environment variables.
+    """
     store_records = (
         list(store_integrations) if store_integrations is not None else load_integrations()
     )
     env_records = (
         list(env_integrations) if env_integrations is not None else load_env_integrations()
     )
-    merged_integrations = merge_local_integrations(store_records, env_records)
+    if remote_integrations is not None:
+        remote_records = list(remote_integrations)
+    else:
+        from integrations.account_integrations import load_account_integrations
+
+        remote_records = load_account_integrations()
+    merged_integrations = merge_integrations_by_service(env_records, store_records, remote_records)
     classified_integrations = classify_integrations(merged_integrations)
-    source_by_service, store_integration_by_service = _service_metadata(store_records, env_records)
+    source_by_service, record_by_service = _service_metadata(
+        store_records, env_records, remote_records
+    )
 
     effective: dict[str, dict[str, Any]] = {}
 
@@ -2136,17 +2167,17 @@ def resolve_effective_integrations(
         )
 
     if "datadog" not in effective:
-        datadog_store_integration = store_integration_by_service.get("datadog")
-        if isinstance(datadog_store_integration, dict):
-            datadog_credentials = _raw_credentials(datadog_store_integration)
+        datadog_record = record_by_service.get("datadog")
+        if isinstance(datadog_record, dict):
+            datadog_credentials = _raw_credentials(datadog_record)
             effective["datadog"] = _effective_entry(
-                "local store",
+                source_by_service.get("datadog", "local store"),
                 {
                     "api_key": str(datadog_credentials.get("api_key", "")).strip(),
                     "app_key": str(datadog_credentials.get("app_key", "")).strip(),
                     "site": str(datadog_credentials.get("site", "datadoghq.com")).strip()
                     or "datadoghq.com",
-                    "integration_id": str(datadog_store_integration.get("id", "")).strip(),
+                    "integration_id": str(datadog_record.get("id", "")).strip(),
                 },
             )
 
@@ -2171,9 +2202,9 @@ def resolve_effective_integrations(
                 },
             )
 
-    slack_store_integration = store_integration_by_service.get("slack")
-    if isinstance(slack_store_integration, dict):
-        slack_credentials = _raw_credentials(slack_store_integration)
+    slack_record = record_by_service.get("slack")
+    if isinstance(slack_record, dict):
+        slack_credentials = _raw_credentials(slack_record)
         slack_config = _slack_effective_config(
             webhook_url=str(slack_credentials.get("webhook_url", "")).strip(),
             bot_token=str(slack_credentials.get("bot_token", "")).strip(),
@@ -2182,7 +2213,9 @@ def resolve_effective_integrations(
             webhook_label="Slack webhook URL from store",
         )
         if slack_config:
-            effective["slack"] = _effective_entry("local store", slack_config)
+            effective["slack"] = _effective_entry(
+                source_by_service.get("slack", "local store"), slack_config
+            )
     else:
         slack_config = _slack_effective_config(
             webhook_url=os.getenv(SLACK_WEBHOOK_URL_ENV, "").strip(),

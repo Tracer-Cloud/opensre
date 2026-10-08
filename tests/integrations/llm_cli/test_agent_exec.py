@@ -52,6 +52,23 @@ def test_classify_timeout_names_the_agent() -> None:
     assert classified.error == "claude-code timed out after 90s"
 
 
+def test_classify_anthropic_credit_error_is_not_opensre_hosted_exhaustion() -> None:
+    outcome = AgentProcessOutcome(
+        stdout="Your credit balance is too low to access the Anthropic API.",
+        stderr="",
+        returncode=1,
+        timed_out=False,
+    )
+    classified = classify_agent_outcome(
+        outcome, agent_name="claude-code", changed_files=[], timeout_sec=60
+    )
+    assert classified.success is False
+    assert classified.error is not None
+    assert "credit balance is too low" not in classified.error.lower()
+    assert "not your OpenSRE hosted credit balance" in classified.error
+    assert "`opensre credits`" in classified.error
+
+
 def test_classify_clean_exit_with_no_changes_and_no_output_is_a_failure() -> None:
     outcome = AgentProcessOutcome(stdout="", stderr="", returncode=0, timed_out=False)
     classified = classify_agent_outcome(

@@ -93,3 +93,41 @@ def test_gating_returns_a_new_value_and_does_not_mutate_the_original() -> None:
     assert gated is not bundle
     gated.agent({"source": "manual_loop"})
     assert (gate.acquired, gate.released) == (1, 1)
+
+
+def test_a_run_without_a_model_turn_does_not_touch_the_gate() -> None:
+    """A deterministic builder, such as the CI repair supervisor, must not hold a chat slot."""
+
+    # Arrange — a bundle that knows which payloads run a model turn
+    def runner(payload: dict[str, Any]) -> str:
+        return str(payload["source"])
+
+    gate = _CountingGate()
+    bundle = SchedulerRunners(
+        agent=runner, runs_model_turn=lambda payload: payload["source"] != "builder"
+    ).gated(gate)
+
+    # Act
+    built = bundle.agent({"source": "builder"})
+    digested = bundle.agent({"source": "sentry_digest"})
+
+    # Assert — only the model turn cost a permit
+    assert (built, digested) == ("builder", "sentry_digest")
+    assert (gate.acquired, gate.released) == (1, 1)
+
+
+def test_hosting_keeps_the_model_turn_predicate() -> None:
+    # Arrange
+    def runner(payload: dict[str, Any]) -> str:
+        _ = payload
+        return "report body"
+
+    gate = _CountingGate()
+    bundle = SchedulerRunners(agent=runner, runs_model_turn=lambda _payload: False)
+
+    # Act
+    hosted = bundle.hosted_by(lambda: "session").gated(gate)
+    hosted.agent({"source": "builder"})
+
+    # Assert
+    assert (gate.acquired, gate.released) == (0, 0)

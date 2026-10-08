@@ -13,7 +13,7 @@ permissions:
 jobs:
   celebrate-merge:
     name: Post-merge celebration comment
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: >-
       github.event.pull_request.merged == true &&
       github.event.pull_request.user.type != 'Bot' &&

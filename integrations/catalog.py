@@ -73,6 +73,7 @@ def merge_integrations_by_service(
 def resolve_effective_integrations(
     store_integrations: list[dict[str, Any]] | None = None,
     env_integrations: list[dict[str, Any]] | None = None,
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     _sync_overrides()
     return cast(
@@ -80,6 +81,7 @@ def resolve_effective_integrations(
         _load_catalog_impl().resolve_effective_integrations(
             store_integrations=store_integrations,
             env_integrations=env_integrations,
+            remote_integrations=remote_integrations,
         ),
     )
 
@@ -212,23 +214,46 @@ def load_env_integration_services() -> list[str]:
 
 
 def configured_integration_services() -> list[str]:
-    """Return lowercase service keys for integrations configured via env or the local store.
+    """Return lowercase service keys for configured integrations, from any source.
 
     Single source of truth shared by the welcome banner and the REPL session so
-    they never disagree about which integrations are connected. Covers both
-    environment-variable configuration and integrations saved to ``~/.opensre``
-    (e.g. via ``opensre integrations setup ...``). Never raises; returns an
+    they never disagree about which integrations are connected. Covers
+    environment-variable configuration, integrations saved to ``~/.opensre``
+    (e.g. via ``opensre integrations setup ...``), and the signed-in account's
+    organization integrations from the OpenSRE app. Never raises; returns an
     empty list on any failure so callers can treat it as best-effort.
     """
     try:
         store_records = load_integrations()
     except Exception:
         store_records = []
-    return _configured_service_names(store_records=store_records)
+    try:
+        from integrations.account_integrations import load_account_integrations
+
+        remote_records = load_account_integrations()
+    except Exception:
+        remote_records = []
+    # A silo hydrates GitHub and Slack from its secret, then asks the webapp
+    # which Pipedream apps (Linear, and so on) the workspace connected. Those
+    # app ids have to be in this list or the model reports them as disconnected.
+    try:
+        from integrations.webapp_vault import fetch_webapp_org_integrations
+
+        vault_records = fetch_webapp_org_integrations() or []
+    except Exception:
+        vault_records = []
+    return _configured_service_names(
+        store_records=store_records,
+        remote_records=[*remote_records, *vault_records],
+    )
 
 
-def _configured_service_names(*, store_records: list[dict[str, Any]]) -> list[str]:
-    """Merge env-visible and active store services into one deduplicated list."""
+def _configured_service_names(
+    *,
+    store_records: list[dict[str, Any]],
+    remote_records: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Merge env-visible, active store, and active remote services into one list."""
     services: list[str] = []
 
     try:
@@ -240,14 +265,51 @@ def _configured_service_names(*, store_records: list[dict[str, Any]]) -> list[st
         if service:
             services.append(service)
 
-    for record in store_records:
+    for record in [*store_records, *(remote_records or [])]:
         if str(record.get("status", "active")).strip().lower() != "active":
             continue
         service = str(record.get("service", "")).strip().lower()
         if service and _is_registered_service(service):
             services.append(service)
+        services.extend(_pipedream_app_services(record))
 
     return list(dict.fromkeys(services))
+
+
+def _record_credentials(record: dict[str, Any]) -> dict[str, Any]:
+    """Credentials from a flat vault record or the first v2 instance."""
+    credentials = record.get("credentials")
+    if isinstance(credentials, dict):
+        return credentials
+    instances = record.get("instances")
+    if not isinstance(instances, list):
+        return {}
+    for instance in instances:
+        if not isinstance(instance, dict):
+            continue
+        instance_credentials = instance.get("credentials")
+        if isinstance(instance_credentials, dict):
+            return instance_credentials
+    return {}
+
+
+def _pipedream_app_services(record: dict[str, Any]) -> list[str]:
+    """App ids inside a Pipedream record, such as ``linear``.
+
+    Pipedream itself is not a registered integration, and neither are most of
+    its apps. The connected-integrations line still has to name them or a
+    Slack turn treats a workspace connection as missing.
+    """
+    if str(record.get("service") or "").strip().lower() != "pipedream":
+        return []
+    from integrations.pipedream.connect import parse_apps
+
+    names: list[str] = []
+    for app in parse_apps(_record_credentials(record).get("apps")):
+        service = app.service.strip().lower()
+        if service:
+            names.append(service)
+    return names
 
 
 def _is_registered_service(service: str) -> bool:

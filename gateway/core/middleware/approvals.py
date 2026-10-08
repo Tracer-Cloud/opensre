@@ -22,6 +22,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from config.constants.tooling import ToolBlockedBy
 from core.tool import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
 from gateway.core.storage.security_audit import audit_security_action
 
@@ -175,6 +176,7 @@ def approval_tool_hooks(prompter: ApprovalPrompter) -> ToolExecutionHooks:
                 f"(decision by {who}). Do not retry; tell the user what you "
                 "wanted to do and why."
             ),
+            metadata={ToolBlockedBy.APPROVAL_DECLINED: True},
         )
 
     return ToolExecutionHooks(before_tool_call=before_tool_call)

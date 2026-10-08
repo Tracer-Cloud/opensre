@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from core.agent_harness.prompts.skills import (
@@ -48,11 +50,33 @@ def test_resolve_scheduled_skill_rejects_missing_skill() -> None:
         resolve_scheduled_skill("missing-skill-xyz", "abc123")
 
 
-def test_resolve_scheduled_skill_rejects_revision_drift() -> None:
+@pytest.mark.parametrize("pin", ["v2:99:" + "0" * 64, "0" * 64])
+def test_a_major_change_or_a_changed_legacy_pin_stops_the_schedule(pin: str) -> None:
+    """A legacy pin has no version, so any change to its approved body needs re-adding."""
+    with pytest.raises(RuntimeError, match="changed since it was scheduled"):
+        resolve_scheduled_skill("delivering-morning-briefings", pin)
+
+
+def test_an_unchanged_legacy_pin_is_repinned() -> None:
     skill = find_action_skill("delivering-morning-briefings")
     assert skill is not None
-    with pytest.raises(RuntimeError, match="changed since it was scheduled"):
-        resolve_scheduled_skill("delivering-morning-briefings", "0" * 64)
+    body = load_skill_body(skill.name)
+    legacy = hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+    resolved = resolve_scheduled_skill(skill.name, legacy)
+
+    assert resolved.repinned
+    assert resolved.revision == skill_revision(skill)
+
+
+def test_resolve_scheduled_skill_follows_edits_within_the_major_version() -> None:
+    skill = find_action_skill("delivering-morning-briefings")
+    assert skill is not None
+    pinned = f"v2:{skill.version.split('.')[0]}:" + "0" * 64
+    resolved = resolve_scheduled_skill("delivering-morning-briefings", pinned)
+    assert resolved.repinned
+    assert resolved.revision == skill_revision(skill)
+    assert resolved.body == load_skill_body("delivering-morning-briefings")
 
 
 def test_validate_skill_inputs_rejects_non_strings() -> None:

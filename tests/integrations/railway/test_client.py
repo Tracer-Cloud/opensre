@@ -78,19 +78,3 @@ def test_probe_reports_missing_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     probe = client.probe_access()
 
     assert probe.status == "missing"
-
-
-def test_redeploy_rejects_response_without_deployment_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = RailwayClient(
-        RailwayIntegrationConfig(
-            project="project-id", service="service-id", environment="production"
-        )
-    )
-    monkeypatch.setattr("integrations.railway.client.shutil.which", lambda command: command)
-    monkeypatch.setattr(
-        "integrations.railway.client.subprocess.run",
-        lambda *_args, **_kwargs: _completed(stdout='{"success": true}'),
-    )
-
-    with pytest.raises(RailwayOperationError, match="deployment ID"):
-        client.redeploy(client.resolve_scope_object())

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import suppress
+from typing import TextIO, cast
 
 import click
 
@@ -58,7 +60,8 @@ def status_command() -> None:
 @click.option("--dry-run", is_flag=True, help="Preview transfers without changing anything.")
 def sync_now_command(pull_only: bool, push_only: bool, dry_run: bool) -> None:
     """Sync now: pull remote changes, then push local ones."""
-    progress = CliProgress() if click.get_text_stream("stdout").isatty() else None
+    stdout = cast(Callable[[str], TextIO], click.get_text_stream)("stdout")
+    progress = CliProgress() if stdout.isatty() else None
     try:
         report = run_remote_sync(
             pull_only=pull_only, push_only=push_only, dry_run=dry_run, on_progress=progress
@@ -218,7 +221,8 @@ def _collect_setup_request(
             enabled=enabled,
         )
 
-    if not click.get_text_stream("stdin").isatty():
+    stdin = cast(Callable[[str], TextIO], click.get_text_stream)("stdin")
+    if not stdin.isatty():
         raise RemoteSyncError(
             "pass --provider and --bucket, or run setup in an interactive terminal"
         )

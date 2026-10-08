@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 from rich.console import Console
 from rich.markup import escape
 
+from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
+from core.agent_harness.tools import capability_values
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_TIME_PARAM
+from infrastructure.scheduling.scheduler.types import DeliveryStatus, TaskRun
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -283,7 +286,7 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
         "  channels: "
         + escape(_channels_label(tuple(provider.value for provider in created.channels)))
     )
-    _reload_loop_scheduler(console)
+    _reload_loop_scheduler(session, console)
 
     if parsed.run_now:
         _run_loop_task_ids_once(console, (created.task.id,))
@@ -305,7 +308,7 @@ def _cmd_loops_run(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _cmd_loops_set_enabled(
-    _session: Session,
+    session: Session,
     console: Console,
     args: list[str],
     *,
@@ -327,7 +330,7 @@ def _cmd_loops_set_enabled(
     console.print(f"[{HIGHLIGHT}]loop {action}:[/] {escape(result.summary.name)}")
     console.print(f"  id: [{HIGHLIGHT}]{escape(result.summary.id)}[/]")
     console.print(f"  tasks: {result.task_count}")
-    _reload_loop_scheduler(console)
+    _reload_loop_scheduler(session, console)
     return True
 
 
@@ -346,7 +349,7 @@ def _cmd_loops_delete(session: Session, console: Console, args: list[str]) -> bo
     console.print(f"[{HIGHLIGHT}]loop deleted:[/] {escape(result.summary.name)}")
     console.print(f"  id: [{HIGHLIGHT}]{escape(result.summary.id)}[/]")
     console.print(f"  tasks removed: {result.task_count}")
-    _reload_loop_scheduler(console)
+    _reload_loop_scheduler(session, console)
     return True
 
 
@@ -441,19 +444,44 @@ def _cmd_loops_service(session: Session, console: Console, args: list[str]) -> b
 def _run_loop_task_ids_once(console: Console, task_ids: tuple[str, ...]) -> bool:
     from surfaces.interactive_shell.runtime.loop_scheduler import run_loop_now
 
-    failures = [task_id for task_id in task_ids if not run_loop_now(task_id)]
+    failures: list[str] = []
+    partial_deliveries: list[str] = []
+    for task_id in task_ids:
+        runs: list[TaskRun] = []
+        if not run_loop_now(task_id, on_result=runs.append):
+            failures.append(task_id)
+            continue
+        if runs and runs[-1].delivery_status is DeliveryStatus.PARTIAL:
+            failed_destinations = ", ".join(
+                target.label() for target in runs[-1].targets if not target.ok
+            )
+            partial_deliveries.append(f"{task_id}: {failed_destinations}")
 
     if failures:
         console.print(
             f"[{ERROR}]run-now failed for:[/] {escape(', '.join(failures))} "
             f"[{DIM}](check /cron logs)[/]"
         )
+    if partial_deliveries:
+        console.print(
+            f"[{WARNING}]run-now partial delivery:[/] "
+            f"{escape('; '.join(partial_deliveries))} "
+            f"[{DIM}](check /loops show <loop-id>)[/]"
+        )
+    if failures or partial_deliveries:
         return False
     console.print(f"[{HIGHLIGHT}]run-now complete.[/]")
     return True
 
 
-def _reload_loop_scheduler(console: Console) -> None:
+def _reload_loop_scheduler(session: Session, console: Console) -> None:
+    from infrastructure.scheduling.scheduler.reload_signal import request_scheduler_reload
+
+    if SCHEDULER_HOST_IN_PROCESS in capability_values(session, SCHEDULER_HOST_CAPABILITY):
+        request_scheduler_reload()
+        console.print("  scheduler: reload requested")
+        return
+
     from surfaces.interactive_shell.runtime.loop_scheduler import reload_loop_scheduler
 
     try:

@@ -29,14 +29,14 @@ class TelegramSendMessageTool(BaseTool):
     source = SOURCE
     description = (
         "Send a plain-text message via the configured Telegram integration. "
-        "Use this for explicit user-requested Telegram message actions and for "
-        "incident notifications. The tool resolves credentials internally and "
-        "returns structured delivery status without exposing secrets."
+        "Use it only when the user asks to send something to Telegram; do not send "
+        "alerts or turn results there on your own. The tool resolves credentials "
+        "internally and returns structured delivery status without exposing secrets."
     )
     use_cases = [
         "Sending a user-requested message to the configured Telegram default chat",
-        "Posting a concise incident notification to a Telegram chat or channel",
-        "Following up after an investigation with a short status update",
+        "Posting an incident notification the user asked for to a Telegram chat or channel",
+        "Sending a short status update the user asked for after an investigation",
     ]
     requires = ["telegram"]
     side_effect_level = SideEffectLevel.EXTERNAL

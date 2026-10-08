@@ -67,6 +67,7 @@ def test_clearing_the_plan_writes_a_tombstone() -> None:
     storage.flush(session)
 
     session.task_plan = None
+    session.plan_only_until_authorized = False
     storage.flush(session)
 
     snapshots = [

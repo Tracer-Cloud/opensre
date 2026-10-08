@@ -64,6 +64,22 @@ class SlackMessagingClient(Protocol):
 
     def stop_stream(self, *, channel: str, ts: str, blocks: Blocks | None = None) -> bool:
         """Finish a streamed message, optionally attaching final blocks."""
+        ...
+
+    def set_thread_status(
+        self,
+        *,
+        channel: str,
+        thread_ts: str,
+        status: str,
+        loading_messages: Sequence[str] | None = None,
+    ) -> bool:
+        """Show or clear the loading indicator on the triggering thread.
+
+        This is Slack's assistant status on that thread, not a reply. An empty
+        ``status`` clears it.
+        """
+        ...
 
 
 # API errors that mean streaming will never work for this app/workspace
@@ -246,6 +262,35 @@ class SlackWebApiClient:
             return False
         except Exception:
             logger.warning("[slack-gateway] chat.stopStream failed", exc_info=True)
+            return False
+        return True
+
+    def set_thread_status(
+        self,
+        *,
+        channel: str,
+        thread_ts: str,
+        status: str,
+        loading_messages: Sequence[str] | None = None,
+    ) -> bool:
+        """Loading indicator on the triggering thread. Empty ``status`` clears it."""
+        payload: dict[str, Any] = {
+            "channel_id": channel,
+            "thread_ts": thread_ts,
+            "status": status,
+        }
+        if loading_messages:
+            payload["loading_messages"] = list(loading_messages)[:10]
+        try:
+            self._web_client.assistant_threads_setStatus(**payload)
+        except SlackApiError as exc:
+            logger.debug(
+                "[slack-gateway] assistant.threads.setStatus failed: %s",
+                exc.response.get("error"),
+            )
+            return False
+        except Exception:
+            logger.debug("[slack-gateway] assistant.threads.setStatus failed", exc_info=True)
             return False
         return True
 

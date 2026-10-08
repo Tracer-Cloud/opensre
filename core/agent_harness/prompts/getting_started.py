@@ -11,10 +11,15 @@ from core.agent_harness.prompts.skills import getting_started_skills
 
 GETTING_STARTED_CUSTOM = "Or type your own answer..."
 
-GETTING_STARTED_OPTIONS: tuple[str, ...] = tuple(
-    skill.getting_started or "" for skill in getting_started_skills()
-)
-GETTING_STARTED_MENU: tuple[str, ...] = (*GETTING_STARTED_OPTIONS, GETTING_STARTED_CUSTOM)
+
+def getting_started_options() -> tuple[str, ...]:
+    """Return the active catalog's demo labels in menu order."""
+    return tuple(skill.getting_started or "" for skill in getting_started_skills())
+
+
+def getting_started_menu() -> tuple[str, ...]:
+    """Return the demo labels followed by the custom-answer row."""
+    return (*getting_started_options(), GETTING_STARTED_CUSTOM)
 
 
 def load_getting_started_block(*, surface: str = "interactive_shell") -> str:
@@ -44,8 +49,8 @@ def load_getting_started_block(*, surface: str = "interactive_shell") -> str:
 
 __all__ = [
     "GETTING_STARTED_CUSTOM",
-    "GETTING_STARTED_MENU",
-    "GETTING_STARTED_OPTIONS",
+    "getting_started_menu",
+    "getting_started_options",
     "getting_started_skills",
     "load_getting_started_block",
 ]

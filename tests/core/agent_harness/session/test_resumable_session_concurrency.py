@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 import surfaces.interactive_shell.main as main_entrypoint
+import surfaces.interactive_shell.runtime.session_shutdown as session_shutdown
 from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from infrastructure.turn_host.session_lock import (
@@ -17,6 +18,7 @@ from infrastructure.turn_host.session_lock import (
     retained_session_execution_locks,
     session_execution_lock,
 )
+from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.session import Session
 
 
@@ -55,7 +57,12 @@ def test_rotate_in_place_retains_the_fresh_session_lease(
 def test_repl_shutdown_refreshes_before_closing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Idle-shell teardown reconciles state while the shared execution lease is held."""
+    """Idle-shell teardown reconciles, persists, then closes under the shared lease.
+
+    The flush sits between the two so a teardown Ctrl+C, which raises wherever
+    it lands once the exit is armed, cannot reach the blocking close with the
+    transcript still unwritten.
+    """
     events: list[str] = []
     session = Session(session_id="session-123")
 
@@ -66,7 +73,10 @@ def test_repl_shutdown_refreshes_before_closing(
         def refresh_from_storage(self, _session: Session) -> None:
             events.append("refresh")
 
-        def close(self, _session: Session) -> None:
+        def flush(self, _session: Session) -> None:
+            events.append("flush")
+
+        def close(self, _session: Session, **_kwargs: object) -> None:
             events.append("close")
 
     @contextmanager
@@ -86,11 +96,11 @@ def test_repl_shutdown_refreshes_before_closing(
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=session, inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=session, state=ReplState(), inbox=None),
     )
     monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)
     monkeypatch.setattr(main_entrypoint.SessionManager, "for_session", lambda _session: _Manager())
-    monkeypatch.setattr(main_entrypoint, "session_execution_lock", _lease)
+    monkeypatch.setattr(session_shutdown, "session_execution_lock", _lease)
 
     assert asyncio.run(main_entrypoint.run_repl_async()) == 0
-    assert events == ["lock", "refresh", "close"]
+    assert events == ["lock", "refresh", "flush", "close"]

@@ -7,7 +7,11 @@ from typing import Any
 
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
-from core.agent_harness.turns.host_cancel import host_cancel_requested
+from core.agent_harness.turns.host_cancel import (
+    HostCancelEvent,
+    HostCancelReason,
+    host_cancel_requested,
+)
 from core.agent_harness.turns.orchestrator import run_turn
 from core.agent_harness.turns.turn_results import (
     FINAL_INTENT_CANCELLED,
@@ -57,6 +61,36 @@ def test_host_cancel_requested_reads_sink_event() -> None:
     ensure_turn_cancel(sink).set()
     assert host_cancel_requested(sink) is True
     assert host_cancel_requested(None) is False
+
+
+def test_goal_pause_reason_can_be_retained_without_interrupting() -> None:
+    cancel = HostCancelEvent()
+
+    cancel.request(HostCancelReason.GOAL_PAUSE, interrupt=False)
+
+    assert cancel.reason is HostCancelReason.GOAL_PAUSE
+    assert cancel.is_set() is False
+
+
+def test_goal_pause_reason_survives_a_later_generic_stop() -> None:
+    cancel = HostCancelEvent()
+
+    cancel.request(HostCancelReason.GOAL_PAUSE)
+    cancel.set()
+
+    assert cancel.reason is HostCancelReason.GOAL_PAUSE
+    assert cancel.is_set() is True
+
+
+def test_goal_clear_reason_overrides_pause_and_survives_a_later_stop() -> None:
+    cancel = HostCancelEvent()
+
+    cancel.request(HostCancelReason.GOAL_PAUSE)
+    cancel.request(HostCancelReason.GOAL_CLEAR)
+    cancel.set()
+
+    assert cancel.reason is HostCancelReason.GOAL_CLEAR
+    assert cancel.is_set() is True
 
 
 def test_run_turn_cancelled_action_stops_turn() -> None:
@@ -137,3 +171,20 @@ def test_bindable_output_stream_stops_when_turn_cancel_set() -> None:
     text = bindable.stream(label="assistant", chunks=_chunks())
     assert text == "a"
     assert inner.seen == ["a"]
+
+
+def test_predicate_cancel_writes_the_host_event() -> None:
+    from core.agent_harness.turns.host_cancel import bind_cancel_predicate
+
+    sink = _CancelSink()
+    cancelled = False
+
+    def _is_cancelled() -> bool:
+        return cancelled
+
+    console = bind_cancel_predicate(sink, _is_cancelled)
+    assert console.cancel_requested is False
+    assert host_cancel_requested(sink) is False
+    cancelled = True
+    assert console.cancel_requested is True
+    assert host_cancel_requested(sink) is True

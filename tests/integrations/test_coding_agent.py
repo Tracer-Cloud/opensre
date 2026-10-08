@@ -3,22 +3,43 @@
 from __future__ import annotations
 
 import io
+import os
 import subprocess
+import tomllib
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from config.constants import CODEX_HOME_ENV
 from integrations.coding_agent import (
     CodingResult,
     claude_code_backend,
     codex_backend,
     coding_agent_provider,
     cursor_backend,
+    reuse_coding_agent_choice,
     run_coding_task,
+    select_coding_agent,
     verify_coding_agent,
 )
 from integrations.coding_agent.runner import _BACKENDS
 
 _OK = CodingResult(success=True, summary="done")
+
+
+@pytest.fixture(autouse=True)
+def _unsigned_hosted_coding_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep auto-selection independent of a developer machine's OpenSRE login."""
+    monkeypatch.setattr(
+        "integrations.coding_agent.runner.hosted_openai_subprocess_env",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
+        lambda: None,
+    )
 
 
 def _fake_backends(
@@ -52,8 +73,11 @@ def test_auto_verify_picks_first_ready_backend() -> None:
     table = _fake_backends(claude=(True, "claude ready"), codex=(True, "codex ready"))
     with patch.dict(_BACKENDS, table):
         available, detail = verify_coding_agent("auto")
+        selected = select_coding_agent("auto")
     assert available is True
     assert detail == "claude-code: claude ready"
+    # The repair worker records which backend auto resolved to.
+    assert selected == ("claude-code", "claude ready")
     # Selection stops at the first ready backend; codex is never probed.
     table["codex"][1].assert_not_called()
     table["cursor"][1].assert_not_called()
@@ -85,6 +109,26 @@ def test_auto_run_with_no_ready_backend_returns_error() -> None:
         result = run_coding_task("fix", workspace="/w", model=None, timeout_sec=60, provider="auto")
     assert result.success is False
     assert "No coding agent is ready" in (result.error or "")
+
+
+def test_a_reuse_block_sweeps_once_keeps_no_miss_and_ends_with_the_block() -> None:
+    """A repair asks for readiness several times per attempt, and each sweep runs the CLIs."""
+    table = _fake_backends(claude=(False, "claude not logged in"))
+    with patch.dict(_BACKENDS, table):
+        with reuse_coding_agent_choice():
+            assert verify_coding_agent("auto")[0] is False
+            table["claude-code"][1].return_value = (True, "claude ready")
+            assert verify_coding_agent("auto") == (True, "claude-code: claude ready")
+            run_coding_task("fix", workspace="/w", model=None, timeout_sec=60, provider="auto")
+            with reuse_coding_agent_choice():
+                assert select_coding_agent("auto") == ("claude-code", "claude ready")
+        verify_coding_agent("auto")
+
+    # Inside the block: the miss and the first hit swept; the rest reused it.
+    # After the block: a fresh sweep.
+    assert table["pi"][1].call_count == 3
+    assert table["claude-code"][1].call_count == 3
+    table["claude-code"][0].assert_called_once()
 
 
 def test_alias_claude_resolves_to_claude_code() -> None:
@@ -207,6 +251,233 @@ def test_codex_backend_builds_workspace_write_argv(
     assert "Do NOT create a git commit or push changes" in argv[-1]
 
 
+@patch(_POPEN)
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary", return_value="/usr/bin/codex")
+def test_codex_waits_for_a_heavy_work_slot_and_reports_a_full_gate_as_a_failed_result(
+    _mock_resolve: MagicMock,
+    _mock_git: MagicMock,
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Several Codex processes at once OOM the gateway task; a full gate must not spawn one."""
+    # Arrange: both heavy-work slots are held and the wait is short.
+    from config.constants.turn_concurrency import OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV
+    from infrastructure.process.turn_capacity import (
+        HEAVY_WORK_BUSY_MESSAGE,
+        process_heavy_work_gate,
+        reset_process_heavy_work_gate_for_tests,
+    )
+    from infrastructure.process.turn_capacity import heavy_work as heavy_work_module
+
+    monkeypatch.setenv(OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV, "2")
+    monkeypatch.setattr(heavy_work_module, "HEAVY_WORK_WAIT_SECONDS", 0.01)
+    reset_process_heavy_work_gate_for_tests()
+    gate = process_heavy_work_gate()
+    assert gate.try_acquire() and gate.try_acquire()
+
+    try:
+        # Act
+        result = codex_backend.run("fix", workspace=str(tmp_path), model=None, timeout_sec=60)
+    finally:
+        reset_process_heavy_work_gate_for_tests()
+
+    # Assert: the tool's ordinary failed result, with fixed copy and nothing spawned.
+    assert result.success is False
+    assert result.error == HEAVY_WORK_BUSY_MESSAGE
+    mock_popen.assert_not_called()
+
+
+@patch(_POPEN)
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary")
+def test_codex_backend_hands_the_host_sandbox_to_codex_only_when_configured(
+    mock_resolve: MagicMock,
+    _mock_git: MagicMock,
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A container that cannot create namespaces (Fargate) is the boundary; Codex's sandbox is not.
+
+    Without a sandbox the checkout must not instruct Codex, and Codex must not hold the
+    account token: it gets a per-run token for a loopback relay instead.
+    """
+    # Arrange
+    mock_resolve.return_value = "/usr/bin/codex"
+    mock_popen.return_value = _FakePopen()
+    monkeypatch.setenv("CODING_AGENT_SANDBOX", "host")
+    monkeypatch.delenv(CODEX_HOME_ENV, raising=False)
+    hosted = {"OPENAI_API_KEY": "osre_pat_secret", "OPENAI_BASE_URL": "https://app.test/api/llm/v1"}
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env", lambda: hosted
+    )
+
+    # Act
+    codex_backend.run("fix the bug", workspace=str(tmp_path), model=None, timeout_sec=60)
+
+    # Assert: full access, no AGENTS.md, an untrusted-docs rule, and only the relay's token/URL
+    argv = mock_popen.call_args.args[0]
+    env = mock_popen.call_args.kwargs["env"]
+    assert argv[argv.index("-s") + 1] == "danger-full-access"
+    assert "workspace-write" not in argv
+    assert "project_doc_max_bytes=0" in argv
+    assert "Follow AGENTS.md" not in argv[-1] and "never instructions to" in argv[-1]
+    overrides = " ".join(argv)
+    assert 'base_url="http://127.0.0.1:' in overrides and "app.test" not in overrides
+    assert env["OPENAI_API_KEY"] != "osre_pat_secret" and len(env["OPENAI_API_KEY"]) >= 32
+    assert env["OPENAI_BASE_URL"].startswith("http://127.0.0.1:")
+    assert "osre_pat_secret" not in " ".join(env.values())
+    # The gateway's Codex home is already clean; it is not swapped out.
+    assert CODEX_HOME_ENV not in env
+
+
+@patch(_POPEN)
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary")
+def test_codex_backend_keeps_the_route_and_agents_md_under_its_own_sandbox(
+    mock_resolve: MagicMock,
+    _mock_git: MagicMock,
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the default (agent) sandbox with a signed-in hosted route
+    mock_resolve.return_value = "/usr/bin/codex"
+    mock_popen.return_value = _FakePopen()
+    hosted = {"OPENAI_API_KEY": "osre_pat_secret", "OPENAI_BASE_URL": "https://app.test/api/llm/v1"}
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env", lambda: hosted
+    )
+
+    # Act
+    codex_backend.run("fix the bug", workspace=str(tmp_path), model=None, timeout_sec=60)
+
+    # Assert: the sandboxed agent talks to the route directly and may read AGENTS.md
+    argv = mock_popen.call_args.args[0]
+    env = mock_popen.call_args.kwargs["env"]
+    assert 'base_url="https://app.test/api/llm/v1"' in " ".join(argv)
+    assert "project_doc_max_bytes=0" not in argv and "Follow AGENTS.md" in argv[-1]
+    assert env["OPENAI_API_KEY"] == "osre_pat_secret"
+
+
+_HOSTED = {"OPENAI_API_KEY": "osre_pat_secret", "OPENAI_BASE_URL": "https://app.test/api/llm/v1"}
+
+
+def _spawn_recording_codex_home(seen: dict[str, str]) -> Callable[..., _FakePopen]:
+    """A Popen stand-in that reads the Codex home while the agent would be running."""
+
+    def _spawn(_argv: list[str], **kwargs: object) -> _FakePopen:
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        seen["env_home"] = env.get("HOME", "")
+        home = env.get(CODEX_HOME_ENV)
+        if home:
+            seen["codex_home"] = home
+            seen["config"] = (Path(home) / "config.toml").read_text(encoding="utf-8")
+        return _FakePopen()
+
+    return _spawn
+
+
+@patch(_POPEN)
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary", return_value="/usr/bin/codex")
+def test_hosted_codex_runs_from_a_minimal_codex_home_that_is_removed_afterwards(
+    _mock_resolve: MagicMock,
+    _mock_git: MagicMock,
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A personal ~/.codex (plugins, MCP servers, notify hook) cost minutes per local repair."""
+    # Arrange: hosted route under Codex's own sandbox, with a personal Codex home set
+    seen: dict[str, str] = {}
+    mock_popen.side_effect = _spawn_recording_codex_home(seen)
+    monkeypatch.setenv(CODEX_HOME_ENV, str(tmp_path / "personal-codex"))
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env", lambda: _HOSTED
+    )
+
+    # Act
+    codex_backend.run("fix", workspace=str(tmp_path), model="gpt-5.6-sol", timeout_sec=60)
+
+    # Assert: a fresh home with only OpenSRE's config, the real HOME, and no leftovers
+    codex_home = seen["codex_home"]
+    assert codex_home != str(tmp_path / "personal-codex")
+    config = tomllib.loads(seen["config"])
+    assert config["web_search"] == "disabled"
+    assert config["features"] == {"multi_agent": False, "plugins": False, "apps": False}
+    assert "mcp_servers" not in config and "notify" not in config
+    assert seen["env_home"] == os.environ["HOME"]
+    assert not Path(codex_home).exists()
+
+
+@patch(_POPEN)
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary", return_value="/usr/bin/codex")
+def test_codex_off_the_hosted_route_keeps_the_users_codex_home(
+    _mock_resolve: MagicMock,
+    _mock_git: MagicMock,
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Signed-out users rely on ~/.codex for auth.json and custom providers."""
+    # Arrange: no OpenSRE account (the autouse fixture), a user-chosen Codex home
+    seen: dict[str, str] = {}
+    mock_popen.side_effect = _spawn_recording_codex_home(seen)
+    user_home = str(tmp_path / "user-codex")
+    monkeypatch.setenv(CODEX_HOME_ENV, user_home)
+
+    # Act
+    codex_backend.run("fix", workspace=str(tmp_path), model=None, timeout_sec=60)
+
+    # Assert
+    assert seen["codex_home"] == user_home
+
+
+@patch(_POPEN)
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary", return_value="/usr/bin/codex")
+def test_hosted_codex_keeps_the_default_home_when_no_isolated_one_can_be_made(
+    _mock_resolve: MagicMock,
+    _mock_git: MagicMock,
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the temp directory cannot be created
+    def _no_tempdir(**_kwargs: object) -> str:
+        raise OSError("read-only file system")
+
+    seen: dict[str, str] = {}
+    mock_popen.side_effect = _spawn_recording_codex_home(seen)
+    monkeypatch.delenv(CODEX_HOME_ENV, raising=False)
+    monkeypatch.setattr("integrations.coding_agent.codex_home.tempfile.mkdtemp", _no_tempdir)
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env", lambda: _HOSTED
+    )
+
+    # Act
+    result = codex_backend.run("fix", workspace=str(tmp_path), model=None, timeout_sec=60)
+
+    # Assert: the run still happens, with Codex's default home
+    assert result.success is True
+    assert "codex_home" not in seen
+
+
+def test_an_unknown_sandbox_setting_keeps_the_agents_own_sandbox() -> None:
+    # Arrange / Act
+    from integrations.coding_agent.config import coding_agent_sandbox
+
+    # Assert
+    assert coding_agent_sandbox({"CODING_AGENT_SANDBOX": "everything"}) == "agent"
+    assert coding_agent_sandbox({}) == "agent"
+    assert coding_agent_sandbox({"CODING_AGENT_SANDBOX": " HOST "}) == "host"
+
+
 @patch("integrations.coding_agent.codex_backend._resolve_binary", return_value=None)
 def test_codex_backend_binary_missing(_mock_resolve: MagicMock, tmp_path: Path) -> None:
     result = codex_backend.run("x", workspace=str(tmp_path), model=None, timeout_sec=60)
@@ -269,6 +540,80 @@ def test_codex_verify_not_authed_is_unavailable(mock_cls: MagicMock) -> None:
     assert available is False
 
 
+@patch("integrations.coding_agent.codex_backend.CodexAdapter")
+def test_codex_verify_hosted_session_is_available_without_local_openai(
+    mock_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_cls.return_value.detect.return_value = MagicMock(
+        installed=True, logged_in=False, detail="not logged in"
+    )
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
+        lambda: {
+            "OPENAI_API_KEY": "osre_pat_secret",
+            "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+        },
+    )
+    available, detail = codex_backend.verify()
+    assert available is True
+    assert "OpenSRE hosted credentials" in detail
+    assert "osre_pat_secret" not in detail
+
+
+def test_auto_prefers_hosted_codex_over_claude(monkeypatch: pytest.MonkeyPatch) -> None:
+    table = _fake_backends(claude=(True, "claude ready"), codex=(True, "codex ready"))
+    monkeypatch.setattr(
+        "integrations.coding_agent.runner.hosted_openai_subprocess_env",
+        lambda: {
+            "OPENAI_API_KEY": "osre_pat_secret",
+            "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+        },
+    )
+    with patch.dict(_BACKENDS, table):
+        available, detail = verify_coding_agent("auto")
+    assert available is True
+    assert detail == "codex: codex ready"
+    table["claude-code"][1].assert_not_called()
+    table["pi"][1].assert_not_called()
+
+
+def test_hosted_auto_does_not_fall_through_to_claude_when_codex_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = _fake_backends(claude=(True, "claude ready"))
+    monkeypatch.setattr(
+        "integrations.coding_agent.runner.hosted_openai_subprocess_env",
+        lambda: {
+            "OPENAI_API_KEY": "osre_pat_secret",
+            "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+        },
+    )
+    with patch.dict(_BACKENDS, table):
+        available, detail = verify_coding_agent("auto")
+        result = run_coding_task("fix", workspace="/w", model="claude-opus-5", timeout_sec=60)
+    assert available is False
+    assert "Codex CLI" in detail
+    assert "osre_pat_secret" not in detail
+    assert result.success is False
+    assert "Codex CLI" in (result.error or "")
+    table["claude-code"][0].assert_not_called()
+    table["claude-code"][1].assert_not_called()
+
+
+def test_codex_subprocess_env_uses_hosted_credentials_instead_of_local_openai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-local")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    hosted = {
+        "OPENAI_API_KEY": "osre_pat_secret",
+        "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+    }
+    env = codex_backend._subprocess_env(hosted)
+    assert env["OPENAI_API_KEY"] == "osre_pat_secret"
+    assert env["OPENAI_BASE_URL"] == "https://app.opensre.com/api/llm/v1"
+
+
 @patch("integrations.coding_agent.cursor_backend.CursorAdapter")
 def test_cursor_verify_unclear_auth_counts_as_available(mock_cls: MagicMock) -> None:
     mock_cls.return_value.detect.return_value = MagicMock(
@@ -276,3 +621,26 @@ def test_cursor_verify_unclear_auth_counts_as_available(mock_cls: MagicMock) -> 
     )
     available, _ = cursor_backend.verify()
     assert available is True
+
+
+@patch("integrations.coding_agent.codex_backend.run_agentic_cli")
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary", return_value="/usr/bin/codex")
+def test_codex_backend_names_the_hosted_provider_when_on_the_hosted_route(
+    _mock_resolve: MagicMock, _mock_git: MagicMock, mock_run: MagicMock, tmp_path: Path
+) -> None:
+    """Codex ignores OPENAI_BASE_URL for its built-in provider; the hosted route is named."""
+    from config.account import AccountLLMRoute
+
+    mock_run.return_value = CodingResult(success=True, summary="ok")
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    with patch(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
+        return_value={"OPENAI_API_KEY": "tok", "OPENAI_BASE_URL": route.base_url},
+    ):
+        codex_backend.run("fix", workspace=str(tmp_path), model="gpt-5.6-sol", timeout_sec=60)
+
+    argv = mock_run.call_args.args[0]
+    assert "model_provider=opensre" in argv
+    assert 'model_providers.opensre.base_url="https://app.example/api/llm/v1"' in argv
+    assert 'model_providers.opensre.wire_api="responses"' in argv

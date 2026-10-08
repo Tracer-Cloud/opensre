@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.prompts import (
     build_action_system_prompt,
@@ -14,6 +16,7 @@ from core.agent_harness.prompts import (
     recent_conversation_block,
     repository_context_block,
 )
+from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.memory.conversation import NO_HISTORY_PLACEHOLDER
 from core.agent_harness.prompts.skills import (
     SKILLS_HEADER,
@@ -25,6 +28,12 @@ from core.agent_harness.prompts.skills import (
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from tests.utils.skill_cards import skill_card
+
+
+@pytest.fixture(autouse=True)
+def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
 
 
 def _skill_instruction_text(name: str) -> str:
@@ -95,26 +104,15 @@ def test_prior_action_facts_block_surfaces_telegram_followup_values() -> None:
     assert "slack_send_message input" in block
 
 
-def test_system_prompt_slack_fragment_documents_roster_followup() -> None:
-    # Slack-specific "Want me to" roster follow-up now lives in
-    # integrations.slack.action_prompt and is appended to the composed action
-    # prompt via the harness-ports fragment registry, not hardcoded in core.
-    prompt = build_action_system_prompt(_ctx()).lower()
-    assert "want me to: offering more slack roster" in prompt
-    assert "slack_list_team_members" in prompt
-
-
-def test_system_prompt_routes_slack_teammate_reads_to_action_tools() -> None:
-    # Vendor recipe now lives in integrations.slack.action_prompt and is
-    # appended to the composed action prompt via the harness-ports fragment
-    # registry (see integrations/harness_adapters.py), not hardcoded in core.
-    prompt = build_action_system_prompt(_ctx()).lower()
-    compact = prompt.replace(" ", "")
-    assert "slack teammate requests use slack tools" in prompt
-    assert 'slack_read_messages(channel="#opensre-slack-testing"' in compact
-    assert "roster / people questions ignore channel_id" in prompt
-    assert "slack_list_team_members only" in prompt
-    assert "never slack_read_messages" in prompt
+def test_system_prompt_leaves_chat_routing_to_the_connected_tools() -> None:
+    # Slack/Telegram/Rocket.Chat/Buzz routing rides on each tool's description,
+    # which reaches the model only when that integration is connected. The
+    # default prompt keeps only the rule for a channel whose tool is absent.
+    prompt = " ".join(build_action_system_prompt(_ctx()).lower().split())
+    for vendor_tool in ("slack_read_messages", "slack_list_team_members", "telegram_send_message"):
+        assert vendor_tool not in prompt
+    assert "never invent a command to deliver the message" in prompt
+    assert 'args=["setup", "<channel>"]' in prompt
 
 
 def test_system_prompt_routes_github_cli_to_action_tools() -> None:
@@ -130,15 +128,6 @@ def test_system_prompt_routes_github_cli_to_action_tools() -> None:
     assert "day-by-day stars" in prompt
 
 
-def test_system_prompt_slack_fragment_documents_invented_command_example() -> None:
-    # The Slack-specific invented-delivery-command example now lives in
-    # integrations.slack.action_prompt, appended via the harness-ports
-    # fragment registry, not hardcoded in core.
-    prompt = build_action_system_prompt(_ctx()).lower()
-    compact_prompt = " ".join(prompt.split())
-    assert "`/messaging send slack …` is not a real command" in compact_prompt
-
-
 def test_morning_report_skill_closes_with_schedule_offer() -> None:
     """A run-once morning report without an offer cannot drive repeat usage."""
     clear_skills_caches()
@@ -146,7 +135,7 @@ def test_morning_report_skill_closes_with_schedule_offer() -> None:
     assert "propose_scheduled_delivery" in body
     assert "recurring_skill" in body
     assert "delivering-morning-briefings" in body
-    assert 'cron="0 8 * * 1-5"' in body or "cron='0 8 * * 1-5'" in body
+    assert 'cron="0 8 * * mon-fri"' in body or "cron='0 8 * * mon-fri'" in body
     assert "do not call /cron yet" in body
     assert "do not start an investigation" in body
     # Intermediate curls must be quiet so the user does not see weather/news
@@ -187,6 +176,30 @@ def test_repository_context_renders_one_active_and_multiple_remembered_repos() -
     assert "remembered=Tracer-Cloud/opensre, vercel/next.js" in block
     assert "without deleting the others" in block
     assert repository_context_block(_ctx()) == ""
+
+
+def test_repository_agents_md_files_never_reach_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AGENTS.md is for local coding agents: the agent's prompt never carries it."""
+    root = tmp_path / "payments"
+    service = root / "svc"
+    service.mkdir(parents=True)
+    (root / ".git").mkdir()
+    (root / "AGENTS.md").write_text("ROOT-RULE-ZEBRA-7731\n")
+    (service / "AGENTS.override.md").write_text("OVERRIDE-RULE-QUOKKA-1942\n")
+    monkeypatch.chdir(service)
+    snapshot = replace(
+        _ctx(active_repositories={"github": "acme/payments"}),
+        working_directory=str(service),
+    )
+
+    prompt = build_action_system_prompt_envelope(snapshot).render()
+
+    assert "acme/payments" in prompt  # the repository itself is still named
+    assert "ROOT-RULE-ZEBRA-7731" not in prompt
+    assert "OVERRIDE-RULE-QUOKKA-1942" not in prompt
+    assert "REPOSITORY INSTRUCTIONS" not in prompt
 
 
 def test_skill_body_appends_sibling_report_template_but_index_stays_thin(
@@ -325,9 +338,11 @@ def test_action_system_prompt_includes_skills_block() -> None:
     )
 
 
-def test_action_prompt_includes_long_term_memory_bodies(
+def test_action_prompt_lists_memories_and_includes_bodies_relevant_to_the_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from dataclasses import replace
+
     from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
     from core.domain.memory import save_memory
 
@@ -339,10 +354,15 @@ def test_action_prompt_includes_long_term_memory_bodies(
         description="Name is Vaibhav",
         body="The user's name is Vaibhav on the platform team.",
     )
-    prompt = build_action_system_prompt(_ctx())
-    assert "LONG-TERM MEMORY" in prompt
-    assert "user-profile" in prompt
-    assert "platform team" in prompt
+
+    idle = build_action_system_prompt(_ctx())
+    asked = build_action_system_prompt(replace(_ctx(), text="which team is Vaibhav on?"))
+
+    assert "LONG-TERM MEMORY" in idle
+    assert "- [user] user-profile — Name is Vaibhav" in idle
+    assert "platform team" not in idle
+    assert "RELEVANT MEMORIES" in asked
+    assert "platform team" in asked
 
 
 def test_scheduling_guidance_survives_prompt_assembly() -> None:

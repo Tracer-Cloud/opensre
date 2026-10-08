@@ -4,9 +4,18 @@ from pathlib import Path
 
 from config.prompt_log import PromptLogConfig
 from core.agent_harness.accounting.token_accounting import LlmRunInfo
+from core.agent_harness.session.pending_choice import AskUserQuestion, PendingUserChoice
+from infrastructure.analytics.prompt_log.lifecycle import record_prompt_turn, recorded_prompt_text
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder
+from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry import integration_snapshot
+from surfaces.shared import integration_telemetry as integration_snapshot
+from tests.core.agent.orchestration.action_execution_test_harness import (
+    ActionExecutionHarness,
+    FakeActionLLM,
+    no_tool_response,
+    tool_response,
+)
 
 
 def test_prompt_recorder_start_respects_supported_turns(monkeypatch, tmp_path: Path) -> None:
@@ -114,7 +123,7 @@ def test_prompt_recorder_sends_ai_generation(monkeypatch, tmp_path: Path) -> Non
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {
             "connected_integrations": [],
             "connected_integrations_count": 0,
@@ -138,7 +147,8 @@ def test_prompt_recorder_sends_ai_generation(monkeypatch, tmp_path: Path) -> Non
     recorder.flush()
     assert captured
     assert captured[0]["$ai_model"] == "gpt-test"
-    assert captured[0]["$ai_input_tokens"] == 0
+    assert "$ai_input_tokens" not in captured[0]
+    assert captured[0]["token_usage_status"] == "unavailable"
     assert captured[0]["connected_integrations"] == []
     assert captured[0]["connected_integrations_count"] == 0
     assert captured[0]["configured_integrations"] == []
@@ -163,7 +173,7 @@ def test_prompt_recorder_sends_connected_integrations(monkeypatch, tmp_path: Pat
         lambda payload: captured.append(payload),
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {
             "connected_integrations": ["github"],
             "connected_integrations_count": 1,
@@ -209,7 +219,7 @@ def test_prompt_recorder_still_captures_when_tool_resolution_fails(
         raise RuntimeError("tool registry blew up")
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.get_registered_tools",
+        "surfaces.shared.integration_telemetry.get_registered_tools",
         _boom,
     )
 
@@ -229,10 +239,11 @@ def test_prompt_recorder_still_captures_when_tool_resolution_fails(
     assert captured
     assert captured[0]["$ai_model"] == "gpt-test"
     assert captured[0]["configured_integrations"] == ["datadog"]
-    assert captured[0]["connected_integrations"] == []
+    assert "connected_integrations" not in captured[0]
+    assert captured[0]["integration_snapshot_status"] == "partial"
 
 
-def test_prompt_recorder_uses_no_conversational_agent_without_llm_run(
+def test_prompt_recorder_uses_no_conversational_agent_for_explicit_static_dispatch(
     monkeypatch, tmp_path: Path
 ) -> None:
     captured: list[dict[str, object]] = []
@@ -248,7 +259,7 @@ def test_prompt_recorder_uses_no_conversational_agent_without_llm_run(
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -264,6 +275,7 @@ def test_prompt_recorder_uses_no_conversational_agent_without_llm_run(
     assert recorder is not None
     recorder.set_properties(integration_snapshot.build_turn_integration_snapshot(session))
     recorder.set_response("slash /help (succeeded)")
+    recorder.set_llm_attempted(False)
     recorder.flush()
     assert captured[0]["$ai_model"] == "no_conversational_agent"
     assert captured[0]["$ai_provider"] == "no_conversational_agent"
@@ -284,7 +296,7 @@ def test_prompt_recorder_uses_prompt_fallback_when_response_empty(
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     captured: list[dict[str, object]] = []
@@ -302,6 +314,83 @@ def test_prompt_recorder_uses_prompt_fallback_when_response_empty(
     assert captured[0]["$ai_output_choices"][0]["content"] == "terminal turn handled: /help"
 
 
+def test_prompt_fallback_never_reaches_the_session_conversation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Analytics wants a response on every row; the conversation must not take it.
+
+    The fallback was written to the session file as the assistant's reply, so
+    ``/resume`` replayed "terminal turn handled: /resume" as model prose and fed
+    it back to the model as its own prior turn.
+    """
+    cfg = PromptLogConfig(
+        enabled=True,
+        local_enabled=False,
+        posthog_enabled=False,
+        redact=False,
+        max_chars=1000,
+        log_path=tmp_path / "prompt_log.jsonl",
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
+    )
+    monkeypatch.setattr(
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
+        lambda _session: {},
+    )
+    written: list[str | None] = []
+
+    def _append_turn_detail(_session_id, _kind, _prompt, *, response=None, **_kwargs):
+        written.append(response)
+
+    session = Session()
+    monkeypatch.setattr(session.store, "append_turn_detail", _append_turn_detail)
+    recorder = PromptRecorder.start(session=session, text="/resume", turn_kind="agent")
+    assert recorder is not None
+    recorder.set_response("   ")
+    recorder.flush()
+
+    assert written == []
+
+
+def test_a_reply_less_turn_leaves_no_orphan_user_message(monkeypatch, tmp_path: Path) -> None:
+    """`append_turn_detail` writes the prompt unconditionally and the reply only
+    if present, so persisting a reply-less turn left an unpaired user message —
+    adjacent user roles in `cli_agent_messages` on the next resume, and a
+    bookkeeping line such as `/resume` handed back to the model as context.
+    """
+    cfg = PromptLogConfig(
+        enabled=True,
+        local_enabled=False,
+        posthog_enabled=False,
+        redact=False,
+        max_chars=1000,
+        log_path=tmp_path / "prompt_log.jsonl",
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
+    )
+    monkeypatch.setattr(
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
+        lambda _session: {},
+    )
+    session = Session()
+
+    recorder = PromptRecorder.start(session=session, text="/resume", turn_kind="agent")
+    assert recorder is not None
+    recorder.flush()
+
+    assert session.agent.messages == []
+
+    answered = PromptRecorder.start(session=session, text="why is redis slow?", turn_kind="agent")
+    assert answered is not None
+    answered.set_response("Pool exhaustion.")
+    answered.flush()
+
+    roles = [role for role, _ in session.agent.messages]
+    assert roles == [] or roles == ["user", "assistant"]
+
+
 def test_prompt_recorder_set_error_adds_structured_properties(monkeypatch, tmp_path: Path) -> None:
     captured: list[dict[str, object]] = []
     cfg = PromptLogConfig(
@@ -316,7 +405,7 @@ def test_prompt_recorder_set_error_adds_structured_properties(monkeypatch, tmp_p
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -336,10 +425,9 @@ def test_prompt_recorder_set_error_adds_structured_properties(monkeypatch, tmp_p
     assert captured[0]["$ai_is_error"] is True
     assert captured[0]["$ai_error"] == "ANTHROPIC_API_KEY not set"
     assert captured[0]["error_kind"] == "config"
-    # Investigation-style errors are terminal-path failures, not conversational
-    # LLM provider failures: no ai_error_kind and the sentinel model stays.
+    # A generic config error alone says nothing about whether an LLM was used.
     assert "ai_error_kind" not in captured[0]
-    assert captured[0]["$ai_model"] == "no_conversational_agent"
+    assert captured[0]["$ai_model"] == "unknown"
 
 
 def test_prompt_recorder_omits_error_properties_by_default(monkeypatch, tmp_path: Path) -> None:
@@ -356,7 +444,7 @@ def test_prompt_recorder_omits_error_properties_by_default(monkeypatch, tmp_path
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -369,7 +457,7 @@ def test_prompt_recorder_omits_error_properties_by_default(monkeypatch, tmp_path
     recorder.set_properties(integration_snapshot.build_turn_integration_snapshot(session))
     recorder.set_response("world")
     recorder.flush()
-    assert "$ai_is_error" not in captured[0]
+    assert captured[0]["$ai_is_error"] is False
     assert "$ai_error" not in captured[0]
     assert "error_kind" not in captured[0]
 
@@ -393,7 +481,7 @@ def _posthog_recorder(
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -463,6 +551,7 @@ def test_prompt_recorder_terminal_error_kinds_keep_terminal_sentinel(
     captured: list[dict[str, object]] = []
     recorder = _posthog_recorder(monkeypatch, tmp_path, text="hi", captured=captured)
     recorder.set_error("timeout", "command timed out after 60 seconds")
+    recorder.set_llm_attempted(False)
     recorder.set_response("command timed out after 60 seconds")
     recorder.flush()
     assert captured[0]["$ai_model"] == "no_conversational_agent"
@@ -484,7 +573,7 @@ def test_prompt_recorder_uses_only_latest_slash_outcome(monkeypatch, tmp_path: P
         "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.build_turn_integration_snapshot",
+        "surfaces.shared.integration_telemetry.build_turn_integration_snapshot",
         lambda _session: {},
     )
     monkeypatch.setattr(
@@ -510,3 +599,118 @@ def test_prompt_recorder_uses_only_latest_slash_outcome(monkeypatch, tmp_path: P
     recorder.set_response("github and datadog")
     recorder.flush()
     assert "slash_outcome" not in captured[0]
+
+
+def test_choose_turn_is_named_by_the_queued_question() -> None:
+    session = Session()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which demo would you like me to run?",
+        options=("Explore a repo", "Skip the demo"),
+    )
+    assert recorded_prompt_text("/choose", session) == "Which demo would you like me to run?"
+    assert recorded_prompt_text("  /choose  ", session) == "Which demo would you like me to run?"
+    batched = Session()
+    batched.pending_user_choice = PendingUserChoice(
+        title="Ask User",
+        options=(),
+        questions=(
+            AskUserQuestion(label="Demo", title="Which demo?", options=("One", "Two")),
+            AskUserQuestion(label="Repo", title="Which repository?", options=("acme/one",)),
+        ),
+    )
+    assert recorded_prompt_text("/choose now", batched) == "Which demo?\nWhich repository?"
+
+
+def test_choose_without_a_queued_question_stays_the_command() -> None:
+    session = Session()
+    assert recorded_prompt_text("/choose", session) == "/choose"
+    assert recorded_prompt_text("/help", session) == "/help"
+    session.pending_user_choice = PendingUserChoice(title="   ", options=("Yes", "No"))
+    assert recorded_prompt_text("/choose", session) == "/choose"
+
+
+def test_choose_turn_sends_the_question_as_the_prompt(monkeypatch, tmp_path: Path) -> None:
+    captured: list[dict[str, object]] = []
+    cfg = PromptLogConfig(
+        enabled=True,
+        local_enabled=False,
+        posthog_enabled=True,
+        redact=False,
+        max_chars=1000,
+        log_path=tmp_path / "prompt_log.jsonl",
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.capture_ai_generation",
+        lambda payload: captured.append(payload),
+    )
+    session = Session()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which demo would you like me to run?",
+        options=("Explore a repo", "Skip the demo"),
+    )
+    with record_prompt_turn("/choose", session, surface="interactive_shell") as recorder:
+        assert recorder is not None
+        recorder.set_response("slash /choose (succeeded)")
+    assert captured[0]["$ai_input"] == [
+        {"role": "user", "content": "Which demo would you like me to run?"}
+    ]
+
+
+def test_a_turn_that_stopped_short_records_why_the_loop_stopped(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Arrange: a work call fails, then the model tries to conclude three times.
+    # The goal review refuses each attempt until the loop stops on its own limit.
+    captured: list[dict[str, object]] = []
+    cfg = PromptLogConfig(
+        enabled=True,
+        local_enabled=False,
+        posthog_enabled=True,
+        redact=True,
+        max_chars=4000,
+        log_path=tmp_path / "prompt_log.jsonl",
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.PromptLogConfig.load", lambda: cfg
+    )
+    monkeypatch.setattr(
+        "infrastructure.analytics.prompt_log.recorder.capture_ai_generation",
+        lambda payload: captured.append(payload),
+    )
+    harness = ActionExecutionHarness(
+        llm=FakeActionLLM(
+            [
+                tool_response("skill_view", {"name": "missing-skill", "reference": "metrics"}),
+                no_tool_response("Done."),
+                no_tool_response("Done."),
+                no_tool_response("Done."),
+                no_tool_response("I could not load the metrics reference."),
+            ]
+        )
+    )
+    session = Session()
+
+    # Act
+    with record_prompt_turn("show the CI metrics", session, surface="interactive_shell"):
+        result = run_action_tool_turn(
+            "show the CI metrics", session, harness.console, llm_factory=harness.llm_factory
+        )
+
+    # Assert: the turn result and $ai_generation both name the real stop.
+    assert result.hit_iteration_cap is True
+    assert result.stop_reason == "goal_unverified"
+    generation = captured[0]
+    assert generation["stop_reason"] == "goal_unverified"
+    assert generation["goal_review_reason"] == "work_tool_failed"
+    assert generation["last_failed_tool"] == "skill_view"
+    assert generation["last_tool_error"] == "unknown reference 'metrics' for skill 'missing-skill'"
+    assert (generation["tool_error_count"], generation["blocked_tool_calls"]) == (1, 0)
+    assert generation["error_kind"] == "iteration_limit"
+    assert generation["$ai_error"] == (
+        "Agent stopped before producing a final answer. stop_reason=goal_unverified; "
+        "goal_review_reason=work_tool_failed; last_failed_tool=skill_view; "
+        "last_tool_error=unknown reference 'metrics' for skill 'missing-skill'"
+    )

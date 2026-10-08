@@ -1,0 +1,48 @@
+---
+title: "macOS"
+description: "Install OpenSRE on a Mac and ask your first question."
+---
+
+Install OpenSRE on macOS, sign in to your account, then ask the agent your first question.
+
+## 1. Install
+
+```bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
+```
+
+You usually don't need `sudo`. If the terminal says `opensre: command not found`, open a new window or add the path the installer printed (often `~/.local/bin`).
+
+## 2. Set things up
+
+```bash
+opensre
+```
+
+Create an OpenSRE account or sign in to activate the hosted model. The first prompt offers a demo; pick the CI/CD analysis of a repository on this machine, or choose **E** to skip it. Add tools later, when you need them:
+
+```bash
+opensre integrations setup <service>
+```
+
+Then check connected tools:
+
+```bash
+opensre integrations verify
+```
+
+## 3. Ask the agent
+
+Open the shell and describe what's going on in plain English:
+
+```bash
+opensre
+```
+
+Ask: *why is checkout latency spiking?*
+
+## Next
+
+- [Quickstart](/getting-started/quickstart) — same flow with screenshots
+- [Install locally](/install/install-local) — PATH notes, on-prem tips
+- [Integrations overview](/integrations) — connect more tools

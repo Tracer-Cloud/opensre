@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import time
 import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from config.constants.analytics import LLMCreditErrorReason
 from config.prompt_log import PromptLogConfig
 from config.version import get_opensre_version
+from core.llm.shared.llm_retry import credit_exhaustion_reason
 from core.llm_invoke_errors import LLM_PROVIDER_FAILURE_KINDS, classify_provider_error_kind
+from infrastructure.analytics.event_properties import bounded_error_message
 from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
     append_prompt_log_record,
 )
 from infrastructure.analytics.prompt_log.sinks.posthog_ai import capture_ai_generation
 from infrastructure.analytics.provider import JsonValue
+from infrastructure.analytics.scheduled_task_attribution import current_scheduled_task_id
 from infrastructure.safety.secret_redaction import redact_text
 
 _SUPPORTED_TURN_KINDS = frozenset({"agent", "follow_up", "new_alert", "background_task"})
@@ -39,12 +44,19 @@ _TURN_TO_SESSION_KIND: dict[str, str] = {
     "background_task": "cli_command",
 }
 
+# Error recorded when the agent loop hit a hard stop (iteration cap, stagnation,
+# unverified goal) instead of accepting a final answer.
+_STOPPED_SHORT_KIND = "iteration_limit"
+_STOPPED_SHORT_MESSAGE = "Agent stopped before producing a final answer."
+# Loop-outcome properties the stopped-short error message repeats, in order.
+_STOP_DETAIL_KEYS = ("stop_reason", "goal_review_reason", "last_failed_tool", "last_tool_error")
 
-def _latest_slash_outcome(session: Any) -> str | None:
+
+def _latest_slash_outcome(session: Any, *, start: int = 0) -> str | None:
     history = getattr(session, "history", None)
     if not isinstance(history, list):
         return None
-    for entry in reversed(history):
+    for entry in reversed(history[start:]):
         if not isinstance(entry, dict) or entry.get("type") != "slash":
             continue
         outcome = entry.get("slash_outcome")
@@ -105,16 +117,28 @@ class PromptRecorder:
         self._turn_id = turn_id
         self._prompt = prompt
         self._session = session
+        history = getattr(session, "history", None)
+        self._history_start = len(history) if isinstance(history, list) else 0
         self._surface = surface
         self._properties: dict[str, JsonValue] = {}
+        # Read at start: a background task's recorder flushes later, outside the tick.
+        if scheduled_task_id := current_scheduled_task_id():
+            self._properties["scheduled_task_id"] = scheduled_task_id
         self._response: str = ""
         self._error_kind: str = ""
         self._error_message: str = ""
+        self._ai_error_reason: LLMCreditErrorReason | None = None
         self._model: str | None = None
         self._provider: str | None = None
         self._latency_ms: int | None = None
         self._input_tokens: int | None = None
         self._output_tokens: int | None = None
+        self._llm_attempted: bool | None = None
+        self._model_system = ""
+        self._model_skill = ""
+        self._model_context = ""
+        self._model_blocks: dict[str, JsonValue] = {}
+        self._loop_outcome: dict[str, JsonValue] = {}
         self._start = time.monotonic()
         self._flushed = False
 
@@ -127,14 +151,91 @@ class PromptRecorder:
         """Attach host-specific analytics metadata."""
         self._properties.update(properties)
 
+    def set_model_prompt(self, *, system: str = "", skill: str = "", context: str = "") -> None:
+        """Attach the system prompt, skill body, and other context the model received.
+
+        The literal user text stays in ``$ai_input``. These three fields are what
+        the action turn added around it: the cached system prompt, skill bodies
+        loaded for the turn, and the ephemeral context (conversation, plan, facts).
+        Each is redacted and capped so the analytics event still fits the payload
+        limit. Empty values are omitted at flush.
+        """
+        self._model_system = _bound_model_text(
+            system, config=self._config, limit=_SYSTEM_PROMPT_MAX_CHARS
+        )
+        self._model_skill = _bound_model_text(
+            skill, config=self._config, limit=_SKILL_PROMPT_MAX_CHARS
+        )
+        self._model_context = _bound_model_text(
+            context, config=self._config, limit=_CONTEXT_MAX_CHARS
+        )
+
+    def set_model_blocks(self, blocks: dict[str, JsonValue]) -> None:
+        """Attach the size of each prompt block, the replayed history, and the tool count.
+
+        Block ids and numbers only, never prompt text, so both sinks receive it
+        whole: no redaction, no cap.
+        """
+        self._model_blocks = dict(blocks)
+
     def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""
+        self._llm_attempted = True
         self._model = run.model or self._model
         self._provider = run.provider or self._provider
         if run.input_tokens is not None:
             self._input_tokens = run.input_tokens
         if run.output_tokens is not None:
             self._output_tokens = run.output_tokens
+
+    def set_llm_attempted(self, attempted: bool) -> None:
+        """Record whether dispatch used a provider or a deterministic tool call."""
+        self._llm_attempted = attempted
+
+    def set_loop_outcome(
+        self,
+        *,
+        stop_reason: str,
+        goal_review_reason: str = "",
+        last_failed_tool: str = "",
+        last_tool_error: str = "",
+        blocked_tool_calls: int = 0,
+        tool_error_count: int = 0,
+    ) -> None:
+        """Attach why the agent loop stopped and how its tool calls failed.
+
+        The values become ``$ai_generation`` properties. ``last_tool_error`` is
+        redacted and capped like a tool event's ``error_message``.
+        """
+        outcome: dict[str, JsonValue] = {
+            "blocked_tool_calls": blocked_tool_calls,
+            "tool_error_count": tool_error_count,
+        }
+        for key, value in (
+            ("stop_reason", stop_reason),
+            ("goal_review_reason", goal_review_reason),
+            ("last_failed_tool", last_failed_tool),
+            ("last_tool_error", bounded_error_message(last_tool_error)),
+        ):
+            if text := value.strip():
+                outcome[key] = text
+        self._loop_outcome = outcome
+
+    def set_stopped_short(self) -> None:
+        """Record a turn whose loop stopped before a final answer, naming why.
+
+        Call after :meth:`set_loop_outcome`; its stop reason, goal review
+        reason, and last failure follow the generic text of the error.
+        """
+        details = "; ".join(
+            f"{key}={self._loop_outcome[key]}"
+            for key in _STOP_DETAIL_KEYS
+            if key in self._loop_outcome
+        )
+        self.set_error(
+            _STOPPED_SHORT_KIND,
+            f"{_STOPPED_SHORT_MESSAGE} {details}" if details else _STOPPED_SHORT_MESSAGE,
+        )
 
     @property
     def turn_id(self) -> str:
@@ -198,7 +299,7 @@ class PromptRecorder:
             session=session,
         )
 
-    def set_error(self, kind: str, message: str) -> None:
+    def set_error(self, kind: str, message: str, *, error: BaseException | None = None) -> None:
         """Attach a structured turn error emitted as ``$ai_error`` properties.
 
         The human-readable response text is unaffected; these properties make
@@ -211,6 +312,10 @@ class PromptRecorder:
             return
         self._error_kind = kind or "error"
         self._error_message = _sanitize_text(message, config=self._config)
+        if error is not None:
+            self._ai_error_reason = credit_exhaustion_reason(error)
+        if self._error_kind in LLM_PROVIDER_FAILURE_KINDS or self._ai_error_reason:
+            self._llm_attempted = True
 
     def set_response(self, text: str, run: _RunInfo | None = None) -> None:
         cleaned = _sanitize_text(text, config=self._config)
@@ -221,22 +326,50 @@ class PromptRecorder:
             self._latency_ms = int((time.monotonic() - self._start) * 1000)
             return
         self.set_run(run)
-        self._latency_ms = run.latency_ms or int((time.monotonic() - self._start) * 1000)
+        self._latency_ms = (
+            run.latency_ms
+            if run.latency_ms is not None
+            else int((time.monotonic() - self._start) * 1000)
+        )
+
+    def _append_conversation_turn(self, response: str, *, latency_ms: int) -> None:
+        """Write one prompt/reply pair to the session file for ``/resume``."""
+        with contextlib.suppress(Exception):
+            self._session.store.append_turn_detail(
+                self._session_id,
+                _TURN_TO_SESSION_KIND.get(self._turn_kind, self._turn_kind),
+                self._prompt,
+                response=response,
+                turn_id=self._turn_id,
+                model=self._model or None,
+                provider=self._provider or None,
+                latency_ms=latency_ms,
+            )
 
     def _response_for_emit(self) -> str:
-        """Resolve the assistant text written to sinks at flush time."""
-        if self._response.strip():
-            return self._response
-        if self._error_message.strip():
-            return self._error_message
-        return _fallback_terminal_response(prompt=self._prompt)
+        """Resolve the assistant text written to analytics sinks at flush time."""
+        return self._conversation_response() or _fallback_terminal_response(prompt=self._prompt)
+
+    def _conversation_response(self) -> str | None:
+        """The assistant text that genuinely belongs in the conversation, if any.
+
+        Analytics wants a response on every row and falls back to synthetic filler
+        when a turn produced no model output. The session file must not take that
+        filler: it is replayed as the assistant's reply and fed back to the model
+        as its own prior turn. A turn with no output simply has no reply.
+        """
+        return self._response.strip() or self._error_message.strip() or None
 
     def flush(self) -> None:
         if self._flushed:
             return
         self._flushed = True
         response_text = self._response_for_emit()
-        latency_ms = self._latency_ms or int((time.monotonic() - self._start) * 1000)
+        latency_ms = (
+            self._latency_ms
+            if self._latency_ms is not None
+            else int((time.monotonic() - self._start) * 1000)
+        )
         record = {
             "ts": datetime.now(UTC).isoformat(),
             "session_id": self._session_id,
@@ -251,33 +384,60 @@ class PromptRecorder:
             "output_tokens": self._output_tokens,
             "opensre_version": get_opensre_version(),
         }
+        if self._model_system:
+            record["model_system_prompt"] = self._model_system
+        if self._model_skill:
+            record["model_skill_prompt"] = self._model_skill
+        if self._model_context:
+            record["model_context"] = self._model_context
+        if self._model_blocks:
+            record["model_blocks"] = self._model_blocks
         if self._config.local_enabled:
             with contextlib.suppress(OSError):
                 append_prompt_log_record(path=self._config.log_path, record=record)
 
-        # Also write enriched turn to the session file so /resume can restore context.
-        with contextlib.suppress(Exception):
-            session_kind = _TURN_TO_SESSION_KIND.get(self._turn_kind, self._turn_kind)
-            self._session.store.append_turn_detail(
-                self._session_id,
-                session_kind,
-                self._prompt,
-                response=response_text or None,
-                turn_id=self._turn_id,
-                model=self._model or None,
-                provider=self._provider or None,
-                latency_ms=latency_ms,
-            )
-
+        # Also write enriched turn to the session file so /resume can restore
+        # context. Only a turn that produced a reply belongs there: the store
+        # writes the prompt unconditionally and the reply only if present, so
+        # persisting a reply-less turn would leave an unpaired user message in
+        # ``cli_agent_messages`` — adjacent user roles on the next resume, and a
+        # bookkeeping line such as ``/resume`` fed back to the model as context.
+        conversation_response = self._conversation_response()
+        if conversation_response is not None:
+            self._append_conversation_turn(conversation_response, latency_ms=latency_ms)
         if self._config.posthog_enabled:
             with contextlib.suppress(Exception):
                 # When the conversational LLM was attempted but the provider
                 # failed, the turn is a failed LLM call — never a terminal
                 # action. Fall back to "unknown" instead of the terminal
                 # sentinel when the attempted model could not be resolved.
-                llm_provider_failed = self._error_kind in LLM_PROVIDER_FAILURE_KINDS
-                fallback_label = UNKNOWN_LLM if llm_provider_failed else NO_CONVERSATIONAL_AGENT
+                llm_provider_failed = (
+                    self._error_kind in LLM_PROVIDER_FAILURE_KINDS
+                    or self._ai_error_reason is not None
+                )
+                fallback_label = (
+                    NO_CONVERSATIONAL_AGENT if self._llm_attempted is False else UNKNOWN_LLM
+                )
+                response_source = (
+                    "captured"
+                    if self._response.strip()
+                    else "error"
+                    if self._error_message.strip()
+                    else "synthetic"
+                )
+                turn_outcome = (
+                    "cancelled"
+                    if self._error_kind == "cancelled"
+                    else "error"
+                    if self._error_kind
+                    else "completed"
+                    if response_source == "captured"
+                    else "unknown"
+                )
                 posthog_properties: dict[str, JsonValue] = {
+                    "turn_outcome": turn_outcome,
+                    "response_source": response_source,
+                    "$ai_is_error": bool(self._error_kind),
                     "$ai_trace_id": self._turn_id,
                     "$ai_session_id": self._session_id,
                     "$ai_span_id": self._turn_id,
@@ -292,15 +452,27 @@ class PromptRecorder:
                         }
                     ],
                     "$ai_latency": (round(latency_ms / 1000.0, 3)),
-                    "$ai_input_tokens": self._input_tokens or 0,
-                    "$ai_output_tokens": self._output_tokens or 0,
                     "cli_turn_kind": self._turn_kind,
                     "cli_session_id": self._session_id,
                     "cli_turn_id": self._turn_id,
                     "opensre_version": get_opensre_version(),
                     **self._properties,
                 }
-                slash_outcome = _latest_slash_outcome(self._session)
+                if self._llm_attempted is not None:
+                    posthog_properties["llm_attempted"] = self._llm_attempted
+                posthog_properties.update(self._loop_outcome)
+                reported = 0
+                for key, value in (
+                    ("$ai_input_tokens", self._input_tokens),
+                    ("$ai_output_tokens", self._output_tokens),
+                ):
+                    if value is not None:
+                        posthog_properties[key] = value
+                        reported += 1
+                posthog_properties["token_usage_status"] = (
+                    "complete" if reported == 2 else "partial" if reported else "unavailable"
+                )
+                slash_outcome = _latest_slash_outcome(self._session, start=self._history_start)
                 if slash_outcome:
                     posthog_properties["slash_outcome"] = slash_outcome
                 if self._error_kind:
@@ -308,10 +480,78 @@ class PromptRecorder:
                     posthog_properties["$ai_error"] = self._error_message or self._error_kind
                     posthog_properties["error_kind"] = self._error_kind
                     if llm_provider_failed:
-                        posthog_properties["ai_error_kind"] = classify_provider_error_kind(
-                            self._error_message or self._error_kind
+                        posthog_properties["ai_error_kind"] = (
+                            "quota"
+                            if self._ai_error_reason
+                            else classify_provider_error_kind(
+                                self._error_message or self._error_kind
+                            )
                         )
+                    if self._ai_error_reason:
+                        posthog_properties["ai_error_reason"] = self._ai_error_reason
+                if self._model_system:
+                    posthog_properties["model_system_prompt"] = self._model_system
+                if self._model_skill:
+                    posthog_properties["model_skill_prompt"] = self._model_skill
+                if self._model_context:
+                    posthog_properties["model_context"] = self._model_context
+                if self._model_blocks:
+                    posthog_properties["model_blocks"] = self._model_blocks
+                _fit_model_prompt(posthog_properties)
                 capture_ai_generation(posthog_properties)
+
+
+# Caps leave room for the user prompt, the response, and the rest of the event
+# under the 256KiB analytics payload limit. The fitter below shrinks further
+# when redaction or escaping still blows the budget.
+_SYSTEM_PROMPT_MAX_CHARS = 80_000
+_SKILL_PROMPT_MAX_CHARS = 24_000
+_CONTEXT_MAX_CHARS = 48_000
+_MODEL_PROMPT_BUDGET_BYTES = 160_000
+_TRUNCATED = "\n\n[truncated]"
+_MODEL_PROMPT_KEYS = ("model_context", "model_system_prompt", "model_skill_prompt")
+
+
+def _bound_model_text(text: str, *, config: PromptLogConfig, limit: int) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if config.redact:
+        cleaned = redact_text(cleaned)
+    return _truncate(cleaned, limit)
+
+
+def _truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    keep = max(0, limit - len(_TRUNCATED))
+    return text[:keep].rstrip() + _TRUNCATED
+
+
+def _fit_model_prompt(properties: dict[str, JsonValue]) -> None:
+    """Shrink the model-prompt fields until they fit, leaving the user prompt intact."""
+    while True:
+        encoded = json.dumps(
+            {key: properties[key] for key in _MODEL_PROMPT_KEYS if key in properties},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        if len(encoded) <= _MODEL_PROMPT_BUDGET_BYTES:
+            return
+        key = next(
+            (
+                name
+                for name in _MODEL_PROMPT_KEYS
+                if isinstance(properties.get(name), str) and properties[name]
+            ),
+            None,
+        )
+        if key is None:
+            return
+        text = str(properties[key])
+        if len(text) < 2_000:
+            properties.pop(key)
+            continue
+        properties[key] = _truncate(text, len(text) // 2)
 
 
 def _sanitize_text(text: str, *, config: PromptLogConfig) -> str:

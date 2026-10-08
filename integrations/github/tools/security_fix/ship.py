@@ -29,6 +29,7 @@ from integrations.github.pull_requests import (
     PullRequest,
     open_pull_request,
 )
+from integrations.github.tools.security_fix.branches import fix_branch_stem
 from integrations.github.tools.security_fix.context import SecurityAlertContext
 from integrations.github.tools.security_fix.errors import (
     ERR_GITHUB_TOKEN,
@@ -37,7 +38,6 @@ from integrations.github.tools.security_fix.errors import (
     GitHubSecurityFixError,
 )
 
-_BRANCH_PREFIX = "opensre/github-security-fix"
 _SUBJECT_MAX = 72
 _MARKDOWN_HEADING_RE = re.compile(r"^#{1,6}\s*")
 _SUBJECT_SKIP_LABELS = frozenset(
@@ -53,15 +53,10 @@ class ShipResult:
     pr: PullRequest
 
 
-def _slug(value: object) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "-", str(value or "")).strip("-")
-    return cleaned or "alert"
-
-
 def build_branch_name(workspace: str, ctx: SecurityAlertContext) -> str:
     """Namespaced branch name for this fix."""
     suffix = short_head(workspace) or "wip"
-    return f"{_BRANCH_PREFIX}-{_slug(ctx.alert_type)}-{_slug(ctx.number)}-{suffix}"
+    return f"{fix_branch_stem(ctx.alert_type, ctx.number)}{suffix}"
 
 
 def _commit_message(ctx: SecurityAlertContext, summary: str) -> str:

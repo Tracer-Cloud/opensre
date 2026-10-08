@@ -10,7 +10,7 @@ from core.agent_harness.prompts import PromptEnvelope
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from core.llm.types import AgentLLMResponse
 from core.messages import UserRuntimeMessage
-from core.state import MAX_CONVERSATION_MESSAGES
+from core.state import history_window_messages
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 from core.tool.contracts import AgentTool
 
@@ -115,7 +115,6 @@ class _RuntimeInput:
     resolved_integrations: dict[str, Any]
     max_iterations: int
     model: object
-    last_observation: str | None
 
 
 class _AgentState:
@@ -135,32 +134,18 @@ class _AgentState:
             resolved_integrations={"sentry": {"configured": True}},
             max_iterations=3,
             model=self.model,
-            last_observation="prior observation",
         )
 
 
 class _Session:
     def __init__(self, tool: AgentTool) -> None:
         self.cli_agent_messages = [
-            ("user", str(index)) for index in range(MAX_CONVERSATION_MESSAGES + 2)
+            ("user", str(index)) for index in range(history_window_messages() + 2)
         ]
         self.configured_integrations = ("github",)
         self.configured_integrations_known = True
         self.reasoning_effort = None
         self.agent = _AgentState(tool)
-
-
-def test_turn_snapshot_from_session_reads_last_command_observation_from_session() -> None:
-    class _Session:
-        cli_agent_messages: list[tuple[str, str]] = []
-        configured_integrations = ()
-        configured_integrations_known = True
-        reasoning_effort = None
-        last_command_observation = "tool output from shell"
-
-    ctx = TurnSnapshot.from_session("why", _Session(), surface="interactive_shell")
-
-    assert ctx.last_observation == "tool output from shell"
 
 
 def test_turn_snapshot_from_session_snapshots_shell_and_runtime_request_fields() -> None:
@@ -171,10 +156,10 @@ def test_turn_snapshot_from_session_snapshots_shell_and_runtime_request_fields()
 
     assert session.agent.seen_text == "next turn"
     assert ctx.text == "next turn"
-    assert len(ctx.conversation_messages) <= MAX_CONVERSATION_MESSAGES
+    assert len(ctx.conversation_messages) <= history_window_messages()
     assert ctx.conversation_messages[0][1].startswith(SESSION_SUMMARY_PREFIX)
     assert "0" in ctx.conversation_messages[0][1]
-    assert ctx.conversation_messages[-1] == ("user", str(MAX_CONVERSATION_MESSAGES + 1))
+    assert ctx.conversation_messages[-1] == ("user", str(history_window_messages() + 1))
     assert ctx.configured_integrations == ("github",)
     assert ctx.render_system_prompt() == "selected system"
     assert ctx.available_tools == (tool,)
@@ -182,4 +167,3 @@ def test_turn_snapshot_from_session_snapshots_shell_and_runtime_request_fields()
     assert ctx.resolved_integrations == {"sentry": {"configured": True}}
     assert ctx.max_iterations == 3
     assert ctx.model is session.agent.model
-    assert ctx.last_observation == "prior observation"

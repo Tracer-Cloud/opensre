@@ -69,9 +69,7 @@ class AgentBuildConfig:
     """How a host wants its headless agent built.
 
     Omit a field to keep that host's usual default. ``apply_capability_policy``
-    left unset means do not mutate the session. Passing an empty
-    ``AgentBuildConfig()`` is not the same as omitting the config: the
-    gateway pool injects chat withholds only when ``agent_build is None``.
+    left unset means do not mutate the session.
     """
 
     build_tools: BuildTools | None = None

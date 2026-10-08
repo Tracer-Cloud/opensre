@@ -44,4 +44,4 @@ def test_skip_option_opens_the_plain_shell_without_a_model_turn(
     assert session.active_skill is None
     assert session.terminal.awaiting_handoff_answer is False
     assert session.terminal.pending_prompt_default in (None, "")
-    assert "Demo skipped" in console.file.getvalue()  # type: ignore[union-attr]
+    assert "Opened the shell" in console.file.getvalue()  # type: ignore[union-attr]

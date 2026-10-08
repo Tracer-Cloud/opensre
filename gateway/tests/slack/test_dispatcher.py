@@ -89,6 +89,33 @@ class _FakeMessagingClient:
         )
         return True
 
+    def delete_message(self, *, channel: str, ts: str) -> bool:
+        _ = (channel, ts)
+        return True
+
+    def start_stream(self, *, channel: str, thread_ts: str) -> str | None:
+        _ = (channel, thread_ts)
+        return None
+
+    def append_stream(self, *, channel: str, ts: str, chunks: Any) -> bool:
+        _ = (channel, ts, chunks)
+        return True
+
+    def stop_stream(self, *, channel: str, ts: str, blocks: Any = None) -> bool:
+        _ = (channel, ts, blocks)
+        return True
+
+    def set_thread_status(
+        self,
+        *,
+        channel: str,
+        thread_ts: str,
+        status: str,
+        loading_messages: Any = None,
+    ) -> bool:
+        _ = (channel, thread_ts, status, loading_messages)
+        return True
+
 
 class _FakeSession:
     session_id = "session-12345678"
@@ -190,6 +217,7 @@ def test_authorized_message_reaches_handler_with_thread_sink() -> None:
 
     def handler(text: str, session: Any, sink: Any, _logger: logging.Logger) -> None:
         turns.append((text, session))
+        assert sink.tool_hooks is None
         sink.finalize("done")
 
     _dispatcher(
@@ -204,9 +232,11 @@ def test_authorized_message_reaches_handler_with_thread_sink() -> None:
     assert agent_text.endswith("check the api")
     assert session is turns[0][1]
     assert resolver.calls == [{"user_id": "T1:C1:100.1", "chat_id": "C1"}]
-    # Placeholder posted into the thread, then edited with the final answer.
+    # One reply, and only after the answer is ready. Loading stays on the mention.
+    assert len(messaging.posts) == 1
+    assert messaging.posts[0]["text"] == "done"
     assert messaging.posts[0]["thread_ts"] == "100.1"
-    assert messaging.updates[-1]["text"] == "done"
+    assert messaging.updates == []
     # Coworker UX: eyes while working, then checkmark.
     emoji_ops = [(r["op"], r["emoji"]) for r in messaging.reactions]
     assert ("add", "eyes") in emoji_ops
@@ -257,8 +287,8 @@ def test_out_of_credits_blocks_turn_with_short_reply(monkeypatch: pytest.MonkeyP
     assert turns == []
     assert reasons == ["slack_turn"]
     # Short thread reply; no balances or env details leak to the channel.
-    assert messaging.updates[-1]["text"] == "Out of credits — top up in the OpenSRE console."
-    assert messaging.posts[0]["thread_ts"] == "100.1"
+    assert messaging.posts[-1]["text"] == "Out of credits — top up in the OpenSRE console."
+    assert messaging.posts[-1]["thread_ts"] == "100.1"
     emoji_ops = [(reaction["op"], reaction["emoji"]) for reaction in messaging.reactions]
     assert ("remove", "eyes") in emoji_ops
     assert ("add", "x") in emoji_ops
@@ -343,7 +373,7 @@ def test_untrustworthy_credit_outcomes_fail_closed(
     ).dispatch(_inbound())
 
     assert turns == []
-    assert messaging.updates[-1]["text"] == user_facing_error_message(TURN_ERROR_MESSAGE)
+    assert messaging.posts[-1]["text"] == user_facing_error_message(TURN_ERROR_MESSAGE)
 
 
 def test_handler_exception_is_contained() -> None:
@@ -360,9 +390,8 @@ def test_handler_exception_is_contained() -> None:
     ).dispatch(_inbound())
 
 
-def test_errored_turn_replaces_placeholder_with_error() -> None:
-    """A raising handler must leave a visible error in the thread, not a frozen
-    'Digging in…' placeholder (only the reaction changing)."""
+def test_errored_turn_posts_the_error() -> None:
+    """A raising handler must leave a visible error in the thread."""
     messaging = _FakeMessagingClient()
 
     def handler(_text: str, _session: Any, _sink: Any, _logger: logging.Logger) -> None:
@@ -376,9 +405,8 @@ def test_errored_turn_replaces_placeholder_with_error() -> None:
             handler=handler,
         )._run_turn(_inbound(), _test_scope())
 
-    # The placeholder message was edited to an error, and the message shows ✗.
-    assert messaging.updates, "placeholder was never updated on error"
-    assert "went wrong" in messaging.updates[-1]["text"].lower()
+    assert messaging.posts, "error was never posted"
+    assert "went wrong" in messaging.posts[-1]["text"].lower()
     assert ("add", "x") in [(r["op"], r["emoji"]) for r in messaging.reactions]
 
 
@@ -450,7 +478,7 @@ def test_stop_cancels_in_flight_turn() -> None:
     try:
         deadline = time.monotonic() + 3.0
         while time.monotonic() < deadline and not any(
-            update["text"] == "Stopped." for update in messaging.updates
+            post["text"] == "Stopped." for post in messaging.posts
         ):
             time.sleep(0.02)
     finally:
@@ -458,12 +486,11 @@ def test_stop_cancels_in_flight_turn() -> None:
         worker.join(5.0)
 
     assert seen_cancel and seen_cancel[0].is_set()
-    assert any(update["text"] == "Stopped." for update in messaging.updates)
+    assert any(post["text"] == "Stopped." for post in messaging.posts)
 
 
-def test_turn_timeout_finalizes_placeholder_when_handler_hangs() -> None:
-    """A turn that outruns the timeout gets a visible message + ✗ instead of a
-    frozen placeholder, even though the blocking handler cannot be cancelled."""
+def test_turn_timeout_marks_the_mention_without_a_thread_reply() -> None:
+    """A turn that outruns the timeout fails the mention and posts nothing."""
     messaging = _FakeMessagingClient()
     release = threading.Event()
 
@@ -480,17 +507,15 @@ def test_turn_timeout_finalizes_placeholder_when_handler_hangs() -> None:
     worker.start()
     try:
         deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline and not any(
-            "taking longer" in update["text"].lower() for update in messaging.updates
-        ):
+        while time.monotonic() < deadline and ("add", "x") not in [
+            (r["op"], r["emoji"]) for r in messaging.reactions
+        ]:
             time.sleep(0.02)
     finally:
         release.set()
         worker.join(5.0)
 
-    assert any("taking longer" in update["text"].lower() for update in messaging.updates), (
-        "timeout did not replace the placeholder"
-    )
+    assert messaging.posts == []
     ops = [(r["op"], r["emoji"]) for r in messaging.reactions]
     assert ("add", "x") in ops
     # The timeout owns the outcome, so a late normal completion must not stack a
@@ -550,12 +575,12 @@ def test_untagged_reply_ignored_when_bot_not_in_thread() -> None:
     # (bot never joined it) is never engaged.
     dispatcher.dispatch(_inbound())
     turns.clear()
-    messaging.updates.clear()
+    posted = len(messaging.posts)
     dispatcher.dispatch(_untagged_reply())
 
-    # No turn ran and nothing was posted — the bot stays out of threads it hasn't joined.
+    # No turn ran and nothing new was posted — the bot stays out of threads it hasn't joined.
     assert turns == []
-    assert messaging.updates == []
+    assert len(messaging.posts) == posted
 
 
 def test_untagged_reply_answered_inside_attention_window() -> None:

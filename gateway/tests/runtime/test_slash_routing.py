@@ -88,13 +88,15 @@ def test_gateway_integrations_setup_returns_headless_guidance(
         _fake_run_cli_command,
     )
 
+    monkeypatch.setenv("OPENSRE_WEBAPP_URL", "https://app.opensre.com")
     sink = _run_gateway_slash("/integrations setup grafana")
     assert recorded == []
     assert sink.finalized is not None
-    assert "grafana" in sink.finalized.lower()
+    assert "Configure Grafana" in sink.finalized
+    assert "https://app.opensre.com/integrations/grafana" in sink.finalized
+    assert "uv run" not in sink.finalized
     assert "succeeded" not in sink.finalized.lower()
     assert "timed out" not in sink.finalized.lower()
-    assert "uv run opensre integrations setup grafana" in sink.finalized
     assert "Launching" not in (sink.finalized or "")
 
 

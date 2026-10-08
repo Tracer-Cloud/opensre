@@ -919,10 +919,6 @@
     "seconds": 0.112,
     "tests": 10
   },
-  "tests/core/agent/prompts/test_gateway_visible_integrations.py": {
-    "seconds": 0.008,
-    "tests": 2
-  },
   "tests/core/agent/prompts/test_goal_contract.py": {
     "seconds": 0.008,
     "tests": 2
@@ -1086,10 +1082,6 @@
   "tests/core/agent_harness/test_accounting_consume_once.py": {
     "seconds": 0.028,
     "tests": 3
-  },
-  "tests/core/agent_harness/test_action_observation_stash.py": {
-    "seconds": 0.009,
-    "tests": 2
   },
   "tests/core/agent_harness/test_action_turn_outcome.py": {
     "seconds": 1.291,
@@ -2619,10 +2611,6 @@
     "seconds": 0.063,
     "tests": 9
   },
-  "tests/interactive_shell/command_registry/test_integrations_observation.py": {
-    "seconds": 0.013,
-    "tests": 4
-  },
   "tests/interactive_shell/command_registry/test_integrations_refresh.py": {
     "seconds": 0.025,
     "tests": 4
@@ -2654,22 +2642,6 @@
   "tests/interactive_shell/history/test_history_policy.py": {
     "seconds": 0.137,
     "tests": 30
-  },
-  "tests/interactive_shell/references/test_agents_md_reference.py": {
-    "seconds": 0.072,
-    "tests": 14
-  },
-  "tests/interactive_shell/references/test_cli_reference_cache.py": {
-    "seconds": 0.065,
-    "tests": 11
-  },
-  "tests/interactive_shell/references/test_docs_reference.py": {
-    "seconds": 0.214,
-    "tests": 29
-  },
-  "tests/interactive_shell/references/test_grounding_diagnostics.py": {
-    "seconds": 0.013,
-    "tests": 3
   },
   "tests/interactive_shell/runtime/test_agent_harness_adapters.py": {
     "seconds": 0.036,
@@ -2833,10 +2805,6 @@
   },
   "tests/interactive_shell/test_gateway_cmds.py": {
     "seconds": 0.031,
-    "tests": 5
-  },
-  "tests/interactive_shell/test_grounding_diagnostics.py": {
-    "seconds": 0.078,
     "tests": 5
   },
   "tests/interactive_shell/test_harness_api_border.py": {

@@ -197,6 +197,40 @@ def test_reminder_scheduling_resolves_naive_datetime_in_requested_timezone(
     assert task.params["run_at"] == "2027-09-12T09:00:00+05:30"
 
 
+def test_completing_a_work_item_disables_its_reminder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work_items_file = tmp_path / "work_items.json"
+    scheduler_file = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr("core.domain.work_items.store.work_items_path", lambda: work_items_file)
+    monkeypatch.setattr("tools.system.work_items.tool.work_items_path", lambda: work_items_file)
+    monkeypatch.setattr(
+        "tools.system.work_items.reminders.work_items_path", lambda: work_items_file
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: scheduler_file,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+    added = work_task_add(
+        title="Page on-call",
+        remind_at="2026-08-24T10:00:00Z",
+        channel_provider="slack",
+        channel_id="C999",
+        timezone="UTC",
+    )
+    assert "error" not in added
+    assert list_tasks()[0].enabled is True
+
+    complete = work_task_complete(selectors=[added["task"]["id"]])
+    assert "error" not in complete
+    assert list_tasks()[0].enabled is False
+
+
 @pytest.mark.parametrize(
     ("remind_at", "timezone", "expected"),
     [
@@ -255,6 +289,29 @@ def test_work_task_add_rejects_invalid_reminder_before_persistence(
     assert response == expected
     assert not work_items_file.exists()
     assert list_tasks(scheduler_file) == []
+
+
+def test_schedule_checkin_accepts_7_as_crontab_sunday(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Crontab writes Sunday as 0 or 7; APScheduler's own crontab parser rejects 7."""
+    # Arrange
+    scheduler_file = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: scheduler_file,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+    # Act
+    response = work_task_schedule_checkin(cron="0 9 * * 7", provider="slack", chat_id="C12345")
+
+    # Assert
+    assert "error" not in response
+    assert [task.cron for task in list_tasks(scheduler_file)] == ["0 9 * * 7"]
 
 
 def test_work_task_tools_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

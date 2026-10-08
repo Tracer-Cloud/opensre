@@ -9,7 +9,8 @@ from typing import Any
 from core.domain.types.evidence import record_evidence_entry
 from core.tool import BaseTool
 from infrastructure.evidence.evidence_compaction import compact_logs, summarize_counts
-from integrations.elasticsearch._client import make_client, unavailable
+from integrations.elasticsearch._client import make_client
+from integrations.elasticsearch.search_failures import not_configured, search_failed
 
 _ERROR_KEYWORDS = (
     "error",
@@ -50,6 +51,8 @@ class ElasticsearchLogsTool(BaseTool):
     name = "query_elasticsearch_logs"
     evidence_mapper = _map_elasticsearch_logs
     source = "elasticsearch"
+    # The configured cluster receives the configured credentials; never a model-chosen URL.
+    injected_params = ["url"]
     description = "Search Elasticsearch logs for errors, exceptions, and application events."
     use_cases = [
         "Investigating application errors stored in Elasticsearch",
@@ -90,7 +93,7 @@ class ElasticsearchLogsTool(BaseTool):
 
     def is_available(self, sources: dict) -> bool:
         # Shares the "opensearch" source: same client, same credentials (see
-        # docs/opensearch.mdx — configuring OpenSearch/Elasticsearch once
+        # docs/integrations/databases/opensearch.mdx — configuring OpenSearch/Elasticsearch once
         # enables both the analytics tool and this log-search tool).
         return bool(sources.get("opensearch", {}).get("connection_verified"))
 
@@ -127,9 +130,7 @@ class ElasticsearchLogsTool(BaseTool):
             index_pattern=index_pattern,
         )
         if not client:
-            return unavailable(
-                "elasticsearch_logs", "logs", "Elasticsearch integration not configured"
-            )
+            return not_configured("elasticsearch_logs", vendor="Elasticsearch")
 
         result = client.search_logs(
             query=query,
@@ -137,7 +138,7 @@ class ElasticsearchLogsTool(BaseTool):
             limit=limit,
         )
         if not result.get("success"):
-            return unavailable("elasticsearch_logs", "logs", result.get("error", "Unknown error"))
+            return search_failed("elasticsearch_logs", result, vendor="Elasticsearch")
 
         logs = result.get("logs", [])
         error_logs = [

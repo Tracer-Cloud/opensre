@@ -40,6 +40,19 @@ def normalize_gateway_status(status: str) -> str:
     return status
 
 
+def chat_status_headline(status: str) -> str:
+    """One row for a shared chat.
+
+    Later rows are the copyable argument, and that argument stays on the
+    shell. A channel preview never receives it.
+    """
+    normalized = normalize_gateway_status(status)
+    for row in normalized.splitlines():
+        if line := " ".join(row.split()):
+            return line
+    return normalized
+
+
 _GENERIC_ERROR = "Something went wrong handling that request. Please try again."
 
 # Shown when a turn streams no status at all, so the placeholder is not left blank.
@@ -77,7 +90,11 @@ def status_from_tool_start(
     *,
     describe: DescribeTool | None = None,
 ) -> str:
-    """Build a one-line ``⏳ label… (hint)`` status while an action tool runs.
+    """Build ``⏳ label…`` status while an action tool runs.
+
+    The argument sits on the following row. Together they may wrap to three
+    rows; neither the label nor the argument is shortened, because the argument
+    is what a person copies out of the terminal.
 
     ``describe`` supplies the tool's own wording; the host is handed it rather
     than reading a registry, so this module stays below the tool tier. Without
@@ -87,7 +104,11 @@ def status_from_tool_start(
     if not name:
         return initial_status_message()
     candidates = describe(name) if describe is not None else ()
-    return f"⏳ {_tool_label(name, candidates)}…{_input_hint(tool_input)}"
+    label = f"⏳ {_tool_label(name, candidates)}…"
+    hint = _input_hint(tool_input).lstrip()
+    if not hint:
+        return label
+    return f"{label}\n{hint}"
 
 
 @lru_cache(maxsize=256)
@@ -95,28 +116,31 @@ def _tool_label(tool_name: str, candidates: tuple[str, ...]) -> str:
     """First clause of the tool's own wording, else its humanized name."""
     for text in (*candidates, tool_name.replace("_", " ")):
         clause = re.split(r"\.\s| — | - |; ", " ".join(text.split()), maxsplit=1)[0]
-        if len(clause) > 72:
-            clause = f"{clause[:71]}…"
         if clause := clause.rstrip("."):
             return clause
     return tool_name
 
 
 def _input_hint(tool_input: Any) -> str:
-    """First meaningful argument value, shortened, as an inline ``(hint)``."""
+    """First meaningful argument value, as an inline ``(hint)``.
+
+    The hint is what a person copies (a path, a command, a skill name), so it
+    is not cut down to a preview.
+    """
     if not isinstance(tool_input, dict):
         return ""
     for value in tool_input.values():
         items = value if isinstance(value, list) else [value] if isinstance(value, str) else []
         text = " ".join(part for item in items if (part := " ".join(str(item).split())))
         if text:
-            return f" ({text[:45]}…)" if len(text) > 48 else f" ({text})"
+            return f" ({text})"
     return ""
 
 
 __all__ = [
     "DescribeTool",
     "EMPTY_RESPONSE_MESSAGE",
+    "chat_status_headline",
     "initial_status_message",
     "normalize_gateway_status",
     "status_from_response_label",

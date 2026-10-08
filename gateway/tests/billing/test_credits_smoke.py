@@ -35,7 +35,7 @@ def test_metering_off_by_default_makes_no_network_call(monkeypatch: pytest.Monke
         raise AssertionError("metering is off — no HTTP call may be made")
 
     monkeypatch.setattr("gateway.core.billing.credits_client.httpx.post", explode)
-    monkeypatch.setattr("gateway.core.billing.credits_client.webapp_shared_secret", explode)
+    monkeypatch.setattr("gateway.core.billing.credits_client.agent_bearer_token", explode)
 
     # Act
     outcome = consume_credits(reason="smoke")

@@ -33,11 +33,16 @@ from core.llm.shared.openai_responses import (
     response_raw_message,
     response_tool_calls,
     responses_input,
+    responses_prompt_cache_key,
     responses_tool_specs,
     uses_responses_api,
 )
 from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
-from core.llm.shared.usage import emit_provider_usage, extract_cache_tokens
+from core.llm.shared.usage import (
+    emit_provider_usage,
+    extract_cache_tokens,
+    extract_reasoning_tokens,
+)
 from core.llm.transports.sdk.anthropic_cache import (
     cached_system as _anthropic_cached_system,
 )
@@ -53,10 +58,6 @@ from core.llm.transports.sdk.anthropic_cache import (
 from core.llm.types import AgentLLMResponse, ModelType, SchemaDescribedTool, ToolCall
 
 logger = logging.getLogger(__name__)
-
-# The runtime executes one action per response (``core.tool.execution``); ask
-# the model for one tool call so the batch is never generated and rejected.
-ANTHROPIC_SINGLE_TOOL_CHOICE: dict[str, Any] = {"type": "auto", "disable_parallel_tool_use": True}
 
 
 def _anthropic_tool_schema(tool: Any) -> dict[str, Any]:
@@ -190,7 +191,6 @@ class AnthropicAgentClient:
             kwargs["system"] = _anthropic_cached_system(system) if cache else system
         if tools:
             kwargs["tools"] = _anthropic_tools_with_cache(tools) if cache else tools
-            kwargs["tool_choice"] = ANTHROPIC_SINGLE_TOOL_CHOICE
 
         backoff = _RETRY_INITIAL_BACKOFF_SEC
         last_err: Exception | None = None
@@ -517,7 +517,7 @@ class BedrockConverseAgentClient:
 
 
 _OPENAI_O_SERIES_RE = re.compile(r"(?:^|[^A-Za-z0-9])o\d", re.IGNORECASE)
-_OPENAI_GPT5_RE = re.compile(r"(?:^|[^A-Za-z0-9])gpt-5", re.IGNORECASE)
+_OPENAI_GPT5_PLUS_RE = re.compile(r"(?:^|[^A-Za-z0-9])gpt-[56]", re.IGNORECASE)
 
 
 def _supports_openai_parallel_tool_calls_param(api_key_env: str) -> bool:
@@ -526,13 +526,13 @@ def _supports_openai_parallel_tool_calls_param(api_key_env: str) -> bool:
 
 
 def _openai_max_token_kwarg(model: str) -> str:
-    # OpenAI o-series (o1, o3, o4-mini, …) and gpt-5 series reject max_tokens.
+    # OpenAI o-series (o1, o3, o4-mini, …) and gpt-5/gpt-6 series reject max_tokens.
     # O-series: matches a bare ``o<digit>`` token at the start of the name or
     # following a non-alphanumeric separator, so vendor-prefixed routes
     # (``openai/o4-mini``, ``azure/o3``) and custom deployments are detected.
-    # gpt-5: matches ``gpt-5`` at the start or after a separator, covering
-    # gpt-5, gpt-5o, gpt-5o-mini, and future gpt-5* variants.
-    if _OPENAI_O_SERIES_RE.search(model) or _OPENAI_GPT5_RE.search(model):
+    # gpt-5/gpt-6: matches ``gpt-5``/``gpt-6`` at the start or after a separator,
+    # covering gpt-5, gpt-5o, gpt-5o-mini, gpt-6, gpt-6-luna and future variants.
+    if _OPENAI_O_SERIES_RE.search(model) or _OPENAI_GPT5_PLUS_RE.search(model):
         return "max_completion_tokens"
     return "max_tokens"
 
@@ -549,6 +549,45 @@ _PROVIDER_LABEL_OVERRIDES = {
 }
 
 
+# A minimal Responses payload with each output item type the agent reads, so
+# ``prewarm`` builds the same model classes the first real response needs.
+_PREWARM_RESPONSE: dict[str, Any] = {
+    "id": "resp_prewarm",
+    "object": "response",
+    "created_at": 0,
+    "model": "prewarm",
+    "status": "completed",
+    "parallel_tool_calls": True,
+    "tool_choice": "auto",
+    "tools": [],
+    "output": [
+        {"type": "reasoning", "id": "rs_prewarm", "summary": []},
+        {
+            "type": "message",
+            "id": "msg_prewarm",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "", "annotations": []}],
+        },
+        {
+            "type": "function_call",
+            "id": "fc_prewarm",
+            "call_id": "call_prewarm",
+            "name": "prewarm",
+            "arguments": "{}",
+            "status": "completed",
+        },
+    ],
+    "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+        "output_tokens_details": {"reasoning_tokens": 0},
+    },
+}
+
+
 class OpenAIAgentClient:
     """OpenAI-compatible client with tool-calling for the agent loop."""
 
@@ -561,16 +600,39 @@ class OpenAIAgentClient:
         api_key_default: str = "",
         credential_resolver: Callable[[str], str] | None = None,
     ) -> None:
-        from openai import OpenAI
-
         from config.llm_credentials import resolve_env_credential
 
         resolver = credential_resolver or resolve_env_credential
-        api_key = resolver(api_key_env) or api_key_default
-        self._client = OpenAI(api_key=api_key, base_url=base_url, timeout=AGENT_CLIENT_TIMEOUT_SEC)
+        self._credential_resolver = resolver
+        self._api_key_default = api_key_default
+        self._base_url = base_url
+        self._api_key_env = api_key_env
+        self._api_key = ""
+        self._client: Any = None
         self._model = model
         self._max_tokens = max_tokens
-        self._api_key_env = api_key_env
+        self._ensure_client()
+
+    def _ensure_client(self) -> None:
+        """Refresh the SDK client when the account token rotates."""
+        from openai import OpenAI
+
+        resolver = getattr(self, "_credential_resolver", None)
+        if resolver is None:
+            return
+        api_key = resolver(self._api_key_env) or self._api_key_default
+        if not api_key:
+            raise RuntimeError(
+                "Missing LLM credentials. Sign in with `opensre account login` "
+                f"or set {self._api_key_env}."
+            )
+        if self._client is None or api_key != self._api_key:
+            self._api_key = api_key
+            self._client = OpenAI(
+                api_key=api_key,
+                base_url=self._base_url,
+                timeout=AGENT_CLIENT_TIMEOUT_SEC,
+            )
 
     @property
     def model_id(self) -> str | None:
@@ -583,6 +645,27 @@ class OpenAIAgentClient:
         if override:
             return override
         return api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
+
+    def prewarm(self) -> None:
+        """Load what the first request would otherwise load inline, without a request.
+
+        The SDK imports its endpoint resource and builds its response models
+        lazily, on the first call. Hosts run this in the background while the
+        user is still choosing, so the first model call does not pay for it.
+        """
+        self._ensure_client()
+        api_key_env = str(getattr(self, "_api_key_env", "OPENAI_API_KEY"))
+        if uses_responses_api(self._model, api_key_env):
+            from openai.types.responses import Response
+
+            _ = self._client.responses
+            # Validation builds the nested output and usage models a real response needs.
+            try:
+                Response.model_validate(_PREWARM_RESPONSE)
+            except ValueError:
+                Response.model_construct(**_PREWARM_RESPONSE)
+        else:
+            _ = self._client.chat.completions
 
     def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         return build_openai_tool_specs(tools)
@@ -599,6 +682,10 @@ class OpenAIAgentClient:
         """Return a text description of an image via this provider's vision model."""
         import base64
 
+        from core.llm.hosted_credits import admit_hosted_credits
+
+        admit_hosted_credits()
+        self._ensure_client()
         data_url = f"data:{mimetype};base64,{base64.b64encode(image_bytes).decode('ascii')}"
         messages: Any = [
             {
@@ -625,6 +712,9 @@ class OpenAIAgentClient:
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
+        from core.llm.hosted_credits import admit_hosted_credits
+
+        admit_hosted_credits()
         from openai import (
             AuthenticationError,
             BadRequestError,
@@ -633,6 +723,7 @@ class OpenAIAgentClient:
             RateLimitError,
         )
 
+        self._ensure_client()
         msgs = strip_internal_message_markers(messages)
         if system:
             msgs = [{"role": "system", "content": system}] + msgs
@@ -645,10 +736,12 @@ class OpenAIAgentClient:
                 "max_output_tokens": self._max_tokens,
                 "input": responses_input(msgs),
             }
+            if system:
+                kwargs["prompt_cache_key"] = responses_prompt_cache_key(system)
             if tools:
                 kwargs["tools"] = responses_tool_specs(tools)
                 kwargs["tool_choice"] = "auto"
-                kwargs["parallel_tool_calls"] = False
+                kwargs["parallel_tool_calls"] = True
             from config.llm_reasoning_effort import get_active_reasoning_effort
 
             reasoning_effort = get_active_reasoning_effort()
@@ -664,7 +757,7 @@ class OpenAIAgentClient:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
                 if _supports_openai_parallel_tool_calls_param(api_key_env):
-                    kwargs["parallel_tool_calls"] = False
+                    kwargs["parallel_tool_calls"] = True
 
         backoff = _RETRY_INITIAL_BACKOFF_SEC
         last_err: Exception | None = None
@@ -724,7 +817,8 @@ class OpenAIAgentClient:
                 output_key="output_tokens",
             )
             responses_tool_calls = response_tool_calls(response)
-            cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
+            usage = getattr(response, "usage", None)
+            cache_read, cache_write = extract_cache_tokens(usage)
             return AgentLLMResponse(
                 content=str(getattr(response, "output_text", "") or ""),
                 tool_calls=responses_tool_calls,
@@ -734,6 +828,7 @@ class OpenAIAgentClient:
                 cache_creation_tokens=cache_write,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                reasoning_tokens=extract_reasoning_tokens(usage),
             )
 
         if not hasattr(response, "choices") or not response.choices:
@@ -747,7 +842,8 @@ class OpenAIAgentClient:
             input_key="prompt_tokens",
             output_key="completion_tokens",
         )
-        cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
+        usage = getattr(response, "usage", None)
+        cache_read, cache_write = extract_cache_tokens(usage)
         choice = response.choices[0]
         msg = choice.message
         content = msg.content or ""
@@ -774,6 +870,7 @@ class OpenAIAgentClient:
             cache_creation_tokens=cache_write,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            reasoning_tokens=extract_reasoning_tokens(usage),
         )
 
     @staticmethod
@@ -864,13 +961,11 @@ class CLIBackedAgentClient:
                     name = tc.get("name")
                     if not isinstance(name, str) or not name.strip():
                         continue
-                    raw_input = tc.get("input")
-                    input_payload = raw_input if isinstance(raw_input, dict) else {}
                     tool_calls.append(
                         ToolCall(
                             id=str(tc.get("id") or f"call_{i}"),
                             name=name.strip(),
-                            input=input_payload,
+                            input=_cli_tool_call_input(tc),
                         )
                     )
             content = "" if tool_calls else text
@@ -906,6 +1001,26 @@ class CLIBackedAgentClient:
                 return {"role": "assistant", "content": f"{content.strip()}\n\n{tool_json}"}
             return {"role": "assistant", "content": tool_json}
         return {"role": "assistant", "content": content}
+
+
+def _cli_tool_call_input(call: dict[str, Any]) -> dict[str, Any]:
+    """The argument object of one CLI-emitted tool call.
+
+    The instruction asks for ``input`` as an object, but CLI models trained on
+    OpenAI function calling often write ``arguments`` and/or a JSON-encoded
+    string. Both are envelope fields, never tool arguments, so reading them is
+    unambiguous; anything else stays ``{}`` and fails validation as before.
+    """
+    for key in ("input", "arguments"):
+        raw = call.get(key)
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw) if raw.strip() else None
+            except json.JSONDecodeError:
+                raw = None
+        if isinstance(raw, dict):
+            return raw
+    return {}
 
 
 def _try_parse_tool_call_json(text: str) -> dict[str, Any] | None:

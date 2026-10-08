@@ -10,6 +10,8 @@ import pytest
 from integrations.github.tools.ci_fix.context import CiFixContext, FailingCheck
 from integrations.github.tools.ci_fix.verification import (
     DEFAULT_POLL_INTERVAL_SECONDS,
+    DEFAULT_REGISTRATION_SECONDS,
+    DEFAULT_SETTLE_SECONDS,
     CheckState,
     _workflow_runs_state,
     wait_for_branch_checks,
@@ -425,6 +427,103 @@ def test_wait_for_pr_checks_rejects_newly_skipped_check() -> None:
 
     assert result.state is CheckState.FAILED
     assert result.failing_checks == ("quality",)
+
+
+def test_wait_for_pr_checks_accepts_a_new_skip_outside_the_repair_in_a_green_run() -> None:
+    """A docs deployment that had nothing to deploy is skipped; that is not a failed repair."""
+    # Arrange: the targeted check passes; a deployment check outside Actions is skipped; a
+    # conditional job in a second, passing run is skipped while an earlier run of the same
+    # workflow failed (a rerun), which must not be held against it
+    payload = {
+        "headRefOid": "new-sha",
+        "statusCheckRollup": [
+            {
+                "name": "quality",
+                "conclusion": "SUCCESS",
+                "status": "COMPLETED",
+                "workflowName": "CI",
+                "detailsUrl": "https://github.com/o/r/actions/runs/2/job/20",
+            },
+            {
+                "name": "Mintlify Deployment",
+                "conclusion": "SKIPPED",
+                "status": "COMPLETED",
+                "workflowName": "",
+                "detailsUrl": "https://mintlify.example/deploy/1",
+            },
+            {
+                "name": "windows quality",
+                "conclusion": "SKIPPED",
+                "status": "COMPLETED",
+                "workflowName": "CI",
+                "detailsUrl": "https://github.com/o/r/actions/runs/2/job/21",
+            },
+        ],
+        "runs": [
+            {"databaseId": 1, "status": "completed", "conclusion": "failure", "workflowName": "CI"},
+            {"databaseId": 2, "status": "completed", "conclusion": "success", "workflowName": "CI"},
+        ],
+    }
+
+    # Act
+    with patch(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        return_value=payload,
+    ):
+        result = wait_for_pr_checks(
+            _CONTEXT,
+            github_token="tok",
+            expected_head_sha="new-sha",
+            registration_seconds=0,
+            settle_seconds=0,
+        )
+
+    # Assert
+    assert result.state is CheckState.PASSED
+    assert result.failing_checks == ()
+
+
+def test_wait_for_pr_checks_rejects_a_skip_caused_by_a_failed_workflow_run() -> None:
+    """A job skipped because an earlier job in its run failed is still a failure."""
+    # Arrange: the targeted check passes but a later job is skipped and its run failed
+    payload = {
+        "headRefOid": "new-sha",
+        "statusCheckRollup": [
+            {
+                "name": "quality",
+                "conclusion": "SUCCESS",
+                "status": "COMPLETED",
+                "workflowName": "CI",
+            },
+            {
+                "name": "deploy",
+                "conclusion": "SKIPPED",
+                "status": "COMPLETED",
+                "workflowName": "CI",
+                "detailsUrl": "https://github.com/o/r/actions/runs/1/job/11",
+            },
+        ],
+        "runs": [
+            {"databaseId": 1, "status": "completed", "conclusion": "failure", "workflowName": "CI"}
+        ],
+    }
+
+    # Act
+    with patch(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        return_value=payload,
+    ):
+        result = wait_for_pr_checks(
+            _CONTEXT,
+            github_token="tok",
+            expected_head_sha="new-sha",
+            registration_seconds=0,
+            settle_seconds=0,
+        )
+
+    # Assert
+    assert result.state is CheckState.FAILED
+    assert result.failing_checks == ("deploy",)
 
 
 def test_wait_for_pr_checks_times_out_when_new_checks_never_appear() -> None:
@@ -927,3 +1026,42 @@ def test_wait_for_pr_checks_stops_at_once_when_pushed_head_is_conflicted() -> No
     # Assert
     assert result.state is CheckState.CONFLICTED
     assert sleeps == [1]
+
+
+class _AdvancingClock:
+    """Monotonic clock that moves only when verification sleeps."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def test_wait_for_pr_checks_holds_the_default_registration_window() -> None:
+    """A check that is already successful still waits out registration and settle."""
+    payload = _rollup(sha="new-sha", name="quality", conclusion="SUCCESS", status="COMPLETED")
+    clock = _AdvancingClock()
+
+    with patch(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        return_value=payload,
+    ):
+        result = wait_for_pr_checks(
+            _CONTEXT,
+            github_token="tok",
+            expected_head_sha="new-sha",
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        )
+
+    assert result.state is CheckState.PASSED
+    assert result.check_names == ("quality",)
+    assert clock.now == DEFAULT_REGISTRATION_SECONDS + DEFAULT_SETTLE_SECONDS
+    assert clock.sleeps
+    assert all(seconds == DEFAULT_POLL_INTERVAL_SECONDS for seconds in clock.sleeps)

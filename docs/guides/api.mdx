@@ -1,0 +1,63 @@
+---
+title: "HTTP API"
+description: "Health checks and alert intake over HTTP."
+---
+
+The OpenSRE backend serves one HTTP API (FastAPI, `gateway/web/webapp.py`). All
+routes live on a single port (default `8000`). To drive the agent in-process
+from your own code instead, see the [Python API](/guides/python-api). In production, always call the
+API over HTTPS — deploy behind a TLS-terminating load balancer (the backend is
+Terraform-managed, separately from this repo).
+
+In production, terminate TLS at a load balancer or reverse proxy in front of
+the application.
+
+## Authentication
+
+| Routes | Caller | Authentication |
+| --- | --- | --- |
+| `POST /alerts` | Machines (alert sources, CI, schedulers) | Set `OPENSRE_ALERT_LISTENER_TOKEN` and send `Authorization: Bearer <token>`. If unset, only loopback callers are accepted. |
+| `GET /`, `/health`, `/ok`, `/healthz`, `/readyz` | Health probes | None |
+
+## Health
+
+| Route | Behavior |
+| --- | --- |
+| `GET /healthz` | Liveness. Always returns `{"status": "ok"}`. |
+| `GET /readyz` | Readiness after gateway startup. Returns `503` with `{"status": "not_ready"}` until ready. |
+| `GET /`, `/health`, `/ok` | LLM configuration check. Returns version and `llm_configured`. Status is `503` until an LLM is configured. |
+
+```bash
+curl https://<host>/healthz
+curl https://<host>/readyz
+curl https://<host>/health
+```
+
+## Alert intake
+
+Enqueue an alert for background handling. Returns `202`:
+
+```bash
+curl -X POST "https://<host>/alerts" \
+  -H "Authorization: Bearer $OPENSRE_ALERT_LISTENER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "CPU above 90% on checkout-db", "source": "grafana"}'
+```
+
+Required field: `text`. Optional fields: `alert_name`, `severity`, `source`,
+`received_at`. Request bodies larger than 1 MiB return `413`.
+
+Queued alerts are picked up by the agent's alert inbox — the interactive shell
+surfaces them with `/alerts`, and chat gateways deliver them to the paired
+channel.
+
+## Status codes
+
+| Code | Meaning |
+| --- | --- |
+| `202` | Accepted (`POST /alerts`) |
+| `400` | Malformed JSON or missing required fields |
+| `401` | Missing or invalid bearer token |
+| `403` | Non-loopback caller without `OPENSRE_ALERT_LISTENER_TOKEN` |
+| `413` | Alert body larger than 1 MiB |
+| `503` | LLM not configured (`/health`) or gateway not ready (`/readyz`) |

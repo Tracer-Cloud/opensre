@@ -1,0 +1,1236 @@
+"""Tests for sending a prompt to the hosted gateway: what is sent, and what the user is told."""
+
+from __future__ import annotations
+
+import json
+import logging
+from http import HTTPStatus
+from types import SimpleNamespace, TracebackType
+from typing import Any
+
+import httpx
+import pytest
+
+from core.agent_harness import SessionCore
+from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
+from core.agent_harness.tools import ActionToolScope
+from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY
+from core.agent_harness.turns.display_text import (
+    cap_for_display,
+    is_outcome_report,
+    preferred_tool_response_text,
+)
+from core.tool import AgentToolContext
+from integrations.hosted_gateway import (
+    ERR_ALREADY_ANSWERED,
+    ERR_ALREADY_SETTLED,
+    ERR_GATEWAY_UNAVAILABLE,
+    ERR_NOT_RUNNING,
+    ERR_TOO_MANY_PROMPTS,
+    ERR_UNKNOWN_PROMPT,
+    HostedGatewayClient,
+    HostedGatewayError,
+    PromptChoice,
+    PromptProgress,
+    PromptQuestion,
+    PromptRecord,
+)
+from integrations.hosted_gateway.tools import gateway_prompt
+from integrations.hosted_gateway.tools.gateway_prompt import ask_hosted_gateway
+from integrations.hosted_gateway.tools.gateway_prompt_cancel import cancel_hosted_gateway_prompt
+from tools.registry import clear_tool_registry_cache, get_registered_tool_map
+
+_TOKEN = "osre_pat_test_token_value"
+_ID = "p_" + "a" * 32
+
+
+@pytest.fixture(autouse=True)
+def _no_submit_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One attempt per call unless a test opts into the restart backoff."""
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", ())
+
+
+def _client(transport: httpx.MockTransport) -> HostedGatewayClient:
+    return HostedGatewayClient(app_url="https://app.test", token=_TOKEN, transport=transport)
+
+
+def test_send_prompt_posts_the_prompt_and_context_with_the_token_only() -> None:
+    # Arrange
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(202, json={"prompt_id": _ID, "state": "queued"})
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.send_prompt("which tasks run?", context={"repository": "o/r"})
+
+    # Assert: no organization or gateway named anywhere; the token is the only identity.
+    request = seen[0]
+    assert request.method == "POST" and request.url.path == "/api/agent-backend/gateway/prompts"
+    assert json.loads(request.content) == {
+        "prompt": "which tasks run?",
+        "context": {"repository": "o/r"},
+    }
+    assert request.headers["authorization"] == f"Bearer {_TOKEN}"
+    assert "org" not in str(request.url) and "organization" not in request.content.decode()
+    assert record == PromptRecord(prompt_id=_ID, state="queued")
+
+
+def test_a_conversation_is_sent_and_only_a_canonical_conversation_id_is_read_back() -> None:
+    # Arrange: the gateway hands back one usable id and one that could name another path
+    conversation_id = "0b6f2c1e-8d4a-4c55-9a77-2f1c3e5d7a90"
+    bodies: list[dict[str, Any]] = []
+    replies = iter([conversation_id, "../elsewhere"])
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            202, json={"prompt_id": _ID, "state": "queued", "conversation_id": next(replies)}
+        )
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        separate = client.send_prompt("audit", context={}, conversation="new")
+        unsafe = client.send_prompt("again", context={}, conversation=conversation_id)
+
+    # Assert
+    assert [body["conversation"] for body in bodies] == ["new", conversation_id]
+    assert separate.conversation_id == conversation_id
+    assert unsafe.conversation_id == ""
+
+
+def test_cancel_posts_to_the_prompt_and_names_why_it_could_not() -> None:
+    # Arrange: the first cancel stops a running prompt, the second finds it finished
+    seen: list[httpx.Request] = []
+    replies = iter(
+        [
+            httpx.Response(
+                202, json={"prompt_id": _ID, "state": "running", "cancel_requested": True}
+            ),
+            httpx.Response(409, json={"error": "already_settled"}),
+        ]
+    )
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return next(replies)
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        stopping = client.cancel_prompt(_ID)
+        with pytest.raises(HostedGatewayError) as finished:
+            client.cancel_prompt(_ID)
+
+    # Assert: no user or organization is named; the app decides whose prompt it is
+    assert seen[0].url.path == f"/api/agent-backend/gateway/prompts/{_ID}/cancel"
+    assert json.loads(seen[0].content) == {}
+    assert stopping.cancel_requested is True and stopping.state == "running"
+    assert finished.value.code == ERR_ALREADY_SETTLED
+
+
+@pytest.mark.parametrize(
+    ("method", "status", "code"),
+    [
+        ("send", 409, ERR_NOT_RUNNING),
+        ("send", 413, "prompt_too_large"),
+        ("read", 404, ERR_UNKNOWN_PROMPT),
+        ("read", 409, ERR_NOT_RUNNING),
+    ],
+)
+def test_refusals_become_stable_codes(method: str, status: int, code: str) -> None:
+    # Arrange
+    client = _client(httpx.MockTransport(lambda _r: httpx.Response(status, json={"error": code})))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        if method == "send":
+            client.send_prompt("x", context={})
+        else:
+            client.prompt_result(_ID)
+
+    # Assert
+    assert excinfo.value.code == code
+    assert _TOKEN not in str(excinfo.value)
+
+
+def test_an_id_that_is_not_a_prompt_id_never_reaches_the_network() -> None:
+    # Arrange
+    requests: list[httpx.Request] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    client = _client(httpx.MockTransport(record))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        client.prompt_result("../health")
+
+    # Assert
+    assert excinfo.value.code == ERR_UNKNOWN_PROMPT
+    assert requests == []
+
+
+class _App:
+    """A fake signed-in client whose gateway settles after a given number of polls.
+
+    A ``HostedGatewayError`` among the states is raised by the call that reaches it.
+    """
+
+    app_url = "https://app.test"
+
+    def __init__(self, states: list[PromptRecord | HostedGatewayError]) -> None:
+        self._states = list(states)
+        self.sent: list[tuple[str, dict[str, str]]] = []
+        self.sent_request_ids: list[str] = []
+        self.sent_conversations: list[str] = []
+        self.polled: list[str] = []
+        self.answered: list[tuple[str, str]] = []
+
+    def __enter__(self) -> _App:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        return None
+
+    def send_prompt(
+        self, prompt: str, *, context: dict[str, str], request_id: str = "", conversation: str = ""
+    ) -> PromptRecord:
+        self.sent.append((prompt, context))
+        self.sent_request_ids.append(request_id)
+        self.sent_conversations.append(conversation)
+        return self._next()
+
+    def prompt_result(self, prompt_id: str) -> PromptRecord:
+        self.polled.append(prompt_id)
+        return self._next()
+
+    def answer_prompt(self, prompt_id: str, answer: str, *, request_id: str = "") -> PromptRecord:
+        _ = request_id  # the fake keeps no prompts to deduplicate
+        self.answered.append((prompt_id, answer))
+        return self._next()
+
+    def _next(self) -> PromptRecord:
+        state = self._states.pop(0)
+        if isinstance(state, HostedGatewayError):
+            raise state
+        return state
+
+
+def _tool_context(session: SessionCore, turn_user_message: str) -> AgentToolContext:
+    scope = ActionToolScope(session=session, console=None, turn_user_message=turn_user_message)
+    return AgentToolContext(
+        resolved_integrations={}, resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope}
+    )
+
+
+def _signed_in_with(monkeypatch: pytest.MonkeyPatch, app: _App) -> None:
+    monkeypatch.setattr(gateway_prompt.HostedGatewayClient, "from_account", lambda: app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_PROMPT_POLL_SECONDS", 0.0)
+
+
+def test_the_tool_waits_for_the_answer_and_returns_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    app = _App(
+        [
+            PromptRecord(_ID, "queued"),
+            PromptRecord(_ID, "running"),
+            PromptRecord(_ID, "done", answer="4 tasks; the CI repair loop is among them."),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="which tasks run?", facts={"repository": "o/r"})
+
+    # Assert
+    assert app.sent == [("which tasks run?", {"repository": "o/r"})]
+    assert app.polled == [_ID, _ID]
+    assert out["success"] is True and out["state"] == "done"
+    assert out["response_text"] == "4 tasks; the CI repair loop is among them."
+
+
+def test_a_question_from_the_gateway_opens_this_shells_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: a shell session behind the tool, and a gateway that stopped on a question
+    choice = PromptChoice(
+        title="Approve schedule_ci_repair_loop?",
+        questions=(PromptQuestion("Approve schedule_ci_repair_loop?", ("Approve", "Deny")),),
+        custom_answer=False,
+        note="Starts a background worker.",
+    )
+    app = _App([PromptRecord(_ID, "needs_input", question="Approve?", choice=choice)])
+    _signed_in_with(monkeypatch, app)
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt="schedule the loop", context=_tool_context(session, ""))
+
+    # Assert: the question is parked as the shell's own menu, with the approval details;
+    # the user reads one plain sentence, the model gets the continuation separately
+    parked = session.pending_user_choice
+    assert out["state"] == "needs_input" and "the menu opens now" in out["response_text"]
+    assert "Approve schedule_ci_repair_loop?" not in out["response_text"]
+    # The resumed turn keeps only this line of the result, so the prompt id must be in it.
+    assert _ID in out["response_text"] and "call ask_hosted_gateway" not in out["response_text"]
+    assert f"prompt_id={_ID}" in out["instructions"]
+    assert "Do not repeat the question" in out["instructions"]
+    assert parked is not None and parked.options == ("Approve", "Deny")
+    assert parked.note == "Starts a background worker." and parked.custom_answer is False
+    assert parked.interaction_id == f"hosted_prompt:{_ID}"
+    assert out["choice"]["note"] == "Starts a background worker."
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        # The incident: a blocked outcome was hidden behind the next question.
+        "**Demo Outcome**\n- Outcome: **blocked** — the rerun did not reset PR #1.",
+        # Reads as data to the shell: opens with a link, carries two '":'.
+        '[PR #1](https://github.com/o/r/pull/1) failed: {"ok": false, "error": "refused"}',
+    ],
+)
+def test_the_gateways_report_reads_above_the_menu_line_and_keeps_the_prompt_id(
+    monkeypatch: pytest.MonkeyPatch, report: str
+) -> None:
+    """The report is shown, and the line naming the prompt survives the shell's filters."""
+    # Arrange: the gateway wrote a report, then stopped on a question
+    question = PromptQuestion("Retry the repair?", ("Retry", "Stop"))
+    asked = PromptRecord(
+        _ID,
+        "needs_input",
+        answer=report,
+        question="Retry the repair?",
+        choice=PromptChoice("Retry the repair?", (question,)),
+    )
+    app = _App([asked])
+    _signed_in_with(monkeypatch, app)
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt="rerun the repair", context=_tool_context(session, ""))
+
+    # Assert: the menu line with the prompt id leads, then the quoted report
+    text = out["response_text"]
+    assert text.startswith("The hosted gateway needs your decision; the menu opens now")
+    assert text.index(_ID) < text.index("The hosted gateway reported:\n> ")
+    # The shell previews only the head, so a long report cannot push the prompt id out of view.
+    assert _ID in cap_for_display(f"{text}\n" + "padding line\n" * 40)
+    assert "rerun did not reset" in text or "refused" in text
+    assert "the menu opens now" in text and _ID in text
+    # What the next turn keeps of this result is this text, so the shell must not drop it.
+    kept = preferred_tool_response_text(SimpleNamespace(details={"response_text": text}))
+    assert _ID in kept
+    assert not is_outcome_report(text)
+    assert f"prompt_id={_ID}" in out["instructions"]
+    parked = session.pending_user_choice
+    assert parked is not None and parked.interaction_id == f"hosted_prompt:{_ID}"
+
+
+def test_the_answer_comes_from_the_users_selection_never_from_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the same asked prompt, read twice: once in a turn the user answered, once not
+    question = PromptQuestion("Which branch?", ("main", "release"))
+    asked = PromptRecord(
+        _ID,
+        "needs_input",
+        question="Which branch?",
+        choice=PromptChoice("Which branch?", (question,)),
+    )
+    follow_up = PromptRecord("p_" + "b" * 32, "done", answer="Loop scheduled on release.")
+    app = _App([asked, asked, follow_up])
+    _signed_in_with(monkeypatch, app)
+    answered_turn = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Which branch?", options=("main", "release")),),
+        ("release",),
+    )
+
+    # Act
+    unanswered = ask_hosted_gateway(prompt_id=_ID, context=_tool_context(SessionCore(), ""))
+    sent_without_a_pick = list(app.answered)
+    answered = ask_hosted_gateway(
+        prompt_id=_ID, context=_tool_context(SessionCore(), answered_turn)
+    )
+
+    # Assert: nothing is sent until the shell's own message carries the user's pick
+    assert unanswered["state"] == "needs_input" and sent_without_a_pick == []
+    assert answered["state"] == "done" and app.answered == [(_ID, "release")]
+
+
+def test_several_questions_go_back_as_one_json_object_keyed_by_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    questions = (
+        PromptQuestion("Scope?", ("a", "b")),
+        PromptQuestion("Window?", ("1h", "24h")),
+    )
+    asked = PromptRecord(
+        _ID, "needs_input", question="Setup", choice=PromptChoice("Setup", questions)
+    )
+    app = _App([asked, PromptRecord("p_" + "c" * 32, "done", answer="ok")])
+    _signed_in_with(monkeypatch, app)
+    turn = format_ask_user_answers(
+        (
+            AskUserQuestion(label="", title="Scope?", options=("a", "b")),
+            AskUserQuestion(label="", title="Window?", options=("1h", "24h")),
+        ),
+        ("b", "24h"),
+    )
+
+    # Act
+    ask_hosted_gateway(prompt_id=_ID, context=_tool_context(SessionCore(), turn))
+
+    # Assert
+    assert app.answered == [(_ID, json.dumps({"Scope?": "b", "Window?": "24h"}))]
+
+
+def test_reading_an_earlier_prompt_sends_nothing_new(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    app = _App([PromptRecord(_ID, "failed", error="turn_failed")])
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt_id=_ID)
+
+    # Assert
+    assert app.sent == [] and app.polled == [_ID]
+    assert out["state"] == "failed"
+    assert out["response_text"].startswith(
+        "The hosted gateway hit an error while running the prompt"
+    )
+
+
+def test_the_wait_budget_hands_back_the_prompt_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    app = _App([PromptRecord(_ID, "queued"), PromptRecord(_ID, "running")])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS", 0.0)
+
+    # Act
+    out = ask_hosted_gateway(prompt="slow one")
+
+    # Assert
+    assert out["success"] is False and out["state"] == "queued"
+    assert _ID in out["response_text"] and "still working" in out["response_text"]
+
+
+def _app_refusing(status: HTTPStatus, error: str) -> HostedGatewayClient:
+    response = httpx.Response(status, json={"error": error})
+    return _client(httpx.MockTransport(lambda _request: response))
+
+
+def test_a_prompt_the_gateway_could_not_take_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The incident: three 502s were told as 'may still be starting', hiding GATEWAY_UNREACHABLE."""
+    # Arrange
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.BAD_GATEWAY, "GATEWAY_UNREACHABLE"),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["error_kind"] == ERR_GATEWAY_UNAVAILABLE
+    assert out["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert "could not connect" in out["response_text"]
+    assert "integration change" in out["response_text"]
+    assert "may still be starting" not in out["response_text"]
+    assert _TOKEN not in out["response_text"]
+
+
+def test_a_full_prompt_queue_is_not_described_as_a_restart(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.SERVICE_UNAVAILABLE, "too_many_prompts"),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["error_kind"] == ERR_TOO_MANY_PROMPTS
+    assert "queue is full" in out["response_text"]
+    assert "may still be starting" not in out["response_text"]
+
+
+def test_a_lost_submission_is_resent_under_its_request_id_and_a_known_prompt_by_its_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry advice must be something the caller can follow without running the work twice."""
+    # Arrange: the gateway does not answer a fresh submission, then a read of a known prompt
+    lost = HostedGatewayError(ERR_GATEWAY_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT)
+    app = _App([lost, lost, PromptRecord(_ID, "done", answer="ran once")])
+    _signed_in_with(monkeypatch, app)
+
+    # Act: the failed send, a read by id that fails too, then the resend the advice names
+    fresh = ask_hosted_gateway(prompt="delegate the demo")
+    known = ask_hosted_gateway(prompt_id=_ID)
+    resent = ask_hosted_gateway(prompt="delegate the demo", request_id=fresh["request_id"])
+
+    # Assert: the fresh failure names no prompt id but a request id the resend reuses
+    assert "will not run twice" in fresh["response_text"] and "prompt_id" not in fresh
+    assert fresh["request_id"] in fresh["instructions"]
+    assert app.sent_request_ids == [fresh["request_id"], fresh["request_id"]]
+    assert resent["response_text"] == "ran once"
+    assert f"Ask about prompt {_ID} again" in known["response_text"]
+    assert known["prompt_id"] == _ID and "request_id" not in known
+
+
+def test_a_restarting_gateway_is_retried_under_one_request_id_before_failing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production: most failures were a send that hit a gateway mid-restart, surfaced at once."""
+    # Arrange: two sends hit a restarting gateway, the third is taken; a second call never is
+    restarting = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    taken = PromptRecord(_ID, "done", answer="ran once")
+    app = _App([restarting, restarting, taken, restarting, restarting, restarting])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo", context=context)
+    given_up = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert: the retries reuse one request id, the user hears once, and the backoff is bounded
+    assert out["response_text"] == "ran once"
+    assert len(set(app.sent_request_ids[:3])) == 1
+    assert [u["progress"] for u in updates][0].startswith(gateway_prompt._UNANSWERED_NOTICE)
+    assert len(updates) == 1
+    assert given_up["success"] is False and given_up["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert len(app.sent) == 6
+
+
+def test_no_retry_starts_once_the_retry_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each send can wait out HTTP timeouts, so the retries are bounded by elapsed time."""
+    # Arrange: the gateway keeps failing and the budget is already spent
+    restarting = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    app = _App([restarting, restarting, restarting])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS", 0.0)
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["success"] is False and out["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert len(app.sent) == 1
+
+
+def test_a_refusal_that_is_not_transient_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    app = _App([HostedGatewayError(ERR_NOT_RUNNING, HTTPStatus.CONFLICT)])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["error_kind"] == ERR_NOT_RUNNING and len(app.sent) == 1
+
+
+def test_an_answer_whose_response_was_lost_is_followed_not_sent_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the question already took an answer; the user's turn still carries it
+    question = PromptQuestion("Which branch?", ("main", "release"))
+    follow_up_id = "p_" + "f" * 32
+    asked = PromptRecord(
+        _ID,
+        "needs_input",
+        question="Which branch?",
+        choice=PromptChoice("Which branch?", (question,)),
+        answered_by=follow_up_id,
+    )
+    follow_up = PromptRecord(follow_up_id, "done", answer="pushed", parent_prompt_id=_ID)
+    app = _App([asked, follow_up])
+    _signed_in_with(monkeypatch, app)
+    turn = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Which branch?", options=("main", "release")),),
+        ("main",),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt_id=_ID, context=_tool_context(SessionCore(), turn))
+
+    # Assert: the accepted answer's result, and no second answer
+    assert app.answered == [] and app.polled == [_ID, follow_up_id]
+    assert out["prompt_id"] == follow_up_id and out["response_text"] == "pushed"
+
+
+def test_free_text_from_the_app_is_not_shown_to_the_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    leaked = f"connection refused for {_TOKEN}"
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.BAD_GATEWAY, leaked),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["cause_code"] == ""
+    assert leaked not in out["response_text"] and _TOKEN not in out["response_text"]
+    assert "may still be starting" in out["response_text"]
+
+
+def test_an_unknown_cause_is_named_rather_than_dropped(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.BAD_GATEWAY, "GATEWAY_NEW_REASON"),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["cause_code"] == "GATEWAY_NEW_REASON"
+    assert "GATEWAY_NEW_REASON" in out["response_text"]
+    assert "may still be starting" in out["response_text"]
+
+
+def test_a_gateway_that_stops_answering_briefly_is_waited_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One 502 mid-wait used to end the call, and the model never learned the prompt id."""
+    # Arrange
+    app = _App(
+        [
+            PromptRecord(_ID, "running"),
+            HostedGatewayError(ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY),
+            HostedGatewayError(ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY),
+            PromptRecord(_ID, "done", answer="pong"),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="ping", context=context)
+
+    # Assert: the answer arrives, and the user heard once why the wait got longer
+    assert out["state"] == "done" and out["response_text"] == "pong"
+    assert updates == [{"progress": gateway_prompt._UNANSWERED_NOTICE}]
+
+
+def test_a_named_cause_is_what_the_wait_tells_the_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    unavailable = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    app = _App(
+        [
+            PromptRecord(_ID, "running"),
+            unavailable,
+            PromptRecord(_ID, "done", answer="pong"),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="ping", context=context)
+
+    # Assert
+    assert out["response_text"] == "pong"
+    progress = updates[0]["progress"]
+    assert progress.startswith(gateway_prompt._UNANSWERED_NOTICE)
+    assert "still waiting" in progress
+    assert gateway_prompt.cause_sentence(unavailable) in progress
+    assert "could not connect" in progress
+
+
+def test_losing_contact_keeps_the_prompt_id_and_the_cause(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    unavailable = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    app = _App([PromptRecord(_ID, "running"), unavailable, unavailable])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS", 0.0)
+
+    # Act
+    out = ask_hosted_gateway(prompt="fix ci")
+
+    # Assert
+    assert out["prompt_id"] == _ID and out["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert _ID in out["response_text"] and "could not connect" in out["response_text"]
+
+
+def test_a_gateway_silent_past_the_grace_hands_back_the_prompt_id_without_a_stack(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression: four 502 reads each dumped a traceback into the shell between progress lines."""
+    # Arrange
+    unavailable = HostedGatewayError(ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY)
+    app = _App([PromptRecord(_ID, "running"), unavailable, unavailable])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS", 0.0)
+
+    # Act
+    with caplog.at_level(logging.DEBUG, logger="tools"):
+        out = ask_hosted_gateway(prompt="fix ci")
+
+    # Assert
+    assert out["success"] is False and out["error_kind"] == ERR_GATEWAY_UNAVAILABLE
+    assert out["prompt_id"] == _ID and _ID in out["response_text"]
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
+    assert "Traceback" not in caplog.text
+
+
+def test_a_prompt_the_restart_dropped_ends_the_wait_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A restarted gateway holds no earlier prompt; waiting on it longer cannot help."""
+    # Arrange
+    app = _App(
+        [
+            PromptRecord(_ID, "running"),
+            HostedGatewayError(ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY),
+            HostedGatewayError(ERR_UNKNOWN_PROMPT, HTTPStatus.NOT_FOUND),
+            PromptRecord(_ID, "done", answer="never read"),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="fix ci")
+
+    # Assert
+    assert out["error_kind"] == ERR_UNKNOWN_PROMPT and "send it again" in out["response_text"]
+    assert len(app.polled) == 2
+
+
+def test_the_tool_is_external_takes_no_identifier_and_refuses_an_empty_request() -> None:
+    # Arrange
+    clear_tool_registry_cache()
+    tool = get_registered_tool_map()["ask_hosted_gateway"]
+
+    # Act
+    out = ask_hosted_gateway()
+
+    # Assert
+    assert tool.side_effect_level == "external"
+    assert set(tool.input_schema["properties"]) == {
+        "prompt",
+        "facts",
+        "prompt_id",
+        "request_id",
+        "conversation",
+    }
+    assert tool.accepts_runtime_context is True
+    assert out["success"] is False and "Give the hosted gateway a prompt" in out["response_text"]
+
+
+def test_a_failed_integration_on_the_gateway_points_the_user_to_the_integrations_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    app = _App([PromptRecord(_ID, "done", answer="16 open PRs", failed_integrations=("github",))])
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="count open PRs")
+
+    # Assert: the credential instruction comes first, in plain words, then the answer
+    assert out["failed_integrations"] == ["github"]
+    text = out["response_text"]
+    assert text.startswith("The hosted gateway's github integration failed during this request")
+    assert "https://app.test/integrations" in text
+    assert text.index("https://app.test/integrations") < text.index("16 open PRs")
+    # A finished prompt is never re-sent whole: only the failed part may be asked again.
+    assert "ask again only for what the failed integration should have done" in text
+    assert "sent again" not in text
+    # A GitHub failure that does not name HTTP 401 or 403 does not get the token checklist.
+    assert "Check the GitHub token in this order" not in text
+
+
+def test_a_github_401_or_403_includes_the_token_checklist(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: the gateway answer names the credential refusal
+    refused = f"GitHub returned HTTP {HTTPStatus.FORBIDDEN.value} for the repository."
+    app = _App(
+        [
+            PromptRecord(
+                _ID,
+                "done",
+                answer=refused,
+                failed_integrations=("github",),
+            )
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="seed the demo")
+
+    # Assert
+    text = out["response_text"]
+    assert "Check the GitHub token in this order" in text
+    assert text.index("Check the GitHub token") < text.index(refused)
+
+
+def test_a_failed_integration_on_a_waiting_prompt_says_to_continue_it_not_resend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the gateway parked a question after GitHub refused the token
+    choice = PromptChoice(
+        "Unblock CI repair", (PromptQuestion("Unblock CI repair", ("Retry", "Stop")),)
+    )
+    app = _App(
+        [
+            PromptRecord(
+                _ID,
+                "needs_input",
+                question="Unblock CI repair",
+                choice=choice,
+                failed_integrations=("github",),
+            )
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="schedule the loop", context=_tool_context(SessionCore(), ""))
+
+    # Assert: fix the credential, then continue through the menu; never a fresh prompt
+    text = out["response_text"]
+    assert text.startswith("The hosted gateway's github integration failed during this request")
+    assert (
+        "continue this prompt through its menu" in text and "do not send the prompt again" in text
+    )
+    assert "the menu opens now" in text
+
+
+def test_the_client_reads_failed_integrations_from_the_record() -> None:
+    # Arrange
+    payload = {
+        "prompt_id": _ID,
+        "state": "done",
+        "answer": "x",
+        "failed_integrations": ["github", 3, ""],
+    }
+    client = _client(httpx.MockTransport(lambda _r: httpx.Response(200, json=payload)))
+
+    # Act
+    record = client.prompt_result(_ID)
+
+    # Assert: only well-formed names survive
+    assert record.failed_integrations == ("github",)
+
+
+def test_answer_prompt_posts_to_the_answer_route_and_keeps_the_apps_refusal_code() -> None:
+    # Arrange
+    seen: list[httpx.Request] = []
+    follow_up = "p_" + "b" * 32
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if len(seen) == 1:
+            return httpx.Response(202, json={"prompt_id": follow_up, "state": "queued"})
+        return httpx.Response(409, json={"error": "already_answered"})
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.answer_prompt(_ID, "Approve")
+        with pytest.raises(HostedGatewayError) as refused:
+            client.answer_prompt(_ID, "Approve")
+
+    # Assert
+    request = seen[0]
+    assert request.method == "POST"
+    assert request.url.path == f"/api/agent-backend/gateway/prompts/{_ID}/answer"
+    assert json.loads(request.content) == {"answer": "Approve"}
+    assert record == PromptRecord(prompt_id=follow_up, state="queued")
+    assert refused.value.args[0] == ERR_ALREADY_ANSWERED
+
+
+def test_a_needs_input_record_carries_the_structured_choice() -> None:
+    # Arrange
+    def answer(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "prompt_id": _ID,
+                "state": "needs_input",
+                "question": "Approve schedule_ci_repair_loop?",
+                "choice": {
+                    "title": "Approve schedule_ci_repair_loop?",
+                    "questions": [
+                        {
+                            "title": "Approve schedule_ci_repair_loop?",
+                            "options": ["Approve", "Deny"],
+                            "multi_select": False,
+                        }
+                    ],
+                    "custom_answer": False,
+                },
+            },
+        )
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.prompt_result(_ID)
+
+    # Assert
+    assert record.choice == PromptChoice(
+        title="Approve schedule_ci_repair_loop?",
+        questions=(
+            PromptQuestion(title="Approve schedule_ci_repair_loop?", options=("Approve", "Deny")),
+        ),
+        custom_answer=False,
+    )
+
+
+def test_progress_lines_are_relayed_to_the_shell_once_each(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: three polls; the second repeats a line the first already carried
+    first = PromptRecord(
+        _ID, "running", progress=(PromptProgress(0, "Reading runs…", kind="tool"),)
+    )
+    second = PromptRecord(
+        _ID,
+        "running",
+        progress=(
+            PromptProgress(0, "Reading runs…", kind="tool"),
+            PromptProgress(1, "Checking out…", kind="tool"),
+        ),
+    )
+    app = _App([PromptRecord(_ID, "queued"), first, second, PromptRecord(_ID, "done", answer="ok")])
+    _signed_in_with(monkeypatch, app)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="fix ci", context=context)
+
+    # Assert
+    assert out["state"] == "done"
+    assert updates == [
+        {"progress": "Reading runs…", "kind": "tool"},
+        {"progress": "Checking out…", "kind": "tool"},
+    ]
+
+
+def test_rereading_a_prompt_does_not_replay_progress_already_on_the_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A verification read must not reprint lines the shell already showed."""
+    recorded = PromptProgress(0, "Reading runs…", kind="plan")
+    running = PromptRecord(_ID, "running", progress=(recorded,))
+    finished = PromptRecord(
+        _ID,
+        "done",
+        answer="ok",
+        progress=(recorded, PromptProgress(1, "Checking out…", kind="tool")),
+    )
+    app = _App([running, finished])
+
+    def from_account() -> _App:
+        return app
+
+    monkeypatch.setattr(gateway_prompt.HostedGatewayClient, "from_account", from_account)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_PROMPT_POLL_SECONDS", 0.0)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    out = ask_hosted_gateway(prompt_id=_ID, context=context)
+
+    assert out["state"] == "done"
+    assert updates == [{"progress": "Checking out…", "kind": "tool"}]
+
+
+def test_a_queued_prompt_tells_the_user_they_are_waiting_for_a_slot_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user queued behind another conversation saw nothing at all while waiting."""
+    # Arrange: the gateway keeps the prompt queued for three polls, then finishes it
+    app = _App(
+        [
+            PromptRecord(_ID, "queued"),
+            PromptRecord(_ID, "queued"),
+            PromptRecord(_ID, "queued"),
+            PromptRecord(_ID, "running"),
+            PromptRecord(_ID, "done", answer="pong"),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS", 0.0)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="ping", context=context)
+
+    # Assert: one notice while queued, none once running, and the answer arrives
+    assert out["state"] == "done" and out["response_text"] == "pong"
+    assert updates == [{"progress": gateway_prompt._QUEUED_NOTICE}]
+
+
+def test_the_queue_notice_counts_from_when_the_prompt_was_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slow submission must not add its own duration to the ten-second wait for the notice."""
+    # Arrange: the prompt left this machine long ago; the gateway still reports it queued
+    import time
+
+    app = _App([PromptRecord(_ID, "queued"), PromptRecord(_ID, "done", answer="pong")])
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_PROMPT_POLL_SECONDS", 0.0)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS", 10.0)
+    updates: list[Any] = []
+    relay = gateway_prompt._ProgressRelay(
+        AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+    )
+    sent_at = time.monotonic() - 30.0
+
+    # Act
+    record, _waited = gateway_prompt._wait_until_settled(
+        app, PromptRecord(_ID, "queued"), relay, sent_at=sent_at
+    )
+
+    # Assert: the notice appears on the first poll instead of ten seconds later
+    assert record.state == "done"
+    assert updates == [{"progress": gateway_prompt._QUEUED_NOTICE}]
+
+
+def test_a_slow_fetch_before_a_follow_up_answer_is_not_counted_as_queue_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Continuing a prompt reads it first; that read must not make the queue notice fire early."""
+    # Arrange: reading the parked prompt is slow, the answer is then queued briefly and finishes
+    import time
+
+    choice = PromptChoice("Pick", (PromptQuestion("Pick", ("Red", "Blue")),))
+
+    class _SlowRead(_App):
+        def prompt_result(self, prompt_id: str) -> PromptRecord:
+            record = super().prompt_result(prompt_id)
+            if record.state == "needs_input":
+                time.sleep(0.3)
+            return record
+
+    app = _SlowRead(
+        [
+            PromptRecord(_ID, "needs_input", question="Pick", choice=choice),
+            PromptRecord(_ID + "b", "queued", parent_prompt_id=_ID),
+            PromptRecord(_ID + "b", "done", answer="Blue"),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS", 0.2)
+    updates: list[Any] = []
+    session = SessionCore()
+    answered = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Pick", options=("Red", "Blue")),), ("Blue",)
+    )
+    scope = ActionToolScope(session=session, console=None, turn_user_message=answered)
+    context = AgentToolContext(
+        resolved_integrations={},
+        resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope},
+        _emit_update=updates.append,
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt_id=_ID, context=context)
+
+    # Assert: the answer went through and no queue notice appeared for the read's duration
+    assert out["state"] == "done" and out["response_text"] == "Blue"
+    assert updates == []
+
+
+def test_a_record_carries_its_progress_lines() -> None:
+    # Arrange
+    def answer(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "prompt_id": _ID,
+                "state": "running",
+                "progress": [
+                    {"index": 3, "text": "Reading runs…", "kind": "plan"},
+                    {"index": "x", "text": "bad"},
+                    {"index": 4, "text": "still waiting"},
+                ],
+            },
+        )
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.prompt_result(_ID)
+
+    # Assert: well-formed lines are kept in order, malformed ones dropped
+    assert record.progress == (
+        PromptProgress(3, "Reading runs…", kind="plan"),
+        PromptProgress(4, "still waiting"),
+    )
+
+
+def test_a_busy_gateway_is_explained_in_plain_words(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    app = _App([PromptRecord(_ID, "failed", error="not_admitted")])
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="which tasks run?")
+
+    # Assert
+    assert out["response_text"].startswith("The hosted gateway was busy with another conversation")
+    assert "not_admitted" not in out["response_text"]
+
+
+@pytest.mark.parametrize(
+    ("error", "lead"),
+    [
+        ("invalid_answer", "That answer did not match the question's options"),
+        ("interrupted", "The hosted gateway restarted before it used that answer"),
+    ],
+)
+def test_a_rejected_answer_reopens_the_original_question_in_the_shell(
+    monkeypatch: pytest.MonkeyPatch, error: str, lead: str
+) -> None:
+    # Arrange: the parent asks; the gateway cannot use the answer (it fits no option, or the
+    # task was replaced mid-turn) and reopens the parent
+    question = PromptQuestion("Which branch?", ("main", "release"))
+    asked = PromptRecord(
+        _ID,
+        "needs_input",
+        question="Which branch?",
+        choice=PromptChoice("Which branch?", (question,)),
+    )
+    rejected = PromptRecord("p_" + "d" * 32, "failed", error=error)
+    app = _App([asked, rejected, asked])
+    _signed_in_with(monkeypatch, app)
+    turn = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Which branch?", options=("main", "release")),),
+        ("develop",),
+    )
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt_id=_ID, context=_tool_context(session, turn))
+
+    # Assert: the menu is parked again on the original prompt, with a one-line reason first
+    assert app.answered == [(_ID, "develop")] and app.polled == [_ID, _ID]
+    assert out["state"] == "needs_input" and out["prompt_id"] == _ID
+    assert out["response_text"].startswith(lead)
+    parked = session.pending_user_choice
+    assert parked is not None and parked.options == ("main", "release")
+
+
+def test_a_rejected_follow_up_read_by_its_own_id_still_reopens_the_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the caller polls the follow-up's id later; the record names its parent
+    follow_up_id = "p_" + "e" * 32
+    question = PromptQuestion("Which branch?", ("main", "release"))
+    parent = PromptRecord(
+        _ID,
+        "needs_input",
+        question="Which branch?",
+        choice=PromptChoice("Which branch?", (question,)),
+    )
+    rejected = PromptRecord(follow_up_id, "failed", error="invalid_answer", parent_prompt_id=_ID)
+    app = _App([rejected, parent])
+    _signed_in_with(monkeypatch, app)
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt_id=follow_up_id, context=_tool_context(session, ""))
+
+    # Assert: the parent, not the follow-up, is re-read and its menu parked again
+    assert app.polled == [follow_up_id, _ID] and app.answered == []
+    assert out["state"] == "needs_input" and out["prompt_id"] == _ID
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.options == ("main", "release")
+
+
+def test_the_client_reads_the_parent_prompt_id_of_a_follow_up() -> None:
+    # Arrange
+    def answer(_request: httpx.Request) -> httpx.Response:
+        body = {
+            "prompt_id": "p_" + "e" * 32,
+            "state": "failed",
+            "error": "invalid_answer",
+            "parent_prompt_id": _ID,
+        }
+        return httpx.Response(200, json=body)
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.prompt_result("p_" + "e" * 32)
+
+    # Assert
+    assert record.parent_prompt_id == _ID and record.error == "invalid_answer"
+
+
+def test_the_tool_starts_a_separate_conversation_and_refuses_a_malformed_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    conversation_id = "0b6f2c1e-8d4a-4c55-9a77-2f1c3e5d7a90"
+    app = _App([PromptRecord(_ID, "done", answer="ok", conversation_id=conversation_id)])
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="audit the deploy", conversation="new")
+    refused = ask_hosted_gateway(prompt="audit the deploy", conversation="../other")
+
+    # Assert: the id comes back for continuing; a malformed one never reaches the app
+    assert app.sent_conversations == ["new"]
+    assert out["conversation_id"] == conversation_id
+    assert refused["success"] is False and "conversation must be" in refused["response_text"]
+
+
+def test_cancelling_a_running_prompt_says_it_stops_and_a_finished_one_says_why_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    class _CancellingApp(_App):
+        def cancel_prompt(self, prompt_id: str) -> PromptRecord:
+            self.polled.append(prompt_id)
+            return self._next()
+
+    app = _CancellingApp(
+        [
+            PromptRecord(_ID, "running", cancel_requested=True),
+            HostedGatewayError(ERR_ALREADY_SETTLED, 409),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    stopping = cancel_hosted_gateway_prompt(prompt_id=_ID)
+    finished = cancel_hosted_gateway_prompt(prompt_id=_ID)
+
+    # Assert
+    assert stopping["success"] is True and "stops at its next step" in stopping["response_text"]
+    assert finished["success"] is False and "already finished" in finished["response_text"]

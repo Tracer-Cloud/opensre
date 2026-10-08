@@ -74,6 +74,9 @@ def resolve_provider_name(client: object) -> str | None:
     pattern-matching the client's class name for known substrings
     (``openai``, ``bedrock``, ``cli``, ``anthropic``/``llmclient``).
     Returns ``None`` if no match is found (no exceptions raised).
+
+    The result is an analytics label (``custom_openai``), not a provider id a
+    command accepts; use :func:`resolve_provider_id` to name the provider to a user.
     """
     provider_label = getattr(client, "_provider_label", None)
     if isinstance(provider_label, str) and provider_label:
@@ -88,6 +91,21 @@ def resolve_provider_name(client: object) -> str | None:
     if "anthropic" in name or "llmclient" in name:
         return "anthropic"
     return None
+
+
+def resolve_provider_id(client: object) -> str | None:
+    """Provider id (``custom-openai``) whose OpenSRE-managed API key ``client`` sends.
+
+    Read from the client's API-key env through the provider catalog, so the id is
+    one ``opensre auth login`` accepts. ``None`` when the client carries no such
+    env (Anthropic SDK, Bedrock and CLI-backed clients).
+    """
+    from config.llm_auth.provider_catalog import provider_for_api_key_env
+
+    api_key_env = getattr(client, "_api_key_env", None)
+    if not isinstance(api_key_env, str) or not api_key_env:
+        return None
+    return provider_for_api_key_env(api_key_env)
 
 
 def record_llm_turn(
@@ -221,23 +239,23 @@ def build_llm_run_info(
     since no explicit counts are accepted here).
 
     ``latency_ms`` is computed from ``started`` (a ``time.monotonic()``
-    timestamp) if given, else defaults to ``0``.
+    timestamp) if given, else stays unknown. Estimated tokens update only the
+    session counters; the returned provider usage fields stay unknown.
 
     ``model``/``provider`` are used as-is if given; otherwise, if
     ``client`` is provided, they're resolved via ``resolve_model_name``/
     ``resolve_provider_name``; otherwise they're left as ``None``.
 
-    Returns a fully populated ``LlmRunInfo``, including the given
+    Returns an ``LlmRunInfo``, including the given
     ``response_text`` and ``final_system_prompt`` verbatim.
     """
-    inp, out, _estimated = record_llm_turn(session, prompt=prompt, response=response_text)
-    latency_ms = 0 if started is None else int((time.monotonic() - started) * 1000)
+    # Session estimates remain available for the UI but are not provider usage.
+    record_llm_turn(session, prompt=prompt, response=response_text)
+    latency_ms = None if started is None else int((time.monotonic() - started) * 1000)
     return LlmRunInfo(
         model=model or (resolve_model_name(client) if client is not None else None),
         provider=provider or (resolve_provider_name(client) if client is not None else None),
         latency_ms=latency_ms,
-        input_tokens=inp,
-        output_tokens=out,
         response_text=response_text,
         final_system_prompt=final_system_prompt,
     )
@@ -285,5 +303,6 @@ __all__ = [
     "record_invoke_response",
     "record_llm_turn",
     "resolve_model_name",
+    "resolve_provider_id",
     "resolve_provider_name",
 ]

@@ -5,7 +5,9 @@ One entry point serves every way into a skill. The model enters through the
 with no model step and no tool-event render. A skill's entry menu is catalog
 data (``ActionSkill.entry_menu``, built by the loader), never frontmatter; it
 opens here through the real ``ask_user_choice`` executor, so a host-opened menu
-behaves exactly as if the model had called the tool.
+behaves exactly as if the model had called the tool. Before any of that, a
+skill that is not yet active passes its host-owned prerequisite gate
+(``skill_prerequisite_gate``).
 """
 
 from __future__ import annotations
@@ -13,20 +15,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from core.agent_harness import normalize_skill_name
-from core.agent_harness.spi.grounding import (
-    ActionSkill,
-    SkillEntryMenu,
-    list_action_skills,
-    load_skill_body,
-)
+from config.constants.ask_user import AskUserReason
+from core.agent_harness.spi.grounding import ActionSkill, SkillEntryMenu
 from core.agent_harness.spi.handoff import question_key
+from core.agent_harness.spi.skill_releases import SkillCatalogSnapshot, active_skill_catalog
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_skill_executed
 from tools.interactive_shell.actions.ask_choice import (
     ask_user_choice_tool,
     execute_ask_user_choice_tool,
 )
+from tools.interactive_shell.actions.skill_prerequisite_gate import gate_skill_entry
 
 _ENTRY_MENU_TOOL = "ask_user_choice"
 
@@ -45,9 +44,15 @@ _MENU_SUPPRESSED_INSTRUCTION = (
 )
 
 
-def _skill_by_name(name: str) -> ActionSkill | None:
-    slug = normalize_skill_name(name)
-    return next((skill for skill in list_action_skills() if skill.name == slug), None)
+def _capture_entry(catalog: SkillCatalogSnapshot, skill: ActionSkill, *, from_model: bool) -> None:
+    capture_skill_executed(
+        skill_name=skill.name,
+        entrypoint="model" if from_model else "host",
+        skills_release=catalog.release,
+        skills_source=str(catalog.source),
+        skill_version=skill.version,
+        skill_digest=catalog.digest(skill.name)[:12],
+    )
 
 
 def _open_entry_menu(menu: SkillEntryMenu, ctx: ActionToolScope) -> dict[str, Any]:
@@ -56,7 +61,7 @@ def _open_entry_menu(menu: SkillEntryMenu, ctx: ActionToolScope) -> dict[str, An
     validation_error = ask_user_choice_tool.validate_public_input(args)
     if validation_error is not None:
         return {"ok": False, "tool": _ENTRY_MENU_TOOL, "error": validation_error}
-    outcome = execute_ask_user_choice_tool(args, ctx)
+    outcome = execute_ask_user_choice_tool(args, ctx, reason_code=AskUserReason.ENTRY_MENU)
     payload: dict[str, Any] = dict(outcome) if isinstance(outcome, dict) else {"ok": bool(outcome)}
     payload.setdefault("ok", True)
     payload["tool"] = _ENTRY_MENU_TOOL
@@ -100,12 +105,24 @@ def _may_open_menu(session: Any, skill: ActionSkill, *, from_model: bool) -> boo
     return skill.name not in (getattr(session, "skills_already_prompted", None) or set())
 
 
-def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, Any]:
-    """Activate ``name`` on the session, open its entry menu, and return the body for the model."""
-    skill = _skill_by_name(name)
-    body = load_skill_body(name) if skill is not None else ""
+def enter_skill(
+    name: str,
+    ctx: Any,
+    *,
+    from_model: bool = False,
+    resolved_integrations: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Activate ``name`` on the session, open its entry menu, and return the body for the model.
+
+    ``resolved_integrations`` is the turn's integration view the prerequisite
+    gate checks; a host entry passes none and the gate resolves the session's.
+    """
+    # One catalog read: the card, its body and its provenance always agree.
+    catalog = active_skill_catalog().current()
+    skill = catalog.find(name)
+    body = catalog.body(name) if skill is not None else ""
     if skill is None or not body:
-        available = [item.name for item in list_action_skills()]
+        available = [item.name for item in catalog.skills]
         return {
             "ok": False,
             "name": name,
@@ -116,6 +133,12 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
     already_active = (
         from_model and session is not None and getattr(session, "active_skill", None) == skill.name
     )
+    if not already_active:
+        # A held skill is neither activated nor counted as executed, so the
+        # message resubmitted after setup enters it exactly as this one would.
+        blocked = gate_skill_entry(skill.name, ctx, resolved_integrations=resolved_integrations)
+        if blocked is not None:
+            return blocked
     # Re-entry retains the active skill and does not reopen an answered menu.
     if session is not None and not already_active:
         session.active_skill = skill.name
@@ -145,10 +168,7 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
     elif hook is not None and hook.get("menu") == "suppressed":
         content = "".join((body, "\n\n", _MENU_SUPPRESSED_INSTRUCTION))
     if not already_active:
-        capture_skill_executed(
-            skill_name=skill.name,
-            entrypoint="model" if from_model else "host",
-        )
+        _capture_entry(catalog, skill, from_model=from_model)
     # ``summary`` is what the user sees; ``content`` is for the model only.
     # Without it the generic formatter prints the whole skill body on screen.
     result = {

@@ -174,8 +174,8 @@ def _format_openai_connection_error(err: Exception, provider_label: str) -> str:
 
 
 def _uses_max_completion_tokens(model: str) -> bool:
-    """Reasoning models (o1, o3, o4, gpt-5 series) require max_completion_tokens."""
-    return model.startswith(("o1", "o3", "o4", "gpt-5"))
+    """Reasoning models (o1, o3, o4, gpt-5/gpt-6 series) require max_completion_tokens."""
+    return model.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6"))
 
 
 def _resolve_openai_reasoning_effort(*, model: str, api_key_env: str) -> str | None:
@@ -745,6 +745,9 @@ class OpenAILLMClient:
 
     def invoke_structured(self, model: type[BaseModel], prompt: str) -> BaseModel:
         """Constrained JSON via OpenAI ``chat.completions.parse`` (strict schema)."""
+        from core.llm.hosted_credits import admit_hosted_credits
+
+        admit_hosted_credits()
         kwargs = self._build_request_kwargs(prompt)
         client = self._ensure_client()
         parse_kwargs: dict[str, Any] = {
@@ -839,8 +842,10 @@ class OpenAILLMClient:
         return kwargs
 
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        from core.llm.hosted_credits import admit_hosted_credits
         from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
+        admit_hosted_credits()
         # Build kwargs first (also calls _ensure_client internally) so the
         # captured client below reflects the latest key — guards against a
         # rotation between the two _ensure_client invocations.
@@ -936,8 +941,10 @@ class OpenAILLMClient:
         retrying would duplicate visible output, so post-emission failures
         propagate. Auth and guardrail errors never retry.
         """
+        from core.llm.hosted_credits import admit_hosted_credits
         from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
+        admit_hosted_credits()
         # Build kwargs first (also calls _ensure_client internally) so the
         # captured client below reflects the latest key — same rotation
         # guard as ``invoke``.

@@ -7,14 +7,14 @@ description: >-
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-14
+  last_changed_at: 2026-10-02
   usecases:
   - For new users selecting an available onboarding workflow at startup or through /demo.
   - For users exploring OpenSRE capabilities before choosing a specific workflow.
   requires:
   - An interactive terminal for the entry picker, or a conversational surface for its text fallback.
   - At least one available onboarding child skill.
-  version: '3.0'
+  version: '3.1'
 ---
 
 # CI/CD onboarding
@@ -44,7 +44,7 @@ shell handles Skip and Escape without sending an answer to the model.
 
 ## Follow the selected child
 
-The next message carries the question and the user's answer. Call `skill_view`
+The next message carries the question and the user's answer. A local or cloud repair can also carry a second answer to `Create a private demo repository?`. That answer is the target decision. Do not ask it again and do not reopen this menu. Call `skill_view`
 with the matching name, then follow its returned instructions in the same turn:
 
 Use the generated Current demo choices below to match the answer to its skill.
@@ -57,3 +57,5 @@ to this master menu. Escape cancels onboarding; wait for a fresh user request.
 
 An explicit `/demo` starts the selected workflow with the new request. Let its
 tool resolve an existing active run; completed results do not count as a new run.
+
+When the picker is unavailable, the text fallback must offer the two outcomes first, then the three automation choices, instead of a flat list of four demos. Bump last_changed_by, last_changed_at, and version on each card in that same edit

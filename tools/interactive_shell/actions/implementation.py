@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from core.agent_harness.tools import (
@@ -24,11 +25,19 @@ _STARTED_NOTE = (
 )
 
 
+def _turn_cancelled(ctx: ActionToolScope) -> Callable[[], bool]:
+    """The running turn's cancel flag, so a wait for a heavy-work slot ends with the turn."""
+    console = ctx.console
+    return lambda: bool(getattr(console, "cancel_requested", False))
+
+
 def execute_implementation_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
     task = str(args.get("task", "")).strip()
     if not task:
         return {"ok": False, "error": "No implementation task was given."}
-    launch = run_claude_code_implementation(task, require_subprocess_presenter(ctx))
+    launch = run_claude_code_implementation(
+        task, require_subprocess_presenter(ctx), stop=_turn_cancelled(ctx)
+    )
     if not launch.started:
         return {"ok": False, "error": launch.detail}
     return {"ok": True, "task_id": launch.task_id, "status": "started", "note": _STARTED_NOTE}

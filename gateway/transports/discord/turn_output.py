@@ -18,8 +18,8 @@ from gateway.transports.discord.feedback import feedback_components
 from infrastructure.text.markdown import tighten_markdown_emphasis
 from infrastructure.turn_host.status_messages import (
     EMPTY_RESPONSE_MESSAGE,
+    chat_status_headline,
     initial_status_message,
-    normalize_gateway_status,
     status_from_response_label,
     user_facing_error_message,
 )
@@ -142,8 +142,8 @@ class DiscordTurnOutput:
             )
 
     def _set_status(self, status: str) -> None:
-        status = normalize_gateway_status(status)
-        self._edit_preview(f"*{status}*")
+        # Discord italics stay on the label row. The argument row stays on the shell.
+        self._edit_preview(f"*{chat_status_headline(status)}*")
 
     def _edit_preview(self, preview: str) -> None:
         with self._lock:

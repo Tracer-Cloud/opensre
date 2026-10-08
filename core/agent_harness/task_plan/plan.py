@@ -8,7 +8,7 @@ survives transcript compaction.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any
 
@@ -106,6 +106,12 @@ class TaskPlan:
 
     steps: tuple[PlanStep, ...]
     explanation: str = ""
+    owner: str | None = None
+    """Skill active when the plan was last written; ``None`` for a skill-less plan.
+
+    Host-recorded, never model-written: an Ask User answer continues the plan
+    (and lets the host advance it) only for a question this skill asked.
+    """
 
     @property
     def total(self) -> int:
@@ -204,7 +210,11 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
     )
     raw_plan = args.get("plan")
     if not isinstance(raw_plan, list) or len(raw_plan) < 2:
-        return None, "plan must list at least two steps"
+        return None, (
+            "plan must list at least two steps: list the work already done this "
+            "turn as completed and each remaining step after it. Only work that "
+            "fits in one tool call, with nothing run yet, needs no plan."
+        )
     steps: list[PlanStep] = []
     in_progress = 0
     for item in raw_plan:
@@ -257,6 +267,8 @@ def task_plan_to_payload(plan: TaskPlan) -> dict[str, Any]:
     }
     if plan.explanation:
         payload["explanation"] = plan.explanation
+    if plan.owner:
+        payload["owner"] = plan.owner
     return payload
 
 
@@ -267,9 +279,10 @@ def task_plan_from_payload(payload: Any) -> TaskPlan | None:
     plan, error = parse_task_plan(
         {"plan": payload.get("plan"), "explanation": payload.get("explanation", "")}
     )
-    if error is not None:
+    if error is not None or plan is None:
         return None
-    return plan
+    owner = payload.get("owner")
+    return replace(plan, owner=owner) if isinstance(owner, str) and owner else plan
 
 
 __all__ = [

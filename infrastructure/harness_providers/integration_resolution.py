@@ -27,6 +27,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from config.constants.paths import integrations_store_stamp
 from config.strict_config import StrictConfigModel
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,9 @@ MergeIntegrationsByServiceFn = Callable[
 ]
 ConfiguredIntegrationServicesFn = Callable[[], tuple[str, ...]]
 SetupableIntegrationServicesFn = Callable[[], tuple[str, ...]]
+AccountIntegrationsFetcherFn = Callable[[], list[dict[str, Any]]]
+AccountIntegrationsGenerationFn = Callable[[], int]
+FleetVaultConfiguredFn = Callable[[], bool]
 
 
 def _default_fetch_remote(org_id: str, auth_token: str) -> list[dict[str, Any]]:
@@ -95,14 +99,35 @@ def _default_fetch_webapp_vault() -> list[dict[str, Any]] | None:
     return None
 
 
+def _default_fetch_account_integrations() -> list[dict[str, Any]]:
+    return []
+
+
+def _default_fleet_vault_configured() -> bool:
+    return False
+
+
+def _default_account_integrations_generation() -> int:
+    return 0
+
+
 def _default_integration_setup_command(service_id: str) -> str:
     return f"integrations setup {service_id}"
+
+
+def _default_select_connection(
+    resolved: dict[str, Any], _connection_id: str | None
+) -> dict[str, Any]:
+    return resolved
 
 
 @dataclass(frozen=True)
 class IntegrationResolutionAdapters:
     """The load/merge/classify adapters, installed once by ``integrations``."""
 
+    select_github_connection: Callable[[dict[str, Any], str | None], dict[str, Any]] = (
+        _default_select_connection
+    )
     load_integrations: LoadIntegrationsFn = _default_load_integrations
     integration_store_path: IntegrationStorePathFn = _default_store_path
     load_env_integrations: LoadEnvIntegrationsFn = _default_load_env_integrations
@@ -112,6 +137,11 @@ class IntegrationResolutionAdapters:
     configured_services: ConfiguredIntegrationServicesFn = _default_configured_services
     setupable_services: SetupableIntegrationServicesFn = _default_setupable_services
     fetch_webapp_vault: WebappVaultFetcherFn = _default_fetch_webapp_vault
+    fleet_vault_configured: FleetVaultConfiguredFn = _default_fleet_vault_configured
+    fetch_account_integrations: AccountIntegrationsFetcherFn = _default_fetch_account_integrations
+    account_integrations_generation: AccountIntegrationsGenerationFn = (
+        _default_account_integrations_generation
+    )
 
     def install(self) -> None:
         """Bind these as the process-wide resolution adapters."""
@@ -163,6 +193,16 @@ def configured_integration_services() -> tuple[str, ...]:
     return _adapters().configured_services()
 
 
+def integration_sources_stamp() -> tuple[int, int]:
+    """A value that changes when any integration source behind a session changes.
+
+    Combines the local store file's stamp with the signed-in account's
+    remote-set generation, so a credential saved either locally or in the web
+    app invalidates a session's resolved cache on its next turn.
+    """
+    return (integrations_store_stamp(), _adapters().account_integrations_generation())
+
+
 def setupable_integration_services() -> tuple[str, ...]:
     """Service ids that have a real setup handler (never invent outside this set)."""
     return _adapters().setupable_services()
@@ -184,6 +224,7 @@ class IntegrationResolutionRequest(BaseModel):
     resolved_integrations: dict[str, Any] | None = None
     auth_token: str = Field(default="", alias="_auth_token")
     org_id: str = ""
+    github_connection_id: str | None = None
 
     @field_validator("auth_token", "org_id", mode="before")
     @classmethod
@@ -208,10 +249,30 @@ def resolve_integrations(state: Mapping[str, Any] | None = None) -> dict[str, An
     return resolve_integrations_with_metadata(state).resolved_integrations
 
 
+def select_github_connection(resolved: dict[str, Any], connection_id: str | None) -> dict[str, Any]:
+    """Apply the connection choice to an already resolved integration snapshot."""
+    return _adapters().select_github_connection(resolved, connection_id)
+
+
 def resolve_integrations_with_metadata(
     state: Mapping[str, Any] | None = None,
 ) -> IntegrationResolutionResult:
+    from infrastructure.harness_providers.integration_selection import current_github_connection_id
+
     request = IntegrationResolutionRequest.model_validate(state or {})
+    result = _resolve_integrations_request(request)
+    connection_id = (
+        request.github_connection_id
+        if state and "github_connection_id" in state
+        else current_github_connection_id()
+    )
+    selected = select_github_connection(result.resolved_integrations, connection_id)
+    return result.model_copy(update={"resolved_integrations": selected})
+
+
+def _resolve_integrations_request(
+    request: IntegrationResolutionRequest,
+) -> IntegrationResolutionResult:
     existing = request.resolved_integrations
     if existing:
         return IntegrationResolutionResult(resolved_integrations=dict(existing))
@@ -257,17 +318,25 @@ def resolve_integrations_with_metadata(
 
 
 def _resolve_from_webapp_vault_or_local() -> IntegrationResolutionResult:
-    """Silo path: pull org vault from opensre-webapp, else local store/env.
+    """Silo path: pull org vault from opensre-webapp, else account/local sources.
 
     Merge order is vault → store → env so ops can still override a vault
     secret with ``GITHUB_MCP_AUTH_TOKEN`` (etc.) on the task definition.
+    On a signed-in laptop (no fleet vault) the account's organization
+    integrations fill the remote role instead, and there they win over the
+    local store and env.
     """
     adapters = _adapters()
     remote = adapters.fetch_webapp_vault()
-    if remote is None:
-        return _resolve_from_local_sources()
     if not remote:
-        # Explicit empty vault — still allow local/env overlays (e.g. Slack SSM).
+        # A configured fleet vault that failed, or an org with nothing exported,
+        # stays on this silo. The signed-in account is only for a laptop that
+        # has no fleet vault; that account can belong to a different organization.
+        if adapters.fleet_vault_configured():
+            return _resolve_from_local_sources()
+        account_records = adapters.fetch_account_integrations()
+        if account_records:
+            return _resolve_remote_with_local_fallback(account_records)
         return _resolve_from_local_sources()
 
     store_integrations = adapters.load_integrations()
@@ -383,6 +452,8 @@ def reset() -> None:
 
 
 __all__ = [
+    "AccountIntegrationsFetcherFn",
+    "AccountIntegrationsGenerationFn",
     "ClassifyIntegrationsFn",
     "ConfiguredIntegrationServicesFn",
     "IntegrationResolutionAdapters",
@@ -401,7 +472,9 @@ __all__ = [
     "configured_integration_services",
     "fetch_remote_integrations",
     "integration_setup_command",
+    "integration_sources_stamp",
     "resolve_integrations",
     "resolve_integrations_with_metadata",
+    "select_github_connection",
     "setupable_integration_services",
 ]

@@ -55,7 +55,9 @@ class SlackReadMessagesTool(BaseTool):
         "#channel-name; optional thread_ts for a thread. Returns message text + user "
         'ids — NOT a workspace member roster. For "who is on the team?" / roster / '
         "member IDs use slack_list_team_members instead (do not invent a roster from "
-        "channel chat, even when [Slack channel_id=…] is in the user message)."
+        "channel chat, even when [Slack channel_id=…] is in the user message). When the "
+        "user message carries a [Slack channel_id=… thread_ts=…] line, read that channel "
+        '(and thread_ts) for "this channel", "here", or "this thread".'
     )
     use_cases = [
         "Reading recent discussion in an incident channel for context",

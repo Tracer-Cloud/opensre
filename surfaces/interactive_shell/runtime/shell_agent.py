@@ -24,7 +24,7 @@ from core.agent_harness.runtime import (
     HeadlessAgent,
     resolve_agent_ports,
 )
-from surfaces.interactive_shell.grounding.cli_reference import shell_prompt_context_provider
+from core.agent_harness.spi.defaults import DefaultPromptContextProvider
 from surfaces.interactive_shell.runtime.agent_harness_adapters import (
     ShellErrorReporter,
     resolve_output_sink,
@@ -62,11 +62,16 @@ def _observer_factory(session: Session, console: Console) -> Callable[[str], Any
     return observer_factory
 
 
+def _shell_prompts(session: SessionState) -> DefaultPromptContextProvider:
+    """The shell's turns run on the interactive-shell prompt surface."""
+    return DefaultPromptContextProvider(session, surface="interactive_shell")
+
+
 def shell_agent_build_config(
     *,
     request_exit: Callable[[], None] | None = None,
 ) -> AgentBuildConfig:
-    """REPL wiring: shell tools and CLI grounding; no withholds."""
+    """REPL wiring: shell tools on the interactive-shell prompt surface; no withholds."""
 
     def build_tools(
         session: SessionState,
@@ -81,7 +86,7 @@ def shell_agent_build_config(
 
     return AgentBuildConfig(
         build_tools=build_tools,
-        build_prompts=shell_prompt_context_provider,
+        build_prompts=_shell_prompts,
         error_reporter=ShellErrorReporter(),
     )
 

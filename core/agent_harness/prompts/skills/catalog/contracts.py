@@ -39,6 +39,8 @@ class ActionSkill:
     entry_menu: SkillEntryMenu | None = None
     includes: tuple[str, ...] = ()
     script_tools: tuple[SkillScriptTool, ...] = ()
+    #: The card's ``metadata.version`` (``MAJOR.MINOR``), for provenance and schedule pins.
+    version: str = ""
 
 
 @dataclass(frozen=True)

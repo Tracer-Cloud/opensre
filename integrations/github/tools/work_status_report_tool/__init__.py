@@ -8,23 +8,13 @@ from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
-from integrations.github.client import resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
-    github_source_available,
+    github_repository_source_available,
 )
 from integrations.github.tools.work_status import list_github_work_items, summarize_github_pr_status
 from integrations.github.tools.workflow import build_work_status_report
-
-
-def _report_available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        (github_source_available(sources) or resolve_github_token(None))
-        and gh.get("owner")
-        and gh.get("repo")
-    )
 
 
 def _report_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -70,7 +60,7 @@ def _map_generate_work_status_report(
         },
         "required": [],
     },
-    is_available=_report_available,
+    is_available=github_repository_source_available,
     extract_params=_report_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_generate_work_status_report,

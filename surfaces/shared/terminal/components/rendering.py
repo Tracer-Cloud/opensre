@@ -15,10 +15,13 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any, Literal, cast
 
-from rich.console import Console
+from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
+from rich.json import JSON
 from rich.segment import Segment
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
+from rich.theme import Theme
 
 from infrastructure.terminal.markdown import REPLY_TABLE_BOX
 
@@ -92,14 +95,89 @@ def _feed_record_buffer(console: Console, plain_text: str) -> None:
         owner._record_buffer.append(Segment(plain_text))
 
 
+class _TranscriptRenderable:
+    """A printed renderable replayed at any width as it was printed.
+
+    Keeps the console's theme, the print ``style`` and the right margin the
+    print left (``console.width - width``), so a later layout matches.
+    """
+
+    def __init__(
+        self,
+        renderable: RenderableType,
+        *,
+        theme: Theme,
+        style: Style | None,
+        margin: int,
+        leading_blank: bool,
+    ) -> None:
+        self._renderable = renderable
+        self._theme = theme
+        self._style = style
+        self._margin = margin
+        self._leading_blank = leading_blank
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        width = max(1, options.max_width - self._margin)
+        console.push_theme(self._theme, inherit=False)
+        try:
+            lines = console.render_lines(
+                self._renderable, options.update_width(width), style=self._style, pad=False
+            )
+        finally:
+            console.pop_theme()
+        if self._leading_blank:
+            yield Segment.line()
+        for line in lines:
+            yield from line
+            yield Segment.line()
+
+
+def record_in_transcript(
+    console: Console,
+    renderable: RenderableType,
+    *,
+    style: str | Style | None = None,
+    width: int | None = None,
+    leading_blank: bool = False,
+) -> bool:
+    """Hand ``renderable`` to a transcript-recording stdout instead of printing it.
+
+    The full-screen shell's stdout lays it out again at every width. Returns
+    False (print as usual) for any other stdout, another file, or a capture.
+    """
+    if console.file is not sys.stdout or _console_is_capturing(console):
+        return False
+    write_renderable = getattr(sys.stdout, "write_renderable", None)
+    if not callable(write_renderable):
+        return False
+    replay = _TranscriptRenderable(
+        renderable,
+        theme=Theme(dict(console._theme_stack._entries[-1]), inherit=False),
+        style=console.get_style(style) if style else None,
+        margin=0 if width is None else max(0, console.width - width),
+        leading_blank=leading_blank,
+    )
+    if not write_renderable(replay):
+        return False
+    if console.record:
+        plain = io.StringIO()
+        Console(file=plain, width=console.width, height=25, color_system=None).print(replay)
+        _feed_record_buffer(console, plain.getvalue())
+    return True
+
+
 def _write_repl_tty_buffered(
     *,
     console: Console,
     width: int,
     leading_blank: bool,
+    renderable: RenderableType,
     render_to_buffer: Callable[[Console], None],
 ) -> None:
     """Render Rich output to a buffer and write it in one TTY-safe stdout call."""
+    if record_in_transcript(console, renderable, width=width, leading_blank=leading_blank):
+        return
     buf = io.StringIO()
     # Inherit the caller's color depth and NO_COLOR decision so theme colours
     # are not down-converted or stripped on a truecolor terminal (Rich would
@@ -158,6 +236,7 @@ def print_repl_table(console: Console, table: Table, *, width: int | None = None
             console=console,
             width=width,
             leading_blank=leading_blank,
+            renderable=table,
             render_to_buffer=lambda buf_console: buf_console.print(table),
         )
     else:
@@ -183,6 +262,7 @@ def print_repl_json(console: Console, json_str: str) -> None:
             console=console,
             width=width,
             leading_blank=True,
+            renderable=JSON(json_str),
             render_to_buffer=lambda buf_console: buf_console.print_json(json_str),
         )
     else:
@@ -210,6 +290,7 @@ def print_repl_text(console: Console, text: str, *, markup: bool = False) -> Non
             console=console,
             width=width,
             leading_blank=False,
+            renderable=Text.from_markup(text) if markup else Text(text),
             render_to_buffer=lambda buf_console: buf_console.print(text, markup=markup),
         )
         return
@@ -228,6 +309,7 @@ def print_repl_renderable(console: Console, renderable: Any) -> None:
             console=console,
             width=width,
             leading_blank=False,
+            renderable=renderable,
             render_to_buffer=lambda buf_console: buf_console.print(renderable),
         )
         return
@@ -306,6 +388,7 @@ __all__ = [
     "print_repl_renderable",
     "print_repl_table",
     "print_repl_text",
+    "record_in_transcript",
     "repl_clear_screen",
     "repl_output_width",
     "repl_print",

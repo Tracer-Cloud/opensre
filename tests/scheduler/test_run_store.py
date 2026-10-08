@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-import infrastructure.scheduling.scheduler.storage.run_store as run_store
 from infrastructure.scheduling.scheduler.storage import database, migrations
 from infrastructure.scheduling.scheduler.storage.run_store import (
+    _RECOVERABLE_RUNS_QUERY,
     ExecutionClaim,
     RecoverableRun,
     complete_run,
@@ -24,6 +24,7 @@ from infrastructure.scheduling.scheduler.storage.run_store import (
     get_latest_targeted_run,
     get_recoverable_runs,
     get_runs,
+    has_live_claim,
     renew_claims,
     try_claim,
     try_queue_run,
@@ -233,6 +234,19 @@ class TestClaimStore:
         assert second.owner_token != first.owner_token
         assert get_runs("task1", db_path=db_path)[0].status is TaskStatus.RUNNING
         assert get_runs("task1", db_path=db_path)[1].status is TaskStatus.ABANDONED
+
+    def test_a_dead_claimant_blocks_its_task_for_minutes_not_half_an_hour(
+        self, db_path: Path
+    ) -> None:
+        """A killed ``/cron run`` left its CI repair stuck ``running`` for 30 minutes.
+
+        Live owners renew every third of the lease, so the lease only bounds how
+        long a claimant that died mid-tick keeps the task's later ticks out.
+        """
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        now = datetime.now(UTC)
+
+        assert now + timedelta(seconds=90) < claim.lease_expires_at <= now + timedelta(minutes=2)
 
     def test_expired_claims_are_visible_to_the_scheduler_recovery_sweep(
         self, db_path: Path
@@ -1057,7 +1071,7 @@ def test_recovery_query_uses_partial_indexes_without_scanning_completed_history(
         details = [
             str(row[3])
             for row in conn.execute(
-                f"EXPLAIN QUERY PLAN {run_store._RECOVERABLE_RUNS_QUERY}",
+                f"EXPLAIN QUERY PLAN {_RECOVERABLE_RUNS_QUERY}",
                 _recovery_query_arguments(datetime.now(UTC).isoformat(), limit=100),
             )
         ]
@@ -1127,3 +1141,20 @@ def test_recovery_index_migration_retries_a_lock_longer_than_busy_timeout(db_pat
 
     with sqlite3.connect(db_path) as conn:
         assert _recovery_index_names(conn) >= migrations._RECOVERY_INDEX_NAMES
+
+
+def test_only_an_unexpired_running_claim_counts_as_live(db_path: Path) -> None:
+    """A service restart is deferred on this answer, so dead and finished claims must not count."""
+    # No database yet: nothing runs, and the read does not create one.
+    assert has_live_claim(db_path) is False
+    assert not db_path.exists()
+
+    finished = _claimed(db_path, "task1", "2026-01-01T09:00")
+    assert has_live_claim(db_path) is True
+    complete_run(finished, status=TaskStatus.SUCCESS, db_path=db_path)
+    assert has_live_claim(db_path) is False
+
+    # A claimant that died stops counting once its lease lapses.
+    _claimed(db_path, "task2", "2026-01-01T09:00")
+    _expire_claim(db_path, "task2", "2026-01-01T09:00")
+    assert has_live_claim(db_path) is False

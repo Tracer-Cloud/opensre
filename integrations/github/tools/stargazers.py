@@ -29,6 +29,8 @@ _STAR_ACCEPT_HEADER = "application/vnd.github.star+json"
 
 
 def _github_star_history_available(sources: dict[str, dict]) -> bool:
+    if sources.get("github", {}).get("connection_selection_error"):
+        return False
     gh = sources.get("github", {})
     return bool(
         (

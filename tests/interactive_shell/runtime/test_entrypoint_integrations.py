@@ -15,6 +15,7 @@ from rich.console import Console
 
 import surfaces.interactive_shell.main as main_entrypoint
 from core.agent_harness.session.integration_resolution import IntegrationResolutionResult
+from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.session import Session
 
 
@@ -143,9 +144,9 @@ def test_stale_background_warm_does_not_overwrite_refreshed_cache() -> None:
     stale_generation = session.integrations._warm_generation
     session.integrations._warm_generation += 1
     session.integrations._store(
-        {"fresh": {"token": "new"}}, generation=session.integrations._warm_generation
+        {"fresh": {"token": "new"}}, generation=session.integrations._warm_generation, stamp=0
     )
-    session.integrations._store({"stale": {"token": "old"}}, generation=stale_generation)
+    session.integrations._store({"stale": {"token": "old"}}, generation=stale_generation, stamp=0)
     assert session.resolved_integrations_cache == {"fresh": {"token": "new"}}
 
 
@@ -201,7 +202,7 @@ def test_run_repl_async_identifies_saved_github_username(monkeypatch: Any) -> No
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
 
     import asyncio
@@ -242,13 +243,16 @@ def test_run_repl_async_failed_resume_flushes_starter_session(
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=session, inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=session, state=ReplState(), inbox=None),
     )
 
     exit_code = asyncio.run(main_entrypoint.run_repl_async(resume_session_id="missing-session"))
 
     assert exit_code == 1
-    assert flushed == [session.session_id]
+    # Teardown persists before the blocking close, and ``close`` flushes again;
+    # the repeat is a documented no-op (no second leaf). What this pins is that
+    # the starter session — and only it — reached the store.
+    assert flushed and set(flushed) == {session.session_id}
     assert not (sessions_dir / f"{session.session_id}.jsonl").exists()
 
 
@@ -274,7 +278,7 @@ def test_run_repl_async_runs_held_back_launch_work_once_the_banner_is_painted(
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
 
     # Act
@@ -360,8 +364,13 @@ def test_launch_banner_captures_shell_render_after_successful_first_paint(
         lambda **_kwargs: events.append("captured"),
     )
 
-    finish = main_entrypoint._start_launch_banner(Console(file=io.StringIO(), force_terminal=False))
+    finish = main_entrypoint._start_launch_banner(
+        Console(file=io.StringIO(), force_terminal=False),
+        on_painted=lambda: events.append("captured"),
+    )
     finish()
+
+    assert events == ["rendered", "captured"]
 
     assert events == ["rendered", "captured"]
 
@@ -424,7 +433,7 @@ def test_run_repl_async_routes_the_console_into_resume(monkeypatch: Any, tmp_pat
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
     captured = Console(file=StringIO(), force_terminal=False, width=80)
 
@@ -567,7 +576,7 @@ def test_initial_input_replay_uses_the_supplied_console(monkeypatch: Any) -> Non
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
     captured = Console(file=StringIO(), force_terminal=False, width=80)
 

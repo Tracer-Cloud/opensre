@@ -25,7 +25,7 @@ RULES: tuple[PathRule, ...] = (
     PathRule("dev/cicd_epoch_observer.py", ("tests/integrations/github/test_ci_epochs.py",)),
     PathRule("integrations/github/ci_epochs.py", ("tests/integrations/github/test_ci_epochs.py",)),
     # User-facing quickstart surface
-    PathRule("docs/quickstart.mdx", ("tests/cli/test_quickstart.py",)),
+    PathRule("docs/getting-started/quickstart.mdx", ("tests/cli/test_quickstart.py",)),
     # Installer surfaces (curl/bash, PowerShell, docs, Homebrew sync)
     PathRule(
         "install.sh",
@@ -39,11 +39,18 @@ RULES: tuple[PathRule, ...] = (
         "install.ps1",
         ("tests/cli/test_install_matrix.py", "tests/cli/test_install_ps1_progress.py"),
     ),
-    PathRule("docs/install.mdx", ("tests/cli/test_install_matrix.py",)),
-    PathRule("docs/install-local.mdx", ("tests/cli/test_install_matrix.py",)),
+    PathRule("docs/install/index.mdx", ("tests/cli/test_install_matrix.py",)),
+    PathRule("docs/install/install-local.mdx", ("tests/cli/test_install_matrix.py",)),
     PathRule(
         ".github/scripts/sync-homebrew-tap-formula.sh",
         ("tests/cli/test_install_matrix.py",),
+    ),
+    PathRule(
+        "Dockerfile",
+        (
+            "tests/cli/test_install_matrix.py",
+            "tests/infrastructure/deployment/container/test_entrypoint.py",
+        ),
     ),
     # Shared core
     PathRule("core/domain/", ("tests/core/domain/",)),
@@ -54,6 +61,14 @@ RULES: tuple[PathRule, ...] = (
             "core/agent_harness/prompts/skills/",
             "tests/core/agent_harness/prompts/",
             "tests/core/agent/prompts/",
+        ),
+    ),
+    PathRule(
+        "core/llm/hosted_credits.py",
+        (
+            "tests/core/runtime/llm/test_hosted_credits.py",
+            "tests/core/agent/prompts/test_turn_interaction.py",
+            "tests/core/agent_harness/prompts/test_runtime_facts_block.py",
         ),
     ),
     PathRule("core/", ("tests/core/",)),
@@ -581,10 +596,29 @@ RULES: tuple[PathRule, ...] = (
     PathRule("gateway/web/webapp.py", ("gateway/tests/web/test_webapp.py",)),
     PathRule("infrastructure/scheduling/", ("tests/scheduler/",)),
     PathRule("infrastructure/", ("tests/infrastructure/",)),
+    PathRule(
+        "config/account_credits.py",
+        (
+            "tests/shared/test_account_credits.py",
+            "tests/core/runtime/llm/test_hosted_credits.py",
+        ),
+    ),
     PathRule("config/", ("tests/config/",)),
     PathRule("bootstrap/", ("tests/bootstrap/",)),
+    PathRule(
+        "surfaces/shared/account_credits.py",
+        ("tests/shared/test_account_credits.py",),
+    ),
+    PathRule(
+        "surfaces/shared/account_session.py",
+        (
+            "tests/shared/test_account_session.py",
+            "tests/cli/test_account_command.py",
+        ),
+    ),
     PathRule("surfaces/", ("tests/surfaces/",)),
     # Repository tooling and broad configuration changes still run focused contracts.
+    PathRule(".env.example", ("tests/config/",)),
     PathRule("pyproject.toml", ("tests/packaging/", "tests/config/")),
     PathRule("uv.lock", ("tests/packaging/", "tests/config/")),
     PathRule("pytest.ini", ("tests/github_ci/",)),

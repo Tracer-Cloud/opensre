@@ -7,8 +7,8 @@ subdirectories. The repo-root `AGENTS.md` still applies.
 
 `interactive_shell/` owns the interactive OpenSRE terminal surface: the REPL
 loop, slash-command surface, local alert ingestion, shell execution, and Rich /
-prompt-toolkit UI. Reusable agent session state, prompt history, grounding, and
-prompt construction live under `core.agent_harness`.
+prompt-toolkit UI. Reusable agent session state, prompt history, and prompt
+construction live under `core.agent_harness`.
 
 Design for a terminal user who may be in the middle of an incident: behavior
 should be predictable, interruptible, explainable, and safe by default.
@@ -23,7 +23,6 @@ should be predictable, interruptible, explainable, and safe by default.
 | `command_registry/` | slash-command definitions, argument validation, command dispatch | long-running implementation details better placed in services/runtime modules |
 | `runtime/` | background task workers, lifecycle/`ReplState`, runtime context assembly, semantic shell-turn execution, and core harness adapters | prompt text, reusable session persistence, or compatibility shims |
 | `tools/interactive_shell/shell/` | shell command normalization, shell execution policy, subprocess execution, and the `run_shell_command` runner (next to the `shell_run` tool in `tools/interactive_shell/actions/shell.py`) | slash-command execution |
-| `references/` | CLI/docs/source/AGENTS reference loading and caching | generated model prose |
 | `config/` | interactive-shell config loading and tool catalog metadata | global app config unrelated to the REPL |
 | `ui/` | Rich/prompt-toolkit rendering, theme, menus, streaming output, and domain views such as `incoming_alerts.py` (receiver/queue/listener lifecycle lives in `core.domain.alerts.inbox`) | business logic or network calls |
 
@@ -78,7 +77,7 @@ owning area rather than adding more logic to the caller.
   command substitution all run once approved (or immediately at High). The `!`
   prefix is honored but optional. The only shell input still rejected is
   genuinely empty input (a bare `!` or whitespace). Document levels and
-  `/trust` interaction in `docs/interactive-shell-commands.mdx` (`/auto`) and
+  `/trust` interaction in `docs/getting-started/interactive-shell-commands.mdx` (`/auto`) and
   `docs/interactive-shell-action-policy.md`. Do **not** re-add a shell allowlist
   or deny floor while in alpha — gate stricter policy in `execution_policy.py`
   (the `ask` verdict, confirmation UX, `trust_mode`, and `/auto` are the hooks),
@@ -109,12 +108,21 @@ owning area rather than adding more logic to the caller.
     command (`/integrations remove`, `/integrations setup`, `/mcp connect`,
     `/mcp disconnect`, or a bare `/integrations` / `/mcp` menu), the loop has not
     reserved stdin, so `tools/interactive_shell/actions/slash.py` must NOT run the picker inline. It defers
-    via `session.queue_auto_command(...)`, which re-submits the command as
-    literal command text so the loop can reserve exclusive stdin before the
-    agent path runs it. New raw-stdin picker/wizard commands the action agent can emit
+    via `set_auto_command(session, ...)` (`core.agent_harness.spi.session_state`),
+    which re-submits the command as literal command text so the loop can
+    reserve exclusive stdin before the agent path runs it. The tool result
+    names the command under `QUEUED_COMMAND_KEY`, which ends the action turn
+    so the model cannot retry before the command runs. New raw-stdin picker/wizard commands the action agent can emit
     must be added to
     `_INTERACTIVE_PICKER_MENUS` / `_INTERACTIVE_PICKER_SUBCOMMANDS` in
     `tools/interactive_shell/actions/slash.py`.
+  - **Resume after setup:** a deferred `/integrations setup <service>` inside
+    a skill parks the turn's message, as does a skill's prerequisite gate.
+    `command_registry/setup_resume.py` (called when the wizard ends and by
+    the setup menu's "continue" row) re-runs the prerequisite's check —
+    `run_cli_command` reports success for every interactive run, so never
+    trust it — and replays the parked message once; it never replaces a
+    queued autosubmit.
 
 ## Action Selection And Execution
 

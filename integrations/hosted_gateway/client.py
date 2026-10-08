@@ -8,45 +8,118 @@ organization or a gateway, so a caller can only ever reach its own.
 
 from __future__ import annotations
 
+import re
+import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
 from types import TracebackType
 from typing import Any
-from urllib.parse import urlsplit
 
 import httpx
 
-from config.account import load_account_record, resolve_account_token
+from config.account import is_secure_account_origin, load_account_record, resolve_account_token
+from config.constants.gateway import PROMPT_PROGRESS_KIND_NOTE, PROMPT_PROGRESS_KINDS
 from config.constants.hosted_gateway import (
+    HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS,
     HOSTED_GATEWAY_HEALTH_PATH,
     HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
-    HOSTED_GATEWAY_LOOPBACK_HOSTS,
+    HOSTED_GATEWAY_PROMPTS_PATH,
+    HOSTED_GATEWAY_START_PATH,
+    HOSTED_GATEWAY_STOP_PATH,
 )
+from infrastructure.analytics.capture import capture_hosted_gateway_task_submitted
 
 ERR_NOT_SIGNED_IN = "not_signed_in"
 ERR_INSECURE_APP_URL = "insecure_app_url"
 ERR_UNREACHABLE = "unreachable"
+# The app answered, but the gateway behind it did not: starting, restarting, or down.
+ERR_GATEWAY_UNAVAILABLE = "gateway_unavailable"
 ERR_UNAUTHORIZED = "unauthorized"
 ERR_INVALID_RESPONSE = "invalid_response"
 # The app is older than this CLI and has no hosted-gateway routes yet.
 ERR_NOT_SUPPORTED = "not_supported"
+# The organization has no gateway to start or stop.
+ERR_NOT_PROVISIONED = "not_provisioned"
+# The gateway exists but no task of it is running, so it cannot take a prompt.
+ERR_NOT_RUNNING = "not_running"
+# The prompt id names nothing the gateway still holds.
+ERR_UNKNOWN_PROMPT = "unknown_prompt"
+ERR_PROMPT_TOO_LARGE = "prompt_too_large"
+#: The prompt is not waiting for an answer, or already took one.
+ERR_NOT_WAITING = "not_waiting"
+ERR_ALREADY_ANSWERED = "already_answered"
+#: The prompt already finished, so there is nothing to cancel.
+ERR_ALREADY_SETTLED = "already_settled"
+#: Another gateway task (one being replaced) runs the prompt; this one cannot stop it.
+ERR_NOT_OWNED = "not_owned"
+#: The gateway's prompt queue is full and it took nothing; send again after ``retry_after``.
+ERR_TOO_MANY_PROMPTS = "too_many_prompts"
+
+#: A prompt id as the gateway mints it; anything else never becomes part of a URL.
+_PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
+
+#: An upstream reason the app may name. Free text never qualifies, so a body cannot
+#: leak into what the user is told.
+_CAUSE_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+
+#: Failures before a connection existed, so no byte of the request reached the app.
+_CONNECT_FAILURES = (httpx.ConnectError, httpx.ConnectTimeout)
+
+#: The app's answer when it, or the control plane behind it, could not reach the gateway.
+_UNAVAILABLE_STATUSES = frozenset(
+    {HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT}
+)
+
+#: Statuses the app may carry a capacity refusal on: 503 and 429 now, 502 from an app
+#: deployed before it kept the gateway's 503.
+_CAPACITY_STATUSES = _UNAVAILABLE_STATUSES | {HTTPStatus.TOO_MANY_REQUESTS}
+
+#: Failures that pass on their own: nobody answered, and a later request may succeed.
+#: A capacity refusal is not one of them: the gateway answered, so it is never resent at once.
+TRANSIENT_ERRORS = frozenset({ERR_UNREACHABLE, ERR_GATEWAY_UNAVAILABLE})
 
 #: Failures of the account or its setup, not of the service: nothing to report as an incident.
 EXPECTED_ERRORS = frozenset(
-    {ERR_NOT_SIGNED_IN, ERR_INSECURE_APP_URL, ERR_UNAUTHORIZED, ERR_NOT_SUPPORTED}
+    {
+        ERR_NOT_SIGNED_IN,
+        ERR_INSECURE_APP_URL,
+        ERR_UNAUTHORIZED,
+        ERR_NOT_SUPPORTED,
+        ERR_NOT_PROVISIONED,
+        ERR_NOT_RUNNING,
+        ERR_UNKNOWN_PROMPT,
+        ERR_PROMPT_TOO_LARGE,
+        ERR_NOT_WAITING,
+        ERR_ALREADY_ANSWERED,
+        ERR_ALREADY_SETTLED,
+        ERR_NOT_OWNED,
+        ERR_TOO_MANY_PROMPTS,
+    }
 )
 
 
 class HostedGatewayError(RuntimeError):
     """The OpenSRE app refused or could not serve a hosted-gateway request.
 
-    Carries a stable ``code`` only; never the account token or a response body.
+    ``code`` is the failure class (from the HTTP status). ``cause_code`` is the
+    app's more specific reason when it named one. Neither is a response body
+    or the account token. ``retry_after`` is the app's ``Retry-After`` in
+    seconds, when it sent one.
     """
 
-    def __init__(self, code: str, status: int | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        status: int | None = None,
+        *,
+        cause_code: str = "",
+        retry_after: int | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.status = status
+        self.cause_code = cause_code
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)
@@ -67,6 +140,65 @@ class GatewayHealth:
     updated_at: str = ""
 
 
+@dataclass(frozen=True)
+class PromptQuestion:
+    """One question the gateway stopped on, with the options it offered."""
+
+    title: str
+    options: tuple[str, ...]
+    multi_select: bool = False
+
+
+@dataclass(frozen=True)
+class PromptChoice:
+    """The structured question behind a ``needs_input`` record, for a real menu."""
+
+    title: str
+    questions: tuple[PromptQuestion, ...]
+    custom_answer: bool = True
+    #: What is being decided: an approval's reason and redacted arguments, for example.
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class PromptProgress:
+    """One progress line the gateway reported while working on a prompt."""
+
+    index: int
+    text: str
+    #: ``tool``, ``plan``, ``plan_done``, or ``note``. Older records omit it.
+    kind: str = "note"
+
+
+@dataclass(frozen=True)
+class PromptRecord:
+    """One prompt on the organization's gateway, as the app reports it."""
+
+    prompt_id: str
+    state: str
+    answer: str = ""
+    question: str = ""
+    error: str = ""
+    #: Integrations whose tools failed on the gateway during this prompt, by vendor name.
+    failed_integrations: tuple[str, ...] = ()
+    choice: PromptChoice | None = None
+    #: The newest progress lines; ``index`` grows over the prompt's life, so a poller
+    #: prints each line once.
+    progress: tuple[PromptProgress, ...] = ()
+    #: For a follow-up carrying an answer: the prompt whose question it answered.
+    parent_prompt_id: str = ""
+    #: For a question: the follow-up that took its answer, so a lost answer response is found.
+    answered_by: str = ""
+    #: The conversation the prompt ran on; send it as ``conversation`` to continue that one.
+    conversation_id: str = ""
+    #: A cancel was asked for and the running turn has not stopped yet.
+    cancel_requested: bool = False
+
+    @property
+    def settled(self) -> bool:
+        return self.state in {"done", "needs_input", "failed"}
+
+
 class HostedGatewayClient:
     """Thin HTTP client; one instance per command or tool call."""
 
@@ -76,11 +208,14 @@ class HostedGatewayClient:
         _require_secure_origin(app_url)
         if not token:
             raise HostedGatewayError(ERR_NOT_SIGNED_IN)
+        self._token = token
         self.app_url = app_url.rstrip("/")
         self._http = httpx.Client(
             base_url=self.app_url,
             headers={"Authorization": f"Bearer {token}"},
-            timeout=HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
+            timeout=httpx.Timeout(
+                HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS, connect=HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS
+            ),
             follow_redirects=False,
             transport=transport,
         )
@@ -110,32 +245,141 @@ class HostedGatewayClient:
 
     def health(self) -> GatewayHealth:
         """Ask the app whether this account's organization has a gateway and it is serving."""
-        payload = self._get(HOSTED_GATEWAY_HEALTH_PATH)
-        provisioned, healthy = payload.get("provisioned"), payload.get("healthy")
-        if not isinstance(provisioned, bool) or not isinstance(healthy, bool):
-            raise HostedGatewayError(ERR_INVALID_RESPONSE)
-        return GatewayHealth(
-            provisioned=provisioned,
-            healthy=healthy,
-            gateway_id=_text(payload.get("gateway_id")),
-            desired_state=_text(payload.get("desired_state")),
-            actual_state=_text(payload.get("actual_state")),
-            size_profile=_text(payload.get("size_profile")),
-            last_error_code=_text(payload.get("last_error_code")),
-            updated_at=_text(payload.get("updated_at")),
+        return _gateway_health(self._request("GET", HOSTED_GATEWAY_HEALTH_PATH, _REFUSALS))
+
+    def start(self) -> GatewayHealth:
+        """Ask the app to start the organization's gateway."""
+        return _gateway_health(
+            self._request("POST", HOSTED_GATEWAY_START_PATH, _LIFECYCLE_REFUSALS)
         )
 
-    def _get(self, path: str) -> dict[str, Any]:
+    def stop(self) -> GatewayHealth:
+        """Ask the app to stop the organization's gateway; its state and credentials are kept."""
+        return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH, _LIFECYCLE_REFUSALS))
+
+    def send_prompt(
+        self,
+        prompt: str,
+        *,
+        context: dict[str, str],
+        request_id: str = "",
+        conversation: str = "",
+    ) -> PromptRecord:
+        """Queue a prompt on the organization's running gateway.
+
+        With a ``request_id`` the gateway queues the prompt at most once, so a
+        submission whose response was lost is sent once more with the same id.
+        ``conversation`` is "" for the user's own conversation, ``new`` for a
+        separate one that runs beside it, or an earlier record's ``conversation_id``.
+        """
+        from infrastructure.harness_providers.integration_selection import (
+            current_github_connection_id,
+        )
+
+        connection_id = current_github_connection_id()
+        context = dict(context)
+        if connection_id and "github_connection_id" not in context:
+            context["github_connection_id"] = connection_id
+        body: dict[str, Any] = {"prompt": prompt, "context": context}
+        if request_id:
+            body["request_id"] = request_id
+        if conversation:
+            body["conversation"] = conversation
+        payload = self._post_idempotent(HOSTED_GATEWAY_PROMPTS_PATH, _PROMPT_REFUSALS, body)
+        record = _prompt_record(payload)
+        capture_hosted_gateway_task_submitted(record.prompt_id)
+        return record
+
+    def answer_prompt(self, prompt_id: str, answer: str, *, request_id: str = "") -> PromptRecord:
+        """Answer a prompt that stopped to ask; the follow-up prompt's record comes back.
+
+        A ``request_id`` makes a resent answer the same follow-up, as for prompts.
+        """
+        if not _PROMPT_ID.fullmatch(prompt_id):
+            raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
+        body: dict[str, Any] = {"answer": answer}
+        if request_id:
+            body["request_id"] = request_id
+        payload = self._post_idempotent(
+            f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}/answer",
+            _PROMPT_ANSWER_REFUSALS,
+            body,
+            body_codes=_ANSWER_BODY_CODES,
+        )
+        return _prompt_record(payload)
+
+    def cancel_prompt(self, prompt_id: str) -> PromptRecord:
+        """Cancel a queued or running prompt of this user's; a running one stops at its next check.
+
+        ``already_settled`` when it already finished. The app names the user to the
+        gateway, so another member's prompt reads as ``unknown_prompt``.
+        """
+        if not _PROMPT_ID.fullmatch(prompt_id):
+            raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
+        payload = self._request(
+            "POST",
+            f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}/cancel",
+            _PROMPT_RESULT_REFUSALS,
+            body={},
+            body_codes=_CANCEL_BODY_CODES,
+        )
+        return _prompt_record(payload)
+
+    def prompt_result(self, prompt_id: str) -> PromptRecord:
+        """Read one prompt's state; ``unknown_prompt`` for an id the gateway does not hold."""
+        if not _PROMPT_ID.fullmatch(prompt_id):
+            raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
+        payload = self._request(
+            "GET", f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}", _PROMPT_RESULT_REFUSALS
+        )
+        return _prompt_record(payload)
+
+    def _post_idempotent(
+        self,
+        path: str,
+        refusals: dict[int, str],
+        body: dict[str, Any],
+        *,
+        body_codes: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
+        """POST, then once more after a transient failure when ``body`` names a request id.
+
+        The gateway keeps one prompt per request id, so the second send cannot
+        queue the work twice; without an id a lost response is never resent.
+        """
         try:
-            response = self._http.get(path)
+            return self._request("POST", path, refusals, body=body, body_codes=body_codes)
+        except HostedGatewayError as exc:
+            if exc.code not in TRANSIENT_ERRORS or not body.get("request_id"):
+                raise
+        return self._request("POST", path, refusals, body=body, body_codes=body_codes)
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        refusals: dict[int, str],
+        *,
+        body: dict[str, Any] | None = None,
+        body_codes: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
+        try:
+            response = self._send(method, path, body)
         except httpx.HTTPError as exc:
             raise HostedGatewayError(ERR_UNREACHABLE) from exc
-        if response.status_code == HTTPStatus.UNAUTHORIZED:
-            raise HostedGatewayError(ERR_UNAUTHORIZED, response.status_code)
-        if response.status_code == HTTPStatus.NOT_FOUND:
-            raise HostedGatewayError(ERR_NOT_SUPPORTED, response.status_code)
+        refusal = refusals.get(response.status_code)
+        if refusal is not None:
+            raise self._refused(_refusal_code(response, refusal, body_codes), response)
+        if response.status_code in _CAPACITY_STATUSES and _is_capacity_refusal(response):
+            raise HostedGatewayError(
+                ERR_TOO_MANY_PROMPTS,
+                response.status_code,
+                retry_after=_retry_after_seconds(response),
+            )
+        if response.status_code in _UNAVAILABLE_STATUSES:
+            raise self._refused(ERR_GATEWAY_UNAVAILABLE, response)
         if not response.is_success:
-            raise HostedGatewayError(f"http_{response.status_code}", response.status_code)
+            raise self._refused(f"http_{response.status_code}", response)
         try:
             payload = response.json()
         except ValueError as exc:
@@ -144,16 +388,208 @@ class HostedGatewayClient:
             raise HostedGatewayError(ERR_INVALID_RESPONSE, response.status_code)
         return payload
 
+    def _refused(self, code: str, response: httpx.Response) -> HostedGatewayError:
+        """The error for a non-success response, with the app's cause when it named one."""
+        return HostedGatewayError(
+            code, response.status_code, cause_code=self._cause(response, code)
+        )
+
+    def _cause(self, response: httpx.Response, code: str) -> str:
+        cause = _cause_code(response)
+        if not cause or cause == code or self._token in cause:
+            return ""
+        return cause
+
+    def _send(self, method: str, path: str, body: dict[str, Any] | None) -> httpx.Response:
+        """Send, with one fresh connection if the first could not be made.
+
+        Only a connect failure is retried: the request never left, so a prompt
+        cannot be queued twice. A read timeout may follow an accepted prompt.
+        """
+        try:
+            return self._http.request(method, path, json=body)
+        except _CONNECT_FAILURES:
+            return self._http.request(method, path, json=body)
+
+
+#: Status codes every hosted-gateway route uses to refuse a request, as stable client codes.
+_REFUSALS: dict[int, str] = {
+    HTTPStatus.UNAUTHORIZED: ERR_UNAUTHORIZED,
+    HTTPStatus.NOT_FOUND: ERR_NOT_SUPPORTED,
+}
+
+#: Start and stop also refuse organizations without a gateway.
+_LIFECYCLE_REFUSALS: dict[int, str] = {
+    **_REFUSALS,
+    HTTPStatus.CONFLICT: ERR_NOT_PROVISIONED,
+}
+
+#: A prompt needs a running task; the app answers 409 when there is none.
+_PROMPT_REFUSALS: dict[int, str] = {
+    **_REFUSALS,
+    HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
+}
+
+#: Reading a result: 404 is the prompt, not the route, being unknown.
+_PROMPT_RESULT_REFUSALS: dict[int, str] = {
+    HTTPStatus.UNAUTHORIZED: ERR_UNAUTHORIZED,
+    HTTPStatus.NOT_FOUND: ERR_UNKNOWN_PROMPT,
+    HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
+}
+
+#: Answering: a 409 is the gateway not running, or the prompt not waiting; the body says which.
+_PROMPT_ANSWER_REFUSALS: dict[int, str] = {
+    **_PROMPT_RESULT_REFUSALS,
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
+}
+_ANSWER_BODY_CODES = frozenset({ERR_NOT_RUNNING, ERR_NOT_WAITING, ERR_ALREADY_ANSWERED})
+#: Cancelling: a 409 is the gateway not running, or the prompt beyond this task's reach.
+_CANCEL_BODY_CODES = frozenset({ERR_NOT_RUNNING, ERR_ALREADY_SETTLED, ERR_NOT_OWNED})
+
+
+def _cause_code(response: httpx.Response) -> str:
+    """The body's ``error`` when it is a stable code, else ""."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
+    code = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(code, str) and _CAUSE_CODE.fullmatch(code):
+        return code
+    return ""
+
+
+def _is_capacity_refusal(response: httpx.Response) -> bool:
+    """The gateway took nothing because its prompt queue is full."""
+    return _cause_code(response) == ERR_TOO_MANY_PROMPTS
+
+
+def _retry_after_seconds(response: httpx.Response) -> int | None:
+    """``Retry-After`` as whole seconds; an HTTP date or a malformed value reads as absent."""
+    raw = response.headers.get("Retry-After", "").strip()
+    return int(raw) if raw.isdigit() else None
+
+
+def _refusal_code(response: httpx.Response, default: str, body_codes: frozenset[str]) -> str:
+    """The app's own error code when it is one the caller distinguishes, else ``default``."""
+    if not body_codes:
+        return default
+    try:
+        payload = response.json()
+    except ValueError:
+        return default
+    code = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(code, str) and code in body_codes:
+        return code
+    return default
+
+
+def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
+    prompt_id, state = payload.get("prompt_id"), payload.get("state")
+    if not isinstance(prompt_id, str) or not isinstance(state, str) or not prompt_id:
+        raise HostedGatewayError(ERR_INVALID_RESPONSE)
+    return PromptRecord(
+        prompt_id=prompt_id,
+        state=state,
+        answer=_text(payload.get("answer")),
+        question=_text(payload.get("question")),
+        error=_text(payload.get("error")),
+        failed_integrations=_names(payload.get("failed_integrations")),
+        choice=_choice(payload.get("choice")),
+        progress=_progress(payload.get("progress")),
+        parent_prompt_id=_text(payload.get("parent_prompt_id")),
+        answered_by=_prompt_id(payload.get("answered_by")),
+        conversation_id=_conversation_id(payload.get("conversation_id")),
+        cancel_requested=payload.get("cancel_requested") is True,
+    )
+
+
+def _prompt_id(value: object) -> str:
+    """A prompt id the gateway minted, else "": it may become part of a URL."""
+    return value if isinstance(value, str) and _PROMPT_ID.fullmatch(value) else ""
+
+
+def _conversation_id(value: object) -> str:
+    """A conversation id in canonical form, else "": it is sent back to name a session."""
+    if not isinstance(value, str):
+        return ""
+    try:
+        canonical = str(uuid.UUID(value))
+    except ValueError:
+        return ""
+    return value if canonical == value else ""
+
+
+def _progress_kind(value: object) -> str:
+    if isinstance(value, str) and value in PROMPT_PROGRESS_KINDS:
+        return value
+    return PROMPT_PROGRESS_KIND_NOTE
+
+
+def _progress(value: object) -> tuple[PromptProgress, ...]:
+    if not isinstance(value, list):
+        return ()
+    lines: list[PromptProgress] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        index, text = item.get("index"), item.get("text")
+        if isinstance(index, int) and not isinstance(index, bool) and isinstance(text, str):
+            lines.append(
+                PromptProgress(index=index, text=text, kind=_progress_kind(item.get("kind")))
+            )
+    return tuple(lines)
+
+
+def _choice(value: object) -> PromptChoice | None:
+    if not isinstance(value, dict):
+        return None
+    title = value.get("title")
+    raw_questions = value.get("questions")
+    if not isinstance(title, str) or not isinstance(raw_questions, list):
+        return None
+    questions: list[PromptQuestion] = []
+    for item in raw_questions:
+        if not isinstance(item, dict) or not isinstance(item.get("title"), str):
+            return None
+        options = _names(item.get("options"))
+        multi = item.get("multi_select") is True
+        questions.append(PromptQuestion(title=item["title"], options=options, multi_select=multi))
+    return PromptChoice(
+        title=title,
+        questions=tuple(questions),
+        custom_answer=value.get("custom_answer") is not False,
+        note=_text(value.get("note")),
+    )
+
+
+def _names(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and item)
+
+
+def _gateway_health(payload: dict[str, Any]) -> GatewayHealth:
+    provisioned, healthy = payload.get("provisioned"), payload.get("healthy")
+    if not isinstance(provisioned, bool) or not isinstance(healthy, bool):
+        raise HostedGatewayError(ERR_INVALID_RESPONSE)
+    return GatewayHealth(
+        provisioned=provisioned,
+        healthy=healthy,
+        gateway_id=_text(payload.get("gateway_id")),
+        desired_state=_text(payload.get("desired_state")),
+        actual_state=_text(payload.get("actual_state")),
+        size_profile=_text(payload.get("size_profile")),
+        last_error_code=_text(payload.get("last_error_code")),
+        updated_at=_text(payload.get("updated_at")),
+    )
+
 
 def _require_secure_origin(app_url: str) -> None:
     """The account token travels only over https, or over http to this machine."""
-    parsed = urlsplit(app_url)
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme == "https" and host:
-        return
-    if parsed.scheme == "http" and host in HOSTED_GATEWAY_LOOPBACK_HOSTS:
-        return
-    raise HostedGatewayError(ERR_INSECURE_APP_URL)
+    if not is_secure_account_origin(app_url):
+        raise HostedGatewayError(ERR_INSECURE_APP_URL)
 
 
 def _text(value: object) -> str:
@@ -161,14 +597,24 @@ def _text(value: object) -> str:
 
 
 __all__ = [
+    "ERR_ALREADY_SETTLED",
+    "ERR_GATEWAY_UNAVAILABLE",
     "ERR_INSECURE_APP_URL",
     "ERR_INVALID_RESPONSE",
+    "ERR_NOT_PROVISIONED",
+    "ERR_NOT_OWNED",
+    "ERR_NOT_RUNNING",
     "ERR_NOT_SIGNED_IN",
     "ERR_NOT_SUPPORTED",
+    "ERR_PROMPT_TOO_LARGE",
+    "ERR_TOO_MANY_PROMPTS",
     "ERR_UNAUTHORIZED",
+    "ERR_UNKNOWN_PROMPT",
     "ERR_UNREACHABLE",
     "EXPECTED_ERRORS",
     "GatewayHealth",
     "HostedGatewayClient",
     "HostedGatewayError",
+    "PromptRecord",
+    "TRANSIENT_ERRORS",
 ]

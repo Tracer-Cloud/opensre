@@ -93,9 +93,49 @@ def test_prompt_region_keeps_the_checklist_above_invoking_tools() -> None:
     assert "● Trace 502s to the last deploy" in rendered
     assert SpinnerState.INVOKING_TOOLS_PHASE in rendered
     assert rendered.index("Plan · 2/3") < rendered.index(SpinnerState.INVOKING_TOOLS_PHASE)
-    # Auto stays on the page (DIM) while busy, below the Invoking status row.
-    assert "Auto (High)" in rendered
-    assert rendered.index(SpinnerState.INVOKING_TOOLS_PHASE) < rendered.index("Auto (High)")
+    # Auto stays on the page (DIM) while busy, but on its own fixed row under
+    # the composer — not in the message region the plan and spinner share.
+    assert "Auto (High)" not in rendered
+
+
+def test_gateway_plan_sits_above_the_local_plan() -> None:
+    session = Session()
+    session.task_plan = _sample_plan()
+    state = ReplState()
+    gateway, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": "List organization memberships", "status": "completed"},
+                {"step": "Check repository creation permission", "status": "in_progress"},
+            ]
+        }
+    )
+    assert error is None and gateway is not None
+    state.gateway_plan = gateway
+
+    rendered = _strip_ansi(render_prompt_region(session, state, SpinnerState()).value)
+
+    assert rendered.index("on the gateway") < rendered.index("List organization memberships")
+    assert rendered.index("List organization memberships") < rendered.index("Plan · 2/3")
+    assert "Trace 502s to the last deploy" in rendered
+
+
+def test_gateway_only_plan_keeps_expand_until_the_checklist_changes() -> None:
+    session = Session()
+    state = ReplState()
+    state.gateway_plan = _long_plan()
+    state.plan_expanded = True
+
+    rendered = _strip_ansi(render_prompt_region(session, state, SpinnerState()).value)
+
+    assert state.plan_expanded is True
+    assert "Inspect the repo" in rendered
+    assert "Confirm green" in rendered
+
+    state.gateway_plan = _other_long_plan()
+    replaced = _strip_ansi(render_prompt_region(session, state, SpinnerState()).value)
+    assert state.plan_expanded is False
+    assert "Ctrl+P to view all" in replaced
 
 
 def test_idle_prompt_region_shows_plan_without_thinking_or_ready_hint() -> None:
@@ -106,8 +146,10 @@ def test_idle_prompt_region_shows_plan_without_thinking_or_ready_hint() -> None:
     assert SpinnerState.EXECUTING_PHASE not in rendered
     assert "Plan · 2/3" in rendered
     assert "Ready" not in rendered  # no recurring idle hint line
-    assert rendered.index("Plan · 2/3") < rendered.index("Auto (High)")
-    assert "  ○ Confirm checkout returns 2xx\n\nAuto (High) · Allow all" in rendered
+    # One blank row separates the pinned plan from the composer it sits above;
+    # Auto chrome renders on its own row under the box, not in this string.
+    assert "Auto (High)" not in rendered
+    assert "  ○ Confirm checkout returns 2xx\n\n >" in rendered
     # Blank row above the plan separates it from scrollback notes (Droid blocks).
     assert rendered.lstrip().startswith("Plan · 2/3") or "\nPlan · 2/3" in rendered
 

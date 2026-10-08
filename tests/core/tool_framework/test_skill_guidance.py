@@ -42,7 +42,8 @@ tools:
     formatted = format_tool_skill_guidance(result.skill)
     assert '<tool_guidance name="tracking-github-work-status"' in formatted
     assert 'description="Guide GitHub workflow tools."' in formatted
-    assert f"References are relative to {tmp_path}" in formatted
+    assert f'location="{path}"' in formatted
+    assert "References: this file's directory." in formatted
 
 
 def test_load_tool_skill_guidance_skips_missing_file(tmp_path: Path) -> None:

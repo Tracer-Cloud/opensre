@@ -159,7 +159,7 @@ def validate_provider_credentials(
         base_url = _get_provider_base_url(provider.value)
         openai_client = openai_client_cls(api_key=api_key, base_url=base_url, timeout=30.0)
         # Only native OpenAI reasoning models use max_completion_tokens; others use max_tokens
-        if provider.value == "openai" and model.startswith(("o1", "o3", "o4", "gpt-5")):
+        if provider.value == "openai" and model.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6")):
             openai_response = openai_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],

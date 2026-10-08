@@ -25,6 +25,8 @@ _escape_patch_installed: list[bool] = [False]
 _ctrl_c_patch_installed: list[bool] = [False]
 _last_ctrl_c: list[float | None] = [None]
 _handling_ctrl_c: list[bool] = [False]
+_exit_in_progress: list[bool] = [False]
+_exit_interrupted: list[bool] = [False]
 
 CTRL_C_DOUBLE_PRESS_WINDOW_S: float = 2.0
 _CTRL_C_EXIT_WINDOW: float = CTRL_C_DOUBLE_PRESS_WINDOW_S
@@ -99,14 +101,47 @@ def install_questionary_escape_cancel() -> None:
     _escape_patch_installed[0] = True
 
 
+def begin_ctrl_c_exit() -> None:
+    """Mark an exit as accepted: the next Ctrl+C ends the process at once.
+
+    Teardown runs with the prompt off screen, so SIGINT arrives at
+    :func:`handle_ctrl_c_press` rather than the prompt's own binding. Call this
+    wherever an exit is accepted, and that handler interrupts the teardown
+    instead of re-arming the double-press gate. One-way for the process.
+    """
+    _exit_in_progress[0] = True
+
+
+def ctrl_c_exit_interrupted() -> bool:
+    """Whether Ctrl+C has cut an accepted exit's teardown short.
+
+    Teardown stages read this to drop optional blocking work (the closing
+    memory pass, a telemetry drain) rather than each waiting to be interrupted
+    in turn. Persisting the session is not optional and still runs.
+    """
+    return _exit_interrupted[0]
+
+
 def handle_ctrl_c_press() -> None:
-    """Handle Ctrl+C from the SIGINT signal handler (between prompts)."""
+    """Handle Ctrl+C from the SIGINT signal handler (between prompts).
+
+    A first press hints and a second exits, except once
+    :func:`begin_ctrl_c_exit` has run: from then on the press raises
+    :exc:`KeyboardInterrupt` to interrupt teardown.
+    """
     if _handling_ctrl_c[0]:
         return
     _handling_ctrl_c[0] = True
     try:
+        if _exit_in_progress[0]:
+            # Teardown is what the user is waiting on; record the press so the
+            # stages after this one skip their own waits too.
+            _exit_interrupted[0] = True
+            raise KeyboardInterrupt
         now = time.monotonic()
         if _last_ctrl_c[0] is not None and now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
+            # This press is the accepted exit, and teardown follows it.
+            begin_ctrl_c_exit()
             print("\nGoodbye!", flush=True)
             sys.exit(0)
         _last_ctrl_c[0] = now
@@ -139,6 +174,7 @@ def _with_ctrl_c_double_exit(
                     raise
                 now = time.monotonic()
                 if _last_ctrl_c[0] is not None and now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
+                    begin_ctrl_c_exit()
                     print("\nGoodbye!", flush=True)
                     sys.exit(0)
                 _last_ctrl_c[0] = now
@@ -173,14 +209,25 @@ def _wrap_question_ctrl_c(
 
 
 def repl_reset_ctrl_c_gate() -> None:
+    """Re-arm the double-press gate; an accepted exit is deliberately untouched.
+
+    The Ctrl+C binding ends the prompt with an empty result, so this runs once
+    more on the way out. Clearing the exit state here would leave controller
+    cleanup unprotected.
+    """
     _last_ctrl_c[0] = None
 
 
 def repl_prompt_ctrl_c_should_exit() -> bool:
-    """Arm the REPL Ctrl-C gate or consume a second press as an exit."""
+    """Arm the REPL Ctrl-C gate or consume a second press as an exit.
+
+    Consuming a press also begins the exit, so a Ctrl+C during the teardown that
+    follows ends the process instead of re-arming the gate.
+    """
     now = time.monotonic()
     if _last_ctrl_c[0] is not None and now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
         _last_ctrl_c[0] = None
+        begin_ctrl_c_exit()
         return True
     _last_ctrl_c[0] = now
     return False

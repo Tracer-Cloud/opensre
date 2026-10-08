@@ -281,7 +281,8 @@ model:
   the first step; the first demo stalled that way live.
 - The second work tool of a turn is refused while no plan with open work is
   stored (`core/agent_harness/task_plan/required.py`). The refusal
-  names the fix: write the plan, then run the tool again.
+  names the fix: re-send the tool in one response with the plan write listed
+  before it.
 
 These are before/after tool hooks on the execution path, the same seam as the
 duplicate-call guard; they never route intent or rewrite a tool call.

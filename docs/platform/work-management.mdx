@@ -1,0 +1,82 @@
+---
+title: "Work Management"
+description: "Track human tasks, choose what to do next, and schedule reminders or check-ins."
+---
+
+## Commands at a glance
+
+| Command | What it does |
+| --- | --- |
+| `/work` | List open work items |
+| `/work add <title>` | Add a durable task |
+| `/work done <id-or-title>` | Mark one or more tasks completed |
+| `/work next` | Rank open tasks by priority, due date, and age |
+| `/work path` | Print the local work-item store path |
+| `opensre work ...` | Script the same workflow from the terminal |
+
+Use `/tasks` for OpenSRE runtime jobs. Use `/work` for human todos, hackathon
+work, and follow-ups. `/work add` does not schedule reminder delivery; use the
+destination-aware CLI form below or ask from a connected chat.
+
+## Natural language
+
+You can ask normally:
+
+```text
+Add task "finish Slack reminder smoke test" for the hackathon, priority high.
+```
+
+```text
+Give me an overview of all tasks that still need to be completed.
+```
+
+```text
+What should I focus on next?
+```
+
+```text
+Mark the docs and CLI tasks as completed.
+```
+
+The agent stores these as work items and uses the same store when ranking or
+listing them later.
+
+## Reminders and check-ins
+
+One-off reminders:
+
+```bash
+opensre work add "ping owners about demo blockers" \
+  --project hackathon --priority high \
+  --remind-at 2026-07-30T09:30 \
+  --provider slack --chat-id C0123ABCD
+```
+
+Recurring check-ins:
+
+```bash
+opensre work schedule-checkin \
+  --cron "0 9 * * mon-fri" \
+  --tz Europe/London \
+  --target slack:C0123ABCD \
+  --target telegram:-100123456 \
+  --project hackathon
+```
+
+Slack, Telegram, and Discord gateway turns can default reminders and recurring
+check-ins to the current chat. Terminal commands require either `--provider` and
+`--chat-id`, or one or more `--target` flags.
+Use repeated `--target provider:chat_id` flags to send the same reminder or
+check-in to more than one service. Slack webhook delivery may use `--target
+slack` without a channel id; Telegram, Discord, and Rocket.Chat need explicit
+chat/channel ids.
+
+## Storage
+
+Work items are stored locally as JSON under `~/.opensre/work_items/` by default.
+Set `OPENSRE_WORK_ITEMS_DIR` to choose another folder. Existing entries from the
+old Slack captured-task JSONL store are imported once into the new work-item
+store.
+
+Recurring check-ins are stored in OpenSRE's scheduler store and run whenever the
+gateway scheduler or `opensre cron start` is active.

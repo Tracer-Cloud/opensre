@@ -27,7 +27,7 @@ from tools.interactive_shell.shared import ExecutionPolicyResult
 
 # --- constants ---
 
-SHELL_COMMAND_TIMEOUT_SECONDS = 120
+SHELL_COMMAND_TIMEOUT_SECONDS = 240
 CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS = 1800
 TASK_POLL_SECONDS = 0.25
 MAX_COMMAND_OUTPUT_CHARS = 24_000
@@ -50,6 +50,35 @@ _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[mA-Za-z]")
 # --- lifecycle ---
 
 
+class WatchedProcess(Protocol):
+    """Process operations required by the shared cancellation watcher."""
+
+    pid: int
+    returncode: int | None
+
+    def poll(self) -> int | None:
+        """Return the root's exit code, or None while it is running."""
+
+    def wait(self, timeout: float | None = None) -> int:
+        """Wait for the root, raising TimeoutExpired at the deadline."""
+
+    def kill(self) -> None:
+        """Forcefully stop the root using its owned process handle."""
+
+    def terminate(self) -> None:
+        """Request termination of the root."""
+
+
+class OwnedProcessTree(Protocol):
+    """Launch-time ownership that remains valid after a process root exits."""
+
+    def is_alive(self) -> bool:
+        """Return whether the kernel-owned tree still has active processes."""
+
+    def terminate_tree(self) -> None:
+        """Terminate and wait for the entire owned tree."""
+
+
 def _is_process_group_leader(pid: int) -> bool:
     """True when *pid* leads its group (typical after ``start_new_session``)."""
     if os.name == "nt" or not hasattr(os, "getpgid"):
@@ -60,7 +89,7 @@ def _is_process_group_leader(pid: int) -> bool:
         return False
 
 
-def _process_group_leader_pid(proc: subprocess.Popen[Any]) -> int | None:
+def _process_group_leader_pid(proc: WatchedProcess) -> int | None:
     """Pgid to ``killpg`` when *proc* leads a session, else None.
 
     Snapshot this before the child exits: ``getpgid`` fails once the
@@ -88,7 +117,7 @@ def _process_group_is_alive(group_pid: int | None) -> bool:
 
 
 def _signal_child(
-    proc: subprocess.Popen[Any],
+    proc: WatchedProcess,
     *,
     forceful: bool,
     group_pid: int | None,
@@ -117,7 +146,7 @@ def _signal_child(
 
 
 def terminate_child_process(
-    proc: subprocess.Popen[Any],
+    proc: WatchedProcess,
     *,
     group_pid: int | None = None,
 ) -> None:
@@ -239,25 +268,34 @@ class SubprocessWatchResult:
 
 
 def watch_subprocess_until_exit(
-    proc: subprocess.Popen[Any],
+    proc: WatchedProcess,
     *,
     cancel_event: threading.Event,
     timeout_seconds: float,
     poll_seconds: float = TASK_POLL_SECONDS,
+    owned_tree: OwnedProcessTree | None = None,
 ) -> SubprocessWatchResult:
     """Poll a child and its process group until exit, cancellation, or timeout."""
     started = time.monotonic()
     timed_out = False
     terminated_by_watcher = False
-    group_pid = _process_group_leader_pid(proc)
-    while proc.poll() is None or _process_group_is_alive(group_pid):
+    group_pid = None if owned_tree is not None else _process_group_leader_pid(proc)
+    while proc.poll() is None or (
+        owned_tree.is_alive() if owned_tree is not None else _process_group_is_alive(group_pid)
+    ):
         if time.monotonic() - started > timeout_seconds:
             timed_out = True
-            terminate_child_process(proc, group_pid=group_pid)
+            if owned_tree is not None:
+                owned_tree.terminate_tree()
+            else:
+                terminate_child_process(proc, group_pid=group_pid)
             terminated_by_watcher = True
             break
         if cancel_event.is_set():
-            terminate_child_process(proc, group_pid=group_pid)
+            if owned_tree is not None:
+                owned_tree.terminate_tree()
+            else:
+                terminate_child_process(proc, group_pid=group_pid)
             terminated_by_watcher = True
             break
         time.sleep(poll_seconds)
@@ -353,11 +391,13 @@ __all__ = [
     "CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS",
     "HEADLESS_SUBPROCESS_TERMINAL_WIDTH",
     "MAX_COMMAND_OUTPUT_CHARS",
+    "OwnedProcessTree",
     "MIN_SUBPROCESS_TERMINAL_WIDTH",
     "SHELL_COMMAND_TIMEOUT_SECONDS",
     "SIGTERM_GRACE_SECONDS",
     "TASK_DIAG_CHARS",
     "TASK_POLL_SECONDS",
+    "WatchedProcess",
     "SubprocessPresenter",
     "SubprocessWatchResult",
     "TASK_OUTPUT_JOIN_TIMEOUT_SECONDS",

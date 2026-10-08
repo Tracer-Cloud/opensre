@@ -86,3 +86,25 @@ def test_dev_build_version_is_deterministic_for_a_fixed_commit_and_clock(monkeyp
     second = version_module.get_opensre_version()
 
     assert first == second == "0.1.2026.8.27+main.85fd865"
+
+
+class _NextDayClock:
+    """The day after :class:`_FixedClock`, for a build that did not change."""
+
+    @staticmethod
+    def now(tz: object = None) -> _dt.datetime:
+        return _dt.datetime(2026, 8, 28, tzinfo=tz)  # type: ignore[arg-type]
+
+
+def test_build_stamp_of_a_dev_checkout_changes_with_the_commit_not_the_day(monkeypatch) -> None:
+    # The scheduler service is restarted when this stamp changes; a dated stamp
+    # would restart it every day for the same code.
+    monkeypatch.setattr(version_module.importlib.metadata, "version", _raise_package_not_found)
+    monkeypatch.setattr(version_module, "_pyproject_version", lambda: "0.1")
+    _git_head_at(monkeypatch, "85fd865")
+    today = version_module.get_build_stamp()
+    monkeypatch.setattr(version_module, "datetime", _NextDayClock)
+
+    assert version_module.get_build_stamp() == today == "0.1+main.85fd865"
+    _git_head_at(monkeypatch, "98e2e6e")
+    assert version_module.get_build_stamp() == "0.1+main.98e2e6e"

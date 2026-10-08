@@ -32,7 +32,7 @@ from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_ENV, OPENSRE_OPERATIONS_LOG_PATH_ENV
 from config.constants.session_store import OPENSRE_SESSION_FILE_LOCK_ENV
-from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
+from core.agent_harness.session import JsonlSessionRepo, JsonlSessionStore
 from core.agent_harness.session.persistence.paths import session_path, sessions_dir
 from infrastructure.observability.operations_log import read_operations
 
@@ -268,15 +268,6 @@ def _assert_readable(path: Path) -> list[dict[str, Any]]:
     return records
 
 
-def _parses(line: str) -> bool:
-    """Whether ``line`` is a decodable JSON record."""
-    try:
-        json.loads(line)
-    except json.JSONDecodeError:
-        return False
-    return True
-
-
 def _written_markers(records: list[dict[str, Any]]) -> set[str]:
     """Marker prefixes (``w0-3``) of every turn stub in the file."""
     return {
@@ -471,16 +462,20 @@ def test_soak_sigkill_while_holding_the_lock_strands_nothing(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#5750: a crash leaves a record with no trailing newline, and the next "
-        "append is concatenated onto it. That fuses both records into one "
-        "unparseable line, so the post-crash turn is invisible to every reader. "
-        "Strict, so this flips to a failure the moment #5750 is fixed."
-    ),
+@pytest.mark.parametrize(
+    "torn_tail",
+    [
+        pytest.param(
+            b'{"id": "partial", "type": "custom_message", "text": "tor',
+            id="partial-json",
+        ),
+        pytest.param(
+            b'{"id": "partial", "type": "custom_message", "text": "\xe2\x82',
+            id="partial-utf8-code-point",
+        ),
+    ],
 )
-def test_soak_write_after_a_torn_tail_is_not_swallowed(soak_home: Path) -> None:
+def test_soak_write_after_a_torn_tail_is_not_swallowed(soak_home: Path, torn_tail: bytes) -> None:
     """Case 3, deterministic half: the record after a torn tail must survive.
 
     A SIGKILL lands mid-write only sometimes, so the crash *artifact* is seeded
@@ -491,20 +486,31 @@ def test_soak_write_after_a_torn_tail_is_not_swallowed(soak_home: Path) -> None:
     """
     session_id = "soak-torn"
     path = _seed(session_id)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write('{"id": "partial", "type": "custom_message", "text": "tor')
+    JsonlSessionStore().append_turn(_session(session_id), "chat", "before-the-crash")
+    before = json.loads(path.read_bytes().splitlines()[-1])
+    with path.open("ab") as handle:
+        handle.write(torn_tail)
 
     JsonlSessionStore().append_turn(_session(session_id), "chat", "after-the-crash")
 
-    _metrics(soak_home).report("torn-tail")
-    readable = [
-        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if _parses(line)
+    metrics = _metrics(soak_home)
+    metrics.report("torn-tail")
+    assert metrics.decode_failures >= 1
+
+    raw_lines = path.read_bytes().splitlines()
+    assert raw_lines[-2] == torn_tail
+    after = json.loads(raw_lines[-1])
+    assert after["text"] == "after-the-crash"
+    assert after["parent_id"] == before["id"]
+
+    restored = JsonlSessionRepo().load_session(session_id)
+    assert restored is not None
+    assert restored["entry_id"] == after["id"]
+    assert restored["leaf_id"] == after["id"]
+    assert [(item["kind"], item["text"]) for item in restored["history"]] == [
+        ("chat", "before-the-crash"),
+        ("chat", "after-the-crash"),
     ]
-    texts = [str(r.get("text", "")) for r in readable if r.get("custom_type") == "turn_stub"]
-    assert any("after-the-crash" in text for text in texts), (
-        "the turn written after the torn tail is unreadable: it was appended onto "
-        "the partial line instead of a new one"
-    )
 
 
 def test_soak_lock_timeout_fails_cleanly_without_partial_append(

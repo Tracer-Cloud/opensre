@@ -41,6 +41,12 @@ _TRUNCATION_MIN_TOKENS = 1_000
 
 _PINNED_MESSAGE_KEY = "_opensre_seed"
 _DUPLICATE_RESULT_KEY = "_opensre_duplicate_result"
+# Marks a tool result whose output was replaced by the eviction stub.
+_EVICTED_RESULT_KEY = "_opensre_evicted"
+EVICTED_TOOL_RESULT_TEXT = (
+    "[This tool call's output was removed to fit the context window. "
+    "Call the tool again if you still need it.]"
+)
 
 
 def strip_internal_message_markers(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -74,6 +80,11 @@ def _is_duplicate_result_message(message: dict[str, Any]) -> bool:
     return bool(message.get(_DUPLICATE_RESULT_KEY))
 
 
+def _is_evicted_message(message: dict[str, Any]) -> bool:
+    """Whether this tool-result message already holds the eviction stub."""
+    return bool(message.get(_EVICTED_RESULT_KEY))
+
+
 def _has_tool_use_block(content: Any) -> bool:
     if not isinstance(content, list):
         return False
@@ -89,12 +100,22 @@ def _candidate_exchange(
     start: int,
     end: int,
     message_tokens: list[int] | None = None,
+    evicted: bool = False,
 ) -> _ToolExchange | None:
+    """The exchange at ``[start, end)`` when it is a candidate, else ``None``.
+
+    With ``evicted=False`` only exchanges that still carry real output qualify
+    (to be stubbed); with ``evicted=True`` only fully stubbed ones (to be dropped).
+    """
     exchange_messages = messages[start:end]
     if any(_is_pinned_message(message) for message in exchange_messages):
         return None
 
     result_messages = exchange_messages[1:]
+    if not result_messages:
+        return None
+    if all(_is_evicted_message(message) for message in result_messages) != evicted:
+        return None
     duplicate_only = bool(result_messages) and all(
         _is_duplicate_result_message(message) for message in result_messages
     )
@@ -117,8 +138,11 @@ def _append_candidate(
     start: int,
     end: int,
     message_tokens: list[int] | None = None,
+    evicted: bool = False,
 ) -> None:
-    candidate = _candidate_exchange(messages, start=start, end=end, message_tokens=message_tokens)
+    candidate = _candidate_exchange(
+        messages, start=start, end=end, message_tokens=message_tokens, evicted=evicted
+    )
     if candidate is not None:
         candidates.append(candidate)
 
@@ -127,6 +151,7 @@ def _tool_exchange_candidates(
     messages: list[dict[str, Any]],
     *,
     message_tokens: list[int] | None = None,
+    evicted: bool = False,
 ) -> list[_ToolExchange]:
     candidates: list[_ToolExchange] = []
     for index, message in enumerate(messages):
@@ -140,6 +165,7 @@ def _tool_exchange_candidates(
                 start=index,
                 end=min(index + 2, len(messages)),
                 message_tokens=message_tokens,
+                evicted=evicted,
             )
             continue
 
@@ -159,6 +185,7 @@ def _tool_exchange_candidates(
                 start=index,
                 end=end,
                 message_tokens=message_tokens,
+                evicted=evicted,
             )
     return candidates
 
@@ -205,19 +232,6 @@ def _message_token_estimates(messages: list[dict[str, Any]]) -> tuple[list[int],
     return tokens, sum(tokens)
 
 
-def _ledger_remove_range(
-    message_tokens: list[int],
-    total_message_tokens: int,
-    *,
-    start: int,
-    end: int,
-) -> int:
-    """Drop ``[start, end)`` from the ledger; return the new total."""
-    removed = sum(message_tokens[start:end])
-    del message_tokens[start:end]
-    return total_message_tokens - removed
-
-
 def _estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
     return sum(_message_token_estimate(message) for message in messages)
 
@@ -260,23 +274,78 @@ def estimate_message_tokens(
     return _estimate_messages_tokens(messages) + system_and_tools_overhead(system, tools)
 
 
+def _stub_tool_result_message(message: dict[str, Any]) -> dict[str, Any] | None:
+    """A copy of ``message`` with every tool result replaced by the eviction stub.
+
+    Builds new containers rather than editing in place: provider messages share
+    nested blocks with the run's transcript, which must keep the real output.
+    Returns ``None`` when the message carries no tool result.
+    """
+    if message.get("role") == "tool":
+        return {**message, "content": EVICTED_TOOL_RESULT_TEXT, _EVICTED_RESULT_KEY: True}
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+    stubbed: list[Any] = []
+    changed = False
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "tool_result":
+            stubbed.append({**block, "content": EVICTED_TOOL_RESULT_TEXT})
+            changed = True
+        elif isinstance(block, dict) and isinstance(block.get("toolResult"), dict):
+            result = {**block["toolResult"], "content": [{"text": EVICTED_TOOL_RESULT_TEXT}]}
+            stubbed.append({**block, "toolResult": result})
+            changed = True
+        else:
+            stubbed.append(block)
+    if not changed:
+        return None
+    return {**message, "content": stubbed, _EVICTED_RESULT_KEY: True}
+
+
 def _trim_lowest_value_tool_pair(
     messages: list[dict[str, Any]],
     *,
     message_tokens: list[int] | None = None,
 ) -> tuple[int, int] | None:
-    """Drop one non-pinned tool exchange; return its ``[start, end)`` range."""
+    """Stub the results of one non-pinned tool exchange; return its ``[start, end)``.
+
+    The call stays and its output is replaced by a short note, so the model
+    still knows the call happened and can repeat it instead of losing the
+    exchange without a trace. ``message_tokens`` is updated in place.
+    """
     candidates = _tool_exchange_candidates(messages, message_tokens=message_tokens)
     if not candidates:
         return None
 
     selected = min(candidates, key=_eviction_priority)
-    del messages[selected.start : selected.end]
+    for index in range(selected.start + 1, selected.end):
+        stubbed = _stub_tool_result_message(messages[index])
+        if stubbed is None:
+            continue
+        messages[index] = stubbed
+        if message_tokens is not None:
+            message_tokens[index] = _message_token_estimate(stubbed)
     return selected.start, selected.end
 
 
+def _drop_oldest_stubbed_exchange(
+    messages: list[dict[str, Any]],
+    *,
+    message_tokens: list[int],
+) -> bool:
+    """Remove the oldest exchange whose output is already a stub (last resort)."""
+    candidates = _tool_exchange_candidates(messages, message_tokens=message_tokens, evicted=True)
+    if not candidates:
+        return False
+    oldest = min(candidates, key=lambda exchange: exchange.start)
+    del messages[oldest.start : oldest.end]
+    del message_tokens[oldest.start : oldest.end]
+    return True
+
+
 def trim_lowest_value_tool_pair(messages: list[dict[str, Any]]) -> bool:
-    """Drop one non-pinned tool exchange using the eviction heuristic."""
+    """Stub one non-pinned tool exchange's results using the eviction heuristic."""
     return _trim_lowest_value_tool_pair(messages) is not None
 
 
@@ -398,20 +467,27 @@ def enforce_context_budget(
     tools: list[dict[str, Any]] | None = None,
     fixed_overhead_tokens: int | None = None,
     ceiling: int = _TOKEN_BUDGET_CEILING,
-) -> None:
+) -> int:
     """Trim low-value tool exchanges until the prompt fits under ``ceiling``.
 
     Pass ``fixed_overhead_tokens`` (from :func:`system_and_tools_overhead`) to
     skip re-serializing tool schemas on every call.  When omitted the overhead
-    is computed from ``system`` and ``tools``.
+    is computed from ``system`` and ``tools``. Returns the estimated tokens of
+    the request as sent, so a caller can compare it with the provider's count.
     """
     if fixed_overhead_tokens is None:
         fixed_overhead_tokens = system_and_tools_overhead(system, tools)
-    # Per-message ledger: estimate once, then adjust only on trim / truncate.
+    # Per-message ledger: estimate once, then adjust only on stub / truncate.
     message_tokens, total_message_tokens = _message_token_estimates(messages)
     while (total_message_tokens + fixed_overhead_tokens) > ceiling:
-        removed = _trim_lowest_value_tool_pair(messages, message_tokens=message_tokens)
-        if removed is None:
+        stubbed = _trim_lowest_value_tool_pair(messages, message_tokens=message_tokens)
+        if stubbed is None and _drop_oldest_stubbed_exchange(
+            messages, message_tokens=message_tokens
+        ):
+            # Every exchange is already a stub; drop whole ones, oldest first.
+            total_message_tokens = sum(message_tokens)
+            continue
+        if stubbed is None:
             changed, total_message_tokens = _truncate_largest_message(
                 messages,
                 message_tokens=message_tokens,
@@ -425,15 +501,14 @@ def enforce_context_budget(
                     "(ceiling=%d); letting the request proceed",
                     ceiling,
                 )
-                return
+                break
             logger.warning(
                 "[agent] truncated oversized message to fit context budget (ceiling=%d)", ceiling
             )
             continue
-        start, end = removed
-        total_message_tokens = _ledger_remove_range(
-            message_tokens, total_message_tokens, start=start, end=end
-        )
+        total_message_tokens = sum(message_tokens)
         logger.warning(
-            "[agent] trimmed low-value tool pair to fit context budget (ceiling=%d)", ceiling
+            "[agent] replaced a tool output with a stub to fit context budget (ceiling=%d)",
+            ceiling,
         )
+    return total_message_tokens + fixed_overhead_tokens

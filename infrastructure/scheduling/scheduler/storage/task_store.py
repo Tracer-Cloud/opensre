@@ -17,10 +17,21 @@ from typing import Any
 from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_DIR
+from config.constants.organization import organization_id
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
+from config.scope_handoff import acting_scope
 from infrastructure.scheduling.scheduler import reload_signal
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CREATED_BY_PARAM,
+    LOOP_DESCRIPTION_PARAM,
+    LOOP_PROMPT_PARAM,
+    LOOP_TEMPLATE_PARAM,
+)
+from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
 )
+from infrastructure.scheduling.scheduler.storage.run_store import skip_queued_runs
 from infrastructure.scheduling.scheduler.types import ScheduledTask
 
 logger = logging.getLogger(__name__)
@@ -40,6 +51,11 @@ class TaskStoreSnapshot:
 def default_task_store_path() -> Path:
     """Return the scheduler task-store path under the OpenSRE home."""
     return OPENSRE_HOME_DIR / _STORE_FILENAME
+
+
+def _run_database_for_store(store_path: Path) -> Path:
+    """Run database paired with ``store_path``: ``<store dir>/scheduler.db``."""
+    return run_database_path(store_path.parent)
 
 
 def _lock_path(store_path: Path) -> Path:
@@ -207,16 +223,43 @@ def get_task(task_id: str, store_path: Path | None = None) -> ScheduledTask | No
     return None
 
 
+#: Text a template loop takes from its latest add instead of from its schedule identity.
+_TEMPLATE_LOOP_TEXT = (LOOP_PROMPT_PARAM, LOOP_DESCRIPTION_PARAM)
+
+
+def _refresh_template_copies(existing: dict[str, Any], task: ScheduledTask) -> bool:
+    """Take the prompt copy and any description a re-add supplies; return whether one changed."""
+    params = existing.get("params") or {}
+    if not params.get(LOOP_TEMPLATE_PARAM):
+        return False
+    changes = {
+        key: task.params[key]
+        for key in _TEMPLATE_LOOP_TEXT
+        if key in task.params and params.get(key) != task.params[key]
+    }
+    existing["params"] = {**params, **changes}
+    return bool(changes)
+
+
 def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     """What makes two rows the same schedule.
 
     Full configuration, not just the slot: two rows differing in destination or
     params are separate reports, and merging them would drop one the user asked
-    for. Identity deliberately excludes ``id``, ``name``, skill revision, and the
-    run bookkeeping (``created_at``, ``last_run``, ``next_run``), which differ
-    between two confirmations of the same schedule.
+    for. Identity deliberately excludes ``id``, ``name``, skill revision, who
+    created it, and the run bookkeeping (``created_at``, ``last_run``,
+    ``next_run``), which differ between two confirmations of the same schedule.
+    The owning organization is part of it: two organizations with the same
+    schedule hold two rows. A template loop is identified by its template name,
+    not by the prompt and description copied from it.
     """
+    raw_params = entry.get("params") or {}
+    ignored = {LOOP_CREATED_BY_PARAM}
+    if raw_params.get(LOOP_TEMPLATE_PARAM):
+        ignored.update(_TEMPLATE_LOOP_TEXT)
+    params = {key: value for key, value in raw_params.items() if key not in ignored}
     return (
+        _owner_of(entry),
         entry.get("kind"),
         entry.get("cron"),
         entry.get("timezone"),
@@ -225,8 +268,38 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
         entry.get("window_hours"),
         entry.get("skill_name") or "",
         tuple(sorted((entry.get("skill_inputs") or {}).items())),
-        tuple(sorted((entry.get("params") or {}).items())),
+        tuple(sorted(params.items())),
     )
+
+
+def _owner_of(entry: Mapping[str, Any]) -> str:
+    """The organization a row belongs to: its stamp, else the deployment's organization.
+
+    Rows written before stamps existed carry none; on a deployment that declares
+    its organization they are that organization's.
+    """
+    stamped = str(entry.get("organization") or "")
+    if stamped:
+        return stamped
+    return organization_id()
+
+
+def _owned_by_acting_scope(task: ScheduledTask) -> ScheduledTask:
+    """Stamp the organization and member of the turn that created ``task``.
+
+    The store is process-wide; the organization stamp is what lets a reader show
+    one organization only its own loops. A CLI child of a turn acts in the scope
+    its parent handed it. A task that already names its owner or creator keeps it.
+    """
+    scope = acting_scope()
+    if scope is None:
+        return task
+    update: dict[str, Any] = {}
+    if not task.organization:
+        update["organization"] = scope.principal.id
+    if not task.params.get(LOOP_CREATED_BY_PARAM):
+        update["params"] = {**task.params, LOOP_CREATED_BY_PARAM: scope.actor.id}
+    return task.model_copy(update=update) if update else task
 
 
 def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
@@ -237,6 +310,7 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
     ``daily_summary`` entries, none of which could deliver.
     """
     path = store_path or default_task_store_path()
+    task = _owned_by_acting_scope(task)
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_for_write(path)
@@ -247,7 +321,8 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
         )
         if existing_index is not None:
             existing = raw[existing_index]
-            if existing.get("skill_revision", "") == task.skill_revision:
+            refreshed = _refresh_template_copies(existing, task)
+            if existing.get("skill_revision", "") == task.skill_revision and not refreshed:
                 return ScheduledTask.model_validate(existing)
             existing["skill_revision"] = task.skill_revision
             stored_task = ScheduledTask.model_validate(existing)
@@ -274,6 +349,7 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
 
     # The schedule changed: wake any running scheduler so it stops firing this.
     reload_signal.request_scheduler_reload()
+    skip_queued_runs(task_id, reason="missing_task", db_path=_run_database_for_store(path))
 
     return True
 
@@ -282,14 +358,47 @@ def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
     """Update an existing task in the store. Returns True if found and updated."""
     path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
+    should_reload = False
     with lock:
         raw = _load_raw(path)
         for i, entry in enumerate(raw):
             if entry.get("id") == task.id:
-                raw[i] = task.model_dump(mode="json")
+                updated = task.model_dump(mode="json")
+                should_reload = _job_registration_changed(entry, updated)
+                raw[i] = updated
                 _save_raw(path, raw)
-                return True
-    return False
+                break
+        else:
+            return False
+    if should_reload:
+        # Enable/disable/schedule edits must drop or replace the live APScheduler job.
+        reload_signal.request_scheduler_reload()
+    if not task.enabled:
+        skip_queued_runs(task.id, reason="disabled", db_path=_run_database_for_store(path))
+    return True
+
+
+def _job_registration_changed(previous: dict[str, object], updated: dict[str, object]) -> bool:
+    """True when APScheduler must drop or replace the job for this row."""
+    previous_params = previous.get("params")
+    updated_params = updated.get("params")
+    previous_run_at = (
+        previous_params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM)
+        if isinstance(previous_params, dict)
+        else None
+    )
+    updated_run_at = (
+        updated_params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM)
+        if isinstance(updated_params, dict)
+        else None
+    )
+    return (
+        previous.get("enabled") != updated.get("enabled")
+        or previous.get("cron") != updated.get("cron")
+        or previous.get("timezone") != updated.get("timezone")
+        or previous.get("kind") != updated.get("kind")
+        or previous_run_at != updated_run_at
+    )
 
 
 def record_task_success(task_id: str, store_path: Path | None = None) -> bool:

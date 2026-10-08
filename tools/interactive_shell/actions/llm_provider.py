@@ -15,6 +15,7 @@ from core.agent_harness.tools import (
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema
+from tools.interactive_shell.actions.slash import execute_slash_tool
 from tools.interactive_shell.shared import allow_tool
 
 
@@ -44,12 +45,12 @@ def _apply_model_set_target(target: str, ctx: ActionToolScope) -> bool:
     return bool(ctx.llm_provider_ports.apply_target(target, ctx.console))
 
 
-def execute_llm_provider_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool:
+def execute_llm_provider_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dict[str, Any]:
     target = str(args.get("target", args.get("provider", ""))).strip()
     if not target:
         return False
     if ctx.llm_provider_ports is None:
-        raise RuntimeError("LLM provider tool requires provider runtime ports")
+        return execute_slash_tool({"command": "/model", "args": ["set", target]}, ctx)
     policy = allow_tool("switch_llm_provider")
     if not ctx.llm_provider_ports.execution_allowed(
         policy=policy,

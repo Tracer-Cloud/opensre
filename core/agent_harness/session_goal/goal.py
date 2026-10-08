@@ -217,6 +217,8 @@ class SessionGoal:
     # the review budget and must not be treated as complete after restore.
     tool_evidence: tuple[str, ...] | None = ()
     tool_success_seen: bool = False
+    # Explicit tool-supplied items survive edits that only change the condition prose.
+    checklist_explicit: bool = False
 
     def with_status(self, status: str) -> SessionGoal:
         return replace(self, status=status)
@@ -363,6 +365,7 @@ def build_session_goal(
         status=SessionGoalStatus.ACTIVE,
         step_count=len(clean_items) or None,
         checklist=clean_items,
+        checklist_explicit=any(item.strip() for item in checklist),
     )
 
 

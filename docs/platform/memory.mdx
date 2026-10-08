@@ -1,0 +1,183 @@
+---
+title: "Long-Term Memory"
+description: "The agent remembers who you are and how your infrastructure works — durable facts persist across sessions as plain local files you control."
+---
+
+## Commands at a glance
+
+| Command | What it does |
+| --- | --- |
+| `/memory` | List everything the agent remembers |
+| `/memory show <name>` | Print one memory in full |
+| `/memory forget <name>` | Delete one memory |
+| `/memory path` | Print the folder where memories are stored |
+
+---
+
+## What the agent remembers
+
+OpenSRE keeps durable knowledge across sessions so you never repeat yourself:
+
+- **Who you are** — your name, role, and how you like to work
+- **Your infrastructure** — cluster names, naming conventions, known-flaky services
+- **Your repositories** — owner/name, purpose, default branch, CI behavior, and repo-specific conventions
+- **Your preferences** — report formats, notification choices, defaults
+- **Operational learnings** — failures, their causes, and the fix that worked
+
+Every conversation sees two things:
+
+- **An index of every memory** — one line each (name and summary), with your
+  profile and preferences first.
+- **The full text of the memories that match your request** — up to five,
+  picked by matching the words of your message, plus the active repository and
+  your connected integrations.
+
+So a memory about `acme/payments` shows up in full when you ask about the
+checkout deploy, even if you saved ten other notes since. Any other memory is
+one `memory_recall` away; ask "what do you remember about the payments repo?"
+and the agent searches every memory for the words you used.
+
+### Multiple repositories
+
+OpenSRE keeps one active repository per GitHub or GitLab context while retaining
+facts for many repositories. Naming a different repository makes it active for
+unqualified follow-up requests in that session; it does not delete or overwrite
+the repositories used earlier. Durable details are stored as separate
+`repository` memories, one per repository, and remain available in later
+sessions. A new session defaults the active target to the current workspace
+checkout, while the other repository memories stay available for recall.
+
+## Saving memories
+
+Talk normally — no special phrasing:
+
+```
+our prod cluster is eks-prod-1
+```
+
+```
+Tracer-Cloud/opensre is our SRE assistant repo; its default branch is main
+```
+
+```
+my name is Vaibhav, I'm on the platform team
+```
+
+When the agent judges a fact useful for future sessions, it stores it (and
+updates an existing entry instead of duplicating). Facts the agent verified
+with a tool — a CI job that fails only on Windows, the fix that made a run
+pass — can be remembered too, and the memory file records where each fact came
+from:
+
+```
+source: tool
+evidence: gh run view 18822 failed on windows-latest; retry passed
+verified: true
+```
+
+A background pass also reviews the conversation every six turns and once more
+when you exit the shell, so knowledge lands even if the agent did not save it
+mid-turn. That pass saves at most five memories, and it only keeps facts you
+stated or a tool showed — never something only the agent claimed about your
+systems.
+
+The background review skips demo and onboarding runs (`/demo` and the
+first-run picker), and memories about demo, sample, or synthetic repositories
+and runs are hidden from the agent and archived.
+
+## Viewing and deleting memories
+
+```
+/memory
+```
+
+```
+  Long-term memory
+
+   name                      type            description                          updated
+   ─────────────────────────────────────────────────────────────────────────────────────────
+   prod-cluster-conventions  infrastructure  Prod EKS clusters: eks-prod-<region>  2026-07-09
+   user-profile              user            Vaibhav, platform team                2026-07-09
+```
+
+Delete one with `/memory forget prod-cluster-conventions`, or ask the agent:
+"forget what you know about the prod cluster". Forgetting a memory also
+removes the consolidated summary, which is rewritten without it in the
+background as you keep chatting. Summaries of conversations that had started
+before you forgot it are not used to write the new one.
+
+## Upkeep
+
+When you send a message, at most once every six hours, OpenSRE tidies the
+store in the background:
+
+- **Archives** demo, sample, and synthetic memories, and memories neither
+  updated nor used for 120 days. Your profile and preferences never expire.
+- **Merges duplicates** — two repository memories about the same `owner/repo`
+  become one: the most recently updated is kept, the other's notes are added
+  to it under a "Merged from" heading (lines it already has are not repeated),
+  and the other's file is archived. When the notes would not fit in one
+  memory, both memories stay as they are.
+- **Writes `memory_summary.md`** — a short summary of who you are, your
+  preferences, your repositories, and recurring failures and fixes, shown to
+  the agent above the index. It is skipped when no LLM is configured.
+
+Nothing is deleted. To bring an archived memory back, move its file from
+`.archive/` into the memory folder.
+
+## Where memories live
+
+On a laptop, memories are plain markdown files under `~/.opensre/memory/`:
+
+| Path | What it holds |
+| --- | --- |
+| `<name>.md` | One memory per file |
+| `MEMORY.md` | Generated list of every memory |
+| `memory_summary.md` | The consolidated summary |
+| `.archive/` | Archived memories, never shown to the agent |
+| `sessions/` | Short summaries of recent sessions (the last 30), read only by upkeep |
+| `.usage.json` | How often each memory was shown to the agent |
+
+OpenSRE creates the folder (and an empty index) the first time memory is used
+in a chat or via `/memory`. Files are stored **locally and unencrypted**.
+
+Override the directory with `OPENSRE_MEMORY_DIR` when you need a custom path.
+
+On a Slack or Discord silo, each member gets a private memory folder inside the
+organization's mounted context volume
+(`<org root>/users/<user_id>/memory/`), not a shared host folder. Telegram
+turns are unbound and stay **host-global** under the flat `~/.opensre/memory/`
+layout.
+
+The index, the matching memories, and the summary are sent to your configured
+LLM provider with each turn. You can open, edit, or delete the files directly
+at any time; the index rebuilds on the next write.
+
+## Turning memory off
+
+| Environment variable | Effect |
+| --- | --- |
+| `OPENSRE_MEMORY_DISABLED=1` | Disable long-term memory entirely |
+| `OPENSRE_MEMORY_AUTOEXTRACT_DISABLED=1` | Keep memory, but skip the background review and the upkeep |
+| `OPENSRE_MEMORY_GATEWAY_ENABLED=1` | Opt in on Slack/Telegram gateway (off by default — see below) |
+| `OPENSRE_MEMORY_DIR` | Override the memory storage directory |
+
+The background review makes one lightweight LLM call every six turns and one
+on exit; the upkeep makes at most one call every six hours. On shell exit the
+review runs to completion so durable facts are not dropped. Never share
+secrets or credentials expecting them to be remembered — the memory ingestion
+path blocks obvious tokens, passwords, private keys, and credential-shaped
+values, and redacts matching spans before anything is sent to the LLM.
+
+## Gateway (Slack / Telegram / Discord / Buzz)
+
+On Slack, Discord, and Buzz, when org scope is bound, memory is **per-user
+scoped** — each member's facts live under their own `users/<id>/memory/` folder
+inside the org volume, so one user's memories cannot appear in another's
+prompts or channel replies. Telegram turns are unbound and stay **host-global**.
+
+Because Telegram is host-global (and to keep memory off by default on shared
+hosts), the **Slack and Telegram** gateway path is **off by default**; opt in
+with `OPENSRE_MEMORY_GATEWAY_ENABLED=1`. Discord and Buzz use the same
+actor-scoped storage layout when scoped; they are not gated by that opt-in flag
+today — use `OPENSRE_MEMORY_DISABLED=1` if you need memory off there.

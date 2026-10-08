@@ -12,6 +12,7 @@ import logging
 
 from core.agent_harness import AgentSession, TurnResult
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.schedule_cancel import cancel_requested_for_payload
 from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.posthog.report_prerequisites import (
     DEFAULT_POSTHOG_PERIOD,
@@ -53,19 +54,20 @@ def _require_posthog_configured() -> None:
     raise RuntimeError(posthog_not_configured_hint())
 
 
-def _dispatch_headless_turn(message: str) -> TurnResult:
+def _dispatch_headless_turn(message: str, payload: AgentPayload) -> TurnResult:
     _require_posthog_configured()
     return AgentSession.run_headless_turn(
         message,
         logger=logger,
         is_tty=False,
+        cancel_requested=cancel_requested_for_payload(payload),
     )
 
 
 def run_posthog_report(payload: AgentPayload) -> TaskReport:
     """Run one headless summarizing-posthog-analytics turn and return the assistant report."""
     message = build_report_prompt(payload)
-    result = _dispatch_headless_turn(message)
+    result = _dispatch_headless_turn(message, payload)
     report = result.primary_response_text
     if not result.answered:
         # Billing/auth failures often leave a useful message on the action path

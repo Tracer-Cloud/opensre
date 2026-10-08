@@ -29,8 +29,6 @@ _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
         # ``/demo`` queues onboarding; finish it before reading the queued prompt.
         "/demo",
         "/help",
-        "/integrations",
-        "/mcp",
         "/memory",
         "/model",
         "/tools",
@@ -45,6 +43,7 @@ _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
         "/verify",
         "/status",
         "/cost",
+        "/credits",
         "/tasks",
         "/loops",
         "/work",
@@ -61,13 +60,18 @@ _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
 )
 _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
+        ("/integrations", "list"),
         ("/integrations", "setup"),
         # ``remove`` drives a native inline arrow-key picker (raw os.read on
         # stdin). Without exclusive stdin the active prompt application steals
         # keystrokes and CPR responses leak into the next prompt buffer.
         ("/integrations", "remove"),
+        ("/mcp", "list"),
         ("/mcp", "connect"),
         ("/mcp", "disconnect"),
+        # Bare ``/model set`` opens the provider picker; with a provider it may
+        # prompt for a missing key and prints the models table.
+        ("/model", "set"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),
@@ -85,8 +89,10 @@ _WAIT_FOR_COMPLETION_COMMANDS: frozenset[str] = frozenset(
         "/onboard",
         "/config",
         "/account",
+        "/credits",
         "/auth",
         "/login",
+        "/logout",
         # ``/goal set|resume`` queues the condition as the next prompt turn.
         # Wait for the slash turn to finish so the work prompt renders as its
         # own ``[N] ❯`` line (not buried under the set paint / ``$`` echo).

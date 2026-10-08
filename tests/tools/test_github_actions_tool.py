@@ -299,6 +299,11 @@ def _runs_mcp_response(arguments: dict[str, Any], runs: list[dict[str, Any]]) ->
     }
 
 
+def _mcp_server_page_size(arguments: dict[str, Any]) -> int:
+    """Page size as github-mcp-server reads it: ``perPage`` (default 30); ``per_page`` is ignored."""
+    return int(arguments.get("perPage", 30))
+
+
 @pytest.fixture(autouse=True)
 def _rest_history_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     """Commit history goes to MCP paging unless a test supplies a REST fake."""
@@ -310,6 +315,9 @@ def _rest_history_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
             pass
 
         def paginate(self, *_args: Any, **_kwargs: Any) -> list[Any]:
+            raise GitHubApiError("REST unavailable in this test")
+
+        def request(self, *_args: Any, **_kwargs: Any) -> Any:
             raise GitHubApiError("REST unavailable in this test")
 
     monkeypatch.setattr(actions_module, "GitHubRestClient", _NoRest)
@@ -1050,8 +1058,8 @@ def test_head_sha_history_pages_at_the_api_maximum_and_flags_an_unreached_commit
     seen_sizes: list[int] = []
 
     def _respond(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        seen_sizes.append(int(arguments["per_page"]))
-        size = int(arguments["per_page"])
+        size = _mcp_server_page_size(arguments)
+        seen_sizes.append(size)
         return _runs_mcp_response(
             arguments, [_workflow_run(index, "othersha") for index in range(size)]
         )
@@ -1114,3 +1122,165 @@ def test_rest_history_at_the_page_cap_is_not_marked_complete() -> None:
     assert result["history_source"] == "rest"
     assert result["history_fully_fetched"] is False
     assert result["pages_fetched"] == _HEAD_SHA_MAX_PAGES
+
+
+def _dated_run(run_id: int, created_at: str, name: str = "CI") -> dict[str, Any]:
+    return {**_workflow_run(run_id, "sha", name), "head_branch": "main", "created_at": created_at}
+
+
+def test_listing_without_head_sha_returns_the_newest_runs_first() -> None:
+    """An out-of-order MCP page comes back newest first; unverified when REST is unavailable."""
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    out_of_order = [
+        _dated_run(3, "2026-10-04T19:00:00Z"),
+        _dated_run(5, "2026-10-04T19:30:00Z"),
+        _dated_run(4, "2026-10-04T19:30:00Z", "CodeQL"),
+    ]
+    sent: list[dict[str, Any]] = []
+
+    def _respond(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        sent.append(arguments)
+        return _runs_mcp_response(arguments, out_of_order[: _mcp_server_page_size(arguments)])
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
+    ):
+        result = workflow_tool(owner="org", repo="repo", branch="main", per_page=3)
+
+    assert sent[0]["page"] == 1
+    assert sent[0]["perPage"] == 3
+    assert "per_page" not in sent[0]
+    assert [row["id"] for row in result["workflow_runs"]] == [5, 4, 3]
+    assert result["listing_source"] == "mcp"
+    assert result["listing_verified"] is False
+
+
+class _RestListing:
+    """Fake REST client serving ``actions/runs`` page 1, newest first like GitHub."""
+
+    calls: list[dict[str, Any]] = []
+    runs: list[dict[str, Any]] = []
+
+    def __init__(self, _token: str | None = None) -> None:
+        pass
+
+    def request(self, method: str, path: str, *, params: dict[str, Any]) -> dict[str, Any]:
+        _RestListing.calls.append({"method": method, "path": path, "params": params})
+        return {"workflow_runs": _RestListing.runs[: int(params["per_page"])]}
+
+
+def test_stale_mcp_listing_is_flagged_and_replaced_by_the_newest_rest_page() -> None:
+    """Regression: the hosted gateway presented August runs as the most recent on 2026-10-04."""
+    from integrations.github.tools import actions as actions_module
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    august = [
+        _dated_run(32549382871, "2026-08-22T03:35:13Z"),
+        _dated_run(32549072775, "2026-08-22T03:28:36Z"),
+    ]
+    _RestListing.calls = []
+    _RestListing.runs = [
+        _dated_run(37229103087, "2026-10-04T19:39:20Z", "Release"),
+        _dated_run(37228907189, "2026-10-04T19:36:14Z", "CodeQL"),
+        *august,
+    ]
+
+    def _respond(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return _runs_mcp_response(arguments, august)
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
+        patch.object(actions_module, "GitHubRestClient", _RestListing),
+    ):
+        result = workflow_tool(
+            owner="Tracer-Cloud", repo="opensre", branch="main", per_page=2, github_token="tok"
+        )
+
+    assert [call["params"] for call in _RestListing.calls] == [{"branch": "main", "per_page": 2}]
+    assert [row["id"] for row in result["workflow_runs"]] == [37229103087, 37228907189]
+    assert result["listing_source"] == "rest"
+    assert "2 missing" in result["listing_note"]
+
+
+def test_mcp_page_with_the_newest_run_but_a_gap_is_replaced() -> None:
+    """Holding GitHub's newest run is not enough: a missing run inside the page is stale too."""
+    from integrations.github.tools import actions as actions_module
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    _RestListing.calls = []
+    _RestListing.runs = [
+        _dated_run(30, "2026-10-04T19:30:00Z"),
+        _dated_run(20, "2026-10-04T19:20:00Z"),
+        _dated_run(10, "2026-10-04T19:10:00Z"),
+    ]
+
+    def _respond(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return _runs_mcp_response(
+            arguments,
+            [_dated_run(30, "2026-10-04T19:30:00Z"), _dated_run(1, "2026-08-22T03:35:13Z")],
+        )
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
+        patch.object(actions_module, "GitHubRestClient", _RestListing),
+    ):
+        result = workflow_tool(owner="org", repo="repo", per_page=2, github_token="tok")
+
+    assert [row["id"] for row in result["workflow_runs"]] == [30, 20]
+    assert result["listing_source"] == "rest"
+    assert result["listing_verified"] is True
+
+
+def test_fresh_mcp_listing_is_kept_after_the_rest_check() -> None:
+    from integrations.github.tools import actions as actions_module
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    newest = [
+        _dated_run(37229103087, "2026-10-04T19:39:20Z", "Release"),
+        _dated_run(37228907189, "2026-10-04T19:36:14Z", "CodeQL"),
+    ]
+    _RestListing.calls, _RestListing.runs = [], list(newest)
+
+    def _respond(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return _runs_mcp_response(arguments, newest)
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
+        patch.object(actions_module, "GitHubRestClient", _RestListing),
+    ):
+        result = workflow_tool(owner="org", repo="repo", per_page=2, github_token="tok")
+
+    assert len(_RestListing.calls) == 1
+    assert result["listing_source"] == "mcp"
+    assert result["listing_verified"] is True
+    assert "listing_note" not in result
+
+
+def test_mcp_page_with_runs_github_no_longer_lists_is_replaced() -> None:
+    """Extra MCP rows (e.g. a deleted run on a stale page) fail verification too."""
+    from integrations.github.tools import actions as actions_module
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    _RestListing.calls = []
+    _RestListing.runs = [_dated_run(30, "2026-10-04T19:30:00Z")]
+
+    def _respond(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return _runs_mcp_response(
+            arguments,
+            [_dated_run(30, "2026-10-04T19:30:00Z"), _dated_run(25, "2026-10-04T19:25:00Z")],
+        )
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
+        patch.object(actions_module, "GitHubRestClient", _RestListing),
+    ):
+        result = workflow_tool(owner="org", repo="repo", per_page=2, github_token="tok")
+
+    assert [row["id"] for row in result["workflow_runs"]] == [30]
+    assert result["listing_source"] == "rest"
+    assert "1 not listed by GitHub" in result["listing_note"]

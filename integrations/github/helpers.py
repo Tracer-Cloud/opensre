@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from integrations.github.client import resolve_github_token
 from integrations.github.mcp import (
     DEFAULT_GITHUB_MCP_MODE,
     GitHubMCPConfig,
@@ -28,6 +29,7 @@ from integrations.github.mcp import (
 
 # Runtime connection/secret kwargs from ``extract_params``; must win over model input.
 GITHUB_INJECTED_PARAMS: tuple[str, ...] = (
+    "github_connection_id",
     "github_url",
     "github_mode",
     "github_token",
@@ -48,9 +50,23 @@ def github_source_available(sources: dict[str, dict]) -> bool:
     return bool(sources.get("github", {}).get("connection_verified"))
 
 
+def github_repository_source_available(sources: dict[str, dict]) -> bool:
+    """Require a repository and an available GitHub grant without selection fallback."""
+    gh = sources.get("github", {})
+    if gh.get("connection_selection_error"):
+        return False
+    return bool(
+        (github_source_available(sources) or resolve_github_token(None))
+        and gh.get("owner")
+        and gh.get("repo")
+    )
+
+
 def github_creds(gh: dict) -> dict[str, Any]:
     """Map classified GitHub integration fields to tool credential kwargs."""
     creds: dict[str, Any] = {}
+    if gh.get("connection_id"):
+        creds["github_connection_id"] = gh["connection_id"]
     url = gh.get("github_url") or gh.get("url")
     if url:
         creds["github_url"] = url

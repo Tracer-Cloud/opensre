@@ -15,6 +15,8 @@ BRANCH_FAILED = "branch_failed"
 COMMIT_FAILED = "commit_failed"
 PUSH_FAILED = "push_failed"
 MERGE_FAILED = "merge_failed"
+# Too many memory-heavy operations (clones, coding agents) were already running.
+HEAVY_WORK_BUSY = "heavy_work_busy"
 
 
 class GitCommandError(Exception):

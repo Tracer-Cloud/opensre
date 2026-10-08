@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 #: than widening to every destination.
 _TARGETED_RUN_SCAN_LIMIT = 50
 _RECOVERABLE_RUN_SCAN_LIMIT = 100
-_CLAIM_LEASE_SECONDS = 30 * 60
+#: Live owners renew every third of the lease, so its length only bounds how
+#: long a claimant that died mid-tick keeps the task's later ticks from running.
+_CLAIM_LEASE_SECONDS = 2 * 60
 _RUN_COLUMNS = (
     "task_id, fire_time, started_at, finished_at, status, posted_message_id, "
     "error, provider, targets, attempt, id, report, report_summary, work_outcome"
@@ -354,6 +356,56 @@ def get_recoverable_runs(
         return [RecoverableRun(task_id=str(row[0]), fire_time=str(row[1])) for row in rows]
 
 
+def has_live_claim(db_path: Path | None = None) -> bool:
+    """Whether any scheduled execution currently holds an unexpired lease.
+
+    Live owners renew their lease while they run, so a ``True`` means some
+    process is executing a scheduled task now; a claimant that died stops
+    counting once its lease lapses. A missing database is never created here.
+    """
+    path = db_path if db_path is not None else database.default_run_database_path()
+    if not path.exists():
+        return False
+    with database.connection(path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM task_runs WHERE status = ? AND lease_expires_at >= ? LIMIT 1",
+            (TaskStatus.RUNNING.value, datetime.now(UTC).isoformat()),
+        ).fetchone()
+    return row is not None
+
+
+def skip_queued_runs(
+    task_id: str,
+    *,
+    reason: str,
+    db_path: Path | None = None,
+) -> int:
+    """Mark pending or expired ticks for ``task_id`` skipped after cancel."""
+    path = db_path if db_path is not None else database.default_run_database_path()
+    if not path.exists():
+        return 0
+    skipped = 0
+    while True:
+        runs = get_recoverable_runs(eligible_task_ids={task_id}, db_path=db_path)
+        if not runs:
+            return skipped
+        progressed = 0
+        for run in runs:
+            claim = try_claim(run.task_id, run.fire_time, db_path=db_path)
+            if claim is None:
+                continue
+            complete_run(
+                claim,
+                status=TaskStatus.SKIPPED,
+                error=reason,
+                db_path=db_path,
+            )
+            progressed += 1
+            skipped += 1
+        if progressed == 0:
+            return skipped
+
+
 def complete_run(
     claim: ExecutionClaim,
     *,
@@ -640,8 +692,10 @@ __all__ = [
     "get_group_run",
     "get_group_runs",
     "get_latest_runs",
+    "has_live_claim",
     "record_run_report",
     "renew_claims",
+    "skip_queued_runs",
     "try_claim",
     "try_queue_run",
 ]

@@ -7,6 +7,7 @@ from core.tool.contracts import RegisteredTool
 from infrastructure.turn_host.status_messages import (
     INITIAL_STATUSES,
     _tool_label,
+    chat_status_headline,
     initial_status_message,
     normalize_gateway_status,
     status_from_response_label,
@@ -102,6 +103,22 @@ def test_tool_status_falls_back_to_humanized_name(monkeypatch) -> None:
     assert status_from_tool_start("list_open_pull_requests") == "⏳ list open pull requests…"
 
 
+def test_slash_invoke_status_does_not_claim_the_interactive_shell() -> None:
+    """Gateway progress must not say a slash command ran in the local shell."""
+    from tools.interactive_shell.shared.slash_catalog import slash_invoke_tool_description
+
+    status = status_from_tool_start(
+        "slash_invoke",
+        {"command": "/cron", "args": ["list"]},
+        describe=lambda _name: (slash_invoke_tool_description([]),),
+    )
+
+    label, argument = status.split("\n", 1)
+    assert label == "⏳ Run a slash command…"
+    assert "interactive shell" not in label
+    assert argument == "(/cron)"
+
+
 def test_tool_status_includes_first_input_hint(monkeypatch) -> None:
     tool = _make_tool("slash_invoke", "Run a registered interactive-shell slash command.")
     _register(monkeypatch, [tool])
@@ -113,6 +130,50 @@ def test_tool_status_includes_first_input_hint(monkeypatch) -> None:
     )
     assert status.startswith("⏳ Run a registered interactive-shell slash command…")
     assert "/integrations" in status
+
+
+def test_tool_status_keeps_a_long_argument() -> None:
+    """The hint is what gets copied out of the terminal, so it is not shortened."""
+    status = status_from_tool_start(
+        "shell_run",
+        {"command": ("cat /Users/janvincentfranciszek/.opensre/ci-repair/987221fb5e15/result.md")},
+    )
+    assert "987221fb5e15/result.md" in status
+    assert "…" not in status.split("(", 1)[-1]
+
+
+def _describe_skill(_name: str) -> tuple[str, ...]:
+    return (
+        "Load the full body of one action-agent skill by name from the "
+        "SKILLS INDEX. Call this in the same turn.",
+    )
+
+
+def test_tool_status_keeps_a_long_label_on_its_own_rows() -> None:
+    """A gateway status may use three rows; the label and argument stay whole."""
+    status = status_from_tool_start(
+        "skill_view",
+        {"name": "operating-github-ci-repairs"},
+        describe=_describe_skill,
+    )
+    label, argument = status.split("\n", 1)
+    assert "SKILLS INDEX" in label
+    assert argument == "(operating-github-ci-repairs)"
+    assert "……" not in status
+
+
+def test_chat_status_keeps_the_label_and_drops_the_argument() -> None:
+    """A shared chat shows the label. The argument stays on the shell."""
+    status = status_from_tool_start(
+        "shell_run",
+        {"command": "echo sk-secret-token"},
+    )
+
+    headline = chat_status_headline(status)
+
+    assert "sk-secret-token" not in headline
+    assert "\n" not in headline
+    assert headline.startswith("⏳")
 
 
 def test_tool_label_miss_does_not_scan_the_whole_registry(monkeypatch) -> None:

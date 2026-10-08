@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from surfaces.shared.terminal.banner.banner import (
+        ResponsiveLaunchBanner,
         WordmarkSpinFrame,
         animate_launch_wordmark,
         build_launch_banner,
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "ResponsiveLaunchBanner",
     "WordmarkSpinFrame",
     "animate_launch_wordmark",
     "build_launch_banner",

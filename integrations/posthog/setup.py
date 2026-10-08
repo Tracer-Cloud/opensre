@@ -14,6 +14,7 @@ from config.constants.posthog import (
     POSTHOG_PERSONAL_API_KEY_ENV,
     POSTHOG_PROJECT_ID_ENV,
 )
+from integrations.posthog.setup_guide import guide_posthog
 from integrations.posthog.verifier import verify_posthog
 from integrations.setup_flow import IntegrationSetupSpec, SetupField
 
@@ -23,6 +24,7 @@ PERSONAL_API_KEY_FIELD = "personal_api_key"
 
 POSTHOG_SETUP = IntegrationSetupSpec(
     service="posthog",
+    guide=guide_posthog,
     fields=(
         SetupField(
             name=BASE_URL_FIELD,

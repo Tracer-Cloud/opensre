@@ -59,10 +59,6 @@ class FixSentryIssueTool(BaseTool):
     source = SOURCE
     side_effect_level = SideEffectLevel.MUTATING
     surfaces = (ToolSurface.ACTION,)
-    requires_approval = True
-    approval_reason = (
-        "Runs a coding agent to edit files based on a Sentry issue, and can open a PR."
-    )
     description = (
         "Given a Sentry issue URL, fetch the issue context and run a coding agent to "
         "propose a fix in the current repository, returning a summary plus the git diff. "

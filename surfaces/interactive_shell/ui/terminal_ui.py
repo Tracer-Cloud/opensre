@@ -14,20 +14,23 @@ by :func:`render_prompt_region`, which ``PromptBuilder`` calls per redraw.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from prompt_toolkit.formatted_text import ANSI
 from rich.console import Console
 
 from infrastructure.terminal import theme as ui_theme
-from surfaces.interactive_shell.ui.ci_fix_status import prompt_status_ansi
 from surfaces.interactive_shell.ui.hooks import confirmation_choice_overlay_ansi
 from surfaces.interactive_shell.ui.input_prompt import rendering as prompt_rendering
 from surfaces.interactive_shell.ui.prompt_visibility import (
     hidden_typing_box_pad,
     typing_box_hidden,
 )
-from surfaces.interactive_shell.ui.task_plan import task_plan_overlay_ansi
+from surfaces.interactive_shell.ui.task_plan import (
+    gateway_plan_overlay_ansi,
+    task_plan_overlay_ansi,
+)
 from surfaces.shared.terminal.banner import render_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import strip_cpr_sequences
 from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_line_width
@@ -57,8 +60,20 @@ def render_terminal_ui(
     render_launch_banner(console, session=session, animate=animate)
 
 
-def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerState) -> ANSI:
+def render_prompt_region(
+    session: Session,
+    state: ReplState,
+    spinner: SpinnerState,
+    *,
+    status_line: Callable[[], str] | None = None,
+) -> ANSI:
     """Compose the live prompt region: context line plus rule and input prefix.
+
+    ``status_line`` is the fallback for a prompt session this process did not
+    build: the permission/CI row normally lives under the composer, but a
+    caller-supplied session's layout is not ours to reframe, so its chrome is
+    folded back into this string above the box. Leave it ``None`` whenever the
+    frame already carries that row, or it renders twice.
 
     The top line is the pending confirmation prompt when one is active,
     otherwise Thinking / Invoking while a turn is running, then the ``/auto``
@@ -80,12 +95,20 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
         base = hidden_typing_box_pad()
     else:
         base = prompt_rendering._prompt_message(session).value
+    gateway_plan = state.gateway_plan
     plan = session.task_plan
     if plan is None or not plan.steps or _plan_already_in_transcript(session, plan, state):
         # Drop expand so the next plan opens collapsed rather than inheriting
-        # a sticky Ctrl+P from a previous checklist.
-        state.plan_expanded = False
-        state.plan_step_texts = None
+        # a sticky Ctrl+P from a previous checklist. A live gateway checklist
+        # still uses the flag, keyed by its own step texts.
+        if gateway_plan is None or not gateway_plan.steps:
+            state.plan_expanded = False
+            state.plan_step_texts = None
+        else:
+            gateway_steps = tuple(item.step for item in gateway_plan.steps)
+            if state.plan_step_texts is not None and state.plan_step_texts != gateway_steps:
+                state.plan_expanded = False
+            state.plan_step_texts = gateway_steps
         plan_overlay = ""
     else:
         # Status-only updates keep expand; a different checklist must not.
@@ -96,16 +119,32 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
         plan_overlay = strip_cpr_sequences(
             task_plan_overlay_ansi(plan, expanded=state.plan_expanded)
         )
+    # Paint after the expand decision so a replaced checklist opens collapsed.
+    gateway_overlay = ""
+    if gateway_plan is not None and gateway_plan.steps:
+        gateway_overlay = strip_cpr_sequences(
+            gateway_plan_overlay_ansi(gateway_plan, expanded=state.plan_expanded)
+        )
     # Droid block rhythm: blank row above the checklist (separates scrollback
     # notes from the pinned plan) and one blank beneath before status chrome.
-    plan_prefix = f"\n{plan_overlay}\n\n" if plan_overlay else ""
+    # The gateway checklist sits above the local one, with the same gap.
+    if gateway_overlay and plan_overlay:
+        plan_prefix = f"\n{gateway_overlay}\n\n{plan_overlay}\n\n"
+    elif gateway_overlay:
+        plan_prefix = f"\n{gateway_overlay}\n\n"
+    elif plan_overlay:
+        plan_prefix = f"\n{plan_overlay}\n\n"
+    else:
+        plan_prefix = ""
 
     # A pending confirmation renders a stacked, arrow-navigable Yes/No choice
     # (box hidden). Density matches the streaming stack: status → Auto → composer.
+    # Chrome for a session whose frame has no status row (see ``status_line``).
+    fallback = f"{strip_cpr_sequences(status_line())}\n" if status_line is not None else ""
+
     if state.is_awaiting_confirmation():
-        auto_line = strip_cpr_sequences(prompt_status_ansi(session, quiet=False))
         choice = _confirmation_block(state)
-        return ANSI(f"{plan_prefix}{choice}\n{auto_line}\n{base}")
+        return ANSI(f"{plan_prefix}{choice}\n{fallback}{base}")
 
     if state.is_ctrl_c_exit_hint_visible():
         prefix = prompt_rendering.ctrl_c_exit_hint_ansi()
@@ -122,15 +161,15 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
     # folded into the spinner status row (same line as ``Invoking tools…``).
     # Auto stays on the page while busy (DIM) so permission chrome does not
     # vanish for the length of the turn.
-    auto_line = strip_cpr_sequences(prompt_status_ansi(session, quiet=bool(inline_spinner)))
     # Mid-turn stream text has no trailing blank (that lands only when the
-    # reply finishes). One lead row under Thinking/Invoking so status chrome
-    # does not sit flush on the last assistant line. Skip when a plan overlay
-    # already supplies the gap, and skip when idle (no status prefix).
+    # reply finishes). One lead row keeps Thinking/Invoking off the last
+    # assistant line, and one blank row below it is the seam between the live
+    # region and the composer. Auto metadata is no longer in this string: it
+    # renders on a fixed row under the box, so it never moves with the spinner.
     status_lead = "\n" if prefix and not plan_prefix else ""
     if prefix:
-        return ANSI(f"{plan_prefix}{status_lead}{prefix}\n{auto_line}\n{base}")
-    return ANSI(f"{plan_prefix}{auto_line}\n{base}")
+        return ANSI(f"{plan_prefix}{status_lead}{prefix}\n\n{fallback}{base}")
+    return ANSI(f"{plan_prefix}{fallback}{base}")
 
 
 _CONFIRM_HINT = "↑↓ Navigate • Enter confirm • Esc cancel"

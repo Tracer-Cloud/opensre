@@ -1,6 +1,8 @@
 """The tool contract: what a tool is, how it runs, and where it is registered."""
 
 from core.tool.contracts import (
+    CALL_SIDE_EFFECT_LEVEL_KEY,
+    ERROR_KIND_REFUSED,
     REGISTERED_TOOL_ATTR,
     AgentToolContext,
     BaseTool,
@@ -23,6 +25,8 @@ from core.tool.live_catalog import LiveToolCatalog
 from core.tool.registry import ToolRegistry, normalize_surfaces
 
 __all__ = [
+    "CALL_SIDE_EFFECT_LEVEL_KEY",
+    "ERROR_KIND_REFUSED",
     "REGISTERED_TOOL_ATTR",
     "AgentToolContext",
     "BaseTool",

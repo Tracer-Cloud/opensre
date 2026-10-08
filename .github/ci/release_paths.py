@@ -12,16 +12,30 @@ _EXCLUDED_DIRECTORIES = (
     "tests/",
 )
 _EXCLUDED_SUFFIXES = (".md", ".mdx")
+# Markdown the frozen binary actually loads. A skill-only push has to publish a
+# main build, or a container that installs that binary never sees the edit.
+_BUNDLED_MARKDOWN = "core/agent_harness/prompts/opensre_system_prompt.md"
+_BUNDLED_MARKDOWN_PREFIXES = (
+    "core/agent_harness/prompts/loop_templates/",
+    "core/agent_harness/prompts/skills/",
+)
+
+
+def _affects_release(path: str) -> bool:
+    if not path or path.startswith(_EXCLUDED_DIRECTORIES):
+        return False
+    if (
+        path == _BUNDLED_MARKDOWN
+        or path.startswith(_BUNDLED_MARKDOWN_PREFIXES)
+        or path.endswith("/SKILL.md")
+    ):
+        return True
+    return not path.endswith(_EXCLUDED_SUFFIXES)
 
 
 def requires_release(paths: Iterable[str]) -> bool:
     """Return whether at least one changed path affects release contents."""
-    return any(
-        path
-        and not path.startswith(_EXCLUDED_DIRECTORIES)
-        and not path.endswith(_EXCLUDED_SUFFIXES)
-        for path in paths
-    )
+    return any(_affects_release(path) for path in paths)
 
 
 def main() -> int:

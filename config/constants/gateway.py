@@ -5,10 +5,23 @@ ATTACHMENT_MAX_TOTAL_CHARS = 120_000
 CREDITS_DENIED_MESSAGE = "Out of credits — top up in the OpenSRE console."
 #: Overall SIGTERM budget for web + chat workers. Sequential stop steps share it.
 DEFAULT_STOP_TIMEOUT_SECONDS = 8.0
+#: Overrides that budget; a hosted task sets it just under its ECS ``stopTimeout``.
+GATEWAY_STOP_TIMEOUT_SECONDS_ENV = "OPENSRE_GATEWAY_STOP_TIMEOUT_SECONDS"
+#: Ceiling for the override: the longest ``stopTimeout`` Fargate allows.
+MAX_STOP_TIMEOUT_SECONDS = 120.0
+#: How long a health check waits for the scheduler task-store lock before counting zero.
+HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS = 1.0
+#: Share of the remaining budget that running scheduled jobs may use to finish.
+SCHEDULER_STOP_BUDGET_SHARE = 0.5
 #: Web is a thread join, not a network drain, so it keeps a smaller slice.
 WEB_STOP_TIMEOUT_SECONDS = 5.0
 #: Reload watcher only polls a flag; cap the join so chat workers keep the rest.
 SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS = 2.0
+#: How often a hosted gateway checks the organization's integrations secret for a
+#: new version, so a credential saved in the web app reaches it without a restart.
+CREDENTIAL_REFRESH_INTERVAL_SECONDS = 60.0
+#: The refresh watcher only sleeps between checks; cap its join on shutdown.
+CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS = 2.0
 DEFAULT_MAX_CONVERSATION_LOCKS = 1024
 NEW_SESSION_MESSAGE = "Started a new session."
 #: Inbound-decision reply sentinel: rotate the session instead of replying.
@@ -19,6 +32,59 @@ TURN_TIMEOUT_MESSAGE = "This is taking longer than expected. Please try again."
 UNAUTHORIZED_MESSAGE = "You're not authorized to use this bot. Ask an admin to add you."
 USER_STOP_MESSAGE = "Stopped."
 
+#: Remote prompt intake: one prompt in, one answer out, polled by id.
+PROMPT_ROUTE_PATH = "/v1/prompt"
+PROMPT_MAX_CHARS = 8_000
+PROMPT_CONTEXT_MAX_ITEMS = 16
+PROMPT_CONTEXT_VALUE_MAX_CHARS = 512
+PROMPT_QUEUE_MAX = 8
+#: ``Retry-After`` on a ``too_many_prompts`` refusal. A slot frees only when a turn ends,
+#: which takes tens of seconds at least, so a sooner retry is refused again.
+PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS = 10
+PROMPT_RESULT_RETENTION_SECONDS = 3_600.0
+#: Actor recorded for a remote prompt when the caller names none.
+PROMPT_DEFAULT_ACTOR = "remote-shell"
+#: ``conversation`` on a remote prompt that starts a separate conversation instead of
+#: continuing the actor's own; it runs beside the actor's other conversations.
+PROMPT_CONVERSATION_NEW = "new"
+#: How long a queued remote prompt waits for a free turn slot before it counts as refused.
+PROMPT_SLOT_WAIT_SECONDS = 300.0
+#: Progress updates a prompt record keeps (the newest).
+PROMPT_PROGRESS_MAX_LINES = 20
+#: Character budget for one progress update: three terminal rows.
+PROMPT_PROGRESS_LINE_MAX_CHARS = 600
+#: A hosted checklist is one progress entry with many steps, so it is not
+#: held to the three-row status budget. Past this, whole steps are dropped
+#: and :data:`PROMPT_PROGRESS_PLAN_OMITTED` is appended.
+PROMPT_PROGRESS_PLAN_MAX_CHARS = 12_000
+PROMPT_PROGRESS_PLAN_OMITTED = "… further steps omitted"
+#: What a progress line is, so the shell can paint it instead of dumping the text.
+PROMPT_PROGRESS_KIND_TOOL = "tool"
+PROMPT_PROGRESS_KIND_PLAN = "plan"
+PROMPT_PROGRESS_KIND_PLAN_DONE = "plan_done"
+PROMPT_PROGRESS_KIND_NOTE = "note"
+PROMPT_PROGRESS_KINDS: frozenset[str] = frozenset(
+    {
+        PROMPT_PROGRESS_KIND_TOOL,
+        PROMPT_PROGRESS_KIND_PLAN,
+        PROMPT_PROGRESS_KIND_PLAN_DONE,
+        PROMPT_PROGRESS_KIND_NOTE,
+    }
+)
+#: The prompt worker ends after its current job; it gets this slice of the stop budget.
+PROMPT_WORKER_STOP_TIMEOUT_SECONDS = 2.0
+#: Remote prompt records, relative to the deployment's home (the org mount on a silo),
+#: so a replacement task still answers prompts its predecessor accepted.
+PROMPT_JOBS_FILE = "gateway/prompt-jobs.jsonl"
+#: How long one prompt-record write waits for another writer of the same file.
+PROMPT_JOBS_LOCK_TIMEOUT_SECONDS = 10.0
+#: How often a task re-saves the unsettled prompts it owns, so another task sees it alive.
+PROMPT_HEARTBEAT_SECONDS = 15.0
+#: An unsettled prompt whose owner has not written it for this long belongs to a dead task.
+PROMPT_JOB_STALE_SECONDS = 60.0
+#: Least time between two re-reads of prompts another task owns.
+PROMPT_FOREIGN_REFRESH_SECONDS = 2.0
+
 #: Postgres DSN for the gateway's shared repositories; unset means process-local storage.
 DATABASE_URL_ENV = "DATABASE_URL"
 
@@ -26,13 +92,44 @@ __all__ = [
     "DATABASE_URL_ENV",
     "ATTACHMENT_MAX_FILE_CHARS",
     "ATTACHMENT_MAX_TOTAL_CHARS",
+    "CREDENTIAL_REFRESH_INTERVAL_SECONDS",
+    "CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS",
     "CREDITS_DENIED_MESSAGE",
     "DEFAULT_MAX_CONVERSATION_LOCKS",
     "DEFAULT_STOP_TIMEOUT_SECONDS",
+    "GATEWAY_STOP_TIMEOUT_SECONDS_ENV",
+    "HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS",
+    "MAX_STOP_TIMEOUT_SECONDS",
     "NEW_SESSION_MESSAGE",
     "ROTATE_SESSION",
     "SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS",
+    "SCHEDULER_STOP_BUDGET_SHARE",
     "NO_ACTIVE_TURN_MESSAGE",
+    "PROMPT_CONTEXT_MAX_ITEMS",
+    "PROMPT_CONTEXT_VALUE_MAX_CHARS",
+    "PROMPT_CONVERSATION_NEW",
+    "PROMPT_DEFAULT_ACTOR",
+    "PROMPT_FOREIGN_REFRESH_SECONDS",
+    "PROMPT_HEARTBEAT_SECONDS",
+    "PROMPT_JOB_STALE_SECONDS",
+    "PROMPT_JOBS_FILE",
+    "PROMPT_JOBS_LOCK_TIMEOUT_SECONDS",
+    "PROMPT_MAX_CHARS",
+    "PROMPT_PROGRESS_KIND_NOTE",
+    "PROMPT_PROGRESS_KIND_PLAN",
+    "PROMPT_PROGRESS_KIND_PLAN_DONE",
+    "PROMPT_PROGRESS_KIND_TOOL",
+    "PROMPT_PROGRESS_KINDS",
+    "PROMPT_PROGRESS_LINE_MAX_CHARS",
+    "PROMPT_PROGRESS_MAX_LINES",
+    "PROMPT_PROGRESS_PLAN_MAX_CHARS",
+    "PROMPT_PROGRESS_PLAN_OMITTED",
+    "PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS",
+    "PROMPT_QUEUE_MAX",
+    "PROMPT_RESULT_RETENTION_SECONDS",
+    "PROMPT_SLOT_WAIT_SECONDS",
+    "PROMPT_ROUTE_PATH",
+    "PROMPT_WORKER_STOP_TIMEOUT_SECONDS",
     "TURN_ERROR_MESSAGE",
     "TURN_TIMEOUT_MESSAGE",
     "UNAUTHORIZED_MESSAGE",

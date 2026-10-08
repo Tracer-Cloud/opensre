@@ -60,9 +60,10 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks a docs/how-to question about OpenSRE features",),
     ),
     "/account": _mcp(
-        "Sign in to a personal OpenSRE account, inspect the local login, open the "
-        "credits and top-up page, or sign out. Signing out closes the interactive "
-        "shell. Subcommands: login, status, usage, logout.",
+        "Sign in to a personal OpenSRE account, inspect the local login, show "
+        "hosted credit balance, open the credits and top-up page, or sign out. "
+        "Signing out closes the interactive shell. Subcommands: login, status, "
+        "credits, usage, logout.",
         "User asks to sign in to OpenSRE or create a personal account",
         "User asks whether they are logged into OpenSRE",
         anti_examples=(
@@ -115,12 +116,28 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks how to configure an integration (answer directly)",),
     ),
     "/context": _mcp(
-        "Display accumulated infrastructure context collected during the session.",
-        "User asks what context or infra metadata the session has accumulated",
+        "Show what the next model call will contain, without calling a model: each "
+        "prompt block with its tier, characters and estimated tokens, the replayed "
+        "conversation history, the tool schema count, the total, and how much of the "
+        "history compaction budget is used.",
+        "User asks how big the context or prompt is, or what the model sees each turn",
+        "User asks how close the conversation is to being compacted",
+        anti_examples=("User asks about token spend or cost so far (use /cost)",),
     ),
     "/cost": _mcp(
         "Show token usage and estimated session cost for LLM calls in this REPL session.",
         "User asks about token usage, cost, or spend in the current session",
+    ),
+    "/credits": _mcp(
+        "Show remaining OpenSRE hosted credits for the signed-in account. "
+        "Same as `opensre credits` and `/account credits`. Does not report "
+        "a coding-agent provider's own Anthropic or OpenAI balance.",
+        "User asks how many OpenSRE credits they have left",
+        "User asks to check hosted credit balance while signed in",
+        anti_examples=(
+            "User asks to open the billing page (use /account usage)",
+            "User asks to switch LLM providers (use /model)",
+        ),
     ),
     "/cron": _mcp(
         "Manage cron-driven scheduled deliveries. "
@@ -163,8 +180,8 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks to switch provider or model name (use /model)",),
     ),
     "/demo": _mcp(
-        "Open the guided demo picker that runs on real repositories from this machine "
-        "(CI/CD analytics, CI reliability agent, Slack handoff).",
+        "Open the guided outcome picker for repository analysis, a local or hosted "
+        "CI repair, Slack setup, or the plain shell.",
         "User asks to run a demo, see what OpenSRE can do, or replay the first-run demo menu",
         anti_examples=(
             "User names a specific repository to analyze (call the analytics tool directly)",
@@ -215,7 +232,10 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to clear, disable, or configure command history persistence",
     ),
     "/integrations": _mcp(
-        "Manage configured integrations. Subcommands: list, verify, show <service>, remove.",
+        "Connect an integration with setup <service>; guide the human through sign-in and verify it. "
+        "Other subcommands: list, verify, show <service>, remove.",
+        "User asks Can you configure Telegram for me? (setup telegram)",
+        "User asks to connect GitHub or PostHog (setup github or setup posthog)",
         "User asks to verify an integration by name",
         "User asks to show details for a configured integration",
         anti_examples=(
@@ -227,7 +247,22 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "Shortcut for /auth login. Supports subscription aliases chatgpt and claude, "
         "and API-key providers such as deepseek.",
         "User asks to log in to ChatGPT, Claude, DeepSeek, or another LLM provider",
-        anti_examples=("User asks to log in to a non-LLM integration (use /integrations or /mcp)",),
+        anti_examples=(
+            "User asks to log in to a non-LLM integration (use /integrations or /mcp)",
+            "User asks to sign in to their OpenSRE account (use /account login)",
+            "User asks to sign out of their OpenSRE account (use /logout)",
+        ),
+    ),
+    "/logout": _mcp(
+        "Sign out of the OpenSRE account and close the interactive shell. "
+        "Shortcut for /account logout. Does not clear an LLM provider credential.",
+        "User types /logout or asks to sign out of their OpenSRE account",
+        "User asks to leave the signed-in account before switching LLM providers",
+        anti_examples=(
+            "User asks to clear one LLM provider credential (use /auth logout <provider>)",
+            "User asks to leave the shell without signing out (use /exit)",
+            "User asks to log in to an LLM provider (use /login)",
+        ),
     ),
     "/loops": _mcp(
         "List, create, stop, start, delete, run once, and debug recurring prompt loops, "
@@ -279,6 +314,17 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
             "User says switch to local llama without a concrete provider (clarify the provider)",
         ),
     ),
+    "/new": _mcp(
+        "Start a new session while preserving the current LLM conversation context and "
+        "accumulated infra context. Rotates the session ID and resets all session state "
+        "while keeping the conversation thread so you can continue seamlessly in a fresh session file.",
+        "User wants to continue a conversation in a new session after /resume",
+        "User asks to start a new session without losing their current conversation",
+        anti_examples=(
+            "User wants to clear the screen (use /clear)",
+            "User asks to list sessions (use /sessions)",
+        ),
+    ),
     "/onboard": _mcp(
         "Launch the interactive LLM onboarding wizard (handoff if run inside the REPL).",
         "User asks to run onboarding or reconfigure the LLM provider",
@@ -299,16 +345,11 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks about remote deployment status, health, or operations",
         anti_examples=("Vague connect to X without remote/hosted context (clarify the target)",),
     ),
-    "/new": _mcp(
-        "Start a new session while preserving the current LLM conversation context and "
-        "accumulated infra context. Rotates the session ID and resets all session state "
-        "while keeping the conversation thread so you can continue seamlessly in a fresh session file.",
-        "User wants to continue a conversation in a new session after /resume",
-        "User asks to start a new session without losing their current conversation",
-        anti_examples=(
-            "User wants to clear the screen (use /clear)",
-            "User asks to list sessions (use /sessions)",
-        ),
+    "/rename": _mcp(
+        "Rename the current session with /rename <name>; "
+        "/rename --reset restores its automatic title.",
+        "User explicitly asks to rename the current session or reset its name",
+        anti_examples=("User asks to rename a different saved session",),
     ),
     "/resume": _mcp(
         "Restore the conversation context from a previous session. "
@@ -371,13 +412,23 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
             "User asks how runbook-guided investigations work (answer from docs)",
         ),
     ),
+    "/skills": _mcp(
+        "Show the live skills release this machine runs, pull the newest one, or "
+        "publish and roll back skills (OpenSRE staff). Subcommands: status, update, "
+        "push, rollback, history, pull.",
+        "User asks which skills version is active, to refresh skills, or to publish a skill edit",
+        anti_examples=(
+            "User asks to run or use a skill (load it with skill_view)",
+            "User asks what skills can do (answer from the skills index)",
+        ),
+    ),
     "/tasks": _mcp(
         "List recent and in-flight shell background tasks with ids and status.",
         "User asks to list running or recent tasks",
     ),
     "/tools": _mcp(
         "Explicit /tools command operation: list registered chat/action tools "
-        "wired into this OpenSRE build.",
+        "wired into this OpenSRE build. Takes no arguments.",
         "User explicitly types /tools or asks to run /tools",
         "User explicitly asks to list registered tools as a shell command",
         anti_examples=(
@@ -537,14 +588,19 @@ def format_slash_catalog_text(
 def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -> str:
     entries = specs if specs is not None else build_slash_command_specs()
     header = (
-        "Run a slash command in the OpenSRE interactive shell. "
+        "Run a slash command. "
         "Use this only for explicit slash-command operations: literal /command "
-        "text, requests that explicitly ask to run a slash command, or "
+        "text, requests that explicitly ask to run a slash command, requests to configure "
+        "or connect an integration, or "
         "operation/discovery cases that the system prompt explicitly maps to a "
         "slash command. Do not use this as a natural-language router for "
         "ordinary informational, how-to, capability, or status questions merely "
         "because a slash command can display related information; answer those "
         "directly unless a prompt rule names a read-only discovery exception. "
+        "For requests such as Can you configure Telegram/GitHub/PostHog for me, "
+        'call slash_invoke(command="/integrations", args=["setup", "telegram"/"github"/"posthog"]). '
+        "The guided flow explains each human action, collects secrets privately, discovers IDs, "
+        "and verifies the result. Do not ask for tokens in chat or use cli_exec for interactive setup. "
         "Supply positional args in the args array. This tool covers "
         "only the slash-command clause of a request. For compound requests, "
         "still emit a separate tool call for every other actionable clause in "
@@ -568,12 +624,15 @@ def slash_invoke_input_schema(
     args_description = (
         "Positional arguments after the command name. Valid values depend on the "
         "chosen command — see the slash_invoke tool description. Examples: "
-        '["list"] for /tools, ["verify", "datadog"] for /integrations.'
+        '[] for /tools, ["verify", "datadog"] for /integrations.'
     )
     return object_schema(
         properties={
             "command": string_property(
-                description="Slash command name including leading `/`.",
+                description=(
+                    "Slash command name only, including the leading `/` (e.g. "
+                    "`/integrations`). Put every word after it in `args`, never in `command`."
+                ),
                 enum=command_names,
             ),
             "args": string_array_property(description=args_description),

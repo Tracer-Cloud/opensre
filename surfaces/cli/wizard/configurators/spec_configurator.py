@@ -51,6 +51,13 @@ def configure_from_spec(
     steer to another mode. Returns the pair the wizard's configurator table
     expects: the display name and the ``.env`` path that was written.
     """
+    if spec.guide is not None:
+        from integrations.setup import run_guided_setup
+
+        outcome = run_guided_setup(spec)
+        assert outcome.env_path is not None
+        return title, str(outcome.env_path)
+
     _, credentials = integration_defaults(spec.service)
     if intro:
         console.print(intro)

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sqlite3
 from contextlib import nullcontext
 from dataclasses import replace
+from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -36,11 +38,18 @@ from integrations.github.tools.ci_fix.errors import (
     GitHubCiFixError,
 )
 from integrations.github.tools.ci_fix.ship import PushResult, push_ci_fix
+from integrations.github.tools.ci_fix.timing import PhaseTimer
 from integrations.github.tools.ci_fix.tool import (
     _github_ci_fix_available,
     fix_github_pr_ci,
 )
-from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
+from integrations.github.tools.ci_fix.verification import (
+    DEFAULT_POLL_INTERVAL_SECONDS,
+    DEFAULT_REGISTRATION_SECONDS,
+    DEFAULT_SETTLE_SECONDS,
+    CheckState,
+    CheckVerification,
+)
 from integrations.github.tools.ci_fix.worktree import BranchWorktree, create_branch_worktree
 from tests.tools.conftest import BaseToolContract
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map, get_registered_tools
@@ -182,6 +191,13 @@ def _isolate_repair_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     # Fake workspaces have no git history; PR heads count as up to date unless a test says so.
     monkeypatch.setattr(
         "integrations.github.tools.ci_fix.runner.base_has_new_commits", lambda *_a, **_k: False
+    )
+    # Merge-decision requests are PR comments; a test that needs them patches them itself.
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_fix.runner.reported_decision", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_fix.runner.report_decision", lambda *_a, **_k: True
     )
 
 
@@ -423,6 +439,56 @@ def test_push_ci_fix_returns_exact_committed_head_sha() -> None:
     head_sha.assert_called_once_with("/workspace")
 
 
+def test_push_ci_fix_records_a_commit_the_coding_agent_already_created(tmp_path: Path) -> None:
+    import subprocess
+
+    work = tmp_path / "repo"
+    work.mkdir()
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=work, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-b", "feat/fix-ci")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Tester")
+    (work / "README.md").write_text("hello\n")
+    git("add", "README.md")
+    git("commit", "-m", "init")
+    parent = git("rev-parse", "HEAD")
+    (work / "app.py").write_text("fixed = True\n")
+    git("add", "app.py")
+    git("commit", "-m", "agent fix")
+    captured: list[dict[str, object]] = []
+    ctx = replace(_CTX, head_sha=parent, head_branch="feat/fix-ci")
+
+    with (
+        patch("integrations.github.tools.ci_fix.ship.resolve_github_token", return_value="tok"),
+        patch(
+            "integrations.github.tools.ci_fix.ship.remote_branch_sha",
+            return_value=parent,
+        ),
+        patch("integrations.github.tools.ci_fix.ship.push_branch"),
+        patch(
+            "infrastructure.analytics.capture.capture_opensre_commit_created",
+            lambda **properties: captured.append(properties),
+        ),
+    ):
+        result = push_ci_fix(
+            str(work),
+            ctx=ctx,
+            result=CodingResult(success=True, summary="Fixed CI.", changed_files=["app.py"]),
+            github_token="tok",
+        )
+
+    assert result.changed_files == []
+    assert result.head_sha == git("rev-parse", "HEAD")
+    assert captured == [
+        {"workflow": "github_ci_fix", "commit_kind": "content", "changed_file_count": 1}
+    ]
+
+
 def test_with_push_output_reports_superseded_commit() -> None:
     output = {
         "owner": "Tracer-Cloud",
@@ -570,6 +636,8 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         changed_files=["app.py"],
         diff="diff",
     )
+    ticks = count()
+    timer = PhaseTimer(clock=lambda: float(next(ticks)))
 
     result = runner.run_ci_fix(
         owner="Tracer-Cloud",
@@ -577,8 +645,18 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         pr_number=4597,
         github_token="tok",
         confirm_fn=lambda prompt: prompts.append(prompt) or "y",
+        timer=timer,
     )
 
+    # Every phase of the repair is timed; the two checkout steps add up.
+    assert timer.take() == {
+        "context_gather": 1.0,
+        "checkout": 2.0,
+        "merge_base": 1.0,
+        "coding_agent": 1.0,
+        "push": 1.0,
+        "verify": 1.0,
+    }
     assert result["success"] is True
     assert result["source_head_sha"] == _CTX.head_sha
     assert result["branch_name"] == "feat/fix-ci"
@@ -594,7 +672,128 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         _CTX,
         github_token="tok",
         expected_head_sha="new-sha",
+        registration_seconds=DEFAULT_REGISTRATION_SECONDS,
+        settle_seconds=DEFAULT_SETTLE_SECONDS,
+        poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
     )
+
+
+@patch(
+    "integrations.github.tools.ci_fix.runner.push_ci_fix",
+    return_value=PushResult(branch_name="feat/fix-ci", head_sha="new-sha", changed_files=["a.py"]),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.wait_for_pr_checks",
+    return_value=CheckVerification(state=CheckState.PASSED, check_names=("test",)),
+)
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
+@patch("integrations.github.tools.ci_fix.runner.gather_ci_fix_context", return_value=_CTX)
+def test_run_ci_fix_checks_and_runs_the_coding_agent_on_one_probe_sweep(
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    _wait: MagicMock,
+    _push: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from integrations.coding_agent.runner import _BACKENDS
+
+    signed_out = MagicMock(return_value=(False, "not signed in"))
+    probe = MagicMock(return_value=(True, "codex ready"))
+    agent = MagicMock(
+        return_value=CodingResult(success=True, summary="fixed", changed_files=["a.py"])
+    )
+    monkeypatch.delenv("CODING_AGENT", raising=False)
+    monkeypatch.setattr(
+        "integrations.coding_agent.runner.hosted_openai_subprocess_env", lambda: None
+    )
+    monkeypatch.setitem(_BACKENDS, "pi", (MagicMock(), signed_out))
+    monkeypatch.setitem(_BACKENDS, "claude-code", (MagicMock(), signed_out))
+    monkeypatch.setitem(_BACKENDS, "codex", (agent, probe))
+
+    result = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+
+    assert result["success"] is True
+    agent.assert_called_once()
+    assert signed_out.call_count == 2
+    assert probe.call_count == 1
+
+
+def test_run_ci_fix_forwards_short_demo_check_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    push = PushResult(
+        branch_name="demo/failing-ci", head_sha="fixed", changed_files=["calculator.py"]
+    )
+
+    def wait(_ctx: CiFixContext, **kwargs: Any) -> CheckVerification:
+        seen.update(kwargs)
+        return CheckVerification(state=CheckState.PASSED, check_names=("test",))
+
+    def resumed(*_args: object, **_kwargs: object) -> tuple[CiFixContext, PushResult]:
+        return _CTX, push
+
+    monkeypatch.setattr(runner, "gather_ci_fix_context", lambda **_kwargs: _CTX)
+    monkeypatch.setattr(runner, "repair_workspace", lambda *_args, **_kwargs: nullcontext("/ws"))
+    monkeypatch.setattr(runner, "resumed_push", resumed)
+    monkeypatch.setattr(runner, "wait_for_pr_checks", wait)
+    monkeypatch.setattr(runner, "record_verification", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner, "publish_repair_epoch", lambda *_args, **_kwargs: None)
+
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud",
+        repo="opensre",
+        pr_number=4597,
+        github_token="tok",
+        registration_seconds=0,
+        settle_seconds=0,
+        poll_interval_seconds=2,
+    )
+
+    assert result["checks_state"] == "passed"
+    assert result["fix_head_sha"] == "fixed"
+    assert seen["expected_head_sha"] == "fixed"
+    assert seen["registration_seconds"] == 0
+    assert seen["settle_seconds"] == 0
+    assert seen["poll_interval_seconds"] == 2
+
+
+def test_run_ci_fix_refuses_a_source_head_that_changed_before_checkout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    changed = replace(_CTX, head_sha="another-commit")
+    checkout = MagicMock(side_effect=AssertionError("a moved head must not be checked out"))
+    coding = MagicMock(side_effect=AssertionError("a moved head must not reach the coding agent"))
+    push = MagicMock(side_effect=AssertionError("a moved head must not be pushed"))
+    monkeypatch.setattr(runner, "gather_ci_fix_context", lambda **_kwargs: changed)
+    monkeypatch.setattr(runner, "repair_workspace", checkout)
+    monkeypatch.setattr(runner, "run_fix", coding)
+    monkeypatch.setattr(runner, "push_ci_fix", push)
+
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud",
+        repo="opensre",
+        pr_number=4597,
+        github_token="tok",
+        expected_source_head_sha=_CTX.head_sha,
+    )
+
+    assert result["success"] is False
+    assert result["error_kind"] == "checks_superseded"
+    assert result["source_head_sha"] == "another-commit"
+    assert result["response_text"] == (
+        "The remote source head changed before repair; no push was made."
+    )
+    checkout.assert_not_called()
+    coding.assert_not_called()
+    push.assert_not_called()
 
 
 @patch(
@@ -735,6 +934,9 @@ def test_run_ci_fix_branch_target_uses_worktree_and_branch_verification(
         replace(_BRANCH_CTX, head_branch="opensre/ci-fix-main-ea14998-12345678"),
         github_token="tok",
         expected_head_sha="new-sha",
+        registration_seconds=DEFAULT_REGISTRATION_SECONDS,
+        settle_seconds=DEFAULT_SETTLE_SECONDS,
+        poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
     )
     mock_cleanup.assert_called_once()
 
@@ -788,7 +990,7 @@ def test_registry_discovers_ci_fix_on_action_surface() -> None:
 
     tool = action["fix_github_pr_ci"]
     assert tool.surfaces == ("action",)
-    assert tool.requires_approval is True
+    assert tool.requires_approval is False
     assert tool.side_effect_level == "mutating"
     assert "fix_github_pr_ci" not in chat
 
@@ -1105,6 +1307,7 @@ def test_run_ci_fix_merges_base_before_fixing_a_conflicted_pr(
     assert order == ["merge", "fix"]
     assert "merging main into it and resolving conflicts" in prompts[0]
     assert mock_push.call_args.kwargs["already_committed"] is True
+    assert mock_push.call_args.kwargs["recorded_through"] == "merge-sha"
     assert result["merged_base_branch"] == "main"
     assert result["resolved_conflicts"] == ["package.json"]
     assert result["response_text"] == (
@@ -1160,6 +1363,7 @@ def test_run_ci_fix_pushes_a_merge_only_repair_without_running_the_fix_agent(
     # Assert
     mock_run_fix.assert_not_called()
     mock_push.assert_called_once()
+    assert mock_push.call_args.kwargs["recorded_through"] == "merge-sha"
     assert result["success"] is True
     assert result["summary"] == "merged main"
 
@@ -1206,6 +1410,175 @@ def test_run_ci_fix_reports_blocked_merge_files_in_one_line(
     assert result["error_kind"] == ERR_MERGE_CONFLICT
     assert "package.json (changed on both feat/fix-ci and main)" in result["response_text"]
     assert "\n" not in result["response_text"]
+
+
+@patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
+)
+@patch("integrations.github.tools.ci_fix.runner.base_has_new_commits", return_value=True)
+@pytest.mark.parametrize(
+    "posted, kind, status, retryable",
+    [
+        (True, "merge_decision_required", "blocked", False),
+        # Nobody was told, so the head must not stay blocked: the next call retries.
+        (False, "merge_conflict", "failed", True),
+    ],
+)
+def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
+    _behind: MagicMock,
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    mock_merge: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    posted: bool,
+    kind: str,
+    status: str,
+    retryable: bool,
+) -> None:
+    # Arrange
+    from integrations.github.repair_outcomes import attach_repair_outcome
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_DECISION
+
+    asked: list[tuple[str, str]] = []
+
+    def report(ctx: CiFixContext, message: str, **_kw: object) -> bool:
+        asked.append((ctx.head_sha, message))
+        return posted
+
+    monkeypatch.setattr(runner, "report_decision", report)
+    decision = (
+        "Merging main into feat/fix-ci is blocked on 1 file(s) a person must decide: "
+        "auth.py (changed on both feat/fix-ci and main). No push was made."
+    )
+    mock_merge.side_effect = GitHubCiFixError(
+        ERR_MERGE_DECISION, decision, branch_name="feat/fix-ci"
+    )
+
+    # Act
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
+    )
+
+    # Assert: asked once, for the head that conflicts; a sweep skips it only once asked
+    assert asked == [("head-1", decision)]
+    assert result["error_kind"] == kind
+    outcome = attach_repair_outcome(result, operation="ci")["work_outcome"]
+    assert (outcome["status"], outcome["retryable"]) == (status, retryable)
+
+
+def _journal_unavailable(*_args: object) -> int:
+    raise sqlite3.OperationalError("database is locked")
+
+
+@patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
+)
+@patch("integrations.github.tools.ci_fix.runner.base_has_new_commits", return_value=True)
+@pytest.mark.parametrize(
+    "second_base, journal_works, second_kind",
+    [
+        # The same head merging the same base again: the agent will not settle it.
+        ("base-1", True, "merge_decision_required"),
+        # A new base can bring different conflicts, so it is a fresh first attempt.
+        ("base-2", True, "merge_conflict"),
+        # Without the count a run cannot know it repeats: it retries, it does not crash.
+        ("base-1", False, "merge_conflict"),
+    ],
+)
+def test_a_merge_left_unsettled_twice_at_one_head_goes_to_a_person(
+    _behind: MagicMock,
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    mock_merge: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    second_base: str,
+    journal_works: bool,
+    second_kind: str,
+) -> None:
+    # Arrange: the agent finishes each time but never touches the conflicted file.
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_UNSETTLED
+
+    asked: list[str] = []
+
+    def report(ctx: CiFixContext, _message: str, **_kw: object) -> bool:
+        asked.append(ctx.head_sha)
+        return True
+
+    def unsettled(base_sha: str) -> GitHubCiFixError:
+        return GitHubCiFixError(
+            ERR_MERGE_UNSETTLED,
+            "Merging main into feat/fix-ci is blocked on 1 file(s) a person must decide: "
+            "auth.py (changed on both feat/fix-ci and main). No push was made.",
+            branch_name="feat/fix-ci",
+            base_sha=base_sha,
+        )
+
+    monkeypatch.setattr(runner, "report_decision", report)
+    if not journal_works:
+        monkeypatch.setattr(runner, "record_unsettled_merge", _journal_unavailable)
+    mock_merge.side_effect = [unsettled("base-1"), unsettled(second_base)]
+
+    # Act
+    first = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+    second = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+
+    # Assert: one retry, then a visible request instead of an hourly coding-agent run
+    assert first["error_kind"] == "merge_conflict"
+    assert second["error_kind"] == second_kind
+    assert asked == (["head-1"] if second_kind == "merge_decision_required" else [])
+
+
+@patch("integrations.github.tools.ci_fix.runner.repair_workspace")
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
+)
+def test_run_ci_fix_does_not_retry_a_merge_already_waiting_on_a_person(
+    _gather: MagicMock,
+    mock_workspace: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the PR already carries the request for this head
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_DECISION
+
+    monkeypatch.setattr(
+        runner, "reported_decision", lambda *_a, **_k: "decide whether to keep auth.py"
+    )
+
+    # Act
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
+    )
+
+    # Assert: no clone, no coding agent; the result says it was already asked
+    mock_workspace.assert_not_called()
+    assert result["error_kind"] == ERR_MERGE_DECISION
+    assert result["already_reported"] is True
+    assert "decide whether to keep auth.py" in result["error"]
 
 
 @patch(
@@ -1336,6 +1709,7 @@ def test_run_ci_fix_merges_base_and_reverifies_when_the_pushed_fix_conflicts(
     second_push = mock_push.call_args_list[1].kwargs
     assert second_push["ctx"].head_sha == "new-sha"
     assert second_push["already_committed"] is True
+    assert second_push["recorded_through"] == "merge-sha"
     assert [c.kwargs["expected_head_sha"] for c in mock_wait.call_args_list] == [
         "new-sha",
         "merge-sha",

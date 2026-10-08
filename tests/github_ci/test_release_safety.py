@@ -93,9 +93,31 @@ def test_release_builds_and_publishes_the_validated_source_sha() -> None:
     assert publish["steps"].index(tag_step) > publish["steps"].index(release_step)
 
 
+def test_stable_release_tags_and_notes_use_the_validated_source_sha() -> None:
+    workflow = _release_workflow()
+    publish = workflow["jobs"]["publish-release"]
+    source_sha = "${{ needs.prepare.outputs.source_sha }}"
+
+    assert _checkout(publish)["with"]["ref"] == source_sha
+
+    context = next(
+        step for step in publish["steps"] if step.get("name") == "Resolve release context"
+    )
+    assert context["env"]["SOURCE_SHA"] == source_sha
+    assert 'target_sha="$(git rev-parse "${SOURCE_SHA}^{commit}")"' in context["run"]
+    assert "origin/$default_branch" not in context["run"]
+    assert 'range_spec="${previous_tag}..${target_sha}"' in context["run"]
+
+    release = next(step for step in publish["steps"] if step.get("name") == "Create GitHub release")
+    assert release["env"]["TARGET_SHA"] == "${{ steps.release_ctx.outputs.target_sha }}"
+    assert "refs/tags/${TAG_NAME}^{commit}" in release["run"]
+    assert '[ "$existing_tag_sha" != "$TARGET_SHA" ]' in release["run"]
+    assert '--target "$TARGET_SHA"' in release["run"]
+
+
 def test_release_path_classifier_preserves_the_previous_push_filters() -> None:
     assert not _requires_release(
-        "docs/quickstart.mdx",
+        "docs/getting-started/quickstart.mdx",
         "tests/cli/test_smoke.py",
         "README.md",
         ".claude/settings.json",
@@ -103,3 +125,8 @@ def test_release_path_classifier_preserves_the_previous_push_filters() -> None:
     )
     assert _requires_release("core/agent_harness/turns/driver.py")
     assert _requires_release("pyproject.toml")
+    assert _requires_release("core/agent_harness/prompts/skills/onboarding-github-ci/SKILL.md")
+    assert _requires_release("core/agent_harness/prompts/opensre_system_prompt.md")
+    assert _requires_release("core/agent_harness/prompts/loop_templates/pr-ci.md")
+    assert _requires_release("integrations/github/SKILL.md")
+    assert not _requires_release("docs/install/docker.mdx")

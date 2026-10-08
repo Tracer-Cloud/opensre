@@ -7,6 +7,10 @@
 - ``error`` — ``Agent.run`` raised before returning
 - ``cancelled`` — host cancellation during ``Agent.run``
 - ``no_tools_needed`` — loop finished without executing any tools
+
+``loop_stop_reason`` keeps the loop's own reason uncollapsed, so a run that
+ended on ``goal_unverified`` or ``stagnation_limit`` is not read as having
+exhausted its iterations.
 """
 
 from __future__ import annotations
@@ -24,14 +28,19 @@ from core.agent_harness.spi.accounting import (
     resolve_model_name,
     resolve_provider_name,
 )
+from core.llm.shared.llm_retry import credit_exhaustion_reason
 from core.messages import RuntimeMessageLike
-from infrastructure.analytics.capture import capture_react_turn_completed
+from infrastructure.analytics.capture import (
+    capture_llm_credit_limit_reached,
+    capture_react_turn_completed,
+)
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from infrastructure.analytics.repl_context import (
     get_cli_session_id,
     get_cli_turn_kind,
     get_prompt_turn_id,
 )
+from infrastructure.analytics.scheduled_task_attribution import current_scheduled_task_id
 
 ReactPhase = Literal["action", "gather"]
 ReactStopReason = Literal["completed", "iteration_cap", "error", "cancelled", "no_tools_needed"]
@@ -87,12 +96,12 @@ def emit_react_turn_completed(
     result: AgentRunResult | None,
     iteration_cap: int,
     duration_ms: int,
-    llm: Any,
+    llm: Any | None,
     session: SessionState | None = None,
     error: BaseException | None = None,
     cancelled: bool = False,
 ) -> None:
-    """Emit one ``react_turn_completed`` lifecycle event for an Agent.run."""
+    """Emit one lifecycle event; ``llm=None`` identifies deterministic dispatch."""
     tool_calls_executed = len(result.executed) if result is not None else 0
     llm_iterations_used = result.llm_iterations_used if result is not None else 0
     hit_iteration_cap = bool(result.hit_iteration_cap) if result is not None else False
@@ -103,11 +112,25 @@ def emit_react_turn_completed(
         cancelled=cancelled,
     )
     hit_iteration_cap = stop_reason == "iteration_cap"
+    # A partial result from an aborted run carries no loop reason of its own.
+    loop_stop_reason = (result.stop_reason if result is not None else "") or stop_reason
+    raised = error if stop_reason == "error" else None
+    credit_reason = (
+        credit_exhaustion_reason(raised) if raised is not None and llm is not None else None
+    )
 
     cli_turn_kind = get_cli_turn_kind() or "agent"
+    cli_session_id = _resolve_cli_session_id(session)
+    prompt_turn_id = get_prompt_turn_id()
+    llm_provider = resolve_provider_name(llm) or "unknown"
+    llm_model = resolve_model_name(llm) or "unknown"
 
     recorder = PromptRecorder.current()
-    if recorder is not None:
+    if recorder is not None and llm is None:
+        recorder.set_llm_attempted(False)
+        if error is not None:
+            recorder.set_error("cancelled" if cancelled else "action_error", str(error))
+    elif recorder is not None:
         recorder.set_run(
             LlmRunInfo(
                 model=resolve_model_name(llm),
@@ -125,12 +148,27 @@ def emit_react_turn_completed(
         stop_reason=stop_reason,
         tool_calls_executed=tool_calls_executed,
         duration_ms=duration_ms,
-        cli_session_id=_resolve_cli_session_id(session),
+        cli_session_id=cli_session_id,
         cli_turn_kind=cli_turn_kind,
-        llm_provider=resolve_provider_name(llm) or "unknown",
-        llm_model=resolve_model_name(llm) or "unknown",
-        prompt_turn_id=get_prompt_turn_id(),
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        prompt_turn_id=prompt_turn_id,
+        loop_stop_reason=loop_stop_reason,
+        error_type=type(raised).__name__ if raised is not None else "",
+        error_message=str(raised) if raised is not None else "",
+        scheduled_task_id=current_scheduled_task_id(),
+        ai_error_reason=credit_reason or "",
     )
+    if credit_reason:
+        capture_llm_credit_limit_reached(
+            reason_code=credit_reason,
+            phase=phase,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            cli_session_id=cli_session_id,
+            cli_turn_kind=cli_turn_kind,
+            prompt_turn_id=prompt_turn_id,
+        )
 
 
 def run_react_agent_with_telemetry(
@@ -139,10 +177,10 @@ def run_react_agent_with_telemetry(
     *,
     phase: ReactPhase,
     iteration_cap: int,
-    llm: Any,
+    llm: Any | None,
     session: SessionState | None = None,
 ) -> AgentRunResult:
-    """Run ``agent.run`` and emit exactly one ``react_turn_completed`` event."""
+    """Run with one completion event, using ``llm=None`` for deterministic dispatch."""
     started = time.monotonic()
     result: AgentRunResult | None = None
     try:

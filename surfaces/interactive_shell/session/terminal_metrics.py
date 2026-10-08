@@ -28,7 +28,7 @@ class TerminalMetricsSnapshot(StrictConfigModel):
 
     turn_index: int
     fallback_count: int
-    action_success_percent: float
+    action_success_percent: float | None
     fallback_rate_percent: float
 
 
@@ -45,6 +45,8 @@ class TerminalMetrics:
     Ctrl-C with no agent running is intentionally not counted."""
     correction_intervention_count: int = 0
     """Incremented when a follow-up/new-alert message starts with a correction cue."""
+    autosubmit_overwrite_count: int = 0
+    """Incremented when a queued autosubmit is replaced before it ran (a lost next turn)."""
 
     def record_turn(
         self,
@@ -62,7 +64,7 @@ class TerminalMetrics:
         action_success_percent = (
             100.0 * self.actions_success_count / self.actions_executed_count
             if self.actions_executed_count > 0
-            else 0.0
+            else None
         )
         fallback_rate_percent = 100.0 * self.fallback_count / self.turn_count
         return TerminalMetricsSnapshot(
@@ -89,6 +91,7 @@ class TerminalMetrics:
         self.actions_success_count = 0
         self.ctrl_c_intervention_count = 0
         self.correction_intervention_count = 0
+        self.autosubmit_overwrite_count = 0
 
 
 __all__ = ["InterventionKind", "TerminalMetrics", "TerminalMetricsSnapshot"]

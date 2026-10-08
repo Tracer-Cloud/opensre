@@ -7,25 +7,39 @@ import sys
 import threading
 from collections.abc import Callable
 
-import click
 from rich.console import Console
 
 from config.repl_config import ReplConfig
 from core.agent_harness import SessionManager
 from infrastructure.analytics.capture import capture_interactive_shell_rendered
 from infrastructure.analytics.github_identity import identify_saved_github_username
+from infrastructure.analytics.usage_context import claim_process_session_id
 from infrastructure.logging import install_shell_log_handler, quiet_noisy_third_party_loggers
+from infrastructure.terminal.prompt_support import begin_ctrl_c_exit
 from infrastructure.terminal.theme import set_active_theme
-from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.interactive_shell.controller import InteractiveShellController
 from surfaces.interactive_shell.runtime.context import create_repl_runtime
+from surfaces.interactive_shell.runtime.session_shutdown import close_repl_session
 from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
+from surfaces.interactive_shell.runtime.startup.deferred_work import DeferredStartupWork
 from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
+from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
+    join_first_turn_warmup,
+    warm_first_turn,
+)
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
+from surfaces.interactive_shell.runtime.startup.tool_registry_prewarm import (
+    start_tool_registry_prewarm,
+)
+from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.input_prompt.alternate_scroll import (
+    alternate_scroll_disabled,
+)
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
-from surfaces.shared.terminal.banner import animate_launch_wordmark
+from surfaces.interactive_shell.ui.transcript_view import TranscriptStore, record_startup_output
+from surfaces.shared.terminal.banner import ResponsiveLaunchBanner, animate_launch_wordmark
 from surfaces.shared.terminal.components.rendering import repl_clear_screen
 
 # Fallback when a caller does not supply one. Forces a terminal because the
@@ -35,21 +49,31 @@ _DEFAULT_CONSOLE = Console(
 )
 
 
+def _new_shell_session() -> Session:
+    """The shell's first session, under the process analytics session id when still unclaimed.
+
+    Sharing it keeps ``cli_invoked``, startup onboarding and the shell's turns
+    in one analytics session; ``/new`` and ``/resume`` still change the id.
+    """
+    session_id = claim_process_session_id()
+    return Session(session_id=session_id) if session_id else Session()
+
+
 async def run_repl_async(
     initial_input: str | None = None,
     config: ReplConfig | None = None,
     resume_session_id: str | None = None,
     console: Console | None = None,
-    cli_command_group: click.Command | None = None,
     finish_banner: Callable[[], None] | None = None,
     after_banner: Callable[[], None] | None = None,
+    tools_ready: Callable[[], None] | None = None,
 ) -> int:
     """Run the shell on an existing event loop and return its exit code.
 
-    ``cli_command_group`` is the ``opensre`` Click group the shell documents to
-    the model; the process entrypoint passes it, embedders may leave it out.
     ``after_banner`` is launch work the CLI held back until the banner is on
     screen (error-reporting start); it runs once the runtime is booted.
+    ``tools_ready`` waits for a tool-registry load started before the runtime
+    booted; it returns before the first turn can start.
     """
     # Keep MCP schema-cache warnings / httpx chatter off the transcript —
     # progress is soft status lines, not library WARNINGs.
@@ -65,9 +89,8 @@ async def run_repl_async(
     install_shell_log_handler(lambda: out)
     # Let PromptBuilder build the prompt session so it can wire the
     # composer-hide (needs the session + REPL state, which do not exist yet).
-    runtime_context = create_repl_runtime()
+    runtime_context = create_repl_runtime(session=_new_shell_session())
     session = runtime_context.session
-    session.terminal.cli_command_group = cli_command_group
 
     if initial_input:
         if after_banner is not None:
@@ -79,50 +102,91 @@ async def run_repl_async(
     # where it interleaves with the launch-banner paint. This coroutine is the
     # shell body only; embedders driving it directly manage their own auth.
 
+    # Warm-ups and snapshots wait until the first menu draws (``/choose``
+    # releases them) so they do not compete with the launch for the interpreter.
+    startup_work = DeferredStartupWork()
+    session.terminal.startup_work_release = startup_work.release
+
     # Open the session file now that we know this is an interactive REPL run.
     SessionManager.for_session(session).open_store(session)
     # The runtime is booted; nothing has printed yet. Stop the launch spin and
     # paint the static banner before anything below can write to the screen.
+    transcript = TranscriptStore()
     if finish_banner is not None:
         finish_banner()
+        # The banner is in scrollback; the full-screen view lays it out again
+        # at whatever width the window has when it is drawn.
+        transcript.append_renderable(ResponsiveLaunchBanner(session=session), on_normal_screen=True)
     # The launch has nothing left to load: held-back work no longer competes
     # with it for the interpreter.
     if after_banner is not None:
         after_banner()
+    if tools_ready is not None:
+        tools_ready()
 
     try:
-        if resume_session_id:
-            from surfaces.interactive_shell.command_registry.session_cmds.resume import (
-                resume_session_by_prefix,
-            )
+        # Mouse reporting carries the wheel to the transcript wherever it reaches
+        # us. Where it does not (tmux with ``mouse off``), the terminal would turn
+        # wheel notches into Up keys and recall history into the composer instead.
+        with alternate_scroll_disabled():
+            with record_startup_output(transcript):
+                started = _prepare_shell_start(session, out, resume_session_id, startup_work)
+            if not started:
+                return 1
+            await InteractiveShellController(
+                runtime_context,
+                config=cfg,
+                console=out,
+                startup_work=startup_work,
+                transcript=transcript,
+            ).start_interactive_shell()
+        return 0
+    finally:
+        # The exit is settled however it was asked for (Ctrl+C, Ctrl+D, /exit),
+        # and the prompt is off screen, so SIGINT reaches the process handler
+        # again: one press must end the run rather than re-open the
+        # double-press gate on an exit the user already confirmed.
+        begin_ctrl_c_exit()
+        try:
+            startup_work.close()
+            join_first_turn_warmup()
+        finally:
+            # Nested, because the drains above can block and a teardown Ctrl+C
+            # now raises wherever it lands. True end-of-run teardown persists
+            # and releases the session, and that is not the user's to skip.
+            close_repl_session(session, runtime_context.state)
 
-            slash_command = f"/resume {resume_session_id.strip()}"
-            if not resume_session_by_prefix(
+
+def _prepare_shell_start(
+    session: Session,
+    out: Console,
+    resume_session_id: str | None,
+    startup_work: DeferredStartupWork,
+) -> bool:
+    """Replay a resumed session or queue the demo menu; False when resume fails."""
+    if resume_session_id:
+        from surfaces.interactive_shell.command_registry.session_cmds.resume import (
+            resume_session_by_prefix,
+        )
+
+        slash_command = f"/resume {resume_session_id.strip()}"
+        return bool(
+            resume_session_by_prefix(
                 resume_session_id.strip(),
                 session,
                 out,
                 slash_command=slash_command,
-            ):
-                return 1
-        else:
-            # Entering the master skill queues its menu; the first model turn is the answer.
-            offer_demo(session, out)
-
-        await InteractiveShellController(
-            runtime_context,
-            config=cfg,
-            console=out,
-        ).start_interactive_shell()
-        return 0
-    finally:
-        # True end-of-run teardown: persist and release the session's resources.
-        manager = SessionManager.for_session(session)
-        with session_execution_lock(session.session_id):
-            manager.refresh_from_storage(session)
-            manager.close(session)
+            )
+        )
+    if offer_demo(session, out):
+        # Entering the master skill queues its menu; the first model turn is the answer.
+        startup_work.defer("first-turn warm-up", warm_first_turn)
+    return True
 
 
-def _start_launch_banner(console: Console) -> Callable[[], None]:
+def _start_launch_banner(
+    console: Console, *, on_painted: Callable[[], None] | None = None
+) -> Callable[[], None]:
     """Spin the wordmark on a thread while the runtime boots; return the finisher.
 
     The finisher stops the spin (after its minimum frames), waits for it, and
@@ -143,7 +207,8 @@ def _start_launch_banner(console: Console) -> Callable[[], None]:
         stop.set()
         spinner.join()
         render_terminal_ui(console, animate=False)
-        capture_interactive_shell_rendered(entrypoint="opensre_binary")
+        if on_painted is not None:
+            on_painted()
 
     return finish
 
@@ -154,10 +219,15 @@ def run_repl(
     *,
     resume_session_id: str | None = None,
     console: Console | None = None,
-    cli_command_group: click.Command | None = None,
     after_banner: Callable[[], None] | None = None,
+    capture_shell_rendered: bool = True,
 ) -> int:
-    """Run the shell on a new event loop and return its exit code."""
+    """Run the shell on a new event loop and return its exit code.
+
+    ``interactive_shell_rendered`` fires at the sign-in screen when that is
+    painted, or at first banner paint when the user is already signed in.
+    ``--resume`` and an auto-launch after ``opensre onboard`` do not record it.
+    """
     cfg = config or ReplConfig.load()
     set_active_theme(cfg.theme)
     out = console or _DEFAULT_CONSOLE
@@ -166,15 +236,33 @@ def run_repl(
     if not sys.stdin.isatty() and initial_input is None:
         return 0
 
+    record_shell = capture_shell_rendered and not resume_session_id
+    shell_rendered = False
+
+    def record_shell_rendered() -> None:
+        nonlocal shell_rendered
+        if not record_shell or shell_rendered:
+            return
+        shell_rendered = True
+        capture_interactive_shell_rendered(entrypoint="opensre_binary")
+
     finish_banner: Callable[[], None] | None = None
+    tools_ready: Callable[[], None] | None = None
     try:
         if not initial_input:
-            if not pass_sign_in_gate(out):
+            # The sign-in check and runtime boot mostly wait on the network;
+            # the first turn's tool registry loads in that time instead of after.
+            tools_ready = start_tool_registry_prewarm()
+            if not pass_sign_in_gate(
+                out, on_screen=record_shell_rendered if record_shell else None
+            ):
                 return 0
             # Wipe the calling shell or completed sign-in screen so the REPL
             # reads as its own screen, then boot it under the launch animation.
             repl_clear_screen()
-            finish_banner = _start_launch_banner(out)
+            finish_banner = _start_launch_banner(
+                out, on_painted=record_shell_rendered if record_shell else None
+            )
 
         return asyncio.run(
             run_repl_async(
@@ -182,9 +270,9 @@ def run_repl(
                 config=cfg,
                 resume_session_id=resume_session_id,
                 console=out,
-                cli_command_group=cli_command_group,
                 finish_banner=finish_banner,
                 after_banner=after_banner,
+                tools_ready=tools_ready,
             )
         )
     except (EOFError, KeyboardInterrupt):

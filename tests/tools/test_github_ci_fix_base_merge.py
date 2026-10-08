@@ -12,7 +12,12 @@ from integrations.coding_agent import CodingResult, Progress
 from integrations.git import head_sha, merge_in_progress
 from integrations.github.tools.ci_fix.base_merge import base_has_new_commits, merge_base_into_head
 from integrations.github.tools.ci_fix.context import MERGE_STATE_DIRTY, CiFixContext
-from integrations.github.tools.ci_fix.errors import ERR_MERGE_CONFLICT, GitHubCiFixError
+from integrations.github.tools.ci_fix.errors import (
+    ERR_MERGE_CONFLICT,
+    ERR_MERGE_DECISION,
+    ERR_MERGE_UNSETTLED,
+    GitHubCiFixError,
+)
 
 _CTX = CiFixContext(
     owner="Tracer-Cloud",
@@ -129,13 +134,29 @@ def test_conflicts_resolved_by_agent_are_committed_and_reported(tmp_path: Path) 
     assert "pnpm install --lockfile-only" in task
 
 
-def test_unresolved_conflicts_abort_the_merge_and_name_the_blocked_files(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "edits_package_json, kind",
+    [
+        # Edited, yet markers kept: the agent's way to flag a choice for a person.
+        (True, ERR_MERGE_DECISION),
+        # Never touched: git's own markers prove nothing; the runner retries, then asks.
+        (False, ERR_MERGE_UNSETTLED),
+    ],
+)
+def test_conflicts_the_agent_left_abort_the_merge_and_name_the_blocked_files(
+    tmp_path: Path, edits_package_json: bool, kind: str
+) -> None:
     # Arrange
     work = _repo(tmp_path, conflict=True)
     before = head_sha(str(work))
 
     def resolve(_task: str, **_kw: object) -> CodingResult:
         (work / "pnpm-lock.yaml").write_text("dep: 2.0\n")
+        if edits_package_json:
+            (work / "package.json").write_text(
+                '<<<<<<< ci-fix\n{"dep": "1.1"}\n=======\n{"dep": "2.0", "pin": true}\n'
+                ">>>>>>> main\n"
+            )
         return CodingResult(success=True, summary="Regenerated the lockfile; package.json unclear.")
 
     # Act
@@ -144,7 +165,7 @@ def test_unresolved_conflicts_abort_the_merge_and_name_the_blocked_files(tmp_pat
 
     # Assert
     error = excinfo.value
-    assert error.kind == ERR_MERGE_CONFLICT
+    assert error.kind == kind
     assert "blocked on 1 file(s) a person must decide" in error.message
     assert "package.json (changed on both ci-fix and main)" in error.message
     assert "pnpm-lock.yaml" not in error.message.split("decide:")[1].split(".")[0]
@@ -167,7 +188,7 @@ def test_failed_agent_run_aborts_the_merge(tmp_path: Path) -> None:
     with pytest.raises(GitHubCiFixError) as excinfo:
         merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=resolve)
 
-    # Assert
+    # Assert: a failed run may succeed on a later attempt, so it is no decision
     assert excinfo.value.kind == ERR_MERGE_CONFLICT
     assert "Coding agent: agent timed out" in excinfo.value.message
     assert merge_in_progress(str(work)) is False

@@ -16,9 +16,13 @@ leaks a slot, and a leaked slot is a process that answers "at capacity" forever.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Protocol
+
+#: How often a wait that can be stopped checks whether to give up.
+_STOP_POLL_SECONDS = 1.0
 
 
 class TurnGate(Protocol):
@@ -54,6 +58,47 @@ def turn_slot(gate: TurnGate | None) -> Iterator[bool]:
 
 
 @contextmanager
+def waiting_turn_slot(
+    gate: TurnGate | None,
+    *,
+    timeout_seconds: float,
+    stop: Callable[[], bool] | None = None,
+) -> Iterator[bool]:
+    """Wait up to ``timeout_seconds`` for a slot, then hold it; yield whether one was had.
+
+    For work that was already accepted (a queued remote prompt) but must not
+    wait forever: the caller reports a refusal only after the wait. ``stop``,
+    checked about once a second, ends the wait early (the work was cancelled).
+    """
+    if gate is None:
+        yield True
+        return
+    if stop is None:
+        acquired = gate.acquire(timeout=timeout_seconds)
+    else:
+        acquired = _acquire_unless_stopped(gate, timeout_seconds, stop)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            gate.release()
+
+
+def _acquire_unless_stopped(
+    gate: TurnGate, timeout_seconds: float, stop: Callable[[], bool]
+) -> bool:
+    """Take a permit within ``timeout_seconds``, giving up as soon as ``stop()`` is true."""
+    deadline = time.monotonic() + max(timeout_seconds, 0.0)
+    while not stop():
+        remaining = deadline - time.monotonic()
+        if gate.acquire(timeout=max(min(remaining, _STOP_POLL_SECONDS), 0.0)):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+    return False
+
+
+@contextmanager
 def queued_turn_slot(gate: TurnGate | None) -> Iterator[None]:
     """Wait for a slot, then hold it for the body.
 
@@ -69,4 +114,4 @@ def queued_turn_slot(gate: TurnGate | None) -> Iterator[None]:
         gate.release()
 
 
-__all__ = ["TurnGate", "queued_turn_slot", "turn_slot"]
+__all__ = ["TurnGate", "queued_turn_slot", "turn_slot", "waiting_turn_slot"]

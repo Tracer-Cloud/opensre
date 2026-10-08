@@ -7,7 +7,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from config.constants import PRODUCT_DISPLAY_NAME
+from config.constants import PRODUCT_DISPLAY_NAME, WELCOME_DESCRIPTION
 from surfaces.interactive_shell.ui import poster as poster_module
 from surfaces.shared.terminal.banner import banner as banner_module
 from surfaces.shared.terminal.banner import banner_state as banner_state_module
@@ -60,7 +60,7 @@ def test_launch_banner_is_borderless_centered_hero(monkeypatch: object) -> None:
     # Welcome title + product description (same copy as the sign-in screen),
     # in place of the old TIP line.
     assert "Welcome to OpenSRE CLI" in output
-    assert "AI-powered DevOps agent" in output
+    assert WELCOME_DESCRIPTION in output
     # Banner is install health, not a shortcut dump (those live on ``?``).
     assert "/ commands" not in output
     assert "Enter send" not in output

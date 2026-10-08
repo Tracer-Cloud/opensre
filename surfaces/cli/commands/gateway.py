@@ -57,6 +57,14 @@ def gateway_start_command(ctx: click.Context, foreground: bool) -> None:
     click.echo("Stop: opensre gateway stop · Status: opensre gateway status")
 
 
+@gateway_command.command("web")
+def gateway_web_command() -> None:
+    """Serve the health and alert HTTP app in the foreground."""
+    from surfaces.gateway_entry import serve_web
+
+    serve_web()
+
+
 @gateway_command.command("stop")
 def gateway_stop_command() -> None:
     """Stop the background gateway daemon."""

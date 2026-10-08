@@ -24,8 +24,10 @@ from typing import Any
 from rich.console import Console
 
 from config.constants.gateway import (
-    DEFAULT_STOP_TIMEOUT_SECONDS,
+    CREDENTIAL_REFRESH_INTERVAL_SECONDS,
+    CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
+    SCHEDULER_STOP_BUDGET_SHARE,
 )
 from core.agent_harness.ports import SlashPortsFactory
 from gateway import startup as gateway_startup
@@ -35,12 +37,22 @@ from gateway.core.config.logging_config import configure_logging
 from gateway.core.lifecycle.credential_hydration import (
     GatewayBootstrap,
     GatewayCredentialHydrator,
+    watch_credential_changes,
 )
 from gateway.core.lifecycle.errors import GatewayConfigurationError
 from gateway.core.process.component_status import clear_component_status, write_component_status
 from gateway.core.process.readiness import set_ready
-from gateway.core.process.shutdown_budget import ShutdownBudget
+from gateway.core.process.shutdown_budget import ShutdownBudget, stop_timeout_from_environment
+from gateway.core.process.shutdown_record import (
+    CLEAN,
+    FIRST_START,
+    PREVIOUS_SHUTDOWN_COMPONENT,
+    describe_previous_shutdown,
+    record_running,
+    record_stopped,
+)
 from gateway.core.process.supervision import GATEWAY_PID_FILE
+from gateway.core.prompt_intake import PromptTurnRunner
 from infrastructure.turn_host.concurrency import (
     TurnConcurrencyGate,
     process_turn_gate,
@@ -79,6 +91,8 @@ class GatewayController:
         self.scheduler: Any = None
         self._scheduler_runners: Any = None
         self._scheduler_reload_thread: threading.Thread | None = None
+        self._credential_refresh_thread: threading.Thread | None = None
+        self._credential_hydrator: GatewayCredentialHydrator | None = None
         self.components: dict[str, str] = {}
         self._slash_ports_factory = slash_ports_factory
         self._credential_hydrator_factory = (
@@ -90,6 +104,8 @@ class GatewayController:
         else:
             self.turn_gate = process_turn_gate()
         self._stopped = threading.Event()
+        # A second signal must not rerun the stop and overwrite its record.
+        self._stop_result: bool | None = None
 
     def start_gateway(self, *, wait: bool = True) -> GatewayController:
         """Credential hydrate, shared process boot, then channels + scheduler."""
@@ -98,7 +114,9 @@ class GatewayController:
         logger = self.logger = configure_logging()
         set_ready(False)
         self._load_credentials(logger)
+        self._start_credential_refresh_watcher(logger)
         configure_process(GATEWAY_PROFILE, logger=logger)
+        self._note_previous_shutdown(logger)
 
         # One turn runner for every chat transport. Capacity gate lives on the
         # same object — do not wrap it in a second "turn runner". Action tools
@@ -107,12 +125,12 @@ class GatewayController:
         handler = TurnRunner(
             console=console,
             slash_ports_factory=self._slash_ports_factory,
-            agent_build=chat_agent_build_config(),
+            agent_build=chat_agent_build_config(hosts_scheduler=_gateway_hosts_scheduler()),
             gate=self.turn_gate,
             admission_check=admit_metered_turn,
         )
 
-        self.start_surfaces(logger=logger, handler=handler)
+        self.start_surfaces(logger=logger, handler=handler, prompt_runner=handler)
         if _gateway_hosts_scheduler():
             self.start_scheduler(logger=logger)
         else:
@@ -136,9 +154,12 @@ class GatewayController:
         *,
         logger: logging.Logger,
         handler: TurnCallback,
+        prompt_runner: PromptTurnRunner | None = None,
     ) -> None:
         """Start web + every chat transport together (via :mod:`gateway.startup`)."""
-        self.surfaces = gateway_startup.start_gateway(logger=logger, handler=handler)
+        self.surfaces = gateway_startup.start_gateway(
+            logger=logger, handler=handler, prompt_runner=prompt_runner
+        )
         self.components.update(self.surfaces.statuses)
 
     def start_scheduler(self, *, logger: logging.Logger) -> None:
@@ -169,9 +190,16 @@ class GatewayController:
             self.components["scheduler"] = f"running {task_count} scheduled task(s)"
         self._start_scheduler_reload_watcher(logger)
 
-    def stop(self, *, timeout: float = DEFAULT_STOP_TIMEOUT_SECONDS) -> bool:
-        """Shut down all components and return whether the chat workers stopped."""
-        budget = ShutdownBudget(timeout)
+    def stop(self, *, timeout: float | None = None) -> bool:
+        """Shut down all components and return whether the chat workers stopped.
+
+        ``timeout`` defaults to the budget the environment gives this process.
+        Only the first call stops anything; a repeated call returns its result.
+        """
+        if self._stopped.is_set():
+            return bool(self._stop_result)
+        seconds = stop_timeout_from_environment() if timeout is None else timeout
+        budget = ShutdownBudget(seconds)
         set_ready(False)
         self._stopped.set()
         stopped = True
@@ -182,14 +210,38 @@ class GatewayController:
             )
             budget.consume(started)
             self._scheduler_reload_thread = None
+        if self._credential_refresh_thread is not None:
+            started = budget.mark()
+            self._credential_refresh_thread.join(
+                timeout=budget.take(CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS)
+            )
+            budget.consume(started)
+            self._credential_refresh_thread = None
+        scheduled_jobs_finished = True
         if self.scheduler is not None:
-            self.scheduler.shutdown(wait=False)
+            started = budget.mark()
+            scheduler_seconds = budget.remaining * SCHEDULER_STOP_BUDGET_SHARE
+            scheduled_jobs_finished = _shut_scheduler_down(self.scheduler, scheduler_seconds)
+            budget.consume(started)
             self.scheduler = None
         if self.surfaces is not None:
             stopped = self.surfaces.stop(timeout=budget.remaining) and stopped
             self.surfaces = None
         clear_component_status()
+        record_stopped(
+            chat_workers_stopped=stopped,
+            scheduled_jobs_finished=scheduled_jobs_finished,
+        )
+        self._stop_result = stopped
         return stopped
+
+    def _note_previous_shutdown(self, logger: logging.Logger) -> None:
+        """Report how the previous process ended, then mark this one as running."""
+        previous = describe_previous_shutdown()
+        self.components[PREVIOUS_SHUTDOWN_COMPONENT] = previous
+        if previous not in (CLEAN, FIRST_START):
+            logger.warning("[gateway] previous shutdown was %s", previous)
+        record_running()
 
     def _load_credentials(self, logger: logging.Logger) -> GatewayBootstrap | None:
         """Hydrate before any transport, scheduler, or worker can start."""
@@ -199,6 +251,7 @@ class GatewayController:
                 self.components["credentials"] = "not configured"
                 return None
             bootstrap = hydrator.hydrate()
+            self._credential_hydrator = hydrator
         except Exception as exc:
             logger.error("gateway credential hydration failed (%s)", type(exc).__name__)
             self.components["credentials"] = "failed"
@@ -241,6 +294,39 @@ class GatewayController:
         )
         self._scheduler_reload_thread.start()
 
+    def _start_credential_refresh_watcher(self, logger: logging.Logger) -> None:
+        """Pick up a credential saved in the web app without a restart.
+
+        The web app writes it to the organization's secret; this watcher reloads
+        the local store when that secret gets a new version.
+        """
+        hydrator = self._credential_hydrator
+        if hydrator is None or not hydrator.refreshes or self._credential_refresh_thread:
+            return
+
+        def _reloaded() -> None:
+            if self._stopped.is_set():
+                return
+            self.components["credentials"] = "hydrated (reloaded)"
+            logger.info("[gateway] integrations reloaded from the organization's secret")
+            self._publish_status(logger)
+
+        def _watch() -> None:
+            watch_credential_changes(
+                hydrator,
+                self._stopped,
+                interval_seconds=CREDENTIAL_REFRESH_INTERVAL_SECONDS,
+                on_reload=_reloaded,
+                on_error=lambda exc: logger.warning(
+                    "[gateway] credential refresh failed (%s)", type(exc).__name__
+                ),
+            )
+
+        self._credential_refresh_thread = threading.Thread(
+            target=_watch, name="opensre-credential-refresh", daemon=True
+        )
+        self._credential_refresh_thread.start()
+
     def _reload_scheduler(self, logger: logging.Logger) -> None:
         """Resync the live scheduler (or start one) from the current task store."""
         from infrastructure.scheduling.scheduler.runner import refresh_background_scheduler
@@ -266,6 +352,20 @@ class GatewayController:
 
     def _handle_signal(self, *_args: object) -> None:
         self.stop()
+
+
+def _shut_scheduler_down(scheduler: Any, seconds: float) -> bool:
+    """Stop the scheduler and wait up to ``seconds`` for running jobs; return whether they ended."""
+    waiter = threading.Thread(
+        target=scheduler.shutdown,
+        kwargs={"wait": True},
+        name="opensre-scheduler-shutdown",
+        daemon=True,
+    )
+    waiter.start()
+    waiter.join(timeout=seconds)
+    finished = not waiter.is_alive()
+    return finished
 
 
 _BARE_MANAGER_EXIT = (

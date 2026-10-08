@@ -49,6 +49,10 @@ datas.append((str(_baked_index), str(BAKED_INDEX_RELATIVE_PATH.parent)))
 hiddenimports = [
     "tiktoken_ext",
     "tiktoken_ext.openai_public",
+    # Lazy import in the gateway's DATABASE_URL store. Analysis never sees it.
+    "psycopg2",
+    "psycopg2.extensions",
+    "psycopg2.pool",
     *runtime_hidden_imports(ROOT),
 ]
 

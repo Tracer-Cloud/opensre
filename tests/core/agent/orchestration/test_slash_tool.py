@@ -9,54 +9,18 @@ into the input line.
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 from typing import Any
 
 import pytest
 from rich.console import Console
 
 import tools.interactive_shell.actions.slash as slash_tool
+from config.constants.slash_commands import QUEUED_COMMAND_KEY
+from core.agent_harness.spi.session_state import pending_setup_resume
 from core.agent_harness.tools.tool_context import ActionToolScope
 from surfaces.interactive_shell.session import Session
-
-
-@dataclass
-class FakeSlashPorts:
-    """Controllable slash runtime adapter used by action-tool tests."""
-
-    tty: bool = True
-    dispatch_result: bool = True
-    dispatched: list[str] = field(default_factory=list)
-
-    def command_exists(self, _name: str) -> bool:
-        return True
-
-    def command_is_mutating(self, _name: str) -> bool:
-        return True
-
-    def tty_interactive(self) -> bool:
-        return self.tty
-
-    def format_turn_outcome(self, command: str, *, ok: bool) -> str:
-        status = "succeeded" if ok else "failed"
-        return f"slash {command} ({status})"
-
-    def execution_allowed(
-        self,
-        *,
-        policy: Any,
-        **_kwargs: Any,
-    ) -> bool:
-        del policy
-        return True
-
-    def dispatch(
-        self,
-        command: str,
-        **_kwargs: Any,
-    ) -> bool:
-        self.dispatched.append(command)
-        return self.dispatch_result
+from tests.core.agent.orchestration.action_execution_test_harness import FakeSlashPorts
 
 
 def _ctx(
@@ -89,9 +53,10 @@ def _ctx(
         ("/integrations", ["setup", "datadog"], "/integrations setup datadog"),
         ("/mcp", ["connect", "github"], "/mcp connect github"),
         ("/mcp", ["disconnect", "github"], "/mcp disconnect github"),
-        ("/integrations", [], "/integrations"),
-        ("/mcp", [], "/mcp"),
+        ("/integrations", ["list"], "/integrations list"),
+        ("/mcp", ["list"], "/mcp list"),
         ("/loops", ["show"], "/loops show"),
+        ("/tools", [], "/tools"),
     ],
 )
 def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
@@ -107,7 +72,11 @@ def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
         ctx,
     )
 
-    assert handled is True
+    # The result names the queued command, which ends the action turn.
+    assert isinstance(handled, dict)
+    assert handled["ok"] is True
+    assert handled[QUEUED_COMMAND_KEY] == expected
+    assert "error" not in handled
     assert ports.dispatched == []
     assert session.terminal.pending_prompt_default == expected
     assert session.terminal.pending_prompt_autosubmit is True
@@ -117,24 +86,107 @@ def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
     assert buf.getvalue() == ""
 
 
+@pytest.mark.parametrize(
+    ("active_skill", "turn_message", "parks"),
+    [
+        ("analyzing-github-ci-performance", '1. Which repository?\n@json:"acme/w"', True),
+        (None, "connect github for me", False),
+        ("analyzing-github-ci-performance", "/integrations setup github", False),
+    ],
+    ids=["mid-skill", "no-skill", "slash-turn"],
+)
+def test_a_setup_queued_mid_skill_parks_the_turn_for_replay(
+    active_skill: str | None, turn_message: str, parks: bool
+) -> None:
+    """Only a skill's own turn is resubmitted after setup; plain prose never is."""
+    ctx, _buf, session, _ports = _ctx(ports=FakeSlashPorts(tty=True))
+    ctx = replace(ctx, turn_user_message=turn_message)
+    session.active_skill = active_skill
+
+    slash_tool.execute_slash_tool({"command": "/integrations", "args": ["setup", "GitHub"]}, ctx)
+
+    parked = pending_setup_resume(session)
+    assert (parked is not None) is parks
+    if parked is not None:
+        assert (parked.text, parked.skill, parked.service) == (
+            turn_message,
+            active_skill,
+            "github",
+        )
+
+
+def test_a_declined_command_reports_it_did_not_run_without_an_error() -> None:
+    """The model must hear the command never ran, and the same call must stay refusable.
+
+    A declined command used to return ``True``, which reached the model as
+    ``{"ok": true}``: it reported a change that never happened and the step
+    counted as plan evidence. No ``error`` key keeps the duplicate guard
+    refusing an identical re-ask.
+    """
+    ctx, _buf, session, ports = _ctx(ports=FakeSlashPorts(tty=True, allowed=False))
+
+    result = slash_tool.execute_slash_tool({"command": "/cron", "args": ["remove", "abc"]}, ctx)
+
+    assert isinstance(result, dict)
+    assert result["ok"] is False
+    assert result["not_run"] is True
+    assert result["command"] == "/cron remove abc"
+    assert "error" not in result
+    assert ports.dispatched == []
+    rows = [row for row in session.history if row.get("type") == "slash"]
+    assert [(row["text"], row["ok"]) for row in rows] == [("/cron remove abc", False)]
+
+
 def test_interactive_picker_runs_inline_when_exclusive_stdin_active() -> None:
     """An already-exclusive turn must dispatch inline instead of re-queueing."""
     ctx, buf, session, ports = _ctx(ports=FakeSlashPorts(tty=True))
     session.terminal.exclusive_stdin_active = True
 
     handled = slash_tool.execute_slash_tool(
-        {"command": "/integrations", "args": []},
+        {"command": "/integrations", "args": ["list"]},
         ctx,
     )
 
     assert handled is True
-    assert ports.dispatched == ["/integrations"]
+    assert ports.dispatched == ["/integrations list"]
     assert session.terminal.pending_prompt_default is None
     assert session.terminal.pending_prompt_autosubmit is False
     # Exclusive stdin means the user typed this slash literally, so the prompt
     # line already shows it — announcing it again would be the third rendering
-    # of one command.
-    assert buf.getvalue() == ""
+    # of one command. Only the blank row that separates it from the output.
+    assert buf.getvalue() == "\n"
+
+
+@pytest.mark.parametrize(
+    ("typed", "args"),
+    [
+        ("/rename release-candidate", ["release-candidate"]),
+        # Rebuilt as ``/rename 'release candidate'``, so only matching on tokens
+        # recognises it as the line the user typed.
+        ('/rename "release candidate"', ["release candidate"]),
+        ("/rename   release-candidate", ["release-candidate"]),
+    ],
+    ids=["plain", "requoted", "extra-spaces"],
+)
+def test_a_typed_command_is_not_announced_under_its_own_prompt_row(
+    typed: str, args: list[str]
+) -> None:
+    """A typed ``/rename`` printed twice: once as the user row, once as ``$ /rename``.
+
+    Only a handful of commands reserve exclusive stdin, so that check alone left
+    every other typed command announcing itself a second time. The command line
+    is rebuilt from parsed arguments, so the match is on tokens: a quoted or
+    loosely spaced spelling is still the line the prompt row already shows.
+    """
+    ctx, buf, session, ports = _ctx(ports=FakeSlashPorts(tty=True))
+    ctx = replace(ctx, turn_user_message=typed)
+
+    slash_tool.execute_slash_tool({"command": "/rename", "args": args}, ctx)
+
+    assert len(ports.dispatched) == 1
+    assert session.terminal.exclusive_stdin_active is False
+    # Just the blank row that separates the command's output from the prompt.
+    assert buf.getvalue() == "\n"
 
 
 def test_agent_resolved_slash_announces_itself() -> None:
@@ -224,12 +276,12 @@ def test_interactive_picker_runs_inline_when_not_a_tty() -> None:
 def test_duplicate_slash_invoke_alone_may_run_twice() -> None:
     """Slash tool itself does not suppress repeats; the action-turn guard does."""
     ctx, _buf, _session, ports = _ctx(ports=FakeSlashPorts(tty=True))
-    args = {"command": "/integrations", "args": ["list"]}
+    args = {"command": "/health", "args": []}
 
     assert slash_tool.execute_slash_tool(args, ctx) is True
     assert slash_tool.execute_slash_tool(args, ctx) is True
 
-    assert ports.dispatched == ["/integrations list", "/integrations list"]
+    assert ports.dispatched == ["/health", "/health"]
 
 
 def test_interleaved_slash_invoke_runs_each_time() -> None:
@@ -238,17 +290,17 @@ def test_interleaved_slash_invoke_runs_each_time() -> None:
 
     assert slash_tool.execute_slash_tool({"command": "/health", "args": []}, ctx) is True
     assert (
-        slash_tool.execute_slash_tool({"command": "/integrations", "args": ["list"]}, ctx) is True
+        slash_tool.execute_slash_tool({"command": "/integrations", "args": ["show", "github"]}, ctx)
+        is True
     )
     assert slash_tool.execute_slash_tool({"command": "/health", "args": []}, ctx) is True
 
-    assert ports.dispatched == ["/health", "/integrations list", "/health"]
+    assert ports.dispatched == ["/health", "/integrations show github", "/health"]
 
 
 @pytest.mark.parametrize(
     ("command", "args"),
     [
-        ("/integrations", ["list"]),
         ("/integrations", ["show", "github"]),
         ("/loops", ["show", "abc123"]),
         ("/health", []),

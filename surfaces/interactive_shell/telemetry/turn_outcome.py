@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+
 _ANALYTICS_OUTPUT_MAX_CHARS = 8_000
 
 # Slash commands whose handlers attach to the real TTY (wizards, pickers). Analytics
@@ -12,18 +15,24 @@ _INTERACTIVE_WIZARD_SLASH_ROOTS: frozenset[str] = frozenset(
         "/onboard",
         "/auth",
         "/login",
-        "/integrations",
-        "/mcp",
     }
 )
 _INTERACTIVE_WIZARD_SLASH_PATHS: frozenset[str] = frozenset(
     {
+        "/integrations list",
         "/integrations setup",
         "/integrations remove",
+        "/mcp list",
         "/mcp connect",
         "/mcp disconnect",
         "/auth login",
         "/auth logout",
+    }
+)
+_CONDITIONAL_BROWSER_SLASH_PATHS: frozenset[str] = frozenset(
+    {
+        "/integrations list",
+        "/mcp list",
     }
 )
 
@@ -69,6 +78,10 @@ def slash_command_is_summary_only(command_line: str) -> bool:
     root = parts[0].lower()
     if root in _SUMMARY_ONLY_SLASH_ROOTS:
         return True
+    if len(parts) >= 2:
+        path = f"{root} {parts[1].lower()}"
+        if path in _CONDITIONAL_BROWSER_SLASH_PATHS:
+            return False
     return slash_command_is_interactive_wizard(command_line)
 
 
@@ -112,3 +125,36 @@ def format_terminal_turn_outcome(
     if captured_output:
         return truncate_analytics_text(f"{prefix}\n{captured_output}")
     return prefix
+
+
+@dataclass(frozen=True)
+class TerminalTurnOutcome:
+    """A parsed :func:`format_terminal_turn_outcome` payload."""
+
+    kind: str
+    command_line: str
+    ok: bool
+    detail: str
+
+
+_OUTCOME_RE = re.compile(r"^(?P<kind>\S+) (?P<command>.*) \((?P<status>succeeded|failed)\)$")
+
+
+def parse_terminal_turn_outcome(text: str) -> TerminalTurnOutcome | None:
+    """Recover the structured outcome from a recorded payload, or ``None``.
+
+    The inverse of :func:`format_terminal_turn_outcome`, kept beside it so the
+    two cannot drift. Returns ``None`` for anything that is not an outcome
+    payload — notably an ``outcome_hint``, which a handler writes as its own
+    user-facing prose and which callers should show unchanged.
+    """
+    head, _, detail = text.partition("\n")
+    match = _OUTCOME_RE.match(head.strip())
+    if match is None:
+        return None
+    return TerminalTurnOutcome(
+        kind=match["kind"],
+        command_line=match["command"].strip(),
+        ok=match["status"] == "succeeded",
+        detail=detail.strip(),
+    )

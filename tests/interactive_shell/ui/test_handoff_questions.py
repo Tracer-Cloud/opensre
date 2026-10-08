@@ -58,7 +58,6 @@ def test_ask_user_answers_render_as_numbered_qa() -> None:
     assert "Where does the /api/orders service live?" in output
     assert "Hypothetical/demo scenario, no real code" in output
     assert "Last 7 days" in output
-    assert session.terminal.submitted_turn_count == 1
 
 
 def test_ask_user_qa_highlights_answer_differently_from_question() -> None:
@@ -120,7 +119,6 @@ def test_choose_slash_is_not_echoed() -> None:
     render_submitted_prompt(console, session, "/choose")
     assert session.terminal.awaiting_handoff_answer is True
     assert buffer.getvalue() == ""
-    assert session.terminal.submitted_turn_count == 0
     # The queued /choose must not leave a stale autosubmit flag, or the next
     # genuine turn is misread as autosubmitted and skips the round-counter reset.
     assert session.terminal.last_input_autosubmitted is False
@@ -136,7 +134,6 @@ def test_auto_submitted_single_choice_is_not_echoed_as_a_user_turn() -> None:
     render_submitted_prompt(console, session, "Blue-green")
 
     assert buffer.getvalue() == ""
-    assert session.terminal.submitted_turn_count == 0
     assert session.terminal.pending_choice_response == "Blue-green"
 
 

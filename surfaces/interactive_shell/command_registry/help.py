@@ -27,6 +27,11 @@ QUICK_ACCESS_COMMANDS: list[str] = [
     "/help",
 ]
 
+_HELP_SELECTION_COMMANDS: dict[str, str] = {
+    "/integrations": "/integrations list",
+    "/mcp": "/mcp list",
+}
+
 
 def _quick_access_section() -> HelpSection:
     from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
@@ -185,7 +190,9 @@ def _cmd_help(_session: Session, console: Console, args: list[str]) -> bool:
             # runs the command directly instead of only opening details.
             from surfaces.interactive_shell.command_registry import dispatch_slash
 
-            return dispatch_slash(selected, _session, console)
+            return dispatch_slash(
+                _HELP_SELECTION_COMMANDS.get(selected, selected), _session, console
+            )
         return True
 
     render_help_index(console, sections)

@@ -704,6 +704,28 @@ def test_load_recent_respects_n_limit(tmp_path: Path) -> None:
         assert len(SessionStore.load_recent(n=3)) == 3
 
 
+def test_load_recent_conversations_does_not_count_command_only_sessions(
+    tmp_path: Path,
+) -> None:
+    conversation = _make_session()
+    command_only = _make_session()
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(conversation)
+        SessionStore.append_turn_detail(
+            conversation.session_id,
+            "chat",
+            "investigate latency",
+            response="Checking now.",
+        )
+        time.sleep(0.01)
+        SessionStore.open_session(command_only)
+        SessionStore.append_turn(command_only, "slash", "/choose")
+
+        results = SessionStore.load_recent(n=1, require_conversation=True)
+
+    assert [result["session_id"] for result in results] == [conversation.session_id]
+
+
 # ── load_session ──────────────────────────────────────────────────────────────
 
 

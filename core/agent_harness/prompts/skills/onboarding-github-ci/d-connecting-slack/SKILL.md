@@ -5,12 +5,12 @@ description: >-
   with cli_exec; if Slack is missing, queues `/integrations setup slack` via slash_invoke (the wizard
   needs a full terminal). Use for the startup demo option "Connect OpenSRE to Slack and hand off DevOps
   chores for your team". Never post, reply, or send to Slack in this flow. Multi-step; load before acting.
-getting_started: Connect OpenSRE to Slack and hand off DevOps chores for your team
+getting_started: Connect Slack
 demo_order: 4
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-14
+  last_changed_at: 2026-10-04
   usecases:
   - For Slack workspace administrators connecting OpenSRE for their team.
   - For users verifying an existing Slack connection and learning channel or DM handoffs.
@@ -18,7 +18,7 @@ metadata:
   - Permission to add the OpenSRE bot to the target Slack workspace.
   - The cli_exec and slash_invoke tools.
   - When Slack setup is needed, an interactive terminal for /integrations setup slack.
-  version: '1.3'
+  version: '1.4'
 ---
 
 # Slack handoff
@@ -39,7 +39,8 @@ through a channel mention or a DM.
 
 Track progress with the `update_plan` tool, not with headers or prose:
 
-- On entry, before the first workflow tool call, call `update_plan` with the
+- On entry, in the same response as the first workflow tool call
+  (`cli_exec`), call `update_plan` with the
   steps below verbatim, the first step `in_progress`, and a one-line
   `explanation` (this is not a diagnosis; no hypothesis table):
   `Check Slack` / `Set up if needed` / `Explain the hand-off`. Mark
@@ -60,8 +61,8 @@ Call `cli_exec` with payload `integrations verify slack`.
 
 ### 2. Set up if needed
 
-If Slack is not configured, call `slash_invoke` with
-`/integrations setup slack` and stop. The shell queues that wizard on the
+If Slack is not configured, call `slash_invoke` with command
+`/integrations` and args `["setup", "slack"]`, and stop. The shell queues that wizard on the
 next prompt so it gets exclusive stdin. If Slack is already connected, say
 so and skip setup.
 

@@ -38,14 +38,10 @@ from core.agent_harness.ports import (
     ToolEventObserver,
     ToolProvider,
 )
-from core.agent_harness.prompts.grounding import (
-    DefaultPromptContextProvider,
-    supports_default_prompt_context,
-)
+from core.agent_harness.prompts.grounding import DefaultPromptContextProvider
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
 from core.agent_harness.turns.headless_adapters import (
     BufferOutputSink,
-    EmptyPromptContextProvider,
     InMemorySessionState,
     NoopErrorReporter,
 )
@@ -76,9 +72,7 @@ class InMemoryHeadlessBuild:
         return self.output if self.output is not None else BufferOutputSink()
 
     def prompts(self) -> PromptContextProvider:
-        if supports_default_prompt_context(self._session):
-            return DefaultPromptContextProvider(self._session)
-        return EmptyPromptContextProvider()
+        return DefaultPromptContextProvider(self._session)
 
     def agent(
         self,

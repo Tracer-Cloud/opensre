@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 
+from config.constants.scheduler import SCHEDULED_TASK_TRACE_KEY
 from core.agent_harness import (
     is_legacy_skill_name,
     normalize_skill_name,
@@ -18,9 +19,17 @@ from core.agent_harness import (
     resolve_scheduled_skill,
 )
 from infrastructure.observability.trace.trace_session import inherit_trace_session
-from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.loop_prompt import current_loop_prompt
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.sources import (
+    SCHEDULED_GITHUB_PR_SWEEP,
+    SCHEDULED_MANUAL_LOOP,
+    SCHEDULED_POSTHOG_METRIC_REPORT,
+    SCHEDULED_RECURRING_SKILL,
+    SCHEDULED_SENTRY_MORNING_DIGEST,
+    SCHEDULED_SENTRY_UPTIME_WATCH,
+)
 from infrastructure.scheduling.scheduler.storage import update_task
 from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
@@ -46,7 +55,11 @@ def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     with inherit_trace_session(
         runners.host_session_id() or task.id,
         tags=(SCHEDULED_TRACE_TAG,),
-        metadata={"task_id": task.id, "task_name": task.name, "task_kind": task.kind.value},
+        metadata={
+            SCHEDULED_TASK_TRACE_KEY: task.id,
+            "task_name": task.name,
+            "task_kind": task.kind.value,
+        },
     ):
         return _build_message(task, runners)
 
@@ -76,7 +89,7 @@ def _build_sentry_morning_digest(task: ScheduledTask, runners: SchedulerRunners)
             "stats_period": "24h",
             "query": "is:unresolved",
             **safe_params,
-            "source": "scheduled_sentry_morning_digest",
+            "source": SCHEDULED_SENTRY_MORNING_DIGEST,
             "task_id": task.id,
         }
         return runners.agent(payload)
@@ -98,7 +111,7 @@ def _build_sentry_uptime_watch(task: ScheduledTask, runners: SchedulerRunners) -
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
             **safe_params,
-            "source": "scheduled_sentry_uptime_watch",
+            "source": SCHEDULED_SENTRY_UPTIME_WATCH,
             "task_id": task.id,
         }
         return runners.agent(payload)
@@ -115,7 +128,7 @@ def _build_github_pr_sweep(task: ScheduledTask, runners: SchedulerRunners) -> st
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
             **safe_params,
-            "source": "scheduled_github_pr_sweep",
+            "source": SCHEDULED_GITHUB_PR_SWEEP,
             "task_id": task.id,
         }
         return runners.agent(payload)
@@ -133,7 +146,7 @@ def _build_posthog_metric_report(task: ScheduledTask, runners: SchedulerRunners)
         payload = {
             "stats_period": "7d",
             **safe_params,
-            "source": "scheduled_posthog_metric_report",
+            "source": SCHEDULED_POSTHOG_METRIC_REPORT,
             "task_id": task.id,
         }
         return runners.agent(payload)
@@ -196,12 +209,12 @@ def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """
     try:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        prompt = safe_params.get(LOOP_PROMPT_PARAM, "").strip()
+        prompt = current_loop_prompt(safe_params)
         if not prompt:
             return f"⚠️ Manual loop task {task.id} has no prompt configured."
         payload = {
             **safe_params,
-            "source": "scheduled_manual_loop",
+            "source": SCHEDULED_MANUAL_LOOP,
             "task_id": task.id,
             "name": task.name,
             "task_name": task.name,
@@ -223,15 +236,34 @@ def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> st
         raise RuntimeError(f"Recurring skill task {task.id} is missing skill_name.")
     if is_legacy_skill_name(skill_name):
         _migrate_renamed_skill(task)
-    resolve_scheduled_skill(task.skill_name, task.skill_revision)
+    resolved = resolve_scheduled_skill(task.skill_name, task.skill_revision)
+    if resolved.repinned:
+        _record_followed_revision(task, resolved.revision)
     return runners.agent(
         {
-            "source": "scheduled_recurring_skill",
+            "source": SCHEDULED_RECURRING_SKILL,
             "task_id": task.id,
             "skill_name": task.skill_name,
             "skill_revision": task.skill_revision,
             "skill_inputs": dict(task.skill_inputs),
         }
+    )
+
+
+def _record_followed_revision(task: ScheduledTask, revision: str) -> None:
+    """Store the pin of a skill edit the schedule followed, and report the change."""
+    previous = task.skill_revision
+    task.skill_revision = revision
+    if not update_task(task):
+        logger.warning(
+            "Recurring skill task %s is not in the task store; running with an unsaved pin.",
+            task.id,
+        )
+        return
+    record_scheduler_task_operation(
+        "scheduled_skill_revision_changed",
+        task,
+        extra={"from_revision": previous[:24], "to_revision": revision[:24]},
     )
 
 

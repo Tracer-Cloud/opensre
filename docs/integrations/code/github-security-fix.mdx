@@ -1,0 +1,113 @@
+---
+title: "Fix GitHub security and quality findings"
+description: "Use OpenSRE to remediate Dependabot, code-scanning, and Code Quality findings, then open a pull request."
+---
+
+## Overview
+
+OpenSRE can turn one GitHub security or quality finding into a local fix and, when approved, a pull request. It supports Dependabot alerts, code-scanning/CodeQL alerts, and GitHub Code Quality standard findings.
+
+<Warning>
+This is mutating. OpenSRE asks before editing files, then asks again before committing, pushing, and opening a PR.
+</Warning>
+
+## Prerequisites
+
+- Local checkout whose `origin` matches the finding repository
+- GitHub token with the access listed under Credentials
+- Optional coding-agent CLI (Pi, Claude Code, Codex, or Cursor) for findings that need broader reasoning
+
+## Setup
+
+There is no dedicated `integrations setup` target for this tool. Configure the workspace and token:
+
+```bash
+export CODING_WORKSPACE=/path/to/repo  # optional; defaults to cwd
+export GITHUB_TOKEN=... # repo write access plus security-alert read access
+```
+
+OpenSRE has built-in local fixers for some Code Quality findings, such as unused imports and unused local variables. For findings that need broader code reasoning, it automatically uses the first coding agent CLI it finds installed and logged in: Pi, Claude Code, Codex, or Cursor. No configuration is needed when one of those CLIs already works on your machine.
+
+To pin a specific agent instead of auto-detection:
+
+```bash
+export CODING_AGENT=claude-code  # pi | claude-code | codex | cursor (default: auto)
+export CODING_MODEL=...          # optional model override for that agent
+```
+
+## Credentials
+
+| Need | GitHub access |
+| --- | --- |
+| Read Dependabot alerts | `security_events` on classic PATs for private repos, `public_repo` for public-only use, or Dependabot alerts read on fine-grained tokens |
+| Read code-scanning alerts | Code scanning alerts read |
+| Read Code Quality findings | `repo` on classic PATs, `public_repo` for public-only use, or Code quality read on fine-grained tokens |
+| Push a branch and open a PR | Contents write and pull requests write, or equivalent `repo` access |
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `fix_github_security_alert` | Remediate one Dependabot, code-scanning, or Code Quality finding; optionally open a PR |
+
+Related skill: `fixing-github-security-alerts`.
+
+### Use it
+
+In the interactive shell:
+
+```text
+hey fix the security issues
+fix the security and quality issues in Tracer-Cloud/opensre and raise a PR
+fix the code quality findings on https://github.com/Tracer-Cloud/opensre/security/quality
+fix the security issues in Tracer-Cloud/opensre and raise a PR
+```
+
+For a broad repo request, OpenSRE selects one open supported finding by severity, skipping findings that already have an open OpenSRE fix PR. When nothing is left, it reports that no PR was needed. If you do not name a repo, it uses the current checkout's GitHub `origin`. For a specific alert, include the alert URL or say the alert type and number:
+
+```text
+fix Dependabot alert 12 in this repo
+fix the code scanning errors on https://github.com/acme/app/security/code-scanning and raise a PR
+fix https://github.com/acme/app/security/code-scanning/7 and open a PR
+fix Code Quality finding 42 in Tracer-Cloud/opensre and raise a PR
+```
+
+OpenSRE asks before editing files, then asks again before committing, pushing, and opening the PR.
+
+### What happens
+
+1. OpenSRE reads the GitHub alert or Code Quality finding details.
+2. It verifies the local checkout's `origin` matches the finding repository.
+3. OpenSRE first tries a built-in local fixer when one safely applies.
+4. If no built-in fixer applies, OpenSRE runs the auto-detected (or pinned) coding agent CLI to implement the fix in the local checkout.
+5. If PR shipping is requested and approved, OpenSRE commits only the files the fix run changed, pushes an `opensre/github-security-fix-*` branch, and opens a PR into the default branch.
+
+Secret-scanning alerts are not auto-fixed. Revoke or rotate the secret first, then plan repository cleanup separately.
+
+### Scheduled fixes on public repositories
+
+A scheduled loop that opens PRs on a public repository should pass `quality_only=true`. OpenSRE then fixes only code-scanning and Code Quality findings without a security severity, so a vulnerability fix is never published in a public PR before you can handle it privately.
+
+## Verify
+
+There is no dedicated `integrations verify` target. Confirm readiness by:
+
+1. Valid `GITHUB_TOKEN` / `GH_TOKEN` (or `opensre integrations verify github`) with the scopes above
+2. Local checkout `origin` matches the target repository
+3. A coding agent CLI is available when built-in fixers do not cover the finding
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Secret-scanning refused** | Expected — revoke/rotate the secret first; this tool does not auto-fix secret leaks |
+| **Dual confirmation prompts** | Edit confirm, then commit/push/PR confirm when `open_pr` is requested |
+| **Wrong repository** | Ensure checkout `origin` matches the finding repo, or name the repo in the prompt |
+| **No coding agent found** | Install/login Pi, Claude Code, Codex, or Cursor, or pin `CODING_AGENT` |
+| **A loop reports nothing to fix while findings stay open** | Each remaining finding already has an open OpenSRE fix PR: merge or close those PRs, or dismiss findings you will not fix |
+
+## Security
+
+- Dual confirmation when shipping: edit first, then commit/push/PR.
+- PR branches use the `opensre/github-security-fix-*` prefix.
+- Store tokens in `.env` or your secret manager — not in source control.

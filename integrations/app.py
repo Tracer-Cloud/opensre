@@ -46,10 +46,7 @@ def _run_remove(svc: str | None, _options: set[str]) -> None:
 
 
 def _run_setup(svc: str | None, _options: set[str]) -> None:
-    resolved_service = cmd_setup(svc)
-    if resolved_service in SUPPORTED_VERIFY_SERVICES:
-        print(f"  Verifying {resolved_service}...\n")
-        raise SystemExit(cmd_verify(resolved_service))
+    cmd_setup(svc)
 
 
 def _run_verify(svc: str | None, options: set[str]) -> None:
@@ -78,13 +75,14 @@ def _print_help() -> None:
     print(f"  Verify services: {', '.join(SUPPORTED_VERIFY_SERVICES)}\n")
 
 
-def _capture_invocation(command_parts: list[str]) -> None:
+def _capture_invocation(command: str) -> None:
     capture_first_run_if_needed()
     capture_cli_invoked(
         build_cli_invoked_properties(
             entrypoint=_ENTRYPOINT,
-            command_parts=command_parts,
-        )
+            command_parts=[command],
+        ),
+        ["integrations", command],
     )
 
 
@@ -113,7 +111,7 @@ def main() -> None:
         positional_args = [arg for arg in args[1:] if not arg.startswith("--")]
         svc = positional_args[0].lower() if positional_args else None
 
-        _capture_invocation([cmd, svc] if svc else [cmd])
+        _capture_invocation(cmd)
         handler(svc, option_args)
     finally:
         shutdown_analytics(flush=False)

@@ -4,7 +4,7 @@
 This is the second, richer seam: an *observation* is a typed region
 (``span`` / ``agent`` / ``generation`` / ``tool``) with input, output, token
 usage and metadata, nested by the active execution context and exported by an
-installed backend such as Langfuse (``infrastructure.observability.langfuse``).
+explicitly installed backend.
 
 Design for production safety
 ----------------------------
@@ -26,7 +26,7 @@ from typing import Any, Protocol
 
 
 class ObservationKind(StrEnum):
-    """Langfuse-compatible observation types this codebase emits."""
+    """Observation types this codebase emits."""
 
     SPAN = "span"
     AGENT = "agent"
@@ -84,7 +84,7 @@ class Observation(Protocol):
 
 
 class ObservationSink(Protocol):
-    """Backend that materialises observations (Langfuse, a test recorder, ...)."""
+    """Backend that materialises observations."""
 
     def observe(
         self,

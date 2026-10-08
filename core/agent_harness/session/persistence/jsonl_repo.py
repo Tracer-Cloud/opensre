@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 
 import core.agent_harness.session.persistence.paths as storage_paths
-from core.agent_harness.session.persistence.contracts import CHAT_KINDS, RestoreContextKey
+from core.agent_harness.session.persistence.contracts import (
+    CHAT_KINDS,
+    SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+    TURN_EVIDENCE_CUSTOM_TYPE,
+    RestoreContextKey,
+)
 from core.agent_harness.session.persistence.wal_recovery import dangling_tool_intents
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 
@@ -16,7 +21,12 @@ from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 class JsonlSessionRepo:
     """Read-only queries over v2 session files."""
 
-    def load_recent(self, n: int = 20) -> list[dict[str, Any]]:
+    def load_recent(
+        self,
+        n: int = 20,
+        *,
+        require_conversation: bool = False,
+    ) -> list[dict[str, Any]]:
         root = storage_paths.sessions_dir()
         if not root.exists():
             return []
@@ -28,7 +38,10 @@ class JsonlSessionRepo:
                 if loaded is None:
                     continue
                 header, entries = loaded
-                results.append(self._summary(path, header, entries))
+                summary = self._summary(path, header, entries)
+                if require_conversation and not summary.get("conversation_title"):
+                    continue
+                results.append(summary)
             if len(results) >= n:
                 break
         results.sort(key=lambda x: x.get("started_at") or "", reverse=True)
@@ -76,6 +89,11 @@ class JsonlSessionRepo:
             messages = _messages_for_branch(branch)
             context = _accumulated_context_for_branch(branch)
             goal_state = _session_goal_state_for_branch(branch)
+            # A control targets the live branch. Explicit ``session:entry``
+            # restores are historical snapshots and must never consume it.
+            goal_controls = (
+                _pending_session_goal_controls(entries, branch) if entry_ref is None else []
+            )
             plan_state = _task_plan_state_for_branch(branch)
             choice_state = _pending_user_choice_state_for_branch(branch)
             history = _history_for_branch(branch)
@@ -84,14 +102,16 @@ class JsonlSessionRepo:
                 "session_id": str(header.get("id") or target_path.stem),
                 "entry_id": target_entry,
                 "leaf_id": _resolve_entry_id(entries, None),
-                "name": storage_paths.derive_name(_records_to_lines([header, *entries])),
+                "name": _session_name(header, entries),
                 "started_at": header.get("created_at"),
                 RestoreContextKey.CLI_AGENT_MESSAGES: messages,
                 RestoreContextKey.ACCUMULATED_CONTEXT: context,
                 RestoreContextKey.SESSION_GOAL_STATE: goal_state,
+                RestoreContextKey.SESSION_GOAL_CONTROLS: goal_controls,
                 RestoreContextKey.TASK_PLAN_STATE: plan_state,
                 RestoreContextKey.PENDING_USER_CHOICE_STATE: choice_state,
                 RestoreContextKey.HISTORY: history,
+                RestoreContextKey.TURN_EVIDENCE: _turn_evidence_for_branch(branch),
                 "turn_details": turn_details,
                 "has_snapshot": False,
                 # WAL sidecars are off-branch, so scan the full entry list:
@@ -107,10 +127,28 @@ class JsonlSessionRepo:
     ) -> dict[str, Any]:
         leaf = next((rec for rec in reversed(entries) if rec.get("type") == "leaf"), None)
         total_turns = _count_turns(entries)
+        leaf_id = _resolve_entry_id(entries, None)
+        branch = _branch_to(entries, leaf_id)
+        conversation_title = next(
+            (
+                title
+                for rec in branch
+                if rec.get("type") == "message" and rec.get("role") == "user"
+                if (title := " ".join(str(rec.get("content") or "").split()))
+                and not title.startswith("/")
+            ),
+            "",
+        )
+        activity_at = next(
+            (rec.get("timestamp") for rec in reversed(branch) if rec.get("timestamp")),
+            header.get("created_at"),
+        )
         return {
             "session_id": str(header.get("id") or path.stem),
-            "name": storage_paths.derive_name(_records_to_lines([header, *entries])),
+            "name": _session_name(header, entries),
             "started_at": header.get("created_at"),
+            "conversation_title": conversation_title,
+            "activity_at": activity_at,
             "opensre_version": header.get("opensre_version"),
             "duration_secs": leaf.get("duration_secs") if leaf else None,
             "total_turns": leaf.get("total_turns") if leaf else total_turns,
@@ -124,7 +162,7 @@ class JsonlSessionRepo:
                 )
                 for rec in entries
             ),
-            "leaf_id": _resolve_entry_id(entries, None),
+            "leaf_id": leaf_id,
         }
 
 
@@ -142,15 +180,15 @@ def _split_session_ref(ref: str) -> tuple[str, str | None]:
 
 
 def _load_v2_file(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
-    return _load_v2_lines(path.read_text(encoding="utf-8").splitlines())
+    return _load_v2_lines(path.read_bytes().splitlines())
 
 
-def _load_v2_lines(lines: list[str]) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+def _load_v2_lines(lines: list[bytes]) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     if not lines:
         return None
     try:
-        header = json.loads(lines[0])
-    except json.JSONDecodeError:
+        header = json.loads(lines[0].decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return None
     if (
         not isinstance(header, dict)
@@ -160,8 +198,8 @@ def _load_v2_lines(lines: list[str]) -> tuple[dict[str, Any], list[dict[str, Any
         return None
     entries: list[dict[str, Any]] = []
     for line in lines[1:]:
-        with contextlib.suppress(json.JSONDecodeError):
-            rec = json.loads(line)
+        with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError):
+            rec = json.loads(line.decode("utf-8"))
             if isinstance(rec, dict) and "id" in rec and "type" in rec:
                 entries.append(rec)
     return header, entries
@@ -210,7 +248,13 @@ def _messages_for_branch(branch: list[dict[str, Any]]) -> list[tuple[str, str]]:
     for rec in branch:
         if rec.get("type") == "compaction":
             summary = str(rec.get("summary") or "").strip()
-            if summary:
+            replacement = rec.get("replacement_messages")
+            if isinstance(replacement, list):
+                # The compaction recorded what it kept, so it replaces the
+                # transcript so far instead of adding a summary beside it.
+                messages = [("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}")] if summary else []
+                messages.extend(_replacement_pairs(replacement))
+            elif summary:
                 messages.append(("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}"))
             continue
         if rec.get("type") != "message":
@@ -222,6 +266,36 @@ def _messages_for_branch(branch: list[dict[str, Any]]) -> list[tuple[str, str]]:
         if content:
             messages.append((role, content))
     return messages
+
+
+def _replacement_pairs(raw: list[Any]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        role, content = item
+        if role in {"user", "assistant"} and isinstance(content, str) and content:
+            pairs.append((role, content))
+    return pairs
+
+
+def _turn_evidence_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Persisted turn-evidence records, restarting at a compaction that kept its own."""
+    records: list[dict[str, Any]] = []
+    for rec in branch:
+        if rec.get("type") == "compaction":
+            replacement = rec.get("replacement_evidence")
+            if isinstance(replacement, list):
+                records = [item for item in replacement if isinstance(item, dict)]
+            continue
+        if (
+            rec.get("type") == "custom_message"
+            and rec.get("custom_type") == TURN_EVIDENCE_CUSTOM_TYPE
+        ):
+            content = rec.get("content")
+            if isinstance(content, dict):
+                records.append(content)
+    return records
 
 
 def _history_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -281,12 +355,25 @@ def _session_goal_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, An
     for rec in branch:
         if rec.get("type") != "custom_message":
             continue
-        if rec.get("custom_type") != SESSION_GOAL_STATE_CUSTOM_TYPE:
-            continue
         content = rec.get("content")
-        if isinstance(content, dict):
+        if rec.get("custom_type") == SESSION_GOAL_STATE_CUSTOM_TYPE and isinstance(content, dict):
             latest = content
+        elif rec.get("custom_type") == SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE:
+            state = content.get("session_goal_state") if isinstance(content, dict) else None
+            if isinstance(state, dict):
+                latest = state
     return latest
+
+
+def _pending_session_goal_controls(
+    entries: list[dict[str, Any]],
+    branch: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Return unacknowledged goal controls from off-branch sidecar records."""
+    from core.agent_harness.session_goal.persist import pending_session_goal_controls
+
+    branch_entry_ids = {str(record["id"]) for record in branch if isinstance(record.get("id"), str)}
+    return pending_session_goal_controls(entries, branch_entry_ids=branch_entry_ids)
 
 
 def _task_plan_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -297,11 +384,13 @@ def _task_plan_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, Any] 
     for rec in branch:
         if rec.get("type") != "custom_message":
             continue
-        if rec.get("custom_type") != TASK_PLAN_STATE_CUSTOM_TYPE:
-            continue
         content = rec.get("content")
-        if isinstance(content, dict):
+        if rec.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE and isinstance(content, dict):
             latest = content
+        elif rec.get("custom_type") == SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE:
+            state = content.get("task_plan_state") if isinstance(content, dict) else None
+            if isinstance(state, dict):
+                latest = state
     return latest
 
 
@@ -343,5 +432,13 @@ def _count_chat_turns(entries: list[dict[str, Any]]) -> int:
     )
 
 
-def _records_to_lines(records: list[dict[str, Any]]) -> list[str]:
-    return [json.dumps(rec, ensure_ascii=False, default=str) for rec in records]
+def _session_name(header: dict[str, Any], entries: list[dict[str, Any]]) -> str:
+    for record in reversed(entries):
+        if record.get("type") == "custom_message" and record.get("custom_type") == "session_name":
+            name = record.get("name")
+            if isinstance(name, str) and name:
+                return name
+            break
+    return storage_paths.derive_name(
+        [json.dumps(record, ensure_ascii=False, default=str) for record in [header, *entries]]
+    )

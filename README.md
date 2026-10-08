@@ -29,9 +29,9 @@
 
 <p align="center">
   <strong>
-    <a href="https://www.opensre.com/docs/quickstart">Quickstart</a> ·
+    <a href="https://www.opensre.com/docs/getting-started/quickstart">Quickstart</a> ·
     <a href="https://www.opensre.com/docs">Docs</a> ·
-    <a href="https://opensre.com/docs/faq">FAQ</a> ·
+    <a href="https://opensre.com/docs/guides/faq">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
 </p>
@@ -40,7 +40,7 @@
 
 ---
 
-> 🚧 Public Alpha: Core workflows are usable for early exploration, though not yet fully stable. The project is in active development, and APIs and integrations may evolve
+> 🚧 Public Alpha: Core workflows are usable for early exploration, though not yet fully stable. The project is in active development, and APIs and integrations may evolve.
 
 ---
 
@@ -53,8 +53,16 @@ Make sure you have:
 
 ## Step 1: Install and start opensre
 
+macOS or Linux:
+
 ```bash
-curl -fsSL https://install.opensre.com | bash
+curl -fsSL https://install.opensre.com | bash -s -- -gh
+```
+
+Windows (PowerShell):
+
+```powershell
+& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -gh
 ```
 
 Then start OpenSRE:
@@ -65,11 +73,11 @@ opensre
 
 ![OpenSRE CLI welcome screen with the sign-in prompt](docs/images/opensre-welcome.png)
 
-Use a macOS or Linux terminal. On Windows, use [WSL](docs/environments/windows-local.mdx).
+Windows details: [Windows](docs/install/windows-local.mdx).
 
 The installer fetches the latest build from `main` without requiring sudo. If `opensre` is not found, follow the PATH instructions printed by the installer or open a new terminal.
 
-For supported platforms and troubleshooting, see [Install locally](https://www.opensre.com/docs/install-local).
+For supported platforms and troubleshooting, see [Install locally](https://www.opensre.com/docs/install/install-local).
 
 ---
 
@@ -126,7 +134,7 @@ opensre
 
 Webapp contributors can run `opensre setup --dev` to authenticate through `http://localhost:3000`.
 
-**Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), and local agent fleet monitoring (`/agents`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/interactive-shell-commands)** for the full reference.
+**Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), and local agent fleet monitoring (`/agents`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/getting-started/interactive-shell-commands)** for the full reference.
 
 **Headless CLI** — run one agent turn non-interactively from a terminal, script, or CI job:
 
@@ -134,23 +142,23 @@ Webapp contributors can run `opensre setup --dev` to authenticate through `http:
 opensre ask "why is checkout-api slow?"
 ```
 
-See **[Headless CLI](https://www.opensre.com/docs/headless-cli)** for stdin prompts, JSON output, and tool approvals.
+See **[Headless CLI](https://www.opensre.com/docs/guides/headless-cli)** for stdin prompts, JSON output, and tool approvals.
 
 **From Python** — drive the agent in-process from your own code (source checkout required):
 
 ```python
-from core.agent_harness import AgentSession
+from bootstrap.embedded import start_embedded_session
 
-session = AgentSession.start()
+session = start_embedded_session()
 result = session.chat("why is checkout-api slow?")
 if result.answered:
     print(result.primary_response_text)
 ```
 
-See **[Python API](https://www.opensre.com/docs/python-api)** for sessions, conversations, and custom output sinks.
+See **[Python API](https://www.opensre.com/docs/guides/python-api)** for sessions, conversations, and custom output sinks.
 
 **For your team's daily loop:** embed OpenSRE in the Python services and automations your teammates already use.
-Start with the in-repo [Python API guide](docs/python-api.mdx), then use it every day to make incident response repeatable.
+Start with the in-repo [Python API guide](docs/guides/python-api.mdx), then use it every day to make incident response repeatable.
 
 Other useful commands:
 
@@ -165,10 +173,11 @@ opensre uninstall   # remove opensre and all local data
 
 ## Deployment
 
-Two primary AWS EC2 paths and a general hosted option:
+An OpenSRE Cloud managed gateway, an AWS EC2 path, and a general self-hosted option:
 
+- **OpenSRE Cloud managed gateway:** an organization admin provisions it in the web app; signed-in shell users can check, start, or stop it without handling infrastructure credentials locally.
 - **Gateway (AMI + systemd):** `make build-gateway-image` then `make deploy-gateway` — Telegram gateway only, no Docker; the gateway is installed into a server image that new servers start from.
-- **Hosted (Railway / ECS / Vercel):** deploy with the repo `Dockerfile`; set `LLM_PROVIDER` and the matching API key (see [`.env.example`](.env.example)), plus `DATABASE_URI` and `REDIS_URI` if persistence is needed.
+- **Self-hosted container (Railway / ECS / Vercel):** deploy the repo `Dockerfile`, select `MODE`, and set `LLM_PROVIDER` plus its API key. Use `DATABASE_URL` only when the gateway needs shared Postgres-backed state, such as Slack Events API replicas.
 
 **[Full deployment steps and prerequisites → DEPLOYMENT.md](DEPLOYMENT.md)**
 
@@ -221,14 +230,14 @@ OpenSRE connects to 60+ tools and services across the modern cloud stack, from L
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **AI / LLM Providers**  | Anthropic · OpenAI · OpenAI Codex · Ollama · Google Gemini · OpenRouter · TrustedRouter · NVIDIA NIM · Bedrock                                                                                                                                                                                                                                                                                                                                                                               |                                                                                                                                                                                                                                                                    |
 | **Observability**       | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo · annotations) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/groundcover.webp" width="16"> groundcover · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch · Better Stack · Splunk · Victoria Logs · SignOz · OpenObserve · OpenSearch · Azure Monitor · New Relic |                                                                                                                                                                                                             |
-| **Infrastructure**      | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS (S3 · Lambda · EKS · EC2 · CloudTrail · Bedrock) · <img src="docs/assets/icons/gcp.jpg" width="16"> GCP · <img src="docs/assets/icons/azure.png" width="16"> Azure · Yandex Cloud · ArgoCD · Helm · Jenkins                                                                                                                                                  |                                                                                                                                                                                                                                                                    |
+| **Infrastructure**      | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS (S3 · Lambda · EKS · EC2 · CloudTrail · Bedrock) · <img src="docs/assets/icons/azure.png" width="16"> Azure · Yandex Cloud · ArgoCD · Helm                                                                                                                                                  |                                                                                                                                                                                                                                                                    |
 | **Database**            | MongoDB · ClickHouse · PostgreSQL · MySQL · MariaDB · MongoDB Atlas · Azure SQL · Snowflake · Redis · RDS · Supabase                                                                                                                                                                                                                                                                                                                                                         |                                                                                                                                                                                                                                                                    |
-| **Data Platform**       | Apache Airflow · Apache Kafka · Apache Spark · Prefect · RabbitMQ · Dagster                                                                                                                                                                                                                                                                                                                                                                                                |                                                                                                                                                                                                                                                                    |
-| **Dev Tools**           | <img src="docs/assets/icons/github.webp" width="16"> GitHub · GitHub MCP · Bitbucket · GitLab                                                                                                                                                                                                                                                                                                                                                                                |                                                                                                                                                                                                                                                                    |
-| **Incident Management** | <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Opsgenie · Jira · Alertmanager · incident.io · ServiceNow                                                                                                                                                                                                                                                                                                                                                | [Trello](https://github.com/Tracer-Cloud/opensre/issues/361) · [Linear](https://github.com/Tracer-Cloud/opensre/issues/124)                                                                 |
+| **Data Platform**       | Apache Airflow · Apache Kafka · Prefect · RabbitMQ · Dagster · Temporal                                                                                                                                                                                                                                                                                                                                                                                                |                                                                                                                                                                                                                                                                    |
+| **Dev Tools**           | <img src="docs/assets/icons/github.webp" width="16"> GitHub · GitHub MCP · Bitbucket · GitLab · Jenkins                                                                                                                                                                                                                                                                                                                                                                                |                                                                                                                                                                                                                                                                    |
+| **Incident Management** | <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Opsgenie · Jira · Alertmanager · incident.io · ServiceNow · Trello (client helpers only)                                                                                                                                                                                                                                                                                                                                                | [Linear](https://github.com/Tracer-Cloud/opensre/issues/124)                                                                 |
 | **Communication**       | <img src="docs/assets/icons/slack.png" width="16"> Slack · Google Docs · Discord · Telegram · <img src="docs/assets/icons/rocketchat.png" width="16"> Rocket.Chat · WhatsApp · Buzz                                                                                                                                                                                                                                                                                                                                                                     | [Notion](https://github.com/Tracer-Cloud/opensre/issues/286) · [Teams](https://github.com/Tracer-Cloud/opensre/issues/138) · [Confluence](https://github.com/Tracer-Cloud/opensre/issues/313)                                                                   |
 | **Agent Deployment**    | <img src="docs/assets/icons/vercel.png" width="16"> Vercel · <img src="docs/assets/icons/aws.png" width="16"> EC2 · <img src="docs/assets/icons/aws.png" width="16"> ECS · Railway                                                                                                                                                                                                                                                                                         |                                                                                                                                                                                                                                                                    |
-| **Protocols**           | <img src="docs/assets/icons/mcp.svg" width="16"> MCP · <img src="docs/assets/icons/acp.png" width="16"> ACP                                                                                                                                                                                                                                                                                                                                                     |                                                                                                                                                                                                                                                                    |
+| **Protocols**           | <img src="docs/assets/icons/mcp.svg" width="16"> MCP                                                                                                                                                                                                                                                                                                                                                     |                                                                                                                                                                                                                                                                    |
 
 OpenSRE is community-built. Looking for a safe first contribution? Browse [`good first issue`](https://github.com/Tracer-Cloud/opensre/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) tickets or see the [Good First Issues guide](docs/good-first-issues/README.md). See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow.
 

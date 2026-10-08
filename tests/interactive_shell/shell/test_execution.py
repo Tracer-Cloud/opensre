@@ -70,14 +70,9 @@ def test_shell_argv_disables_windows_startup_and_delayed_expansion(
         lambda: r"C:\Windows\System32\cmd.exe",
     )
 
-    assert shell_execution._shell_argv("echo ok") == [
-        r"C:\Windows\System32\cmd.exe",
-        "/d",
-        "/v:off",
-        "/s",
-        "/c",
-        "echo ok",
-    ]
+    assert shell_execution._shell_argv("echo ok") == (
+        r'"C:\Windows\System32\cmd.exe" /d /v:off /s /c "echo ok"'
+    )
 
 
 def test_shell_argv_keeps_pwd_diagnostic_portable_on_windows(
@@ -91,14 +86,24 @@ def test_shell_argv_keeps_pwd_diagnostic_portable_on_windows(
         lambda: r"C:\Windows\System32\cmd.exe",
     )
 
-    assert shell_execution._shell_argv("pwd") == [
-        r"C:\Windows\System32\cmd.exe",
-        "/d",
-        "/v:off",
-        "/s",
-        "/c",
-        "cd",
-    ]
+    assert shell_execution._shell_argv("pwd") == (
+        r'"C:\Windows\System32\cmd.exe" /d /v:off /s /c "cd"'
+    )
+
+
+def test_shell_argv_preserves_windows_command_quotes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_execution.os, "name", "nt")
+    monkeypatch.setattr(
+        shell_execution,
+        "_windows_command_shell",
+        lambda: r"C:\Windows\System32\cmd.exe",
+    )
+
+    assert shell_execution._shell_argv('echo "quoted&value"') == (
+        r'"C:\Windows\System32\cmd.exe" /d /v:off /s /c "echo "quoted&value""'
+    )
 
 
 def test_shell_environment_removes_exported_bash_functions(

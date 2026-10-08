@@ -8,11 +8,12 @@ import re
 import subprocess
 import time
 import uuid
+from datetime import UTC, datetime
+from typing import Any
 
 from filelock import FileLock, Timeout
 
 from config.constants.ci_repair import CI_REPAIR_CRON, CI_REPAIR_REPORT_BUILDER, CI_REPAIR_SECONDS
-from config.constants.github import GITHUB_CI_DEMO_REPOSITORY
 from infrastructure.scheduling.scheduler.background_service import ensure_background_service
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_AGENT,
@@ -21,65 +22,132 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
 )
-from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import add_task, get_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
-from integrations.github.client import GitHubRestClient
+from integrations.github.client import GitHubApiError, GitHubRestClient
+from integrations.github.tools.ci_repair_loop import telemetry
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
-from integrations.github.tools.ci_repair_loop.fixture import object_response
-from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
+from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun, RepairStatus
+from integrations.github.tools.ci_repair_loop.responses import object_response
+from integrations.github.tools.ci_repair_loop.seeded import was_seeded_here
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 from integrations.github.tools.ci_repair_loop.supervisor import finish_run
 
 logger = logging.getLogger(__name__)
 
 
+def repair_task_name(owner: str, repo: str) -> str:
+    """Cron title that binds one repair schedule to one repository."""
+    return f"CI repair: {owner}/{repo}"
+
+
 def _component(value: str) -> str:
     if not value or re.fullmatch(r"[A-Za-z0-9_.-]+", value) is None or value in {".", ".."}:
-        raise ValueError("Use an explicit GitHub owner and repository name.")
+        raise RepairRefused("Use an explicit GitHub owner and repository name.")
     return value
+
+
+def _head_repository_name(pull: dict[str, Any]) -> str:
+    """The ``owner/name`` the pull request's head branch lives in, or empty."""
+    head = pull.get("head")
+    if not isinstance(head, dict):
+        return ""
+    head_repo = head.get("repo")
+    if not isinstance(head_repo, dict):
+        return ""
+    return str(head_repo.get("full_name") or "")
+
+
+def _head_sha(pull: dict[str, Any]) -> str:
+    """The pull request's head commit, or empty."""
+    head = pull.get("head")
+    return str(head.get("sha") or "") if isinstance(head, dict) else ""
+
+
+def _require_repairable(client: GitHubRestClient, owner: str, repo: str, pr_number: int) -> str:
+    """Refuse, in plain words, a pull request the loop could never push to; return its head.
+
+    Checked before anything is reserved or scheduled, so the user learns at once
+    that a fork or a closed pull request is not a target and what to choose instead.
+    """
+    pull = object_response(client.request("GET", f"repos/{owner}/{repo}/pulls/{pr_number}"))
+    state = str(pull.get("state") or "").lower()
+    if state != "open":
+        raise RepairRefused(
+            f"PR #{pr_number} is {state or 'unavailable'}; only an open pull request can be "
+            "repaired. Choose an open one."
+        )
+    head_full_name = _head_repository_name(pull)
+    if head_full_name.lower() != f"{owner}/{repo}".lower():
+        origin = head_full_name or "a fork"
+        raise RepairRefused(
+            f"PR #{pr_number} comes from {origin}; the repair loop only pushes to branches "
+            f"inside {owner}/{repo}. Choose a pull request opened from a branch in this "
+            "repository, or ask its author to open one."
+        )
+    return _head_sha(pull)
+
+
+def _refusal_for(
+    client: GitHubRestClient, owner: str, repo: str, pr_number: int
+) -> tuple[Exception | None, str]:
+    """What a fresh reservation of this pull request would raise, or ``None``, and its head.
+
+    A failed lookup counts too: it stops a new run, never the reuse of one.
+    """
+    try:
+        head = _require_repairable(client, owner, repo, pr_number)
+    except (RepairRefused, GitHubApiError, ValueError) as refusal:
+        return refusal, ""
+    return None, head
 
 
 def schedule_repair(
     *,
-    demo: bool,
-    owner: str = "",
-    repo: str = "",
-    pr_number: int = 0,
+    owner: str,
+    repo: str,
+    pr_number: int,
     github_token: str | None = None,
     store: RepairStore | None = None,
+    scheduler_in_process: bool = False,
+    fast_checks: bool = False,
 ) -> tuple[RepairRun, bool, str | None]:
-    """Schedule once per active target; repeated requests retain the original deadline."""
+    """Schedule once per active target; repeated requests retain the original deadline.
+
+    ``scheduler_in_process`` says the host's own scheduler picks the task up from the
+    store (the hosted gateway); otherwise the OS-level background service is ensured.
+    A pull request this account seeded in this process, still at the seeded head
+    commit, is repaired as the demo even when the caller does not pass ``fast_checks``.
+    """
     started = time.time()
     token = configured_token(github_token)
     user = object_response(GitHubRestClient(token).request("GET", "user"))
     actor_id = account_id(user)
     actor = _component(str(user.get("login") or ""))
-    owner = _component(owner.strip() or actor)
-    if demo:
-        if pr_number or repo and repo != GITHUB_CI_DEMO_REPOSITORY:
-            raise ValueError(
-                "Demo mode uses only the fixed demo repository and creates its own PR."
-            )
-        repo = GITHUB_CI_DEMO_REPOSITORY
-    elif pr_number <= 0:
-        raise ValueError("Select a PR number or request demo=true.")
+    owner = _component(owner.strip())
+    if pr_number <= 0:
+        raise RepairRefused("Select the pull request number to repair.")
     repo = _component(repo.strip())
     store = store or RepairStore()
+    # Looked up before any lock; an active run is still returned as is, even if
+    # its PR has closed meanwhile, and a refused PR is never written to the store.
+    refusal, head = _refusal_for(GitHubRestClient(token), owner, repo, pr_number)
+    seeded_demo = fast_checks or was_seeded_here(actor_id, owner, repo, pr_number, head)
+    candidate = RepairRun(
+        id=uuid.uuid4().hex[:12],
+        owner=owner,
+        repo=repo,
+        actor=actor,
+        actor_id=actor_id,
+        fast_checks=seeded_demo,
+        seeded_head=head if seeded_demo else "",
+        remote=scheduler_in_process,
+        started_at=started,
+        deadline=started + CI_REPAIR_SECONDS,
+        pr_number=pr_number,
+    )
     with FileLock(str(store.root / "schedule.lock"), timeout=30):
-        run, reused = store.reserve(
-            RepairRun(
-                id=uuid.uuid4().hex[:12],
-                owner=owner,
-                repo=repo,
-                actor=actor,
-                actor_id=actor_id,
-                demo=demo,
-                started_at=started,
-                deadline=started + CI_REPAIR_SECONDS,
-                pr_number=pr_number,
-            )
-        )
+        run, reused = store.reserve(candidate, refusal=refusal)
         existing = get_task(run.id)
         if reused and existing is not None and existing.enabled:
             return run, True, existing.next_run
@@ -99,7 +167,8 @@ def schedule_repair(
                 run = store.get(run.id)
             return run, True, None
         try:
-            ensure_background_service(deadline=run.deadline)
+            if not scheduler_in_process:
+                ensure_background_service(deadline=run.deadline)
             if time.time() >= run.deadline:
                 run.status, run.reason = (
                     RepairStatus.TIMED_OUT,
@@ -110,7 +179,7 @@ def schedule_repair(
             if existing is None:
                 task = ScheduledTask(
                     id=run.id,
-                    name=f"CI repair: {owner}/{repo}",
+                    name=repair_task_name(owner, repo),
                     kind=TaskKind.MANUAL_LOOP,
                     cron=CI_REPAIR_CRON,
                     timezone="UTC",
@@ -122,9 +191,11 @@ def schedule_repair(
                         LOOP_REPORT_ARGS_PARAM: json.dumps({"run_id": run.id}),
                     },
                 )
-                task.next_run = compute_next_run(task)
+                task.next_run = datetime.now(UTC).isoformat()
                 existing = add_task(task)
                 run = store.mark_registered(run.id)
+                telemetry.monitoring_started(run)
+                telemetry.demo_failure_triggered(run)
         except (ValueError, RuntimeError, OSError, subprocess.SubprocessError):
             logger.exception("CI repair registration failed")
             run.status, run.reason = (

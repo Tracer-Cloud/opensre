@@ -39,6 +39,8 @@ from infrastructure.harness_providers.evidence_sources import (
 )
 from infrastructure.harness_providers.evidence_sources import reset as _reset_evidence_sources
 from infrastructure.harness_providers.integration_resolution import (
+    AccountIntegrationsFetcherFn,
+    AccountIntegrationsGenerationFn,
     ClassifyIntegrationsFn,
     ConfiguredIntegrationServicesFn,
     IntegrationResolutionAdapters,
@@ -57,8 +59,10 @@ from infrastructure.harness_providers.integration_resolution import (
     configured_integration_services,
     fetch_remote_integrations,
     integration_setup_command,
+    integration_sources_stamp,
     resolve_integrations,
     resolve_integrations_with_metadata,
+    select_github_connection,
     setupable_integration_services,
 )
 from infrastructure.harness_providers.integration_resolution import (
@@ -98,6 +102,17 @@ from infrastructure.harness_providers.runbooks import (
     resolve_runbook_source,
 )
 from infrastructure.harness_providers.runbooks import reset as _reset_runbooks
+from infrastructure.harness_providers.skill_prerequisites import (
+    SkillPrerequisiteCheck,
+    clear_skill_prerequisite_checks,
+    register_skill_prerequisite_check,
+    registered_skill_prerequisite_checks,
+    skill_prerequisite_met,
+    skill_prerequisite_verdict,
+)
+from infrastructure.harness_providers.skill_prerequisites import (
+    reset as _reset_skill_prerequisites,
+)
 from infrastructure.harness_providers.subprocess_presenter import (
     SubprocessPresenterProvider,
     resolve_subprocess_presenter,
@@ -133,6 +148,7 @@ def reset_harness_providers() -> None:
     _reset_message_context()
     _reset_evidence_sources()
     _reset_subprocess_presenter()
+    _reset_skill_prerequisites()
 
     # Core leaf registries (populated by integrations/harness_adapters).
     from core.domain.alerts.alert_source import (
@@ -153,6 +169,8 @@ def reset_harness_providers() -> None:
 
 
 __all__ = [
+    "AccountIntegrationsFetcherFn",
+    "AccountIntegrationsGenerationFn",
     "BuildCliClientFn",
     "CliLlmAdapters",
     "ClassifyIntegrationsFn",
@@ -176,6 +194,7 @@ __all__ = [
     "RemoteIntegrationsProvider",
     "RunbookSourceFactory",
     "SetupableIntegrationServicesFn",
+    "SkillPrerequisiteCheck",
     "SubprocessPresenterProvider",
     "ToolSources",
     "VcsRepoScopeProvider",
@@ -190,6 +209,7 @@ __all__ = [
     "clear_metric_query_drafts",
     "clear_preferred_evidence_sources",
     "clear_runbook_source_providers",
+    "clear_skill_prerequisite_checks",
     "clear_vcs_repo_scope_providers",
     "cli_provider_registration",
     "configured_integration_services",
@@ -198,6 +218,7 @@ __all__ = [
     "flatten_cli_messages_to_prompt",
     "gateway_persona_fragments",
     "integration_setup_command",
+    "integration_sources_stamp",
     "metric_cohort_resolved_for",
     "metric_query_draft_for",
     "preferred_evidence_sources_by_kind",
@@ -212,17 +233,22 @@ __all__ = [
     "register_metric_query_tools",
     "register_preferred_evidence_source",
     "register_runbook_source_provider",
+    "register_skill_prerequisite_check",
     "register_vcs_repo_scope_provider",
     "registered_discovery_targets",
     "registered_metric_query_tools",
+    "registered_skill_prerequisite_checks",
     "reset_harness_providers",
     "resolve_integrations",
     "resolve_integrations_with_metadata",
+    "select_github_connection",
     "resolve_runbook_source",
     "resolve_subprocess_presenter",
     "resolve_surface_tool_map",
     "resolve_surface_tools",
     "resolve_skill_tools",
     "setupable_integration_services",
+    "skill_prerequisite_met",
+    "skill_prerequisite_verdict",
     "strip_message_context_prefix",
 ]

@@ -2,77 +2,51 @@
 
 from __future__ import annotations
 
-import contextlib
-
 from rich.console import Console
-from rich.markup import escape
 
+from surfaces.interactive_shell.command_registry.session_cmds.resume import (
+    resume_session_by_prefix,
+)
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui import (
-    BOLD_BRAND,
-    DIM,
-    print_repl_table,
-    repl_table,
+from surfaces.interactive_shell.ui.session_picker import choose_recent_session
+from surfaces.interactive_shell.ui.sessions import render_recent_sessions, session_menu_items
+from surfaces.shared.terminal.components.choice_menu import (
+    prepare_repl_output_line,
+    repl_tty_interactive,
 )
-from surfaces.shared.terminal.components.time_format import (
-    format_repl_duration,
-    format_repl_timestamp,
-)
+
+
+def _validate_sessions_args(args: list[str]) -> str | None:
+    return "usage: /sessions" if args else None
 
 
 def _cmd_sessions(session: Session, console: Console, _args: list[str]) -> bool:
-    from datetime import UTC, datetime
-
     from core.agent_harness.spi.defaults import default_session_repo
 
     entries = default_session_repo().load_recent(20)
-    if not entries:
-        console.print(f"[{DIM}]No sessions recorded yet.[/]")
+    items = session_menu_items(
+        entries,
+        current_session_id=session.session_id,
+        current_started_at=session.started_at,
+        resumed_from_name=session.resumed_from_name,
+    )
+    if items and repl_tty_interactive():
+        picked = choose_recent_session(items)
+        if picked is None:
+            session.record("slash", "/sessions")
+            return True
+
+        prepare_repl_output_line()
+        if picked == session.session_id:
+            console.print("Already in this session.")
+            session.record("slash", "/sessions")
+            return True
+
+        slash_command = f"/sessions {picked[:8]}"
+        if not resume_session_by_prefix(picked, session, console, slash_command=slash_command):
+            session.record("slash", slash_command, ok=False)
         return True
 
-    table = repl_table(title="Recent sessions\n", title_style=BOLD_BRAND)
-    table.add_column("#", style="bold", justify="right")
-    table.add_column("Session ID", style="bold")
-    table.add_column("Name")
-    table.add_column("Started")
-    table.add_column("Duration")
-    table.add_column("Turns", justify="right")
-
-    for i, entry in enumerate(entries, start=1):
-        sid = entry["session_id"]
-        short_id = sid[:8] if len(sid) >= 8 else sid
-        is_current = sid == session.session_id
-
-        name = entry.get("name") or ""
-        if is_current and not name and session.resumed_from_name:
-            name = f"↩ {session.resumed_from_name}"
-        if is_current:
-            name_col = f"[{DIM}](current)[/]" if not name else f"{escape(name)} [{DIM}](current)[/]"
-        else:
-            name_col = escape(name) if name else f"[{DIM}]—[/]"
-
-        started_str = format_repl_timestamp(entry.get("started_at"), style="table")
-
-        duration_secs = entry.get("duration_secs")
-        if is_current:
-            with contextlib.suppress(OSError, OverflowError, ValueError):
-                elapsed = int(
-                    (
-                        datetime.now(UTC) - datetime.fromtimestamp(session.started_at, tz=UTC)
-                    ).total_seconds()
-                )
-                duration_secs = elapsed
-
-        total = entry.get("total_turns")
-
-        table.add_row(
-            str(i),
-            short_id,
-            name_col,
-            started_str,
-            format_repl_duration(duration_secs),
-            str(total) if total is not None else "—",
-        )
-
-    print_repl_table(console, table)
+    render_recent_sessions(console, items)
+    session.record("slash", "/sessions")
     return True

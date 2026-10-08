@@ -1,4 +1,4 @@
-"""The Langfuse ``session_id`` in effect for the current turn.
+"""The trace ``session_id`` in effect for the current turn.
 
 The outermost turn owns the trace session: the first ``run_turn`` on a call
 path binds its session id, and every ``run_turn`` nested inside it — a loop

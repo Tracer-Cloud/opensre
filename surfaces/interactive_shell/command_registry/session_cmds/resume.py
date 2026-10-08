@@ -14,15 +14,22 @@ from infrastructure.turn_host.session_lock import (
     session_execution_lock,
 )
 from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
+    render_resume_banner,
     render_resumed_session_history,
+    replayable_turn_count,
 )
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING
+from surfaces.interactive_shell.ui import DIM, ERROR, WARNING
+from surfaces.interactive_shell.ui.resume_picker import (
+    ResumeMenuItem,
+    choose_resume_session,
+)
 from surfaces.shared.terminal.components.choice_menu import (
-    repl_choose_one,
+    prepare_repl_output_line,
     repl_tty_interactive,
 )
-from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+
+_RECENT_CONVERSATION_LIMIT = 200
 
 
 def _record_resume_slash(
@@ -43,30 +50,37 @@ def _record_resume_slash(
 
 
 def _interactive_resume_menu(session: Session, console: Console) -> bool:
-    """Show a numbered list of recent sessions and resume the selected one."""
-    from core.agent_harness.spi.defaults import default_session_repo
-
-    entries = [
-        e for e in default_session_repo().load_recent(10) if e["session_id"] != session.session_id
-    ]
-    if not entries:
-        console.print(f"[{DIM}]No previous sessions to resume.[/]")
-        return True
-
-    choices: list[tuple[str, str]] = []
-    for entry in entries:
+    """Show recent conversations and resume the selected one."""
+    repo = default_session_repo()
+    items: list[ResumeMenuItem] = []
+    for entry in repo.load_recent(
+        _RECENT_CONVERSATION_LIMIT + 1,
+        require_conversation=True,
+    ):
         sid = entry["session_id"]
-        short_id = sid[:8]
-        name = entry.get("name") or f"[{short_id}]"
-        started_str = format_repl_timestamp(entry.get("started_at"), style="compact")
-        label = f"{name[:40]:<40}  {short_id}  {started_str}"
-        choices.append((sid, label))
-    choices.append(("done", "done"))
-
-    picked = repl_choose_one(title="resume session", breadcrumb="/resume", choices=choices)
-    if picked is None or picked == "done":
+        if sid == session.session_id:
+            continue
+        title = entry.get("name") or entry.get("conversation_title") or ""
+        if not title:
+            continue
+        items.append(
+            ResumeMenuItem(
+                session_id=sid,
+                title=title,
+                activity_at=entry.get("activity_at") or entry.get("started_at"),
+            )
+        )
+        if len(items) >= _RECENT_CONVERSATION_LIMIT:
+            break
+    if not items:
+        console.print(f"[{DIM}]No previous conversations to resume.[/]")
         return True
 
+    picked = choose_resume_session(items)
+    if picked is None:
+        return True
+
+    prepare_repl_output_line()
     slash_command = f"/resume {picked[:8]}"
     if not _do_resume(picked, session, console, slash_command=slash_command):
         _record_resume_slash(session, [], picked_id=picked, ok=False)
@@ -89,7 +103,17 @@ def _apply_resume_data_unlocked(
     short_id = sid[:8] if len(sid) >= 8 else sid
     name = data.get("name") or ""
 
-    if not messages and not context:
+    has_saved_state = any(
+        (
+            messages,
+            context,
+            history,
+            data.get("session_goal_state"),
+            data.get("task_plan_state"),
+            data.get("pending_user_choice_state"),
+        )
+    )
+    if not has_saved_state:
         console.print(
             f"[{DIM}]session {short_id} has no conversation to resume "
             "(no chat turns or context found).[/]"
@@ -104,10 +128,9 @@ def _apply_resume_data_unlocked(
 
     existing = session.agent.messages
     if existing:
-        console.print(
-            f"[{WARNING}]current session has {len(existing)} messages — "
-            "they will be replaced by the resumed context.[/]"
-        )
+        # Not a warning: the outgoing session is flushed to its own file below,
+        # so nothing is lost and it can be resumed again.
+        console.print(f"[{DIM}]current session saved ({len(existing)} messages) — switching.[/]")
 
     manager = SessionManager.for_session(session)
     manager.rebind_for_resume(
@@ -117,12 +140,18 @@ def _apply_resume_data_unlocked(
     )
     manager.restore_context(session, data)
 
-    source = "snapshot" if has_snapshot else "turn records"
-    name_str = f" · {escape(name)}" if name else ""
-    console.print(
-        f"[{HIGHLIGHT}]resumed session {short_id}{name_str}[/] "
-        f"[{DIM}]({len(messages)} messages in context from {source})[/]"
+    last_activity = str(history[-1].get("timestamp") or "") if history else ""
+    render_resume_banner(
+        console,
+        short_id=short_id,
+        name=name,
+        turns=replayable_turn_count(history),
+        last_activity=last_activity or None,
     )
+
+    # The live composer and ``/sessions`` both surface this; ``clear()`` wiped it
+    # and nothing set it again, so both affordances were dead.
+    session.resumed_from_name = name or short_id
 
     render_resumed_session_history(
         console,
@@ -218,13 +247,23 @@ def _lookup_resume_session_data(
 
     repo = default_session_repo()
     data = repo.load_session(prefix)
-    if data is None and len(prefix) >= 3:
-        candidates = [
-            e
-            for e in repo.load_recent(20)
-            if prefix.lower() in (e.get("name") or "").lower()
-            and e["session_id"] != session.session_id
-        ]
+    name_query = " ".join(prefix.lower().split())
+    if data is None and len(name_query) >= 3:
+        recent = repo.load_recent(20)
+        candidates = [e for e in recent if (e.get("name") or "").lower() == prefix.lower()]
+        current_exact = any(e["session_id"] == session.session_id for e in candidates)
+        candidates = [e for e in candidates if e["session_id"] != session.session_id]
+        if not candidates:
+            for entry in recent:
+                if entry["session_id"] == session.session_id:
+                    continue
+                name = " ".join((entry.get("name") or "").lower().split())
+                # An exact current name must not select a whitespace-only variant.
+                if name_query in name and (not current_exact or name != name_query):
+                    candidates.append(entry)
+        if not candidates and current_exact:
+            console.print(f"[{DIM}]'{escape(prefix)}' is the current session.[/]")
+            return None
         if len(candidates) == 1:
             data = repo.load_session(candidates[0]["session_id"])
         elif len(candidates) > 1:
@@ -289,7 +328,7 @@ def _cmd_resume(session: Session, console: Console, args: list[str]) -> bool:
         _record_resume_slash(session, args)
         return True
 
-    prefix = args[0].strip()
+    prefix = " ".join(args).strip()
     session_prefix = prefix.split(":", 1)[0]
 
     if session.session_id.startswith(session_prefix) and ":" not in prefix:

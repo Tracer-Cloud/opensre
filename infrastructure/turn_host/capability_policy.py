@@ -1,28 +1,33 @@
-"""What gateway chat does not offer.
-
-The list is the gateway's product decision; recording it on a session is the
-harness's job (``spi.session_state.withhold_capabilities``), because the
-harness owns the capability mapping and reads it when planning a turn.
-"""
+"""Record the gateway's scheduler capabilities and withhold shell account tools."""
 
 from __future__ import annotations
 
 from typing import Any
 
+from config.constants.capabilities import (
+    HOSTED_GATEWAY_CAPABILITY,
+    SCHEDULER_HOST_CAPABILITY,
+    SCHEDULER_HOST_IN_PROCESS,
+)
 from core.agent_harness.spi.session_state import withhold_capabilities
 
-UNSUPPORTED_GATEWAY_CAPABILITIES = (
-    "llm_provider",
-    "task_cancel",
-)
 
+def ensure_gateway_capability_policy(session: Any, *, hosts_scheduler: bool = False) -> None:
+    """Record scheduler hosting and withhold tools that need a signed-in account.
 
-def ensure_gateway_capability_policy(session: Any) -> None:
-    """Record the capabilities gateway chat withholds on ``session``."""
-    withhold_capabilities(session, *UNSUPPORTED_GATEWAY_CAPABILITIES)
+    A gateway that runs the scheduler in-process says so: a scheduling tool then
+    registers its task with the store instead of installing an OS-level service
+    the container cannot run. The hosted-gateway tools call the OpenSRE app with
+    this machine's account token. The gateway has no such sign-in, so those
+    tools stay off its turns.
+    """
+    withhold_capabilities(session, HOSTED_GATEWAY_CAPABILITY)
+    if hosts_scheduler:
+        capabilities = getattr(session, "available_capabilities", None)
+        if isinstance(capabilities, dict):
+            capabilities[SCHEDULER_HOST_CAPABILITY] = (SCHEDULER_HOST_IN_PROCESS,)
 
 
 __all__ = [
-    "UNSUPPORTED_GATEWAY_CAPABILITIES",
     "ensure_gateway_capability_policy",
 ]

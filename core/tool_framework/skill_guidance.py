@@ -123,13 +123,11 @@ def _xml_attr(value: str) -> str:
 def format_tool_skill_guidance(skill: SkillGuidance) -> str:
     """Format skill guidance for inclusion in model-facing tool descriptions."""
 
-    skill_dir = str(Path(skill.file_path).parent)
     return (
         f'<tool_guidance name="{_xml_attr(skill.name)}" '
         f'description="{_xml_attr(skill.description)}" '
         f'location="{_xml_attr(skill.file_path)}">\n'
-        "Already loaded: call the tool, not skill_view.\n"
-        f"References are relative to {skill_dir}.\n\n"
+        "Loaded; call the tool, not skill_view. References: this file's directory.\n\n"
         f"{skill.content.strip()}\n"
         "</tool_guidance>"
     )

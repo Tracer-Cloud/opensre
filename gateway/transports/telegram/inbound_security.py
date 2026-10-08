@@ -8,6 +8,7 @@ from config.constants.gateway import ROTATE_SESSION
 from gateway.core.middleware.identity_policy import (
     load_identity_policy,
 )
+from gateway.transports.telegram.settings import connected_chat_user_id
 from integrations.messaging_security import (
     AuthorizationResult,
     MessagingIdentityPolicy,
@@ -27,6 +28,19 @@ class InboundDecision:
     reply_text: str = ""
     persist_policy: bool = False
     updated_policy: MessagingIdentityPolicy | None = None
+
+
+def _is_connected_private_chat(
+    policy: MessagingIdentityPolicy, connected: str, *, user_id: str, chat_id: str
+) -> bool:
+    """Whether this is the connection's own private chat, within the policy's limits."""
+    return (
+        bool(connected)
+        and policy.inbound_enabled
+        and user_id == connected
+        and chat_id == connected
+        and (not policy.allowed_chat_ids or chat_id in policy.allowed_chat_ids)
+    )
 
 
 def enforce_inbound_telegram_message_security(
@@ -78,11 +92,16 @@ def enforce_inbound_telegram_message_security(
             ),
         )
 
-    result: AuthorizationResult = authorize_inbound_message(
-        policy=policy,
-        user_id=user_id,
-        chat_id=chat_id,
-        message_text=text,
+    connected = connected_chat_user_id(record.get("credentials") or {}) if record else ""
+    result: AuthorizationResult = (
+        AuthorizationResult(allowed=True, reason="User is the connected chat")
+        if _is_connected_private_chat(policy, connected, user_id=user_id, chat_id=chat_id)
+        else authorize_inbound_message(
+            policy=policy,
+            user_id=user_id,
+            chat_id=chat_id,
+            message_text=text,
+        )
     )
 
     if text.strip().lower() == "/new":

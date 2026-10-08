@@ -16,6 +16,7 @@ from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema
 from infrastructure.scheduling.task_types import TaskStatus
+from tools.interactive_shell.actions.slash import execute_slash_tool
 from tools.interactive_shell.shared import plan_foreground_tool
 
 
@@ -64,15 +65,15 @@ def _resolve_task_cancel_target(ctx: ActionToolScope, target: str) -> str | None
     return str(candidates[0].task_id)
 
 
-def execute_task_cancel_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool:
+def execute_task_cancel_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dict[str, Any]:
     target = str(args.get("target", "")).strip()
     if not target:
         return False
-    if ctx.task_cancel_ports is None:
-        raise RuntimeError("task cancel tool requires cancellation runtime ports")
     task_id = _resolve_task_cancel_target(ctx, target)
     if task_id is None:
         return True
+    if ctx.task_cancel_ports is None:
+        return execute_slash_tool({"command": "/cancel", "args": [task_id]}, ctx)
     command = f"/cancel {task_id}"
     plan = plan_foreground_tool("slash", "slash")
     if not ctx.task_cancel_ports.execution_allowed(

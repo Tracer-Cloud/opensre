@@ -53,14 +53,17 @@ def test_resolve_literal_slash_typo_unknown_root() -> None:
         "/resume redis",
         "/help model",
         "/help /model",
-        "/integrations ls",
-        "/tools ls",
-        "/tools tool",
-        "/mcp ls",
     ],
 )
 def test_resolve_literal_slash_typo_allows_free_form_first_args(command_line: str) -> None:
     assert resolve_literal_slash_typo(command_line, SLASH_COMMANDS) is None
+
+
+def test_tools_argument_hint_points_to_the_direct_browser() -> None:
+    typo = resolve_literal_slash_typo("/tools list", SLASH_COMMANDS)
+    assert typo is not None
+    assert typo.outcome == "invalid_subcommand"
+    assert typo.message == "Use /tools without arguments to browse registered tools."
 
 
 def test_dispatch_invalid_subcommand_is_handled_by_command_handler(

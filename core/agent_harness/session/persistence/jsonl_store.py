@@ -160,6 +160,8 @@ class JsonlSessionStore:
                 }
                 with path.open("w", encoding="utf-8") as fh:
                     fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())
                 key = (session.session_id, str(path))
                 self._leaf_ids[key] = None
                 self._leaf_file_sig[key] = self._file_sig(path)
@@ -174,6 +176,14 @@ class JsonlSessionStore:
                 "text": text,
                 "display": False,
             },
+        )
+
+    def append_session_name(self, session_id: str, name: str) -> str:
+        return self._append_entry(
+            session_id,
+            "custom_message",
+            {"custom_type": "session_name", "name": name},
+            sidecar=True,
         )
 
     def append_turn_detail(
@@ -336,6 +346,8 @@ class JsonlSessionStore:
         after_chars: int,
         before_tokens: int | None = None,
         after_tokens: int | None = None,
+        replacement_messages: list[list[str]] | None = None,
+        replacement_evidence: list[dict[str, Any]] | None = None,
     ) -> str:
         return self._append_entry(
             session_id,
@@ -347,6 +359,18 @@ class JsonlSessionStore:
                 "after_chars": after_chars,
                 "before_tokens": before_tokens,
                 "after_tokens": after_tokens,
+                # What the compaction kept verbatim. Present means the record
+                # replaces everything before it when the session is restored.
+                **(
+                    {"replacement_messages": replacement_messages}
+                    if replacement_messages is not None
+                    else {}
+                ),
+                **(
+                    {"replacement_evidence": replacement_evidence}
+                    if replacement_evidence is not None
+                    else {}
+                ),
             },
         )
 
@@ -406,6 +430,136 @@ class JsonlSessionStore:
             with self._locked(path):
                 self._flush_locked(session, path)
 
+    def flush_session_goal_control_state(self, session: SessionPersistenceSource) -> None:
+        """Persist goal and task-plan state changed by a goal control."""
+        from core.agent_harness.session.persistence.contracts import (
+            SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+        )
+        from core.agent_harness.session_goal.persist import session_goal_state_snapshot
+        from core.agent_harness.task_plan.persist import task_plan_state_snapshot
+
+        path = session_path(session.session_id)
+        if not path.exists():
+            raise FileNotFoundError(path)
+        with self._locked(path):
+            records = self._read_records(path)
+            snapshot = {
+                "session_goal_state": session_goal_state_snapshot(session),
+                "task_plan_state": task_plan_state_snapshot(session) or {},
+            }
+            if not self.append_custom_message(
+                session.session_id,
+                custom_type=SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+                content=snapshot,
+                display=False,
+            ):
+                raise OSError("Could not persist session-goal control state")
+            if not self._append_task_plan_state(session, records):
+                raise OSError("Could not persist task-plan state")
+            if not self._append_session_goal_state(session, records):
+                raise OSError("Could not persist session-goal state")
+
+    def append_session_goal_control(self, session_id: str, reason: str) -> str:
+        """Durably record a goal control outside the live conversation branch."""
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            SESSION_GOAL_CONTROL_REQUESTED,
+        )
+
+        path = session_path(session_id)
+        if not path.exists():
+            raise OSError("Could not persist session-goal control")
+        control_id = _new_id()
+        with self._locked(path):
+            target_entry_id, _needs_separator = self._current_leaf_id(session_id, path)
+            if target_entry_id is None:
+                raise OSError("Could not identify session-goal control branch")
+            entry_id = self._append_entry(
+                session_id,
+                SESSION_GOAL_CONTROL_RECORD_TYPE,
+                {
+                    "control_id": control_id,
+                    "reason": reason,
+                    "status": SESSION_GOAL_CONTROL_REQUESTED,
+                    "target_entry_id": target_entry_id,
+                },
+                durable=True,
+                sidecar=True,
+            )
+        if not entry_id:
+            raise OSError("Could not persist session-goal control")
+        return control_id
+
+    def complete_session_goal_control(self, session_id: str, control_id: str) -> None:
+        """Durably acknowledge a previously recorded goal control."""
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_CONTROL_APPLIED,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+        )
+
+        entry_id = self._append_entry(
+            session_id,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            {
+                "control_id": control_id,
+                "status": SESSION_GOAL_CONTROL_APPLIED,
+            },
+            durable=True,
+            sidecar=True,
+        )
+        if not entry_id:
+            raise OSError("Could not acknowledge session-goal control")
+
+    def _append_session_goal_state(
+        self,
+        session: SessionPersistenceSource,
+        records: list[dict[str, Any]],
+    ) -> bool:
+        if not records or not hasattr(session, "session_goal"):
+            return True
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_STATE_CUSTOM_TYPE,
+            session_goal_state_snapshot,
+            should_persist_session_goal_state,
+        )
+
+        goal_state = session_goal_state_snapshot(session)
+        if should_persist_session_goal_state(goal_state, prior_records=records):
+            return bool(
+                self.append_custom_message(
+                    session.session_id,
+                    custom_type=SESSION_GOAL_STATE_CUSTOM_TYPE,
+                    content=goal_state,
+                    display=False,
+                )
+            )
+        return True
+
+    def _append_task_plan_state(
+        self,
+        session: SessionPersistenceSource,
+        records: list[dict[str, Any]],
+    ) -> bool:
+        if not hasattr(session, "task_plan"):
+            return True
+        from core.agent_harness.task_plan.persist import (
+            TASK_PLAN_STATE_CUSTOM_TYPE,
+            should_persist_task_plan_state,
+            task_plan_state_snapshot,
+        )
+
+        plan_state = task_plan_state_snapshot(session)
+        if should_persist_task_plan_state(plan_state, prior_records=records):
+            return bool(
+                self.append_custom_message(
+                    session.session_id,
+                    custom_type=TASK_PLAN_STATE_CUSTOM_TYPE,
+                    content=plan_state or {},
+                    display=False,
+                )
+            )
+        return True
+
     def _flush_locked(self, session: SessionPersistenceSource, path: Path) -> None:
         """Read-modify-append leaf / goal / message records; runs under the write lock.
 
@@ -416,7 +570,7 @@ class JsonlSessionStore:
         records = self._read_records(path)
         if not records:
             return
-        trailing_leaf = records[-1].get("type") == "leaf"
+        trailing_leaf = self._conversation_tip_is_closed(records)
         if not trailing_leaf and not self._has_turns(records):
             from core.agent_harness.session.pending_choice import PendingUserChoice
 
@@ -438,36 +592,8 @@ class JsonlSessionStore:
                 content=dict(session.accumulated_context),
                 display=False,
             )
-        if hasattr(session, "session_goal"):
-            from core.agent_harness.session_goal.persist import (
-                SESSION_GOAL_STATE_CUSTOM_TYPE,
-                session_goal_state_snapshot,
-                should_persist_session_goal_state,
-            )
-
-            goal_state = session_goal_state_snapshot(session)
-            if should_persist_session_goal_state(goal_state, prior_records=records):
-                self.append_custom_message(
-                    session.session_id,
-                    custom_type=SESSION_GOAL_STATE_CUSTOM_TYPE,
-                    content=goal_state,
-                    display=False,
-                )
-        if hasattr(session, "task_plan"):
-            from core.agent_harness.task_plan.persist import (
-                TASK_PLAN_STATE_CUSTOM_TYPE,
-                should_persist_task_plan_state,
-                task_plan_state_snapshot,
-            )
-
-            plan_state = task_plan_state_snapshot(session)
-            if should_persist_task_plan_state(plan_state, prior_records=records):
-                self.append_custom_message(
-                    session.session_id,
-                    custom_type=TASK_PLAN_STATE_CUSTOM_TYPE,
-                    content=plan_state or {},
-                    display=False,
-                )
+        self._append_session_goal_state(session, records)
+        self._append_task_plan_state(session, records)
         if hasattr(session, "pending_user_choice"):
             from core.agent_harness.session.pending_choice import (
                 PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
@@ -555,7 +681,9 @@ class JsonlSessionStore:
                 entry_id = _new_id()
                 parent = parent_id
                 if parent is None and resolve_parent and not sidecar:
-                    parent = self._current_leaf_id(session_id, path)
+                    parent, needs_separator = self._current_leaf_id(session_id, path)
+                else:
+                    needs_separator = self._tail_needs_separator(path)
                 record = {
                     "id": entry_id,
                     "parent_id": parent,
@@ -565,8 +693,12 @@ class JsonlSessionStore:
                     **{key: value for key, value in payload.items() if value is not None},
                 }
                 with path.open("a", encoding="utf-8") as fh:
+                    if needs_separator:
+                        fh.write("\n")
                     fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
-                    if durable:
+                    # S3 Files needs fsync for conversation records and durable
+                    # WAL sidecars to survive a hosted task restart.
+                    if durable or not sidecar:
                         fh.flush()
                         os.fsync(fh.fileno())
                 if not sidecar:
@@ -604,7 +736,7 @@ class JsonlSessionStore:
         self._leaf_ids[key] = entry_id
 
     @staticmethod
-    def _loads_record(line: str, *, path: Path | None = None) -> dict[str, Any] | None:
+    def _loads_record(line: bytes, *, path: Path | None = None) -> dict[str, Any] | None:
         """Parse one JSONL line into a record dict, or ``None`` if unusable.
 
         A decode failure here is a torn tail or truncation on the read side —
@@ -612,8 +744,8 @@ class JsonlSessionStore:
         different failure modes on either end of the same file.
         """
         try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
+            rec = json.loads(line.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
             record_operation(
                 "session_jsonl_decode_failed",
                 {"line_chars": len(line), "path": str(path) if path else ""},
@@ -624,21 +756,29 @@ class JsonlSessionStore:
     @staticmethod
     def _read_records(path: Path) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in path.read_bytes().splitlines():
             rec = JsonlSessionStore._loads_record(line, path=path)
             if rec is not None:
                 records.append(rec)
         return records
 
-    def _current_leaf_id(self, session_id: str, path: Path) -> str | None:
+    @staticmethod
+    def _tail_needs_separator(path: Path) -> bool:
+        if path.stat().st_size <= 0:
+            return False
+        with path.open("rb") as fh:
+            fh.seek(-1, os.SEEK_END)
+            return fh.read(1) != b"\n"
+
+    def _current_leaf_id(self, session_id: str, path: Path) -> tuple[str | None, bool]:
         key = (session_id, str(path))
         sig = self._file_sig(path)
         if key in self._leaf_ids and self._leaf_file_sig.get(key) == sig:
-            return self._leaf_ids[key]
-        leaf = self._scan_leaf_id(path)
+            return self._leaf_ids[key], self._tail_needs_separator(path)
+        leaf, needs_separator = self._scan_leaf_id(path)
         self._leaf_ids[key] = leaf
         self._leaf_file_sig[key] = sig
-        return leaf
+        return leaf, needs_separator
 
     @staticmethod
     def _tip_id_from_record(rec: dict[str, Any]) -> tuple[bool, str | None]:
@@ -664,7 +804,7 @@ class JsonlSessionStore:
         entry_id = rec.get("id")
         return True, str(entry_id) if entry_id else None
 
-    def _scan_leaf_id(self, path: Path) -> str | None:
+    def _scan_leaf_id(self, path: Path) -> tuple[str | None, bool]:
         """Cold-path tip resolve, reading the file tail backwards in deltas.
 
         Each loop iteration reads only the bytes not yet seen (one chunk,
@@ -673,23 +813,27 @@ class JsonlSessionStore:
         entry. Lines are scanned newest-first and each complete line is parsed
         at most once. Peak memory is the buffered tail, bounded by the file.
 
-        Tip rules (first matching record from the end):
+        Returns the resolved tip and whether a separator is needed before the
+        next append. Tip rules (first matching record from the end):
         - ``trace_span`` / ``sidecar``-flagged / ``session``: skip (sidecar / header)
         - ``leaf``: tip is that marker's ``parent_id``
         - anything else: tip is that record's ``id``
         """
         size = path.stat().st_size
         if size <= 0:
-            return None
+            return None, False
         with path.open("rb") as fh:
             buffer = b""
             start = size
+            needs_separator = False
             scanned_low: int | None = None  # buffer offset of oldest scanned line
             while True:
                 if start > 0:
                     new_start = max(0, start - _TAIL_SCAN_CHUNK_BYTES)
                     fh.seek(new_start)
                     delta = fh.read(start - new_start)
+                    if not buffer:
+                        needs_separator = not delta.endswith(b"\n")
                     buffer = delta + buffer
                     if scanned_low is not None:
                         scanned_low += len(delta)
@@ -705,7 +849,7 @@ class JsonlSessionStore:
                 region_end = scanned_low if scanned_low is not None else len(buffer)
                 if region_start < region_end:
                     region = buffer[region_start:region_end]
-                    for line in reversed(region.decode("utf-8").splitlines()):
+                    for line in reversed(region.splitlines()):
                         if not line.strip():
                             continue
                         rec = self._loads_record(line, path=path)
@@ -713,10 +857,10 @@ class JsonlSessionStore:
                             continue
                         resolved, tip = self._tip_id_from_record(rec)
                         if resolved:
-                            return tip
+                            return tip, needs_separator
                     scanned_low = region_start
                 if start == 0:
-                    return None
+                    return None, needs_separator
 
     @staticmethod
     def _has_turns(records: list[dict[str, Any]]) -> bool:
@@ -725,6 +869,15 @@ class JsonlSessionStore:
             or (rec.get("type") == "custom_message" and rec.get("custom_type") == "turn_stub")
             for rec in records
         )
+
+    @staticmethod
+    def _conversation_tip_is_closed(records: list[dict[str, Any]]) -> bool:
+        """Return whether the newest non-sidecar record is a closing leaf."""
+        for record in reversed(records):
+            if record.get("sidecar") or record.get("type") == "trace_span":
+                continue
+            return bool(record.get("type") == "leaf")
+        return False
 
     @staticmethod
     def _count_turns(records: list[dict[str, Any]]) -> int:

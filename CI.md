@@ -26,44 +26,6 @@ worktrees with their locked dependencies. An uncommitted fix cannot make a
 broken commit pass. Existing push hooks run first and receive Git's original
 arguments and ref updates.
 
-## 1) Mandatory local validation
-
-Before committing, run:
-
-```bash
-make pre-push
-```
-
-This checks the working tree, including untracked files. It runs lint,
-formatting, types, strict import boundaries, integration/tool registries,
-repository-wide contracts, and tests selected from the diff. Independent
-checks run concurrently and all failures are reported in one run.
-
-Normal checks target **60 seconds**. Dependency preparation is separate;
-cold caches and broad changes can take longer. Required checks finish even
-when the target is exceeded. Failure blocks the push.
-
-Inspect the selection without running it:
-
-```bash
-make pre-push ARGS=--dry-run
-```
-
-The default comparison uses the remote default branch, falling back to
-`origin/main`. Without a remote base, all tracked files are considered.
-Override it when needed:
-
-```bash
-make pre-push ARGS='--base origin/release'
-```
-
-A missing explicit base is an error. Fetch that branch and retry. Unknown
-source paths or stale test targets also block validation: update the mapping
-in [`.github/ci/test_scope_rules.py`](.github/ci/test_scope_rules.py).
-
-Documentation-only diffs skip code checks. Runtime prompts, scripts,
-workflows, and dependency changes do not qualify for that shortcut.
-
 ## 2) Focused tests and complete CI
 
 Use `make test-scope` to run only the affected tests during development. It

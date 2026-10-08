@@ -18,7 +18,13 @@ from typing import TYPE_CHECKING, Any
 
 from infrastructure.harness_providers import (
     IntegrationResolutionResult,
+    integration_sources_stamp,
     resolve_integrations,
+    select_github_connection,
+)
+from infrastructure.harness_providers.integration_selection import (
+    bound_github_connection,
+    current_github_connection_id,
 )
 
 if TYPE_CHECKING:
@@ -82,15 +88,50 @@ def _has_usable_cache(cache: dict[str, Any] | None) -> bool:
 
 
 def resolve_and_cache_integrations(session: SessionState) -> dict[str, Any]:
-    """Resolve a session's integration configs, using and updating its cache."""
-    cached = session.resolved_integrations_cache
-    if _has_usable_cache(cached):
-        return dict(cached or {})
+    """Resolve a session's integration configs, using and updating its cache.
 
-    resolved = resolve_integrations()
+    A cache built from an earlier version of the integration sources (the
+    local store file or the account's remote set) is dropped, so a credential
+    that reached this process after the session started is picked up on the
+    session's next turn. The stamp lives on the session's
+    :class:`IntegrationState`; a session without one keeps the plain cache rule.
+    """
+    stamp = integration_sources_stamp()
+    state = getattr(session, "integrations", None)
+    context = getattr(session, "accumulated_context", None)
+    if (
+        isinstance(state, IntegrationState)
+        and state.github_connection_id
+        and isinstance(context, dict)
+    ):
+        context["_github_connection_id"] = state.github_connection_id
+    cached = session.resolved_integrations_cache
+    if cached and _built_from_another_store(state, stamp):
+        cached = None
+        session.resolved_integrations_cache = None
+    if _has_usable_cache(cached):
+        if not cached:
+            return {}
+        return select_github_connection(cached or {}, getattr(state, "github_connection_id", None))
+
+    resolved = _resolve_for_connection(getattr(state, "github_connection_id", None))
     if resolved:
         session.resolved_integrations_cache = merge_resolved_integrations(cached, resolved)
+        if isinstance(state, IntegrationState):
+            state.store_stamp = stamp
     return dict(session.resolved_integrations_cache or {})
+
+
+def _resolve_for_connection(connection_id: str | None) -> dict[str, Any]:
+    with bound_github_connection(connection_id):
+        resolved = resolve_integrations()
+    return select_github_connection(resolved, connection_id)
+
+
+def _built_from_another_store(state: Any, stamp: tuple[int, int]) -> bool:
+    if not isinstance(state, IntegrationState) or state.store_stamp is None:
+        return False
+    return state.store_stamp != stamp
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +143,8 @@ def resolve_and_cache_integrations(session: SessionState) -> dict[str, Any]:
 class IntegrationState:
     """A session's integration-resolution state and the logic that warms it."""
 
+    github_connection_id: str | None = field(default_factory=current_github_connection_id)
+    """Explicit host-selected connection; None means the workspace default."""
     configured: tuple[str, ...] = ()
     """Session-scoped configured integration names for planning-time capability checks."""
     configured_known: bool = False
@@ -113,6 +156,8 @@ class IntegrationState:
     conversational assistant can call registered tools without
     waiting for the first user message to trigger a visible "Loading integrations"
     pass. Cleared by :meth:`refresh` when integrations change."""
+    store_stamp: tuple[int, int] | None = None
+    """Stamp of the integration sources the resolved cache was built from."""
     vcs_repo_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Active per-vendor repo scopes used for unqualified VCS tool calls."""
     active_vcs_repositories: dict[str, str] = field(default_factory=dict)
@@ -157,14 +202,18 @@ class IntegrationState:
         if generation is None:
             with self._warm_lock:
                 generation = self._warm_generation
+        # The stamp is read before resolving so it names the sources these
+        # credentials came from; a source rewritten mid-resolution keeps the
+        # older stamp and is re-resolved on the next turn.
+        stamp = integration_sources_stamp()
         try:
-            resolved = resolve_integrations()
+            resolved = _resolve_for_connection(self.github_connection_id)
         except Exception:
             # Best-effort warmup: leave cache unset so later turns can retry.
             return
-        self._store(resolved, generation=generation)
+        self._store(resolved, generation=generation, stamp=stamp)
 
-    def _store(self, resolved: dict[str, Any], *, generation: int) -> None:
+    def _store(self, resolved: dict[str, Any], *, generation: int, stamp: tuple[int, int]) -> None:
         if not resolved:
             return
         with self._warm_lock:
@@ -175,6 +224,7 @@ class IntegrationState:
             ):
                 return
             self.resolved_cache = merge_resolved_integrations(self.resolved_cache, resolved)
+            self.store_stamp = stamp
 
     def get(self) -> IntegrationResolutionResult:
         """Return the session's integration configs as a typed snapshot (cache-aware).
@@ -184,7 +234,13 @@ class IntegrationState:
         """
         cached = self.resolved_cache
         if _has_usable_cache(cached):
-            return IntegrationResolutionResult(resolved_integrations=dict(cached or {}))
+            if not cached:
+                return IntegrationResolutionResult(resolved_integrations={})
+            return IntegrationResolutionResult(
+                resolved_integrations=select_github_connection(
+                    cached or {}, self.github_connection_id
+                )
+            )
         self.warm()
         return IntegrationResolutionResult(resolved_integrations=dict(self.resolved_cache or {}))
 

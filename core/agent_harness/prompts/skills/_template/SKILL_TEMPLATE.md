@@ -18,7 +18,7 @@ metadata:
 # demo_order: 1
 # Optional local instruction inclusion, distinct from on-demand references/ files.
 # includes:
-#   - common/ask_once.md
+#   - common/shared-rule.md
 ---
 
 # <Workflow title>
@@ -58,6 +58,12 @@ Complete when <observable tool result>.
 <State the output format and evidence required to support the result.>
 
 Complete when <the user has received the result>.
+
+## Success criteria
+
+- [ ] `<tool>` returns `<observable field>`, or the reply states `<the stopping fact>`.
+
+Register the same lines in `config/constants/skill_success.py` under this skill's `name`.
 
 <!-- Authoring notes: copy to skills/<name>/SKILL.md, replace placeholders,
      set the actual unquoted change date, and remove these notes. Follow

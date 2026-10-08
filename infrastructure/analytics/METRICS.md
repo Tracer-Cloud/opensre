@@ -13,21 +13,27 @@ remaining metrics require queries over `analytics_product_events`.
 
 ## Acquisition and activation
 
+Eligible installation observations exclude synthetic/test identities and every
+identity with confirmed or reported automation in retained runtime history.
+Remaining identities have unknown origin: these are observed installations, not
+a measured human acquisition denominator. Report their conversion separately
+from verified account metrics and show automation counts alongside them.
+
 | Metric | Events and calculation |
 | --- | --- |
-| Installations | Distinct non-CI `analytics_id` values with `install_detected`. |
+| Installations | Distinct eligible `analytics_id` values with `install_detected`. Count each installation once; when an installation has both an original event and a recovery event (`install_detection_reason=unverified_marker`, event ID suffix `:delivery-v1`), keep the earliest `occurred_at` for install date and take `install_source`/`install_channel`/`install_version` from that earliest event. A recovery event that is the only `install_detected` for an installation is a valid installation whose install date is a lower bound only and whose source dimensions may be the runtime fallbacks. |
 | Install-to-signup conversion | Installations linked to a Clerk signup created between `install_detected` and the first authenticated link, divided by installations. |
-| Authenticated installations | Distinct non-CI installations with any later personal-bearer event. `account_authenticated` is the normal first link, but the metric does not depend on that single event being delivered. |
-| Sign-in gate conversion | Distinct non-CI installations with `sign_in_selected`, and distinct installations with `stay_signed_out_selected`, each divided separately by distinct installations with `sign_in_prompted`. Slice `stay_signed_out_selected` by `method` to separate the explicit exit option (`menu`) from a closed menu (`dismissed`). A `sign_in_selected` without a later `account_authenticated` is an abandoned or failed browser login. |
-| Onboarding conversion | Distinct non-CI installations completing onboarding, and distinct installations failing onboarding, each divided separately by distinct installations that started. |
-| Personal activation | Server-resolved users whose linked installation completes onboarding and later records a non-error `$ai_generation`. |
+| Authenticated installations | Distinct eligible installation observations with any later personal-bearer event. `account_authenticated` is the normal first link, but the metric does not depend on that single event being delivered. |
+| Sign-in gate conversion | Distinct eligible installation observations with `sign_in_selected`, and distinct installations with `stay_signed_out_selected`, each divided separately by distinct installations with `sign_in_prompted`. Slice `stay_signed_out_selected` by `method` to separate the explicit exit option (`menu`) from a closed menu (`dismissed`). A `sign_in_selected` without a later `account_authenticated` is an abandoned or failed browser login. |
+| Onboarding conversion | Distinct eligible installation observations completing onboarding, and distinct installations failing onboarding, each divided separately by distinct installations that started. |
+| Personal activation | Server-resolved users whose linked installation completes onboarding and later records a completed, captured AI response with an observed LLM attempt and no error. Legacy events require a real model/provider and non-synthetic output. |
 | Gateway activation | Organizations with an authenticated `gateway_turn_completed` where `answered=true`. Keep this separate from personal activation because a gateway actor is not a Clerk user. |
 
 ## Usage and retention
 
 | Metric | Events and calculation |
 | --- | --- |
-| Personal DAU / WAU / MAU | Distinct server-resolved users with a personal-bearer `cli_invoked` or `$ai_generation` in the requested window. |
+| Personal DAU / WAU / MAU | Distinct server-resolved users with a personal-bearer `cli_command_opensre…` (historically `cli_invoked`) or `$ai_generation` in the requested window. |
 | Organization DAU / WAU / MAU | Distinct authenticated organizations with gateway activity in the requested window; report separately from personal users. |
 | D1 / D7 / D30 retention | Personally activated users with another qualifying personal event in the target day or window. Organization retention is a separate gateway metric. |
 | Feature adoption | Personal users by CLI/AI feature and organizations by gateway surface; never combine the two identity grains. |
@@ -40,13 +46,15 @@ remaining metrics require queries over `analytics_product_events`.
 | Gateway answer rate | `gateway_turn_completed` with `answered=true`, divided by all completed gateway turns. |
 | Terminal action success | Sum of `executed_success_count`, divided by sum of `executed_count`. |
 | LLM fallback rate | `terminal_turn_summarized` with `fallback_to_llm=true`, divided by all summarized turns. |
-| Agent reliability | Error, cancellation, and iteration-cap ReAct turns, divided by all `react_turn_completed` events. |
-| Tool-call success | Executed `agent_tool_call_completed` events with `outcome=ok`, divided by all executed tool calls. Slice pre-execution rejection outcomes separately. |
+| Agent reliability | Error, cancellation, and iteration-cap ReAct turns, divided by all `react_turn_completed` events. Slice iteration-cap turns by `loop_stop_reason` to separate an exhausted budget from `goal_unverified` and `stagnation_limit`. |
+| Tool-call success | Executed `agent_tool_call_completed` events with `outcome=ok`, divided by all executed tool calls. Slice pre-execution rejection outcomes separately, and blocked calls by `blocked_by`. |
 | Ask User response | `ask_user_prompt_answered` divided by picker-mode `ask_user_prompt_rendered`; report `ask_user_prompt_dismissed` and custom-answer share separately. |
 | Scheduled-work reliability | Completed versus failed scheduled tasks by task kind and provider. |
 | Latency | p50/p95 for gateway, ReAct, and AI-generation duration by surface, model, and provider. |
 
-Exclude `is_ci=true` from human acquisition and retention. Anonymous install
+Separate confirmed/reported automation from unknown-origin observations. Non-CI
+metrics require recorded Boolean `is_ci=false`; missing flags remain unknown.
+A detector negative is not human verification. Anonymous install
 and onboarding counts are directional because a public open-source client
 cannot keep a signing secret from its machine owner. Use personal-bearer linkage
 for trusted user metrics, and never substitute a gateway actor ID for a Clerk

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from core.agent_harness.session_goal.control import apply_session_goal_control
+from core.agent_harness.session_goal.edit import edit_session_goal
 from core.agent_harness.session_goal.goal import (
     MAX_GOAL_CONDITION_CHARS,
     SESSION_GOAL_UNBOUNDED_TURNS,
@@ -23,7 +25,10 @@ from core.agent_harness.session_goal.progress import (
     goal_paint_signature,
     same_goal_identity,
 )
-from core.agent_harness.session_goal.run_until import run_until_session_goal
+from core.agent_harness.session_goal.run_until import (
+    pause_active_session_goal,
+    run_until_session_goal,
+)
 
 __all__ = [
     "GoalPaintSignature",
@@ -32,13 +37,16 @@ __all__ = [
     "SessionGoal",
     "SessionGoalReason",
     "SessionGoalStatus",
+    "apply_session_goal_control",
     "attach_session_goal",
     "build_session_goal",
     "clear_session_goal",
     "derive_session_goal_checklist",
+    "edit_session_goal",
     "format_session_goal_progress",
     "format_session_goal_status_line",
     "goal_paint_signature",
+    "pause_active_session_goal",
     "run_until_session_goal",
     "same_goal_identity",
     "session_goal_is_active",

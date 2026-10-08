@@ -1,4 +1,4 @@
-"""ReAct loop emits Langfuse-shaped observations: one ``agent`` per run, one
+"""ReAct loop emits typed observations: one ``agent`` per run, one
 ``generation`` per model call (never aggregated), and each ``tool`` as a
 sibling of the generation that requested it.
 

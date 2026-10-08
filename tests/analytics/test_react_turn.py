@@ -114,5 +114,71 @@ def test_emit_react_turn_completed_sets_hit_iteration_cap_from_stop_reason(
             "llm_provider": "anthropic",
             "llm_model": "claude-sonnet-4-6",
             "prompt_turn_id": None,
+            "loop_stop_reason": "iteration_cap",
+            "error_type": "",
+            "error_message": "",
+            "scheduled_task_id": "",
+            "ai_error_reason": "",
         }
     ]
+
+
+def test_hard_stops_keep_the_dashboard_stop_reason_but_name_the_loop_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: two runs that ended on different hard stops.
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+
+    # Act
+    for loop_reason in ("goal_unverified", "stagnation_limit"):
+        emit_react_turn_completed(
+            phase="action",
+            result=AgentRunResult(
+                messages=[],
+                final_text="handoff",
+                hit_iteration_cap=True,
+                stop_reason=loop_reason,
+                llm_iterations_used=5,
+            ),
+            iteration_cap=64,
+            duration_ms=900,
+            llm=_StubLLM(),
+        )
+
+    # Assert: dashboards still see iteration_cap; the loop reason tells them apart.
+    recorded = [
+        (properties["stop_reason"], properties["loop_stop_reason"])
+        for _event, properties in stub.events
+        if properties is not None
+    ]
+    assert recorded == [
+        ("iteration_cap", "goal_unverified"),
+        ("iteration_cap", "stagnation_limit"),
+    ]
+
+
+def test_a_run_that_raised_records_the_exception_type_and_a_redacted_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+    token = "ghp_" + "c" * 36
+
+    # Act
+    emit_react_turn_completed(
+        phase="action",
+        result=None,
+        iteration_cap=64,
+        duration_ms=10,
+        llm=_StubLLM(),
+        error=RuntimeError(f"provider rejected {token}"),
+    )
+
+    # Assert
+    (_event, properties) = stub.events[0]
+    assert properties is not None
+    assert properties["stop_reason"] == properties["loop_stop_reason"] == "error"
+    assert properties["error_type"] == "RuntimeError"
+    assert properties["error_message"] == "provider rejected [REDACTED:github_pat]"

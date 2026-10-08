@@ -23,6 +23,7 @@ class _PromptSpinner(Protocol):
 
 
 _ROW_SAFE_KWARGS = frozenset({"width"})
+_TRANSCRIPT_KWARGS = frozenset({"width", "style"})
 
 
 def _renders_as_rows(args: tuple[Any, ...], kwargs: dict[str, Any]) -> bool:
@@ -87,6 +88,21 @@ class StreamingConsole(Console):
         patching, row-by-row ``\\n`` output makes the status bar repaint one
         line lower per row, stacking stale copies of itself down the screen.
         """
+        from surfaces.shared.terminal.components.rendering import record_in_transcript
+
+        # The full-screen transcript keeps the renderable to lay it out again on
+        # resize; it records through the console that owns the theme and record.
+        if (
+            len(args) == 1
+            and set(kwargs) <= _TRANSCRIPT_KWARGS
+            and record_in_transcript(
+                self._output or self,
+                _as_renderable(args),
+                style=kwargs.get("style"),
+                width=kwargs.get("width"),
+            )
+        ):
+            return
         if self._output is not None:
             self._output.print(*args, **kwargs)
             return

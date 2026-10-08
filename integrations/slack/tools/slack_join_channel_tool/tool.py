@@ -38,8 +38,6 @@ class SlackJoinChannelTool(BaseTool):
     ]
     requires = ["slack"]
     side_effect_level = SideEffectLevel.EXTERNAL
-    requires_approval = True
-    approval_reason = "Joins a Slack channel as the OpenSRE bot."
     input_schema = {
         "type": "object",
         "properties": {

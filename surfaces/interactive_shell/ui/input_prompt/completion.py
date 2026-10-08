@@ -8,7 +8,6 @@ from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 
-from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry.help import QUICK_ACCESS_COMMANDS
 from surfaces.interactive_shell.command_registry.types import SlashCommand
@@ -57,7 +56,7 @@ def _resolve_completion_preview(
     return label, meta
 
 
-def completion_preview_hint_ansi() -> str:
+def completion_preview_text(*, include_label: bool = True) -> str:
     """Full description for the highlighted completion menu item."""
     app = get_app_or_none()
     if app is None:
@@ -80,10 +79,10 @@ def completion_preview_hint_ansi() -> str:
     # Leave the last column empty so this context line cannot soft-wrap on
     # shrink-resize and orphan stale prompt frames (same budget as the rule).
     line = clip_prompt_text(
-        f"{label}{_COMPLETION_PREVIEW_SEP}{description}",
+        f"{label}{_COMPLETION_PREVIEW_SEP}{description}" if include_label else description,
         prompt_line_width(cols),
     )
-    return f"{ui_theme.ANSI_DIM}{line}{ui_theme.ANSI_RESET}"
+    return line
 
 
 # Precomputed at import time so bare-`/` completions never rebuild it per keystroke.
@@ -96,6 +95,24 @@ def _slash_completion(cmd: SlashCommand, start_position: int, *, cols: int) -> C
         start_position=start_position,
         display=cmd.name,
         display_meta=_short_meta(cmd.description, command_name=cmd.name, cols=cols),
+    )
+
+
+def subcommand_completions(command_name: str, prefix: str = "") -> tuple[Completion, ...]:
+    """Return first-argument completions for a registered slash command."""
+    entry = SLASH_COMMANDS.get(command_name)
+    if entry is None:
+        return ()
+    sub_prefix = prefix.lower()
+    return tuple(
+        Completion(
+            subcommand,
+            start_position=-len(prefix),
+            display=subcommand,
+            display_meta=metadata,
+        )
+        for subcommand, metadata in entry.first_arg_completions
+        if subcommand.startswith(sub_prefix)
     )
 
 
@@ -141,25 +158,13 @@ class ShellCompleter(Completer):
             if _suppress_empty_arg_completions_for_inline_picker(cmd_name, raw_arg):
                 return
 
-            entry = SLASH_COMMANDS.get(cmd_name)
-            hints = entry.first_arg_completions if entry is not None else ()
-            sub_prefix = raw_arg.lower()
-            for sub, meta in hints:
-                if sub.startswith(sub_prefix):
-                    yield Completion(
-                        sub,
-                        start_position=-len(raw_arg),
-                        display=sub,
-                        display_meta=meta,
-                    )
+            yield from subcommand_completions(cmd_name, raw_arg)
 
 
 # Commands where bare invocation opens an inline picker in TTY mode.
 _INLINE_PICKER_COMMANDS: frozenset[str] = frozenset(
     {
         "/history",
-        "/integrations",
-        "/mcp",
         "/model",
         "/trust",
         "/verbose",

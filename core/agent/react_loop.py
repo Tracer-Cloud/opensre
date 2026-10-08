@@ -67,6 +67,7 @@ from infrastructure.observability.trace.observations import (
 )
 from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.observability.trace.spans import (
+    is_session_trace_active,
     llm_span,
     loop_iteration_span,
     loop_span,
@@ -85,6 +86,13 @@ _GENERATION_OBSERVATION_NAME = "think"
 _OVERFLOW_RETRY_BUDGET_FACTOR = 0.6
 _OVERFLOW_RETRY_MIN_MESSAGE_TOKENS = 4_000
 
+# The budget estimates tokens from characters on purpose high. After each call
+# the ceiling is corrected by the provider's own count, within these bounds, so
+# a request is not trimmed at half the real window.
+_MIN_TOKEN_SCALE = 0.25
+_MAX_TOKEN_SCALE = 1.5
+_MAX_CEILING_STRETCH = 3.0
+
 _SAFETY_HANDOFF_PROMPT = """\
 The tool loop has stopped for safety ({reason}). Tools are disabled for this response.
 Give the user a concise final handoff based only on the work and tool results above:
@@ -100,6 +108,10 @@ _STAGNATION_FALLBACK = (
     "I stopped after repeated tool calls produced no new result. Partial results are "
     "preserved, but I could not complete the request. Change the inputs or tool strategy "
     "before continuing."
+)
+_GOAL_UNVERIFIED_FALLBACK = (
+    "I could not verify that the requested outcome was achieved. Partial results are "
+    "preserved, but I could not complete the request."
 )
 
 
@@ -147,6 +159,32 @@ def _observation_fingerprint(
     return digest.digest()
 
 
+_CALL_USAGE_FIELDS = ("input_tokens", "cache_read_tokens", "output_tokens", "reasoning_tokens")
+
+
+def _record_call_usage(span_attrs: dict[str, Any], response: Any) -> None:
+    """Put the provider-reported usage of one model call on its trace span.
+
+    The span lands in the session log, which makes the per-call prompt-cache
+    hit rate and reasoning spend readable after the fact. Fields the provider
+    did not report stay off the span rather than reading as 0.
+    """
+    for name in _CALL_USAGE_FIELDS:
+        value = getattr(response, name, None)
+        if isinstance(value, int):
+            span_attrs[name] = value
+
+
+def _traced_exception_message(exc: BaseException) -> str | None:
+    """Redacted, capped exception text for an error span; ``None`` when nothing is traced."""
+    if not is_session_trace_active():
+        return None
+    # Deferred: only a failed run that is being traced needs the analytics redactor.
+    from infrastructure.analytics.event_properties import bounded_error_message
+
+    return bounded_error_message(exc) or None
+
+
 @dataclass(frozen=True, slots=True)
 class _IterationResult:
     """Outcome summary for one loop iteration."""
@@ -189,6 +227,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._runtime_tools = list(host._filter_tools(initial_tools))
         self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
         self._ceiling = context_budget_ceiling_for_model(getattr(self._llm, "_model", None))
+        # Provider-counted tokens per estimated token, learned from the last call.
+        self._token_scale = 1.0
+        self._calibrate_budget = True
         # Recompute only when the host changes the available tools.
         self._fixed_overhead_tokens = system_and_tools_overhead(self._system, self._tool_schemas)
         self._executed: list[tuple[ToolCall, Any]] = []
@@ -200,8 +241,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._cancelled = False
         self._iterations_used = 0
         # Provider-reported usage summed over every model call of this run.
-        self._input_tokens = 0
-        self._output_tokens = 0
+        self._input_tokens: int | None = 0
+        self._output_tokens: int | None = 0
         self._stop_reason = "iteration_cap"
         self._seen_observations: set[bytes] = set()
         self._stagnant_iterations = 0
@@ -311,6 +352,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     "error",
                     error=True,
                     exception_type=type(exc).__name__,
+                    exception_message=_traced_exception_message(exc),
                     message_count=len(self._messages),
                     executed_count=len(self._executed),
                 )
@@ -390,10 +432,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         request_tools = self._tool_schemas if tool_schemas is None else tool_schemas
         transformed_messages = self._host._transform_messages(self._messages)
         llm_messages = self._host._convert_to_llm(self._llm, transformed_messages)
-        enforce_context_budget(
+        estimated_tokens = enforce_context_budget(
             llm_messages,
             fixed_overhead_tokens=self._fixed_overhead_tokens,
-            ceiling=self._ceiling,
+            ceiling=self._effective_ceiling(),
         )
         provider_request = ProviderRequest(
             messages=llm_messages,
@@ -448,6 +490,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             span_attrs["has_tool_calls"] = response.has_tool_calls
             span_attrs["tool_call_count"] = len(response.tool_calls)
             span_attrs["content_chars"] = len(response.content or "")
+            _record_call_usage(span_attrs, response)
             if is_observation_sink_active():
                 generation.update(
                     output=generation_output(response),
@@ -459,11 +502,20 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     ),
                     metadata={"stop_reason": str(getattr(response, "stop_reason", "") or "")},
                 )
-        input_tokens = int(getattr(response, "input_tokens", 0) or 0)
-        output_tokens = int(getattr(response, "output_tokens", 0) or 0)
+        input_tokens = getattr(response, "input_tokens", None)
+        output_tokens = getattr(response, "output_tokens", None)
         cache_read_tokens = int(getattr(response, "cache_read_tokens", 0) or 0)
-        self._input_tokens += input_tokens
-        self._output_tokens += output_tokens
+        self._calibrate(estimated_tokens, input_tokens)
+        self._input_tokens = (
+            self._input_tokens + input_tokens
+            if self._input_tokens is not None and input_tokens is not None
+            else None
+        )
+        self._output_tokens = (
+            self._output_tokens + output_tokens
+            if self._output_tokens is not None and output_tokens is not None
+            else None
+        )
         response = self._host._after_response(provider_request, response)
         self._host._emit_runtime(
             ProviderRequestEndEvent(
@@ -482,6 +534,20 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         )
         return response
 
+    def _effective_ceiling(self) -> int:
+        """The budget in estimated tokens, corrected by the provider's last count."""
+        stretched = self._ceiling / self._token_scale
+        return int(min(stretched, self._ceiling * _MAX_CEILING_STRETCH))
+
+    def _calibrate(self, estimated_tokens: int, input_tokens: Any) -> None:
+        """Learn how the estimate compares with what the provider counted."""
+        if not self._calibrate_budget or estimated_tokens <= 0:
+            return
+        if not isinstance(input_tokens, int) or input_tokens <= 0:
+            return
+        scale = input_tokens / estimated_tokens
+        self._token_scale = min(max(scale, _MIN_TOKEN_SCALE), _MAX_TOKEN_SCALE)
+
     def _invoke_within_budget(self, provider_request: ProviderRequest) -> Any:
         """Call the model; on a size rejection, shrink the budget and retry once.
 
@@ -499,6 +565,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         except Exception as exc:
             if not is_context_length_overflow(str(exc)):
                 raise
+            # The provider refused a request the corrected budget allowed, so
+            # stop correcting and fall back to the conservative estimate.
+            self._calibrate_budget = False
+            self._token_scale = 1.0
             estimated = (
                 estimate_message_tokens(provider_request.messages) + self._fixed_overhead_tokens
             )
@@ -558,8 +628,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             evidence_count=len(self._executed),
             iteration=iteration,
             final_text=response.content or "",
+            tool_results=self._tool_results,
         )
         if not accept:
+            self._stagnant_iterations += 1
             nudge_text = (nudge or "").strip() or (
                 "Continue working toward the goal; do not end the turn yet."
             )
@@ -571,6 +643,12 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     data={"accepted": False, "goal_nudge": True},
                 )
             )
+            if (
+                self._max_stagnant_iterations is not None
+                and self._stagnant_iterations >= self._max_stagnant_iterations
+            ):
+                self._stop_reason = "goal_unverified"
+                return _IterationResult(should_stop=True, outcome=self._stop_reason)
             return _IterationResult(should_stop=False, outcome="conclusion_deferred")
 
         self._host._emit_runtime(
@@ -588,15 +666,20 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
     def _observe(self, response: Any, assistant_message: Any, iteration: int) -> _IterationResult:
         """Execute the requested tools, record results, and emit events."""
         requested_tool_count = len(response.tool_calls)
-        for index, tc in enumerate(response.tool_calls):
+        index_by_call_id = {tc.id: index for index, tc in enumerate(response.tool_calls)}
+
+        def on_call_start(tc: Any, *, event_iteration: int = iteration) -> None:
+            # Emitted immediately before the call runs (not up front for the
+            # whole batch) so a durable intent record never covers a call a
+            # crash or an earlier turn-ending result kept from starting.
             self._host._emit_runtime(
                 ToolExecutionStartEvent(
                     tool_call_id=tc.id,
                     tool_name=tc.name,
                     args=public_tool_input(tc.input),
-                    iteration=iteration,
+                    iteration=event_iteration,
                     data={
-                        "tool_call_index": index,
+                        "tool_call_index": index_by_call_id.get(tc.id, 0),
                         "tool_call_count": requested_tool_count,
                     },
                 )
@@ -622,6 +705,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             self._resolved,
             hooks=hooks,
             tool_resources=self._tool_resources,
+            should_stop=self._cancel_requested,
+            on_call_start=on_call_start,
+            iteration=iteration,
         )
         provider_results = [result.provider_content() for result in results]
         tool_result_message = self._msg_formatter.to_tool_result_runtime_message(
@@ -633,7 +719,11 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         terminated_tool_count = sum(1 for result in results if result.terminate)
         for index, (tc, result) in enumerate(zip(response.tool_calls, results, strict=True)):
             compat_payload = result.compat_payload()
-            self._executed.append((tc, compat_payload))
+            # A call skipped after an earlier call ended the turn never ran:
+            # it answers the provider's tool-call id but is not evidence.
+            skipped = bool(result.metadata.get("skipped"))
+            if not skipped:
+                self._executed.append((tc, compat_payload))
             self._tool_results.append((tc, result))
             self._host._emit_runtime(
                 ToolExecutionEndEvent(
@@ -647,6 +737,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                         "terminate": result.terminate,
                         "tool_call_index": index,
                         "tool_call_count": requested_tool_count,
+                        **({"skipped": True} if skipped else {}),
                     },
                 )
             )
@@ -766,6 +857,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             if self._stop_reason == "stagnation_limit"
             else _ITERATION_CAP_FALLBACK
         )
+        if self._stop_reason == "goal_unverified":
+            content = _GOAL_UNVERIFIED_FALLBACK
         return AssistantRuntimeMessage(
             content=content,
             metadata={"safety_handoff": True, "stop_reason": self._stop_reason},
@@ -813,10 +906,11 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             terminated_by_tool=self._terminated_by_tool,
             cancelled=self._cancelled,
             hit_iteration_cap=self._hit_cap,
+            stop_reason=self._stop_reason,
             llm_iterations_used=self._iterations_used,
             final_system_prompt=self._final_system_prompt,
-            input_tokens=self._input_tokens,
-            output_tokens=self._output_tokens,
+            input_tokens=self._input_tokens if self._iterations_used else None,
+            output_tokens=self._output_tokens if self._iterations_used else None,
         )
         self._host._emit_runtime(
             AgentEndEvent(
@@ -908,8 +1002,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             "cancelled": self._cancelled,
             "safety_handoff_attempted": self._safety_handoff_attempted,
             "tool_call_count": len(self._executed),
-            # Token totals are deliberately absent: Langfuse sums generation
-            # usage per trace, and a ``*_tokens`` key would be key-redacted.
+            # Token totals belong on generation observations, not agent metadata;
+            # a ``*_tokens`` metadata key would also be key-redacted.
         }
 
     def _mark_loop_error(self, span_attrs: dict[str, Any], exc: BaseException) -> None:
@@ -919,6 +1013,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             error=True,
             stop_reason=self._stop_reason,
             exception_type=type(exc).__name__,
+            exception_message=_traced_exception_message(exc),
             iterations_used=self._iterations_used,
             max_iterations=self._max_iterations,
             message_count=len(self._messages),

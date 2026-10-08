@@ -10,15 +10,18 @@ request assembly.
 ## Belongs Here
 
 - The mutable per-session conversation store (`MutableAgentState`).
-- Transcript-window compaction helpers.
+- The structured record of each completed turn (`TurnEvidence`): the tool calls
+  and bounded results that later turns replay.
+- Transcript-window compaction helpers and the history switches and budgets
+  (`history_settings`).
 
 ## Does Not Belong Here
 
 - Context trimming, ranking, and budget logic; keep that in `core/context_budget.py`.
 - The LLM/tool-calling loop and runtime request contracts; keep those in sibling
   `core/` runtime modules.
-- Terminal UI, REPL session state, prompt history, CLI help, AGENTS.md grounding,
-  and slash commands; keep those in `surfaces/interactive_shell/`.
+- Terminal UI, REPL session state, prompt history, and slash commands; keep
+  those in `surfaces/interactive_shell/`.
 - External clients, config normalization, and verification; keep those in
   `integrations/`.
 - Agent-callable tool implementations; keep those in `tools/`.
@@ -28,9 +31,9 @@ request assembly.
 ## Also exported (temporary)
 
 - ``MutableAgentState`` in ``agent_state.py``. Now slimmed to the cross-turn
-  transcript (``messages``) plus ``last_observation`` and ``clear()`` — the
-  per-turn tool/prompt machinery has been removed. It still lives here for
-  historical import paths; the remaining move to
+  transcript (``messages``), its turn evidence (``turn_evidence``), and
+  ``clear()`` — the per-turn tool/prompt machinery has been removed. It still
+  lives here for historical import paths; the remaining move to
   ``core/agent_harness/session/`` is pending
   ([#3685](https://github.com/Tracer-Cloud/opensre/issues/3685)).
 

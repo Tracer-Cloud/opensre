@@ -15,9 +15,11 @@ from core.agent_harness.task_plan.plan import TaskPlan
 
 PLAN_REQUIRED_REASON = (
     "Not run: this is the second work tool of the turn and no plan is open. "
-    "Multi-step work is planned first. Call update_plan with the steps (the "
-    "work already done may be completed, the next step in_progress, the step "
-    "that checks the outcome marked verifies: true), then run this tool again."
+    "Multi-step work is planned first. Re-send this tool call in one response "
+    "with update_plan listed before it: the steps (the work already done may be "
+    "completed, the step this call performs in_progress, the step that checks "
+    "the outcome marked verifies: true). Sending update_plan alone first costs "
+    "an extra model call."
 )
 
 

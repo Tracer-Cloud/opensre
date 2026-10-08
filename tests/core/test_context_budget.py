@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from core.context_budget import (
     _TOKENS_PER_CHAR,
+    EVICTED_TOOL_RESULT_TEXT,
     context_budget_ceiling_for_model,
     enforce_context_budget,
     estimate_message_tokens,
@@ -244,4 +245,12 @@ def test_enforce_context_budget_still_trims_when_over_ceiling_with_tools() -> No
     enforce_context_budget(messages, tools=tools, ceiling=ceiling)
 
     assert estimate_message_tokens(messages, tools=tools) <= ceiling
-    assert len(messages) < 5
+    # The calls stay and their outputs become stubs, so the model still sees
+    # that it ran them and can run them again.
+    assert len(messages) == 5
+    results = [block for message in messages[2::2] for block in message["content"]]
+    assert all(block["content"] == EVICTED_TOOL_RESULT_TEXT for block in results)
+    assert [block["id"] for message in messages[1::2] for block in message["content"]] == [
+        "t1",
+        "t2",
+    ]

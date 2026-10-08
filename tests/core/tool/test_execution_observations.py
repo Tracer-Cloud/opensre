@@ -45,7 +45,7 @@ def test_tool_observations_are_children_of_the_calling_observation() -> None:
     def _boom(_args: dict[str, Any], _ctx: Any) -> dict[str, Any]:
         raise RuntimeError("tool exploded")
 
-    # One action plus one bookkeeping call is the largest batch the runtime runs.
+    # A bookkeeping call batched with an action; both run in provider order.
     with observe_agent("run-react-loop") as parent:
         results = execute_tool_calls(
             [

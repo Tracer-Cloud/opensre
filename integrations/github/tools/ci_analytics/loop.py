@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from config.constants.scheduler import WEEKDAY_CRON_FIELD
+from infrastructure.scheduling.scheduler.cron_expression import day_of_week_names
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
     LOOP_REPORT_ARGS_PARAM,
@@ -32,6 +35,8 @@ from integrations.github.tools.ci_analytics.working_hours import (
     local_timezone,
     local_working_hours,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_LOOP_TIME = "08:00"
 LOOP_WINDOW_DAYS = 7
@@ -143,10 +148,20 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
 
     No model is involved, so every delivery carries the analytics header and
     the numbers can be traced back to the JSON snapshot named at the end.
-    Raises ``RuntimeError`` with a generic message when GitHub cannot be read.
+    When GitHub cannot be read, returns a blocked report naming what stopped
+    the read, never exception detail, so the loop's channels hear it.
+    Raises ``RuntimeError`` only for a loop without a repository or a token.
     """
-    from integrations.github.client import GitHubApiError, resolve_github_token
+    from integrations.github.client import (
+        GitHubApiError,
+        github_failure_kind,
+        resolve_github_token,
+    )
     from integrations.github.tools.ci_analytics.analysis import analyze_repository
+    from integrations.github.tools.ci_analytics.failure import (
+        analysis_failure_report,
+        is_operational_failure,
+    )
     from integrations.github.tools.ci_analytics.payload import report_payload
     from integrations.github.tools.ci_analytics.render import headline, render_markdown
 
@@ -166,7 +181,14 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
             owner, repo, token=token, days=days, working_hours=local_working_hours(), now=now
         )
     except (GitHubApiError, ValueError) as exc:
-        raise RuntimeError(f"Could not read the GitHub Actions history of {owner}/{repo}.") from exc
+        # Same split as the tool: GitHub, the network or the token is a
+        # warning without a stack; anything else is a fault worth one.
+        if is_operational_failure(exc):
+            kind = github_failure_kind(exc).value
+            logger.warning("CI reliability loop could not read %s/%s: %s", owner, repo, kind)
+        else:
+            logger.error("CI reliability loop could not read %s/%s", owner, repo, exc_info=exc)
+        return analysis_failure_report(exc, owner=owner, repo=repo, now=datetime.now(UTC))
     report = analysis.report
     snapshot = write_snapshot(
         snapshot_root(snapshot_dir),
@@ -195,12 +217,22 @@ def loop_card(scheduled: ScheduledLoop) -> LoopCard:
     """What the user is told about the loop: one headline and one fact per line."""
     task = scheduled.loop.task
     verb = "Already scheduled" if scheduled.reused else "Scheduled"
-    when = loop_time_label(task.cron) or task.cron
-    cadence = "weekdays" if task.cron.split()[-1] == "1-5" else "every day"
+    # Empty unless the cron is five fields with a plain hour and minute.
+    when = loop_time_label(task.cron)
+    try:
+        days = day_of_week_names(task.cron.split()[-1])
+    except ValueError:
+        days = ""
+    if when and days == WEEKDAY_CRON_FIELD:
+        schedule = f"weekdays at {when}"
+    elif when and days == "*":
+        schedule = f"every day at {when}"
+    else:
+        schedule = f"on cron {task.cron}"
     return LoopCard(
         headline=f"{verb}: {task.name}",
         details=(
-            f"Runs {cadence} at {when} {task.timezone}, next {_next_run_label(scheduled)}",
+            f"Runs {schedule} {task.timezone}, next {_next_run_label(scheduled)}",
             "Reports arrive in this shell's inbox: `/loops messages`",
             f"Manage: `/loops list`, `/loops stop {task.id}`, "
             f"`/loops delete {task.id}` (delete to reschedule)",

@@ -147,6 +147,8 @@ class GitHubMCPConfig(StrictConfigModel):
     toolsets: tuple[str, ...] = DEFAULT_GITHUB_MCP_TOOLSETS
     timeout_seconds: float = Field(default=15.0, gt=0)
     integration_id: str = ""
+    connection_id: str = ""
+    is_default: bool | None = None
 
     @field_validator("url", mode="before")
     @classmethod
@@ -1499,6 +1501,8 @@ def classify(
                 "auth_token": credentials.get("auth_token", ""),
                 "toolsets": credentials.get("toolsets", []),
                 "integration_id": record_id,
+                "connection_id": record_id,
+                "is_default": credentials.get("is_default"),
             }
         )
     except Exception as exc:

@@ -8,8 +8,9 @@ session, or analytics coupling. The interactive shell's accounting layer
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 # Distinguishes the two zero-count outcomes that need different analytics:
 # a normal tool-calling run that completed without planning actions ("completed"),
@@ -33,15 +34,20 @@ class ToolCallingTurnResult:
     response_streamed: bool = False
     accounting_status: ToolCallingAccountingStatus = "completed"
     hit_iteration_cap: bool = False
+    #: Why the agent loop ended (``AgentRunResult.stop_reason``); ``error`` when it raised.
+    stop_reason: str = ""
     #: Host soft-timeout / stop asked the action phase to halt (shell/gateway).
     cancelled: bool = False
-    #: Provider-reported usage summed over the phase's model calls (0 when unreported).
-    input_tokens: int = 0
-    output_tokens: int = 0
+    #: Provider-reported totals; None if any model call omitted that measurement.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     #: Provider-visible tool outputs for session-goal review, including failures.
     tool_evidence: str = ""
     #: Qualifying successes; None for hosts that only supply aggregate counts.
     evidence_success_count: int | None = None
+    #: The turn's tool-call batches and bounded results, recorded with the
+    #: transcript so later turns replay them (``turns.structured_history``).
+    history_items: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)

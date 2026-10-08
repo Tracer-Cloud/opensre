@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from config.scope_handoff import hand_off_scope
 from infrastructure.scheduling.task_types import TaskKind
 from tools.interactive_shell.shared import (
     ExecutionPolicyResult,
@@ -38,6 +39,8 @@ READ_ONLY_OPENSRE_SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "health",
         "version",
+        "--version",
+        "--help",
         "list",
         "status",
         "show",
@@ -90,6 +93,7 @@ class OpensreRunResult:
     outcome: OpensreRunOutcome
     attempted: bool
     display_command: str | None = None
+    foreground: ForegroundCliResult | None = None
 
 
 @dataclass(frozen=True)
@@ -320,17 +324,24 @@ def _print_wizard_handoff(presenter: SubprocessPresenter, command_str: str) -> N
     )
 
 
+def _child_env(presenter: SubprocessPresenter) -> dict[str, str]:
+    """The presenter's child environment plus the turn's organization scope."""
+    env = presenter.subprocess_env()
+    hand_off_scope(env)
+    return env
+
+
 def _run_foreground_via_presenter(
     presenter: SubprocessPresenter,
     *,
     argv_list: list[str],
     display_command: str,
-) -> None:
+) -> ForegroundCliResult:
     presenter.print_bold_command(display_command)
     result = run_foreground_cli(
         argv_list,
         timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS,
-        env=presenter.subprocess_env(),
+        env=_child_env(presenter),
     )
     if result.start_failed:
         if result.start_error:
@@ -340,7 +351,7 @@ def _run_foreground_via_presenter(
             )
             presenter.print_error(f"failed to start: {result.start_error}")
         presenter.session.record("cli_command", display_command, ok=False)
-        return
+        return result
     presenter.print_command_output(result.stdout)
     presenter.print_command_output(result.stderr, style=_ERROR_STYLE)
     if result.timed_out:
@@ -348,11 +359,13 @@ def _run_foreground_via_presenter(
             f"[error]command timed out after {SHELL_COMMAND_TIMEOUT_SECONDS} seconds[/]"
         )
         presenter.session.record("cli_command", display_command, ok=False)
-        return
+        return result
     ok = result.exit_code == 0
     if not ok:
         presenter.print(f"[error]command failed (exit {result.exit_code}):[/]")
     presenter.session.record("cli_command", display_command, ok=ok)
+
+    return result
 
 
 def _run_streaming_via_presenter(
@@ -363,7 +376,7 @@ def _run_streaming_via_presenter(
 ) -> None:
     presenter.print_bold_command(display_command)
     try:
-        proc = spawn_streaming_cli(argv_list, env=presenter.subprocess_env())
+        proc = spawn_streaming_cli(argv_list, env=_child_env(presenter))
     except Exception as exc:  # noqa: BLE001
         presenter.report_exception(
             exc,
@@ -385,8 +398,10 @@ def _run_streaming_via_presenter(
 def run_opensre_cli_command_result(
     args: str,
     presenter: SubprocessPresenter,
+    *,
+    prefer_foreground: bool = False,
 ) -> OpensreRunResult:
-    """Run an opensre subcommand (not agent) via the injected presenter."""
+    """Run a CLI command; headless hosts may request bounded foreground execution."""
     try:
         tokens = shlex.split(args)
     except ValueError:
@@ -430,18 +445,22 @@ def run_opensre_cli_command_result(
         )
 
     argv_list = build_opensre_cli_argv(tokens)
-    if execution_plan.execution_mode in {
+    if prefer_foreground or execution_plan.execution_mode in {
         ToolExecutionMode.FOREGROUND,
         ToolExecutionMode.FOREGROUND_STREAMING,
     }:
-        if execution_plan.execution_mode is ToolExecutionMode.FOREGROUND_STREAMING:
+        foreground = None
+        if (
+            execution_plan.execution_mode is ToolExecutionMode.FOREGROUND_STREAMING
+            and not prefer_foreground
+        ):
             _run_streaming_via_presenter(
                 presenter,
                 argv_list=argv_list,
                 display_command=display_command,
             )
         else:
-            _run_foreground_via_presenter(
+            foreground = _run_foreground_via_presenter(
                 presenter,
                 argv_list=argv_list,
                 display_command=display_command,
@@ -450,6 +469,7 @@ def run_opensre_cli_command_result(
             outcome=OpensreRunOutcome.EXECUTED_FOREGROUND,
             attempted=True,
             display_command=display_command,
+            foreground=foreground,
         )
 
     presenter.session.record("cli_command", display_command)

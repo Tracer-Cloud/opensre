@@ -268,6 +268,22 @@ def test_fast_help_invocation_ignores_help_tokens_used_as_values() -> None:
     assert resolve_command_parts(cli, ["ask", "--", "--help"]) == ["ask"]
 
 
+def test_command_analytics_names_exclude_operands_and_stop_at_unknown_commands() -> None:
+    from infrastructure.analytics.events import cli_command_event_name
+    from surfaces.cli.invocation import resolve_command_parts
+
+    assert cli_command_event_name(resolve_command_parts(cli, ["health", "--rate", "5"])) == (
+        "cli_command_opensre_health"
+    )
+    assert cli_command_event_name(
+        resolve_command_parts(cli, ["integrations", "verify", "private-value"])
+    ) == ("cli_command_opensre_integrations_verify")
+    assert resolve_command_parts(cli, ["integrations", "private-value", "list"]) == ["integrations"]
+    assert cli_command_event_name(["remote-sync"]) == "cli_command_opensre_remote_sync"
+    with pytest.raises(ValueError):
+        cli_command_event_name(["ask", "private prompt"])
+
+
 def test_help_flag_skips_full_startup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Root ``--help`` must not install adapters or Sentry (kubernetes/boto3)."""
 

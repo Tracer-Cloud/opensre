@@ -50,6 +50,9 @@ class PullRequestStatus:
     mergeability: Literal["mergeable", "blocked", "unknown"]
     blocking_reasons: list[str]
     updated_at: str
+    head_repo: str = ""
+    #: Open, not a draft, and headed in the base repository: a PR OpenSRE can push a repair to.
+    repairable: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +62,8 @@ class PullRequestStatus:
             "author": self.author,
             "head_ref": self.head_ref,
             "head_sha": self.head_sha,
+            "head_repo": self.head_repo,
+            "repairable": self.repairable,
             "draft": self.draft,
             "mergeable": self.mergeable,
             "mergeable_state": self.mergeable_state,

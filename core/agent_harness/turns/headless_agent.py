@@ -43,6 +43,7 @@ from core.agent_harness.session_goal.run_until import SessionGoalRunResult, run_
 from core.agent_harness.turns.action_driver import ActionTurnRunner
 from core.agent_harness.turns.chat_api import ChatTurnBindings, dispatch_chat_turn
 from core.agent_harness.turns.headless_adapters import NoopTurnAccounting
+from core.agent_harness.turns.host_cancel import HostCancelReason
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.tool.execution import ToolExecutionHooks
@@ -117,6 +118,7 @@ class HeadlessAgent:
         *,
         accounting_factory: Callable[[str], TurnAccounting] | None = None,
         cancel_requested: Callable[[], bool] | None = None,
+        cancel_reason: Callable[[], HostCancelReason | None] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
     ) -> TurnResult:
         """Handle one inbound message and return the goal loop's last turn result.
@@ -130,6 +132,7 @@ class HeadlessAgent:
             binding,
             accounting_factory=accounting_factory,
             cancel_requested=cancel_requested,
+            cancel_reason=cancel_reason,
             on_progress=on_progress,
         ).last_result
 
@@ -142,6 +145,7 @@ class HeadlessAgent:
         evaluate: Callable[..., str] | None = None,
         accounting_factory: Callable[[str], TurnAccounting] | None = None,
         cancel_requested: Callable[[], bool] | None = None,
+        cancel_reason: Callable[[], HostCancelReason | None] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
     ) -> SessionGoalRunResult:
         """Dispatch, and continue while a session goal is attached; the one loop driver.
@@ -156,8 +160,9 @@ class HeadlessAgent:
         binding: the agent keeps its bound turn context and ``accounting_factory``
         is not used. ``goal`` attaches an explicit host-owned goal; ``evaluate``
         overrides goal completion, else the injected judge decides.
-        ``cancel_requested`` is checked between outer turns; ``on_progress``
-        receives the goal after each.
+        ``cancel_requested`` is checked between outer turns. ``cancel_reason``
+        distinguishes a goal pause from an ordinary stop while using that same
+        host cancel state. ``on_progress`` receives the goal after each turn.
         """
 
         def _one_turn(message: str) -> TurnResult:
@@ -179,6 +184,7 @@ class HeadlessAgent:
                 goal=goal,
                 evaluate=evaluate if evaluate is not None else self._goal_evaluate,
                 cancel_requested=cancel_requested,
+                cancel_reason=cancel_reason,
                 on_progress=on_progress,
             )
 
