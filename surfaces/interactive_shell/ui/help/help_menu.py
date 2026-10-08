@@ -320,6 +320,9 @@ def _render_section_row(section: str, width: int) -> str:
 
 
 def _render_detail_row(detail: HelpDetailLine, width: int) -> str:
+    if width <= _left_column_width(width) + 2:
+        detail_ansi = ui_theme.TEXT_ANSI if detail.role == "label" else ui_theme.DIM_COUNTER_ANSI
+        return f"{detail_ansi}{_clip(detail.text, width)}{ui_theme.ANSI_RESET}"
     left_column = " " * _left_column_width(width)
     right_column = _clip(detail.text, _right_column_width(width))
     right_padding = " " * max(0, _right_column_width(width) - _visible_width(right_column))

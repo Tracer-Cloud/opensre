@@ -107,6 +107,15 @@ def test_detail_rows_use_text_labels_dim_values_and_dim_divider() -> None:
     assert f"{ui_theme.DIM_COUNTER_ANSI}  /help" in value
 
 
+def test_detail_rows_fit_inside_a_narrow_tiny_viewport() -> None:
+    rendered = help_menu._render_detail_row(
+        help_menu.HelpDetailLine("  /model action", "value"),
+        14,
+    )
+
+    assert len(_ANSI_RE.sub("", rendered)) <= 14
+
+
 def test_draw_help_menu_centers_title(monkeypatch) -> None:
     rows = help_menu._flatten_help_rows([("Session", [_cmd("/status")])])
     out = io.StringIO()
