@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import click
 
 from config.runbook_sources import (
@@ -12,6 +14,7 @@ from config.runbook_sources import (
     load_runbook_sources,
     remove_runbook_source,
 )
+from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.terminal.theme import GLYPH_SUCCESS
 
 
@@ -55,6 +58,9 @@ def runbooks_list() -> None:
         sources = load_runbook_sources()
     except RunbookSourceConfigError as exc:
         raise click.ClickException(str(exc)) from exc
+    if is_json_output():
+        click.echo(json.dumps([source.model_dump() for source in sources]))
+        return
     if not sources:
         click.echo("No runbook sources configured.")
         return

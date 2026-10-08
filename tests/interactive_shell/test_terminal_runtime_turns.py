@@ -43,6 +43,11 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
 
     # Typed bare `/model set` opens the provider picker.
     assert loop_input_policy.turn_needs_exclusive_stdin("/model set", session) is True
+    # A subcommand that asks for its missing value needs stdin exactly as its
+    # parent menu does; without this, typing it prints usage while choosing the
+    # same row in /help (which reserves stdin for the whole turn) opens a picker.
+    assert loop_input_policy.turn_needs_exclusive_stdin("/model toolcall", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/history retention", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops active", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops messages", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show", session) is True
@@ -55,6 +60,14 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
     assert loop_input_policy.turn_needs_exclusive_stdin("integrations", session) is False
     assert loop_input_policy.turn_needs_exclusive_stdin("integrations list", session) is False
     assert loop_input_policy.turn_needs_exclusive_stdin("verify", session) is False
+
+
+@pytest.mark.parametrize(
+    "command", ["/work list", "/work next", "/cron list", "/cron logs task-id", "/cron status"]
+)
+def test_responsive_lists_own_stdin(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
+    monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)
+    assert loop_input_policy.turn_needs_exclusive_stdin(command, Session())
 
 
 def test_turn_needs_exclusive_stdin_for_exit_commands(

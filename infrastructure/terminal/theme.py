@@ -473,6 +473,16 @@ def menu_selection_hex() -> str:
     return "#" + "".join(f"{channel:02x}" for channel in rgb)
 
 
+def menu_selection_bg_ansi() -> str:
+    """Return the accent-tinted selection background as an SGR sequence.
+
+    Raw-ANSI menus need the same focused-row plate the composer tray paints
+    through its ``command-tray.current`` style.
+    """
+    rgb = _parse_hex_color(menu_selection_hex())
+    return f"\x1b[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
+
 def prominent_menu_selection_ansi() -> str:
     """Return a filled accent row with contrasting text for a focused menu item."""
     accent = _parse_hex_color(_ACTIVE_THEME.HIGHLIGHT)
@@ -629,6 +639,7 @@ __all__ = [
     "TEXT",
     "TEXT_ANSI",
     "WARNING",
+    "menu_selection_bg_ansi",
     "menu_selection_hex",
     "prominent_menu_selection_ansi",
     "reply_marker_hex",

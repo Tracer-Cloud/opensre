@@ -6,21 +6,21 @@ import re
 
 from rich.console import Console
 from rich.markup import escape
+from rich.text import Text
 
 from surfaces.interactive_shell.command_registry.types import (
     SlashCommand,
 )
 from surfaces.interactive_shell.runtime import Session, TaskRecord, TaskStatus
 from surfaces.interactive_shell.ui import (
-    BOLD_BRAND,
     DIM,
     ERROR,
     HIGHLIGHT,
     WARNING,
-    print_repl_table,
-    repl_table,
 )
+from surfaces.shared.terminal.components.rendering import print_repl_renderable
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[mA-Za-z]")
 _MAX_DETAIL_CHARS = 120
@@ -48,26 +48,19 @@ def _kind_label(task: TaskRecord) -> str:
     return task.kind.value
 
 
-def _task_detail_label(task: TaskRecord) -> str:
-    if task.status == TaskStatus.RUNNING and task.progress:
-        line = _clean_first_line(task.progress)
-        if len(line) > _MAX_DETAIL_CHARS:
-            return line[:_MAX_DETAIL_CHARS] + "…"
-        return line or "—"
-
-    # Show error > result > command, first line, truncated.
-    if task.error:
-        raw = task.error
-    elif task.result:
-        raw = task.result
-    elif task.command:
-        raw = task.command
-    else:
-        return "—"
-    first_line = _clean_first_line(raw)
+def _bounded_first_line(text: str) -> str:
+    first_line = _clean_first_line(text)
     if len(first_line) > _MAX_DETAIL_CHARS:
         return first_line[:_MAX_DETAIL_CHARS] + "…"
     return first_line or "—"
+
+
+def _task_detail_label(task: TaskRecord) -> str:
+    if task.status == TaskStatus.RUNNING and task.progress:
+        return _bounded_first_line(task.progress)
+
+    # Show error > result > command, first line, truncated.
+    return _bounded_first_line(task.error or task.result or task.command or "")
 
 
 def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
@@ -76,14 +69,7 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
         console.print(f"[{DIM}]no tasks recorded this session.[/]")
         return True
 
-    table = repl_table(title="Tasks\n", title_style=BOLD_BRAND)
-    table.add_column("id", style="bold")
-    table.add_column("kind")
-    table.add_column("status")
-    table.add_column("started", style=DIM)
-    table.add_column("duration", style=DIM, justify="right")
-    table.add_column("detail", style=DIM, overflow="fold")
-
+    rows: list[RecordRow] = []
     status_style = {
         TaskStatus.RUNNING: WARNING,
         TaskStatus.COMPLETED: HIGHLIGHT,
@@ -93,15 +79,33 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
     }
     for task in tasks:
         st = status_style.get(task.status, DIM)
-        table.add_row(
-            task.task_id,
-            _kind_label(task),
-            f"[{st}]{task.status.value}[/]",
-            _task_started_label(task),
-            _task_duration_label(task),
-            escape(_task_detail_label(task)),
+        rows.append(
+            RecordRow(
+                (
+                    Text(_bounded_first_line(task.command or _kind_label(task)), style="bold"),
+                    Text(task.status.value.capitalize(), style=st),
+                    Text(_task_duration_label(task)),
+                ),
+                (
+                    Text(f"ID: {task.task_id} · Kind: {_kind_label(task)}", style=DIM),
+                    Text(f"Started: {_task_started_label(task)}", style=DIM),
+                    Text(_task_detail_label(task), style=st),
+                ),
+            )
         )
-    print_repl_table(console, table)
+    print_repl_renderable(
+        console,
+        RecordTable(
+            "Tasks",
+            (
+                RecordColumn("Task"),
+                RecordColumn("State", 10),
+                RecordColumn("Duration", 10, "right"),
+            ),
+            tuple(rows),
+            caption="Cancel: /cancel <task_id>",
+        ),
+    )
     return True
 
 

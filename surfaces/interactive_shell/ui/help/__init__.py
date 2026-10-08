@@ -1,7 +1,8 @@
-"""Interactive help slash-command menus."""
+"""Interactive help: the slash-command browser and its printed fallbacks."""
 
+from surfaces.interactive_shell.ui.help.help_browser import browse_help_commands
 from surfaces.interactive_shell.ui.help.help_menu import (
-    choose_help_command,
+    HelpSection,
     has_help_details,
     render_command_detail,
     render_help_index,
@@ -9,7 +10,8 @@ from surfaces.interactive_shell.ui.help.help_menu import (
 )
 
 __all__ = [
-    "choose_help_command",
+    "HelpSection",
+    "browse_help_commands",
     "has_help_details",
     "render_command_detail",
     "render_help_index",

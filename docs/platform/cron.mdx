@@ -96,7 +96,7 @@ Create a new scheduled delivery task.
 
 ### `opensre cron list`
 
-Display each configured scheduled task as a bullet list: name, id, kind, schedule, provider, channels, enabled state, next cron fire time, and last run.
+Scan scheduled tasks in a table on wide terminals or labeled rows on narrow terminals. IDs remain visible below each task; run times are UTC and each cron expression uses its displayed timezone. Use `opensre --json cron list` for complete configuration.
 
 ### `opensre cron remove <task_id>`
 

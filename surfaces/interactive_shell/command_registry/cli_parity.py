@@ -60,6 +60,7 @@ def _captured_child_env(console: Console, *, headless: bool) -> dict[str, str]:
             columns=console.size.width,
             lines=console.size.height,
             prefix_width=COMMAND_OUTPUT_GUTTER_WIDTH,
+            minimum_columns=1,
         )
     )
 

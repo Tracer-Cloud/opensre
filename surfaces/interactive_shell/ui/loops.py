@@ -17,9 +17,9 @@ from infrastructure.terminal.theme import BOLD_BRAND, DIM, ERROR, HIGHLIGHT, WAR
 from surfaces.shared.terminal.components.rendering import (
     print_repl_renderable,
     print_repl_table,
-    repl_output_width,
     repl_table,
 )
+from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
 def _timestamp(value: str | None) -> datetime | None:
@@ -123,41 +123,60 @@ def render_loops(
     now: datetime | None = None,
     local_timezone: tzinfo | None = None,
 ) -> None:
-    """Show at most two lines per loop, giving findings the largest column."""
+    """Show schedule records with purpose, latest findings and full-report navigation."""
     timestamp = now or datetime.now(UTC)
-    width = repl_output_width(console)
-    next_width = 14 if width >= 70 else 11
-    name_width = max(9, min(34, (width - next_width - 6) // 3))
-    result_width = width - next_width - name_width - 6
-    table = repl_table(title="Loops\n", title_style=BOLD_BRAND)
-    table.add_column("Loop", width=name_width, no_wrap=True)
-    table.add_column("Latest result", width=result_width, no_wrap=True)
-    table.add_column("Next run", width=next_width, no_wrap=True, style=DIM)
+    rows: list[RecordRow] = []
     for loop in loops:
-        name, separator, context = loop.name.partition(" · ")
-        label = _clipped(name, name_width, style="bold")
-        if separator:
-            label.append("\n")
-            label.append_text(_clipped(context, name_width, style=DIM))
+        state = "Invalid" if loop.schedule_error else "Active" if loop.enabled else "Paused"
+        state_style = WARNING if loop.schedule_error else HIGHLIGHT if loop.enabled else DIM
+        details = [
+            Text(f"ID: {loop.id}", style=DIM),
+            Text(f"{', '.join(loop.channels)} · TZ: {loop.timezone}", style=DIM),
+        ]
+        if loop.description:
+            details.append(Text(f"What it does: {loop.description}", style=DIM))
         run = latest.get(loop.id)
         if run is None:
-            result = Text("History unavailable" if loop.last_run else "Not run yet", style=DIM)
+            details.append(
+                Text("History unavailable" if loop.last_run else "Not run yet", style=DIM)
+            )
         else:
             status, style = _status(run)
-            result = _clipped(
-                f"{status} · {_age(run.finished_at or run.started_at, timestamp)}",
-                result_width,
-                style=style,
+            details.append(
+                Text(
+                    f"Latest result: {status} · {_age(run.finished_at or run.started_at, timestamp)}",
+                    style=style,
+                )
             )
-            result.append("\n")
-            result.append_text(_clipped(_finding(run), result_width))
-        table.add_row(
-            label,
-            result,
-            _clipped(_next_run(loop, timestamp, local_timezone), next_width),
+            details.append(_clipped(_finding(run), 160))
+        if loop.schedule_error:
+            details.append(Text(f"Requires action: {loop.schedule_error}", style=WARNING))
+        rows.append(
+            RecordRow(
+                (
+                    Text(loop.name, style="bold"),
+                    Text(state, style=state_style),
+                    Text(loop.cron),
+                    Text(_next_run(loop, timestamp, local_timezone), style=DIM),
+                ),
+                tuple(details),
+            )
         )
-    print_repl_table(console, table, width=width)
-    console.print(Text("/loops show — full reports and configuration", style=DIM))
+    print_repl_renderable(
+        console,
+        RecordTable(
+            "Loops",
+            (
+                RecordColumn("Loop"),
+                RecordColumn("State", 8),
+                RecordColumn("Schedule", 17),
+                RecordColumn("Next run", 14),
+            ),
+            tuple(rows),
+            subtitle="Next run: local time",
+            caption="/loops show <name-or-id> — full reports and configuration",
+        ),
+    )
 
 
 def _exact_time(value: str | None) -> str:
