@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
+from config.llm_models import DEFAULT_MAX_TOKENS
 from core.llm.transports.litellm.frozen_tiktoken_bootstrap import (
     ensure_tiktoken_encodings_discoverable,
 )
@@ -55,7 +56,7 @@ class LiteLLMAgentClient:
         self,
         *,
         litellm_model: str,
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         api_base: str | None = None,
         api_version: str | None = None,
         api_key_env: str | None = None,

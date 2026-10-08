@@ -9,6 +9,7 @@ by model id.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -90,6 +91,27 @@ def test_openai_clients_use_account_proxy_when_personal_login_exists(
     assert str(agent._client.base_url) == "https://app.opensre.com/api/llm/v1/"
     assert reasoning._model == "gpt-account"
     assert reasoning._base_url == "https://app.opensre.com/api/llm/v1"
+
+
+def test_openai_agent_default_output_budget_reaches_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The factory's reasoning budget reaches the actual Responses request."""
+    monkeypatch.setattr("config.account.account_llm_route", lambda: None)
+    route = _route("openai")
+    route.settings.openai_reasoning_model = "gpt-5.6-sol"
+    agent = build_agent_client(route)
+    captured: dict[str, Any] = {}
+
+    def create(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(output=[], output_text="B. The constraints require it.", usage=None)
+
+    monkeypatch.setattr(agent._client.responses, "create", create)
+
+    agent.invoke([{"role": "user", "content": "Choose the correct letter."}])
+
+    assert captured["max_output_tokens"] == 25_000
 
 
 @pytest.mark.parametrize("provider", ["anthropic", "openai", "bedrock"])

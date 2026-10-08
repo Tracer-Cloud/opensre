@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from config.llm_models import DEFAULT_MAX_TOKENS
 from core.context_budget import strip_internal_message_markers
 from core.llm.shared.llm_retry import (
     maybe_raise_credit_exhausted,
@@ -86,7 +87,7 @@ class AnthropicAgentClient:
     def __init__(
         self,
         model: str,
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         *,
         base_url: str | None = None,
         api_key_env: str = "ANTHROPIC_API_KEY",
@@ -361,7 +362,7 @@ class BedrockAgentClient(AnthropicAgentClient):
         "or instance role) and AWS_REGION/AWS_DEFAULT_REGION."
     )
 
-    def __init__(self, model: str, max_tokens: int = 4096) -> None:
+    def __init__(self, model: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> None:
         from anthropic import AnthropicBedrock
 
         region = (os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "").strip()
@@ -398,7 +399,7 @@ class BedrockConverseAgentClient:
 
     provider_name = "Bedrock"
 
-    def __init__(self, model: str, max_tokens: int = 4096) -> None:
+    def __init__(self, model: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> None:
         import boto3
 
         from core.llm.transports.sdk.bedrock_converse import require_aws_region
@@ -594,7 +595,7 @@ class OpenAIAgentClient:
     def __init__(
         self,
         model: str,
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         base_url: str | None = None,
         api_key_env: str = "OPENAI_API_KEY",
         api_key_default: str = "",
