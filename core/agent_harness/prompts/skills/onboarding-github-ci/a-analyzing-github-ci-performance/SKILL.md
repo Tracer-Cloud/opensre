@@ -84,7 +84,7 @@ column of the comparison table), `benchmarks` (the peer columns),
 is yours to write. Do not paginate the REST API or run `execute_python_code`
 yourself.
 
-If the tool reports a missing token, tell the user to run `opensre integrations setup github` and carry that blocker into the table as a coverage gap.
+If the tool reports a missing or rejected GitHub connection, tell the user to connect or reconnect GitHub in the OpenSRE app using the setup URL supplied by the host or tool. End the turn without retrying the tool or invoking GitHub setup through `slash_invoke`. Resume the same repository analysis after the app connection is refreshed.
 
 If GitHub could not be read for any other reason, so the analysis returned no `key_results`, do not show an empty table: say its blocker in one line, then call `skill_view(name="analyzing-local-repositories")` and follow that skill for the same repository instead of steps 4 and 5.
 
