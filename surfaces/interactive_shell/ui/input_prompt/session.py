@@ -219,7 +219,14 @@ def _install_prompt_frame(
         )
         session.app.full_screen = True
         session.app.renderer.full_screen = True
-    session.layout.container = HSplit(children, align=VerticalAlign.TOP)
+    session.layout.container = HSplit(
+        children,
+        align=VerticalAlign.TOP,
+        # ``transcript`` makes this a full-screen prompt-toolkit application.
+        # Its inherited background paints both visible rows and the remaining
+        # screen, so the dark palettes do not depend on the terminal's default.
+        style="class:terminal" if transcript is not None else "",
+    )
     return session
 
 

@@ -59,12 +59,8 @@ def test_rich_renders_each_token_with_its_own_color() -> None:
         assert f"38;2;{red};{green};{blue}m" in output
 
 
-def test_muted_tokens_are_readable_on_theme_background() -> None:
-    """SECONDARY and DIM must keep minimum contrast against the theme BG.
-
-    Regression for the near-invisible onboarding text: DIM #444444 on the
-    #0A0A0A background was ~2:1 contrast.
-    """
+def test_semantic_text_tokens_meet_aa_contrast_on_theme_surfaces() -> None:
+    """Every text token must remain readable on the shell's painted surfaces."""
 
     def _luminance(hex_color: str) -> float:
         def channel(value: int) -> float:
@@ -81,8 +77,22 @@ def test_muted_tokens_are_readable_on_theme_background() -> None:
 
     for name in list_theme_names():
         theme = get_theme(name)
-        assert _contrast(theme.SECONDARY, theme.BG) >= 6.0, name
-        assert _contrast(theme.DIM, theme.BG) >= 3.0, name
+        for token in (
+            theme.HIGHLIGHT,
+            theme.BRAND,
+            theme.TEXT,
+            theme.SECONDARY,
+            theme.DIM,
+            theme.WARNING,
+            theme.ERROR,
+        ):
+            assert _contrast(token, theme.BG) >= 4.5, (name, token, theme.BG)
+        for token in (theme.HIGHLIGHT, theme.TEXT, theme.SECONDARY, theme.DIM):
+            assert _contrast(token, theme.INPUT_SURFACE) >= 4.5, (
+                name,
+                token,
+                theme.INPUT_SURFACE,
+            )
 
 
 def test_fade_fg_ansi_interpolates_dim_to_text() -> None:
