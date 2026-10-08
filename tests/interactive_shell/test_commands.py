@@ -8,7 +8,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from prompt_toolkit.history import FileHistory
@@ -33,6 +35,16 @@ from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 def _capture() -> tuple[Console, io.StringIO]:
     buf = io.StringIO()
     return Console(file=buf, force_terminal=False, highlight=False), buf
+
+
+def _recording_dispatch(dispatched: list[str]) -> Callable[[str, Any, Any], bool]:
+    """Record the slash text a handler re-dispatches, and report success."""
+
+    def _dispatch(command: str, _session: Any, _console: Any) -> bool:
+        dispatched.append(command)
+        return True
+
+    return _dispatch
 
 
 def _signed_out() -> None:
@@ -225,29 +237,84 @@ class TestDispatchSlash:
         assert buf.getvalue() == ""
 
     @pytest.mark.parametrize(
-        ("selected", "expected"),
+        ("selected", "subcommand", "expected"),
         [
-            ("/integrations", "/integrations list"),
-            ("/mcp", "/mcp list"),
+            ("/integrations", "list", "/integrations list"),
+            ("/mcp", "connect", "/mcp connect"),
+            ("/model", "restore", "/model restore"),
+            ("/work", "add", "/work add"),
         ],
     )
-    def test_tty_help_runs_explicit_connection_list_command(
-        self, monkeypatch: pytest.MonkeyPatch, selected: str, expected: str
+    def test_tty_help_offers_subcommands_before_running_a_command(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        selected: str,
+        subcommand: str,
+        expected: str,
+    ) -> None:
+        """A command with subcommands must ask which one, not pick a default."""
+        import surfaces.interactive_shell.command_registry as command_registry
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        dispatched: list[str] = []
+        offered: list[str] = []
+
+        def _pick(*, parent: str, options: tuple[tuple[str, str], ...]) -> str:
+            offered.append(parent)
+            assert subcommand in [name for name, _meta in options]
+            return subcommand
+
+        monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: selected)
+        monkeypatch.setattr(help_cmd, "repl_choose_subcommand", _pick)
+        monkeypatch.setattr(command_registry, "dispatch_slash", _recording_dispatch(dispatched))
+
+        assert dispatch_slash("/help", Session(), _capture()[0]) is True
+        assert offered == [selected]
+        assert dispatched == [expected]
+
+    def test_tty_help_runs_a_command_without_subcommands_directly(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import surfaces.interactive_shell.command_registry as command_registry
         from surfaces.interactive_shell.command_registry import help as help_cmd
 
         dispatched: list[str] = []
         monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
-        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: selected)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: "/status")
         monkeypatch.setattr(
-            command_registry,
-            "dispatch_slash",
-            lambda command, _session, _console: dispatched.append(command) or True,
+            help_cmd,
+            "repl_choose_subcommand",
+            lambda **_kwargs: pytest.fail("/status has no subcommands to offer"),
         )
+        monkeypatch.setattr(command_registry, "dispatch_slash", _recording_dispatch(dispatched))
 
         assert dispatch_slash("/help", Session(), _capture()[0]) is True
-        assert dispatched == [expected]
+        assert dispatched == ["/status"]
+
+    def test_tty_help_escaping_the_subcommand_picker_runs_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Esc in the subcommand picker backs out; it must not run a default."""
+        import surfaces.interactive_shell.command_registry as command_registry
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        dispatched: list[str] = []
+        monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: "/integrations")
+        monkeypatch.setattr(help_cmd, "repl_choose_subcommand", lambda **_kwargs: None)
+        monkeypatch.setattr(command_registry, "dispatch_slash", _recording_dispatch(dispatched))
+
+        assert dispatch_slash("/help", Session(), _capture()[0]) is True
+        assert dispatched == []
+
+    def test_a_flag_only_completion_list_opens_no_subcommand_picker(self) -> None:
+        # /rename completes "--reset", a flag rather than a subcommand; its
+        # normal use is "/rename <new name>", so a one-row picker is noise.
+        from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        assert help_cmd._subcommand_options(SLASH_COMMANDS["/rename"]) == ()
 
     def test_bare_slash_previews_all_commands(self) -> None:
         session = Session()
