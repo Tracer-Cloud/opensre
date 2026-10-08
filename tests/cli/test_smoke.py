@@ -670,6 +670,8 @@ def test_onboard_interactive_smoke(
                 expect="could not be verified. What next?",
                 send=b"\r",
                 stagger_j=1,
+                # Lazy SDK initialization runs inside the live validation probe.
+                timeout=30.0,
             ),
         ],
         timeout=30.0,
