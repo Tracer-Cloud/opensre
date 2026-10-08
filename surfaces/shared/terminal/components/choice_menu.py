@@ -77,7 +77,7 @@ _MENU_LEADING_LINES = 0
 # a new section after Plan complete / reply text, not a continuation line.
 _HEADER_SECTION_GAP = 1
 _TERMINAL_NEWLINE = "\r\n"
-MenuAction = Literal["up", "down", "enter", "cancel", "eof", "ignore"]
+MenuAction = Literal["up", "down", "enter", "cancel", "eof", "ignore", "left", "right"]
 
 
 def repl_tty_interactive() -> bool:
@@ -109,7 +109,12 @@ def repl_section_break(console: Console) -> None:
 # ── raw key reader ───────────────────────────────────────────────────────────
 
 
-def _read_action(*, alpha_keys: bool = False, on_dismiss: OnDismiss | None = None) -> MenuAction:
+def _read_action(
+    *,
+    alpha_keys: bool = False,
+    on_dismiss: OnDismiss | None = None,
+    horizontal: bool = False,
+) -> MenuAction:
     """Map a raw keypress to a menu action.
 
     Delegates terminal I/O to :mod:`key_reader` and applies
@@ -125,16 +130,21 @@ def _read_action(*, alpha_keys: bool = False, on_dismiss: OnDismiss | None = Non
     )
     if key == "tab":
         return "down"
-    if key == "right":
-        return "enter"
-    if key == "left":
-        return "ignore"
+    if not horizontal:
+        if key == "right":
+            return "enter"
+        if key == "left":
+            return "ignore"
     return key  # type: ignore[return-value]
 
 
-def read_menu_action() -> MenuAction:
-    """Read one normalized inline-menu action from stdin."""
-    return _read_action()
+def read_menu_action(*, horizontal: bool = False) -> MenuAction:
+    """Read one normalized inline-menu action from stdin.
+
+    Menus that page content may retain Left/Right; ordinary choice menus keep
+    their established Left-ignore and Right-select behavior.
+    """
+    return _read_action(horizontal=horizontal)
 
 
 # ── rendering helpers ────────────────────────────────────────────────────────

@@ -319,7 +319,7 @@ def test_choose_help_command_space_toggles_inline_details_and_exits(monkeypatch)
     actions = iter(["down", "space", "cancel"])
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(help_menu, "menu_columns", lambda: 80)
-    monkeypatch.setattr(help_menu, "read_menu_action", lambda: next(actions))
+    monkeypatch.setattr(help_menu, "read_menu_action", lambda **_kwargs: next(actions))
 
     selected = help_menu.choose_help_command(sections)
 
@@ -339,7 +339,7 @@ def test_choose_help_command_enter_selects_command_without_details(monkeypatch) 
     actions = iter(["enter"])
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(help_menu, "menu_columns", lambda: 80)
-    monkeypatch.setattr(help_menu, "read_menu_action", lambda: next(actions))
+    monkeypatch.setattr(help_menu, "read_menu_action", lambda **_kwargs: next(actions))
 
     assert help_menu.choose_help_command(sections) == "/status"
 
@@ -353,7 +353,7 @@ def test_choose_help_command_ignores_unknown_actions(monkeypatch) -> None:
     actions = iter(["ignore", "cancel"])
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(help_menu, "menu_columns", lambda: 80)
-    monkeypatch.setattr(help_menu, "read_menu_action", lambda: next(actions))
+    monkeypatch.setattr(help_menu, "read_menu_action", lambda **_kwargs: next(actions))
 
     assert help_menu.choose_help_command(sections) is None
 
@@ -425,3 +425,28 @@ def test_draw_help_menu_clips_its_hint_to_a_short_terminal_width(monkeypatch) ->
 
     plain_lines = _ANSI_RE.sub("", out.getvalue()).splitlines()
     assert len(plain_lines[-1]) <= 39
+
+
+def test_choose_help_command_pages_oversized_expanded_details(monkeypatch) -> None:
+    command = SlashCommand(
+        "/loops",
+        "Inspect loops.",
+        lambda *_args: True,
+        usage=tuple(f"/loops action {index}" for index in range(20)),
+    )
+    out = io.StringIO()
+    actions = iter(["space", "right", "cancel"])
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("COLUMNS", "80")
+    monkeypatch.setenv("LINES", "24")
+    monkeypatch.setattr(
+        help_menu,
+        "read_menu_action",
+        lambda **_kwargs: next(actions),
+    )
+
+    assert help_menu.choose_help_command([("Session", [command])]) is None
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert "/loops action 0" in plain
+    assert "/loops action 19" in plain

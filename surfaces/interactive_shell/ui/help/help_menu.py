@@ -30,6 +30,9 @@ HelpSection = tuple[str, Sequence[SlashCommand]]
 _HELP_VIEW_ROWS = 21
 _HELP_CHROME_ROWS = 6
 _HELP_HINT = "↑↓/j/k navigate  ·  Enter run command  ·  Space toggle details  ·  Esc/q close"
+_HELP_PAGED_HINT = (
+    "←→ page details  ·  ↑↓/j/k navigate  ·  Enter run  ·  Space close  ·  Esc/q close"
+)
 
 
 @dataclass(frozen=True)
@@ -401,6 +404,25 @@ def _help_menu_height(viewport_height: int) -> int:
     return _HELP_CHROME_ROWS + viewport_height
 
 
+def _detail_page(
+    rows: Sequence[HelpDisplayRow],
+    *,
+    selected: int,
+    viewport_height: int,
+    page: int,
+) -> tuple[list[HelpDisplayRow] | None, int]:
+    """Return the selected command and one page of oversized expanded details."""
+    detail_end = _detail_end_index(rows, selected)
+    detail_count = detail_end - selected - 1
+    page_size = max(1, viewport_height - 1)
+    pages = (detail_count + page_size - 1) // page_size
+    if pages <= 1:
+        return None, pages
+    current_page = min(max(0, page), pages - 1)
+    detail_start = selected + 1 + current_page * page_size
+    return [rows[selected], *rows[detail_start : detail_start + page_size]], pages
+
+
 def _draw_help_menu(
     rows: Sequence[HelpRow],
     *,
@@ -408,6 +430,7 @@ def _draw_help_menu(
     expanded: int | None,
     erase_lines: int,
     viewport_height: int | None = None,
+    detail_page: int = 0,
 ) -> int:
     width = menu_columns()
     display = _display_rows(rows, expanded)
@@ -423,6 +446,14 @@ def _draw_help_menu(
         effective_viewport_height = min(effective_viewport_height, available_viewport_height)
     start, end = _viewport_bounds(display, display_selected, effective_viewport_height)
     visible = display[start:end]
+    paged_visible, detail_pages = _detail_page(
+        display,
+        selected=display_selected,
+        viewport_height=effective_viewport_height,
+        page=detail_page,
+    )
+    if paged_visible is not None:
+        visible = paged_visible
     height = _help_menu_height(effective_viewport_height)
     if erase_lines:
         erase_menu_lines(erase_lines)
@@ -438,11 +469,11 @@ def _draw_help_menu(
         f"{ui_theme.DIM_COUNTER_ANSI}{selected_count}/{total_count}{ui_theme.ANSI_RESET}"
     )
     write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{_separator_rule(width)}{ui_theme.ANSI_RESET}")
-    for offset, row in enumerate(visible, start=start):
+    for row in visible:
         write_menu_line(
             _render_display_row(
                 row,
-                selected=(offset == display_selected),
+                selected=(row.source_index == selected),
                 expanded=(row.source_index == expanded),
                 width=width,
             )
@@ -450,7 +481,8 @@ def _draw_help_menu(
     for _ in range(max(0, effective_viewport_height - len(visible))):
         write_menu_line()
     write_menu_line()
-    write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{_clip(_HELP_HINT, width)}{ui_theme.ANSI_RESET}")
+    hint = _HELP_PAGED_HINT if detail_pages > 1 else _HELP_HINT
+    write_menu_line(f"{ui_theme.DIM_COUNTER_ANSI}{_clip(hint, width)}{ui_theme.ANSI_RESET}")
     sys.stdout.flush()
     return height
 
@@ -464,18 +496,21 @@ def choose_help_command(sections: Sequence[HelpSection]) -> str | None:
 
     erase_lines = 0
     expanded: int | None = None
+    detail_page = 0
     while True:
         erase_lines = _draw_help_menu(
             rows,
             selected=selected,
             expanded=expanded,
             erase_lines=erase_lines,
+            detail_page=detail_page,
         )
-        action = read_menu_action()
+        action = read_menu_action(horizontal=True)
         if action == "space":
             command = rows[selected].command
             if command is not None and has_help_details(command):
                 expanded = None if expanded == selected else selected
+                detail_page = 0
             continue
         if action == "enter":
             command = rows[selected].command
@@ -486,12 +521,18 @@ def choose_help_command(sections: Sequence[HelpSection]) -> str | None:
             return None
         if action == "ignore":
             continue
-        if action == "up":
+        if action == "left" and expanded is not None:
+            detail_page = max(0, detail_page - 1)
+        elif action == "right" and expanded is not None:
+            detail_page += 1
+        elif action == "up":
             selected = _next_selectable_index(rows, selected, -1)
             expanded = None
+            detail_page = 0
         elif action == "down":
             selected = _next_selectable_index(rows, selected, 1)
             expanded = None
+            detail_page = 0
 
 
 __all__ = [
