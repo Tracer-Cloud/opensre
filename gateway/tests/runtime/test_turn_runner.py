@@ -11,7 +11,10 @@ from unittest.mock import MagicMock
 import pytest
 from rich.console import Console
 
-from config.constants.capabilities import HOSTED_GATEWAY_CAPABILITY
+from config.constants.capabilities import (
+    HOSTED_GATEWAY_CAPABILITY,
+    MCP_GATEWAY_MUTATION_CAPABILITY,
+)
 from core.agent_harness.runtime import AgentBuildConfig
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
@@ -345,7 +348,7 @@ def test_turn_runner_tolerates_sinks_without_tool_hooks(monkeypatch: Any) -> Non
     assert agent.bind_turn.call_args.args[0].tool_hooks is None
 
 
-def test_turn_runner_leaves_gateway_capabilities_available(monkeypatch: Any) -> None:
+def test_turn_runner_withholds_local_only_capabilities(monkeypatch: Any) -> None:
     _patch_headless_agent(monkeypatch, _empty_turn_result())
     session = SessionCore(store=InMemorySessionStore())
     handler = TurnRunner(console=Console(force_terminal=False))
@@ -357,7 +360,10 @@ def test_turn_runner_leaves_gateway_capabilities_available(monkeypatch: Any) -> 
         logging.getLogger("test"),
     )
 
-    assert session.available_capabilities == {HOSTED_GATEWAY_CAPABILITY: ()}
+    assert session.available_capabilities == {
+        HOSTED_GATEWAY_CAPABILITY: (),
+        MCP_GATEWAY_MUTATION_CAPABILITY: (),
+    }
 
 
 def test_turn_runner_preserves_supported_capabilities(monkeypatch: Any) -> None:
@@ -401,6 +407,7 @@ def test_turn_runner_keeps_capabilities_available_across_turns(monkeypatch: Any)
     assert session.available_capabilities == {
         "shell_commands": ("shell",),
         HOSTED_GATEWAY_CAPABILITY: (),
+        MCP_GATEWAY_MUTATION_CAPABILITY: (),
     }
 
 

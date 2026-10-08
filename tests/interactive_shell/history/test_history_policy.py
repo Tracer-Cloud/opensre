@@ -28,6 +28,7 @@ from surfaces.interactive_shell.prompt_history.policy import (
         ("github_pat_" + "x" * 82, "[REDACTED:github_pat]"),
         ("sk-ant-" + "y" * 90, "[REDACTED:anthropic_key]"),
         ("sk-" + "z" * 48, "[REDACTED:openai_key]"),
+        ("prefixsk-" + "z" * 48, "[REDACTED:openai_key]"),
         ("xoxb-12345-67890-abcdefghijklmn", "[REDACTED:slack_token]"),
         ("sk_live_" + "Q" * 24, "[REDACTED:stripe_key]"),
         (
@@ -39,6 +40,7 @@ from surfaces.interactive_shell.prompt_history.policy import (
             "[REDACTED:jwt]",
         ),
         ("psql --password=hunter2 -h db", "[REDACTED:password]"),
+        ('token="abc123"', "[REDACTED]"),
         (
             "-----BEGIN RSA PRIVATE KEY-----\nMIIEvQIBADANBgkq\n-----END RSA PRIVATE KEY-----",
             "[REDACTED:private_key]",
@@ -95,9 +97,49 @@ def test_pem_block_inside_history_entry_does_not_leak_to_disk(tmp_path: Path) ->
     assert "-----BEGIN EC PRIVATE KEY-----" not in contents
 
 
-def test_natural_language_is_left_alone() -> None:
-    text = "investigate api errors after the redis cluster restarted at 12:30"
+@pytest.mark.parametrize(
+    "text",
+    [
+        "investigate api errors after the redis cluster restarted at 12:30",
+        "token: expiry handling",
+        "secret = unavailable",
+        "How do I rotate a password: safely?",
+    ],
+)
+def test_natural_language_is_left_alone(text: str) -> None:
     assert redact_text(text) == text
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('api_key="abc$def123"', "api_key=[REDACTED]"),
+        ('password="Correct Horse Battery Staple!"', "[REDACTED:password]"),
+        ("secret='punctuation! stays hidden'", "secret=[REDACTED]"),
+    ],
+)
+def test_quoted_credentials_are_fully_redacted(raw: str, expected: str) -> None:
+    assert redact_text(raw) == expected
+
+
+def test_standalone_bearer_prose_survives_history_while_credentials_are_masked(
+    tmp_path: Path,
+) -> None:
+    history_file = tmp_path / "history"
+    backend = RedactingFileHistory(str(history_file))
+    for text in ("Bearer authentication", "bearer support", "Bearer abc"):
+        assert redact_text(text) == text
+        backend.store_string(text)
+    for text in ("Bearer abc123", "Bearer sample-token", "Bearer " + "a" * 32):
+        assert text.split()[1] not in redact_text(text)
+        backend.store_string(text)
+    backend.store_string("Authorization: Bearer abc")
+    contents = history_file.read_text(encoding="utf-8")
+    assert "Bearer authentication" in contents
+    assert "bearer support" in contents
+    assert "Bearer abc\n" in contents
+    assert "abc123" not in contents and "sample-token" not in contents
+    assert "Authorization: Bearer abc" not in contents
 
 
 def test_only_secret_segment_is_replaced() -> None:

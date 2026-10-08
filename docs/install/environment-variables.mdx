@@ -806,6 +806,10 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | `X_MCP_COMMAND` |  | X MCP stdio command |
 | `X_MCP_ARGS` |  | X MCP stdio args |
 | `X_BEARER_TOKEN` |  | X API bearer token (not MCP transport auth) |
+| `MCP_GATEWAY_URL` |  | Generic Streamable HTTP MCP endpoint; required when using the gateway |
+| `MCP_GATEWAY_AUTH_TOKEN` |  | Optional bearer token for the generic MCP endpoint |
+| `MCP_GATEWAY_ALLOWED_TOOLS` |  | Optional comma-separated exact-name allowlist; blank permits all advertised tools |
+| `MCP_GATEWAY_READ_ONLY_TOOLS` |  | Comma-separated exact tool names the operator certifies as read-only |
 
 
   </Accordion>

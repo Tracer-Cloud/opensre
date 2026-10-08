@@ -7,7 +7,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
+from unittest.mock import patch
 
+import httpx
 import mcp_types as types
 import pytest
 
@@ -38,10 +40,14 @@ class _Config:
 @dataclass(frozen=True)
 class _ListToolsResult:
     tools: list[types.Tool]
+    next_cursor: str | None = None
 
 
 class _Session:
-    async def list_tools(self) -> _ListToolsResult:
+    async def list_tools(
+        self, *, params: types.PaginatedRequestParams | None = None
+    ) -> _ListToolsResult:
+        assert params is None
         return _ListToolsResult(tools=[types.Tool(name="status", input_schema={})])
 
     async def call_tool(self, name: str, arguments: dict[str, object]) -> types.CallToolResult:
@@ -99,6 +105,221 @@ def test_shared_client_normalizes_list_and_tool_results(monkeypatch: pytest.Monk
         "tool": "status",
         "arguments": {"verbose": True},
     }
+
+
+def test_tool_call_timeout_is_marked_as_outcome_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SlowSession:
+        async def call_tool(
+            self, _name: str, _arguments: dict[str, object]
+        ) -> types.CallToolResult:
+            await asyncio.sleep(1)
+            raise AssertionError("unreachable")
+
+    @asynccontextmanager
+    async def open_session(*_args: object, **_kwargs: object) -> AsyncIterator[SlowSession]:
+        yield SlowSession()
+
+    monkeypatch.setattr(mcp_client, "open_mcp_session", open_session)
+
+    with pytest.raises(mcp_client.McpToolCallOutcomeUnknownError) as error:
+        mcp_client.call_mcp_tool(
+            _Config(timeout_seconds=0.01),
+            "restart_service",
+            timeout_call=False,
+            timeout_entire_operation=True,
+            **_session_options(),
+        )
+
+    assert isinstance(error.value.__cause__, TimeoutError)
+
+
+def test_shared_client_collects_all_tool_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    requested_cursors: list[str | None] = []
+
+    class PaginatedSession(_Session):
+        async def list_tools(
+            self, *, params: types.PaginatedRequestParams | None = None
+        ) -> _ListToolsResult:
+            cursor = params.cursor if params is not None else None
+            requested_cursors.append(cursor)
+            if cursor is None:
+                return _ListToolsResult(
+                    tools=[types.Tool(name="first", input_schema={})],
+                    next_cursor="page-2",
+                )
+            assert cursor == "page-2"
+            return _ListToolsResult(tools=[types.Tool(name="second", input_schema={})])
+
+    @asynccontextmanager
+    async def open_session(*_args: object, **_kwargs: object) -> AsyncIterator[PaginatedSession]:
+        yield PaginatedSession()
+
+    monkeypatch.setattr(mcp_client, "open_mcp_session", open_session)
+
+    tools = mcp_client.list_mcp_tools(_Config(), **_session_options())
+
+    assert [tool.name for tool in tools] == ["first", "second"]
+    assert requested_cursors == [None, "page-2"]
+
+
+def test_shared_client_rejects_repeated_tool_cursor(monkeypatch: pytest.MonkeyPatch) -> None:
+    class RepeatingSession(_Session):
+        async def list_tools(
+            self, *, params: types.PaginatedRequestParams | None = None
+        ) -> _ListToolsResult:
+            del params
+            return _ListToolsResult(tools=[], next_cursor="same-cursor")
+
+    @asynccontextmanager
+    async def open_session(*_args: object, **_kwargs: object) -> AsyncIterator[RepeatingSession]:
+        yield RepeatingSession()
+
+    monkeypatch.setattr(mcp_client, "open_mcp_session", open_session)
+
+    with pytest.raises(RuntimeError, match="repeated pagination cursor"):
+        mcp_client.list_mcp_tools(_Config(), **_session_options())
+
+
+def test_shared_client_bounds_accumulated_tool_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OversizedSession(_Session):
+        async def list_tools(
+            self, *, params: types.PaginatedRequestParams | None = None
+        ) -> _ListToolsResult:
+            del params
+            return _ListToolsResult(
+                tools=[
+                    types.Tool(
+                        name="large",
+                        description="x" * 200,
+                        input_schema={},
+                    )
+                ],
+                next_cursor="another-page",
+            )
+
+    @asynccontextmanager
+    async def open_session(*_args: object, **_kwargs: object) -> AsyncIterator[OversizedSession]:
+        yield OversizedSession()
+
+    monkeypatch.setattr(mcp_client, "open_mcp_session", open_session)
+    monkeypatch.setattr(mcp_client, "MCP_TOOL_LIST_MAX_SERIALIZED_CHARS", 100)
+
+    with pytest.raises(RuntimeError, match="serialized-size safety limit"):
+        mcp_client.list_mcp_tools(_Config(), **_session_options())
+
+
+def test_shared_client_bounds_one_descriptor_without_serializing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OversizedSession(_Session):
+        async def list_tools(
+            self, *, params: types.PaginatedRequestParams | None = None
+        ) -> _ListToolsResult:
+            del params
+            return _ListToolsResult(
+                tools=[types.Tool(name="large", description="x" * 200, input_schema={})]
+            )
+
+    @asynccontextmanager
+    async def open_session(*_args: object, **_kwargs: object) -> AsyncIterator[OversizedSession]:
+        yield OversizedSession()
+
+    monkeypatch.setattr(mcp_client, "open_mcp_session", open_session)
+    monkeypatch.setattr(mcp_client, "MCP_TOOL_LIST_MAX_SERIALIZED_CHARS", 100)
+
+    with (
+        patch.object(types.Tool, "model_dump_json", side_effect=AssertionError),
+        pytest.raises(RuntimeError, match="serialized-size safety limit"),
+    ):
+        mcp_client.list_mcp_tools(_Config(), **_session_options())
+
+
+class _ChunkedResponseStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+        self.chunks_read = 0
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self._chunks:
+            self.chunks_read += 1
+            yield chunk
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_tool_discovery_stops_reading_a_chunked_oversized_response(method: str) -> None:
+    stream = _ChunkedResponseStream([b"1234", b"56", b"unread"])
+    response = httpx.Response(
+        200,
+        request=httpx.Request(method, "https://mcp.example.test/mcp"),
+        stream=stream,
+    )
+
+    async def consume() -> None:
+        await mcp_client._response_size_hook(5)(response)
+        await response.aread()
+
+    with pytest.raises(mcp_client.McpResponseTooLargeError, match="byte limit"):
+        asyncio.run(consume())
+
+    assert stream.chunks_read == 2
+    assert stream.closed is True
+
+
+def test_tool_discovery_rejects_declared_oversized_response_before_reading() -> None:
+    stream = _ChunkedResponseStream([b"unread"])
+    response = httpx.Response(
+        200,
+        headers={"Content-Length": "6"},
+        request=httpx.Request("POST", "https://mcp.example.test/mcp"),
+        stream=stream,
+    )
+
+    with pytest.raises(mcp_client.McpResponseTooLargeError, match="byte limit"):
+        asyncio.run(mcp_client._response_size_hook(5)(response))
+
+    assert stream.chunks_read == 0
+    assert stream.closed is True
+
+
+def test_tool_discovery_rejects_compressed_responses_before_decoding() -> None:
+    stream = _ChunkedResponseStream([b"unread"])
+    response = httpx.Response(
+        200,
+        headers={"Content-Encoding": "gzip"},
+        request=httpx.Request("POST", "https://mcp.example.test/mcp"),
+        stream=stream,
+    )
+
+    with pytest.raises(mcp_client.McpResponseTooLargeError, match="compression is disabled"):
+        asyncio.run(mcp_client._response_size_hook(5)(response))
+
+    assert stream.chunks_read == 0
+    assert stream.closed is True
+
+
+def test_tool_discovery_opens_session_with_wire_response_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    @asynccontextmanager
+    async def open_session(*_args: object, **kwargs: object) -> AsyncIterator[_Session]:
+        captured.update(kwargs)
+        yield _Session()
+
+    monkeypatch.setattr(mcp_client, "open_mcp_session", open_session)
+
+    mcp_client.list_mcp_tools(_Config(), **_session_options())
+
+    assert captured["response_byte_limit"] == mcp_client.MCP_TOOL_LIST_MAX_RESPONSE_BYTES
 
 
 def test_shared_client_keeps_vendor_timeout_copy_for_chained_timeout() -> None:
@@ -227,11 +448,17 @@ def test_open_session_characterizes_streamable_http_wiring(
     )
     config = _Config(timeout_seconds=7.0)
 
-    asyncio.run(_consume_session(config))
+    asyncio.run(_consume_session(config, response_byte_limit=123))
 
     http_client = captured["http_client"]
     assert isinstance(http_client, dict)
-    assert http_client["headers"] == {"Authorization": "Bearer token"}
+    assert http_client["headers"] == {
+        "Authorization": "Bearer token",
+        "Accept-Encoding": "identity",
+    }
+    hooks = cast(dict[str, list[object]], http_client["event_hooks"])
+    assert len(hooks["response"]) == 1
+    assert callable(hooks["response"][0])
     timeout = http_client["timeout"]
     assert isinstance(timeout, mcp_client.httpx.Timeout)
     assert timeout.connect == 7.0
@@ -240,15 +467,18 @@ def test_open_session_characterizes_streamable_http_wiring(
         "args": ("https://mcp.example.test/mcp",),
         "kwargs": {
             "http_client": "client",
-            "headers": {"Authorization": "Bearer token"},
+            "headers": {
+                "Authorization": "Bearer token",
+                "Accept-Encoding": "identity",
+            },
             "timeout": 7.0,
             "sse_read_timeout": 60.0,
         },
     }
 
 
-async def _consume_session(config: _Config) -> None:
-    async with mcp_client.open_mcp_session(config, **_session_options()):
+async def _consume_session(config: _Config, **kwargs: object) -> None:
+    async with mcp_client.open_mcp_session(config, **_session_options(), **kwargs):
         return None
 
 

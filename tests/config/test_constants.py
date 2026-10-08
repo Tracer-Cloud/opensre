@@ -103,6 +103,16 @@ def test_the_organization_id_is_re_exported() -> None:
         assert name in constants.__all__
 
 
+def test_mcp_gateway_capability_constants_are_re_exported() -> None:
+    """The constants facade exposes MCP capability names to every layer."""
+    from config import constants
+
+    assert constants.MCP_GATEWAY_MUTATION_CAPABILITY == "mcp_gateway_mutation"
+    assert constants.MCP_GATEWAY_MUTATION_TOOL == "call_mcp_gateway_tool"
+    assert "MCP_GATEWAY_MUTATION_CAPABILITY" in constants.__all__
+    assert "MCP_GATEWAY_MUTATION_TOOL" in constants.__all__
+
+
 def test_repl_sound_constants_are_re_exported() -> None:
     """Callers may import the shell-sound names from the package root."""
     from config import constants

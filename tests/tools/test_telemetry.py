@@ -1009,6 +1009,34 @@ def _hosted_gateway_case(tool_name: str) -> ToolFailureCase:
     return ToolFailureCase(tool_name, patch, invoke, tool_name, "opensre")
 
 
+def _mcp_gateway_case(tool_name: str) -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.mcp_gateway import McpGatewayRequestError
+        from integrations.mcp_gateway.tools import gateway as mod
+
+        method = "list_tools" if tool_name == "list_mcp_gateway_tools" else "call_tool"
+        mp.setattr(
+            mod.McpGatewayClient,
+            method,
+            MagicMock(side_effect=McpGatewayRequestError("gateway unavailable")),
+        )
+
+    def invoke() -> dict[str, Any]:
+        from integrations.mcp_gateway import McpGatewayClient, McpGatewayConfig
+        from integrations.mcp_gateway.tools import gateway as mod
+
+        client = McpGatewayClient(McpGatewayConfig(url="http://127.0.0.1:8765/mcp"))
+        if tool_name == "list_mcp_gateway_tools":
+            return mod.list_mcp_gateway_tools(_mcp_gateway_client=client)
+        tools = {
+            "call_mcp_gateway_read_tool": mod.call_mcp_gateway_read_tool,
+            "call_mcp_gateway_tool": mod.call_mcp_gateway_tool,
+        }
+        return tools[tool_name]("status", _mcp_gateway_client=client)
+
+    return ToolFailureCase(tool_name, patch, invoke, tool_name, "mcp_gateway")
+
+
 _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _azure_case(),
     _hosted_gateway_case("check_hosted_gateway"),
@@ -1049,6 +1077,9 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _sentry_mcp_call_tool_case(),
     _x_mcp_list_case(),
     _x_mcp_call_tool_case(),
+    _mcp_gateway_case("list_mcp_gateway_tools"),
+    _mcp_gateway_case("call_mcp_gateway_read_tool"),
+    _mcp_gateway_case("call_mcp_gateway_tool"),
     _pipedream_list_case(),
     _pipedream_call_tool_case(),
     _runbook_guidance_case(),
@@ -1266,6 +1297,9 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         # X MCP — both swallow sites in x_mcp_tool/__init__.py.
         "list_x_tools",
         "call_x_tool",
+        "list_mcp_gateway_tools",
+        "call_mcp_gateway_read_tool",
+        "call_mcp_gateway_tool",
         "load_runbook_guidance",
     }
 )

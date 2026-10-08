@@ -271,6 +271,14 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=49,
     ),
     IntegrationSpec(
+        service="mcp_gateway",
+        aliases=("remote_mcp", "mcp-gateway", "mcp gateway"),
+        has_verifier=True,
+        direct_effective=True,
+        setup_order=45,
+        verify_order=60,
+    ),
+    IntegrationSpec(
         service="mysql",
         has_verifier=True,
         direct_effective=True,

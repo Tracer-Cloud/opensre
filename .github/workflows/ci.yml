@@ -91,6 +91,7 @@ jobs:
             uv.lock
 
       - name: Set up Python
+        id: setup-python
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
         uses: actions/setup-python@v6
         with:
@@ -102,10 +103,9 @@ jobs:
         with:
           path: .mypy_cache
           key: >-
-            mypy-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'mypy.ini') }}-${{
+            mypy-${{ runner.os }}-py${{ steps.setup-python.outputs.python-version }}-${{
+            hashFiles('uv.lock', 'mypy.ini') }}-${{
             github.event.pull_request.base.sha || github.sha }}
-          restore-keys: |
-            mypy-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'mypy.ini') }}-
 
       - name: Install dependencies
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'

@@ -1,0 +1,93 @@
+---
+title: "MCP Gateway"
+description: "Connect one Streamable HTTP MCP server with explicit read and mutation boundaries"
+---
+
+## Overview
+
+The MCP gateway connects OpenSRE to one generic Model Context Protocol server. It supports Streamable HTTP, an optional bearer token, and exact-name tool policies.
+
+Use the gateway when an MCP server does not have a dedicated OpenSRE integration. Prefer a dedicated integration when one exists because it can provide vendor-specific setup and safeguards.
+
+## Setup
+
+Run interactive setup and verification:
+
+```bash
+uv run opensre integrations setup mcp_gateway
+uv run opensre integrations verify mcp_gateway
+```
+
+Or configure environment variables:
+
+```bash
+MCP_GATEWAY_URL=https://mcp.example.com/mcp
+MCP_GATEWAY_AUTH_TOKEN=your-bearer-token
+MCP_GATEWAY_ALLOWED_TOOLS=service_status,restart_service
+MCP_GATEWAY_READ_ONLY_TOOLS=service_status
+```
+
+`MCP_GATEWAY_ALLOWED_TOOLS` is optional. Leaving it blank permits every tool advertised by the server. `MCP_GATEWAY_READ_ONLY_TOOLS` must contain only names from the allowlist when an allowlist is set.
+
+<Warning>
+`MCP_GATEWAY_READ_ONLY_TOOLS` is a security assertion made by the operator. OpenSRE cannot infer whether an arbitrary remote tool changes state. Add a name only after reviewing that tool's server-side behavior.
+</Warning>
+
+Only HTTPS endpoints are accepted, except plaintext HTTP on localhost or another loopback address. The gateway does not currently support stdio, legacy SSE, OAuth, custom headers, resources, prompts, or multiple generic servers.
+
+## Tools and approvals
+
+| OpenSRE tool | Access |
+| --- | --- |
+| `list_mcp_gateway_tools` | Lists allowed tools and labels each `read_only` or `approval_required` |
+| `call_mcp_gateway_read_tool` | Calls only an exact name certified in `MCP_GATEWAY_READ_ONLY_TOOLS` |
+| `call_mcp_gateway_tool` | Calls any allowed name through the local interactive shell's approval-required path |
+
+Chat gateways and unattended schedules can use the listing and certified read-only call tool. They do not receive the external-action call tool. Mutating MCP calls are available only in the local interactive shell, where the operator must review and approve the exact arguments. Trust mode does not bypass this MCP mutation confirmation. A tool name that is disallowed or no longer advertised is refused before its MCP invocation.
+
+## Validate with the local sample
+
+The repository includes a credential-free loopback server with `service_status` and a simulated `restart_service`. The restart tool changes only an in-memory counter.
+
+In one terminal:
+
+```bash
+uv run python examples/mcp_gateway_server.py
+```
+
+To exercise bearer authentication too, start it with `--auth-token local-secret` and set `MCP_GATEWAY_AUTH_TOKEN=local-secret` below.
+
+In another terminal:
+
+```bash
+export MCP_GATEWAY_URL=http://127.0.0.1:8765/mcp
+export MCP_GATEWAY_ALLOWED_TOOLS=service_status,restart_service
+export MCP_GATEWAY_READ_ONLY_TOOLS=service_status
+
+uv run opensre integrations verify mcp_gateway
+```
+
+Run the automated protocol test with:
+
+```bash
+uv run pytest tests/integrations/test_mcp_gateway_protocol.py -q
+```
+
+The test starts the sample server, discovers both tools, calls the certified read path, calls the simulated mutation path, and shuts the server down.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Authentication failed | Check `MCP_GATEWAY_AUTH_TOKEN` and the server's bearer-token policy |
+| Endpoint not found | Confirm `MCP_GATEWAY_URL`; Streamable HTTP servers commonly use `/mcp` |
+| Configured tool is missing | Update the allowlist/read-only list to exact names currently advertised by the server |
+| Connection timed out | Confirm network reachability and that the server completes initialization within 30 seconds |
+
+If a server tool name contains the configured authentication token, discovery shows a stable credential-safe alias. Calls using that alias resolve to the original name before exact-name allowlist and read-only checks. Configure policies using the original server names.
+
+Discovery omits schemas that exceed its size budget or contain the configured authentication token. Check the per-tool omission notice; reduce the server schema or remove the credential from its schema before requesting it again.
+
+Before approving a long mutation, review the complete redacted arguments. The shell provides a temporary JSON file while confirmation is pending. If the arguments exceed 64,000 serialized characters, reduce the payload and try again.
+
+Tool results are redacted and bounded. A `truncated` result means some returned data was omitted; narrow read queries to retrieve less data. Do not repeat a completed mutation to retrieve a larger response. Keep credentials out of the endpoint URL and use `MCP_GATEWAY_AUTH_TOKEN` for authentication.

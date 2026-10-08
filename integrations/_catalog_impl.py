@@ -126,6 +126,12 @@ from config.constants.mariadb import (
     MARIADB_SSL_ENV,
     MARIADB_USERNAME_ENV,
 )
+from config.constants.mcp_gateway import (
+    MCP_GATEWAY_ALLOWED_TOOLS_ENV,
+    MCP_GATEWAY_AUTH_TOKEN_ENV,
+    MCP_GATEWAY_READ_ONLY_TOOLS_ENV,
+    MCP_GATEWAY_URL_ENV,
+)
 from config.constants.mongodb import (
     MONGODB_AUTH_SOURCE_ENV,
     MONGODB_CONNECTION_STRING_ENV,
@@ -314,6 +320,8 @@ from integrations.jira import classify as _classify_jira
 from integrations.kubernetes import classify as _classify_kubernetes
 from integrations.mariadb import build_mariadb_config
 from integrations.mariadb import classify as _classify_mariadb
+from integrations.mcp_gateway import build_mcp_gateway_config
+from integrations.mcp_gateway import classify as _classify_mcp_gateway
 from integrations.mongodb import build_mongodb_config
 from integrations.mongodb import classify as _classify_mongodb
 from integrations.mongodb_atlas import build_mongodb_atlas_config
@@ -527,6 +535,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "posthog_mcp": _classify_posthog_mcp,
     "sentry_mcp": _classify_sentry_mcp,
     "x_mcp": _classify_x_mcp,
+    "mcp_gateway": _classify_mcp_gateway,
     "mysql": _classify_mysql,
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
@@ -1528,6 +1537,29 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
         except Exception as exc:
             _report_env_loader_failure(exc, integration="x_mcp")
+
+    mcp_gateway_url = os.getenv(MCP_GATEWAY_URL_ENV, "").strip()
+    if mcp_gateway_url:
+        try:
+            mcp_gateway_config = build_mcp_gateway_config(
+                {
+                    "url": mcp_gateway_url,
+                    "auth_token": resolve_env_credential(MCP_GATEWAY_AUTH_TOKEN_ENV),
+                    "allowed_tools": os.getenv(MCP_GATEWAY_ALLOWED_TOOLS_ENV, "").strip(),
+                    "read_only_tools": os.getenv(MCP_GATEWAY_READ_ONLY_TOOLS_ENV, "").strip(),
+                }
+            )
+            integrations.append(
+                _active_env_record(
+                    "mcp_gateway",
+                    {
+                        **mcp_gateway_config.model_dump(exclude={"integration_id"}),
+                        "connection_verified": True,
+                    },
+                )
+            )
+        except Exception as exc:
+            _report_env_loader_failure(exc, integration="mcp_gateway")
 
     mariadb_host = os.getenv(MARIADB_HOST_ENV, "").strip()
     mariadb_database = os.getenv(MARIADB_DATABASE_ENV, "").strip()

@@ -119,6 +119,7 @@
               "integrations/monitoring/grafana_annotations",
               "integrations/monitoring/groundcover",
               "integrations/monitoring/honeycomb",
+              "integrations/monitoring/mcp-gateway",
               "integrations/monitoring/new_relic",
               "integrations/monitoring/openobserve",
               "integrations/monitoring/posthog",

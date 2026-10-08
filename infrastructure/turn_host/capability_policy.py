@@ -6,6 +6,7 @@ from typing import Any
 
 from config.constants.capabilities import (
     HOSTED_GATEWAY_CAPABILITY,
+    MCP_GATEWAY_MUTATION_CAPABILITY,
     SCHEDULER_HOST_CAPABILITY,
     SCHEDULER_HOST_IN_PROCESS,
 )
@@ -21,7 +22,11 @@ def ensure_gateway_capability_policy(session: Any, *, hosts_scheduler: bool = Fa
     this machine's account token. The gateway has no such sign-in, so those
     tools stay off its turns.
     """
-    withhold_capabilities(session, HOSTED_GATEWAY_CAPABILITY)
+    withhold_capabilities(
+        session,
+        HOSTED_GATEWAY_CAPABILITY,
+        MCP_GATEWAY_MUTATION_CAPABILITY,
+    )
     if hosts_scheduler:
         capabilities = getattr(session, "available_capabilities", None)
         if isinstance(capabilities, dict):

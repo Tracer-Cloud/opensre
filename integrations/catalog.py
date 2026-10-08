@@ -10,6 +10,7 @@ from config.constants.google_docs import (
     GOOGLE_DRIVE_FOLDER_ID_ENV,
 )
 from config.constants.helm import OSRE_HELM_INTEGRATION_ENV
+from config.constants.mcp_gateway import MCP_GATEWAY_URL_ENV
 from config.constants.new_relic import (
     NEW_RELIC_ACCOUNT_ID_ENV,
     NEW_RELIC_API_KEY_ENV,
@@ -196,6 +197,7 @@ def load_env_integration_services() -> list[str]:
     add("posthog_mcp", _any_env("POSTHOG_MCP_COMMAND", "POSTHOG_MCP_URL", "POSTHOG_MCP_AUTH_TOKEN"))
     add("sentry_mcp", _any_env("SENTRY_MCP_COMMAND", "SENTRY_MCP_URL", "SENTRY_MCP_AUTH_TOKEN"))
     add("x_mcp", _any_env("X_MCP_COMMAND", "X_MCP_URL", "X_MCP_AUTH_TOKEN"))
+    add("mcp_gateway", _env_is_set(MCP_GATEWAY_URL_ENV))
     add("mariadb", _all_env("MARIADB_HOST", "MARIADB_DATABASE"))
     add("opensearch", _env_is_set("OPENSEARCH_URL"))
     add(

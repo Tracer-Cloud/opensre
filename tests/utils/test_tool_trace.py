@@ -125,3 +125,43 @@ def test_format_tool_trace_entry_handles_empty_trace_record_and_output_limit() -
     assert limited.startswith("- `large_tool` (iteration 1)")
     assert "... [truncated]" in limited
     assert limited.count("\n") == 2
+
+
+def test_preview_redacts_complete_values_before_serialization_and_truncation() -> None:
+    private_key = (
+        "-----BEGIN PRIVATE KEY-----\n" + "private-material" * 40 + "\n-----END PRIVATE KEY-----"
+    )
+    preview = format_json_preview({"body": private_key, "service": "prod"}, max_chars=80)
+    assert "private-material" not in preview
+    assert "REDACTED" in preview
+    assert '"service": "prod"' in preview
+
+
+def test_preview_preserves_resource_names_and_ordinary_bearer_phrases() -> None:
+    arguments = {
+        "service": "sk-service",
+        "target": "sk-prod01",
+        "name": "task-service-with-a-long-name",
+        "value": "sk-testcredentialtestcredential",
+        "message": "bearer of good news",
+        "authentication": "Bearer authentication",
+        "support": "bearer support",
+        "short": "Bearer abc",
+    }
+    preview = format_json_preview(arguments)
+    for key in ("service", "target", "name", "message", "authentication", "support", "short"):
+        assert arguments[key] in preview
+    assert arguments["value"] not in preview
+
+
+def test_short_bearer_values_and_authorization_headers_are_redacted() -> None:
+    preview = format_json_preview(
+        {
+            "message": "Bearer sample-token",
+            "diagnostic": "Echo Bearer sample-token",
+            "header": "Authorization: Bearer tiny",
+        }
+    )
+    assert "sample-token" not in preview
+    assert "tiny" not in preview
+    assert "REDACTED" in preview

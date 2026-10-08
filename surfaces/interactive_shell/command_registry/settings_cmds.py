@@ -40,7 +40,7 @@ from surfaces.shared.terminal.components.choice_menu import (
 )
 
 _TRUST_FIRST_ARGS: tuple[tuple[str, str], ...] = (
-    ("on", "enable trust mode (skip approval prompts)"),
+    ("on", "enable trust mode (skip most approval prompts)"),
     ("off", "disable trust mode"),
 )
 
@@ -64,7 +64,7 @@ def _cmd_auto(session: Session, console: Console, args: list[str]) -> bool:
         for level in AutoLevel:
             console.print(f"[{DIM}]  {level.value}[/] — {AUTO_LEVEL_CAPTIONS[level]}")
         console.print(
-            f"[{DIM}]/trust on skips approval prompts even when /auto would ask. "
+            f"[{DIM}]/trust on skips approval prompts even when /auto would ask, except for always-confirmed tools. "
             "Session-only; not restored by /resume.[/]"
         )
         choices = ", ".join(level.value for level in AutoLevel)
@@ -118,7 +118,9 @@ def _cmd_trust(session: Session, console: Console, args: list[str]) -> bool:
         console.print(f"[{DIM}]trust mode off[/]")
     else:
         session.terminal.trust_mode = True
-        console.print(f"[{WARNING}]trust mode on[/] — future approval prompts will be skipped")
+        console.print(
+            f"[{WARNING}]trust mode on[/] — approval prompts will be skipped except for always-confirmed tools"
+        )
     return True
 
 
@@ -207,7 +209,7 @@ COMMANDS: list[SlashCommand] = [
             "off asks before every tool; "
             "med asks before mutating agent tools (shell, code, slash/CLI, …); "
             "high asks nothing.",
-            "/trust on skips approval prompts even when /auto would ask.",
+            "/trust on skips approval prompts even when /auto would ask, except for always-confirmed tools.",
             "Session preference — not restored by /resume.",
         ),
         first_arg_completions=_AUTO_FIRST_ARGS,

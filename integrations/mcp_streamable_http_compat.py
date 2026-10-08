@@ -41,6 +41,22 @@ def _as_transport_triple(streams: Any) -> tuple[Any, Any, Any]:
     return read_stream, write_stream, rest[0] if rest else None
 
 
+class _BorrowedHttpClient:
+    """Expose an existing client without letting a legacy adapter close it."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+    async def __aenter__(self) -> _BorrowedHttpClient:
+        return self
+
+    async def __aexit__(self, *_args: Any) -> None:
+        return None
+
+
 @asynccontextmanager
 async def streamable_http_client(
     url: str,
@@ -62,12 +78,15 @@ async def streamable_http_client(
             yield _as_transport_triple(streams)
         return
 
-    del http_client
+    def _borrow_client(**_kwargs: Any) -> _BorrowedHttpClient:
+        return _BorrowedHttpClient(http_client)
+
     async with legacy_client(
         url,
         headers=headers,
         timeout=timeout,
         sse_read_timeout=sse_read_timeout,
         terminate_on_close=terminate_on_close,
+        httpx_client_factory=_borrow_client,
     ) as streams:
         yield _as_transport_triple(streams)

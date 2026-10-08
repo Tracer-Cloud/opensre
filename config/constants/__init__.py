@@ -283,6 +283,12 @@ if TYPE_CHECKING:
         HOSTED_GATEWAY_CAPABILITY as HOSTED_GATEWAY_CAPABILITY,
     )
     from config.constants.capabilities import (
+        MCP_GATEWAY_MUTATION_CAPABILITY as MCP_GATEWAY_MUTATION_CAPABILITY,
+    )
+    from config.constants.capabilities import (
+        MCP_GATEWAY_MUTATION_TOOL as MCP_GATEWAY_MUTATION_TOOL,
+    )
+    from config.constants.capabilities import (
         SCHEDULER_HOST_CAPABILITY as SCHEDULER_HOST_CAPABILITY,
     )
     from config.constants.capabilities import (
@@ -799,6 +805,36 @@ if TYPE_CHECKING:
     )
     from config.constants.mcp import (
         MCP_TERMINAL_ENV as MCP_TERMINAL_ENV,
+    )
+    from config.constants.mcp import (
+        MCP_TOOL_LIST_MAX_PAGES as MCP_TOOL_LIST_MAX_PAGES,
+    )
+    from config.constants.mcp import (
+        MCP_TOOL_LIST_MAX_RESPONSE_BYTES as MCP_TOOL_LIST_MAX_RESPONSE_BYTES,
+    )
+    from config.constants.mcp import (
+        MCP_TOOL_LIST_MAX_SERIALIZED_CHARS as MCP_TOOL_LIST_MAX_SERIALIZED_CHARS,
+    )
+    from config.constants.mcp import (
+        MCP_TOOL_LIST_MAX_TOOLS as MCP_TOOL_LIST_MAX_TOOLS,
+    )
+    from config.constants.mcp_gateway import (
+        MCP_GATEWAY_ALLOWED_TOOLS_ENV as MCP_GATEWAY_ALLOWED_TOOLS_ENV,
+    )
+    from config.constants.mcp_gateway import (
+        MCP_GATEWAY_AUTH_TOKEN_ENV as MCP_GATEWAY_AUTH_TOKEN_ENV,
+    )
+    from config.constants.mcp_gateway import (
+        MCP_GATEWAY_DEFAULT_TIMEOUT_SECONDS as MCP_GATEWAY_DEFAULT_TIMEOUT_SECONDS,
+    )
+    from config.constants.mcp_gateway import (
+        MCP_GATEWAY_READ_ONLY_TOOLS_ENV as MCP_GATEWAY_READ_ONLY_TOOLS_ENV,
+    )
+    from config.constants.mcp_gateway import (
+        MCP_GATEWAY_TOOL_RESPONSE_MAX_BYTES as MCP_GATEWAY_TOOL_RESPONSE_MAX_BYTES,
+    )
+    from config.constants.mcp_gateway import (
+        MCP_GATEWAY_URL_ENV as MCP_GATEWAY_URL_ENV,
     )
     from config.constants.memory import (
         MEMORY_TOOL_NAMES as MEMORY_TOOL_NAMES,

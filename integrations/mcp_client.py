@@ -4,20 +4,39 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator, Coroutine, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, NotRequired, Protocol, Unpack, cast
 
 import httpx
 import mcp_types as types
 from typing_extensions import TypedDict
 
-from config.constants.mcp import MCP_NO_COLOR_ENV, MCP_TERMINAL_DUMB_VALUE, MCP_TERMINAL_ENV
+from config.constants.mcp import (
+    MCP_NO_COLOR_ENV,
+    MCP_TERMINAL_DUMB_VALUE,
+    MCP_TERMINAL_ENV,
+    MCP_TOOL_LIST_MAX_PAGES,
+    MCP_TOOL_LIST_MAX_RESPONSE_BYTES,
+    MCP_TOOL_LIST_MAX_SERIALIZED_CHARS,
+    MCP_TOOL_LIST_MAX_TOOLS,
+)
+from infrastructure.text import json_size_up_to
 from integrations.mcp_streamable_http_compat import streamable_http_client
 from integrations.mcp_transport import McpTransportMode
 
 if TYPE_CHECKING:
     from mcp.client.session import ClientSession  # type: ignore[import-not-found]
+
+
+class McpToolCallOutcomeUnknownError(RuntimeError):
+    """Signal that transport failed after an MCP tool request began."""
+
+
+@dataclass
+class _ToolCallState:
+    request_started: bool = False
 
 
 class McpClientConfig(Protocol):
@@ -48,6 +67,57 @@ class McpClientConfig(Protocol):
         """Return headers for HTTP-based MCP transports."""
 
 
+class McpResponseTooLargeError(httpx.StreamError):
+    """Raised before an MCP HTTP response can exceed its byte budget."""
+
+
+class _BoundedResponseStream(httpx.AsyncByteStream):
+    """Stop consuming an HTTP response once its wire-byte budget is exhausted."""
+
+    def __init__(self, stream: httpx.AsyncByteStream, limit: int) -> None:
+        self._stream = stream
+        self._limit = limit
+        self._received = 0
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        async for chunk in self._stream:
+            self._received += len(chunk)
+            if self._received > self._limit:
+                await self.aclose()
+                raise McpResponseTooLargeError(
+                    "MCP HTTP response exceeded the configured byte limit"
+                )
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self._stream.aclose()
+
+
+def _response_size_hook(limit: int) -> Callable[[httpx.Response], Awaitable[None]]:
+    async def _enforce(response: httpx.Response) -> None:
+        if response.request.method not in {"GET", "POST"}:
+            return
+        content_encoding = response.headers.get("content-encoding", "identity").lower()
+        if content_encoding not in {"", "identity"}:
+            await response.aclose()
+            raise McpResponseTooLargeError(
+                "MCP HTTP response compression is disabled while enforcing the byte limit"
+            )
+        content_length = response.headers.get("content-length")
+        try:
+            declared_length = int(content_length) if content_length is not None else None
+        except ValueError:
+            declared_length = None
+        if declared_length is not None and declared_length > limit:
+            await response.aclose()
+            raise McpResponseTooLargeError("MCP HTTP response exceeded the configured byte limit")
+        response.stream = _BoundedResponseStream(
+            cast(httpx.AsyncByteStream, response.stream), limit
+        )
+
+    return _enforce
+
+
 class McpSessionOptions(TypedDict):
     """Vendor-specific values needed to establish an MCP session."""
 
@@ -69,6 +139,7 @@ async def open_mcp_session(
     config_env_name: str,
     sse_url_hint: str | None = None,
     streamable_url_hint: str | None = None,
+    response_byte_limit: int | None = None,
 ) -> AsyncIterator[ClientSession]:
     """Open and initialize an MCP session for one configured integration."""
     from mcp.client.session import ClientSession  # type: ignore[import-not-found]
@@ -120,17 +191,23 @@ async def open_mcp_session(
                     f"(set {config_env_name}_URL{hint})."
                 )
             read_timeout = max(60.0, config.timeout_seconds)
+            headers = dict(config.request_headers)
+            event_hooks = None
+            if response_byte_limit is not None:
+                headers["Accept-Encoding"] = "identity"
+                event_hooks = {"response": [_response_size_hook(response_byte_limit)]}
             http_client = await stack.enter_async_context(
                 httpx.AsyncClient(
-                    headers=config.request_headers,
+                    headers=headers,
                     timeout=httpx.Timeout(config.timeout_seconds, read=read_timeout),
+                    event_hooks=event_hooks,
                 )
             )
             read_stream, write_stream, _ = await stack.enter_async_context(
                 streamable_http_client(
                     session_url,
                     http_client=http_client,
-                    headers=config.request_headers,
+                    headers=headers,
                     timeout=config.timeout_seconds,
                     sse_read_timeout=read_timeout,
                 )
@@ -211,8 +288,40 @@ async def _list_tools_async(
     config: McpClientConfig,
     **session_options: Unpack[McpSessionOptions],
 ) -> list[types.Tool]:
-    async with open_mcp_session(config, **session_options) as session:
-        return list((await session.list_tools()).tools)
+    async with open_mcp_session(
+        config,
+        response_byte_limit=MCP_TOOL_LIST_MAX_RESPONSE_BYTES,
+        **session_options,
+    ) as session:
+        tools: list[types.Tool] = []
+        serialized_chars = 0
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        for _ in range(MCP_TOOL_LIST_MAX_PAGES):
+            params = types.PaginatedRequestParams(cursor=cursor) if cursor is not None else None
+            page = await session.list_tools(params=params)
+            for tool in page.tools:
+                if len(tools) >= MCP_TOOL_LIST_MAX_TOOLS:
+                    raise RuntimeError(
+                        "MCP tool listing exceeded the cumulative tool-count safety limit"
+                    )
+                remaining_chars = MCP_TOOL_LIST_MAX_SERIALIZED_CHARS - serialized_chars
+                descriptor_chars = json_size_up_to(tool, remaining_chars)
+                if descriptor_chars is None or descriptor_chars > remaining_chars:
+                    raise RuntimeError(
+                        "MCP tool listing exceeded the cumulative serialized-size safety limit"
+                    )
+                serialized_chars += descriptor_chars
+                tools.append(tool)
+            cursor = page.next_cursor
+            if cursor is None:
+                return tools
+            if cursor in seen_cursors:
+                raise RuntimeError("MCP server returned a repeated pagination cursor")
+            seen_cursors.add(cursor)
+        raise RuntimeError(
+            f"MCP tool listing exceeded the {MCP_TOOL_LIST_MAX_PAGES}-page safety limit"
+        )
 
 
 def list_mcp_tools(
@@ -234,9 +343,16 @@ async def _call_tool_async(
     arguments: dict[str, object] | None,
     *,
     timeout_call: bool,
+    response_byte_limit: int | None,
+    call_state: _ToolCallState,
     **session_options: Unpack[McpSessionOptions],
 ) -> dict[str, object]:
-    async with open_mcp_session(config, **session_options) as session:
+    async with open_mcp_session(
+        config,
+        response_byte_limit=response_byte_limit,
+        **session_options,
+    ) as session:
+        call_state.request_started = True
         call = session.call_tool(tool_name, arguments or {})
         result = (
             await asyncio.wait_for(call, timeout=config.timeout_seconds)
@@ -256,16 +372,27 @@ def call_mcp_tool(
     *,
     timeout_call: bool,
     timeout_entire_operation: bool = False,
+    response_byte_limit: int | None = None,
     **session_options: Unpack[McpSessionOptions],
 ) -> dict[str, object]:
     """Call an MCP tool and normalize its result."""
+    call_state = _ToolCallState()
     operation = _call_tool_async(
         config,
         tool_name,
         arguments,
         timeout_call=timeout_call,
+        response_byte_limit=response_byte_limit,
+        call_state=call_state,
         **session_options,
     )
     if timeout_entire_operation:
         operation = asyncio.wait_for(operation, timeout=config.timeout_seconds)
-    return cast(dict[str, object], run_async(operation))
+    try:
+        return cast(dict[str, object], run_async(operation))
+    except Exception as exc:
+        if call_state.request_started:
+            raise McpToolCallOutcomeUnknownError(
+                "MCP tool call failed after request dispatch began"
+            ) from exc
+        raise

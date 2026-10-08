@@ -416,6 +416,12 @@ def _setup_x_mcp() -> None:
     _run_spec_setup(X_MCP_SETUP)
 
 
+def _setup_mcp_gateway() -> None:
+    from integrations.mcp_gateway.setup import MCP_GATEWAY_SETUP
+
+    _run_spec_setup(MCP_GATEWAY_SETUP)
+
+
 def _setup_postgresql() -> None:
     from integrations.postgresql.setup import POSTGRESQL_SETUP
 
@@ -531,6 +537,7 @@ _HANDLERS: dict[str, Any] = {
     "posthog_mcp": _setup_posthog_mcp,
     "sentry_mcp": _setup_sentry_mcp,
     "x_mcp": _setup_x_mcp,
+    "mcp_gateway": _setup_mcp_gateway,
     "postgresql": _setup_postgresql,
     "mysql": _setup_mysql,
     "redis": _setup_redis,

@@ -241,7 +241,7 @@ async def test_a_wheel_notch_scrolls_the_transcript_and_leaves_the_composer_alon
     ):
         prompt = input_prompt.build_prompt_session(transcript=control)
         app = prompt.app
-        task = asyncio.ensure_future(prompt.prompt_async())
+        task = asyncio.ensure_future(app.run_async())
         try:
             assert await _settle(lambda: app.is_running and bool(app.renderer.mouse_handlers))
 

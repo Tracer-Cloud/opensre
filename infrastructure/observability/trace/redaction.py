@@ -7,8 +7,11 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from infrastructure.safety.secret_redaction import redact_text
+
 _SENSITIVE_KEY_RE = re.compile(
-    r"(api[_-]?key|token|secret|password|credential|authorization|auth[_-]?header)",
+    r"(api[_-]?key|token|secret|password|passwd|passphrase|credential|authorization|"
+    r"auth[_-]?header|private[_-]?key|signing[_-]?key|seed[_-]?phrase|mnemonic)",
     re.IGNORECASE,
 )
 _RUNTIME_KEY_RE = re.compile(r"(^_|backend$|_backend$)", re.IGNORECASE)
@@ -53,7 +56,7 @@ class RedactedToolView:
 def redact_sensitive(value: Any) -> Any:
     """Return a deep copy of ``value`` with credentials and runtime objects hidden.
 
-    Non-container scalars are returned unchanged (no copy). Nested dict/list/
+    Strings are scrubbed before serialization; other scalars are unchanged. Nested dict/list/
     tuple values are walked once into new containers — never aliases of
     ``value``'s nested objects.
     """
@@ -61,17 +64,25 @@ def redact_sensitive(value: Any) -> Any:
         redacted: dict[str, Any] = {}
         for key, item in value.items():
             key_str = str(key)
+            safe_key = redact_text(key_str)
+            unique_key = safe_key
+            duplicate = 1
+            while unique_key in redacted:
+                duplicate += 1
+                unique_key = f"{safe_key} #{duplicate}"
             if _SENSITIVE_KEY_RE.search(key_str):
-                redacted[key_str] = _REDACTED_PLACEHOLDER
+                redacted[unique_key] = _REDACTED_PLACEHOLDER
             elif _RUNTIME_KEY_RE.search(key_str):
-                redacted[key_str] = _RUNTIME_OBJECT_PLACEHOLDER
+                redacted[unique_key] = _RUNTIME_OBJECT_PLACEHOLDER
             else:
-                redacted[key_str] = redact_sensitive(item)
+                redacted[unique_key] = redact_sensitive(item)
         return redacted
     if isinstance(value, list):
         return [redact_sensitive(item) for item in value]
     if isinstance(value, tuple):
         return [redact_sensitive(item) for item in value]
+    if isinstance(value, str):
+        return redact_text(value)
     return value
 
 
@@ -87,14 +98,16 @@ def redact_tool_view(tool_input: Any, output: Any | None = None) -> RedactedTool
     )
 
 
-def format_json_preview(value: Any, *, max_chars: int = DEFAULT_JSON_PREVIEW_MAX_CHARS) -> str:
+def format_json_preview(
+    value: Any, *, max_chars: int | None = DEFAULT_JSON_PREVIEW_MAX_CHARS
+) -> str:
     """Pretty-print a redacted JSON-ish value, bounded for terminal output."""
     redacted = redact_sensitive(value)
     try:
         text = json.dumps(redacted, indent=_JSON_PREVIEW_INDENT, default=str)
     except TypeError:
         text = str(redacted)
-    if len(text) <= max_chars:
+    if max_chars is None or len(text) <= max_chars:
         return text
     keep = max(0, max_chars - len(_JSON_TRUNCATION_SUFFIX))
     return text[:keep].rstrip() + _JSON_TRUNCATION_SUFFIX

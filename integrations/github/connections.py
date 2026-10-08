@@ -11,7 +11,7 @@ def classify_github_connections(records: list[dict[str, Any]], resolved: dict[st
     """Index local grants and managed inactive markers by their record identity."""
     github = [record for record in records if record.get("service") == "github"]
     managed = any(
-        "is_default" in instance.get("credentials", {})
+        instance.get("credentials", {}).get("is_default") is not None
         for record in github
         for instance in _instances(record)
     )

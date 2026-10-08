@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from config.constants.capabilities import (
     HOSTED_GATEWAY_CAPABILITY,
+    MCP_GATEWAY_MUTATION_CAPABILITY,
     SCHEDULER_HOST_CAPABILITY,
     SCHEDULER_HOST_IN_PROCESS,
 )
@@ -38,6 +39,8 @@ def test_a_scheduler_hosting_gateway_tells_the_repair_loop_tool_and_a_chat_gatew
     assert capability_values(chat_only, SCHEDULER_HOST_CAPABILITY) == ()
     assert hosting.available_capabilities[HOSTED_GATEWAY_CAPABILITY] == ()
     assert chat_only.available_capabilities[HOSTED_GATEWAY_CAPABILITY] == ()
+    assert hosting.available_capabilities[MCP_GATEWAY_MUTATION_CAPABILITY] == ()
+    assert chat_only.available_capabilities[MCP_GATEWAY_MUTATION_CAPABILITY] == ()
     assert _scheduler_in_process(_context(hosting)) is True
     assert _scheduler_in_process(_context(chat_only)) is False
     assert _scheduler_in_process(None) is False

@@ -159,6 +159,14 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
+        "integrations/mcp_gateway/",
+        (
+            "tests/integrations/test_mcp_gateway.py",
+            "tests/tools/test_mcp_gateway_tool.py",
+            "tests/integrations/test_mcp_gateway_protocol.py",
+        ),
+    ),
+    PathRule(
         "integrations/mongodb_atlas/",
         (
             "tests/integrations/test_mongodb_atlas_integration.py",
@@ -619,6 +627,10 @@ RULES: tuple[PathRule, ...] = (
     PathRule("surfaces/", ("tests/surfaces/",)),
     # Repository tooling and broad configuration changes still run focused contracts.
     PathRule(".env.example", ("tests/config/",)),
+    PathRule(
+        "examples/mcp_gateway_server.py",
+        ("tests/integrations/test_mcp_gateway_protocol.py",),
+    ),
     PathRule("pyproject.toml", ("tests/packaging/", "tests/config/")),
     PathRule("uv.lock", ("tests/packaging/", "tests/config/")),
     PathRule("pytest.ini", ("tests/github_ci/",)),

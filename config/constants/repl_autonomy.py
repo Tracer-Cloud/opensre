@@ -76,8 +76,11 @@ AUTO_LEVEL_ASK_TOOL_TYPES: Final[dict[AutoLevel, frozenset[str] | None]] = {
 
 # Registered tools that ask at every level, High included. The shell's approval
 # hook reads this set. Generated code can be steered by untrusted log or alert
-# content, so it never runs without the user seeing it first.
-ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset({"execute_python_code"})
+# content, so it never runs without the user seeing it first. MCP gateway
+# mutations likewise require explicit approval independently of shell autonomy.
+ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset(
+    {"execute_python_code", "call_mcp_gateway_tool"}
+)
 
 
 def parse_auto_level(raw: str) -> AutoLevel | None:

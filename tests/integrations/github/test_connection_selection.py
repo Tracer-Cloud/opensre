@@ -8,7 +8,7 @@ import pytest
 
 from config.constants import GH_TOKEN_ENV
 from core.tool.execution import availability_view
-from integrations.github.connections import select_github_connection
+from integrations.github.connections import classify_github_connections, select_github_connection
 from integrations.github.tools.github_cli.tool import github_cli
 
 _LAPTOP = "local-9f3a"
@@ -139,3 +139,25 @@ def test_a_dead_default_does_not_fall_through_to_another_live_grant() -> None:
     assert github["connection_selection_error"] == "github_connection_unavailable"
     assert github["connection_id"] == ""
     assert github.get("auth_token") != "gho_other"
+
+
+def test_an_unset_default_marker_does_not_turn_local_env_into_managed_connections() -> None:
+    resolved = {"github": {"connection_verified": True}}
+    classify_github_connections(
+        [
+            {
+                "id": "env-github",
+                "service": "github",
+                "status": "active",
+                "credentials": {
+                    "url": "https://api.githubcopilot.com/mcp/",
+                    "auth_token": "",
+                    "is_default": None,
+                },
+            }
+        ],
+        resolved,
+    )
+
+    assert "_github_managed_connections" not in resolved
+    assert resolved["github"] == {"connection_verified": True}

@@ -19,7 +19,10 @@ from typing import Any
 import pytest
 from rich.console import Console
 
-from config.constants.capabilities import HOSTED_GATEWAY_CAPABILITY
+from config.constants.capabilities import (
+    HOSTED_GATEWAY_CAPABILITY,
+    MCP_GATEWAY_MUTATION_CAPABILITY,
+)
 from core.agent_harness.runtime import AgentBuildConfig
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
@@ -50,7 +53,10 @@ def test_a_host_that_supplies_nothing_gets_the_chat_defaults() -> None:
 
     # Assert — chat defaults withhold tools that need this machine's account token
     assert agent is not None
-    assert session.available_capabilities == {HOSTED_GATEWAY_CAPABILITY: ()}
+    assert session.available_capabilities == {
+        HOSTED_GATEWAY_CAPABILITY: (),
+        MCP_GATEWAY_MUTATION_CAPABILITY: (),
+    }
 
 
 def test_a_host_supplies_its_own_tools_prompts_and_gather() -> None:
@@ -118,6 +124,7 @@ def test_default_path_preserves_existing_capabilities() -> None:
     assert session.available_capabilities == {
         "llm_provider": ("switch",),
         HOSTED_GATEWAY_CAPABILITY: (),
+        MCP_GATEWAY_MUTATION_CAPABILITY: (),
     }
 
 

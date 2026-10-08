@@ -71,6 +71,8 @@ def execute_with_action_context(
 def capability_available_from_sources(
     sources: dict[str, dict[str, Any]],
     capability_name: str,
+    *,
+    require_explicit: bool = False,
 ) -> bool:
     action_source = sources.get(_ACTION_SESSION_SOURCE) or {}
     available_capabilities = action_source.get("available_capabilities")
@@ -79,7 +81,9 @@ def capability_available_from_sources(
         if isinstance(available_capabilities, dict)
         else None
     )
-    return not (isinstance(capability_values, tuple) and capability_values == ())
+    if isinstance(capability_values, tuple):
+        return bool(capability_values)
+    return not require_explicit
 
 
 def capability_values(session: Any, capability_name: str) -> tuple[str, ...]:

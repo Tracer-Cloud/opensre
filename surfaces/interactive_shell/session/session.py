@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from config.constants.capabilities import (
+    MCP_GATEWAY_MUTATION_CAPABILITY,
+    MCP_GATEWAY_MUTATION_TOOL,
+)
 from core.agent_harness import SessionCore
 from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.session.alert_inbox import SessionAlertInbox
@@ -47,6 +51,10 @@ class Session(SessionCore):
         self.store.append_turn(self, "incoming_alert", alert.text)
         self.alerts.add(alert)
 
+    def __post_init__(self) -> None:
+        """Grant capabilities that require an interactive local operator."""
+        self.available_capabilities[MCP_GATEWAY_MUTATION_CAPABILITY] = (MCP_GATEWAY_MUTATION_TOOL,)
+
     def clear(self, *, rotate_identity: bool = True) -> None:
         """Reset the session — core state plus the shell facets — for /new and /resume."""
         self.terminal.history_generation += 1
@@ -61,6 +69,7 @@ class Session(SessionCore):
         self.terminal.setup_resume = None
         self.terminal.dispatch_active = False
         self.terminal.exclusive_stdin_active = False
+        self.available_capabilities[MCP_GATEWAY_MUTATION_CAPABILITY] = (MCP_GATEWAY_MUTATION_TOOL,)
         # trust_mode and reasoning_effort are intentionally preserved across /new
 
     def release_resources(self) -> None:
