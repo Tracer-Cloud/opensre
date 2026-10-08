@@ -103,3 +103,19 @@ def test_small_catalog_is_left_unchanged() -> None:
     )
 
     assert catalog.snapshot() is tools
+
+
+def test_activating_every_tool_reports_nothing_remaining() -> None:
+    tools = _large_catalog()
+    catalog = ProgressiveToolCatalog(
+        SimpleNamespace(active_skill=None, session_goal=None),
+        lambda: tools,
+        enabled=True,
+        base_names=(tool.name for tool in tools),
+    )
+    search = next(tool for tool in catalog.snapshot() if tool.name == "tool_search")
+
+    result = search(names=[tool.name for tool in tools])
+
+    assert result["remaining_hidden"] == 0
+    assert "tool_search" not in {tool.name for tool in catalog.snapshot()}

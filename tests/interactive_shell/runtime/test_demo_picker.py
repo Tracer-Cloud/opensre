@@ -208,6 +208,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     # The pick enters the chosen skill, so its first response is already step 1.
     llm = FakeActionLLM(
         [
+            tool_response("tool_search", {"names": ["scan_local_git_workspace"]}),
             tool_response("scan_local_git_workspace"),
             tool_response(
                 "ask_user_choice",
@@ -289,7 +290,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert session.pending_user_choice is not None, buffer.getvalue()
     assert session.pending_user_choice.title == _REPOSITORY_TITLE
     assert session.pending_user_choice.options == _REPOSITORY_OPTIONS
-    assert llm.invocations == 2
+    assert llm.invocations == 3
     # Raw-data analysis retains the full catalog for model-selected collection.
     assert onboarding_outcomes == [("ci_analytics", False)]
 
@@ -304,6 +305,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     replay_answer = _take_prompt(session)
     replay_llm = FakeActionLLM(
         [
+            tool_response("tool_search", {"names": ["scan_local_git_workspace"]}),
             tool_response("scan_local_git_workspace"),
             tool_response(
                 "ask_user_choice",
@@ -348,6 +350,7 @@ def test_a_demo_entered_at_the_pick_is_nudged_past_a_reply_that_runs_nothing(
     llm = FakeActionLLM(
         [
             no_tool_response("I'll scan your repositories next."),
+            tool_response("tool_search", {"names": ["scan_local_git_workspace"]}),
             tool_response("scan_local_git_workspace"),
             tool_response(
                 "ask_user_choice",
@@ -363,7 +366,7 @@ def test_a_demo_entered_at_the_pick_is_nudged_past_a_reply_that_runs_nothing(
     assert len(scans) == 1
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == _REPOSITORY_TITLE
-    assert llm.invocations == 3
+    assert llm.invocations == 4
 
 
 def test_without_github_the_demo_opens_setup_first_and_resumes_after_it(
@@ -390,6 +393,7 @@ def test_without_github_the_demo_opens_setup_first_and_resumes_after_it(
         [
             load_demo,
             load_demo,
+            tool_response("tool_search", {"names": ["scan_local_git_workspace"]}),
             tool_response("scan_local_git_workspace"),
             tool_response(
                 "ask_user_choice",
@@ -451,7 +455,7 @@ def test_without_github_the_demo_opens_setup_first_and_resumes_after_it(
     assert session.active_skill == "analyzing-github-ci-performance"
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == _REPOSITORY_TITLE
-    assert llm.invocations == 4
+    assert llm.invocations == 5
     assert titles == [_TITLE, "Connect GitHub to continue"]
     assert onboarding_outcomes == [("ci_analytics", False)]
 
@@ -1169,11 +1173,13 @@ def test_the_analysis_demo_reads_while_its_menus_are_answered(
     owner, repo = _REPOSITORY.split("/")
     llm = FakeActionLLM(
         [
+            tool_response("tool_search", {"names": ["scan_local_git_workspace"]}),
             tool_response("scan_local_git_workspace"),
             tool_response(
                 "ask_user_choice",
                 {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
             ),
+            tool_response("tool_search", {"names": ["analyze_github_ci_reliability"]}),
             tool_response(
                 "analyze_github_ci_reliability", {"owner": owner, "repo": repo, "days": 30}
             ),
@@ -1196,4 +1202,4 @@ def test_the_analysis_demo_reads_while_its_menus_are_answered(
     assert session.active_skill == ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME
     assert scans == ["workspace-scan-prefetch"]
     assert reads == [f"{_REPOSITORY} on github-ci-analysis-prefetch"]
-    assert llm.invocations == 4
+    assert llm.invocations == 6

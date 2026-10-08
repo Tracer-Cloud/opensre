@@ -18,7 +18,13 @@ from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
 UPDATE_PLAN_TOOL = "update_plan"
 #: Tools that never count as work: they record or read the plan and skills.
 PLAN_BOOKKEEPING_TOOLS: frozenset[str] = frozenset(
-    {UPDATE_PLAN_TOOL, "skill_view", "session_goal_set", "session_goal_complete"}
+    {
+        UPDATE_PLAN_TOOL,
+        "skill_view",
+        "tool_search",
+        "session_goal_set",
+        "session_goal_complete",
+    }
 )
 _SLASH_TOOL = "slash_invoke"
 _SKILL_VIEW_TOOL = "skill_view"

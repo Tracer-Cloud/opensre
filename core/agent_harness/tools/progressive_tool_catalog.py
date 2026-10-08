@@ -157,6 +157,7 @@ class ProgressiveToolCatalog:
             matches.extend(self._query_matches(full, clean_query, limit=max(1, min(limit, 8))))
         unique = {tool.name: tool for tool in matches}
         self._activated.update(unique)
+        visible_names = {tool.name for tool in self.snapshot()}
         return {
             "ok": bool(unique),
             "query": clean_query,
@@ -165,7 +166,7 @@ class ProgressiveToolCatalog:
                 for tool in unique.values()
             ],
             "not_found": not_found,
-            "remaining_hidden": max(0, len(full) - len(self.snapshot()) + 1),
+            "remaining_hidden": sum(tool.name not in visible_names for tool in full),
             "summary": (
                 "Activated tool schemas are available on the next reasoning step."
                 if unique

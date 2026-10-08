@@ -5,8 +5,8 @@ We want to have a very specific tests that validates wether the agent is working
 The test goes like this:
 - We start the gateway and get the agent
 - We send a message to the agent: "send a message to slack with the temperature in antartica, compute the temperature first and then send the message"
-- We expect the agent to produce three action turns (plan+compute, Slack send
-  with the plan closed in that same response, finalize). The ReAct same-LLM
+- We expect the agent to produce four action turns (plan+compute, Slack tool
+  discovery, Slack send with the plan closed in that same response, finalize). The ReAct same-LLM
   reviewer is off by default.
 """
 
@@ -63,13 +63,15 @@ class _ComputeThenSlackLLM:
     of turns:
 
     * Turn 1 writes the plan and emits ``shell_run`` to compute the temperature.
-    * Turn 2 promotes the Slack step, emits ``slack_send_message``, then marks
+    * Turn 2 discovers ``slack_send_message`` through ``tool_search``.
+    * Turn 3 promotes the Slack step, emits ``slack_send_message``, then marks
       the plan complete once that send has returned (the Slack step verifies).
-    * Turn 3 concludes with a plain reply and no tool call.
+    * Turn 4 concludes with a plain reply and no tool call.
     """
 
     def __init__(self) -> None:
         self.turns = 0
+        self.slack_activated = False
         self.sent_slack_message: str | None = None
 
     def tool_schemas(self, _tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
@@ -99,6 +101,18 @@ class _ComputeThenSlackLLM:
                         name="shell_run",
                         input={"command": _COMPUTE_COMMAND},
                     ),
+                ],
+            )
+        if not self.slack_activated:
+            self.slack_activated = True
+            return AgentLLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="call_find_slack",
+                        name="tool_search",
+                        input={"names": ["slack_send_message"]},
+                    )
                 ],
             )
         if self.sent_slack_message is None:
@@ -213,13 +227,13 @@ def test_agent_computes_temperature_then_sends_it_to_slack(
     action_tools = provider.action_tools(confirm_fn=None, is_tty=True)
     tool_names = action_tool_names(action_tools)
     assert "shell_run" in tool_names
-    assert "slack_send_message" in tool_names
+    assert "slack_send_message" not in tool_names
+    assert "tool_search" in tool_names
     assert "update_plan" in tool_names
 
     provider = DefaultToolProvider(
         session,
         console,
-        precomputed_action_tools=action_tools,
         subprocess_presenter_factory=headless_subprocess_presenter_factory,
     )
     llm = _ComputeThenSlackLLM()
@@ -235,8 +249,8 @@ def test_agent_computes_temperature_then_sends_it_to_slack(
         is_tty=True,
     )
 
-    # Plan+compute → Slack and close the plan → finalize. The ReAct reviewer is off.
-    assert llm.turns == 3
+    # Plan+compute → discover Slack → send and close the plan → finalize.
+    assert llm.turns == 4
     # Turn 1 actually executed a shell command to compute the temperature.
     shell_entries = [entry for entry in session.history if entry.get("type") == "shell"]
     assert shell_entries, "expected the compute turn to run a shell command"

@@ -242,7 +242,7 @@ def test_loop_mode_reaches_system_prompt_and_tool_catalog(
     assert result == "Repair attempted for #42"
     assert systems
     assert task in user_messages[0]
-    skill_rule = "When the user request matches a skill below, call skill_view(name)"
+    skill_rule = "For a likely multi-step workflow, call skill_view with query"
     if mode == LOOP_MODE_AGENT:
         assert all(skill_rule not in system for system in systems)
         assert "skill_view" not in llm.tool_schema_names

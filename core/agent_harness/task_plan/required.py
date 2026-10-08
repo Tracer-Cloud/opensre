@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from core.agent_harness.session_goal.goal import session_goal_is_attached
 from core.agent_harness.task_plan.evidence import is_plan_work_name, work_returns_this_turn
 from core.agent_harness.task_plan.plan import TaskPlan
 
@@ -41,7 +42,7 @@ def plan_required(
         return False
     if not getattr(session, "active_skill", None):
         return False
-    if getattr(session, "session_goal", None) is not None:
+    if session_goal_is_attached(session):
         return False
     if work_returns_this_turn(session) < 1:
         return False

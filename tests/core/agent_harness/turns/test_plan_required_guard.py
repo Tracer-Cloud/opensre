@@ -8,6 +8,7 @@ from typing import Any
 
 from rich.console import Console
 
+from core.agent_harness.session_goal.goal import SessionGoal, SessionGoalStatus
 from core.agent_harness.task_plan.plan import PlanStepStatus, parse_task_plan
 from core.agent_harness.task_plan.required import PLAN_REQUIRED_REASON
 from core.agent_harness.tools.tool_context import ActionToolScope
@@ -87,6 +88,15 @@ def test_the_first_work_tool_and_non_work_calls_are_never_refused() -> None:
     assert hooks.before_tool_call(_request("memory_remember", role=ToolRole.BOOKKEEPING)) is None
     assert hooks.before_tool_call(_request("ask_user_choice", role=ToolRole.TURN_ENDING)) is None
     assert hooks.before_tool_call(_request("slash_invoke")) is None
+
+
+def test_tool_search_does_not_consume_the_skill_work_lookup() -> None:
+    session = Session(active_skill="repair-github-ci")
+    hooks = with_task_plan_hooks(None, session)
+
+    _returned(hooks, "tool_search")
+
+    assert hooks.before_tool_call(_request("shell_run")) is None
 
 
 def test_slash_commands_and_failed_calls_do_not_count_as_work() -> None:
@@ -236,7 +246,16 @@ def test_ordinary_and_session_goal_turns_do_not_force_a_plan() -> None:
     assert ordinary_hooks.before_tool_call(_request("shell_run")) is None
 
     goal = Session(active_skill="repair-github-ci")
-    goal.session_goal = object()  # type: ignore[assignment]
+    goal.session_goal = SessionGoal(condition="finish the repair")
     goal_hooks = with_task_plan_hooks(None, goal)
     _returned(goal_hooks, "shell_run")
     assert goal_hooks.before_tool_call(_request("shell_run")) is None
+
+    goal.session_goal = SessionGoal(
+        condition="finished repair",
+        status=SessionGoalStatus.ACHIEVED,
+    )
+    finished_hooks = with_task_plan_hooks(None, goal)
+    _returned(finished_hooks, "shell_run")
+    decision = finished_hooks.before_tool_call(_request("shell_run"))
+    assert decision is not None and decision.blocked is True
