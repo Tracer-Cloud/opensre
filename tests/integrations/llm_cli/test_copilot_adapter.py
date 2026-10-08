@@ -1,4 +1,4 @@
-"""Tests for the GitHub Copilot CLI adapter (non-interactive ``copilot -p``)."""
+"""Tests for the GitHub Copilot CLI adapter (non-interactive, prompt on stdin)."""
 
 from __future__ import annotations
 
@@ -441,15 +441,31 @@ def test_build_argv_uses_non_interactive_flags(
     inv = CopilotAdapter().build(prompt="hello world", model=None, workspace="")
 
     assert inv.argv[0] == "/usr/bin/copilot"
-    assert "-p" in inv.argv
-    idx = inv.argv.index("-p")
-    assert inv.argv[idx + 1] == "hello world"
+    # Prompt travels on stdin, never in argv (Windows WinError 206 / ARG_MAX).
+    assert "-p" not in inv.argv
+    assert "--prompt" not in inv.argv
+    assert "hello world" not in inv.argv
+    assert inv.stdin == "hello world"
     assert "--no-color" in inv.argv
     assert "--no-ask-user" in inv.argv
     assert "--silent" in inv.argv
-    assert inv.stdin is None
     assert inv.cwd
     assert inv.env is None
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/copilot")
+def test_build_large_prompt_stays_off_argv(
+    mock_which: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for #6658: a huge expanded prompt must not inflate the command line."""
+    _clean_copilot_env(monkeypatch)
+    prompt = "x" * 170_000
+    inv = CopilotAdapter().build(prompt=prompt, model="claude-sonnet-4.6", workspace="")
+
+    assert inv.stdin == prompt
+    # Windows CreateProcess caps the command line at ~32,767 chars.
+    assert sum(len(a) + 1 for a in inv.argv) < 1_000
     mock_which.assert_called()
 
 
@@ -602,8 +618,8 @@ def test_cli_backed_client_invokes_copilot_and_forwards_token_env(
         detail="ok",
     )
     mock_adapter.build.return_value = MagicMock(
-        argv=["/usr/bin/copilot", "-p", "hi", "--silent"],
-        stdin=None,
+        argv=["/usr/bin/copilot", "--silent"],
+        stdin="hi",
         cwd="/tmp",
         env={"COPILOT_GITHUB_TOKEN": "ghp_runner", "COPILOT_HOME": "/custom/copilot"},
         timeout_sec=30.0,

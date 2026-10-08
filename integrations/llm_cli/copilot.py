@@ -1,4 +1,4 @@
-"""GitHub Copilot CLI adapter (``copilot -p``, non-interactive / programmatic mode).
+"""GitHub Copilot CLI adapter (non-interactive mode, prompt piped on stdin).
 
 Env vars
 --------
@@ -31,7 +31,7 @@ We classify auth in this order (cheap probes only — no Copilot network call):
    to mis-classify and keychain-backed logins omit it anyway.
    This matches Copilot's documented **GitHub CLI fallback**. **BYOK /
    ``COPILOT_OFFLINE``**: no GitHub token may be required; probe may still return
-   ``None`` while ``copilot -p`` works — invoke-time failure is the real check.
+   ``None`` while ``copilot`` works — invoke-time failure is the real check.
 3. Otherwise → ``None``. Auth state cannot be verified from env + ``gh``.
    The runner appends the auth hint on a non-zero exit; the wizard offers retry
    / repick.
@@ -207,7 +207,7 @@ def _fallback_copilot_paths() -> list[str]:
 
 
 class CopilotAdapter:
-    """Non-interactive GitHub Copilot CLI (``copilot -p``, programmatic mode)."""
+    """Non-interactive GitHub Copilot CLI (one-shot mode, prompt piped on stdin)."""
 
     name = "copilot"
     streams_plain_stdout = True
@@ -284,17 +284,21 @@ class CopilotAdapter:
         ws = (workspace or "").strip()
         cwd = str(Path(ws).expanduser()) if ws else os.getcwd()
 
-        # Each flag is required for a non-interactive run; do not drop these
-        # without checking `copilot --help`:
-        #   -p PROMPT       enters one-shot mode (without it, copilot opens a TUI).
+        # The prompt is delivered on stdin, NOT via ``-p <prompt>``. The expanded
+        # agent prompt (system context + tool output) can be hundreds of KB, and
+        # argv is capped (~32 KB on Windows -> ``WinError 206``; ``ARG_MAX`` /
+        # ``MAX_ARG_STRLEN`` on POSIX). Copilot CLI runs one-shot when its prompt
+        # is piped on stdin, so no ``-p`` flag is passed (``-p`` takes exactly
+        # one value and would otherwise consume the next flag).
+        #
+        # Each flag below is required for a non-interactive run; do not drop
+        # these without checking `copilot --help`:
         #   --no-color      strips ANSI so stdout is parseable.
         #   --no-ask-user   disables the agent's `ask_user` tool, otherwise the
-        #                   agent can pause waiting for input even with -p.
+        #                   agent can pause waiting for input.
         #   --silent        emits only the agent response, not stats / banner.
         argv: list[str] = [
             binary,
-            "-p",
-            prompt,
             "--no-color",
             "--no-ask-user",
             "--silent",
@@ -314,7 +318,7 @@ class CopilotAdapter:
         }
         return CLIInvocation(
             argv=tuple(argv),
-            stdin=None,
+            stdin=prompt,
             cwd=cwd,
             env=env or None,
             timeout_sec=self.default_exec_timeout_sec,
@@ -339,7 +343,7 @@ class CopilotAdapter:
         )
         extra = (_AUTH_HINT,) if any(marker in text for marker in auth_markers) else ()
         return explain_cli_failure(
-            exit_label="copilot -p",
+            exit_label="copilot",
             stdout=stdout,
             stderr=stderr,
             returncode=returncode,
