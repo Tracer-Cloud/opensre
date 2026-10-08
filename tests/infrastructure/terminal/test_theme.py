@@ -7,6 +7,7 @@ import re
 from rich.console import Console
 from rich.text import Text
 
+from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
     BRAND,
     DIM,
@@ -93,6 +94,17 @@ def test_semantic_text_tokens_meet_aa_contrast_on_theme_surfaces() -> None:
                 token,
                 theme.INPUT_SURFACE,
             )
+        assert _contrast(theme.BRAND, theme.INPUT_SURFACE) >= 4.5, (
+            name,
+            theme.BRAND,
+            theme.INPUT_SURFACE,
+        )
+        set_active_theme(name)
+        assert _contrast(theme.HIGHLIGHT, ui_theme.menu_selection_hex()) >= 4.5, (
+            name,
+            theme.HIGHLIGHT,
+            ui_theme.menu_selection_hex(),
+        )
 
 
 def test_fade_fg_ansi_interpolates_dim_to_text() -> None:

@@ -22,6 +22,10 @@ def _build_prompt_style() -> Style:
             # its base surface so every foreground token is evaluated against
             # the active theme rather than the user's terminal preference.
             "terminal": f"bg:{theme.BG}",
+            # Rich output without an explicit foreground reaches the full-screen
+            # transcript as an unstyled fragment. Give that content the same
+            # readable foreground as regular shell body text.
+            "transcript": f"fg:{theme.TEXT}",
             "prompt-frame-line": f"bold {theme.HIGHLIGHT}",
             # Keep prompt-toolkit's transparent filler unstyled. The full-screen
             # root owns its background; adding a foreground here makes filler

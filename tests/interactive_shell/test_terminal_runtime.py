@@ -627,12 +627,23 @@ def test_prompt_style_paints_the_full_screen_terminal_background() -> None:
     set_active_theme("blue")
     style = _build_prompt_style()
     terminal = style.get_attrs_for_style_str("class:terminal")
+    transcript = style.get_attrs_for_style_str("class:transcript")
     filler = style.get_attrs_for_style_str("")
 
     assert terminal.bgcolor == THEME_REGISTRY["blue"].BG.lstrip("#")
+    assert transcript.color == THEME_REGISTRY["blue"].TEXT.lstrip("#")
     # The base filler remains transparent. The full-screen root owns the
     # background, avoiding foreground-only padding during terminal resizes.
-    assert not filler.bgcolor
+    assert not any(
+        (
+            filler.color,
+            filler.bgcolor,
+            filler.underline,
+            filler.strike,
+            filler.blink,
+            filler.reverse,
+        )
+    )
 
 
 def test_command_tray_current_item_uses_highlight_style() -> None:

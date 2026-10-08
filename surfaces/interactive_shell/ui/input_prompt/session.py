@@ -215,6 +215,7 @@ def _install_prompt_frame(
                 dont_extend_height=True,
                 wrap_lines=False,
                 always_hide_cursor=True,
+                style="class:transcript",
             ),
         )
         session.app.full_screen = True

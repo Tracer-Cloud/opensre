@@ -115,7 +115,7 @@ THEME_REGISTRY: dict[str, CliTheme] = {
     "red": CliTheme(
         name="red",
         HIGHLIGHT="#EBAB9E",
-        BRAND="#B16E68",
+        BRAND="#BB827C",
         TEXT="#B6BAC2",
         SECONDARY="#A6A6A6",
         DIM="#909090",
@@ -143,7 +143,7 @@ THEME_REGISTRY: dict[str, CliTheme] = {
     "purple": CliTheme(
         name="purple",
         HIGHLIGHT="#CCB7F0",
-        BRAND="#9885B3",
+        BRAND="#9A88B5",
         TEXT="#D0D0D0",
         SECONDARY="#B4B4BC",
         DIM="#909090",
@@ -199,7 +199,7 @@ THEME_REGISTRY: dict[str, CliTheme] = {
     "nord": CliTheme(
         name="nord",
         HIGHLIGHT="#88C0D0",
-        BRAND="#81A1C1",
+        BRAND="#98B3CD",
         TEXT="#E5E9F0",
         SECONDARY="#ACB5C2",
         DIM="#AAB0B9",
@@ -223,7 +223,7 @@ THEME_REGISTRY: dict[str, CliTheme] = {
     "solarized": CliTheme(
         name="solarized",
         HIGHLIGHT="#3BAAA1",
-        BRAND="#3896D7",
+        BRAND="#4DA1DB",
         TEXT="#EEE8D5",
         SECONDARY="#99A7A7",
         DIM="#8D9DA2",
@@ -247,7 +247,7 @@ THEME_REGISTRY: dict[str, CliTheme] = {
     "webflux": CliTheme(
         name="webflux",
         HIGHLIGHT="#E75454",
-        BRAND="#4476F7",
+        BRAND="#5180F8",
         TEXT="#EAF0FF",
         SECONDARY="#9CA8C6",
         DIM="#7D879F",
@@ -464,11 +464,16 @@ def get_active_theme_name() -> str:
 
 
 def menu_selection_hex() -> str:
-    """Return an accent-tinted selection surface for the active composer palette."""
-    rgb = _mix_rgb(
+    """Return a dark, subtly accent-tinted selection surface for the composer."""
+    base = _mix_rgb(
         _parse_hex_color(_ACTIVE_THEME.INPUT_SURFACE),
+        _parse_hex_color(_ACTIVE_THEME.BG),
+        0.30,
+    )
+    rgb = _mix_rgb(
+        base,
         _parse_hex_color(_ACTIVE_THEME.HIGHLIGHT),
-        0.16,
+        0.03,
     )
     return "#" + "".join(f"{channel:02x}" for channel in rgb)
 
