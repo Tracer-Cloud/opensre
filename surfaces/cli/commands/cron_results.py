@@ -51,18 +51,19 @@ def print_run_history(console: Console, runs: list[TaskRun]) -> None:
         targets = (
             f"{sum(target.ok for target in run.targets)}/{len(run.targets)}" if run.targets else "—"
         )
-        details = [Text(f"Attempt: {run.attempt} · Targets: {targets}", style=DIM)]
+        metadata = [Text(f"Attempt: {run.attempt}    Targets: {targets}", style=DIM)]
+        details: list[Text] = []
         if run.posted_message_id:
-            details.append(Text(f"Message ID: {run.posted_message_id}", style=DIM))
+            metadata.append(Text(f"Message ID: {run.posted_message_id}", style=DIM))
         if run.work_error_kind:
             details.extend(
                 description_details(
                     f"Work detail: {run.work_error_kind}", width=120, style=str(WARNING)
-                )
+                )[1:]
             )
         if run.error:
             details.extend(
-                description_details(f"Error: {run.error}", width=120, style=str(WARNING))
+                description_details(f"Error: {run.error}", width=120, style=str(WARNING))[1:]
             )
         rows.append(
             RecordRow(
@@ -74,17 +75,18 @@ def print_run_history(console: Console, runs: list[TaskRun]) -> None:
                     Text(delivery),
                 ),
                 tuple(details),
+                metadata=tuple(metadata),
             )
         )
     console.print(
         RecordTable(
             "Execution history",
             (
-                RecordColumn("Run", 4),
-                RecordColumn("Started", 19),
-                RecordColumn("Execution", 18),
-                RecordColumn("Work", 10),
-                RecordColumn("Delivery", 8),
+                RecordColumn("Run"),
+                RecordColumn("Started"),
+                RecordColumn("Execution"),
+                RecordColumn("Work"),
+                RecordColumn("Delivery"),
             ),
             tuple(rows),
             subtitle="Run times: UTC",

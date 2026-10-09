@@ -58,3 +58,17 @@ def test_work_hides_empty_project_but_keeps_full_ranking_reasons() -> None:
     lines = output.getvalue().splitlines()
     index = next(i for i, line in enumerate(lines) if "Why:" in line)
     assert not lines[index - 1].strip()
+
+
+def test_work_project_column_is_optional_but_preserves_populated_projects() -> None:
+    item = WorkItem(
+        id="work-project",
+        title="Check rollout",
+        status=WorkItemStatus.OPEN,
+        priority=WorkItemPriority.NORMAL,
+        project="日本 checkout",
+    )
+    for table in (work_items_table([item]), next_work_table([WorkItemScore(item, 0, ())])):
+        assert [column.header for column in table.columns][:2] == ["Work item", "Project"]
+        assert table.rows[0].cells[1].plain == "日本 checkout"
+        assert table.rows[0].metadata[0].plain == "ID: work-project"

@@ -82,10 +82,7 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
         st = status_style.get(task.status, DIM)
         title = _bounded_first_line(task.command or _kind_label(task))
         detail = _task_detail_label(task)
-        details = [
-            Text(f"ID: {task.task_id} · Kind: {_kind_label(task)}", style=DIM),
-            Text(f"Started: {_task_started_label(task)}", style=DIM),
-        ]
+        details: list[Text] = []
         has_progress = task.status == TaskStatus.RUNNING and bool(task.progress)
         if detail != "—" and (detail != title or task.error or has_progress):
             detail_style = str(ERROR) if task.error else str(WARNING) if has_progress else None
@@ -94,10 +91,13 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
             RecordRow(
                 (
                     Text(title, style="bold"),
+                    Text(_kind_label(task), style=DIM),
                     Text(task.status.value.capitalize(), style=st),
+                    Text(_task_started_label(task).removesuffix(" UTC"), style=DIM),
                     Text(_task_duration_label(task)),
                 ),
                 tuple(details),
+                metadata=(Text(f"ID: {task.task_id}", style=DIM),),
             )
         )
     print_repl_renderable(
@@ -106,10 +106,13 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
             "Tasks",
             (
                 RecordColumn("Task"),
-                RecordColumn("State", 10),
-                RecordColumn("Duration", 10, "right"),
+                RecordColumn("Kind"),
+                RecordColumn("State"),
+                RecordColumn("Started"),
+                RecordColumn("Duration", "right"),
             ),
             tuple(rows),
+            subtitle="Started times: UTC",
             caption="Cancel: /cancel <task_id>",
         ),
     )
