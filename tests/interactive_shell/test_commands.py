@@ -2464,10 +2464,12 @@ class TestRunCliCommand:
         assert m.run_cli_command(console, ["remote", "health"], session=session) is False
         assert session.history[-1]["ok"] is False
 
-    def test_headless_cron_run_keeps_its_tick_running_past_the_reply_window(
+    @pytest.mark.parametrize("headless", [False, True])
+    def test_cron_run_keeps_its_tick_running_past_the_reply_window(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
+        headless: bool,
     ) -> None:
         """A gateway ``/cron run`` past the reply window must finish, not be killed.
 
@@ -2479,6 +2481,7 @@ class TestRunCliCommand:
         from core.agent_harness.session import SessionCore
         from core.agent_harness.session.persistence.memory import InMemorySessionStore
         from surfaces.interactive_shell.command_registry import cli_parity as m
+        from surfaces.interactive_shell.command_registry import cron_cmds
 
         finished = tmp_path / "finished"
         child = (
@@ -2491,7 +2494,8 @@ class TestRunCliCommand:
             m, "build_opensre_cli_argv", lambda _args: [sys.executable, "-c", child]
         )
         monkeypatch.setattr(m, "_HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS", 0.1)
-        session = SessionCore(store=InMemorySessionStore())
+        monkeypatch.setattr(cron_cmds, "_RUN_FOREGROUND_SECONDS", 0.1)
+        session = SessionCore(store=InMemorySessionStore()) if headless else Session()
         session.record("slash", "/cron run abc123", ok=True)
         console, buf = _capture()
 

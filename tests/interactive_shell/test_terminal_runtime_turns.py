@@ -101,12 +101,28 @@ def test_non_table_subcommands_keep_concurrent_prompt_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)
-    for command in ("/history pause", "/memory path", "/work path", "/loops stop loop-id"):
+    for command in (
+        "/history pause",
+        "/memory path",
+        "/work path",
+        "/loops stop loop-id",
+        "/cron run task-id",
+    ):
         assert not loop_input_policy.turn_needs_exclusive_stdin(command, Session())
 
 
 @pytest.mark.parametrize(
-    "command", ["/work list", "/work next", "/cron list", "/cron logs task-id", "/cron status"]
+    "command",
+    [
+        "/work list",
+        "/work next",
+        "/cron",
+        "/cron run",
+        "/cron run --help",
+        "/cron list",
+        "/cron logs task-id",
+        "/cron status",
+    ],
 )
 def test_responsive_lists_own_stdin(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
     monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)

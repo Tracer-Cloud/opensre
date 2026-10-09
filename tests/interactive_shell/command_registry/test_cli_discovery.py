@@ -131,3 +131,17 @@ def test_cron_picker_selection_and_headless_delegation(monkeypatch: pytest.Monke
     session.terminal = None
     assert cron_cmds.cmd_cron(session, console, ["list"], run_cli=run_cli)
     assert run_cli.call_args.args[1] == ["cron", "list"]
+
+
+@pytest.mark.parametrize("selected", ["add", "logs", "remove", "run"])
+def test_incomplete_cron_choices_return_to_editable_composer(
+    monkeypatch: pytest.MonkeyPatch, selected: str
+) -> None:
+    monkeypatch.setattr(cron_cmds, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(cron_cmds, "repl_choose_subcommand", lambda **_: selected)
+    run_cli = Mock(side_effect=AssertionError("Incomplete choices must not execute"))
+    session = Session()
+    session.terminal.pending_prompt_autosubmit = True
+    assert cron_cmds.cmd_cron(session, Console(file=io.StringIO()), [], run_cli=run_cli)
+    assert session.terminal.pending_prompt_default == f"/cron {selected} "
+    assert not session.terminal.pending_prompt_autosubmit
