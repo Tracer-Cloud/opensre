@@ -218,6 +218,10 @@ asymptotic need, and no more.
 
 ### File placement (all packages)
 
+For CLI, REPL, and shared-terminal presentation changes, read
+[`surfaces/interactive_shell/ui/AGENTS.md`](surfaces/interactive_shell/ui/AGENTS.md)
+for the shared design and visual-verification conventions.
+
 When adding or changing behavior, put code in the **owning module first** — not the nearest
 shared file that already imports something similar.
 
