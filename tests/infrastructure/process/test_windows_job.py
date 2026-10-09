@@ -150,7 +150,7 @@ def test_cleanup_fallback_preserves_captured_outcome(
         command=process.args,
         watch_cancel=cancel,
         timeout_seconds=10 if cancel.is_set() else 0,
-        max_output_chars=1000,
+        max_output_bytes=1000,
         owned_tree=process,
     )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import codecs
 import contextlib
+import io
 import os
 import subprocess
 import threading
@@ -81,11 +82,16 @@ def _drain_pipe(pipe: IO[str] | None, capture: ShellOutputCapture, stream: Outpu
     """Read *pipe* to EOF so a chatty child cannot deadlock on a full buffer."""
     if pipe is None:
         return
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     try:
-        while chunk := os.read(pipe.fileno(), 8192):
-            capture.append(stream, decoder.decode(chunk))
-        capture.append(stream, decoder.decode(b"", final=True))
+        buffer = pipe.buffer if isinstance(pipe, io.TextIOWrapper) else None
+        if isinstance(buffer, io.BufferedReader):
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            while chunk := buffer.read1(8192):
+                capture.append(stream, decoder.decode(chunk))
+            capture.append(stream, decoder.decode(b"", final=True))
+        else:
+            while text := pipe.read(8192):
+                capture.append(stream, text)
     except (OSError, ValueError):
         # Cancellation can close the pipe while this reader is draining it.
         pass
