@@ -93,6 +93,30 @@ class _OneToolProvider(NullToolProvider):
         return [_CiRunsTool()]
 
 
+class _LargeOutputTool(_CiRunsTool):
+    def run(self, **kwargs: Any) -> dict[str, Any]:
+        _ = kwargs
+        return {"output": "START\n" + "x" * 12_000 + "\nrun-id-9312\n" + "x" * 12_000 + "\nEND"}
+
+
+class _LargeOutputProvider(NullToolProvider):
+    def action_tools(self, **_kwargs: Any) -> list[Any]:
+        return [_LargeOutputTool()]
+
+
+def test_follow_up_preserves_the_same_observation_within_codex_budget() -> None:
+    llm = _ScriptedLLM(iter([_call("call_1", "ci_runs"), _text("Observed."), _text("Done.")]))
+    agent = InMemoryHeadlessBuild().agent(tools=_LargeOutputProvider(), llm_factory=lambda: llm)
+
+    agent.dispatch("Inspect the run")
+    first = llm.requests[-1][2]["results"][0]["output"]
+    agent.dispatch("Use that run ID")
+    replayed = llm.requests[-1][2]["results"][0]["output"]
+
+    assert "run-id-9312" in first
+    assert replayed == first
+
+
 def _text(content: str) -> AgentLLMResponse:
     return AgentLLMResponse(content=content, tool_calls=[], raw_content=None)
 

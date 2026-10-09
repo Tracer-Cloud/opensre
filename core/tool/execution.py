@@ -16,6 +16,7 @@ from config.constants.tooling import ToolBlockedBy, ToolSkippedBy
 from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
 from core.tool.contracts import AgentTool, AgentToolContext, RuntimeTool
+from core.tool.output import tool_output_content
 from infrastructure.observability.errors.boundary import report_exception
 from infrastructure.observability.errors.service import is_service_unreachable
 from infrastructure.observability.trace.observations import (
@@ -119,10 +120,12 @@ class ToolExecutionResult:
     is_error: bool = False
     terminate: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    #: An owning tool applied the body budget and retained its status outside it.
+    provider_output_bounded: bool = False
 
     def provider_content(self) -> str | list[dict[str, Any]]:
         """Return the content that should be sent back to the LLM provider."""
-        return self.content
+        return self.content if self.provider_output_bounded else tool_output_content(self.content)
 
     def compat_payload(self) -> Any:
         """Return the historical raw payload shape used by old call sites."""
@@ -872,6 +875,7 @@ def _apply_patch(result: ToolExecutionResult, patch: ToolExecutionPatch) -> Tool
     kwargs: dict[str, Any] = {"metadata": metadata}
     if patch.content is not None:
         kwargs["content"] = patch.content
+        kwargs["provider_output_bounded"] = False
     if patch.details is not _UNSET:
         kwargs["details"] = patch.details
     if patch.is_error is not None:

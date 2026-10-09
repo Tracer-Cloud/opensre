@@ -352,6 +352,14 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV": "conversation_history",
     "OPENSRE_LLM_COMPACTION_ENV": "conversation_history",
     "OPENSRE_STRUCTURED_HISTORY_ENV": "conversation_history",
+    # tool output
+    "DEFAULT_TOOL_OUTPUT_TOKENS": "tool_output",
+    "OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV": "tool_output",
+    "TOOL_OUTPUT_BYTES_PER_TOKEN": "tool_output",
+    "TOOL_OUTPUT_CAPTURE_MAX_BYTES": "tool_output",
+    "TOOL_OUTPUT_HISTORY_DENOMINATOR": "tool_output",
+    "TOOL_OUTPUT_HISTORY_NUMERATOR": "tool_output",
+    "TOOL_OUTPUT_PERSIST_MAX_BYTES": "tool_output",
     # memory
     "MEMORY_TOOL_NAMES": "memory",
     "OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV": "memory",

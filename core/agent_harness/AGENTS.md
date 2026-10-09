@@ -382,6 +382,9 @@ instead of the wrong turn. Compaction (``turns/transcript_compaction.py``) is
 token-based: past ``OPENSRE_HISTORY_TOKEN_BUDGET`` a model writes a handoff
 summary of the older turns, the newest stay verbatim with their evidence, and
 the compaction record keeps both so resume restarts from the same state.
+Tool observations use the shared ``core.tool`` output policy. Preserve that
+observation during replay and summarization; history adds serialization space.
+Audit records are bounded independently and are not a lossless output archive.
 ``OPENSRE_STRUCTURED_HISTORY=0`` restores the text block (``RECENT
 CONVERSATION``) as a kill switch. Code that scans a run's ``result.messages``
 for this turn's output must skip the replayed prefix (``history_count``), or an

@@ -41,7 +41,7 @@ def _execute(
     return execute_shell_command(
         command=command,
         timeout_seconds=timeout_seconds,
-        max_output_chars=10_000,
+        max_output_bytes=10_000,
         cancel_event=cancel_event,
     )
 

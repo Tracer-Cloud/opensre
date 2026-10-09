@@ -23,8 +23,6 @@ HISTORY_KEEP_MAX_TURNS = 20
 DEFAULT_HISTORY_TOKEN_BUDGET = 48_000
 #: Estimated tokens of the newest turns kept verbatim when compaction runs.
 HISTORY_KEEP_RECENT_TOKENS = 16_000
-#: Characters of one tool result kept in replayed history.
-DEFAULT_HISTORY_TOOL_RESULT_CHARS = 8_000
 #: Characters of one tool call's arguments kept in replayed history.
 HISTORY_TOOL_ARGUMENTS_MAX_CHARS = 2_000
 #: Characters of one assistant message kept in replayed history.
@@ -34,7 +32,6 @@ HISTORY_SUMMARY_MAX_CHARS = 12_000
 
 __all__ = [
     "DEFAULT_HISTORY_TOKEN_BUDGET",
-    "DEFAULT_HISTORY_TOOL_RESULT_CHARS",
     "HISTORY_ASSISTANT_TEXT_MAX_CHARS",
     "HISTORY_COMPACT_AFTER_TURNS",
     "HISTORY_KEEP_MAX_TURNS",

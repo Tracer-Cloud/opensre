@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import errno
 import io
+import shlex
 import subprocess
+import sys
 import tempfile
 import threading
 from unittest.mock import MagicMock
@@ -12,6 +14,8 @@ from unittest.mock import MagicMock
 import pytest
 from rich.console import Console
 
+from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY, ActionToolScope
+from core.tool import AgentToolContext, ToolExecutionResult
 from infrastructure.scheduling.task_types import TaskKind, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from integrations.llm_cli.base import CLIInvocation, CLIProbe
@@ -28,6 +32,7 @@ from surfaces.interactive_shell.runtime.subprocess_runner import (
 )
 from surfaces.interactive_shell.runtime.subprocess_runner.repl_presenter import make_repl_presenter
 from surfaces.interactive_shell.session import Session
+from tools.interactive_shell.actions.shell import shell_run_tool
 from tools.interactive_shell.cli import is_interactive_wizard
 from tools.interactive_shell.implementation.claude_code_executor import (
     run_claude_code_implementation,
@@ -400,6 +405,36 @@ def test_run_shell_command_success_records_stdout_without_stderr_noise(
     assert result["stdout"] == "Hawaii: +25C"
     assert result["stderr"] == ""
     assert result["response_text"] == "Hawaii: +25C"
+
+
+def test_shell_tool_applies_requested_budget_once_and_preserves_both_streams() -> None:
+    session = Session()
+    console = Console(file=io.StringIO(), force_terminal=False)
+    presenter = _presenter(session, console, confirm_fn=lambda _prompt: "y", is_tty=True)
+    scope = ActionToolScope(session=session, console=console, subprocess_presenter=presenter)
+    context = AgentToolContext(
+        resolved_integrations={}, resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope}
+    )
+    script = (
+        "import sys; print('START', flush=True); print('x' * 30000, flush=True); "
+        "print('STDERR_WARNING', file=sys.stderr, flush=True)"
+    )
+
+    result = shell_run_tool.run(
+        command=shlex.join([sys.executable, "-c", script]),
+        context=context,
+        quiet=True,
+        max_output_tokens=1000,
+    )
+
+    assert isinstance(result, ToolExecutionResult)
+    visible = result.provider_content()
+    assert isinstance(visible, str)
+    assert "Process exited with code 0" in visible
+    assert "START" in visible
+    assert visible.endswith("STDERR_WARNING\n")
+    assert visible.count("tokens truncated") == 1
+    assert len(visible.encode("utf-8")) < 4200
 
 
 def test_run_shell_command_failure_prints_exit_line(monkeypatch: pytest.MonkeyPatch) -> None:

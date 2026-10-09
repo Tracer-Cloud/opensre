@@ -391,7 +391,8 @@ Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OPENSRE_HISTORY_TOKEN_BUDGET` | `48000` | Estimated tokens of conversation history before it is compacted |
-| `OPENSRE_HISTORY_TOOL_RESULT_CHARS` | `8000` | Characters of each tool result kept in conversation history |
+| `OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT` | `10000` | Approximate tokens per tool observation; output keeps its beginning and end, using four UTF-8 bytes per token |
+| `OPENSRE_HISTORY_TOOL_RESULT_CHARS` |  | Optional additional character cap for recorded tool results; unset keeps the tool observation budget with 20% extra space |
 | `OPENSRE_LLM_COMPACTION` | `1` | Set to `0` to compact history without a model-written summary |
 | `OPENSRE_STRUCTURED_HISTORY` | `1` | Set to `0` to send earlier turns as one text block instead of replaying them |
 

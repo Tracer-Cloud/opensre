@@ -1467,6 +1467,27 @@ if TYPE_CHECKING:
     from config.constants.tls import (
         SSL_CERT_FILE_ENV as SSL_CERT_FILE_ENV,
     )
+    from config.constants.tool_output import (
+        DEFAULT_TOOL_OUTPUT_TOKENS as DEFAULT_TOOL_OUTPUT_TOKENS,
+    )
+    from config.constants.tool_output import (
+        OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV as OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_BYTES_PER_TOKEN as TOOL_OUTPUT_BYTES_PER_TOKEN,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_CAPTURE_MAX_BYTES as TOOL_OUTPUT_CAPTURE_MAX_BYTES,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_HISTORY_DENOMINATOR as TOOL_OUTPUT_HISTORY_DENOMINATOR,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_HISTORY_NUMERATOR as TOOL_OUTPUT_HISTORY_NUMERATOR,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_PERSIST_MAX_BYTES as TOOL_OUTPUT_PERSIST_MAX_BYTES,
+    )
     from config.constants.tooling import (
         CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS as CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS,
     )
