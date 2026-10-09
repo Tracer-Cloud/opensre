@@ -48,7 +48,7 @@ _USAGE = (
     "/loops delete LOOP_ID",
     "/loops next LOOP_ID",
     "/loops messages [--limit N]",
-    "/loops service [install|remove]",
+    "/loops service [status|install|remove]",
 )
 
 
@@ -418,7 +418,7 @@ def _cmd_loops_service(session: Session, console: Console, args: list[str]) -> b
         elif action == "status":
             state = background_service_state()
         else:
-            console.print(f"[{ERROR}]usage:[/] /loops service [install|remove]")
+            console.print(f"[{ERROR}]usage:[/] /loops service [status|install|remove]")
             return True
     except RuntimeError as exc:
         console.print(f"[{ERROR}]service change failed:[/] {escape(str(exc))}")

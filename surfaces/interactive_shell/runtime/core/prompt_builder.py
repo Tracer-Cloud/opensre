@@ -223,13 +223,14 @@ class PromptBuilder:
         self._submitted.put_nowait(buffer.text)
         return False
 
-    def _start_prompt_if_needed(self) -> asyncio.Task[str]:
+    def _start_prompt_if_needed(self, *, default: str = "") -> asyncio.Task[str]:
         if self.pt_session is None:
             raise RuntimeError("PromptBuilder.setup() must run before reading prompts")
         task = self._prompt_task
         if task is None:
             task = asyncio.create_task(
                 self.pt_session.prompt_async(
+                    default=default,
                     message=self.message_with_spinner,
                     bottom_toolbar=self.spinner.toolbar_ansi,
                     refresh_interval=PROMPT_REFRESH_INTERVAL_S,
@@ -316,7 +317,9 @@ class PromptBuilder:
         if prefilled:
             self.pt_session.default_buffer.text = prefilled
 
-        prompt_task = self._start_prompt_if_needed()
+        # prompt_async resets its buffer on startup. Pass the queued prefix as
+        # its default too, so suspending for a picker does not erase the edit.
+        prompt_task = self._start_prompt_if_needed(default=prefilled)
         submitted = asyncio.create_task(self._submitted.get())
         try:
             done, _pending = await asyncio.wait(

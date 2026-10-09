@@ -193,7 +193,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     ),
     "/fleet": _mcp(
         "Show and manage the local AI agent fleet (Claude Code, Cursor, Aider, etc.). "
-        "Subcommands include budget, bus, claim, conflicts, kill, release, trace, wait, graph.",
+        "Subcommands include list, budget, bus, claim, conflicts, kill, release, trace, wait, graph.",
         "User asks to list, scan, or manage local coding agents",
         anti_examples=("User asks about remote/hosted agents only",),
     ),
@@ -338,12 +338,10 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to quit the REPL",
     ),
     "/remote": _mcp(
-        "Connect to, list, and operate remote deployed OpenSRE agents. "
-        "Subcommands: health, ops, pull, trigger.",
-        "User explicitly asks to connect to a remote/hosted/EC2/Nitro OpenSRE instance",
-        "User asks how many remote deployments are configured or wants to inspect a remote agent",
-        "User asks about remote deployment status, health, or operations",
-        anti_examples=("Vague connect to X without remote/hosted context (clarify the target)",),
+        "Explain that /remote is retired. Remote-agent operations are unavailable; "
+        "remote-sync only mirrors sessions and memory, and does not control deployed agents.",
+        "User explicitly invokes the retired /remote command",
+        anti_examples=("Requests to operate remote agents: this command cannot perform them",),
     ),
     "/rename": _mcp(
         "Rename the current session with /rename <name>; "
@@ -605,8 +603,8 @@ def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -
         "only the slash-command clause of a request. For compound requests, "
         "still emit a separate tool call for every other actionable clause in "
         "order; for example "
-        "`run /remote and then send a summary to Slack` requires "
-        'slash_invoke(command="/remote", args=[]) followed by the '
+        "`run /health and then send a summary to Slack` requires "
+        'slash_invoke(command="/health", args=[]) followed by the '
         "Slack send-message tool call."
     )
     # Keep planner payload intentionally tiny for live LLM runs with strict

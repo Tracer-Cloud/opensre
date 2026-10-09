@@ -135,8 +135,8 @@ def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -
         "only the slash-command clause of a request. For compound requests, "
         "still emit a separate tool call for every other actionable clause in "
         "order; for example "
-        "`run /remote and then check disk usage` requires "
-        'slash_invoke(command="/remote", args=[]) followed by '
+        "`run /health and then check disk usage` requires "
+        'slash_invoke(command="/health", args=[]) followed by '
         'shell_run(command="df -h").'
     )
     # Keep planner payload intentionally tiny for live LLM runs with strict

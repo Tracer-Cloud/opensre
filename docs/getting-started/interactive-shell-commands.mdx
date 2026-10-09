@@ -164,7 +164,7 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | `/login` | Shortcut for `/auth login` (`/login openai`, `/login anthropic`, `/login deepseek`). Signs in an LLM provider, not the OpenSRE account |
 | `/logout` | Sign out of the OpenSRE account and close the shell (same as `/account logout`) |
 | `/onboard` | Interactive onboarding wizard |
-| `/remote` | Connect to and operate remote deployed agents |
+| `/remote` | Explain the retired remote-agent command |
 | `/remote-sync` | Manage remote sync to your object store. Subcommands: `status`, `sync`, `setup`. See [Sync to your own object store](/install/remote-sync). |
 | `/config` | Show or edit `~/.opensre/config.yml` |
 | `/cron` | Manage scheduled delivery jobs |
@@ -625,6 +625,7 @@ Show the active hosted model. An authenticated interactive shell is account-mana
 /model set claude-sonnet-4-20250514
 /model restore
 /model restore anthropic
+/model toolcall show
 /model toolcall set gpt-4.1-mini
 /model
 ```
@@ -860,6 +861,7 @@ Fleet coordination is documented further on [Agents](/platform/fleet). Register 
 
 ```text
 /fleet
+/fleet list
 /fleet budget
 /fleet budget cursor-agent 5.00
 /fleet bus
@@ -1018,13 +1020,10 @@ Optional local LLM-provider onboarding. The account-hosted route remains authori
 <Accordion title="/remote">
 
 ```text
-/remote health
-/remote ops
-/remote pull
-/remote trigger
+/remote
 ```
 
-Operate remote deployed OpenSRE agents (EC2, Nitro, hosted runtime).
+The remote-agent workflow has been retired; its health, ops, pull, and trigger commands are unavailable in this build. `/remote` explains this without executing a CLI command. `/remote-sync` is a separate feature that mirrors sessions and memory to an object store; it does not operate remote agents.
 
 </Accordion>
 
@@ -1087,6 +1086,9 @@ Scheduled report delivery. Press Enter or Tab after `/cron` to choose a subcomma
 /loops delete &lt;loop_id&gt;
 /loops next &lt;loop_id&gt;
 /loops messages
+/loops service status
+/loops service install
+/loops service remove
 ```
 
 List recurring loops from the scheduler store, create manual prompt loops, run a loop once immediately, stop or restart a loop, delete a loop, and debug the next fire time. By default a loop tick only produces a report; add `--mode agent` when the tick should act with tools (for example edit and push CI fixes). Onboarding creates draft examples such as a weekday morning report; active loops run through the cron scheduler when the gateway or `opensre cron start` is running.

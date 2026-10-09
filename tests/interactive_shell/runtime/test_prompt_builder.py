@@ -13,7 +13,9 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
+from rich.console import Console
 
+from surfaces.interactive_shell.command_registry import cron_cmds
 from surfaces.interactive_shell.runtime.core import prompt_builder as prompt_builder_module
 from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
@@ -165,5 +167,37 @@ async def test_suspend_releases_and_then_restarts_the_prompt_application(
             assert second_prompt_task is not first_prompt_task
             pipe_input.send_text("after picker\r")
             assert await asyncio.wait_for(second_read, timeout=2) == "after picker"
+        finally:
+            await builder.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["add", "logs", "remove", "run"])
+async def test_cron_argument_prefix_survives_prompt_restart(
+    monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setattr(cron_cmds, "repl_tty_interactive", lambda: True)
+    with (
+        create_pipe_input() as pipe_input,
+        create_app_session(input=pipe_input, output=_terminal_output()),
+    ):
+        session = Session()
+        builder = PromptBuilder(session, ReplState(), SpinnerState(), build_prompt_session(session))
+        builder.setup()
+        try:
+            first_read = asyncio.create_task(builder.read_prompt_text())
+            await _wait_until_running(builder)
+            pipe_input.send_text(f"/cron {action}\r")
+            assert await asyncio.wait_for(first_read, 2) == f"/cron {action}"
+            await builder.suspend()
+            cron_cmds.cmd_cron(session, Console(file=io.StringIO()), [action], run_cli=MagicMock())
+            second_read = asyncio.create_task(builder.read_prompt_text())
+            await _wait_until_running(builder)
+            assert builder.pt_session.default_buffer.text == f"/cron {action} "
+            # Editing stays parked until the user explicitly submits it.
+            assert not second_read.done()
+            pipe_input.send_text("edited-value\r")
+            assert await asyncio.wait_for(second_read, 2) == f"/cron {action} edited-value"
         finally:
             await builder.close()

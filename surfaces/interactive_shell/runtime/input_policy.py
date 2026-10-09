@@ -84,6 +84,8 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/history", "retention"),
         ("/history", "show"),
         ("/fleet", "budget"),
+        ("/fleet", "list"),
+        ("/fleet", "ls"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),

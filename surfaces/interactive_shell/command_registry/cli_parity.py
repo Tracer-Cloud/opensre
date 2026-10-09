@@ -532,8 +532,14 @@ def _cmd_logout(session: Session, console: Console, args: list[str]) -> bool:  #
 
 
 def _cmd_remote(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
-    # Remote-sync configuration prompts on the real TTY (click.prompt).
-    return run_cli_command(console, ["remote", *args], capture_output=False, session=session)
+    console.print(
+        f"[{ERROR}]/remote has been retired.[/] "
+        "Remote-agent operations are unavailable in this build.\n"
+        f"[{DIM}]/remote-sync mirrors sessions and memory to an object store; "
+        "it does not control deployed agents. Use /help for supported commands.[/]"
+    )
+    session.mark_latest(ok=False, kind="slash")
+    return session_terminal(session) is not None
 
 
 def _cmd_guardrails(session: Session, console: Console, args: list[str]) -> bool:
@@ -651,14 +657,11 @@ COMMANDS: list[SlashCommand] = [
     ),
     SlashCommand(
         "/remote",
-        "Connect to and trigger a remote deployed agent.",
+        "Explain the retired remote-agent command and supported alternatives.",
         _cmd_remote,
-        usage=(
-            "/remote health",
-            "/remote ops",
-            "/remote pull",
-            "/remote trigger",
-        ),
+        usage=("/remote",),
+        notes=("Remote-agent operations are unavailable; remote-sync is a separate workflow.",),
+        mutating=False,
     ),
     SlashCommand(
         "/guardrails",

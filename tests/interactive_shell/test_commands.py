@@ -2671,7 +2671,6 @@ class TestCliDelegatedCommands:
         [
             ("/config show", ["config", "show"]),
             ("/runbooks list", ["runbooks", "list"]),
-            ("/remote health", ["remote", "health"]),
             ("/guardrails audit", ["guardrails", "audit"]),
             ("/update", ["update"]),
             ("/uninstall", ["uninstall"]),

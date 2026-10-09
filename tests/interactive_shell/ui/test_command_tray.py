@@ -420,3 +420,24 @@ async def test_cron_and_nested_cli_groups_select_actions_before_dispatch() -> No
         _press(prompt, Keys.Enter)
         assert prompt.app.is_done
         assert prompt.app.future.result() == "/sentry digest schedule list"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "parent,choices",
+    [
+        ("/model toolcall", ["show", "set"]),
+        ("/loops service", ["status", "install", "remove"]),
+    ],
+)
+async def test_native_nested_groups_select_before_dispatch(parent: str, choices: list[str]) -> None:
+    async with _running_prompt() as prompt:
+        buffer = prompt.default_buffer
+        buffer.document = Document(parent, len(parent))
+        _press(prompt, Keys.Enter)
+        assert buffer.text == parent + " "
+        assert buffer.complete_state is not None
+        assert [c.text for c in buffer.complete_state.completions] == choices
+        assert not prompt.app.is_done
+        _press(prompt, Keys.Enter)
+        assert prompt.app.future.result() == parent + " " + choices[0]

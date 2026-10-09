@@ -79,6 +79,8 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
         "/integrations verify github",
         "/verify github",
         "/fleet budget",
+        "/fleet list",
+        "/fleet ls",
         "/help all",
         "/help /model",
         "/help tasks",
