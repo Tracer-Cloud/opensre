@@ -511,6 +511,8 @@ EXPORTS: dict[str, str] = {
     "RUNBOOK_CONTENT_MAX_CHARS": "runbooks",
     "RUNBOOK_MANIFEST_MAX_CHARS": "runbooks",
     # scheduler
+    "DELIVERY_SCHEDULE_LISTS": "delivery_schedule_lists",
+    "DeliveryScheduleList": "delivery_schedule_lists",
     "WEEKDAY_CRON_FIELD": "scheduler",
     "NON_RETRYABLE_WORK_ERROR_KINDS": "scheduler",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV": "scheduler",

@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from rich.cells import cell_len
 from rich.console import Console, RenderableType
 
-from config.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
+from config.constants.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from surfaces.cli.commands import posthog_report, sentry_digest
 from surfaces.cli.commands.command_specs import COMMAND_SPECS_BY_NAME, load_command

@@ -6,7 +6,7 @@ from rich.cells import cell_len
 from rich.console import Console
 from rich.text import Text
 
-from config.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
+from config.constants.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
 from infrastructure.scheduling.scheduler.storage import list_tasks
 from infrastructure.terminal.theme import DIM, HIGHLIGHT
 from surfaces.shared.terminal.components.rendering import print_repl_renderable

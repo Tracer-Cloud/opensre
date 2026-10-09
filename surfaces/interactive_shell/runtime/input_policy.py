@@ -5,7 +5,7 @@ from __future__ import annotations
 import shlex
 
 from config.command_inputs import needs_command_input
-from config.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
+from config.constants.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 
