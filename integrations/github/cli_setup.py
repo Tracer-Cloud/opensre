@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import sys
 import webbrowser
 from typing import Any
 
@@ -89,6 +88,7 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
             active_ui.say("  - Windows: winget install GitHub.cli")
             active_ui.say("You can also continue using the hosted OpenSRE app connection.\n")
 
+            choice: str = ""
             try:
                 choice = active_ui.choose(
                     "How would you like to proceed?",
@@ -100,14 +100,14 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
                 )
             except (EOFError, KeyboardInterrupt):
                 print("\nAborted.")
-                sys.exit(1)
+                raise SystemExit(1) from None
 
             if choice == "retry":
                 continue
             if choice == "app":
                 return _handoff_to_app(url)
             print("\nAborted.")
-            sys.exit(1)
+            raise SystemExit(1)
 
         # probe.installed is True
         if probe.auth_status == GitHubCLIAuthStatus.AUTHENTICATED and probe.active_account:
@@ -117,6 +117,7 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
                 + (f" (version {probe.version})" if probe.version else "")
             )
 
+            choice: str = ""
             try:
                 choice = active_ui.choose(
                     "Select GitHub integration method:",
@@ -132,7 +133,7 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
                 )
             except (EOFError, KeyboardInterrupt):
                 print("\nAborted.")
-                sys.exit(1)
+                raise SystemExit(1) from None
 
             if choice == "retry":
                 continue
@@ -145,7 +146,7 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
                 )
                 return "github_cli"
             print("\nAborted.")
-            sys.exit(1)
+            raise SystemExit(1)
 
         elif probe.auth_status == GitHubCLIAuthStatus.NOT_AUTHENTICATED:
             active_ui.say(
@@ -155,6 +156,7 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
             )
             active_ui.say("To log in with GitHub CLI, run in another terminal: `gh auth login`\n")
 
+            choice: str = ""
             try:
                 choice = active_ui.choose(
                     "How would you like to proceed?",
@@ -166,14 +168,14 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
                 )
             except (EOFError, KeyboardInterrupt):
                 print("\nAborted.")
-                sys.exit(1)
+                raise SystemExit(1) from None
 
             if choice == "retry":
                 continue
             if choice == "app":
                 return _handoff_to_app(url)
             print("\nAborted.")
-            sys.exit(1)
+            raise SystemExit(1)
 
         else:
             # UNKNOWN auth status / probe error
@@ -183,6 +185,7 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
                 + f", but authentication status could not be verified: {probe.detail or 'unknown error'}"
             )
 
+            choice: str = ""
             try:
                 choice = active_ui.choose(
                     "How would you like to proceed?",
@@ -194,14 +197,14 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
                 )
             except (EOFError, KeyboardInterrupt):
                 print("\nAborted.")
-                sys.exit(1)
+                raise SystemExit(1) from None
 
             if choice == "retry":
                 continue
             if choice == "app":
                 return _handoff_to_app(url)
             print("\nAborted.")
-            sys.exit(1)
+            raise SystemExit(1)
 
 
 __all__ = ["setup_github"]
