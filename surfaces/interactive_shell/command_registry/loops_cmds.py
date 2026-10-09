@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
+from core.agent_harness.spi.session_state import exclusive_stdin_active
 from core.agent_harness.tools import capability_values
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_TIME_PARAM
 from infrastructure.scheduling.scheduler.types import DeliveryStatus, TaskRun
@@ -22,6 +23,7 @@ from surfaces.interactive_shell.ui import (
     print_repl_table,
     repl_table,
 )
+from surfaces.shared.terminal.components.choice_menu import repl_choose_one, repl_tty_interactive
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
 
 _LOOPS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
@@ -293,13 +295,42 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
     return True
 
 
-def _cmd_loops_run(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+def _collect_run_loop_id(session: Session, console: Console) -> str | None:
+    """Offer the configured loops when ``/loops run`` arrives without an id.
+
+    Usage text is the fallback whenever this turn cannot own stdin (non-TTY or
+    a scripted dispatch), so a typed command and the same row chosen in
+    ``/help`` — which reserves stdin for the whole turn — stay consistent.
+    """
+    if not repl_tty_interactive() or not exclusive_stdin_active(session):
+        console.print(f"[{ERROR}]usage:[/] /loops run LOOP_ID")
+        return None
+    from infrastructure.scheduling.scheduler.loops import list_loop_summaries
+
+    loops = list_loop_summaries()
+    if not loops:
+        console.print(
+            f"[{DIM}]no loops configured yet. Create one with[/] "
+            f"[{HIGHLIGHT}]/loops add[/][{DIM}].[/]"
+        )
+        return None
+    return repl_choose_one(
+        title="Run loop",
+        breadcrumb="/loops run",
+        choices=[(loop.id, f"{loop.id}  {' '.join(loop.name.split())}") for loop in loops],
+    )
+
+
+def _cmd_loops_run(session: Session, console: Console, args: list[str]) -> bool:
     from infrastructure.scheduling.scheduler.loops import resolve_loop_summary
 
-    if not args:
-        console.print(f"[{ERROR}]usage:[/] /loops run LOOP_ID")
-        return True
-    loop, error = resolve_loop_summary(args[0])
+    identifier = args[0] if args else ""
+    if not identifier.strip():
+        collected = _collect_run_loop_id(session, console)
+        if not collected:
+            return True
+        identifier = collected
+    loop, error = resolve_loop_summary(identifier)
     if loop is None:
         console.print(f"[{ERROR}]{escape(error)}[/]")
         return True

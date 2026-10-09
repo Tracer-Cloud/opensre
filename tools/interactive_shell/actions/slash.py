@@ -46,6 +46,7 @@ _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/integrations", "list"),
         ("/integrations", "setup"),
         ("/integrations", "remove"),
+        ("/loops", "run"),
         ("/loops", "show"),
         ("/mcp", "list"),
         ("/mcp", "connect"),

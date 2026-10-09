@@ -79,13 +79,15 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/work", "ls"),
         ("/work", "next"),
         ("/work", "prioritize"),
-        # These two ask for the value they are missing, so they need stdin the
-        # same way their parent menu does. Without the reservation the handler
-        # sees no exclusive stdin and falls back to printing usage, which is
-        # how a typed subcommand came to behave differently from the same row
-        # chosen in /help.
+        # ``/model toolcall``, ``/history retention``, and ``/loops run`` ask
+        # for the value they are missing, so they need stdin the same way their
+        # parent menu does. Without the reservation the handler sees no
+        # exclusive stdin and falls back to printing usage, which is how a typed
+        # subcommand came to behave differently from the same row chosen in
+        # /help.
         ("/model", "toolcall"),
         ("/history", "retention"),
+        ("/loops", "run"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),

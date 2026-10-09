@@ -52,6 +52,10 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops messages", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show abc123", session) is True
+    # ``/loops run`` collects the loop id it is missing, so a typed invocation
+    # must reserve stdin exactly like ``/loops show`` does.
+    assert loop_input_policy.turn_needs_exclusive_stdin("/loops run", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/loops run abc123", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/theme blue", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/verify", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/verify datadog", session) is False
