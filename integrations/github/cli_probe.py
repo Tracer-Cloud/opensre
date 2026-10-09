@@ -10,7 +10,12 @@ import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 
-from config.constants.github import GITHUB_DEFAULT_HOST, GITHUB_HOST_ENV
+from config.constants.github import (
+    COPILOT_GH_HOST_ENV,
+    GH_BIN_ENV,
+    GITHUB_DEFAULT_HOST,
+    GITHUB_HOST_ENV,
+)
 from integrations.llm_cli.binary_resolver import (
     candidate_binary_names,
     default_cli_fallback_paths,
@@ -82,7 +87,7 @@ def _fallback_gh_paths() -> list[str]:
 def resolve_gh_binary() -> str | None:
     """Locate the `gh` binary using GH_BIN, PATH, and standard fallback install paths."""
     return resolve_cli_binary(
-        explicit_env_key="GH_BIN",
+        explicit_env_key=GH_BIN_ENV,
         binary_names=candidate_binary_names("gh"),
         fallback_paths=_fallback_gh_paths,
     )
@@ -93,7 +98,7 @@ def _target_gh_hostname(explicit_host: str | None = None) -> str:
     candidate = (
         explicit_host
         or os.environ.get(GITHUB_HOST_ENV, "")
-        or os.environ.get("COPILOT_GH_HOST", "")
+        or os.environ.get(COPILOT_GH_HOST_ENV, "")
     ).strip()
     if not candidate:
         return GITHUB_DEFAULT_HOST
@@ -201,14 +206,8 @@ def _parse_gh_auth_text(
             "GitHub CLI reports not logged in.",
         )
 
-    accounts: list[GitHubCLIHostAccount] = []
-    for match in _GH_LOGGED_IN_ACCOUNT_LINE.finditer(combined_output):
-        host = match.group("host").strip()
-        login = match.group("login").strip()
-        if host and login:
-            accounts.append(GitHubCLIHostAccount(hostname=host, username=login, active=True))
-
-    if not accounts:
+    matches = list(_GH_LOGGED_IN_ACCOUNT_LINE.finditer(combined_output))
+    if not matches:
         if "logged in" in lowered or "active account: true" in lowered:
             return (
                 GitHubCLIAuthStatus.AUTHENTICATED,
@@ -223,8 +222,27 @@ def _parse_gh_auth_text(
             "Ambiguous output from GitHub CLI auth status.",
         )
 
-    if target_host:
-        target_matches = [a for a in accounts if a.hostname.lower() == target_host.lower()]
+    accounts: list[GitHubCLIHostAccount] = []
+    for idx, match in enumerate(matches):
+        host = match.group("host").strip()
+        login = match.group("login").strip()
+        start_pos = match.end()
+        end_pos = matches[idx + 1].start() if idx + 1 < len(matches) else len(combined_output)
+        section = combined_output[start_pos:end_pos]
+
+        active_match = re.search(
+            r"-\s*active account:\s*(?P<active>true|false)\b", section, re.IGNORECASE
+        )
+        if active_match:
+            is_active = active_match.group("active").lower() == "true"
+        else:
+            is_active = idx == 0
+
+        accounts.append(GitHubCLIHostAccount(hostname=host, username=login, active=is_active))
+
+    target = target_host.lower() if target_host else None
+    if target:
+        target_matches = [a for a in accounts if a.hostname.lower() == target]
         if not target_matches:
             return (
                 GitHubCLIAuthStatus.NOT_AUTHENTICATED,
@@ -232,9 +250,11 @@ def _parse_gh_auth_text(
                 (),
                 f"No account logged in for host '{target_host}'.",
             )
-        chosen = target_matches[0]
+        active_for_host = [a for a in target_matches if a.active]
+        chosen = active_for_host[0] if active_for_host else target_matches[0]
     else:
-        chosen = accounts[0]
+        active_matches = [a for a in accounts if a.active]
+        chosen = active_matches[0] if active_matches else accounts[0]
 
     return (
         GitHubCLIAuthStatus.AUTHENTICATED,
@@ -251,7 +271,7 @@ def probe_gh_auth(
     timeout_sec: float = DEFAULT_GH_PROBE_TIMEOUT_SECONDS,
 ) -> tuple[GitHubCLIAuthStatus, GitHubCLIHostAccount | None, tuple[GitHubCLIHostAccount, ...], str]:
     """Inspect `gh auth status` using JSON output with text fallback."""
-    target_host = hostname if hostname else None
+    target_host = _target_gh_hostname(hostname)
 
     # 1. Attempt JSON probe
     argv = [binary_path, "auth", "status", "--json", "hosts"]
@@ -354,6 +374,7 @@ def detect_github_cli(
     timeout_sec: float = DEFAULT_GH_PROBE_TIMEOUT_SECONDS,
 ) -> GitHubCLIProbeResult:
     """Perform complete detection: resolve binary, check version, and probe auth."""
+    target_host = _target_gh_hostname(hostname)
     binary = resolve_gh_binary()
     if not binary:
         return GitHubCLIProbeResult(
@@ -378,7 +399,7 @@ def detect_github_cli(
 
     # Probe auth
     auth_status, active_acc, all_acc, auth_detail = probe_gh_auth(
-        binary, hostname=hostname, timeout_sec=timeout_sec
+        binary, hostname=target_host, timeout_sec=timeout_sec
     )
 
     return GitHubCLIProbeResult(

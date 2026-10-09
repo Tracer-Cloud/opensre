@@ -254,6 +254,8 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS": "hosted_gateway",
     # github
+    "COPILOT_GH_HOST_ENV": "github",
+    "GH_BIN_ENV": "github",
     "GH_TOKEN_ENV": "github",
     "GITHUB_API_BASE_URL": "github",
     "GITHUB_DEFAULT_HOST": "github",

@@ -554,6 +554,12 @@ if TYPE_CHECKING:
         OPENSRE_COMMIT_COAUTHOR_TRAILER as OPENSRE_COMMIT_COAUTHOR_TRAILER,
     )
     from config.constants.github import (
+        COPILOT_GH_HOST_ENV as COPILOT_GH_HOST_ENV,
+    )
+    from config.constants.github import (
+        GH_BIN_ENV as GH_BIN_ENV,
+    )
+    from config.constants.github import (
         GH_TOKEN_ENV as GH_TOKEN_ENV,
     )
     from config.constants.github import (

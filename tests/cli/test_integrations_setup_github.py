@@ -152,10 +152,10 @@ def test_github_setup_user_selects_existing_cli_session(monkeypatch: pytest.Monk
     ui = DummySetupUI(["cli"])
     outcome = cli_setup.setup_github(ui=ui)
 
-    assert outcome == "github"
+    assert outcome == "github_cli"
     assert len(saved_entries) == 1
     svc, entry = saved_entries[0]
-    assert svc == "github"
+    assert svc == "github_cli"
     assert entry["credentials"] == {
         "auth_mode": "github_cli",
         "hostname": "github.com",
@@ -167,6 +167,41 @@ def test_github_setup_user_selects_existing_cli_session(monkeypatch: pytest.Monk
     assert any(
         "Configured GitHub integration to use local GitHub CLI session" in m for m in ui.messages
     )
+
+
+def test_github_setup_preserves_existing_mcp_github_records(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+) -> None:
+    from integrations.store import get_integration, replace_integrations
+
+    monkeypatch.setattr("integrations.store.STORE_PATH", tmp_path / "integrations.json")
+    # Pre-populate with existing MCP GitHub record
+    replace_integrations(
+        [
+            {
+                "service": "github",
+                "status": "active",
+                "credentials": {
+                    "auth_token": "ghp_existing_token_12345",
+                },
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        cli_setup, "detect_github_cli", lambda: _fake_probe_authenticated("octocat", "github.com")
+    )
+    ui = DummySetupUI(["cli"])
+    outcome = cli_setup.setup_github(ui=ui)
+
+    assert outcome == "github_cli"
+    github_record = get_integration("github")
+    cli_record = get_integration("github_cli")
+
+    assert github_record is not None
+    assert cli_record is not None
+    assert github_record["credentials"]["auth_token"] == "ghp_existing_token_12345"
+    assert cli_record["credentials"]["auth_mode"] == "github_cli"
+    assert cli_record["credentials"]["username"] == "octocat"
 
 
 def test_github_setup_user_with_cli_chooses_app_mcp_instead(
@@ -202,9 +237,10 @@ def test_github_setup_unauthenticated_cli_retry_then_login(monkeypatch: pytest.M
     ui = DummySetupUI(["retry", "cli"])
     outcome = cli_setup.setup_github(ui=ui)
 
-    assert outcome == "github"
+    assert outcome == "github_cli"
     assert call_count == 2
     assert len(saved_entries) == 1
+    assert saved_entries[0][0] == "github_cli"
 
 
 def test_github_setup_missing_cli_retry_then_app(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -46,9 +46,11 @@ def _persist_cli_session(
     """Persist local GitHub CLI non-secret session metadata in the integration store.
 
     Strict security requirement: Never store, copy, or manage tokens.
+    Preserves existing MCP GitHub records by storing the CLI preference under
+    the distinct `github_cli` service.
     """
     entry: dict[str, Any] = {
-        "service": "github",
+        "service": "github_cli",
         "status": "active",
         "credentials": {
             "auth_mode": "github_cli",
@@ -56,7 +58,7 @@ def _persist_cli_session(
             "username": username,
         },
     }
-    upsert_integration("github", entry)
+    upsert_integration("github_cli", entry)
 
 
 def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
@@ -141,7 +143,7 @@ def setup_github(*, ui: SetupUI | None = None) -> str | SetupPending:
                 active_ui.say(
                     f"Configured GitHub integration to use local GitHub CLI session (@{acc.username} on {acc.hostname})."
                 )
-                return "github"
+                return "github_cli"
             print("\nAborted.")
             sys.exit(1)
 

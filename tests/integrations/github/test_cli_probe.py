@@ -213,3 +213,47 @@ def test_probe_gh_auth_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
     assert status == GitHubCLIAuthStatus.UNKNOWN
     assert active is None
     assert "Failed to run `gh auth status`" in detail
+
+
+def test_parse_gh_auth_text_multiple_accounts_active_distinction() -> None:
+    text = """
+github.com
+  ✓ Logged in to github.com account primary_user (/path/hosts.yml)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: ...
+
+  ✓ Logged in to github.com account secondary_user (/path/hosts.yml)
+  - Active account: false
+  - Git operations protocol: https
+  - Token: ...
+"""
+    status, active, all_acc, detail = _parse_gh_auth_text(text)
+    assert status == GitHubCLIAuthStatus.AUTHENTICATED
+    assert active is not None
+    assert active.username == "primary_user"
+    assert active.active is True
+    assert len(all_acc) == 2
+    assert all_acc[1].username == "secondary_user"
+    assert all_acc[1].active is False
+
+
+def test_target_gh_hostname_and_probe_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    from integrations.github.cli_probe import _target_gh_hostname
+
+    # Default
+    monkeypatch.delenv("GH_HOST", raising=False)
+    monkeypatch.delenv("COPILOT_GH_HOST", raising=False)
+    assert _target_gh_hostname() == "github.com"
+
+    # From GH_HOST
+    monkeypatch.setenv("GH_HOST", "ghe.internal.net")
+    assert _target_gh_hostname() == "ghe.internal.net"
+
+    # From COPILOT_GH_HOST
+    monkeypatch.delenv("GH_HOST", raising=False)
+    monkeypatch.setenv("COPILOT_GH_HOST", "ghe2.internal.net/")
+    assert _target_gh_hostname() == "ghe2.internal.net"
+
+    # Explicit override
+    assert _target_gh_hostname("custom.domain.com") == "custom.domain.com"
