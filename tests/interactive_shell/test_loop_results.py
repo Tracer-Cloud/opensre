@@ -286,7 +286,7 @@ def test_recent_runs_reflow_with_full_timestamp_and_bounded_findings(
     assert "123456789" in recent
     assert _exact_time(run.started_at) in " ".join(recent.split())
     assert "[literal]" in recent and "Failed" in recent
-    assert "\n\n[literal] verified" in recent
+    assert "\n\n    [literal] verified" in recent
     assert "HIDDEN TAIL" not in recent and "…" in recent
     assert "/loops show hidden-id --run" in recent
     assert max(cell_len(line) for line in recent.splitlines()) <= width

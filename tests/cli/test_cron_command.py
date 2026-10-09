@@ -368,7 +368,7 @@ def test_cron_list_keeps_identifiers_outside_summary_columns(
     assert "ID: ecf7c2580b83deadbeef" in result.output
     assert "*/30 * * * * *" in result.output
     assert "TZ: UTC" in result.output
-    assert "interactive_shell" in result.output
+    assert "Channel: local" in result.output
     assert "2026-09-16 12:17:30" in result.output
     assert "Last run: 2026-09-16 11:54:47 UTC" in result.output
     assert "347779" not in result.output

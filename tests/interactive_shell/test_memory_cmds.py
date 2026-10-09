@@ -119,7 +119,7 @@ def test_memory_list_preserves_literal_description_and_name_when_narrow(
     dispatch_slash("/memory", Session(), Console(file=buf, width=width))
     text = buf.getvalue()
     name_lines = text.splitlines()
-    if width >= 72:
+    if "Type:" not in text:
         header = next(line for line in name_lines if "Name" in line and "Type" in line)
         name_lines = [line[: header.index("Type")] for line in name_lines]
     assert slug in "".join("".join(name_lines).split())
@@ -151,7 +151,7 @@ def test_memory_list_bounds_description_but_show_preserves_it(
     preview = listing[listing.index("[literal]") : listing.index("…") + 1]
     from rich.cells import cell_len
 
-    assert cell_len(preview.replace("\n", "")) <= 80
+    assert cell_len(" ".join(preview.split())) <= 80
     output.seek(0)
     output.truncate()
     dispatch_slash("/memory show long-description", Session(), console)
@@ -184,6 +184,8 @@ def test_memory_description_spacing_and_muted_style(
     output.truncate()
     memory.render_memories(console, [replace(record, description="  "), record])
     lines = output.getvalue().splitlines()
-    rows = [i for i, line in enumerate(lines) if line.startswith(record.slug)]
-    previous_metadata_end = rows[0] + (2 if width == 40 else 0)
+    rows = [i for i, line in enumerate(lines) if line.startswith("  " + record.slug)]
+    previous_metadata_end = rows[0]
+    if any("Updated:" in line for line in lines):
+        previous_metadata_end = next(i for i, line in enumerate(lines) if "Updated:" in line)
     assert rows[1] - previous_metadata_end == 2

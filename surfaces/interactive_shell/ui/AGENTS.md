@@ -25,6 +25,17 @@ as well; keep implementation in its owning package, not necessarily this folder.
 - Use tokens from `infrastructure/terminal/theme.py`, not inline colors. Resolve
   lazy tokens with `str(token)` when constructing a concrete Rich text style.
   Express hierarchy through weight and color, not per-row terminal font sizes.
+- Use two terminal cells of outer horizontal padding and four cells between
+  summary columns. Size columns to displayed content; never stretch short fields
+  across the screen or squeeze the gutters to retain a table.
+- Put full IDs in `RecordRow.metadata`, aligned below the primary column after
+  one blank line. Keep Channel, TZ, and populated Project values in summary
+  columns rather than crowding them onto the ID line. Omit all-empty optional
+  columns. IDs must not participate in summary column sizing.
+- Indent supporting details and descriptions two cells beyond the outer padding.
+  On narrow screens, keep name and IDs first, then separated labeled fields.
+  Choose stacked output from actual column widths plus gutters, not a fixed
+  terminal breakpoint. Preserve readable name wrapping for exceptionally long names.
 - Put one blank line above a non-empty summary and one between records. Let
   `description_details` and `RecordTable` supply those gaps; do not add them twice.
   Empty descriptions must not create an empty summary block.

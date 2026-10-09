@@ -22,8 +22,8 @@ def render_memories(console: Console, records: Sequence[MemoryRecord]) -> None:
             "Long-term memory",
             (
                 RecordColumn("Name"),
-                RecordColumn("Type", 22),
-                RecordColumn("Updated", 10),
+                RecordColumn("Type"),
+                RecordColumn("Updated"),
             ),
             tuple(
                 RecordRow(

@@ -21,6 +21,7 @@ from surfaces.shared.terminal.components.rendering import (
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
 from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
+from surfaces.shared.terminal.tables.schedules import schedule_channels
 
 
 def _timestamp(value: str | None) -> datetime | None:
@@ -124,10 +125,7 @@ def render_loops(
     for loop in loops:
         state = "Invalid" if loop.schedule_error else "Active" if loop.enabled else "Paused"
         state_style = WARNING if loop.schedule_error else HIGHLIGHT if loop.enabled else DIM
-        details = [
-            Text(f"ID: {loop.id}", style=DIM),
-            Text(f"{', '.join(loop.channels)} · TZ: {loop.timezone}", style=DIM),
-        ]
+        details: list[Text] = []
         run = latest.get(loop.id)
         if run is None:
             details.append(
@@ -146,18 +144,21 @@ def render_loops(
                     _finding(run),
                     width=160,
                     style=str(style) if style in (WARNING, ERROR) else None,
-                )
+                )[1:]
             )
         details.extend(description_details(loop.description))
         rows.append(
             RecordRow(
                 (
                     Text(loop.name, style="bold"),
+                    Text(schedule_channels(loop)),
                     Text(state, style=state_style),
                     Text(loop.cron),
+                    Text(loop.timezone),
                     Text(_next_run(loop, timestamp, local_timezone), style=DIM),
                 ),
                 tuple(details),
+                metadata=(Text(f"ID: {loop.id}", style=DIM),),
             )
         )
     print_repl_renderable(
@@ -166,12 +167,14 @@ def render_loops(
             "Loops",
             (
                 RecordColumn("Loop"),
-                RecordColumn("State", 8),
-                RecordColumn("Schedule", 17),
-                RecordColumn("Next run", 14),
+                RecordColumn("Channel"),
+                RecordColumn("State"),
+                RecordColumn("Schedule"),
+                RecordColumn("TZ"),
+                RecordColumn("Next run"),
             ),
             tuple(rows),
-            subtitle="Next run: local time",
+            subtitle="Next run: local time · TZ: schedule timezone",
             caption="/loops show <name-or-id> — full reports and configuration",
         ),
     )
@@ -233,9 +236,9 @@ def render_loop_details(
             RecordTable(
                 "Recent runs",
                 (
-                    RecordColumn("Run", 8),
-                    RecordColumn("Result", 14),
-                    RecordColumn("Started", 32),
+                    RecordColumn("Run"),
+                    RecordColumn("Result"),
+                    RecordColumn("Started"),
                 ),
                 tuple(recent_rows),
                 caption=f"/loops show {loop.id} --run <Run> — open an earlier report",
@@ -265,7 +268,7 @@ def render_loop_messages(console: Console, messages: Sequence[LocalLoopMessage])
         console,
         RecordTable(
             "Loop messages",
-            (RecordColumn("Loop"), RecordColumn("Created", 19)),
+            (RecordColumn("Loop"), RecordColumn("Created")),
             tuple(
                 RecordRow(
                     (
@@ -277,10 +280,10 @@ def render_loop_messages(console: Console, messages: Sequence[LocalLoopMessage])
                             style=DIM,
                         ),
                     ),
-                    (
+                    description_details(message.message, width=120),
+                    metadata=(
                         Text(f"Message ID: {message.message_id}", style=DIM),
                         Text(f"Loop ID: {message.loop_id}", style=DIM),
-                        *description_details(message.message, width=120),
                     ),
                 )
                 for message in messages

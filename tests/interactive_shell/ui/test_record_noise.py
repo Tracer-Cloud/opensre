@@ -58,3 +58,40 @@ def test_work_hides_empty_project_but_keeps_full_ranking_reasons() -> None:
     lines = output.getvalue().splitlines()
     index = next(i for i, line in enumerate(lines) if "Why:" in line)
     assert not lines[index - 1].strip()
+
+
+def test_work_project_column_is_optional_but_preserves_populated_projects() -> None:
+    item = WorkItem(
+        id="work-project",
+        title="Check rollout",
+        status=WorkItemStatus.OPEN,
+        priority=WorkItemPriority.NORMAL,
+        project="日本 checkout",
+    )
+    for table in (work_items_table([item]), next_work_table([WorkItemScore(item, 0, ())])):
+        assert [column.header for column in table.columns][:2] == ["Work item", "Project"]
+        assert table.rows[0].cells[1].plain == "日本 checkout"
+        assert table.rows[0].metadata[0].plain == "ID: work-project"
+
+
+def test_mixed_projects_omit_empty_labels_when_stacked() -> None:
+    from dataclasses import replace
+
+    item = WorkItem(
+        id="p1",
+        title="Check rollout",
+        status=WorkItemStatus.OPEN,
+        priority=WorkItemPriority.NORMAL,
+        project="checkout",
+    )
+    missing = replace(item, id="p2", project="  ")
+    for table in (
+        work_items_table([item, missing]),
+        next_work_table([WorkItemScore(item, 1, ()), WorkItemScore(missing, 0, ())]),
+    ):
+        output = io.StringIO()
+        Console(file=output, width=40, height=25, color_system=None).print(table)
+        text = output.getvalue()
+        assert text.count("Project:") == 1
+        assert "checkout" in text
+        assert "Score: 0" in text or "Priority: Normal" in text
