@@ -66,6 +66,7 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         # stdin). Without exclusive stdin the active prompt application steals
         # keystrokes and CPR responses leak into the next prompt buffer.
         ("/integrations", "remove"),
+        ("/memory", "list"),
         ("/mcp", "list"),
         ("/mcp", "connect"),
         ("/mcp", "disconnect"),

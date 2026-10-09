@@ -36,6 +36,7 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
     assert loop_input_policy.turn_needs_exclusive_stdin("/integrations ls", session) is False
     assert loop_input_policy.turn_needs_exclusive_stdin("/mcp ls", session) is False
     assert loop_input_policy.turn_needs_exclusive_stdin("/memory", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/memory list", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/model", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/fleet", session) is True

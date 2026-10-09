@@ -34,10 +34,11 @@ def _seed(slug: str = "prod-cluster") -> None:
     )
 
 
-def test_memory_lists_stored_memories() -> None:
+@pytest.mark.parametrize("command", ["/memory", "/memory list"])
+def test_memory_lists_stored_memories(command: str) -> None:
     _seed()
     console, buf = _capture()
-    assert dispatch_slash("/memory", Session(), console) is True
+    assert dispatch_slash(command, Session(), console) is True
     output = buf.getvalue()
     assert "prod-cluster" in output
     assert "Prod cluster is eks-prod-1" in output

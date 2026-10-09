@@ -368,3 +368,16 @@ async def test_escape_closes_completions_before_clearing_or_cancelling(
             state.cancel_current_dispatch.assert_called_once()
         else:
             assert prompt.default_buffer.text == ""
+
+
+@pytest.mark.asyncio
+async def test_memory_list_is_first_submenu_choice() -> None:
+    async with _running_prompt() as prompt:
+        _complete(prompt, "/memory ")
+        state = prompt.default_buffer.complete_state
+        assert state is not None
+        assert state.completions[0].text == "list"
+        assert any("list" in line for line in _screen_lines(prompt))
+        prompt.default_buffer.go_to_completion(0)
+        _press(prompt, Keys.Tab)
+        assert prompt.default_buffer.text == "/memory list"

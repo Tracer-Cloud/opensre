@@ -95,6 +95,8 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  #
         return _show_list(console)
 
     sub = args[0].lower()
+    if sub == "list":
+        return _show_list(console)
     if sub == "show":
         return _show_one(console, args[1:])
     if sub == "forget":
@@ -102,11 +104,12 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  #
     if sub == "path":
         return _show_path(console)
 
-    console.print(f"[{ERROR}]usage:[/] /memory [show <name>|forget <name>|path]")
+    console.print(f"[{ERROR}]usage:[/] /memory [list|show <name>|forget <name>|path]")
     return True
 
 
 _MEMORY_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("list", "list stored memories"),
     ("show", "print one memory in full (/memory show <name>)"),
     ("forget", "delete one memory (/memory forget <name>)"),
     ("path", "print the memory directory path"),
@@ -119,6 +122,7 @@ COMMANDS: list[SlashCommand] = [
         _cmd_memory,
         usage=(
             "/memory",
+            "/memory list",
             "/memory show <name>",
             "/memory forget <name>",
             "/memory path",
