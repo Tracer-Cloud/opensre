@@ -79,12 +79,11 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/work", "ls"),
         ("/work", "next"),
         ("/work", "prioritize"),
-        # ``/model toolcall``, ``/history retention``, and ``/loops run`` ask
-        # for the value they are missing, so they need stdin the same way their
-        # parent menu does. Without the reservation the handler sees no
-        # exclusive stdin and falls back to printing usage, which is how a typed
-        # subcommand came to behave differently from the same row chosen in
-        # /help.
+        # ``/model toolcall`` and ``/history retention`` ask for the value they
+        # are missing, so they need stdin the same way their parent menu does.
+        # Without the reservation the handler sees no exclusive stdin and falls
+        # back to printing usage, which is how a typed subcommand came to behave
+        # differently from the same row chosen in /help.
         ("/model", "toolcall"),
         ("/history", "retention"),
         ("/loops", "run"),
@@ -151,6 +150,13 @@ def turn_needs_exclusive_stdin(text: str, _session: Session) -> bool:
         return True
     if name in _EXCLUSIVE_STDIN_MENU_COMMANDS and not args:
         return True
+    if name == "/loops" and args[:1] == ["run"] and len(args) > 1:
+        # A supplied id runs the loop inline — no picker, no table — so stdin
+        # must stay free for /cancel while it runs; only the missing-id form
+        # prompts (that entry is in _EXCLUSIVE_STDIN_SUBCOMMANDS above). The
+        # deferred blank form is re-submitted as ``/loops run ''``, and plain
+        # split keeps those quotes, so strip them before deciding.
+        return not args[1].strip().strip("\"'")
     return bool(args and (name, args[0]) in _EXCLUSIVE_STDIN_SUBCOMMANDS)
 
 

@@ -53,9 +53,13 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show abc123", session) is True
     # ``/loops run`` collects the loop id it is missing, so a typed invocation
-    # must reserve stdin exactly like ``/loops show`` does.
+    # must reserve stdin exactly like ``/loops show`` does. A supplied id runs
+    # the loop inline — no picker, no table — so stdin stays free and /cancel
+    # keeps working for the whole run; the deferred blank form is re-submitted
+    # as ``/loops run ''``, which counts as missing.
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops run", session) is True
-    assert loop_input_policy.turn_needs_exclusive_stdin("/loops run abc123", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/loops run abc123", session) is False
+    assert loop_input_policy.turn_needs_exclusive_stdin("/loops run ''", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/theme blue", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/verify", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/verify datadog", session) is False

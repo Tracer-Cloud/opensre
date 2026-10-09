@@ -106,6 +106,25 @@ def test_supplied_id_runs_directly_without_opening_the_picker(
     assert runs == [("morning-ops",)]
 
 
+def test_deferred_blank_id_is_treated_as_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``slash_invoke(args=["run", ""])`` re-submits ``/loops run ''``.
+
+    The loop reserved stdin for that text before dispatch saw it, so dispatch
+    must read the quoted blank as a missing id rather than a loop named ``''``.
+    """
+    _store_loop("morning-ops", "Morning ops")
+    runs = _record_runs(monkeypatch)
+    monkeypatch.setattr(loops_cmds, "repl_choose_one", lambda **_kwargs: "morning-ops")
+
+    text = dispatch("/loops run ''")
+
+    assert runs == [("morning-ops",)]
+    assert "not found" not in text
+    assert "usage:" not in text
+
+
 def test_cancelling_the_picker_runs_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     _store_loop("morning-ops", "Morning ops")
     runs = _record_runs(monkeypatch)

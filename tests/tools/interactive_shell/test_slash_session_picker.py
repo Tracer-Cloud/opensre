@@ -25,6 +25,11 @@ def test_agent_selected_loops_run_is_deferred_only_while_the_id_is_missing() -> 
     assert _slash_drives_interactive_picker(
         "/loops", ["run"], session=session, is_tty=True, ports=ports
     )
+    # ``set_auto_command`` re-submits a blank id as ``''``; shlex hands it back
+    # as an empty second arg, which still means "id missing".
+    assert _slash_drives_interactive_picker(
+        "/loops", ["run", ""], session=session, is_tty=True, ports=ports
+    )
     assert not _slash_drives_interactive_picker(
         "/loops", ["run", "abc123"], session=session, is_tty=True, ports=ports
     )
