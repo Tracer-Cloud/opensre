@@ -18,7 +18,7 @@ _RESPONSE_OUTPUT_KEY = "_openai_response_output"
 
 def uses_responses_api(model: str, api_key_env: str) -> bool:
     """Return whether this official OpenAI model requires the Responses API."""
-    return api_key_env == "OPENAI_API_KEY" and model.lower().startswith("gpt-5.6")
+    return api_key_env == "OPENAI_API_KEY" and model.lower().startswith(("gpt-5.6", "gpt-6.1"))
 
 
 @lru_cache(maxsize=32)

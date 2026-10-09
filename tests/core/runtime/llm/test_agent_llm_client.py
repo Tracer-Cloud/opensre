@@ -719,8 +719,10 @@ def test_openai_agent_client_enables_parallel_tool_calls_for_openai(
     assert captured["parallel_tool_calls"] is True
 
 
-def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
+@pytest.mark.parametrize("model", ["gpt-5.6", "gpt-6.1-sol"])
+def test_openai_reasoning_agent_uses_responses_api_and_replays_reasoning(
     monkeypatch: pytest.MonkeyPatch,
+    model: str,
 ) -> None:
     _install_fake_openai(monkeypatch)
     monkeypatch.setenv("OPENSRE_REASONING_EFFORT", "high")
@@ -763,11 +765,11 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
         responses=types.SimpleNamespace(create=responses_create),
         chat=types.SimpleNamespace(
             completions=types.SimpleNamespace(
-                create=lambda **_: pytest.fail("GPT-5.6 must not use Chat Completions")
+                create=lambda **_: pytest.fail("This model must use Responses")
             )
         ),
     )
-    client._model = "gpt-5.6"
+    client._model = model
     client._max_tokens = 4096
     client._api_key_env = "OPENAI_API_KEY"
     tools = [
