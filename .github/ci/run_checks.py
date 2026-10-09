@@ -83,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--scope", action="store_true", help="Include tests selected from the diff."
     )
+    parser.add_argument("--quick", action="store_true", help="Only Ruff on changed Python files.")
     parser.add_argument("--base", help="Explicit branch/commit to compare against.")
     parser.add_argument("--head", help="Compare committed revisions only (used by the push hook).")
     parser.add_argument("--dry-run", action="store_true")
@@ -90,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.workers < 1:
         parser.error("--workers must be positive")
+    if args.quick and (args.scope or args.check or args.group != "all"):
+        parser.error("--quick cannot be combined with --scope, --check, or --group")
     root = Path.cwd()
     checks = [
         check
@@ -97,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         if (check.name == args.check if args.check else args.group in ("all", check.group))
     ]
     errors: tuple[str, ...] = ()
-    if args.scope:
+    if args.scope or args.quick:
         try:
             changed = changed_files(root, args.base, args.head)
         except subprocess.CalledProcessError:
@@ -109,15 +112,32 @@ def main(argv: list[str] | None = None) -> int:
         if not changed or all(is_documentation(path) for path in changed):
             print("No runtime changes; no code checks required.")
             return 0
-        selection = select_tests(changed, root=root)
-        errors = selection.errors
-        # Global tests remain separate so import order cannot mask discovery failures.
-        covered = {arg for check in checks for arg in check.args if arg.startswith("tests/")}
-        targets = tuple(target for target in selection.targets if target not in covered)
-        if targets:
-            checks.append(Check("affected-tests", "scoped", ("-m", "pytest", "-q", *targets)))
-        for error in errors:
-            print(f"SCOPE ERROR: {error}. Update .github/ci/test_scope_rules.py.", file=sys.stderr)
+        if args.quick:
+            paths = tuple(
+                path
+                for path in changed
+                if Path(path).suffix in {".py", ".pyi"} and (root / path).is_file()
+            )
+            checks = (
+                [
+                    Check("lint", "static", ("-m", "ruff", "check", "--", *paths)),
+                    Check("format", "static", ("-m", "ruff", "format", "--check", "--", *paths)),
+                ]
+                if paths
+                else []
+            )
+        else:
+            selection = select_tests(changed, root=root)
+            errors = selection.errors
+            # Global tests remain separate so import order cannot mask discovery failures.
+            covered = {arg for check in checks for arg in check.args if arg.startswith("tests/")}
+            targets = tuple(target for target in selection.targets if target not in covered)
+            if targets:
+                checks.append(Check("affected-tests", "scoped", ("-m", "pytest", "-q", *targets)))
+            for error in errors:
+                print(
+                    f"SCOPE ERROR: {error}. Update .github/ci/test_scope_rules.py.", file=sys.stderr
+                )
     if args.dry_run:
         for check in checks:
             print(f"{check.name}: {shlex.join(['uv', 'run', 'python', *check.args])}")

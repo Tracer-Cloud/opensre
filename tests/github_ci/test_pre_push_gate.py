@@ -213,3 +213,56 @@ def test_install_is_idempotent_and_does_not_change_a_sibling_worktree(push_repo:
         assert "opensre-hooks" not in previous
     finally:
         _git(push_repo, "worktree", "remove", "--force", str(sibling))
+
+
+def test_quick_checks_only_lint_existing_changed_python_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import run_checks as runner
+
+    _git(tmp_path, "init", "-b", "main")
+    _git(tmp_path, "config", "user.name", "Gate test")
+    _git(tmp_path, "config", "user.email", "gate@example.invalid")
+    (tmp_path / "deleted.py").touch()
+    (tmp_path / "unchanged.py").touch()
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    (tmp_path / "deleted.py").unlink()
+    (tmp_path / " changed.py").touch()
+    (tmp_path / "README.md").touch()
+    monkeypatch.chdir(tmp_path)
+    assert runner.main(["--quick", "--base", base, "--dry-run"]) == 0
+    output = capsys.readouterr().out
+    assert "ruff check -- ' changed.py'" in output
+    assert "ruff format --check -- ' changed.py'" in output
+    assert "pytest" not in output
+    assert "mypy" not in output
+    assert "deleted.py" not in output
+    assert "unchanged.py" not in output
+    (tmp_path / " changed.py").unlink()
+    assert runner.main(["--quick", "--base", base, "--dry-run"]) == 0
+    assert "ruff" not in capsys.readouterr().out
+
+
+def test_snapshot_runs_real_ruff_without_installing_dependencies(tmp_path: Path) -> None:
+    from pre_push import _validate
+
+    _git(tmp_path, "init", "-b", "main")
+    _git(tmp_path, "config", "user.name", "Gate test")
+    _git(tmp_path, "config", "user.email", "gate@example.invalid")
+    source = tmp_path / "example.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    source.write_text("value = missing_name\n", encoding="utf-8")
+    _git(tmp_path, "commit", "-am", "lint failure")
+    head = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    source.write_text("value = 1\n", encoding="utf-8")
+    # No pyproject or lockfile: the gate must use installed Ruff, not uv sync.
+    assert _validate(tmp_path, head, base) == 1
+    _git(tmp_path, "commit", "-am", "fix")
+    fixed = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    assert _validate(tmp_path, fixed, head) == 0
+    assert len(_git(tmp_path, "worktree", "list", "--porcelain").stdout.split("worktree ")) == 2

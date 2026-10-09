@@ -1,4 +1,4 @@
-# Local CI Readiness — Mandatory Pre-Push Harness
+# Local Feedback and Required PR Validation
 
 This file is the **single source of truth** for required local validation before
 any push or pull request. Repository-wide validation runs in GitHub Actions.
@@ -21,20 +21,32 @@ and a blocking pre-push hook for this checkout. For an existing environment,
 run `make install-hooks`. Installation preserves existing hooks and keeps
 linked worktrees independent.
 
-The hook validates the **committed revisions being pushed** in temporary Git
-worktrees with their locked dependencies. An uncommitted fix cannot make a
-broken commit pass. Existing push hooks run first and receive Git's original
-arguments and ref updates.
+The hook runs **Ruff lint and formatting checks on changed Python files only**
+from the committed revisions being pushed. Temporary Git worktrees ensure an
+uncommitted fix cannot hide a committed lint failure. It reuses the checkout's
+installed tooling; it does not install dependencies or run tests, typechecking,
+registry checks, or import checks. Run `make install` if tooling is missing.
+Existing push hooks still run first with Git's original arguments and ref updates.
+
+Run `make pre-push` (or `make check`) for the same fast checks on your working
+changes. Use `ARGS='--base upstream/main'` to select a base explicitly. Without
+an available remote base, all tracked Python files are checked. Deleted files
+are ignored; configuration-only changes are validated by PR CI.
 
 ## 2) Focused tests and complete CI
 
-Use `make test-scope` to run only the affected tests during development. It
-uses the same mapping as the push gate and never falls back to a full coverage
-run. Package-specific validation required by contributor guides still applies.
+Run focused regression tests while developing changed behavior. Use
+`uv run python -m pytest <test-path>` for a narrow selection or `make test-scope`
+for the affected package suites. The latter can select thousands of tests; it
+is not a mandatory pre-push step. Do not repeat a passing suite solely to push.
+Package-specific validation required by contributor guides still applies.
 
-GitHub Actions uses the same quality check definitions as the local gate and
-runs the complete test matrix. The local gate does not replace repository-wide
-CI, Linux/Windows checks, CodeQL, packaging, or release validation. List the
+For an explicit full local validation run, use `make check-full`: all shared
+quality checks followed by the full test suite. This is opt-in, not a routine
+commit, push, or PR prerequisite.
+
+GitHub Actions runs all shared quality checks and the complete test matrix.
+The local gate does not replace repository-wide CI, Linux/Windows checks, CodeQL, packaging, or release validation. List the
 focused tests you ran in the PR description.
 
 ## 3) Emergency override

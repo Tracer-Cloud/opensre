@@ -58,7 +58,7 @@ def _record_override(root: Path, reason: str, updates: str) -> None:
 
 
 def _validate(root: Path, commit: str, base: str | None) -> int:
-    # Use a real Git worktree: tests may inspect Git state or use editable entrypoints.
+    # Use a real Git worktree so changed-path detection sees the pushed Git state.
     with tempfile.TemporaryDirectory(prefix="opensre-pre-push-") as directory:
         snapshot = Path(directory) / "checkout"
         git(root, "worktree", "add", "--detach", "--quiet", str(snapshot), commit)
@@ -68,23 +68,10 @@ def _validate(root: Path, commit: str, base: str | None) -> int:
             environment = {
                 key: value for key, value in os.environ.items() if key not in local_variables
             }
-            print(
-                f"Preparing locked dependencies for {commit[:12]} (outside check timing).",
-                flush=True,
-            )
-            setup = subprocess.run(
-                ["uv", "sync", "--frozen", "--extra", "dev", "--quiet"],
-                cwd=snapshot,
-                env=environment,
-                check=False,
-            )
-            if setup.returncode:
-                return setup.returncode
-            runner = snapshot / ".github" / "ci" / "run_checks.py"
-            if not runner.is_file():
-                # Also validate branches created before this gate was introduced.
-                runner = Path(__file__).with_name("run_checks.py")
-            command = ["uv", "run", "--no-sync", "python", str(runner), "--scope", "--head", commit]
+            # Reuse installed tooling; Ruff reads configuration from the committed snapshot.
+            # Also validate branches created before this gate was introduced.
+            runner = Path(__file__).with_name("run_checks.py").resolve()
+            command = [sys.executable, str(runner), "--quick", "--head", commit]
             if base:
                 command.extend(["--base", base])
             return subprocess.run(command, cwd=snapshot, env=environment, check=False).returncode

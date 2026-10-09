@@ -254,7 +254,11 @@ that already serves multiple providers, stop and extract a dedicated module inst
 Persistence ownership, storage package layout, migration boundaries, and concurrency
 requirements follow [PERSISTENCE.md](PERSISTENCE.md).
 
-Before any push or PR creation follow [**CI.md**](CI.md) — lint, format, typecheck, and test commands all live there.
+Before any push or PR creation follow [**CI.md**](CI.md). The automatic local
+push gate runs changed-file Ruff lint/format checks only. Run focused regression
+tests during development; do not repeat passing suites solely to push or run
+broad local CI as a routine prerequisite. Full tests, typechecking, registries,
+and import checks remain required in remote CI. `make check-full` is opt-in.
 
 When opening a PR, fill out the [**PR template**](.github/PULL_REQUEST_TEMPLATE.md) — it is not optional boilerplate; it has a required AI-usage disclosure section.
 
@@ -281,7 +285,7 @@ When opening a PR, fill out the [**PR template**](.github/PULL_REQUEST_TEMPLATE.
 | `docs/tool-placement-policy.md`               | Decision rule for where a tool lives: `integrations/<vendor>/tools/` vs. `tools/system/` vs. `tools/cross_vendor/` vs. `surfaces/shared/`.                                                                                                                                                                                             |
 | `docs/NAMING.md`                              | Naming conventions for `core/`: the glossary (State/Snapshot/RunInput/RunResult/Slice/Resources/Budget), the `{domain}_{role}.py` file rule, type naming (`Mixin` suffix, role-named Protocols, no package-name prefix), and anti-patterns.                                                                                            |
 | `SETUP.md`                                    | Machine setup (all platforms, Windows, MCP, troubleshooting).                                                                                                                                                                                                                                                                          |
-| `CI.md`                                       | Mandatory pre-push checklist: lint, format, typecheck, tests — agents MUST follow before pushing.                                                                                                                                                                                                                                      |
+| `CI.md`                                       | Fast local push checks, focused development tests, and mandatory remote CI follow-through.                                                                                                                                                                                                                                      |
 | `CONTRIBUTING.md`                             | Contribution workflow, branch/PR guidance, and quality expectations.                                                                                                                                                                                                                                                                   |
 
 Main packages one level deeper:

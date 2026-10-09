@@ -42,7 +42,7 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and clone the repository (see [SETUP.md](SETUP.md) for Windows and alternatives)
 2. Install dependencies: `make install`
-3. Run checks: `make lint && make format-check && make typecheck && make test-cov`
+3. Run focused tests for your changes and `make check`; see [CI.md](CI.md).
     - When invoking the CLI from your checkout, prefer **`uv run opensre …`** (see `SETUP.md` troubleshooting if another `opensre` shadows `.venv`).
 4. Build release artifacts when needed: `make build`
 
@@ -119,18 +119,17 @@ verification) follow [docs/adding-tools-and-integrations.md](docs/adding-tools-a
 - **No Inline Tests:** Avoid adding `*_test.py` files directly inside source packages. We are phasing out existing inline tests to keep the core logic clean.
 - Bug fixes should include a test that would have caught the bug
 - New features should have corresponding tests
-- Aim for >80% code coverage (run `make test-cov` to check)
+- Aim for >80% code coverage; `make test-cov` is available for an optional local report.
 
-### 4. Run Local Checks (Required Before PR)
+### 4. Validate Changes
 
-```bash
-make lint          # ruff: check code style
-make format-check  # ruff: check formatting (read-only)
-make typecheck     # mypy: check type annotations
-make test-cov      # pytest: run tests with coverage report
-```
+Run focused tests while developing, then `make check` for changed-file Ruff lint
+and formatting checks. The push hook checks the committed version automatically;
+it does not repeat your test suite.
 
-All four must pass. **CI will block merging if any fail.**
+GitHub PR CI runs full tests, typechecking, import checks, and registry checks.
+Required CI and reviews must pass before merging. `make check-full` is available
+for an opt-in full local run. See [CI.md](CI.md) for the authoritative workflow.
 
 ### Run one focused test
 
@@ -161,7 +160,7 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 ### PR Checklist Before Submitting
 
 - Linked to the relevant issue
-- All local checks pass: `make lint && make format-check && make typecheck && make test-cov`
+- Focused regression tests and `make check` pass; report the tests run in the PR.
 - Added tests for bug fixes or new features
 - Updated documentation if behavior changed
 - Code follows project style (see **Code Quality** section below)
@@ -224,14 +223,9 @@ We use:
 - **Black-compatible** formatting (4-space indents)
 - **pytest** for testing with coverage tracking
 
-Run these before every commit:
-
-```bash
-make lint          # Auto-fixes many style issues
-make format-check  # Checks formatting without modifying files
-make typecheck     # Catches type errors
-make test-cov      # Ensures tests pass and coverage is tracked
-```
+Use `make check` for fast local lint/format feedback and run focused tests for
+changed behavior. Full local validation is optional (`make check-full`); required
+PR CI remains the merge gate. See [CI.md](CI.md).
 
 To verify the package can be shipped, run:
 
