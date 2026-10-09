@@ -281,7 +281,7 @@ def test_slash_tool_description_preserves_compound_followup_guidance() -> None:
     assert entry is not None
     description = entry.description.lower()
     assert "only the slash-command clause" in description
-    assert "run /remote and then send a summary to slack" in description
+    assert "run /health and then send a summary to slack" in description
     assert "separate tool call for every other actionable clause" in description
 
 
