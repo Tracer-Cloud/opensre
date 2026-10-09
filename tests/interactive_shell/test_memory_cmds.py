@@ -128,3 +128,29 @@ def test_memory_list_preserves_literal_description_and_name_when_narrow(
     assert max(cell_len(line) for line in text.splitlines()) <= width
     if width == 40:
         assert "Type:" in text and "Updated:" in text
+
+
+@pytest.mark.parametrize("width", [40, 160])
+def test_memory_list_bounds_description_but_show_preserves_it(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("COLUMNS", str(width))
+    description = "[literal] " + "日本 evidence " * 10 + "FULL DESCRIPTION END"
+    save_memory(
+        slug="long-description", memory_type="preference", description=description, body="Body"
+    )
+    output = io.StringIO()
+    console = Console(file=output, width=width)
+    dispatch_slash("/memory list", Session(), console)
+    listing = output.getvalue()
+    assert "[literal]" in listing and "…" in listing
+    assert "FULL DESCRIPTION END" not in listing
+    preview = listing[listing.index("[literal]") : listing.index("…") + 1]
+    from rich.cells import cell_len
+
+    assert cell_len(preview.replace("\n", "")) <= 80
+    output.seek(0)
+    output.truncate()
+    dispatch_slash("/memory show long-description", Session(), console)
+    assert description in " ".join(output.getvalue().split())

@@ -13,6 +13,12 @@ from surfaces.shared.terminal.components.rendering import print_repl_renderable
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
+def _description_preview(description: str) -> Text:
+    preview = Text(" ".join(description.split()))
+    preview.truncate(80, overflow="ellipsis")
+    return preview
+
+
 def render_memories(console: Console, records: Sequence[MemoryRecord]) -> None:
     """Show memory metadata and descriptions without exposing the stored bodies."""
     print_repl_renderable(
@@ -31,7 +37,7 @@ def render_memories(console: Console, records: Sequence[MemoryRecord]) -> None:
                         Text(record.memory_type.value, style=DIM),
                         Text(record.updated_at[:10], style=DIM),
                     ),
-                    (Text(record.description),),
+                    (_description_preview(record.description),),
                 )
                 for record in records
             ),
