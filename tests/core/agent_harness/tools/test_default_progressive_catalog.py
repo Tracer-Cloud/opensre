@@ -69,15 +69,15 @@ class _SearchThenFinishLLM:
         names = [str(schema["function"]["name"]) for schema in schemas]
         if len(self.requests) == 1:
             assert "tool_search" in names
-            assert "shell_run" not in names
+            assert "code_implement" not in names
             return AgentLLMResponse(
                 content="",
                 tool_calls=[
-                    ToolCall(id="search-1", name="tool_search", input={"names": ["shell_run"]})
+                    ToolCall(id="search-1", name="tool_search", input={"names": ["code_implement"]})
                 ],
                 stop_reason="tool_use",
             )
-        assert "shell_run" in names
+        assert "code_implement" in names
         return AgentLLMResponse(content="catalog expanded", stop_reason="stop")
 
     @staticmethod

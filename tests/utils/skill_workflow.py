@@ -20,7 +20,7 @@ from core.agent_harness.turns.headless_adapters import (
 from core.agent_harness.turns.headless_agent import HeadlessAgent
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
 from core.llm.types import AgentLLMResponse
-from core.tool import RegisteredTool
+from core.tool import RegisteredTool, ToolExecutionResult
 from tests.core.agent.orchestration.action_execution_test_harness import FakeActionLLM
 
 
@@ -91,6 +91,10 @@ class SkillWorkflow:
 
         def load_skill(**kwargs: Any) -> dict[str, Any]:
             result = skill_view.run(**kwargs)
+            if isinstance(result, ToolExecutionResult):
+                details = result.details
+                assert isinstance(details, dict)
+                result = details
             assert isinstance(result, dict)
             self.loaded_skills.append(result)
             return result
