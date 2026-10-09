@@ -2,23 +2,34 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
+import os
+import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from config.constants.tool_params import config_only_params
-from config.constants.tooling import ToolBlockedBy, ToolSkippedBy
+from config.constants.tooling import (
+    MAX_PARALLEL_TOOL_CALLS,
+    OPENSRE_PARALLEL_TOOL_CALLS_ENV,
+    ToolBlockedBy,
+    ToolSkippedBy,
+)
 from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
-from core.tool.contracts import AgentTool, AgentToolContext, RuntimeTool
+from core.tool.contracts import AgentTool, AgentToolContext, RuntimeTool, SideEffectLevel
 from infrastructure.observability.errors.boundary import report_exception
 from infrastructure.observability.errors.service import is_service_unreachable
 from infrastructure.observability.trace.observations import (
+    Observation,
     ObservationLevel,
     is_observation_sink_active,
     observe_tool,
@@ -39,6 +50,9 @@ _EXECUTED_TOOL_OUTCOMES = frozenset({"ok", "tool_error", "exception"})
 # was skipped without running because the turn ended or was cancelled first.
 _BLOCKED_METADATA_KEY = "blocked"
 _SKIPPED_METADATA_KEY = "skipped"
+# Side-effect levels whose calls may run at the same time as each other.
+_PARALLEL_SIDE_EFFECT_LEVELS = frozenset({SideEffectLevel.NONE, SideEffectLevel.READ_ONLY})
+_FALSY_ENV_VALUES = frozenset({"0", "false", "no", "off"})
 
 
 def availability_view(resolved_integrations: dict[str, Any]) -> dict[str, Any]:
@@ -260,18 +274,30 @@ def execute_tool_calls(
     on_call_start: Callable[[ToolCall], None] | None = None,
     iteration: int | None = None,
 ) -> list[ToolExecutionResult]:
-    """Execute provider-requested tools sequentially and return structured results.
+    """Execute provider-requested tools and return structured results in provider order.
 
-    A response may carry several calls; they run one after another in provider
-    order. A ``TURN_ENDING`` call hands control to the user; only
+    A response may carry several calls; they run in provider order. Consecutive
+    read-only ``ACTION`` calls (side-effect level ``none`` or ``read_only``, and
+    no runtime context, which can reach the session) form a group whose tool
+    bodies run at the same time, up to
+    ``MAX_PARALLEL_TOOL_CALLS`` per group; every other call runs alone.
+    ``OPENSRE_PARALLEL_TOOL_CALLS=0`` runs every call alone. Hooks never run
+    concurrently and always run on the calling thread: a group runs each
+    call's ``before_tool_call`` in provider order, then its bodies at once,
+    then each ``after_tool_call`` in provider order. So inside a group a
+    ``before_tool_call`` sees the earlier calls of the group as admitted, not
+    finished; a guard that counts results must also count the calls it let
+    through (see ``core.agent_harness.turns.plan_hooks``).
+
+    A ``TURN_ENDING`` call hands control to the user; only
     ``BOOKKEEPING`` calls may share its response, and they run before it so a
     plan write lands before the menu ends the turn. A response that breaks
     that rule executes nothing: every call gets the same error so the model
-    re-issues the menu. Results keep provider order. Once a result
-    terminates the turn, or ``should_stop`` reports a
-    host cancel, the remaining calls are skipped: each still gets an error
-    result (providers require one per tool-call id) that says it did not run,
-    marked ``metadata.skipped``.
+    re-issues the menu. Once a result terminates the turn, or ``should_stop``
+    reports a host cancel, the calls that have not started are skipped: each
+    still gets an error result (providers require one per tool-call id) that
+    says it did not run, marked ``metadata.skipped``. Calls of a group whose
+    bodies already started keep their real results.
 
     ``on_call_start`` fires immediately before a call executes — never for a
     skipped call or a rejected batch — so a host can write a durable per-call
@@ -304,77 +330,106 @@ def execute_tool_calls(
         ]
     if hooks.before_tool_batch is not None:
         hooks.before_tool_batch(tool_calls)
-    tool_sources = availability_view(resolved_integrations)
-    runtime_resources = dict(tool_resources or {})
-
+    batch = _Batch(
+        tool_calls=tool_calls,
+        tool_map=tool_map,
+        tool_sources=availability_view(resolved_integrations),
+        resolved_integrations=resolved_integrations,
+        runtime_resources=dict(tool_resources or {}),
+        hooks=hooks,
+        on_call_start=on_call_start,
+        iteration=iteration,
+    )
+    stop = _BatchStop(should_stop)
     results: dict[int, ToolExecutionResult] = {}
-    stop_reason: str | None = None
-    skipped_by: ToolSkippedBy | None = None
-    for index in _execution_order(tool_calls, tool_map):
-        tc = tool_calls[index]
-        if stop_reason is None and should_stop is not None and should_stop():
-            stop_reason = "the turn was cancelled"
-            skipped_by = ToolSkippedBy.HOST_CANCEL
-        if stop_reason is not None:
-            skipped = _skipped_result(tc.name, stop_reason)
-            results[index] = skipped
-            _capture_tool_call_analytics(
-                tc,
-                tool=tool_map.get(tc.name),
-                outcome="skipped",
-                is_error=True,
-                terminate=False,
-                duration_ms=0,
-                error_message=str(skipped.content),
-                skipped_by=skipped_by,
-                iteration=iteration,
-                tool_call_index=index,
-            )
+    for group in _execution_groups(tool_calls, tool_map):
+        if len(group) > 1:
+            results.update(_run_parallel_group(batch, group, stop))
             continue
-        if on_call_start is not None:
-            on_call_start(tc)
-        started = time.monotonic()
-        with (
-            observe_tool(
-                tc.name,
-                input=public_tool_input(tc.input) if is_observation_sink_active() else None,
-                metadata={"tool_call_id": tc.id},
-            ) as observation,
-            tool_span(tc.name, tool_call_id=tc.id) as span_attrs,
-        ):
-            result = _execute_one_tool_call(
-                tc,
-                tool_map=tool_map,
-                tool_sources=tool_sources,
-                resolved_integrations=resolved_integrations,
-                runtime_resources=runtime_resources,
-                hooks=hooks,
-                span_attrs=span_attrs,
-            )
-            _trace_error_message(span_attrs, result)
-            observation.update(
-                output=result.compat_payload(),
-                level=ObservationLevel.ERROR if result.is_error else None,
-                metadata={"is_error": result.is_error, "terminate": result.terminate},
-            )
-            results[index] = result
-        _capture_tool_call_analytics(
-            tc,
-            tool=tool_map.get(tc.name),
-            outcome=str(span_attrs.get("outcome", "unknown")),
-            is_error=result.is_error,
-            terminate=result.terminate,
-            duration_ms=max(0, round((time.monotonic() - started) * 1000)),
-            details=result.details,
-            error_message=_descriptive_tool_error(result),
-            span_attrs=span_attrs,
-            iteration=iteration,
-            tool_call_index=index,
-        )
-        if result.terminate:
-            stop_reason = f"{tc.name} ended the turn"
-            skipped_by = ToolSkippedBy.TURN_TERMINATED
+        index = group[0]
+        if stop.check():
+            results[index] = _skip_call(batch, index, stop)
+            continue
+        result = _run_call(batch, index)
+        results[index] = result
+        stop.note(tool_calls[index], result)
     return [results[index] for index in range(len(tool_calls))]
+
+
+@dataclass(frozen=True, slots=True)
+class _Batch:
+    """What every call of one provider response shares while it executes."""
+
+    tool_calls: Sequence[ToolCall]
+    tool_map: dict[str, RuntimeTool]
+    tool_sources: dict[str, Any]
+    resolved_integrations: dict[str, Any]
+    runtime_resources: dict[str, Any]
+    hooks: ToolExecutionHooks
+    on_call_start: Callable[[ToolCall], None] | None
+    iteration: int | None
+
+
+class _BatchStop:
+    """Why the calls that have not started are skipped, once one is."""
+
+    def __init__(self, should_stop: Callable[[], bool] | None) -> None:
+        self._should_stop = should_stop
+        self.reason: str | None = None
+        self.skipped_by: ToolSkippedBy | None = None
+
+    def check(self) -> bool:
+        """True when the next call must be skipped; polls the host cancel."""
+        if self.reason is None and self._should_stop is not None and self._should_stop():
+            self.reason = "the turn was cancelled"
+            self.skipped_by = ToolSkippedBy.HOST_CANCEL
+        return self.reason is not None
+
+    def note(self, tool_call: ToolCall, result: ToolExecutionResult) -> None:
+        """Stop the rest of the batch when ``result`` ended the turn."""
+        if result.terminate and self.reason is None:
+            self.reason = f"{tool_call.name} ended the turn"
+            self.skipped_by = ToolSkippedBy.TURN_TERMINATED
+
+
+def parallel_tool_calls_enabled() -> bool:
+    """Whether read-only calls of one response may run at once (on unless switched off)."""
+    return os.getenv(OPENSRE_PARALLEL_TOOL_CALLS_ENV, "").strip().lower() not in _FALSY_ENV_VALUES
+
+
+def _runs_in_parallel(tool: RuntimeTool | None) -> bool:
+    """A known ``ACTION`` tool that declares it changes nothing and never sees the session.
+
+    A tool given the runtime context can reach the session (``skill_view``
+    activates a skill), which changes what later calls' checks see, so it
+    runs alone whatever side-effect level it declares.
+    """
+    if tool is None or tool_role(tool) is not ToolRole.ACTION:
+        return False
+    if isinstance(tool, AgentTool) or getattr(tool, "accepts_runtime_context", False):
+        return False
+    return getattr(tool, "side_effect_level", None) in _PARALLEL_SIDE_EFFECT_LEVELS
+
+
+def _execution_groups(
+    tool_calls: Sequence[ToolCall], tool_map: Mapping[str, RuntimeTool]
+) -> list[list[int]]:
+    """Run order split into groups; a group of several calls runs its bodies at once."""
+    order = _execution_order(tool_calls, tool_map)
+    if not parallel_tool_calls_enabled():
+        return [[index] for index in order]
+    groups: list[list[int]] = []
+    open_group: list[int] | None = None
+    for index in order:
+        if not _runs_in_parallel(tool_map.get(tool_calls[index].name)):
+            open_group = None
+            groups.append([index])
+            continue
+        if open_group is None or len(open_group) >= MAX_PARALLEL_TOOL_CALLS:
+            open_group = []
+            groups.append(open_group)
+        open_group.append(index)
+    return groups
 
 
 def _execution_order(
@@ -388,6 +443,238 @@ def _execution_order(
     }
     rest = [index for index in range(len(tool_calls)) if index not in ending]
     return [*rest, *sorted(ending)]
+
+
+@contextmanager
+def _call_trace(tc: ToolCall) -> Iterator[tuple[Observation, dict[str, Any]]]:
+    """The observation and local trace span that cover one call."""
+    with (
+        observe_tool(
+            tc.name,
+            input=public_tool_input(tc.input) if is_observation_sink_active() else None,
+            metadata={"tool_call_id": tc.id},
+        ) as observation,
+        tool_span(tc.name, tool_call_id=tc.id) as span_attrs,
+    ):
+        yield observation, span_attrs
+
+
+def _close_call_trace(
+    observation: Observation | None, span_attrs: dict[str, Any], result: ToolExecutionResult
+) -> None:
+    """Put a finished call's outcome on its trace before the trace closes."""
+    _trace_error_message(span_attrs, result)
+    if observation is None:
+        return
+    observation.update(
+        output=result.compat_payload(),
+        level=ObservationLevel.ERROR if result.is_error else None,
+        metadata={"is_error": result.is_error, "terminate": result.terminate},
+    )
+
+
+def _run_call(batch: _Batch, index: int) -> ToolExecutionResult:
+    """Run one call start to finish on the calling thread."""
+    tc = batch.tool_calls[index]
+    if batch.on_call_start is not None:
+        batch.on_call_start(tc)
+    started = time.monotonic()
+    with _call_trace(tc) as (observation, span_attrs):
+        result = _execute_one_tool_call(
+            tc,
+            tool_map=batch.tool_map,
+            tool_sources=batch.tool_sources,
+            resolved_integrations=batch.resolved_integrations,
+            runtime_resources=batch.runtime_resources,
+            hooks=batch.hooks,
+            span_attrs=span_attrs,
+        )
+        _close_call_trace(observation, span_attrs, result)
+    _capture_finished_call(batch, index, result, span_attrs, time.monotonic() - started)
+    return result
+
+
+def _capture_finished_call(
+    batch: _Batch,
+    index: int,
+    result: ToolExecutionResult,
+    span_attrs: Mapping[str, Any],
+    elapsed_seconds: float,
+) -> None:
+    tc = batch.tool_calls[index]
+    _capture_tool_call_analytics(
+        tc,
+        tool=batch.tool_map.get(tc.name),
+        outcome=str(span_attrs.get("outcome", "unknown")),
+        is_error=result.is_error,
+        terminate=result.terminate,
+        duration_ms=max(0, round(elapsed_seconds * 1000)),
+        details=result.details,
+        error_message=_descriptive_tool_error(result),
+        span_attrs=span_attrs,
+        iteration=batch.iteration,
+        tool_call_index=index,
+    )
+
+
+def _skip_call(batch: _Batch, index: int, stop: _BatchStop) -> ToolExecutionResult:
+    """Answer a call that never started because the turn ended or was cancelled."""
+    tc = batch.tool_calls[index]
+    skipped = _skipped_result(tc.name, stop.reason or "the turn ended")
+    _capture_tool_call_analytics(
+        tc,
+        tool=batch.tool_map.get(tc.name),
+        outcome="skipped",
+        is_error=True,
+        terminate=False,
+        duration_ms=0,
+        error_message=str(skipped.content),
+        skipped_by=stop.skipped_by,
+        iteration=batch.iteration,
+        tool_call_index=index,
+    )
+    return skipped
+
+
+@dataclass(slots=True)
+class _ParallelCall:
+    """One call of a parallel group, handed between the caller and its worker thread.
+
+    The worker holds the call's trace open (so the observation's parent is the
+    generation that asked for it) and runs only the tool body. The caller runs
+    the hooks, in provider order, against the ``span_attrs`` the worker opened.
+    """
+
+    index: int
+    trace_open: threading.Event = field(default_factory=threading.Event)
+    admitted: threading.Event = field(default_factory=threading.Event)
+    body_done: threading.Event = field(default_factory=threading.Event)
+    finished: threading.Event = field(default_factory=threading.Event)
+    observation: Observation | None = None
+    span_attrs: dict[str, Any] = field(default_factory=dict)
+    request: ToolExecutionRequest | None = None
+    raw: Any = None
+    error: Exception | None = None
+    result: ToolExecutionResult | None = None
+    started: float = 0.0
+    ended: float = 0.0
+
+
+def _serialized_updates(hooks: ToolExecutionHooks) -> ToolExecutionHooks:
+    """``hooks`` whose ``on_tool_update`` never runs from two bodies at once."""
+    update = hooks.on_tool_update
+    if update is None:
+        return hooks
+    lock = threading.Lock()
+
+    def on_tool_update(request: ToolExecutionRequest, value: Any) -> None:
+        with lock:
+            update(request, value)
+
+    return replace(hooks, on_tool_update=on_tool_update)
+
+
+def _hold_call_trace(batch: _Batch, call: _ParallelCall, hooks: ToolExecutionHooks) -> None:
+    """Worker side of one parallel call: open its trace, run its body, wait to close."""
+    tc = batch.tool_calls[call.index]
+    try:
+        with _call_trace(tc) as (observation, span_attrs):
+            call.observation = observation
+            call.span_attrs = span_attrs
+            call.trace_open.set()
+            call.admitted.wait()
+            request = call.request
+            if request is not None:
+                try:
+                    call.raw = _invoke_runtime_tool(
+                        request.tool,
+                        tc,
+                        request=request,
+                        tool_sources=batch.tool_sources,
+                        resolved_integrations=batch.resolved_integrations,
+                        runtime_resources=batch.runtime_resources,
+                        hooks=hooks,
+                    )
+                except Exception as exc:  # noqa: BLE001 - reported as the call's result
+                    call.error = exc
+            call.ended = time.monotonic()
+            call.body_done.set()
+            call.finished.wait()
+    except Exception as exc:  # noqa: BLE001 - the trace failed; the call must still answer
+        logger.warning("[tool:%s] parallel call trace failed: %s", tc.name, exc)
+        if not call.body_done.is_set():
+            call.error = exc
+    finally:
+        call.ended = call.ended or time.monotonic()
+        call.trace_open.set()
+        call.body_done.set()
+
+
+def _run_parallel_group(
+    batch: _Batch, group: Sequence[int], stop: _BatchStop
+) -> dict[int, ToolExecutionResult]:
+    """Run a group's bodies at once; its hooks run here, in provider order."""
+    hooks = _serialized_updates(batch.hooks)
+    calls = [_ParallelCall(index) for index in group]
+    results: dict[int, ToolExecutionResult] = {}
+    with ThreadPoolExecutor(max_workers=len(calls), thread_name_prefix="opensre-tool") as pool:
+        try:
+            for call in calls:
+                if stop.check():
+                    continue
+                tc = batch.tool_calls[call.index]
+                if batch.on_call_start is not None:
+                    batch.on_call_start(tc)
+                call.started = time.monotonic()
+                pool.submit(contextvars.copy_context().run, _hold_call_trace, batch, call, hooks)
+                call.trace_open.wait()
+                prepared = _prepare_tool_call(
+                    tc,
+                    tool_map=batch.tool_map,
+                    resolved_integrations=batch.resolved_integrations,
+                    hooks=hooks,
+                    span_attrs=call.span_attrs,
+                )
+                if isinstance(prepared, ToolExecutionResult):
+                    call.result = prepared
+                    stop.note(tc, prepared)
+                else:
+                    call.request = prepared
+                call.admitted.set()
+            for call in calls:
+                if not call.admitted.is_set():
+                    results[call.index] = _skip_call(batch, call.index, stop)
+                    continue
+                call.body_done.wait()
+                result = call.result
+                if call.request is not None:
+                    result = _finish_tool_call(
+                        call.request,
+                        raw=call.raw,
+                        error=call.error,
+                        hooks=hooks,
+                        span_attrs=call.span_attrs,
+                    )
+                if result is None:
+                    result = _error_result(
+                        f"{batch.tool_calls[call.index].name} did not run.",
+                        metadata={"tool_name": batch.tool_calls[call.index].name},
+                    )
+                _close_call_trace(call.observation, call.span_attrs, result)
+                call.finished.set()
+                results[call.index] = result
+                _capture_finished_call(
+                    batch, call.index, result, call.span_attrs, call.ended - call.started
+                )
+                stop.note(batch.tool_calls[call.index], result)
+        finally:
+            # Never leave a worker waiting: a call not yet admitted runs nothing.
+            for call in calls:
+                if not call.admitted.is_set():
+                    call.request = None
+                    call.admitted.set()
+                call.finished.set()
+    return results
 
 
 def _descriptive_tool_error(result: ToolExecutionResult) -> str:
@@ -637,6 +924,39 @@ def _execute_one_tool_call(
     span_attrs: dict[str, Any],
 ) -> ToolExecutionResult:
     """Run one validated tool call; record outcome on ``span_attrs``."""
+    prepared = _prepare_tool_call(
+        tc,
+        tool_map=tool_map,
+        resolved_integrations=resolved_integrations,
+        hooks=hooks,
+        span_attrs=span_attrs,
+    )
+    if isinstance(prepared, ToolExecutionResult):
+        return prepared
+    try:
+        raw = _invoke_runtime_tool(
+            prepared.tool,
+            tc,
+            request=prepared,
+            tool_sources=tool_sources,
+            resolved_integrations=resolved_integrations,
+            runtime_resources=runtime_resources,
+            hooks=hooks,
+        )
+    except Exception as exc:  # noqa: BLE001 - reported as the call's result
+        return _finish_tool_call(prepared, raw=None, error=exc, hooks=hooks, span_attrs=span_attrs)
+    return _finish_tool_call(prepared, raw=raw, error=None, hooks=hooks, span_attrs=span_attrs)
+
+
+def _prepare_tool_call(
+    tc: ToolCall,
+    *,
+    tool_map: Mapping[str, RuntimeTool],
+    resolved_integrations: dict[str, Any],
+    hooks: ToolExecutionHooks,
+    span_attrs: dict[str, Any],
+) -> ToolExecutionRequest | ToolExecutionResult:
+    """Validate a call and run ``before_tool_call``: the request to run, or its final result."""
     tool = tool_map.get(tc.name)
     if tool is None:
         mark_span_outcome(span_attrs, "unknown_tool", error=True)
@@ -644,15 +964,12 @@ def _execute_one_tool_call(
         return _error_result(
             _unavailable_tool_message(tc.name, tool_map), metadata={"tool_name": tc.name}
         )
-
-    request: ToolExecutionRequest | None = None
     try:
         validation_error = tool.validate_public_input(tc.input)
         if validation_error:
             mark_span_outcome(span_attrs, "validation_error", error=True)
             logger.debug("tool_call validation_error name=%s id=%s", tc.name, tc.id)
             return _error_result(validation_error, metadata={"tool_name": tc.name})
-
         source = str(getattr(tool, "source", "unknown"))
         span_attrs["source"] = source
         request = ToolExecutionRequest(
@@ -662,66 +979,74 @@ def _execute_one_tool_call(
             source=source,
             resolved_integrations=resolved_integrations,
         )
-        before = _run_before_hook(hooks, request)
-        if before is not None and before.blocked:
-            mark_span_outcome(
-                span_attrs, "blocked", error=True, **_blocked_call_facts(before.metadata)
-            )
-            logger.debug("tool_call blocked name=%s id=%s", tc.name, tc.id)
-            return ToolExecutionResult(
-                content=before.reason or f"{tc.name} blocked by before_tool_call hook.",
-                details=before.details,
-                is_error=True,
-                terminate=before.terminate,
-                metadata={"tool_name": tc.name, **before.metadata, _BLOCKED_METADATA_KEY: True},
-            )
+    except Exception as exc:  # noqa: BLE001 - reported as the call's result
+        _mark_exception(span_attrs, tc, exc)
+        return _error_result(str(exc), metadata={"tool_name": tc.name})
 
-        logger.debug("tool_call start name=%s id=%s source=%s", tc.name, tc.id, source)
-        raw = _invoke_runtime_tool(
-            tool,
-            tc,
-            request=request,
-            tool_sources=tool_sources,
-            resolved_integrations=resolved_integrations,
-            runtime_resources=runtime_resources,
-            hooks=hooks,
+    before = _run_before_hook(hooks, request)
+    if before is not None and before.blocked:
+        mark_span_outcome(span_attrs, "blocked", error=True, **_blocked_call_facts(before.metadata))
+        logger.debug("tool_call blocked name=%s id=%s", tc.name, tc.id)
+        return ToolExecutionResult(
+            content=before.reason or f"{tc.name} blocked by before_tool_call hook.",
+            details=before.details,
+            is_error=True,
+            terminate=before.terminate,
+            metadata={"tool_name": tc.name, **before.metadata, _BLOCKED_METADATA_KEY: True},
         )
-        result = _normalize_result(raw, tool_name=tc.name)
-        patch = _run_after_hook(hooks, request, result)
-        if patch is not None:
-            result = _apply_patch(result, patch)
-        mark_span_outcome(
-            span_attrs,
-            "tool_error" if result.is_error else "ok",
-            error=result.is_error,
-            is_error=result.is_error,
-            terminate=result.terminate,
-        )
-        logger.debug(
-            "tool_call done name=%s id=%s outcome=%s",
-            tc.name,
-            tc.id,
-            span_attrs["outcome"],
-        )
-        return result
-    except Exception as exc:
-        mark_span_outcome(
-            span_attrs,
-            "exception",
-            error=True,
-            exception_type=type(exc).__name__,
-            error_class=_exception_error_class(exc),
-        )
-        logger.warning("[tool:%s] failed: %s", tc.name, exc)
-        result = _error_result(str(exc), metadata={"tool_name": tc.name})
-        # Raised transport failures must still reach after_tool_call so gather
-        # circuit breakers can mark the source (Grafana used to swallow these
-        # as empty lists; once re-raised, skipping the hook would hide them).
-        if request is not None:
+    logger.debug("tool_call start name=%s id=%s source=%s", tc.name, tc.id, request.source)
+    return request
+
+
+def _finish_tool_call(
+    request: ToolExecutionRequest,
+    *,
+    raw: Any,
+    error: Exception | None,
+    hooks: ToolExecutionHooks,
+    span_attrs: dict[str, Any],
+) -> ToolExecutionResult:
+    """Turn a body's return value or exception into the call's result via ``after_tool_call``."""
+    tc = request.tool_call
+    if error is None:
+        try:
+            result = _normalize_result(raw, tool_name=tc.name)
             patch = _run_after_hook(hooks, request, result)
             if patch is not None:
                 result = _apply_patch(result, patch)
-        return result
+            mark_span_outcome(
+                span_attrs,
+                "tool_error" if result.is_error else "ok",
+                error=result.is_error,
+                is_error=result.is_error,
+                terminate=result.terminate,
+            )
+            logger.debug(
+                "tool_call done name=%s id=%s outcome=%s", tc.name, tc.id, span_attrs["outcome"]
+            )
+            return result
+        except Exception as exc:  # noqa: BLE001 - reported as the call's result
+            error = exc
+    _mark_exception(span_attrs, tc, error)
+    result = _error_result(str(error), metadata={"tool_name": tc.name})
+    # Raised transport failures must still reach after_tool_call so gather
+    # circuit breakers can mark the source (Grafana used to swallow these
+    # as empty lists; once re-raised, skipping the hook would hide them).
+    patch = _run_after_hook(hooks, request, result)
+    if patch is not None:
+        result = _apply_patch(result, patch)
+    return result
+
+
+def _mark_exception(span_attrs: dict[str, Any], tc: ToolCall, exc: Exception) -> None:
+    mark_span_outcome(
+        span_attrs,
+        "exception",
+        error=True,
+        exception_type=type(exc).__name__,
+        error_class=_exception_error_class(exc),
+    )
+    logger.warning("[tool:%s] failed: %s", tc.name, exc)
 
 
 def _invoke_runtime_tool(

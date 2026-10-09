@@ -49,6 +49,9 @@ def with_task_plan_hooks(
     ``turn_user_message`` lets an Ask User answer earn the step it settles.
     ``answer_continues`` (computed once at turn start) says the turn answers
     the plan owner's question; without it only a plan written this turn moves.
+    The guard also counts work calls it let through whose results are not
+    recorded yet, so read-only calls that run at the same time still get
+    exactly one unplanned work call.
     """
     reset_plan_evidence(session)
     base_before = base.before_tool_call if base is not None else None
@@ -56,12 +59,16 @@ def with_task_plan_hooks(
     base_update = base.on_tool_update if base is not None else None
     base_batch = base.before_tool_batch if base is not None else None
     advance_armed = False
+    # Work calls let through whose result is not recorded yet, by tool-call id.
+    work_in_flight: set[str] = set()
 
     def before_batch(tool_calls: Sequence[ToolCall]) -> None:
         nonlocal advance_armed
         if base_batch is not None:
             base_batch(tool_calls)
         advance_armed = all(call.name.strip() != UPDATE_PLAN_TOOL for call in tool_calls)
+        # A call admitted by this hook but refused by an outer one never reaches after().
+        work_in_flight.clear()
 
     def before(request: ToolExecutionRequest) -> BeforeToolCallResult | None:
         nonlocal advance_armed
@@ -69,11 +76,15 @@ def with_task_plan_hooks(
         if decision is not None and decision.blocked:
             return decision
         role = tool_role(request.tool)
+        is_work = role is ToolRole.ACTION and is_plan_work_name(
+            request.tool_call.name, request.arguments
+        )
         if plan_required(
             session,
             tool_name=request.tool_call.name,
             arguments=request.arguments,
             is_action=role is ToolRole.ACTION,
+            work_in_flight=len(work_in_flight),
         ):
             return BeforeToolCallResult(
                 blocked=True,
@@ -91,12 +102,15 @@ def with_task_plan_hooks(
                 turn_user_message=turn_user_message,
                 answer_continues=answer_continues,
             )
+        if is_work:
+            work_in_flight.add(request.tool_call.id)
         return decision
 
     def after(
         request: ToolExecutionRequest, result: ToolExecutionResult
     ) -> ToolExecutionPatch | None:
         patch = base_after(request, result) if base_after is not None else None
+        work_in_flight.discard(request.tool_call.id)
         record_plan_evidence(
             session,
             request.tool_call.name,

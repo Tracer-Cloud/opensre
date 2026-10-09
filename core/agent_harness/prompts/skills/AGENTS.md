@@ -208,11 +208,17 @@ including delivering any user-facing output, before starting the next.
 Do not couple separate steps with wording such as "alongside", "at the same
 time", or "in the same response".
 
-The runtime (`core.tool.execution`) runs a response's tool calls one after
-another, in the order the model listed them — never concurrently. A response
-may batch several independent calls; a call that depends on an earlier call's
-result belongs in the next response. Every tool declares its role on its
-contract (`ToolRole`, replacing the old `parallel_safe` flag):
+The runtime (`core.tool.execution`) runs a response's tool calls in the order
+the model listed them. Consecutive read-only `ACTION` calls (side-effect level
+`none` or `read_only`) run at the same time, up to eight at once, unless the
+tool receives the runtime context: such a tool can change the session
+(`skill_view` activates a skill), so it runs alone. Every other call runs
+alone, after the calls before it. Results always come back in the
+listed order, and hooks (plan guard, approvals, duplicate guard) still check
+each call in that order. A response may batch several independent calls; a
+call that depends on an earlier call's result belongs in the next response.
+`OPENSRE_PARALLEL_TOOL_CALLS=0` runs every call alone. Every tool declares its
+role on its contract (`ToolRole`, replacing the old `parallel_safe` flag):
 
 - `ACTION` and `BOOKKEEPING` (`update_plan`, `memory_remember`,
   `session_goal_complete`) calls may share a response. Cards should say so —
@@ -228,8 +234,9 @@ contract (`ToolRole`, replacing the old `parallel_safe` flag):
   nothing and returns the same error for each call.
 
 Once a call's result ends the turn (a queued menu, a pending approval, a
-host cancel), the calls after it in the batch are skipped with an error
-result saying they did not run.
+host cancel), the calls after it in the batch that have not started are
+skipped with an error result saying they did not run. Read-only calls that
+were already running beside it keep their real results.
 
 Independent read-only checks inside one step (identity plus scheduler, for
 example) may therefore share one response, or one shell command that runs
