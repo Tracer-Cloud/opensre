@@ -1,4 +1,4 @@
-"""Load run summaries for the CLI's schedule lists."""
+"""Load run summaries for shared CLI and REPL schedule lists."""
 
 from __future__ import annotations
 

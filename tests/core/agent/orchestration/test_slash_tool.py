@@ -57,6 +57,7 @@ def _ctx(
         ("/mcp", ["list"], "/mcp list"),
         ("/loops", ["show"], "/loops show"),
         ("/tools", [], "/tools"),
+        ("/cron", [], "/cron"),
     ],
 )
 def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
@@ -426,21 +427,31 @@ def test_failed_rows_from_earlier_turns_are_not_evidence() -> None:
 def test_cron_list_output_reaches_the_model(monkeypatch: pytest.MonkeyPatch) -> None:
     """Successful '/cron list' must surface task ids in the observation so the
     agent can chain a data-dependent '/cron remove <id>' in the same turn."""
-    import subprocess
-
-    import surfaces.interactive_shell.command_registry.cli_parity as cli_parity
+    from infrastructure.scheduling.scheduler.loops import LoopSummary
+    from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+    from surfaces.interactive_shell.command_registry import cron_cmds
     from surfaces.interactive_shell.runtime.slash_adapter import repl_slash_ports
+    from surfaces.shared.terminal.tables import schedule_listing
 
-    def _fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert kwargs.get("capture_output") is True
-        return subprocess.CompletedProcess(
-            cmd,
-            returncode=0,
-            stdout="ecf7c2580b83  daily_summary  0 8 * * 1-5  UTC  slack",
-            stderr="",
-        )
-
-    monkeypatch.setattr(cli_parity.subprocess, "run", _fake_run)
+    loop = LoopSummary(
+        id="ecf7c2580b83",
+        task_ids=("ecf7c2580b83",),
+        name="daily_summary",
+        description="",
+        prompt="",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="0 8 * * 1-5",
+        timezone="UTC",
+        provider=Provider.SLACK,
+        chat_id="C123",
+        channels=("slack",),
+        enabled=True,
+        window_hours=24,
+        last_run=None,
+        next_run=None,
+    )
+    monkeypatch.setattr(cron_cmds, "list_loop_summaries", lambda: [loop])
+    monkeypatch.setattr(schedule_listing, "latest_loop_runs", lambda _: {})
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False, highlight=False)
     session = Session()

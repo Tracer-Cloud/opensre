@@ -11,6 +11,7 @@ from rich.text import Text
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import TaskRun
 from infrastructure.terminal.theme import DIM, HIGHLIGHT, WARNING
+from surfaces.shared.terminal.components.rendering import print_repl_renderable
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
 from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
@@ -73,7 +74,8 @@ def print_schedules(
             )
         )
     schedule_width = max(13, max((cell_len(loop.cron) for loop in loops), default=0))
-    console.print(
+    print_repl_renderable(
+        console,
         RecordTable(
             "Scheduled tasks",
             (
@@ -85,5 +87,5 @@ def print_schedules(
             tuple(rows),
             subtitle="Run times: UTC",
             caption="History: opensre cron logs <task_id>\nConfiguration: opensre --json cron list",
-        )
+        ),
     )

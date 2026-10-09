@@ -1056,14 +1056,17 @@ Read/write `~/.opensre/config.yml`. Prefer env vars for secrets; use config for 
 <Accordion title="/cron">
 
 ```text
+/cron
 /cron list
+/cron status
+/cron start [--service]
 /cron add
 /cron remove &lt;id&gt;
 /cron run &lt;id&gt;
 /cron logs &lt;id&gt;
 ```
 
-Scheduled report delivery. See [Cron](/platform/cron).
+Scheduled report delivery. Press Enter or Tab after `/cron` to choose a subcommand. `/cron list` displays all tasks with their IDs and timezone context; `/cron logs <id>` shows execution history. `/cron start` runs the scheduler in the foreground until interrupted. See [Cron](/platform/cron).
 
 </Accordion>
 

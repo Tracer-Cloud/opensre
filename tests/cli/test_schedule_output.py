@@ -50,7 +50,7 @@ def test_cron_list_reflows_without_losing_identifiers_or_schedule_errors(
         lambda: [loop, invalid, paused],
     )
     monkeypatch.setattr(
-        "surfaces.cli.commands.schedule_listing.latest_loop_runs", lambda _loops: {}
+        "surfaces.shared.terminal.tables.schedule_listing.latest_loop_runs", lambda _loops: {}
     )
     monkeypatch.setattr(cron_module, "_console", Console(width=width, highlight=False))
 

@@ -2753,7 +2753,7 @@ class TestCliDelegatedCommands:
 
     @pytest.mark.parametrize(
         "slash_input",
-        ["/cron", "/cron list", "/cron remove ecf7c2580b83"],
+        ["/cron", "/cron logs ecf7c2580b83", "/cron remove ecf7c2580b83"],
     )
     def test_slash_cron_printers_opt_into_output_capture(
         self, monkeypatch: object, slash_input: str
