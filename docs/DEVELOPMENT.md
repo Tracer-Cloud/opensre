@@ -19,19 +19,8 @@ uv run opensre   # open the interactive shell
 
 ## Local checks and PR validation
 
-Run focused regression tests while developing changed behavior. Use
-`uv run python -m pytest <test-path>` for individual tests or `make test-scope`
-for affected package suites.
-
-Run `make check` for fast Ruff lint and formatting checks on changed Python
-files. The push hook checks the committed version automatically; do not rerun
-passing test suites solely to push.
-
-Full local validation is optional: `make check-full` runs all shared quality
-checks and the full test suite. Required PR CI still runs broad validation,
-including tests, typechecking, import checks, and registry checks.
-See [CI.md](https://github.com/Tracer-Cloud/opensre/blob/main/CI.md) for the
-required workflow and review follow-through.
+Follow [CI.md](https://github.com/Tracer-Cloud/opensre/blob/main/CI.md) for local
+validation, required PR checks, and review follow-through.
 
 ## Interactive shell action policy
 

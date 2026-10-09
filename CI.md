@@ -94,10 +94,20 @@ green, actionable human or automated review feedback (including Greptile and
 Codex when available) is
 addressed, and resolved conversations are closed out.
 
-Agents: the always-on rule lives in [AGENTS.md — CI failures and tests](AGENTS.md).
-After every push, inspect `gh pr checks` / failing job logs and fix until required
-jobs are green. The Cursor stop hook `.cursor/hooks/check-ci-failures.sh` will
-re-prompt when the open PR still has failing checks.
+After every push to an open PR, run `gh pr checks --watch` or inspect
+`gh pr view --json statusCheckRollup,url`. On failure, retrieve the job log with
+`gh run view <id> --log-failed`, fix the root cause in product or test code,
+rerun focused checks for the touched modules, and push. Continue until required
+jobs are green (or skipped where appropriate); do not skip tests or use
+constant-condition toggles to hide failures.
+
+Tests that fail under CI load are real bugs: harden synchronization rather than
+ignoring flakes. For import/API-border failures, use the package API allowed by
+`.importlinter.strict` or the border allowlist, not an internal leaf unless the
+edge is explicitly exempted.
+
+The Cursor stop hook `.cursor/hooks/check-ci-failures.sh` re-prompts when an open
+PR still has failing checks. Treat that follow-up as blocking work, not a suggestion.
 
 A green check does not mean review feedback is clear. After checks complete,
 and again after every push, inspect all unresolved conversations and latest
@@ -107,11 +117,14 @@ finding, reply with the rationale and resolve the thread without changing code.
 
 After each completed PR update, once commits are pushed, the PR description is
 current, and addressed threads are resolved, trigger the required automated
-reviews. Follow [CONTRIBUTING.md](CONTRIBUTING.md#greptile-code-review) to
-request Greptile; repeat until it reports 5/5 with no unresolved comments. If
+reviews. Request Greptile with `@greptile review`; repeat until it reports 5/5
+with no unresolved comments. Reviews commonly take 5–10 minutes or longer. If
 Codex review is available for the repository, request it with `@codex review`
 and address its actionable feedback. Do not re-trigger either reviewer while
 its review is already running.
+
+When available, use the [greploop skill](https://skills.sh/greptileai/skills/greploop)
+to manage this review loop.
 
 Use relevant built-in capabilities or locally installed skills, when available,
 for PR monitoring, CI diagnosis, and review remediation rather than duplicating

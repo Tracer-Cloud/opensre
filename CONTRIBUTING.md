@@ -42,7 +42,7 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and clone the repository (see [SETUP.md](SETUP.md) for Windows and alternatives)
 2. Install dependencies: `make install`
-3. Run focused tests for your changes and `make check`; see [CI.md](CI.md).
+3. Follow the validation workflow in [CI.md](CI.md).
     - When invoking the CLI from your checkout, prefer **`uv run opensre …`** (see `SETUP.md` troubleshooting if another `opensre` shadows `.venv`).
 4. Build release artifacts when needed: `make build`
 
@@ -123,13 +123,7 @@ verification) follow [docs/adding-tools-and-integrations.md](docs/adding-tools-a
 
 ### 4. Validate Changes
 
-Run focused tests while developing, then `make check` for changed-file Ruff lint
-and formatting checks. The push hook checks the committed version automatically;
-it does not repeat your test suite.
-
-GitHub PR CI runs full tests, typechecking, import checks, and registry checks.
-Required CI and reviews must pass before merging. `make check-full` is available
-for an opt-in full local run. See [CI.md](CI.md) for the authoritative workflow.
+See [CI.md](CI.md) for local validation, required PR checks, and review follow-through.
 
 ### Run one focused test
 
@@ -160,7 +154,7 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 ### PR Checklist Before Submitting
 
 - Linked to the relevant issue
-- Focused regression tests and `make check` pass; report the tests run in the PR.
+- Followed [CI.md](CI.md) and reported validation results in the PR.
 - Added tests for bug fixes or new features
 - Updated documentation if behavior changed
 - Code follows project style (see **Code Quality** section below)
@@ -169,21 +163,9 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 
 ### Greptile Code Review
 
-We use [Greptile](https://greptile.com) for automated code review. Before a PR can be merged it must reach a **5/5 confidence score** with zero unresolved comments.
-
-**How Greptile, human review, and CI fit together:** see the public
+See [CI.md §8](CI.md#8-post-pr-follow-through) for review triggers and merge
+requirements. For an overview of automated and human review, see the
 [Pull request review flow](docs/guides/pr-review-flow.mdx) guide.
-
-**Trigger a review** by posting this comment on your PR:
-
-```
-@greptile review
-```
-
-Give it about **5–10 minutes** (sometimes longer), then address each comment and
-re-trigger until you hit 5/5.
-
-> **Automate the loop** — the [greploop skill](https://skills.sh/greptileai/skills/greploop) handles triggering, waiting, fixing, and re-reviewing automatically until 5/5 is reached.
 
 ### If Your PR Includes Screenshots or Logs
 
@@ -222,10 +204,6 @@ We use:
 - **mypy** for strict type checking
 - **Black-compatible** formatting (4-space indents)
 - **pytest** for testing with coverage tracking
-
-Use `make check` for fast local lint/format feedback and run focused tests for
-changed behavior. Full local validation is optional (`make check-full`); required
-PR CI remains the merge gate. See [CI.md](CI.md).
 
 To verify the package can be shipped, run:
 
