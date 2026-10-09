@@ -182,8 +182,8 @@ def test_commands_show_latest_failure_and_allow_opening_the_earlier_full_report(
     # The opened attempt is recent enough to be in the history query; it must
     # not be listed again under its own report.
     recent = text[text.index("Recent runs") : text.index("Configuration")]
-    assert f" {prior_id} │" not in recent
-    assert f" {get_runs(task.id)[0].run_id} │" in recent
+    assert f" {prior_id} Done " not in recent
+    assert f" {get_runs(task.id)[0].run_id} Failed " in recent
     assert f"Run {prior_id} " in text
 
 
@@ -259,3 +259,35 @@ def test_loop_list_uses_responsive_schedule_records(
     assert "Not run yet" in text
     assert "/loops show" in text
     assert max(cell_len(line) for line in text.splitlines()) <= width
+
+
+@pytest.mark.parametrize("width", [40, 80, 160])
+def test_recent_runs_reflow_with_full_timestamp_and_bounded_findings(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    from rich.cells import cell_len
+
+    from surfaces.interactive_shell.ui.loops import _exact_time, render_loop_details
+
+    monkeypatch.setenv("COLUMNS", str(width))
+    monkeypatch.setenv("TERM", "xterm")
+    run = TaskRun(
+        task_id="hidden-id",
+        fire_time="2026-10-09T09:00:00Z",
+        started_at="2026-10-09T09:00:00Z",
+        run_id=123456789,
+        status=TaskStatus.FAILED,
+        report_summary="[literal] " + "verified evidence " * 20 + "HIDDEN TAIL",
+    )
+    output = io.StringIO()
+    render_loop_details(Console(file=output, width=width), _loop(), [run], None)
+    text = output.getvalue()
+    recent = text[text.index("Recent runs") : text.index("Configuration")]
+    assert "123456789" in recent
+    assert _exact_time(run.started_at) in " ".join(recent.split())
+    assert "[literal]" in recent and "Failed" in recent
+    assert "HIDDEN TAIL" not in recent and "…" in recent
+    assert "/loops show hidden-id --run" in recent
+    assert max(cell_len(line) for line in recent.splitlines()) <= width
+    if width == 40:
+        assert "Result:" in recent and "Started:" in recent

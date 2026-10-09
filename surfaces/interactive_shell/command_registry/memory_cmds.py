@@ -22,9 +22,8 @@ from surfaces.interactive_shell.ui import (
     DIM,
     ERROR,
     HIGHLIGHT,
-    print_repl_table,
-    repl_table,
 )
+from surfaces.interactive_shell.ui.memory import render_memories
 
 
 def _disabled_notice(console: Console) -> bool:
@@ -44,19 +43,7 @@ def _show_list(console: Console) -> bool:
         )
         return True
 
-    table = repl_table(title="Long-term memory\n", title_style=BOLD_BRAND)
-    table.add_column("name", style="bold")
-    table.add_column("type", style=DIM)
-    table.add_column("description", overflow="fold")
-    table.add_column("updated", style=DIM)
-    for record in records:
-        table.add_row(
-            escape(record.slug),
-            record.memory_type,
-            escape(record.description),
-            record.updated_at[:10],
-        )
-    print_repl_table(console, table)
+    render_memories(console, records)
     console.print(
         f"[{DIM}]stored unencrypted in {memory_dir()} — edit or delete the files "
         f"directly, or use[/] [{HIGHLIGHT}]/memory forget <name>[/][{DIM}]. "

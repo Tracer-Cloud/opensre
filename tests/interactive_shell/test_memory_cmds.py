@@ -95,3 +95,35 @@ def test_memory_disabled_notice(monkeypatch: pytest.MonkeyPatch) -> None:
     console, buf = _capture()
     assert dispatch_slash("/memory", Session(), console) is True
     assert "memory is disabled" in buf.getvalue()
+
+
+@pytest.mark.parametrize("width", [40, 80, 160])
+def test_memory_list_preserves_literal_description_and_name_when_narrow(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    from rich.cells import cell_len
+
+    monkeypatch.setenv("COLUMNS", str(width))
+    monkeypatch.setenv("TERM", "xterm")
+    slug = "production-checkout-regional-deployment-policy"
+    save_memory(
+        slug=slug,
+        memory_type="investigation_learning",
+        description="[literal] 日本 checkout requires verified rollback evidence.",
+        body="PRIVATE BODY NOT IN LIST",
+    )
+    buf = io.StringIO()
+    dispatch_slash("/memory", Session(), Console(file=buf, width=width))
+    text = buf.getvalue()
+    name_lines = text.splitlines()
+    if width >= 72:
+        header = next(line for line in name_lines if "Name" in line and "Type" in line)
+        name_lines = [line[: header.index("Type")] for line in name_lines]
+    assert slug in "".join("".join(name_lines).split())
+    assert "[literal] 日本 checkout requires verified rollback evidence." in " ".join(text.split())
+    assert "PRIVATE BODY NOT IN LIST" not in text
+    assert "/memory show <name>" in text
+    assert "stored unencrypted" in text
+    assert max(cell_len(line) for line in text.splitlines()) <= width
+    if width == 40:
+        assert "Type:" in text and "Updated:" in text

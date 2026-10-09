@@ -19,8 +19,6 @@ from surfaces.interactive_shell.ui import (
     ERROR,
     HIGHLIGHT,
     WARNING,
-    print_repl_table,
-    repl_table,
 )
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
 
@@ -398,19 +396,9 @@ def _cmd_loops_messages(session: Session, console: Console, args: list[str]) -> 
         console.print(f"[{DIM}]no local loop messages yet.[/]")
         return True
 
-    table = repl_table(title="Loop Messages\n", title_style=BOLD_BRAND)
-    table.add_column("created", style=DIM)
-    table.add_column("loop")
-    table.add_column("id", style=DIM)
-    table.add_column("message", overflow="fold")
-    for message in messages:
-        table.add_row(
-            format_repl_timestamp(message.created_at, style="utc"),
-            escape(message.name or message.loop_id),
-            escape(message.message_id),
-            escape(_short(message.message)),
-        )
-    print_repl_table(console, table)
+    from surfaces.interactive_shell.ui.loops import render_loop_messages
+
+    render_loop_messages(console, messages)
     return True
 
 
