@@ -7,6 +7,7 @@ from typing import Any
 
 from rich.markup import escape
 
+from config.command_inputs import needs_command_input
 from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.spi.session_state import (
     arm_setup_resume,
@@ -72,6 +73,8 @@ def _slash_drives_interactive_picker(
         return False
     if not ports.tty_interactive():
         return False
+    if needs_command_input(name, slash_args):
+        return True
     if name == "/login":
         return True
     if not slash_args:

@@ -800,6 +800,15 @@ Shows up to **50** recent tasks, newest first. Use the **id** column (short pref
 /work path
 ```
 
+In an interactive terminal, `/work add` without a title asks for one, then shows
+selectable detail rows with Priority selected. Use arrow keys or Tab/Shift-Tab to
+move between rows, then Enter to edit a row or choose **Create work item**.
+Ctrl-S creates the item from the summary. Priority is a selection; project supports existing names or a new
+entry; due date supports Today, Tomorrow, or an ISO date/datetime. Optional fields
+remain unset unless supplied, and the existing Normal priority is shown explicitly.
+Esc returns from an edit without applying it; Esc on the summary cancels creation.
+Fully specified commands still execute directly.
+
 `/work add` creates durable human todos; it does not schedule reminder delivery.
 For reminders, use the destination-aware `opensre work add` command with
 `--remind-at` and `--target provider:chat-id`, or ask from a connected chat whose

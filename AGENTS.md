@@ -67,6 +67,7 @@ broader local validation requirements beyond that policy.
 
 ## Code Style
 
+- **CLI/UI inputs:** Clearly mark required/optional fields and defaults, validate all values consistently across forms and direct commands before saving, and preserve entered values when showing actionable errors.
 - Use strict typing, follow DRY principle
 - One clear purpose per file (separation of concerns)
 - Keep every Python `__init__.py` as a lightweight package facade: declare the
