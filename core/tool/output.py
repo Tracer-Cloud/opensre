@@ -38,7 +38,10 @@ _HISTORY_OUTSIDE_BODY_SLACK_BYTES = 256
 
 def history_replay_byte_budget() -> int:
     """Byte ceiling for replaying an observation that was already bounded."""
-    return tool_output_byte_budget(history=True) + _HISTORY_OUTSIDE_BODY_SLACK_BYTES
+    return max(
+        tool_output_byte_budget(history=True),
+        tool_output_byte_budget() + _HISTORY_OUTSIDE_BODY_SLACK_BYTES,
+    )
 
 
 def truncate_output_text(text: str, max_bytes: int, *, tokens: bool = True) -> str:
