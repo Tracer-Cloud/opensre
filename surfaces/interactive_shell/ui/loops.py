@@ -213,10 +213,10 @@ def render_loop_details(
             console.print(Text(selected.error, style=ERROR))
 
     if runs:
-        rows: list[RecordRow] = []
+        recent_rows: list[RecordRow] = []
         for run in runs:
             status, style = _status(run)
-            rows.append(
+            recent_rows.append(
                 RecordRow(
                     (
                         Text(str(run.run_id), style="bold"),
@@ -235,7 +235,7 @@ def render_loop_details(
                     RecordColumn("Result", 14),
                     RecordColumn("Started", 32),
                 ),
-                tuple(rows),
+                tuple(recent_rows),
                 caption=f"/loops show {loop.id} --run <Run> — open an earlier report",
             ),
         )
