@@ -145,6 +145,18 @@ class TestGpt56CatalogPresence:
         assert components.choose_model(provider, default="") == "gpt-5.6-sol"
 
 
+class TestGpt61CatalogPresence:
+    """The hosted default model stays selectable on the OpenAI-family pickers."""
+
+    def test_pickers_list_gpt_6_1_sol(self) -> None:
+        openai_values = {option.value for option in PROVIDER_BY_VALUE["openai"].models}
+        codex_values = {option.value for option in PROVIDER_BY_VALUE["codex"].models}
+        openrouter_values = {option.value for option in PROVIDER_BY_VALUE["openrouter"].models}
+        assert "gpt-6.1-sol" in openai_values
+        assert "gpt-6.1-sol" in codex_values
+        assert "openai/gpt-6.1-sol" in openrouter_values
+
+
 class TestClaudeNewModelsCatalogPresence:
     """Onboarding must keep the Anthropic default and accept a curated 5.x pick."""
 

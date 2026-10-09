@@ -828,6 +828,35 @@ def test_openai_reasoning_agent_uses_responses_api_and_replays_reasoning(
     }
 
 
+def test_gpt_6_1_sol_sends_extra_high_when_effort_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_openai(monkeypatch)
+    monkeypatch.delenv("OPENSRE_REASONING_EFFORT", raising=False)
+    captured: dict[str, Any] = {}
+
+    def responses_create(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return types.SimpleNamespace(output=[], output_text="ok", usage=None)
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        responses=types.SimpleNamespace(create=responses_create),
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(
+                create=lambda **_: pytest.fail("GPT-6.1 tool calls must use Responses")
+            )
+        ),
+    )
+    client._model = "gpt-6.1-sol"
+    client._max_tokens = 4096
+    client._api_key_env = "OPENAI_API_KEY"
+
+    client.invoke(messages=[{"role": "user", "content": "hi"}])
+
+    assert captured["reasoning"] == {"effort": "xhigh"}
+
+
 def _responses_client(create: Any) -> OpenAIAgentClient:
     client = OpenAIAgentClient.__new__(OpenAIAgentClient)
     client._client = types.SimpleNamespace(responses=types.SimpleNamespace(create=create))

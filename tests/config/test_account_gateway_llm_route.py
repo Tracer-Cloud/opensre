@@ -28,7 +28,9 @@ def test_the_injected_token_and_webapp_url_are_the_route(monkeypatch: pytest.Mon
     assert route is not None
     assert route.base_url == "https://app.example/api/llm/v1"
     # The served model family decides the OpenAI endpoint: a chat-completions
-    # model name here makes every tool-using turn fail against gpt-5.6.
+    # model name here makes every tool-using turn fail. The hosted default is
+    # GPT-6.1 Sol, which requires the Responses API.
+    assert route.model == "gpt-6.1-sol"
     assert uses_responses_api(route.model, "OPENAI_API_KEY")
 
 

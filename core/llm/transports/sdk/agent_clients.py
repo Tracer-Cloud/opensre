@@ -743,9 +743,9 @@ class OpenAIAgentClient:
                 kwargs["tools"] = responses_tool_specs(tools)
                 kwargs["tool_choice"] = "auto"
                 kwargs["parallel_tool_calls"] = True
-            from config.llm_reasoning_effort import get_active_reasoning_effort
+            from config.llm_reasoning_effort import resolve_reasoning_effort
 
-            reasoning_effort = get_active_reasoning_effort()
+            reasoning_effort = resolve_reasoning_effort(self._model)
             if reasoning_effort is not None:
                 kwargs["reasoning"] = {"effort": reasoning_effort}
         else:

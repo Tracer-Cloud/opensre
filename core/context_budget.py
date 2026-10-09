@@ -19,8 +19,14 @@ _MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gpt-4o": 128_000,
     "gpt-4.1": 1_000_000,
     "gpt-4": 128_000,
-    # Lookup is first-substring-match in insertion order, so gpt-5.4 / gpt-5.6
-    # must stay above the gpt-5 catch-all or they are never reached.
+    # Lookup is first-substring-match in insertion order, so a longer family
+    # id must stay above any shorter prefix that it contains. GPT-6.1 Sol's
+    # published window is 1,050,000 tokens with a 922,000 input cap and
+    # 128,000 max output. The trimmer only reserves DEFAULT_MAX_TOKENS
+    # (25,000), so the stored window is that input cap plus the reserve.
+    # A full 1,050,000 window would admit prompts the API rejects.
+    "gpt-6.1": 947_000,
+    # gpt-5.4 / gpt-5.6 must stay above the gpt-5 catch-all or they are never reached.
     "gpt-5.6": 1_000_000,
     "gpt-5.4": 1_000_000,
     # gpt-5 window is conservatively pinned to 128k until confirmed for the

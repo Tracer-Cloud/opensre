@@ -179,12 +179,12 @@ def _uses_max_completion_tokens(model: str) -> bool:
 
 
 def _resolve_openai_reasoning_effort(*, model: str, api_key_env: str) -> str | None:
-    """Session override for OpenAI reasoning models in the interactive shell."""
+    """Session, environment, or model-family effort for official OpenAI reasoning models."""
     if api_key_env != "OPENAI_API_KEY" or not _uses_max_completion_tokens(model):
         return None
-    from config.llm_reasoning_effort import get_active_reasoning_effort
+    from config.llm_reasoning_effort import resolve_reasoning_effort
 
-    return get_active_reasoning_effort()
+    return resolve_reasoning_effort(model)
 
 
 class LLMClient:

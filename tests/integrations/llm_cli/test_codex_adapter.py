@@ -329,6 +329,19 @@ def test_build_adds_reasoning_effort_override(mock_which: MagicMock) -> None:
     mock_which.assert_called()
 
 
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
+def test_build_defaults_gpt_6_1_to_extra_high(mock_which: MagicMock) -> None:
+    defaulted = CodexAdapter().build(prompt="p", model="gpt-6.1-sol", workspace="")
+    overridden = CodexAdapter().build(
+        prompt="p", model="gpt-6.1-sol", workspace="", reasoning_effort="low"
+    )
+
+    assert 'model_reasoning_effort="xhigh"' in defaulted.argv
+    assert 'model_reasoning_effort="low"' in overridden.argv
+    assert 'model_reasoning_effort="xhigh"' not in overridden.argv
+    mock_which.assert_called()
+
+
 @patch("integrations.llm_cli.runner.subprocess.run")
 def test_cli_backed_client_invoke(mock_run: MagicMock) -> None:
     from integrations.llm_cli.runner import CLIBackedLLMClient
