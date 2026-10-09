@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 from pathlib import Path
 from typing import Any
@@ -195,6 +196,7 @@ def test_work_form_spacing_keeps_selected_action_visible(columns: int, rows: int
             return Size(rows=rows, columns=columns)
 
     captured: list[str] = []
+    selected_rows: list[str] = []
     with create_pipe_input() as pipe, create_app_session(output=SizedOutput()):
         app = build_work_form({})
         app.input = pipe
@@ -211,12 +213,22 @@ def test_work_form_spacing_keeps_selected_action_visible(columns: int, rows: int
                 return
             captured.extend(lines)
             cursor = screen.get_cursor_position(app.layout.current_window)
-            assert "Create work item" in lines[cursor.y]
+            selected_rows.append(lines[cursor.y])
             pipe.send_text("\x13")
 
-        app.after_render += capture_summary
-        result = app.run(pre_run=lambda: pipe.send_text("Spacing check\r" + "\t" * 4))
+        async def stop_if_stalled() -> None:
+            await asyncio.sleep(2)
+            app.exit(result=None)
 
+        def start() -> None:
+            app.create_background_task(stop_if_stalled())
+            pipe.send_text("Spacing check\r" + "\t" * 4)
+
+        app.after_render += capture_summary
+        result = app.run(pre_run=start)
+
+    assert captured, "Work summary did not render before the timeout"
+    assert "Create work item" in selected_rows[0]
     assert result is not None and result["title"] == "Spacing check"
     assert any("Cancel" in line for line in captured)
     title_line = next(line for line in captured if "Title" in line)
