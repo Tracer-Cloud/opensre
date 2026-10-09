@@ -83,6 +83,8 @@ def _drain_pipe(pipe: IO[str] | None, capture: ShellOutputCapture, stream: Outpu
     if pipe is None:
         return
     try:
+        # Decode raw pipe bytes incrementally so a UTF-8 character split across
+        # reads stays intact. Streams without a binary buffer are already text.
         buffer = pipe.buffer if isinstance(pipe, io.TextIOWrapper) else None
         if isinstance(buffer, io.BufferedReader):
             decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")

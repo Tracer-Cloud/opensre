@@ -485,8 +485,6 @@ def test_opensre_ask_executes_shell_run_through_native_cmd(tmp_path: Path) -> No
     )
     provider_content = json.loads(tool_result["content"])
     assert isinstance(provider_content, str)
-    shell_payload = json.loads(provider_content)
-    assert shell_payload["ok"] is True
-    assert shell_payload["exit_code"] == 0
-    assert "native-windows-e2e" in shell_payload["stdout"]
-    assert "escaped&value" in shell_payload["stdout"]
+    assert "Process exited with code 0" in provider_content
+    assert "native-windows-e2e" in provider_content
+    assert "escaped&value" in provider_content
