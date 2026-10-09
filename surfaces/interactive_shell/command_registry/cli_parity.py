@@ -10,6 +10,8 @@ from typing import BinaryIO
 from rich.console import Console
 from rich.markup import escape
 
+import surfaces.interactive_shell.command_registry.cron_cmds as cron_cmds
+from config.cli_command_choices import CLI_COMMAND_CHOICES
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
 from config.interactive_override import interactive_override_env
 from config.scope_handoff import hand_off_scope
@@ -572,21 +574,7 @@ def _cmd_messaging(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
-    # ``cron start`` blocks as the scheduler daemon and must stream to the real
-    # TTY. Every other subcommand is a printer; the captured output reaches the
-    # slash history row, where the action agent reads it back (e.g. task ids
-    # from ``/cron list`` to chain a remove).
-    if len(args) >= 2 and args[0].lower() == "run":
-        # A tick holds its claim until it finishes, so a headless reply window
-        # must not kill it: the task's later ticks would stay blocked.
-        return run_cli_command(
-            console,
-            ["cron", *args],
-            session=session,
-            keep_running_hint=f"Read its outcome with `/cron logs {args[1]}`.",
-        )
-    capture_output = not args or args[0].lower() != "start"
-    return run_cli_command(console, ["cron", *args], capture_output=capture_output, session=session)
+    return cron_cmds.cmd_cron(session, console, args, run_cli=run_cli_command)
 
 
 def _cmd_sentry(session: Session, console: Console, args: list[str]) -> bool:
@@ -632,6 +620,7 @@ COMMANDS: list[SlashCommand] = [
         "/auth",
         "Log in to LLM providers and inspect local auth state.",
         _cmd_auth,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/auth",)],
         usage=("/auth", "/auth status", "/auth login deepseek", "/auth logout deepseek"),
     ),
     SlashCommand(
@@ -675,6 +664,7 @@ COMMANDS: list[SlashCommand] = [
         "/guardrails",
         "Manage sensitive information guardrail rules.",
         _cmd_guardrails,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/guardrails",)],
         usage=(
             "/guardrails audit",
             "/guardrails init",
@@ -696,12 +686,14 @@ COMMANDS: list[SlashCommand] = [
         "/config",
         "Show or edit local OpenSRE config.",
         _cmd_config,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/config",)],
         usage=("/config show", "/config set <key> <value>"),
     ),
     SlashCommand(
         "/runbooks",
         "Manage trusted runbook sources for guided investigations.",
         _cmd_runbooks,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/runbooks",)],
         usage=(
             "/runbooks list",
             "/runbooks add github --name <name> --repo <owner/repo>",
@@ -713,6 +705,7 @@ COMMANDS: list[SlashCommand] = [
         "/skills",
         "Publish skills and inspect the live skills release in use.",
         _cmd_skills,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/skills",)],
         usage=(
             "/skills status",
             "/skills update",
@@ -724,6 +717,7 @@ COMMANDS: list[SlashCommand] = [
         "/messaging",
         "Manage messaging security and identities.",
         _cmd_messaging,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/messaging",)],
         usage=(
             "/messaging pair",
             "/messaging allow",
@@ -735,18 +729,23 @@ COMMANDS: list[SlashCommand] = [
         "/cron",
         "Manage cron-driven scheduled deliveries.",
         _cmd_cron,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/cron",)],
         usage=(
+            "/cron",
             "/cron list",
             "/cron add --name <name>",
             "/cron remove <id>",
             "/cron run <id>",
             "/cron logs <id>",
+            "/cron status",
+            "/cron start [--service]",
         ),
     ),
     SlashCommand(
         "/sentry",
         "Schedule and run automated Sentry morning digests or uptime watches.",
         _cmd_sentry,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/sentry",)],
         usage=(
             "/sentry digest run",
             "/sentry digest schedule list",
@@ -764,6 +763,7 @@ COMMANDS: list[SlashCommand] = [
         "/posthog",
         "Schedule and run automated PostHog per-metric summary reports.",
         _cmd_posthog,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/posthog",)],
         usage=(
             "/posthog report run",
             "/posthog report schedule list",
@@ -776,5 +776,6 @@ COMMANDS: list[SlashCommand] = [
         "/debug",
         "run targeted runtime diagnostics",
         _cmd_debug,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/debug",)],
     ),
 ]

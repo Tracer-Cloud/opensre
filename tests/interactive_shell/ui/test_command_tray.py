@@ -381,3 +381,42 @@ async def test_memory_list_is_first_submenu_choice() -> None:
         prompt.default_buffer.go_to_completion(0)
         _press(prompt, Keys.Tab)
         assert prompt.default_buffer.text == "/memory list"
+
+
+@pytest.mark.asyncio
+async def test_cron_and_nested_cli_groups_select_actions_before_dispatch() -> None:
+    async with _running_prompt() as prompt:
+        buffer = prompt.default_buffer
+        buffer.document = Document("/cron", len("/cron"))
+        _press(prompt, Keys.Enter)
+        assert buffer.text == "/cron "
+        state = buffer.complete_state
+        assert state is not None
+        assert [c.text for c in state.completions] == [
+            "list",
+            "add",
+            "logs",
+            "remove",
+            "run",
+            "status",
+            "start",
+        ]
+        assert not prompt.app.is_done
+        _press(prompt, Keys.Escape)
+        assert buffer.complete_state is None
+        assert not prompt.app.is_done
+
+        _complete(prompt, "/sentry ")
+        _press(prompt, Keys.Enter)
+        assert buffer.text == "/sentry digest "
+        assert buffer.complete_state is not None
+        assert [c.text for c in buffer.complete_state.completions] == ["run", "schedule"]
+        _press(prompt, Keys.Down)
+        _press(prompt, Keys.Enter)
+        assert buffer.text == "/sentry digest schedule "
+        assert buffer.complete_state is not None
+        assert buffer.complete_state.completions[0].text == "list"
+        assert any("Subcommands · /sentry digest schedule" in row for row in _screen_lines(prompt))
+        _press(prompt, Keys.Enter)
+        assert prompt.app.is_done
+        assert prompt.app.future.result() == "/sentry digest schedule list"

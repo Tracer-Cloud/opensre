@@ -8,6 +8,7 @@ from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 
+from config.cli_command_choices import CLI_COMMAND_CHOICES
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry.help import QUICK_ACCESS_COMMANDS
 from surfaces.interactive_shell.command_registry.types import SlashCommand
@@ -52,7 +53,8 @@ def _resolve_completion_preview(
         label = display
     else:
         parts = buffer_text.split()
-        label = f"{parts[0]} {display}" if parts and parts[0].startswith("/") else display
+        parent = " ".join(parts if buffer_text.endswith(" ") else parts[:-1])
+        label = f"{parent} {display}" if parent.startswith("/") else display
     return label, meta
 
 
@@ -99,10 +101,14 @@ def _slash_completion(cmd: SlashCommand, start_position: int, *, cols: int) -> C
 
 
 def subcommand_completions(command_name: str, prefix: str = "") -> tuple[Completion, ...]:
-    """Return first-argument completions for a registered slash command."""
-    entry = SLASH_COMMANDS.get(command_name)
+    """Return choices for a registered root command or nested CLI group."""
+    path = tuple(command_name.lower().split())
+    if not path:
+        return ()
+    entry = SLASH_COMMANDS.get(path[0])
     if entry is None:
         return ()
+    choices = entry.first_arg_completions if len(path) == 1 else CLI_COMMAND_CHOICES.get(path, ())
     sub_prefix = prefix.lower()
     return tuple(
         Completion(
@@ -111,7 +117,7 @@ def subcommand_completions(command_name: str, prefix: str = "") -> tuple[Complet
             display=subcommand,
             display_meta=metadata,
         )
-        for subcommand, metadata in entry.first_arg_completions
+        for subcommand, metadata in choices
         if subcommand.startswith(sub_prefix)
     )
 
@@ -151,9 +157,9 @@ class ShellCompleter(Completer):
                         yield _slash_completion(cmd, -len(parts[0]), cols=cols)
             return
 
-        if len(parts) <= 2:
-            cmd_name = parts[0].lower()
-            raw_arg = "" if trailing_space or len(parts) < 2 else parts[1]
+        if parts:
+            cmd_name = " ".join(parts if trailing_space else parts[:-1]).lower()
+            raw_arg = "" if trailing_space else parts[-1]
 
             if _suppress_empty_arg_completions_for_inline_picker(cmd_name, raw_arg):
                 return

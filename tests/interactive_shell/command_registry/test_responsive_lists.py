@@ -56,7 +56,7 @@ def test_tasks_list_keeps_cancel_id_and_error(monkeypatch: pytest.MonkeyPatch, w
     assert max(cell_len(line) for line in text.splitlines()) <= width
 
 
-def test_cron_replay_reserves_narrow_gutter_and_keeps_ids_in_pager(
+def test_cron_logs_replay_reserves_narrow_gutter_and_keeps_ids_in_pager(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import subprocess
@@ -82,7 +82,7 @@ def test_cron_replay_reserves_narrow_gutter_and_keeps_ids_in_pager(
 
     monkeypatch.setattr(cli_parity.subprocess, "run", run_child)
     session = Session()
-    cli_parity._cmd_cron(session, console, ["list"])
+    cli_parity._cmd_cron(session, console, ["logs", "abc123"])
     assert child_widths == [35]
     text = output.getvalue()
     assert "final-task-id" not in text

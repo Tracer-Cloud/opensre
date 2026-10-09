@@ -38,8 +38,8 @@ from infrastructure.scheduling.scheduler.loop_constants import (
 from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_reference
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
 from infrastructure.terminal.theme import BOLD_BRAND, DIM
-from surfaces.cli.commands.schedule_listing import print_loop_schedules
 from surfaces.cli.commands.scheduling import validate_cron_and_timezone
+from surfaces.shared.terminal.tables.schedule_listing import print_loop_schedules
 
 _console = Console()
 
