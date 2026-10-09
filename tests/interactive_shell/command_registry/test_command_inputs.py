@@ -15,7 +15,12 @@ from prompt_toolkit.output import DummyOutput
 from rich.console import Console
 
 from config.command_inputs import COMMAND_INPUTS
-from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_WORK_ITEMS_DIR_ENV
+from config.constants import (
+    OPENSRE_INTERACTIVE_ENV,
+    OPENSRE_MEMORY_DIR_ENV,
+    OPENSRE_WORK_ITEMS_DIR_ENV,
+)
+from config.repl_config import ReplConfig
 from core.domain.work_items import list_work_items
 from surfaces.interactive_shell.command_registry import (
     dispatch_slash,
@@ -258,3 +263,28 @@ def test_tab_navigation_reaches_create_from_priority() -> None:
 @pytest.mark.parametrize("command", ["/work done", "/work complete", "/memory show"])
 def test_other_missing_arguments_keep_usage_response(command: str) -> None:
     assert "usage:" in dispatch(command)
+
+
+@pytest.mark.parametrize("tty", [True, False])
+def test_cli_interactive_override_still_respects_noninteractive_dispatch(
+    monkeypatch: pytest.MonkeyPatch, tty: bool
+) -> None:
+    monkeypatch.setenv(OPENSRE_INTERACTIVE_ENV, "0")
+    assert ReplConfig.load(cli_enabled=True).enabled
+
+    def collect(app: Any) -> Any:
+        assert tty, "Noninteractive dispatch must not open the form"
+        return run_keys(app, "Override regression\r\x13")
+
+    monkeypatch.setattr(work_cmds, "run_command_input", collect)
+    with create_app_session(output=DummyOutput()):
+        output = dispatch("/work add --priority high --project payments", tty=tty)
+    items = list_work_items()
+    if tty:
+        assert len(items) == 1
+        assert items[0].title == "Override regression"
+        assert items[0].priority.value == "high"
+        assert items[0].project == "payments"
+    else:
+        assert "usage:" in output
+        assert not items
