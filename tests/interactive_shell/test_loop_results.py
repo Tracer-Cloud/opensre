@@ -291,3 +291,28 @@ def test_recent_runs_reflow_with_full_timestamp_and_bounded_findings(
     assert max(cell_len(line) for line in recent.splitlines()) <= width
     if width == 40:
         assert "Result:" in recent and "Started:" in recent
+
+
+@pytest.mark.parametrize("width", [40, 160])
+def test_invalid_loop_keeps_recovery_guidance_in_details_only(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    from surfaces.interactive_shell.ui.loops import render_loop_details
+
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("COLUMNS", str(width))
+    error = "Legacy task kind 'daily_summary' was disabled. Recreate with opensre cron add."
+    loop = replace(_loop(), enabled=False, schedule_error=error)
+    output = io.StringIO()
+    console = Console(file=output, width=width, color_system=None)
+    render_loops(console, [loop], {})
+    listing = output.getvalue()
+    assert "Invalid" in listing and "Paused" in listing
+    assert "Requires action" not in listing
+    assert "daily_summary" not in listing
+    assert "/loops show <name-or-id>" in listing
+
+    output.seek(0)
+    output.truncate()
+    render_loop_details(console, loop, [], None)
+    assert error in " ".join(output.getvalue().split())

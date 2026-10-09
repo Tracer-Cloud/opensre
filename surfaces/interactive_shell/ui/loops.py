@@ -149,8 +149,6 @@ def render_loops(
                 )
             )
             details.append(_clipped(_finding(run), 160))
-        if loop.schedule_error:
-            details.append(Text(f"Requires action: {loop.schedule_error}", style=WARNING))
         rows.append(
             RecordRow(
                 (
