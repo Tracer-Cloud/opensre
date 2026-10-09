@@ -59,10 +59,12 @@ class RecordTable:
         available = max(1, options.max_width - 2 * _OUTER_PADDING)
         wide = sum(widths) + _COLUMN_GAP * (len(widths) - 1) <= available
         yield Padding(
-            Text(f"{self.title} · {len(self.rows)}", style=BOLD_BRAND), (0, _OUTER_PADDING)
+            Text(f"{self.title} · {len(self.rows)}", style=BOLD_BRAND),
+            (0, _OUTER_PADDING),
+            expand=False,
         )
         if self.subtitle:
-            yield Padding(Text(self.subtitle, style=DIM), (0, _OUTER_PADDING))
+            yield Padding(Text(self.subtitle, style=DIM), (0, _OUTER_PADDING), expand=False)
         yield Text("")
         for index, row in enumerate(self.rows):
             if wide:
@@ -78,19 +80,22 @@ class RecordTable:
                         column.header, width=width, justify=column.justify, overflow="fold"
                     )
                 table.add_row(*row.cells)
-                yield Padding(table, (0, _OUTER_PADDING))
+                yield Padding(table, (0, _OUTER_PADDING), expand=False)
             else:
-                yield Padding(row.cells[0], (0, _OUTER_PADDING))
+                yield Padding(row.cells[0], (0, _OUTER_PADDING), expand=False)
             if row.metadata:
                 yield Text("")
                 for line in row.metadata:
-                    yield Padding(line, (0, _OUTER_PADDING))
+                    yield Padding(line, (0, _OUTER_PADDING), expand=False)
             if not wide and len(self.columns) > 1:
                 yield Text("")
                 for column, cell in zip(self.columns[1:], row.cells[1:], strict=True):
+                    if not cell.plain.strip():
+                        continue
                     yield Padding(
                         Text.assemble((f"{column.header}: ", DIM), cell),
                         (0, _OUTER_PADDING, 0, _OUTER_PADDING + _DETAIL_INDENT),
+                        expand=False,
                     )
             # Description helpers may already supply separators. Normalize them here
             # so absent summaries never create leading, trailing or doubled gaps.
@@ -101,10 +106,12 @@ class RecordTable:
                     continue
                 if separator:
                     yield Text("")
-                yield Padding(line, (0, _OUTER_PADDING, 0, _OUTER_PADDING + _DETAIL_INDENT))
+                yield Padding(
+                    line, (0, _OUTER_PADDING, 0, _OUTER_PADDING + _DETAIL_INDENT), expand=False
+                )
                 separator = False
             if index < len(self.rows) - 1:
                 yield Text("")
         if self.caption:
             yield Text("")
-            yield Padding(Text(self.caption, style=DIM), (0, _OUTER_PADDING))
+            yield Padding(Text(self.caption, style=DIM), (0, _OUTER_PADDING), expand=False)

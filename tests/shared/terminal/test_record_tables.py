@@ -153,3 +153,17 @@ def test_metadata_spacing_and_empty_details_do_not_inflate_columns() -> None:
         assert lines[summary_index + 1] == ""
         assert lines[summary_index + 2].startswith("  next")
         assert "abc123def45678901234567890123456" in "".join(line.strip() for line in lines)
+
+
+def test_outer_padding_does_not_fill_transcripts_to_terminal_width() -> None:
+    table = RecordTable(
+        "Tasks",
+        (RecordColumn("Task"), RecordColumn("State")),
+        (RecordRow((Text("health"), Text("Open")), metadata=(Text("ID: task-123"),)),),
+    )
+    outputs = []
+    for width in (80, 240):
+        output = io.StringIO()
+        Console(file=output, width=width, height=25, color_system=None).print(table)
+        outputs.append(output.getvalue())
+    assert outputs[0] == outputs[1]

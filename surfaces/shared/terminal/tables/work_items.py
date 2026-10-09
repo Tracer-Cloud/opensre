@@ -29,7 +29,7 @@ def work_items_table(items: Sequence[WorkItem], *, title: str = "Work items") ->
             RecordRow(
                 (
                     Text(item.title, style="bold"),
-                    *((Text(item.project or "—"),) if show_project else ()),
+                    *((Text(item.project.strip()),) if show_project else ()),
                     Text(
                         item.status.value.capitalize(),
                         style=WARNING if item.status.value == "blocked" else HIGHLIGHT,
@@ -60,7 +60,7 @@ def next_work_table(ranked: Sequence[WorkItemScore]) -> RecordTable:
             RecordRow(
                 (
                     Text(scored.item.title, style="bold"),
-                    *((Text(scored.item.project or "—"),) if show_project else ()),
+                    *((Text(scored.item.project.strip()),) if show_project else ()),
                     Text(str(index)),
                     Text(str(scored.score)),
                 ),
