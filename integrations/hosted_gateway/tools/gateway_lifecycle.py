@@ -40,6 +40,7 @@ _WHOSE = (
     name=START_TOOL_NAME,
     source=SOURCE,
     display_name="Start hosted gateway",
+    compact_description="Start the signed-in organization's existing hosted gateway.",
     description=(
         "Start the OpenSRE hosted gateway of the signed-in user's organization (the managed "
         "Fargate container that runs CI/CD repair loops remotely). It resumes with the "

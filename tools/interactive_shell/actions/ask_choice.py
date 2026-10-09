@@ -369,6 +369,7 @@ def run_ask_user_choice(
 
 ask_user_choice_tool = RegisteredTool(
     name="ask_user_choice",
+    compact_description="Ask the user one or more blocking multiple-choice questions.",
     description=(
         "Ask the user to pick from a small fixed set via the interactive "
         "shell's selection menu. When several missing facts block a multi-step "

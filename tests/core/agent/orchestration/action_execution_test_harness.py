@@ -34,7 +34,27 @@ class FakeActionLLM:
         self.invocations += 1
         if not self.responses:
             return AgentLLMResponse(content="", tool_calls=[], raw_content=None)
-        return self.responses.pop(0)
+        response = self.responses[0]
+        discovery = self.discovery_response(response, tools)
+        return discovery if discovery is not None else self.responses.pop(0)
+
+    @staticmethod
+    def discovery_response(
+        response: AgentLLMResponse,
+        tools: list[dict[str, Any]] | None,
+    ) -> AgentLLMResponse | None:
+        """Let scripted tests discover a planned hidden tool through the real loop."""
+        visible = {str(spec.get("name")) for spec in tools or ()}
+        hidden = [call.name for call in response.tool_calls if call.name not in visible]
+        if not hidden or "tool_search" not in visible:
+            return None
+        return AgentLLMResponse(
+            content="",
+            tool_calls=[
+                ToolCall(id="call_tool_search", name="tool_search", input={"names": hidden})
+            ],
+            raw_content=None,
+        )
 
     @staticmethod
     def build_assistant_message(content: str, tool_calls: list[ToolCall]) -> dict[str, Any]:

@@ -131,6 +131,8 @@ def _visible_stdout(stdout: str) -> str:
 
 def format_generic_tool_payload(tool_call: ToolCall, tool_result: Any) -> str:
     """Build a user-visible summary for one non-self-recording tool result."""
+    if getattr(tool_result, "model_only", False):
+        return ""
     if already_on_screen(tool_call, tool_result):
         return ""
     preferred_response = preferred_tool_response_text(tool_result)

@@ -34,7 +34,7 @@ def test_a_tool_guidance_name_is_answered_as_already_loaded_not_as_a_failure() -
     assert result["ok"] is True
     assert result["already_loaded"] is True
     assert "summarize_github_pr_status" in result["tools"]
-    assert "call the tool that fits the request" in result["content"]
+    assert "call the tool that fits the request" in result["content"].lower()
     assert "error" not in result
 
 

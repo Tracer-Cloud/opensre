@@ -53,14 +53,10 @@ def test_large_catalog_starts_small_and_search_activates_matching_tools() -> Non
     initial_names = {tool.name for tool in initial}
 
     assert initial_names == {
-        "get_sre_guidance",
         "cli_exec",
-        "code_implement",
-        "llm_set_provider",
+        "ask_user_choice",
         "skill_view",
-        "shell_run",
         "slash_invoke",
-        "task_cancel",
         "tool_search",
         "update_plan",
     }
@@ -68,8 +64,8 @@ def test_large_catalog_starts_small_and_search_activates_matching_tools() -> Non
     result = search(query="Kubernetes incident RCA")
     refreshed_names = {tool.name for tool in catalog.snapshot()}
 
-    assert result["ok"] is True
-    assert {item["name"] for item in result["activated"]} >= {
+    assert result.details["ok"] is True
+    assert {item["name"] for item in result.details["matches"]} >= {
         "get_eks_events",
         "list_eks_pods",
     }
@@ -93,7 +89,7 @@ def test_active_skill_and_goal_expose_only_their_control_tools() -> None:
     assert "get_eks_events" not in names
 
 
-def test_small_catalog_is_left_unchanged() -> None:
+def test_small_catalog_uses_the_same_progressive_policy() -> None:
     tools = (_tool("one"), _tool("two"))
     catalog = ProgressiveToolCatalog(
         SimpleNamespace(active_skill=None, session_goal=None),
@@ -102,7 +98,13 @@ def test_small_catalog_is_left_unchanged() -> None:
         base_names=(tool.name for tool in tools),
     )
 
-    assert catalog.snapshot() is tools
+    initial = catalog.snapshot()
+    assert [tool.name for tool in initial] == ["tool_search"]
+
+    result = initial[0](names=["one"])
+
+    assert result.details["state"] == "matched"
+    assert [tool.name for tool in catalog.snapshot()] == ["tool_search", "one"]
 
 
 def test_activating_every_tool_reports_nothing_remaining() -> None:
@@ -117,5 +119,30 @@ def test_activating_every_tool_reports_nothing_remaining() -> None:
 
     result = search(names=[tool.name for tool in tools])
 
-    assert result["remaining_hidden"] == 0
+    assert result.details["remaining_hidden"] == 0
     assert "tool_search" not in {tool.name for tool in catalog.snapshot()}
+
+
+def test_visible_tool_search_expands_the_full_description_and_guidance() -> None:
+    full = _tool("skill_view", "Full workflow guidance")
+    full.compact_description = "Find a workflow"
+    full.skill_guidance = "Use the exact workflow contract."
+    tools = (full, _tool("specialist"))
+    catalog = ProgressiveToolCatalog(
+        SimpleNamespace(active_skill=None, session_goal=None),
+        lambda: tools,
+        enabled=True,
+        base_names=(tool.name for tool in tools),
+    )
+
+    initial = catalog.snapshot()
+    assert next(tool for tool in initial if tool.name == "skill_view").description == (
+        "Find a workflow"
+    )
+
+    result = next(tool for tool in initial if tool.name == "tool_search")(names=["skill_view"])
+
+    assert result.details["matches"][0]["guidance"] == "Use the exact workflow contract."
+    assert next(tool for tool in catalog.snapshot() if tool.name == "skill_view").description == (
+        "Full workflow guidance"
+    )

@@ -45,7 +45,11 @@ def tap_executed_tool_outcomes(
     """
 
     def _callback(event: RuntimeEvent) -> None:
-        if isinstance(event, ToolExecutionEndEvent) and not event.data.get("skipped"):
+        if (
+            isinstance(event, ToolExecutionEndEvent)
+            and not event.data.get("skipped")
+            and not event.data.get("model_only")
+        ):
             outcomes.append(
                 ExecutedToolOutcome(
                     name=event.tool_name,

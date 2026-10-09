@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from typing import Any
 
+from config.constants.tool_discovery import (
+    DISCOVERY_DETAIL_KEYS_KEY,
+    DISCOVERY_PROGRESS_KEY,
+    MODEL_ONLY_PRESENTATION_KEY,
+)
 from core.agent_harness.spi.grounding import (
     list_action_skills,
     load_skill_reference,
@@ -13,7 +19,7 @@ from core.agent_harness.spi.grounding import (
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
 from core.domain.types.tools import ToolSurface
-from core.tool import RegisteredTool, SideEffectLevel
+from core.tool import RegisteredTool, SideEffectLevel, ToolExecutionResult
 from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.action_names import ActionToolName
 from tools.interactive_shell.actions.skill_entry import enter_skill
@@ -100,8 +106,16 @@ def _search_skills(query: str) -> dict[str, Any]:
 
 
 def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[str, Any]:
-    """Guidance attached to tool descriptions has nothing to open; say so without failing."""
+    """Return the real guidance already attached to the named tools."""
+    from core.agent_harness.tools.action_tools import get_action_tool
+
     listed = ", ".join(guided_tools)
+    guidance = "\n\n".join(
+        text
+        for tool_name in guided_tools
+        if (tool := get_action_tool(tool_name)) is not None
+        if (text := tool.skill_guidance.strip())
+    )
     return {
         "ok": True,
         "name": name,
@@ -109,15 +123,16 @@ def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[s
         "tools": list(guided_tools),
         "summary": f"{name} is tool guidance, already loaded",
         "content": (
-            f"{name} is guidance attached to these tools: {listed}. There is no separate "
-            "skill to open: call the tool that fits the request."
+            guidance
+            or f"{name} is guidance attached to these tools: {listed}. Call the tool that "
+            "fits the request."
         ),
     }
 
 
 def run_skill_view(
     *, name: str = "", query: str = "", reference: str = "", context: Any
-) -> dict[str, Any]:
+) -> ToolExecutionResult:
     # The prerequisite gate reads the integrations this turn's tools receive,
     # so it agrees with the tools it protects.
     resolved: Mapping[str, Any] | None = getattr(context, "resolved_integrations", None)
@@ -125,13 +140,37 @@ def run_skill_view(
     def execute(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
         return execute_skill_view_tool(args, ctx, resolved_integrations=resolved)
 
-    return execute_with_action_context(
+    payload = execute_with_action_context(
         {"name": name, "query": query, "reference": reference}, context, execute
+    )
+    progress = (
+        bool(payload.get("ok"))
+        and bool(name or reference)
+        and not bool(payload.get("already_active") or payload.get("already_loaded"))
+    )
+    detail_keys = tuple(
+        str(match.get("name"))
+        for match in payload.get("matches", ())
+        if isinstance(match, dict) and match.get("name")
+    )
+    if payload.get("ok") and (loaded_name := payload.get("name")):
+        detail_keys = (*detail_keys, f"{loaded_name}:{payload.get('reference') or 'body'}")
+    return ToolExecutionResult(
+        content=json.dumps(payload, default=str),
+        details=payload,
+        is_error=bool(payload.get("error")),
+        metadata={
+            "tool_name": ActionToolName.SKILL_VIEW,
+            MODEL_ONLY_PRESENTATION_KEY: True,
+            DISCOVERY_PROGRESS_KEY: progress,
+            DISCOVERY_DETAIL_KEYS_KEY: detail_keys,
+        },
     )
 
 
 skill_view_tool = RegisteredTool(
     name=ActionToolName.SKILL_VIEW,
+    compact_description="Find and load full workflow instructions or a linked reference.",
     description=(
         "Load the full body of one action-agent skill by name from the "
         "workflow-name index. Search with query when the right workflow name is "

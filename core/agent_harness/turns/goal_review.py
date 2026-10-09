@@ -111,7 +111,7 @@ def tap_executed_tool_names(
     """Wrap ``inner`` to record each executed tool's name into ``names``."""
 
     def _callback(event: RuntimeEvent) -> None:
-        if isinstance(event, ToolExecutionEndEvent):
+        if isinstance(event, ToolExecutionEndEvent) and not event.data.get("model_only"):
             names.append(event.tool_name)
         if inner is not None:
             inner(event)
@@ -126,7 +126,7 @@ def tap_executed_tool_calls(
     """Wrap ``inner`` to record ``(tool_name, args)`` for each executed tool."""
 
     def _callback(event: RuntimeEvent) -> None:
-        if isinstance(event, ToolExecutionEndEvent):
+        if isinstance(event, ToolExecutionEndEvent) and not event.data.get("model_only"):
             calls.append((event.tool_name, dict(event.args or {})))
         if inner is not None:
             inner(event)

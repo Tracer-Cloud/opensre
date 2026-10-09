@@ -262,8 +262,12 @@ class _MessageMappedActionLLM(FakeActionLLM):
         message = _message_from_agent_prompt(messages)
         actions, _has_unhandled = _FAKE_PLANS.get(message, ([], False))
         index = self._issued.get(message, 0)
+        response = _response_from_actions(list(actions[index : index + 1]))
+        discovery = self.discovery_response(response, tools)
+        if discovery is not None:
+            return discovery
         self._issued[message] = index + 1
-        return _response_from_actions(list(actions[index : index + 1]))
+        return response
 
 
 # Deterministic phrase -> (planned actions, has_unhandled_clause) mapping used by the

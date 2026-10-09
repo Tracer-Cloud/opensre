@@ -26,6 +26,7 @@ from config.constants.gateway import (
     PROMPT_PROGRESS_KIND_TOOL,
     PROMPT_PROGRESS_PLAN_OMITTED,
 )
+from config.constants.tool_discovery import TOOL_SEARCH_NAME
 from core.agent_harness.spi.accounting import SELF_RECORDING_ACTION_TOOL_NAMES
 from core.agent_harness.spi.activity import (
     bounded_activity_preview,
@@ -75,6 +76,7 @@ _COMMAND_TOOL_LABELS: frozenset[str] = frozenset({"Execute", "GitHub CLI", "open
 # in :func:`tool_call_display`.
 _PYTHON_URL_RE = re.compile(r"https?://[^\s'\"`]+")
 _HOSTED_GATEWAY_TOOL = "ask_hosted_gateway"
+_DISCOVERY_TOOLS = frozenset({ActionToolName.SKILL_VIEW, TOOL_SEARCH_NAME})
 
 _SIMPLE_TOOL_LABELS: dict[str, tuple[str, str]] = {
     ActionToolName.LLM_SET_PROVIDER: ("LLM provider", "target"),
@@ -350,6 +352,13 @@ class ActionRenderObserver:
             self._render_progress_update(data)
             return
         if kind == "tool_end":
+            if data.get("model_only") is True:
+                call_id = _tool_event_id(data)
+                self._pending_skill_calls.pop(call_id, None)
+                self._pending_result_tools.discard(call_id)
+                self.session.terminal.drop_action_log(call_id)
+                self._clear_active_action(data)
+                return
             if str(data.get("name") or "") == _HOSTED_GATEWAY_TOOL:
                 self._clear_gateway_plan()
             # Discriminate by how the start registered the call: skill entries
@@ -377,6 +386,8 @@ class ActionRenderObserver:
         if not name:
             return
         self._set_spinner_phase(SpinnerState.INVOKING_TOOLS_PHASE)
+        if name == TOOL_SEARCH_NAME:
+            return
         if name == ActionToolName.SKILL_VIEW:
             # ``reference=`` loads one bundled file without re-entering the
             # skill. It is prompt plumbing, not a user-visible action: no
@@ -395,10 +406,18 @@ class ActionRenderObserver:
         else:
             self._render_tool_invocation(name, data)
             self._pending_result_tools.add(_tool_event_id(data))
-        if name not in _SKIP_PLAN_WORK_TOOLS and not _is_internal_choice_command(name, data):
+        if (
+            name not in _SKIP_PLAN_WORK_TOOLS
+            and name not in _DISCOVERY_TOOLS
+            and not _is_internal_choice_command(name, data)
+        ):
             self._record_plan_work(name, data)
             self._set_active_action(name, data)
-        if self.planned_count == 0 and name not in SELF_RECORDING_ACTION_TOOL_NAMES:
+        if (
+            self.planned_count == 0
+            and name not in SELF_RECORDING_ACTION_TOOL_NAMES
+            and name not in _DISCOVERY_TOOLS
+        ):
             self.session.record("cli_agent", self.message)
         self.planned_count += 1
 
@@ -602,6 +621,9 @@ class ActionRenderObserver:
         buffer flushes at the end of the turn, so the row would print under the
         output it labels.
         """
+        if data.get("model_only") is True:
+            self.session.terminal.drop_action_log(_tool_event_id(data))
+            return
         output = data.get("output")
         if isinstance(output, dict) and output.get("rendered_in_shell") is True:
             self.session.terminal.drop_action_log(_tool_event_id(data))

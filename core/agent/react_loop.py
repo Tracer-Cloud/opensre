@@ -11,12 +11,19 @@ host can drive it. ``run_react_loop`` is the one-line functional entry.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from typing import Any
 
+from config.constants.tool_discovery import (
+    DISCOVERY_DETAIL_KEYS_KEY,
+    DISCOVERY_PROGRESS_KEY,
+    MAX_STAGNANT_DISCOVERY_ITERATIONS,
+    MODEL_ONLY_PRESENTATION_KEY,
+)
 from config.llm_models import DEFAULT_MAX_TOKENS
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.loop_host import LoopHost
@@ -99,7 +106,7 @@ The tool loop has stopped for safety ({reason}). Tools are disabled for this res
 Give the user a concise final handoff based only on the work and tool results above:
 summarize useful partial results, state what prevented completion, and give the next
 practical step. Do not claim the task completed and do not request or describe another
-tool call.
+tool call. Do not quote, list, or summarize model-only discovery results.
 """
 _ITERATION_CAP_FALLBACK = (
     "I reached the emergency tool-iteration ceiling. Partial results are preserved, "
@@ -109,6 +116,10 @@ _STAGNATION_FALLBACK = (
     "I stopped after repeated tool calls produced no new result. Partial results are "
     "preserved, but I could not complete the request. Change the inputs or tool strategy "
     "before continuing."
+)
+_DISCOVERY_STAGNATION_FALLBACK = (
+    "I stopped after repeated tool discovery found no new capability or guidance. "
+    "I could not complete the request with the available tools."
 )
 _GOAL_UNVERIFIED_FALLBACK = (
     "I could not verify that the requested outcome was achieved. Partial results are "
@@ -252,6 +263,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._stop_reason = "iteration_cap"
         self._seen_observations: set[bytes] = set()
         self._stagnant_iterations = 0
+        self._stagnant_discovery_iterations = 0
+        self._seen_discovery_details: set[str] = set()
         self._safety_handoff_attempted = False
         self._operation_run_id = uuid.uuid4().hex[:12]
 
@@ -267,6 +280,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             )
         )
         self._record_loop_operation("agent_loop_started")
+        self._record_catalog_snapshot(reason="initial")
         with (
             observe_agent(
                 _AGENT_OBSERVATION_NAME,
@@ -337,6 +351,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._runtime_tools = list(self._host._filter_tools(list(snapshot)))
         self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
         self._fixed_overhead_tokens = system_and_tools_overhead(self._system, self._tool_schemas)
+        self._record_catalog_snapshot(reason="expanded")
 
     def _run_iteration(self, iteration: int) -> _IterationResult:
         """Run one think -> observe step."""
@@ -719,6 +734,17 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         tool_result_message = self._msg_formatter.to_tool_result_runtime_message(
             response.tool_calls, provider_results
         )
+        model_only_indices = tuple(
+            index for index, result in enumerate(results) if result.model_only
+        )
+        if model_only_indices:
+            tool_result_message = replace(
+                tool_result_message,
+                metadata={
+                    **tool_result_message.metadata,
+                    "model_only_result_indices": model_only_indices,
+                },
+            )
         self._messages.append(tool_result_message)
 
         tool_error_count = sum(1 for result in results if result.is_error)
@@ -728,7 +754,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             # A call skipped after an earlier call ended the turn never ran:
             # it answers the provider's tool-call id but is not evidence.
             skipped = bool(result.metadata.get("skipped"))
-            if not skipped:
+            if not skipped and not result.model_only:
                 self._executed.append((tc, compat_payload))
             self._tool_results.append((tc, result))
             self._host._emit_runtime(
@@ -744,6 +770,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                         "tool_call_index": index,
                         "tool_call_count": requested_tool_count,
                         **({"skipped": True} if skipped else {}),
+                        **({MODEL_ONLY_PRESENTATION_KEY: True} if result.model_only else {}),
                     },
                 )
             )
@@ -757,6 +784,11 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     "tool_call_count": requested_tool_count,
                     "tool_error_count": tool_error_count,
                     "terminated_tool_count": terminated_tool_count,
+                    **(
+                        {"model_only_result_indices": model_only_indices}
+                        if model_only_indices
+                        else {}
+                    ),
                 },
             )
         )
@@ -770,6 +802,31 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 requested_tool_count=requested_tool_count,
                 tool_error_count=tool_error_count,
                 terminated_tool_count=terminated_tool_count,
+            )
+        discovery_only = bool(results) and all(result.model_only for result in results)
+        if discovery_only:
+            detail_keys = {
+                str(key)
+                for result in results
+                for key in result.metadata.get(DISCOVERY_DETAIL_KEYS_KEY, ())
+            }
+            made_progress = bool(detail_keys - self._seen_discovery_details) or any(
+                result.metadata.get(DISCOVERY_PROGRESS_KEY) is True for result in results
+            )
+            self._seen_discovery_details.update(detail_keys)
+            self._stagnant_discovery_iterations = (
+                0 if made_progress else self._stagnant_discovery_iterations + 1
+            )
+        else:
+            self._stagnant_discovery_iterations = 0
+        if self._stagnant_discovery_iterations >= MAX_STAGNANT_DISCOVERY_ITERATIONS:
+            self._stop_reason = "discovery_stagnation"
+            return _IterationResult(
+                should_stop=True,
+                outcome=self._stop_reason,
+                requested_tool_count=requested_tool_count,
+                tool_error_count=tool_error_count,
+                terminated_tool_count=0,
             )
         fingerprint = _observation_fingerprint(response.tool_calls, results)
         if fingerprint in self._seen_observations:
@@ -863,6 +920,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             if self._stop_reason == "stagnation_limit"
             else _ITERATION_CAP_FALLBACK
         )
+        if self._stop_reason == "discovery_stagnation":
+            content = _DISCOVERY_STAGNATION_FALLBACK
         if self._stop_reason == "goal_unverified":
             content = _GOAL_UNVERIFIED_FALLBACK
         return AssistantRuntimeMessage(
@@ -1033,6 +1092,23 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         data: dict[str, Any] | None = None,
     ) -> None:
         record_operation(event, {**self._operation_base(), **(data or {})})
+
+    def _record_catalog_snapshot(self, *, reason: str) -> None:
+        """Record catalog shape without tool descriptions or schemas."""
+        serialized_bytes = len(
+            json.dumps(self._tool_schemas, ensure_ascii=False, default=str).encode("utf-8")
+        )
+        self._record_loop_operation(
+            "tool_catalog_snapshot",
+            {
+                "reason": reason,
+                "catalog_names": [
+                    str(getattr(tool, "name", "tool")) for tool in self._runtime_tools
+                ],
+                "serialized_size_bytes": serialized_bytes,
+                "schema_tokens": system_and_tools_overhead(None, self._tool_schemas),
+            },
+        )
 
     def _record_loop_finished(self, *, error: BaseException | None = None) -> None:
         data: dict[str, Any] = {

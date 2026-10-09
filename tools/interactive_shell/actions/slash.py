@@ -333,6 +333,7 @@ def run_slash(*, command: str, args: list[str] | None = None, context: Any) -> d
 
 slash_invoke_tool = RegisteredTool(
     name="slash_invoke",
+    compact_description="Run an OpenSRE interactive slash command.",
     description=slash_invoke_tool_description(),
     input_schema=slash_invoke_input_schema(),
     source="interactive_shell",

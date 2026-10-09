@@ -91,6 +91,7 @@ def run_update_plan(
 
 update_plan_tool = RegisteredTool(
     name=ActionToolName.UPDATE_PLAN,
+    compact_description="Create or revise the live execution plan for multi-step work.",
     description=(
         "Create or revise the live execution plan for this workload, mark a "
         "step blocked, or settle the plan when the work is done. "

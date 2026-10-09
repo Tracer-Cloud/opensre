@@ -172,6 +172,7 @@ _FAILED_INTEGRATION_NEXT_STEP = {
     name=TOOL_NAME,
     source=SOURCE,
     display_name="Ask hosted gateway",
+    compact_description="Send, continue, or inspect work on the organization's hosted gateway.",
     description=(
         "Send one prompt to the OpenSRE hosted gateway of the signed-in user's organization "
         "(the managed Fargate container that runs CI/CD repair loops remotely) and return its "

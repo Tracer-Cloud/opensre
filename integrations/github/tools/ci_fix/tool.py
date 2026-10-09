@@ -107,6 +107,7 @@ def _action_scope(context: Any) -> Any:
     name="fix_github_pr_ci",
     source="github",
     display_name="Fix GitHub CI",
+    compact_description="Diagnose and repair failing GitHub CI, then push and verify the fix.",
     description=(
         "Inspect failing GitHub Actions checks on a pull request or branch, run "
         "an auto-detected coding agent with the failing log context, commit the "
