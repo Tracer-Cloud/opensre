@@ -30,9 +30,7 @@ class CommandInput:
 WORK_ADD_INPUT = CommandInput(
     "/work", ("add",), frozenset({"--project", "--owner", "--priority", "--due"})
 )
-WORK_DONE_INPUT = CommandInput("/work", ("done", "complete"))
-MEMORY_SHOW_INPUT = CommandInput("/memory", ("show",))
-COMMAND_INPUTS = (WORK_ADD_INPUT, WORK_DONE_INPUT, MEMORY_SHOW_INPUT)
+COMMAND_INPUTS = (WORK_ADD_INPUT,)
 
 
 def needs_command_input(command: str, args: list[str]) -> bool:

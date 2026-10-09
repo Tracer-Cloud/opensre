@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from rich.console import Console
 from rich.markup import escape
 
-from config.command_inputs import WORK_ADD_INPUT, WORK_DONE_INPUT
+from config.command_inputs import WORK_ADD_INPUT
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
     WorkItem,
@@ -27,7 +27,7 @@ from surfaces.interactive_shell.ui import (
     HIGHLIGHT,
 )
 from surfaces.interactive_shell.ui.work_input import build_work_form
-from surfaces.shared.terminal.components.command_input import build_search_picker, run_command_input
+from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.rendering import print_repl_renderable
 from surfaces.shared.terminal.tables.work_items import next_work_table, work_items_table
 
@@ -191,22 +191,6 @@ def _cmd_work(session: Session, console: Console, args: list[str]) -> bool:
             return _create_work(console, values["title"], values)
         return _add(console, args[1:])
     if sub in {"done", "complete"}:
-        if can_collect_input(session, WORK_DONE_INPUT, args):
-            items = [item for item in list_work_items(status=None) if item.is_active]
-            if not items:
-                console.print(f"[{DIM}]No unfinished work items. Add one with /work add.[/]")
-                return True
-            selected = run_command_input(
-                build_search_picker(
-                    title="/work done",
-                    choices=[
-                        (item.id, f"{item.display_id} · {item.title} · {item.priority.value}")
-                        for item in items
-                    ],
-                    action="complete",
-                )
-            )
-            return True if selected is None else _done(console, [selected])
         return _done(console, args[1:])
     if sub in {"next", "prioritize"}:
         return _next(console, args[1:])

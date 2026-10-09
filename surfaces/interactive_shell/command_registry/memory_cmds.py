@@ -5,7 +5,6 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
-from config.command_inputs import MEMORY_SHOW_INPUT
 from config.constants import OPENSRE_MEMORY_DISABLED_ENV
 from core.domain.memory import (
     delete_memory,
@@ -16,7 +15,6 @@ from core.domain.memory import (
     memory_path,
     slugify,
 )
-from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -27,7 +25,6 @@ from surfaces.interactive_shell.ui import (
     print_repl_table,
     repl_table,
 )
-from surfaces.shared.terminal.components.command_input import build_search_picker, run_command_input
 
 
 def _disabled_notice(console: Console) -> bool:
@@ -104,7 +101,7 @@ def _show_path(console: Console) -> bool:
     return True
 
 
-def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:
+def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
     if not memory_enabled():
         return _disabled_notice(console)
     if not args:
@@ -112,21 +109,6 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:
 
     sub = args[0].lower()
     if sub == "show":
-        if can_collect_input(session, MEMORY_SHOW_INPUT, args):
-            records = list_memories()
-            if not records:
-                console.print(f"[{DIM}]No memories stored yet. Share durable facts in chat.[/]")
-                return True
-            selected = run_command_input(
-                build_search_picker(
-                    title="/memory show",
-                    choices=[
-                        (record.slug, f"{record.slug} · {record.description}") for record in records
-                    ],
-                    action="open",
-                )
-            )
-            return True if selected is None else _show_one(console, [selected])
         return _show_one(console, args[1:])
     if sub == "forget":
         return _forget(console, args[1:])

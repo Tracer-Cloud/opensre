@@ -15,19 +15,16 @@ from rich.console import Console
 
 from config.command_inputs import COMMAND_INPUTS
 from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_WORK_ITEMS_DIR_ENV
-from core.domain.memory import save_memory
-from core.domain.work_items import add_work_item, list_work_items
+from core.domain.work_items import list_work_items
 from surfaces.interactive_shell.command_registry import (
     dispatch_slash,
     input_collection,
-    memory_cmds,
     work_cmds,
 )
 from surfaces.interactive_shell.command_registry import help as help_cmd
 from surfaces.interactive_shell.runtime import input_policy
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.work_input import build_work_form
-from surfaces.shared.terminal.components.command_input import build_search_picker
 
 
 @pytest.fixture(autouse=True)
@@ -105,47 +102,13 @@ def test_work_form_validation_retains_title_and_cancellation_is_nonmutating(
     assert len(list_work_items(status=None)) == 1
 
 
-def test_picker_filters_and_completes_only_selected_unfinished_item(
+def test_complete_and_noninteractive_flows_never_open_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    add_work_item(title="Review documentation")
-    target = add_work_item(title="Investigate checkout latency")
-
-    def collect(app: Any) -> Any:
-        return run_keys(app, "checkout\r")
-
-    monkeypatch.setattr(work_cmds, "run_command_input", collect)
-    with create_app_session(output=DummyOutput()):
-        dispatch("/work complete")
-    completed = list_work_items(status="completed")
-    assert [item.id for item in completed] == [target.id]
-    assert len(list_work_items()) == 1
-
-
-def test_memory_picker_opens_selected_record(monkeypatch: pytest.MonkeyPatch) -> None:
-    save_memory(
-        slug="prod-cluster",
-        memory_type="infrastructure",
-        description="Production cluster",
-        body="eks-prod-1",
-    )
-
-    def collect(app: Any) -> Any:
-        return run_keys(app, "cluster\r")
-
-    monkeypatch.setattr(memory_cmds, "run_command_input", collect)
-    with create_app_session(output=DummyOutput()):
-        assert "eks-prod-1" in dispatch("/memory show")
-
-
-def test_empty_and_noninteractive_flows_never_open_input(monkeypatch: pytest.MonkeyPatch) -> None:
     def unexpected(_app: Any) -> None:
         raise AssertionError("must not open interactive input")
 
     monkeypatch.setattr(work_cmds, "run_command_input", unexpected)
-    monkeypatch.setattr(memory_cmds, "run_command_input", unexpected)
-    assert "No unfinished work" in dispatch("/work done")
-    assert "No memories" in dispatch("/memory show")
     assert "usage:" in dispatch("/work add", tty=False)
     dispatch("/work add Fully specified --priority high")
     assert len(list_work_items()) == 1
@@ -161,14 +124,6 @@ def test_all_registered_inputs_reserve_stdin() -> None:
             assert input_policy.turn_needs_exclusive_stdin(
                 f"{spec.command} {subcommand}", Session()
             )
-
-
-def test_picker_no_match_enter_and_escape_do_not_select() -> None:
-    with create_app_session(output=DummyOutput()):
-        app = build_search_picker(
-            title="Select", choices=[("opaque-id", "Checkout")], action="open"
-        )
-        assert run_keys(app, "absent\r\x1b") is None
 
 
 def test_form_requires_title_before_accepting() -> None:
@@ -286,3 +241,8 @@ def test_tab_navigation_reaches_create_from_priority() -> None:
     assert result is not None
     assert result["title"] == "Review latency"
     assert result["priority"] == "normal"
+
+
+@pytest.mark.parametrize("command", ["/work done", "/work complete", "/memory show"])
+def test_other_missing_arguments_keep_usage_response(command: str) -> None:
+    assert "usage:" in dispatch(command)
