@@ -53,10 +53,12 @@ def test_large_catalog_starts_small_and_search_activates_matching_tools() -> Non
     initial_names = {tool.name for tool in initial}
 
     assert initial_names == {
-        "cli_exec",
         "ask_user_choice",
+        "cli_exec",
+        "llm_set_provider",
         "skill_view",
         "slash_invoke",
+        "task_cancel",
         "tool_search",
         "update_plan",
     }

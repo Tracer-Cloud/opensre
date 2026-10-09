@@ -754,7 +754,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             # A call skipped after an earlier call ended the turn never ran:
             # it answers the provider's tool-call id but is not evidence.
             skipped = bool(result.metadata.get("skipped"))
-            if not skipped and not result.model_only:
+            # Successful discovery stays out of the work record. A failed
+            # model-only call, such as skill_view(reference=...), is still work
+            # the goal gate has to see.
+            if not skipped and (not result.model_only or result.is_error):
                 self._executed.append((tc, compat_payload))
             self._tool_results.append((tc, result))
             self._host._emit_runtime(

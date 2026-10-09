@@ -416,14 +416,14 @@ def _descriptive_tool_error(result: ToolExecutionResult) -> str:
     """The tool's own account of a failure, never its arguments or evidence."""
     if not result.is_error:
         return ""
-    content = result.content
-    if isinstance(content, str) and content.strip():
-        return content.strip()
     details = result.details
     if isinstance(details, dict):
         error = details.get("error")
         if isinstance(error, str) and error.strip():
             return error.strip()
+    content = result.content
+    if isinstance(content, str) and content.strip():
+        return content.strip()
     return ""
 
 

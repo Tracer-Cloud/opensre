@@ -107,13 +107,13 @@ def _search_skills(query: str) -> dict[str, Any]:
 
 def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[str, Any]:
     """Return the real guidance already attached to the named tools."""
-    from core.agent_harness.tools.action_tools import get_action_tool
+    from tools.registry import get_registered_tool
 
     listed = ", ".join(guided_tools)
     guidance = "\n\n".join(
         text
         for tool_name in guided_tools
-        if (tool := get_action_tool(tool_name)) is not None
+        if (tool := get_registered_tool(tool_name)) is not None
         if (text := tool.skill_guidance.strip())
     )
     return {

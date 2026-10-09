@@ -36,6 +36,8 @@ INITIAL_TOOL_CATALOG_ORDER = (
     "update_plan",
     "cli_exec",
     "slash_invoke",
+    "llm_set_provider",
+    "task_cancel",
     "scan_local_git_workspace",
     "analyze_local_repositories",
     "analyze_github_ci_reliability",
