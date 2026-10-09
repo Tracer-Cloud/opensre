@@ -104,4 +104,5 @@ def test_tasks_list_bounds_multiline_error_and_command() -> None:
     assert "command-tail" not in text
     assert "error-tail" not in text and "second-error-line" not in text
     assert "…" in text and "\x1b" not in text
-    assert len(text) < 800
+    # Bound content rather than the trailing cells Rich pads to the terminal width.
+    assert len("\n".join(line.rstrip() for line in text.splitlines())) < 800
