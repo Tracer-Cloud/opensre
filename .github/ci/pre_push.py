@@ -69,8 +69,10 @@ def _validate(root: Path, commit: str, base: str | None) -> int:
                 key: value for key, value in os.environ.items() if key not in local_variables
             }
             # Reuse installed tooling; Ruff reads configuration from the committed snapshot.
-            # Also validate branches created before this gate was introduced.
-            runner = Path(__file__).with_name("run_checks.py").resolve()
+            runner = snapshot / ".github" / "ci" / "run_checks.py"
+            if not runner.is_file():
+                # Also validate branches created before this gate was introduced.
+                runner = Path(__file__).with_name("run_checks.py").resolve()
             command = [sys.executable, str(runner), "--quick", "--head", commit]
             if base:
                 command.extend(["--base", base])
