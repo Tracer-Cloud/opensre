@@ -18,15 +18,15 @@ explicitly requires them.
 
 Run `make install` after cloning. It installs locked development dependencies
 and a blocking pre-push hook for this checkout. For an existing environment,
-run `make install-hooks` (also after updating the hook launcher). Installation preserves existing hooks and keeps
+run `make install-hooks`. Installation preserves existing hooks and keeps
 linked worktrees independent.
 
 The hook runs **Ruff lint and formatting checks on changed Python files only**
 from the committed revisions being pushed. Temporary Git worktrees ensure an
-uncommitted fix cannot hide a committed lint failure. It reuses the checkout's
-installed tooling. The launcher pins the hook's Python modules to the committed HEAD at
-installation, so dirty helpers or checking out older branches cannot change
-the installed gate. Run `make install-hooks` from an updated checkout to refresh it.
+uncommitted source fix cannot hide a committed lint failure. It reuses the checkout's
+installed tooling. Like other local Git hooks, the validation implementation is
+trusted local tooling, not a tamper-proof security boundary. Required PR CI
+remains authoritative.
 It does not install dependencies or run tests, typechecking,
 registry checks, or import checks. Run `make install` if tooling is missing.
 Existing push hooks still run first with Git's original arguments and ref updates.

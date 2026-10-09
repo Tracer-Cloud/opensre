@@ -147,8 +147,6 @@ def test_push_checks_commit_instead_of_dirty_fix_and_records_explicit_override(
     _git(push_repo, "commit", "-m", "broken")
     (push_repo / "bad.py").write_text("value = 1\n", encoding="utf-8")
     (push_repo / ".github/ci/run_checks.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
-    for helper in ("check_catalog.py", "git_changes.py"):
-        (push_repo / ".github/ci" / helper).write_text("raise SystemExit(0)\n", encoding="utf-8")
     blocked = _git(push_repo, "push", "origin", "main", check=False)
     assert blocked.returncode != 0, blocked.stdout + blocked.stderr
     assert _git(push_repo, "ls-remote", "origin", "refs/heads/main").stdout.split()[0] == accepted
@@ -269,20 +267,6 @@ def test_snapshot_runs_real_ruff_without_installing_dependencies(tmp_path: Path)
     fixed = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
     assert _validate(tmp_path, fixed, head) == 0
     assert len(_git(tmp_path, "worktree", "list", "--porcelain").stdout.split("worktree ")) == 2
-
-
-def test_installed_gate_survives_checkout_before_hook_existed(push_repo: Path) -> None:
-    _git(push_repo, "push", "origin", "main")
-    _git(push_repo, "checkout", "--orphan", "historical")
-    _git(push_repo, "rm", "-rf", ".github")
-    _git(push_repo, "commit", "-m", "historical checkout without hook modules")
-    # Remove the default base so unrelated history is not the failure.
-    _git(push_repo, "remote", "remove", "origin")
-    remote = push_repo.parent / "historical.git"
-    _git(push_repo.parent, "init", "--bare", str(remote))
-    _git(push_repo, "remote", "add", "historical", str(remote))
-    pushed = _git(push_repo, "push", "historical", "HEAD:main", check=False)
-    assert pushed.returncode == 0, pushed.stdout + pushed.stderr
 
 
 def test_snapshot_diff_failure_blocks_with_recovery_advice(
