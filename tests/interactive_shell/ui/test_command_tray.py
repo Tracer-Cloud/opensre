@@ -416,6 +416,7 @@ async def test_cron_and_nested_cli_groups_select_actions_before_dispatch() -> No
         assert buffer.text == "/sentry digest schedule "
         assert buffer.complete_state is not None
         assert buffer.complete_state.completions[0].text == "list"
+        assert any("Subcommands · /sentry digest schedule" in row for row in _screen_lines(prompt))
         _press(prompt, Keys.Enter)
         assert prompt.app.is_done
         assert prompt.app.future.result() == "/sentry digest schedule list"

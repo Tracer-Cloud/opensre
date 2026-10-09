@@ -10,12 +10,12 @@ from typing import BinaryIO
 from rich.console import Console
 from rich.markup import escape
 
+import surfaces.interactive_shell.command_registry.cron_cmds as cron_cmds
 from config.cli_command_choices import CLI_COMMAND_CHOICES
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
 from config.interactive_override import interactive_override_env
 from config.scope_handoff import hand_off_scope
 from core.agent_harness.spi.session_state import session_terminal, set_turn_outcome_hint
-from surfaces.interactive_shell.command_registry import cron_cmds
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.subprocess_runner import build_opensre_cli_argv

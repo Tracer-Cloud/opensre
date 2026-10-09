@@ -53,7 +53,8 @@ def _resolve_completion_preview(
         label = display
     else:
         parts = buffer_text.split()
-        label = f"{parts[0]} {display}" if parts and parts[0].startswith("/") else display
+        parent = " ".join(parts if buffer_text.endswith(" ") else parts[:-1])
+        label = f"{parent} {display}" if parent.startswith("/") else display
     return label, meta
 
 

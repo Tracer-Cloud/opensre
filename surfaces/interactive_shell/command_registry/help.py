@@ -171,7 +171,7 @@ def _command_text(command: SlashCommand) -> str | None:
     browser should offer the same choice the composer tray offers while typing
     it, not silently run whichever subcommand happens to be the default.
     """
-    path = (command.name,)
+    path: tuple[str, ...] = (command.name,)
     options = _subcommand_options(command)
     while options:
         chosen = repl_choose_subcommand(parent=" ".join(path), options=options)

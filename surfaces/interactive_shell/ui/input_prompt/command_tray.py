@@ -17,9 +17,9 @@ def _tray_title(buffer: Buffer) -> str:
     state = buffer.complete_state
     if state is None:
         return "Completions"
-    parent = (
-        state.original_document.text.split(maxsplit=1)[0] if state.original_document.text else ""
-    )
+    before_cursor = state.original_document.text_before_cursor
+    parts = before_cursor.split()
+    parent = " ".join(parts if before_cursor.endswith(" ") else parts[:-1])
     if (
         parent.startswith("/")
         and state.completions
