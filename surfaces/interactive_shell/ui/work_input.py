@@ -13,7 +13,8 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
-from prompt_toolkit.widgets import Frame, TextArea
+from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.widgets import Box, Frame, TextArea
 
 from core.domain.work_items import WORK_ITEM_PRIORITIES
 from infrastructure.safety.terminal_output import strip_terminal_controls
@@ -30,7 +31,7 @@ def build_work_form(
     current["priority"] = current["priority"].lower()
     local_day = today or datetime.now().astimezone().date()
     project_names = sorted({name for name in projects if name}, key=str.casefold)
-    row = 5
+    row = 1
     field = "title"
     mode = "text"
     choice_index = 0
@@ -74,7 +75,10 @@ def build_work_form(
         return [
             (
                 "class:selected" if index == row else "",
-                ("› " if index == row else "  ") + label + "\n",
+                ("\n" if index == len(_FIELDS) else "")
+                + ("› " if index == row else "  ")
+                + label
+                + "\n",
             )
             for index, label in enumerate(labels)
         ]
@@ -89,7 +93,9 @@ def build_work_form(
         ]
 
     summary = FormattedTextControl(
-        summary_rows, focusable=True, get_cursor_position=lambda: Point(0, row)
+        summary_rows,
+        focusable=True,
+        get_cursor_position=lambda: Point(0, row + (row >= len(_FIELDS))),
     )
     selection = FormattedTextControl(
         choice_rows, focusable=True, get_cursor_position=lambda: Point(0, choice_index)
@@ -212,34 +218,49 @@ def build_work_form(
             return "Enter save field · Esc back · Ctrl-C cancel"
         if mode == "choice":
             return "↑↓ choose · Enter select · Esc back"
-        return "↑↓ move · Enter edit/select · Ctrl-S create · Esc cancel"
+        return "↑↓/Tab move · Enter edit/select · Ctrl-S create · Esc cancel"
 
     app: Application[dict[str, str] | None] = Application(
         layout=Layout(
             Frame(
-                HSplit(
-                    [
-                        Window(FormattedTextControl(heading), height=1),
-                        ConditionalContainer(
-                            Window(summary, height=7), filter=Condition(lambda: mode == "summary")
-                        ),
-                        ConditionalContainer(
-                            editor,
-                            filter=Condition(
-                                lambda: mode == "text" or (mode == "choice" and field == "project")
+                Box(
+                    HSplit(
+                        [
+                            Window(FormattedTextControl(heading), height=1),
+                            Window(height=Dimension(min=0, preferred=1, max=1)),
+                            ConditionalContainer(
+                                Window(summary, height=8),
+                                filter=Condition(lambda: mode == "summary"),
                             ),
-                        ),
-                        ConditionalContainer(
-                            Window(selection, height=6), filter=Condition(lambda: mode == "choice")
-                        ),
-                        ConditionalContainer(
+                            ConditionalContainer(
+                                editor,
+                                filter=Condition(
+                                    lambda: (
+                                        mode == "text" or (mode == "choice" and field == "project")
+                                    )
+                                ),
+                            ),
+                            ConditionalContainer(
+                                Window(selection, height=6),
+                                filter=Condition(lambda: mode == "choice"),
+                            ),
+                            ConditionalContainer(
+                                Window(
+                                    FormattedTextControl(lambda: [("class:error", error)]), height=1
+                                ),
+                                filter=Condition(lambda: bool(error)),
+                            ),
+                            Window(height=Dimension(min=0, preferred=1, max=1)),
                             Window(
-                                FormattedTextControl(lambda: [("class:error", error)]), height=1
+                                FormattedTextControl(lambda: [("class:hint", hint())]), height=1
                             ),
-                            filter=Condition(lambda: bool(error)),
-                        ),
-                        Window(FormattedTextControl(lambda: [("class:hint", hint())]), height=1),
-                    ]
+                        ]
+                    ),
+                    padding=0,
+                    padding_left=2,
+                    padding_right=2,
+                    padding_top=Dimension(min=0, preferred=1, max=1),
+                    padding_bottom=Dimension(min=0, preferred=1, max=1),
                 ),
                 title="/work add",
             ),

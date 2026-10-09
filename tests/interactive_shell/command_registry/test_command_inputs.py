@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from prompt_toolkit.application import create_app_session
+from prompt_toolkit.data_structures import Size
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from rich.console import Console
@@ -60,7 +61,7 @@ def test_work_form_preserves_options_and_persists_once(
     monkeypatch: pytest.MonkeyPatch, via_help: bool
 ) -> None:
     def collect(app: Any) -> Any:
-        return run_keys(app, "Investigate checkout latency\r\r")
+        return run_keys(app, "Investigate checkout latency\r\x13")
 
     monkeypatch.setattr(work_cmds, "run_command_input", collect)
     command = '/work add --project "Payments API" --priority high --owner Anwesh --due 2026-10-12'
@@ -88,7 +89,7 @@ def test_work_form_validation_retains_title_and_cancellation_is_nonmutating(
 ) -> None:
     def collect(app: Any) -> Any:
         # Invalid supplied priority opens the selector; choose High without retyping the title.
-        return run_keys(app, "Keep this title\r\r\x1b[B\x1b[B\r\r")
+        return run_keys(app, "Keep this title\r\x13\x1b[B\x1b[B\r\x13")
 
     monkeypatch.setattr(work_cmds, "run_command_input", collect)
     with create_app_session(output=DummyOutput()):
@@ -173,7 +174,7 @@ def test_picker_no_match_enter_and_escape_do_not_select() -> None:
 def test_form_requires_title_before_accepting() -> None:
     with create_app_session(output=DummyOutput()):
         app = build_work_form({})
-        result = run_keys(app, "\rValid title\r\r")
+        result = run_keys(app, "\rValid title\r\x13")
     assert result is not None
     assert result["title"] == "Valid title"
 
@@ -181,9 +182,9 @@ def test_form_requires_title_before_accepting() -> None:
 def test_work_rows_select_priority_and_existing_project_without_typing_values() -> None:
     with create_app_session(output=DummyOutput()):
         app = build_work_form({}, projects=["payments", "platform"])
-        # After the title, Create is selected. Move to Priority, choose High,
+        # After the title, Priority is selected. Open it and choose High,
         # then select the first existing project after None.
-        keys = "Checkout\r" + "\x1b[A" * 4 + "\r\x1b[B\r\x1b[B\r\x1b[B\r\x13"
+        keys = "Checkout\r\r\x1b[B\r\x1b[B\r\x1b[B\r\x13"
         result = run_keys(app, keys)
     assert result is not None
     assert result == {
@@ -199,7 +200,7 @@ def test_work_project_custom_and_date_validation_preserve_other_fields() -> None
     with create_app_session(output=DummyOutput()):
         app = build_work_form({}, projects=["payments"])
         # Search has no existing match: select New after None, preserving query.
-        keys = "Checkout\r" + "\x1b[A" * 3 + "\rnew-project\x1b[B\r\r"
+        keys = "Checkout\r\x1b[B\rnew-project\x1b[B\r\r"
         # Due: select Custom, reject invalid date, correct it, then save.
         keys += "\x1b[B" * 2 + "\r" + "\x1b[B" * 3 + "\rbad-date\r\x01\x0b2026-10-12\r\x13"
         result = run_keys(app, keys)
@@ -212,7 +213,7 @@ def test_work_project_custom_and_date_validation_preserve_other_fields() -> None
 def test_work_edit_back_discards_draft_and_optional_fields_stay_unset() -> None:
     with create_app_session(output=DummyOutput()):
         app = build_work_form({})
-        keys = "Checkout\r" + "\x1b[A" * 2 + "\rdraft owner\x1b\x13"
+        keys = "Checkout\r" + "\x1b[B" * 2 + "\rdraft owner\x1b\x13"
         result = run_keys(app, keys)
     assert result is not None
     assert result["owner"] == result["project"] == result["due"] == ""
@@ -224,9 +225,64 @@ def test_reopening_supplied_project_and_custom_date_keeps_their_selection() -> N
         app = build_work_form({"project": "new project", "due": "2040-01-02"})
         # Project absent from known names remains selected; a custom date opens
         # its existing value, rather than defaulting to None and clearing it.
-        keys = "Checkout\r" + "\x1b[A" * 3 + "\r\r"
+        keys = "Checkout\r\x1b[B\r\r"
         keys += "\x1b[B" * 2 + "\r\r\r\x13"
         result = run_keys(app, keys)
     assert result is not None
     assert result["project"] == "new project"
     assert result["due"] == "2040-01-02"
+
+
+@pytest.mark.parametrize("columns,rows", [(100, 30), (45, 12)])
+def test_work_form_spacing_keeps_selected_action_visible(columns: int, rows: int) -> None:
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=rows, columns=columns)
+
+    captured: list[str] = []
+    with create_pipe_input() as pipe, create_app_session(output=SizedOutput()):
+        app = build_work_form({})
+        app.input = pipe
+
+        def capture_summary(_app: Any) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or captured:
+                return
+            lines = [
+                "".join(screen.data_buffer[y][x].char for x in range(columns))
+                for y in range(screen.height)
+            ]
+            if not any("Create work item" in line for line in lines):
+                return
+            captured.extend(lines)
+            cursor = screen.get_cursor_position(app.layout.current_window)
+            assert "Create work item" in lines[cursor.y]
+            pipe.send_text("\x13")
+
+        app.after_render += capture_summary
+        result = app.run(pre_run=lambda: pipe.send_text("Spacing check\r" + "\t" * 4))
+
+    assert result is not None and result["title"] == "Spacing check"
+    assert any("Cancel" in line for line in captured)
+    title_line = next(line for line in captured if "Title" in line)
+    assert title_line.index("Title") >= 5
+    due_row = next(index for index, line in enumerate(captured) if "Due" in line)
+    create_row = next(index for index, line in enumerate(captured) if "Create work item" in line)
+    assert create_row == due_row + 2
+    assert len(captured) <= rows
+
+
+def test_title_confirmation_does_not_create_on_a_second_enter() -> None:
+    with create_app_session(output=DummyOutput()):
+        app = build_work_form({})
+        assert run_keys(app, "Review latency\r\r\x03") is None
+
+
+def test_tab_navigation_reaches_create_from_priority() -> None:
+    with create_app_session(output=DummyOutput()):
+        app = build_work_form({})
+        # Move to Project and back to Priority, then tab through to Create.
+        result = run_keys(app, "Review latency\r\t\x1b[Z" + "\t" * 4 + "\r\x03")
+    assert result is not None
+    assert result["title"] == "Review latency"
+    assert result["priority"] == "normal"
