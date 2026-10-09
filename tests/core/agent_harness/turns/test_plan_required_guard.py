@@ -15,7 +15,7 @@ from core.agent_harness.tools.tool_context import ActionToolScope
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
-from core.tool.contracts import AgentTool, AgentToolContext
+from core.tool.contracts import AgentTool, AgentToolContext, RegisteredTool, SideEffectLevel
 from core.tool.execution import (
     BeforeToolCallResult,
     ToolExecutionHooks,
@@ -259,3 +259,40 @@ def test_ordinary_and_session_goal_turns_do_not_force_a_plan() -> None:
     _returned(finished_hooks, "shell_run")
     decision = finished_hooks.before_tool_call(_request("shell_run"))
     assert decision is not None and decision.blocked is True
+
+
+def _read_only_tool(name: str, ran: list[str]) -> RegisteredTool:
+    def run(value: str = "") -> dict[str, Any]:
+        ran.append(name)
+        return {"ok": True, "value": value}
+
+    return RegisteredTool(
+        name=name,
+        description="test read-only tool",
+        input_schema={"type": "object", "properties": {}, "additionalProperties": True},
+        source="knowledge",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        run=run,
+    )
+
+
+def test_read_only_work_calls_run_together_still_get_one_unplanned_call() -> None:
+    # Both checks run before either result is recorded, so the guard counts the
+    # first call as in flight and refuses the second, as it does call by call.
+    session = Session(active_skill="repair-github-ci")
+    ran: list[str] = []
+    tools = [_read_only_tool("read_a", ran), _read_only_tool("read_b", ran)]
+
+    results = execute_tool_calls(
+        [
+            ToolCall(id="a", name="read_a", input={}),
+            ToolCall(id="b", name="read_b", input={}),
+        ],
+        tools,
+        {},
+        hooks=with_task_plan_hooks(None, session),
+    )
+
+    assert ran == ["read_a"]
+    assert not results[0].is_error
+    assert results[1].is_error and results[1].content == PLAN_REQUIRED_REASON

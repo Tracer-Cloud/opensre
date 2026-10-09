@@ -1474,6 +1474,12 @@ if TYPE_CHECKING:
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
     )
     from config.constants.tooling import (
+        MAX_PARALLEL_TOOL_CALLS as MAX_PARALLEL_TOOL_CALLS,
+    )
+    from config.constants.tooling import (
+        OPENSRE_PARALLEL_TOOL_CALLS_ENV as OPENSRE_PARALLEL_TOOL_CALLS_ENV,
+    )
+    from config.constants.tooling import (
         TOOL_PREFETCH_MAX_ENTRIES as TOOL_PREFETCH_MAX_ENTRIES,
     )
     from config.constants.tooling import (
