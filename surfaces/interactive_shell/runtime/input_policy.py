@@ -5,6 +5,7 @@ from __future__ import annotations
 import shlex
 
 from config.command_inputs import needs_command_input
+from config.constants.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 
@@ -146,6 +147,8 @@ def turn_needs_exclusive_stdin(text: str, _session: Session) -> bool:
     name = parts[0].lower()
     args = [arg.lower() for arg in parts[1:]]
 
+    if (name.removeprefix("/"), *args) in DELIVERY_SCHEDULE_LISTS:
+        return True
     # Long ticks keep running after their short foreground reply window. Keep
     # the prompt's cancel keys available while waiting; bare run opens editing.
     if name == "/cron" and len(args) >= 2 and args[0] == "run" and "--help" not in args:

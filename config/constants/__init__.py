@@ -370,6 +370,12 @@ if TYPE_CHECKING:
     from config.constants.datadog import (
         DATADOG_SITE_ENV as DATADOG_SITE_ENV,
     )
+    from config.constants.delivery_schedule_lists import (
+        DELIVERY_SCHEDULE_LISTS as DELIVERY_SCHEDULE_LISTS,
+    )
+    from config.constants.delivery_schedule_lists import (
+        DeliveryScheduleList as DeliveryScheduleList,
+    )
     from config.constants.environment import (
         CONTAINER_SUPERVISOR_PID_ENV as CONTAINER_SUPERVISOR_PID_ENV,
     )

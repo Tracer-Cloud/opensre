@@ -1123,6 +1123,7 @@ By default, new loops send to every configured default handle OpenSRE can reach:
 ```
 
 Automated Sentry morning digest delivery (#10) and uptime watch notifications (#4032).
+Schedule lists show full task IDs, timezones, destinations, and projects, and reflow at narrow terminal widths.
 Requires Sentry plus Telegram or Slack configured for the chosen provider. See [Sentry](/integrations/incidents/sentry).
 
 </Accordion>
@@ -1183,6 +1184,7 @@ Run or schedule automated PostHog per-metric summary reports. Requires the PostH
 ```
 
 A scheduled report only fires while a scheduler is running, so pair it with `/gateway start` or `opensre cron start`. Same as `opensre posthog`.
+The schedule list retains full task IDs, timezones, destinations, and report periods at every terminal width.
 
 </Accordion>
 
