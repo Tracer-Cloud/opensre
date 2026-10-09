@@ -9,14 +9,15 @@ from rich.text import Text
 from core.domain.work_items import WorkItem, WorkItemScore
 from infrastructure.terminal.theme import DIM, HIGHLIGHT, WARNING
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
 def _details(item: WorkItem) -> tuple[Text, ...]:
-    return (
-        Text(f"ID: {item.id}", style=DIM),
-        Text(f"Project: {item.project or '—'}", style=DIM),
-    )
+    details = [Text(f"ID: {item.id}", style=DIM)]
+    if item.project.strip():
+        details.append(Text(f"Project: {item.project}", style=DIM))
+    return tuple(details)
 
 
 def work_items_table(items: Sequence[WorkItem], *, title: str = "Work items") -> RecordTable:
@@ -64,7 +65,10 @@ def next_work_table(ranked: Sequence[WorkItemScore]) -> RecordTable:
                     Text(str(index)),
                     Text(str(scored.score)),
                 ),
-                (*_details(scored.item), Text(f"Why: {', '.join(scored.reasons)}", style=DIM)),
+                (
+                    *_details(scored.item),
+                    *description_details(f"Why: {', '.join(scored.reasons)}", width=None),
+                ),
             )
             for index, scored in enumerate(ranked, start=1)
         ),

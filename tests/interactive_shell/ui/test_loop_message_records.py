@@ -44,6 +44,7 @@ def test_loop_messages_keep_ids_and_bound_message_preview(
     assert "[literal]" in text and "09:00:00" in text
     assert "HIDDEN TAIL" not in text and "PRIVATE PROMPT" not in text
     assert "…" in text
+    assert "\n\n[literal] verified" in text
     assert max(cell_len(line) for line in text.splitlines()) <= width
     if width == 40:
         assert "Created:" in text

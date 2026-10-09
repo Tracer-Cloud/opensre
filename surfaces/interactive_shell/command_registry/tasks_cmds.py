@@ -20,6 +20,7 @@ from surfaces.interactive_shell.ui import (
 )
 from surfaces.shared.terminal.components.rendering import print_repl_renderable
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[mA-Za-z]")
@@ -79,18 +80,24 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
     }
     for task in tasks:
         st = status_style.get(task.status, DIM)
+        title = _bounded_first_line(task.command or _kind_label(task))
+        detail = _task_detail_label(task)
+        details = [
+            Text(f"ID: {task.task_id} · Kind: {_kind_label(task)}", style=DIM),
+            Text(f"Started: {_task_started_label(task)}", style=DIM),
+        ]
+        has_progress = task.status == TaskStatus.RUNNING and bool(task.progress)
+        if detail != "—" and (detail != title or task.error or has_progress):
+            detail_style = str(ERROR) if task.error else str(WARNING) if has_progress else None
+            details.extend(description_details(detail, width=120, style=detail_style))
         rows.append(
             RecordRow(
                 (
-                    Text(_bounded_first_line(task.command or _kind_label(task)), style="bold"),
+                    Text(title, style="bold"),
                     Text(task.status.value.capitalize(), style=st),
                     Text(_task_duration_label(task)),
                 ),
-                (
-                    Text(f"ID: {task.task_id} · Kind: {_kind_label(task)}", style=DIM),
-                    Text(f"Started: {_task_started_label(task)}", style=DIM),
-                    Text(_task_detail_label(task), style=st),
-                ),
+                tuple(details),
             )
         )
     print_repl_renderable(

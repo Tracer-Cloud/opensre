@@ -286,6 +286,7 @@ def test_recent_runs_reflow_with_full_timestamp_and_bounded_findings(
     assert "123456789" in recent
     assert _exact_time(run.started_at) in " ".join(recent.split())
     assert "[literal]" in recent and "Failed" in recent
+    assert "\n\n[literal] verified" in recent
     assert "HIDDEN TAIL" not in recent and "…" in recent
     assert "/loops show hidden-id --run" in recent
     assert max(cell_len(line) for line in recent.splitlines()) <= width
@@ -316,3 +317,28 @@ def test_invalid_loop_keeps_recovery_guidance_in_details_only(
     output.truncate()
     render_loop_details(console, loop, [], None)
     assert error in " ".join(output.getvalue().split())
+
+
+@pytest.mark.parametrize("width", [40, 160])
+def test_loop_description_is_a_spaced_preview_with_full_details(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    from surfaces.interactive_shell.ui.loops import render_loop_details
+
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("COLUMNS", str(width))
+    description = "[literal] " + "Checkout evidence " * 8 + "FULL DESCRIPTION END"
+    loop = replace(_loop(), description=description)
+    output = io.StringIO()
+    console = Console(file=output, width=width)
+    render_loops(console, [loop], {})
+    listing = output.getvalue()
+    assert "FULL DESCRIPTION END" not in listing and "…" in listing
+    assert "What it does:" not in listing
+    lines = listing.splitlines()
+    index = next(i for i, line in enumerate(lines) if "[literal]" in line)
+    assert not lines[index - 1].strip()
+    output.seek(0)
+    output.truncate()
+    render_loop_details(console, loop, [], None)
+    assert description in " ".join(output.getvalue().split())

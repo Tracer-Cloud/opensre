@@ -41,6 +41,7 @@ def print_run_history(console: Console, runs: list[TaskRun]) -> None:
     """Show execution, work and delivery separately without squeezing diagnostic fields."""
     from infrastructure.terminal.theme import DIM, WARNING
     from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+    from surfaces.shared.terminal.tables.descriptions import description_details
     from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
     rows: list[RecordRow] = []
@@ -54,9 +55,15 @@ def print_run_history(console: Console, runs: list[TaskRun]) -> None:
         if run.posted_message_id:
             details.append(Text(f"Message ID: {run.posted_message_id}", style=DIM))
         if run.work_error_kind:
-            details.append(Text(f"Work detail: {run.work_error_kind}", style=WARNING))
+            details.extend(
+                description_details(
+                    f"Work detail: {run.work_error_kind}", width=120, style=str(WARNING)
+                )
+            )
         if run.error:
-            details.append(Text(f"Error: {run.error}", style=WARNING))
+            details.extend(
+                description_details(f"Error: {run.error}", width=120, style=str(WARNING))
+            )
         rows.append(
             RecordRow(
                 (
@@ -81,5 +88,6 @@ def print_run_history(console: Console, runs: list[TaskRun]) -> None:
             ),
             tuple(rows),
             subtitle="Run times: UTC",
+            caption=f"Full result: opensre cron logs {runs[0].task_id} --run <Run>" if runs else "",
         )
     )

@@ -321,8 +321,13 @@ def test_cron_list_surfaces_legacy_task_migration_status(
 
     assert result.exit_code == 0
     output = " ".join(result.output.split())
-    assert "daily_summary retired" in output
-    assert "opensre cron add --kind" in output
+    assert "Invalid" in output and summary.id in output
+    assert "daily_summary retired" not in output
+    assert "opensre --json cron list" in output
+    monkeypatch.setattr(cron_module, "is_json_output", lambda: True)
+    diagnostic = CliRunner().invoke(cron_module.cron_command, ["list"])
+    assert diagnostic.exit_code == 0
+    assert json.loads(diagnostic.output)[0]["schedule_error"] == notice
 
 
 def test_cron_list_keeps_identifiers_outside_summary_columns(
@@ -441,7 +446,7 @@ def test_cron_add_stores_the_description_readers_see_in_loop_listings(
     # Assert: stored normalised, and the operator can read back what they entered
     assert result.exit_code == 0, result.output
     assert list_tasks(store)[0].params[LOOP_DESCRIPTION_PARAM] == "Keeps open pull requests green."
-    assert "What it does: Keeps open pull requests green." in listed.output
+    assert "Keeps open pull requests green." in listed.output
 
 
 @pytest.mark.parametrize("mode", [None, "report", "agent"])
@@ -1202,7 +1207,7 @@ def test_cron_add_template_fills_the_loop_and_stores_its_name(
         "repo": "widgets",
     }
     listed = CliRunner().invoke(cron_module.cron_command, ["list"])
-    assert f"What it does: {template.description}" in listed.output
+    assert template.description[:60] in " ".join(listed.output.split())
 
 
 @pytest.mark.parametrize(

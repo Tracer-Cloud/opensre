@@ -10,13 +10,8 @@ from rich.text import Text
 from core.domain.memory import MemoryRecord
 from infrastructure.terminal.theme import DIM
 from surfaces.shared.terminal.components.rendering import print_repl_renderable
+from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
-
-
-def _description_preview(description: str) -> Text:
-    preview = Text(" ".join(description.split()), style=str(DIM))
-    preview.truncate(80, overflow="ellipsis")
-    return preview
 
 
 def render_memories(console: Console, records: Sequence[MemoryRecord]) -> None:
@@ -37,9 +32,7 @@ def render_memories(console: Console, records: Sequence[MemoryRecord]) -> None:
                         Text(record.memory_type.value, style=DIM),
                         Text(record.updated_at[:10], style=DIM),
                     ),
-                    (Text(""), _description_preview(record.description))
-                    if record.description.strip()
-                    else (),
+                    description_details(record.description),
                 )
                 for record in records
             ),

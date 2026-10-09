@@ -53,3 +53,19 @@ def test_work_add_does_not_persist_when_reminder_has_no_delivery_target(
     assert result.exit_code != 0
     assert "requires --target or --provider/--chat-id" in result.output
     assert list_work_items(status=None) == []
+
+
+def test_work_list_omits_store_footer_but_path_remains_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
+    runner = CliRunner()
+    added = runner.invoke(work_command, ["add", "Verify rollout"])
+    assert added.exit_code == 0, added.output
+    listed = runner.invoke(work_command, ["list"])
+    assert listed.exit_code == 0, listed.output
+    assert "Verify rollout" in listed.output
+    assert "Store:" not in listed.output and "Project:" not in listed.output
+    path = runner.invoke(work_command, ["path"])
+    assert path.exit_code == 0
+    assert str(tmp_path / "work_items") in path.output.replace("\n", "")

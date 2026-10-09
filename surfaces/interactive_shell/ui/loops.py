@@ -19,6 +19,7 @@ from surfaces.shared.terminal.components.rendering import (
     print_repl_renderable,
 )
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
@@ -109,12 +110,6 @@ def _finding(run: TaskRun) -> str:
     return "Report not retained"
 
 
-def _clipped(value: str, width: int, *, style: str = "") -> Text:
-    text = Text(" ".join(value.split()), style=style)
-    text.truncate(width, overflow="ellipsis")
-    return text
-
-
 def render_loops(
     console: Console,
     loops: Sequence[LoopSummary],
@@ -133,8 +128,6 @@ def render_loops(
             Text(f"ID: {loop.id}", style=DIM),
             Text(f"{', '.join(loop.channels)} · TZ: {loop.timezone}", style=DIM),
         ]
-        if loop.description:
-            details.append(Text(f"What it does: {loop.description}", style=DIM))
         run = latest.get(loop.id)
         if run is None:
             details.append(
@@ -148,7 +141,14 @@ def render_loops(
                     style=style,
                 )
             )
-            details.append(_clipped(_finding(run), 160))
+            details.extend(
+                description_details(
+                    _finding(run),
+                    width=160,
+                    style=str(style) if style in (WARNING, ERROR) else None,
+                )
+            )
+        details.extend(description_details(loop.description))
         rows.append(
             RecordRow(
                 (
@@ -221,7 +221,11 @@ def render_loop_details(
                         Text(status, style=style),
                         Text(_exact_time(run.started_at), style=DIM),
                     ),
-                    (_clipped(_finding(run), 100, style=style),),
+                    description_details(
+                        _finding(run),
+                        width=100,
+                        style=str(style) if style in (WARNING, ERROR) else None,
+                    ),
                 )
             )
         print_repl_renderable(
@@ -246,6 +250,7 @@ def render_loop_details(
         ("Next run", _exact_time(loop.next_run) if loop.enabled else "Paused"),
         ("Channels", ", ".join(channel.replace("_", " ") for channel in loop.channels)),
         ("Mode", loop.mode if loop.mode != LOOP_MODE_REPORT else ""),
+        ("Description", loop.description),
         ("Prompt", loop.prompt),
         ("Schedule error", loop.schedule_error),
     )
@@ -275,7 +280,7 @@ def render_loop_messages(console: Console, messages: Sequence[LocalLoopMessage])
                     (
                         Text(f"Message ID: {message.message_id}", style=DIM),
                         Text(f"Loop ID: {message.loop_id}", style=DIM),
-                        _clipped(message.message, 120),
+                        *description_details(message.message, width=120),
                     ),
                 )
                 for message in messages

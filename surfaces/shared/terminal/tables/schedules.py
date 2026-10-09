@@ -12,6 +12,7 @@ from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import TaskRun
 from infrastructure.terminal.theme import DIM, HIGHLIGHT, WARNING
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
@@ -59,10 +60,7 @@ def print_schedules(
             )
             if run.work_error_kind:
                 details.append(Text(f"Work detail: {run.work_error_kind}", style=WARNING))
-        if loop.description:
-            details.append(Text(f"What it does: {loop.description}", style=DIM))
-        if loop.schedule_error:
-            details.append(Text(f"Requires action: {loop.schedule_error}", style=WARNING))
+        details.extend(description_details(loop.description))
         rows.append(
             RecordRow(
                 (

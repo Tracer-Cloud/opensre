@@ -45,9 +45,8 @@ def _show_list(console: Console) -> bool:
 
     render_memories(console, records)
     console.print(
-        f"[{DIM}]stored unencrypted in {memory_dir()} — edit or delete the files "
-        f"directly, or use[/] [{HIGHLIGHT}]/memory forget <name>[/][{DIM}]. "
-        f"Disable with {OPENSRE_MEMORY_DISABLED_ENV}=1.[/]"
+        f"[{DIM}]stored unencrypted ·[/] [{HIGHLIGHT}]/memory path[/] "
+        f"[{DIM}]·[/] [{HIGHLIGHT}]/memory forget <name>[/]"
     )
     return True
 
@@ -130,6 +129,7 @@ COMMANDS: list[SlashCommand] = [
         notes=(
             "Memories are plain markdown files under ~/.opensre/memory; "
             "edit or delete them directly at any time.",
+            f"Disable memory with {OPENSRE_MEMORY_DISABLED_ENV}=1.",
         ),
         first_arg_completions=_MEMORY_FIRST_ARGS,
     ),

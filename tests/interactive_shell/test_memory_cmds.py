@@ -43,6 +43,8 @@ def test_memory_lists_stored_memories(command: str) -> None:
     assert "prod-cluster" in output
     assert "Prod cluster is eks-prod-1" in output
     assert "/memory forget" in output
+    assert "/memory path" in output
+    assert "stored unencrypted in" not in output
 
 
 def test_memory_empty_state_message() -> None:
@@ -162,8 +164,9 @@ def test_memory_description_spacing_and_muted_style(
 ) -> None:
     from dataclasses import replace
 
-    from infrastructure.terminal.theme import DIM
+    from infrastructure.terminal.theme import SECONDARY
     from surfaces.interactive_shell.ui import memory
+    from surfaces.shared.terminal.tables.descriptions import description_details
 
     monkeypatch.setenv("TERM", "xterm")
     monkeypatch.setenv("COLUMNS", str(width))
@@ -175,7 +178,7 @@ def test_memory_description_spacing_and_muted_style(
     lines = output.getvalue().splitlines()
     description_index = next(i for i, line in enumerate(lines) if "Prod cluster" in line)
     assert not lines[description_index - 1].strip()
-    assert str(memory._description_preview(record.description).style) == str(DIM)
+    assert str(description_details(record.description)[1].style) == str(SECONDARY)
 
     output.seek(0)
     output.truncate()

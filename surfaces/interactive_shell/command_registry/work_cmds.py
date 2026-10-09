@@ -82,7 +82,6 @@ def _render_work_table(console: Console, rows: Sequence[WorkItem], *, title: str
         return True
 
     print_repl_renderable(console, work_items_table(rows, title=title))
-    console.print(f"[{DIM}]store: {work_items_path()}[/]")
     return True
 
 
