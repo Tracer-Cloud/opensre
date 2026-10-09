@@ -56,6 +56,7 @@ def test_large_catalog_starts_small_and_search_activates_matching_tools() -> Non
         "ask_user_choice",
         "cli_exec",
         "llm_set_provider",
+        "shell_run",
         "skill_view",
         "slash_invoke",
         "task_cancel",
