@@ -10,7 +10,8 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from git_changes import default_base, git
+from check_catalog import quick_checks
+from git_changes import changed_files, default_base, git
 
 
 def _setting(root: Path, name: str) -> str:
@@ -69,14 +70,17 @@ def _validate(root: Path, commit: str, base: str | None) -> int:
                 key: value for key, value in os.environ.items() if key not in local_variables
             }
             # Reuse installed tooling; Ruff reads configuration from the committed snapshot.
-            runner = snapshot / ".github" / "ci" / "run_checks.py"
-            if not runner.is_file():
-                # Also validate branches created before this gate was introduced.
-                runner = Path(__file__).with_name("run_checks.py").resolve()
-            command = [sys.executable, str(runner), "--quick", "--head", commit]
-            if base:
-                command.extend(["--base", base])
-            return subprocess.run(command, cwd=snapshot, env=environment, check=False).returncode
+            # Also validate branches created before this gate was introduced.
+            # Invoke Ruff directly: old or dirty check runners cannot alter this gate.
+            checks = quick_checks(changed_files(snapshot, base, commit), root=snapshot)
+            failed = False
+            for check in checks:
+                print(f"Checking {check.name} on committed Python files.", flush=True)
+                result = subprocess.run(
+                    [sys.executable, *check.args], cwd=snapshot, env=environment, check=False
+                )
+                failed = bool(result.returncode) or failed
+            return int(failed)
         finally:
             git(root, "worktree", "remove", "--force", str(snapshot))
 

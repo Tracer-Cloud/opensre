@@ -80,7 +80,7 @@ def test_failing_check_does_not_hide_other_failures(tmp_path: Path) -> None:
 def test_first_push_and_untracked_paths_cannot_be_mistaken_for_an_empty_diff(
     push_repo: Path,
 ) -> None:
-    assert "bad.txt" in changed_files(push_repo)
+    assert "bad.py" in changed_files(push_repo)
     _git(push_repo, "push", "origin", "main")
     (push_repo / " new test.py").write_text("", encoding="utf-8")
     (push_repo / "staged.py").write_text("", encoding="utf-8")
@@ -100,7 +100,8 @@ def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
 
 
 @pytest.fixture
-def push_repo(tmp_path: Path) -> Path:
+def push_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", sys.prefix)
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-b", "main")
@@ -111,20 +112,19 @@ def push_repo(tmp_path: Path) -> Path:
     _git(repo, "remote", "add", "origin", str(remote))
     (repo / "pyproject.toml").write_text(
         '[project]\nname="gate-fixture"\nversion="0.0.0"\nrequires-python=">=3.13"\n'
-        "[project.optional-dependencies]\ndev=[]\n[tool.uv]\npackage=false\n",
+        "[project.optional-dependencies]\ndev=[]\n[tool.uv]\npackage=false\n"
+        "[tool.ruff]\nline-length=100\n",
         encoding="utf-8",
     )
     subprocess.run(["uv", "lock", "--offline"], cwd=repo, check=True, capture_output=True)
     scripts = repo / ".github" / "ci"
     scripts.mkdir(parents=True)
-    for name in ("pre_push.py", "git_changes.py", "install_hooks.py"):
+    for name in ("pre_push.py", "git_changes.py", "install_hooks.py", "check_catalog.py"):
         (scripts / name).write_bytes((_ROOT / ".github" / "ci" / name).read_bytes())
     (scripts / "run_checks.py").write_text(
-        "from pathlib import Path\n"
-        'raise SystemExit(1 if Path("bad.txt").read_text().strip() == "bad" else 0)\n',
-        encoding="utf-8",
+        "import argparse\n\nargparse.ArgumentParser().parse_args()\n", encoding="utf-8"
     )
-    (repo / "bad.txt").write_text("good", encoding="utf-8")
+    (repo / "bad.py").write_text("value = 1\n", encoding="utf-8")
     (repo / ".gitignore").write_text(".venv/\n__pycache__/\n", encoding="utf-8")
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "fixture")
@@ -142,10 +142,10 @@ def test_push_checks_commit_instead_of_dirty_fix_and_records_explicit_override(
 ) -> None:
     _git(push_repo, "push", "origin", "main")
     accepted = _git(push_repo, "rev-parse", "HEAD").stdout.strip()
-    (push_repo / "bad.txt").write_text("bad", encoding="utf-8")
-    _git(push_repo, "add", "bad.txt")
+    (push_repo / "bad.py").write_text("value = missing_name\n", encoding="utf-8")
+    _git(push_repo, "add", "bad.py")
     _git(push_repo, "commit", "-m", "broken")
-    (push_repo / "bad.txt").write_text("good", encoding="utf-8")
+    (push_repo / "bad.py").write_text("value = 1\n", encoding="utf-8")
     (push_repo / ".github/ci/run_checks.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
     blocked = _git(push_repo, "push", "origin", "main", check=False)
     assert blocked.returncode != 0, blocked.stdout + blocked.stderr
@@ -153,7 +153,7 @@ def test_push_checks_commit_instead_of_dirty_fix_and_records_explicit_override(
     _git(push_repo, "-c", "opensre.prePushOverride=incident recovery", "push", "origin", "main")
     log = push_repo / ".git" / "pre-push-overrides.jsonl"
     assert "incident recovery" in log.read_text(encoding="utf-8")
-    assert (push_repo / "bad.txt").read_text(encoding="utf-8") == "good"
+    assert (push_repo / "bad.py").read_text(encoding="utf-8") == "value = 1\n"
     assert len(_git(push_repo, "worktree", "list", "--porcelain").stdout.split("worktree ")) == 2
 
 
@@ -188,8 +188,8 @@ def test_install_preserves_custom_hooks_and_their_push_input(push_repo: Path) ->
 def test_push_of_a_non_head_ref_validates_that_ref(push_repo: Path) -> None:
     _git(push_repo, "push", "origin", "main")
     _git(push_repo, "checkout", "-b", "broken")
-    (push_repo / "bad.txt").write_text("bad", encoding="utf-8")
-    _git(push_repo, "add", "bad.txt")
+    (push_repo / "bad.py").write_text("value = missing_name\n", encoding="utf-8")
+    _git(push_repo, "add", "bad.py")
     _git(push_repo, "commit", "-m", "broken branch")
     _git(push_repo, "checkout", "main")
     blocked = _git(push_repo, "push", "origin", "broken", check=False)

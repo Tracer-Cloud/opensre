@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from check_catalog import Check, quality_checks
+from check_catalog import Check, quality_checks, quick_checks
 from git_changes import changed_files, is_documentation
 from test_scope_rules import select_tests
 
@@ -113,19 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             print("No runtime changes; no code checks required.")
             return 0
         if args.quick:
-            paths = tuple(
-                path
-                for path in changed
-                if Path(path).suffix in {".py", ".pyi"} and (root / path).is_file()
-            )
-            checks = (
-                [
-                    Check("lint", "static", ("-m", "ruff", "check", "--", *paths)),
-                    Check("format", "static", ("-m", "ruff", "format", "--check", "--", *paths)),
-                ]
-                if paths
-                else []
-            )
+            checks = list(quick_checks(changed, root=root))
         else:
             selection = select_tests(changed, root=root)
             errors = selection.errors
