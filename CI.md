@@ -1,4 +1,4 @@
-# Local CI Readiness — Mandatory Pre-Push Harness
+# Local Feedback and Required PR Validation
 
 This file is the **single source of truth** for required local validation before
 any push or pull request. Repository-wide validation runs in GitHub Actions.
@@ -21,20 +21,35 @@ and a blocking pre-push hook for this checkout. For an existing environment,
 run `make install-hooks`. Installation preserves existing hooks and keeps
 linked worktrees independent.
 
-The hook validates the **committed revisions being pushed** in temporary Git
-worktrees with their locked dependencies. An uncommitted fix cannot make a
-broken commit pass. Existing push hooks run first and receive Git's original
-arguments and ref updates.
+The hook runs **Ruff lint and formatting checks on changed Python files only**
+from the committed revisions being pushed. Temporary Git worktrees ensure an
+uncommitted source fix cannot hide a committed lint failure. It reuses the checkout's
+installed tooling. Like other local Git hooks, the validation implementation is
+trusted local tooling, not a tamper-proof security boundary. Required PR CI
+remains authoritative.
+It does not install dependencies or run tests, typechecking,
+registry checks, or import checks. Run `make install` if tooling is missing.
+Existing push hooks still run first with Git's original arguments and ref updates.
+
+Run `make pre-push` (or `make check`) for the same fast checks on your working
+changes. Use `ARGS='--base upstream/main'` to select a base explicitly. Without
+an available remote base, all tracked Python files are checked. Deleted files
+are ignored; configuration-only changes are validated by PR CI.
 
 ## 2) Focused tests and complete CI
 
-Use `make test-scope` to run only the affected tests during development. It
-uses the same mapping as the push gate and never falls back to a full coverage
-run. Package-specific validation required by contributor guides still applies.
+Run focused regression tests while developing changed behavior. Use
+`uv run python -m pytest <test-path>` for a narrow selection or `make test-scope`
+for the affected package suites. The latter can select thousands of tests; it
+is not a mandatory pre-push step. Do not repeat a passing suite solely to push.
+Package-specific validation required by contributor guides still applies.
 
-GitHub Actions uses the same quality check definitions as the local gate and
-runs the complete test matrix. The local gate does not replace repository-wide
-CI, Linux/Windows checks, CodeQL, packaging, or release validation. List the
+For an explicit full local validation run, use `make check-full`: all shared
+quality checks followed by the full test suite. This is opt-in, not a routine
+commit, push, or PR prerequisite.
+
+GitHub Actions runs all shared quality checks and the complete test matrix.
+The local gate does not replace repository-wide CI, Linux/Windows checks, CodeQL, packaging, or release validation. List the
 focused tests you ran in the PR description.
 
 ## 3) Emergency override
@@ -79,10 +94,20 @@ green, actionable human or automated review feedback (including Greptile and
 Codex when available) is
 addressed, and resolved conversations are closed out.
 
-Agents: the always-on rule lives in [AGENTS.md — CI failures and tests](AGENTS.md).
-After every push, inspect `gh pr checks` / failing job logs and fix until required
-jobs are green. The Cursor stop hook `.cursor/hooks/check-ci-failures.sh` will
-re-prompt when the open PR still has failing checks.
+After every push to an open PR, run `gh pr checks --watch` or inspect
+`gh pr view --json statusCheckRollup,url`. On failure, retrieve the job log with
+`gh run view <id> --log-failed`, fix the root cause in product or test code,
+rerun focused checks for the touched modules, and push. Continue until required
+jobs are green (or skipped where appropriate); do not skip tests or use
+constant-condition toggles to hide failures.
+
+Tests that fail under CI load are real bugs: harden synchronization rather than
+ignoring flakes. For import/API-border failures, use the package API allowed by
+`.importlinter.strict` or the border allowlist, not an internal leaf unless the
+edge is explicitly exempted.
+
+The Cursor stop hook `.cursor/hooks/check-ci-failures.sh` re-prompts when an open
+PR still has failing checks. Treat that follow-up as blocking work, not a suggestion.
 
 A green check does not mean review feedback is clear. After checks complete,
 and again after every push, inspect all unresolved conversations and latest
@@ -92,11 +117,14 @@ finding, reply with the rationale and resolve the thread without changing code.
 
 After each completed PR update, once commits are pushed, the PR description is
 current, and addressed threads are resolved, trigger the required automated
-reviews. Follow [CONTRIBUTING.md](CONTRIBUTING.md#greptile-code-review) to
-request Greptile; repeat until it reports 5/5 with no unresolved comments. If
+reviews. Request Greptile with `@greptile review`; repeat until it reports 5/5
+with no unresolved comments. Reviews commonly take 5–10 minutes or longer. If
 Codex review is available for the repository, request it with `@codex review`
 and address its actionable feedback. Do not re-trigger either reviewer while
 its review is already running.
+
+When available, use the [greploop skill](https://skills.sh/greptileai/skills/greploop)
+to manage this review loop.
 
 Use relevant built-in capabilities or locally installed skills, when available,
 for PR monitoring, CI diagnosis, and review remediation rather than duplicating

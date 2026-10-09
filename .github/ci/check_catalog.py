@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,19 @@ class Check:
     name: str
     group: str
     args: tuple[str, ...]
+
+
+def quick_checks(changed: list[str], *, root: Path) -> tuple[Check, ...]:
+    """Select read-only Ruff commands for existing changed Python files."""
+    paths = tuple(
+        path for path in changed if Path(path).suffix in {".py", ".pyi"} and (root / path).is_file()
+    )
+    if not paths:
+        return ()
+    return (
+        Check("lint", "static", ("-m", "ruff", "check", "--", *paths)),
+        Check("format", "static", ("-m", "ruff", "format", "--check", "--", *paths)),
+    )
 
 
 def quality_checks() -> tuple[Check, ...]:
