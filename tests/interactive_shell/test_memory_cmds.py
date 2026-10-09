@@ -154,3 +154,33 @@ def test_memory_list_bounds_description_but_show_preserves_it(
     output.truncate()
     dispatch_slash("/memory show long-description", Session(), console)
     assert description in " ".join(output.getvalue().split())
+
+
+@pytest.mark.parametrize("width", [40, 160])
+def test_memory_description_spacing_and_muted_style(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    from dataclasses import replace
+
+    from infrastructure.terminal.theme import DIM
+    from surfaces.interactive_shell.ui import memory
+
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("COLUMNS", str(width))
+    _seed()
+    record = list_memories()[0]
+    output = io.StringIO()
+    console = Console(file=output, width=width)
+    memory.render_memories(console, [record])
+    lines = output.getvalue().splitlines()
+    description_index = next(i for i, line in enumerate(lines) if "Prod cluster" in line)
+    assert not lines[description_index - 1].strip()
+    assert str(memory._description_preview(record.description).style) == str(DIM)
+
+    output.seek(0)
+    output.truncate()
+    memory.render_memories(console, [replace(record, description="  "), record])
+    lines = output.getvalue().splitlines()
+    rows = [i for i, line in enumerate(lines) if line.startswith(record.slug)]
+    previous_metadata_end = rows[0] + (2 if width == 40 else 0)
+    assert rows[1] - previous_metadata_end == 2

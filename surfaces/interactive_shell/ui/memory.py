@@ -14,7 +14,7 @@ from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, Rec
 
 
 def _description_preview(description: str) -> Text:
-    preview = Text(" ".join(description.split()))
+    preview = Text(" ".join(description.split()), style=str(DIM))
     preview.truncate(80, overflow="ellipsis")
     return preview
 
@@ -37,7 +37,9 @@ def render_memories(console: Console, records: Sequence[MemoryRecord]) -> None:
                         Text(record.memory_type.value, style=DIM),
                         Text(record.updated_at[:10], style=DIM),
                     ),
-                    (_description_preview(record.description),),
+                    (Text(""), _description_preview(record.description))
+                    if record.description.strip()
+                    else (),
                 )
                 for record in records
             ),
