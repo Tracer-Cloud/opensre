@@ -256,6 +256,8 @@ EXPORTS: dict[str, str] = {
     # github
     "GH_TOKEN_ENV": "github",
     "GITHUB_API_BASE_URL": "github",
+    "GITHUB_DEFAULT_HOST": "github",
+    "GITHUB_HOST_ENV": "github",
     "GITHUB_CONNECTION_ORIGIN_TAG": "github",
     "GITHUB_WEBAPP_ORIGIN": "github",
     "GITHUB_LOCAL_ORIGIN": "github",

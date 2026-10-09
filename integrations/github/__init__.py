@@ -23,6 +23,9 @@ _LAZY_EXPORTS: dict[str, str] = {
     "github_schedule_inputs": "integrations.github.app_connection",
     "refreshed_github_token": "integrations.github.app_connection",
     "setup_github": "integrations.github.cli_setup",
+    "detect_github_cli": "integrations.github.cli_probe",
+    "probe_gh_auth": "integrations.github.cli_probe",
+    "resolve_gh_binary": "integrations.github.cli_probe",
     "run_ci_repair_worker": "integrations.github.tools.ci_repair_loop.worker",
     "effective_github_token": "integrations.github.tools.ci_repair_loop.credentials",
     "count_ci_fixes": "integrations.github.tools.ci_fix.ledger",
@@ -83,6 +86,11 @@ if TYPE_CHECKING:
         github_schedule_inputs,
         github_setup_url,
         refreshed_github_token,
+    )
+    from integrations.github.cli_probe import (
+        detect_github_cli,
+        probe_gh_auth,
+        resolve_gh_binary,
     )
     from integrations.github.cli_setup import setup_github
     from integrations.github.connections import filter_github_connected_services
@@ -149,6 +157,9 @@ __all__ = [
     "github_schedule_inputs",
     "refreshed_github_token",
     "setup_github",
+    "detect_github_cli",
+    "probe_gh_auth",
+    "resolve_gh_binary",
     "PullRequestCheckout",
     "checkout_pull_request",
     "parse_pull_request",

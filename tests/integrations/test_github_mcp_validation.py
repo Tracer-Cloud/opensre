@@ -985,10 +985,14 @@ def test_build_github_mcp_config_strips_persisted_username_metadata() -> None:
             "url": github_mcp_module.DEFAULT_GITHUB_MCP_URL,
             "auth_token": "gho_test",
             "username": "octocat",
+            "auth_mode": "github_cli",
+            "hostname": "github.com",
         }
     )
     assert config.auth_token == "gho_test"
     assert "username" not in config.model_fields_set
+    assert "auth_mode" not in config.model_fields_set
+    assert "hostname" not in config.model_fields_set
 
 
 @pytest.mark.asyncio

@@ -42,7 +42,7 @@ DEFAULT_GITHUB_MCP_MODE: McpTransportMode = McpTransportMode.STREAMABLE_HTTP
 DEFAULT_GITHUB_MCP_TOOLSETS = ("repos", "issues", "pull_requests", "actions", "search")
 
 # Non-transport metadata persisted alongside MCP credentials in the integration store.
-_CREDENTIAL_METADATA_KEYS: frozenset[str] = frozenset({"username"})
+_CREDENTIAL_METADATA_KEYS: frozenset[str] = frozenset({"username", "auth_mode", "hostname"})
 
 REQUIRED_SOURCE_TOOLS = (
     "get_file_contents",

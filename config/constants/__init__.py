@@ -560,6 +560,12 @@ if TYPE_CHECKING:
         GITHUB_API_BASE_URL as GITHUB_API_BASE_URL,
     )
     from config.constants.github import (
+        GITHUB_DEFAULT_HOST as GITHUB_DEFAULT_HOST,
+    )
+    from config.constants.github import (
+        GITHUB_HOST_ENV as GITHUB_HOST_ENV,
+    )
+    from config.constants.github import (
         GITHUB_MCP_ARGS_ENV as GITHUB_MCP_ARGS_ENV,
     )
     from config.constants.github import (
