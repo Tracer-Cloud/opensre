@@ -277,8 +277,9 @@ def execute_tool_calls(
     """Execute provider-requested tools and return structured results in provider order.
 
     A response may carry several calls; they run in provider order. Consecutive
-    read-only ``ACTION`` calls (side-effect level ``none`` or ``read_only``)
-    form a group whose tool bodies run at the same time, up to
+    read-only ``ACTION`` calls (side-effect level ``none`` or ``read_only``, and
+    no runtime context, which can reach the session) form a group whose tool
+    bodies run at the same time, up to
     ``MAX_PARALLEL_TOOL_CALLS`` per group; every other call runs alone.
     ``OPENSRE_PARALLEL_TOOL_CALLS=0`` runs every call alone. Hooks never run
     concurrently and always run on the calling thread: a group runs each
@@ -397,8 +398,15 @@ def parallel_tool_calls_enabled() -> bool:
 
 
 def _runs_in_parallel(tool: RuntimeTool | None) -> bool:
-    """A known ``ACTION`` tool that declares it changes nothing."""
+    """A known ``ACTION`` tool that declares it changes nothing and never sees the session.
+
+    A tool given the runtime context can reach the session (``skill_view``
+    activates a skill), which changes what later calls' checks see, so it
+    runs alone whatever side-effect level it declares.
+    """
     if tool is None or tool_role(tool) is not ToolRole.ACTION:
+        return False
+    if isinstance(tool, AgentTool) or getattr(tool, "accepts_runtime_context", False):
         return False
     return getattr(tool, "side_effect_level", None) in _PARALLEL_SIDE_EFFECT_LEVELS
 

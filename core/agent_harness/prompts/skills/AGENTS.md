@@ -210,8 +210,10 @@ time", or "in the same response".
 
 The runtime (`core.tool.execution`) runs a response's tool calls in the order
 the model listed them. Consecutive read-only `ACTION` calls (side-effect level
-`none` or `read_only`) run at the same time, up to eight at once; every other
-call runs alone, after the calls before it. Results always come back in the
+`none` or `read_only`) run at the same time, up to eight at once, unless the
+tool receives the runtime context: such a tool can change the session
+(`skill_view` activates a skill), so it runs alone. Every other call runs
+alone, after the calls before it. Results always come back in the
 listed order, and hooks (plan guard, approvals, duplicate guard) still check
 each call in that order. A response may batch several independent calls; a
 call that depends on an earlier call's result belongs in the next response.

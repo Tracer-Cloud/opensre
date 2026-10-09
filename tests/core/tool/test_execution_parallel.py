@@ -21,6 +21,8 @@ from core.tool.execution import (
 )
 
 _BARRIER_TIMEOUT_SECONDS = 5.0
+# How long a body waits to see whether another body starts beside it.
+_OVERLAP_PROBE_SECONDS = 0.3
 _marker: contextvars.ContextVar[str] = contextvars.ContextVar("parallel_test_marker", default="")
 
 
@@ -227,3 +229,75 @@ def test_bodies_see_the_callers_context_variables() -> None:
         _marker.reset(token)
 
     assert [r.details["marker"] for r in results] == ["turn-42", "turn-42"]
+
+
+def test_a_read_only_tool_given_the_session_runs_alone() -> None:
+    # skill_view declares read_only but activates a skill through its context,
+    # so no other body may run while it does.
+    neighbour_started = threading.Event()
+    saw_neighbour: list[bool] = []
+
+    def neighbour(value: str) -> dict[str, Any]:
+        neighbour_started.set()
+        return {"value": value}
+
+    def activate(value: str, context: Any) -> dict[str, Any]:
+        del context
+        saw_neighbour.append(neighbour_started.wait(_OVERLAP_PROBE_SECONDS))
+        return {"value": value}
+
+    skill = RegisteredTool(
+        name="skill",
+        description="test tool that receives the session",
+        input_schema={"type": "object", "properties": {}, "additionalProperties": True},
+        source="knowledge",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        accepts_runtime_context=True,
+        run=activate,
+    )
+
+    results = execute_tool_calls(
+        [_call("skill"), _call("read_b")],
+        [skill, _registered("read_b", neighbour)],
+        {},
+    )
+
+    assert [r.is_error for r in results] == [False, False]
+    assert saw_neighbour == [False]
+
+
+def test_a_cancel_after_one_body_starts_skips_the_rest_and_keeps_its_result() -> None:
+    first_started = threading.Event()
+    polls = 0
+
+    def cancel_once_the_first_body_runs() -> bool:
+        nonlocal polls
+        polls += 1
+        if polls == 1:
+            return False
+        return first_started.wait(_BARRIER_TIMEOUT_SECONDS)
+
+    def first(value: str) -> dict[str, Any]:
+        first_started.set()
+        return {"value": value}
+
+    ran: list[str] = []
+
+    def later(value: str) -> dict[str, Any]:
+        ran.append(value)
+        return {"value": value}
+
+    started: list[str] = []
+    results = execute_tool_calls(
+        [_call("read_a"), _call("read_b"), _call("read_c")],
+        [_registered("read_a", first), _registered("read_b", later), _registered("read_c", later)],
+        {},
+        should_stop=cancel_once_the_first_body_runs,
+        on_call_start=lambda tc: started.append(tc.name),
+    )
+
+    assert started == ["read_a"]
+    assert ran == []
+    assert results[0].details == {"value": "read_a"} and not results[0].is_error
+    assert [r.metadata.get("skipped") for r in results[1:]] == [True, True]
+    assert all("cancelled" in str(r.content) for r in results[1:])
