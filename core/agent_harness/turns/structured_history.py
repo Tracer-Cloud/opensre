@@ -34,7 +34,7 @@ from core.state import TurnEvidence, match_turn_evidence
 from core.state.history_settings import history_tool_result_chars
 from core.state.transcript_window import is_summary_message, summary_text
 from core.state.turn_evidence import ITEM_ASSISTANT, ITEM_TOOL_RESULTS, ITEM_USER, cap_text
-from core.tool import tool_output_byte_budget, truncate_output_text
+from core.tool import history_replay_byte_budget, truncate_output_text
 from core.tool.execution import public_tool_input
 
 #: Header of the compacted-history message that opens a long conversation.
@@ -98,7 +98,7 @@ def tool_items_from_run(
     transcript tell the same story.
     """
     result_limit = history_tool_result_chars()
-    result_byte_budget = tool_output_byte_budget(history=True)
+    result_byte_budget = history_replay_byte_budget()
     items: list[dict[str, Any]] = []
     pending_ids: list[str] = []
     for message in messages[history_count + 1 :]:

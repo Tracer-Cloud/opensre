@@ -22,7 +22,11 @@ from core.tool.execution import (
     report_run_error,
 )
 from core.tool.live_catalog import LiveToolCatalog
-from core.tool.output import tool_output_byte_budget, truncate_output_text
+from core.tool.output import (
+    history_replay_byte_budget,
+    tool_output_byte_budget,
+    truncate_output_text,
+)
 from core.tool.registry import ToolRegistry, normalize_surfaces
 
 __all__ = [
@@ -45,6 +49,7 @@ __all__ = [
     "ToolSurface",
     "availability_view",
     "normalize_surfaces",
+    "history_replay_byte_budget",
     "report_run_error",
     "tool_output_byte_budget",
     "truncate_output_text",

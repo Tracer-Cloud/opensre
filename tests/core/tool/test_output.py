@@ -39,9 +39,13 @@ def test_text_blocks_share_one_budget_and_preserve_non_text_content() -> None:
     visible = ToolExecutionResult(content=blocks).provider_content()
 
     assert visible == [
-        {"type": "text", "text": "a" * 39_996},
+        {
+            "type": "text",
+            "text": "a" * 20_000
+            + "…5 tokens truncated…"
+            + "a" * 19_976
+            + "\nabcdefgh\nlater evidence",
+        },
         image,
-        {"type": "text", "text": "ab…1 tokens truncated…gh"},
-        {"type": "text", "text": "[omitted 1 text items ...]"},
     ]
     assert blocks[2]["text"] == "abcdefgh"
