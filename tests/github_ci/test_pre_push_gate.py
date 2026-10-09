@@ -147,6 +147,8 @@ def test_push_checks_commit_instead_of_dirty_fix_and_records_explicit_override(
     _git(push_repo, "commit", "-m", "broken")
     (push_repo / "bad.py").write_text("value = 1\n", encoding="utf-8")
     (push_repo / ".github/ci/run_checks.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    for helper in ("check_catalog.py", "git_changes.py"):
+        (push_repo / ".github/ci" / helper).write_text("raise SystemExit(0)\n", encoding="utf-8")
     blocked = _git(push_repo, "push", "origin", "main", check=False)
     assert blocked.returncode != 0, blocked.stdout + blocked.stderr
     assert _git(push_repo, "ls-remote", "origin", "refs/heads/main").stdout.split()[0] == accepted

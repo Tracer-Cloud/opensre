@@ -18,13 +18,15 @@ explicitly requires them.
 
 Run `make install` after cloning. It installs locked development dependencies
 and a blocking pre-push hook for this checkout. For an existing environment,
-run `make install-hooks`. Installation preserves existing hooks and keeps
+run `make install-hooks` (also after updating the hook launcher). Installation preserves existing hooks and keeps
 linked worktrees independent.
 
 The hook runs **Ruff lint and formatting checks on changed Python files only**
 from the committed revisions being pushed. Temporary Git worktrees ensure an
 uncommitted fix cannot hide a committed lint failure. It reuses the checkout's
-installed tooling; it does not install dependencies or run tests, typechecking,
+installed tooling. The launcher loads the hook's Python modules from the current
+checkout's committed HEAD so dirty validation helpers cannot bypass checks.
+It does not install dependencies or run tests, typechecking,
 registry checks, or import checks. Run `make install` if tooling is missing.
 Existing push hooks still run first with Git's original arguments and ref updates.
 

@@ -47,10 +47,14 @@ def install(root: Path) -> Path:
     launcher.write_text(
         "#!/bin/sh\n# OpenSRE managed pre-push\nset -eu\n"
         "root=$(git rev-parse --show-toplevel)\n"
-        'if [ ! -f "$root/.github/ci/pre_push.py" ]; then\n'
-        '  echo "Push blocked: this checkout lacks .github/ci/pre_push.py. Restore the validation tooling." >&2\n'
-        "  exit 1\nfi\n"
-        'exec uv run --no-sync --project "$root" python "$root/.github/ci/pre_push.py" "$@"\n',
+        'tooling=$(mktemp -d "${TMPDIR:-/tmp}/opensre-push-tools.XXXXXX")\n'
+        "trap 'rm -rf \"$tooling\"' EXIT\n"
+        "revision=$(git rev-parse HEAD)\n"
+        "for module in pre_push.py git_changes.py check_catalog.py; do\n"
+        '  if ! git show "$revision:.github/ci/$module" > "$tooling/$module"; then\n'
+        '    echo "Push blocked: committed validation tooling is missing. Restore it before pushing." >&2\n'
+        "    exit 1\n  fi\ndone\n"
+        'uv run --no-sync --project "$root" python "$tooling/pre_push.py" "$@"\n',
         encoding="utf-8",
     )
     launcher.chmod(0o755)
