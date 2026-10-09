@@ -49,7 +49,7 @@ def install(root: Path) -> Path:
         "root=$(git rev-parse --show-toplevel)\n"
         'tooling=$(mktemp -d "${TMPDIR:-/tmp}/opensre-push-tools.XXXXXX")\n'
         "trap 'rm -rf \"$tooling\"' EXIT\n"
-        "revision=$(git rev-parse HEAD)\n"
+        f"revision={git(root, 'rev-parse', 'HEAD')}\n"
         "for module in pre_push.py git_changes.py check_catalog.py; do\n"
         '  if ! git show "$revision:.github/ci/$module" > "$tooling/$module"; then\n'
         '    echo "Push blocked: committed validation tooling is missing. Restore it before pushing." >&2\n'

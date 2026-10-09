@@ -72,7 +72,15 @@ def _validate(root: Path, commit: str, base: str | None) -> int:
             # Reuse installed tooling; Ruff reads configuration from the committed snapshot.
             # Also validate branches created before this gate was introduced.
             # Invoke Ruff directly: old or dirty check runners cannot alter this gate.
-            checks = quick_checks(changed_files(snapshot, base, commit), root=snapshot)
+            try:
+                checks = quick_checks(changed_files(snapshot, base, commit), root=snapshot)
+            except subprocess.CalledProcessError:
+                print(
+                    "Push blocked: cannot determine changed files. Fetch the remote base "
+                    "and ensure it shares history with the pushed commit.",
+                    file=sys.stderr,
+                )
+                return 1
             failed = False
             for check in checks:
                 print(f"Checking {check.name} on committed Python files.", flush=True)

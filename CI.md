@@ -24,8 +24,9 @@ linked worktrees independent.
 The hook runs **Ruff lint and formatting checks on changed Python files only**
 from the committed revisions being pushed. Temporary Git worktrees ensure an
 uncommitted fix cannot hide a committed lint failure. It reuses the checkout's
-installed tooling. The launcher loads the hook's Python modules from the current
-checkout's committed HEAD so dirty validation helpers cannot bypass checks.
+installed tooling. The launcher pins the hook's Python modules to the committed HEAD at
+installation, so dirty helpers or checking out older branches cannot change
+the installed gate. Run `make install-hooks` from an updated checkout to refresh it.
 It does not install dependencies or run tests, typechecking,
 registry checks, or import checks. Run `make install` if tooling is missing.
 Existing push hooks still run first with Git's original arguments and ref updates.

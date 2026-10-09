@@ -269,3 +269,32 @@ def test_snapshot_runs_real_ruff_without_installing_dependencies(tmp_path: Path)
     fixed = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
     assert _validate(tmp_path, fixed, head) == 0
     assert len(_git(tmp_path, "worktree", "list", "--porcelain").stdout.split("worktree ")) == 2
+
+
+def test_installed_gate_survives_checkout_before_hook_existed(push_repo: Path) -> None:
+    _git(push_repo, "push", "origin", "main")
+    _git(push_repo, "checkout", "--orphan", "historical")
+    _git(push_repo, "rm", "-rf", ".github")
+    _git(push_repo, "commit", "-m", "historical checkout without hook modules")
+    # Remove the default base so unrelated history is not the failure.
+    _git(push_repo, "remote", "remove", "origin")
+    remote = push_repo.parent / "historical.git"
+    _git(push_repo.parent, "init", "--bare", str(remote))
+    _git(push_repo, "remote", "add", "historical", str(remote))
+    pushed = _git(push_repo, "push", "historical", "HEAD:main", check=False)
+    assert pushed.returncode == 0, pushed.stdout + pushed.stderr
+
+
+def test_snapshot_diff_failure_blocks_with_recovery_advice(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pre_push import _validate
+
+    _git(tmp_path, "init", "-b", "main")
+    _git(tmp_path, "config", "user.name", "Gate test")
+    _git(tmp_path, "config", "user.email", "gate@example.invalid")
+    _git(tmp_path, "commit", "--allow-empty", "-m", "base")
+    head = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    assert _validate(tmp_path, head, "refs/heads/missing") == 1
+    assert "Fetch the remote base" in capsys.readouterr().err
+    assert len(_git(tmp_path, "worktree", "list", "--porcelain").stdout.split("worktree ")) == 2
