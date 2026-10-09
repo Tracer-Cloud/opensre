@@ -6,16 +6,19 @@ from dataclasses import dataclass
 from typing import Literal
 
 from rich import box
+from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.text import Text
 
 from infrastructure.terminal.theme import BOLD_BRAND, DIM
 from surfaces.shared.terminal.components.rendering import repl_table
 
+_MAX_PRIMARY_COLUMN_WIDTH = 48
+
 
 @dataclass(frozen=True)
 class RecordColumn:
-    """A summary column; the first column receives the remaining width."""
+    """A summary column; width is a minimum for the content-sized first column."""
 
     header: str
     width: int = 20
@@ -40,13 +43,23 @@ class RecordTable:
     subtitle: str = ""
     caption: str = ""
 
-    def __rich_console__(self, _console: Console, options: ConsoleOptions) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         yield Text(f"{self.title} · {len(self.rows)}", style=BOLD_BRAND)
         if self.subtitle:
             yield Text(self.subtitle, style=DIM)
         yield Text("")
         first_width = options.max_width - sum(col.width + 3 for col in self.columns[1:])
         wide = options.max_width >= 72 and first_width >= self.columns[0].width
+        if wide:
+            content_width = max(
+                (console.measure(row.cells[0], options=options).maximum for row in self.rows),
+                default=0,
+            )
+            preferred_width = max(cell_len(self.columns[0].header), content_width)
+            first_width = min(
+                first_width,
+                max(self.columns[0].width, min(_MAX_PRIMARY_COLUMN_WIDTH, preferred_width)),
+            )
         for index, row in enumerate(self.rows):
             if wide:
                 table = repl_table(box=box.SIMPLE_HEAD, show_header=index == 0)
