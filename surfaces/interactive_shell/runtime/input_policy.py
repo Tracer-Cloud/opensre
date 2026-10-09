@@ -22,8 +22,12 @@ def _literal_slash_command_text(text: str) -> str | None:
 
 
 _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
+    {"/history", "/memory", "/loops", "/work", "/fleet"}
+)
+# These commands can print tables or open a picker even with arguments.
+# Reserve the whole command family so aliases and help topics stay covered.
+_EXCLUSIVE_STDIN_COMMANDS: frozenset[str] = frozenset(
     {
-        "/history",
         "/account",
         "/auth",
         # ``/choose`` renders the pending ask_user_choice arrow-key picker (raw
@@ -32,7 +36,6 @@ _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
         # ``/demo`` queues onboarding; finish it before reading the queued prompt.
         "/demo",
         "/help",
-        "/memory",
         "/model",
         "/tools",
         "/trust",
@@ -48,12 +51,9 @@ _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
         "/cost",
         "/credits",
         "/tasks",
-        "/loops",
-        "/work",
         "/alerts",
         "/privacy",
         "/context",
-        "/fleet",
         "/compact",
         "/sessions",
         "/resume",
@@ -64,6 +64,8 @@ _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
 _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
         ("/integrations", "list"),
+        ("/integrations", "show"),
+        ("/integrations", "verify"),
         ("/integrations", "setup"),
         # ``remove`` drives a native inline arrow-key picker (raw os.read on
         # stdin). Without exclusive stdin the active prompt application steals
@@ -73,9 +75,6 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/mcp", "list"),
         ("/mcp", "connect"),
         ("/mcp", "disconnect"),
-        # Bare ``/model set`` opens the provider picker; with a provider it may
-        # prompt for a missing key and prints the models table.
-        ("/model", "set"),
         ("/cron", "list"),
         ("/cron", "logs"),
         ("/cron", "status"),
@@ -83,13 +82,10 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/work", "ls"),
         ("/work", "next"),
         ("/work", "prioritize"),
-        # These two ask for the value they are missing, so they need stdin the
-        # same way their parent menu does. Without the reservation the handler
-        # sees no exclusive stdin and falls back to printing usage, which is
-        # how a typed subcommand came to behave differently from the same row
-        # chosen in /help.
-        ("/model", "toolcall"),
+        # Retention asks for a missing value; show prints a history table.
         ("/history", "retention"),
+        ("/history", "show"),
+        ("/fleet", "budget"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),
@@ -152,7 +148,7 @@ def turn_needs_exclusive_stdin(text: str, _session: Session) -> bool:
     name = parts[0].lower()
     args = [arg.lower() for arg in parts[1:]]
 
-    if name in _WAIT_FOR_COMPLETION_COMMANDS:
+    if name in _WAIT_FOR_COMPLETION_COMMANDS or name in _EXCLUSIVE_STDIN_COMMANDS:
         return True
     if name == "/theme":
         return True

@@ -55,12 +55,54 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show abc123", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/theme blue", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/verify", session) is True
-    assert loop_input_policy.turn_needs_exclusive_stdin("/verify datadog", session) is False
+    assert loop_input_policy.turn_needs_exclusive_stdin("/verify datadog", session) is True
 
     # Gating is literal-/slash only: bare command words are not recognized.
     assert loop_input_policy.turn_needs_exclusive_stdin("integrations", session) is False
     assert loop_input_policy.turn_needs_exclusive_stdin("integrations list", session) is False
     assert loop_input_policy.turn_needs_exclusive_stdin("verify", session) is False
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/history show",
+        "/model show",
+        "/model toolcall show",
+        "/model restore anthropic",
+        "/model default anthropic",
+        "/model reset anthropic",
+        "/model use anthropic",
+        "/model switch anthropic",
+        "/integrations show github",
+        "/integrations verify",
+        "/integrations verify github",
+        "/verify github",
+        "/fleet budget",
+        "/help all",
+        "/help /model",
+        "/help tasks",
+        "/? /model",
+        "/resume session-id",
+    ],
+)
+def test_table_command_variants_own_stdin(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
+    monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)
+    session = Session()
+    assert loop_input_policy.turn_needs_exclusive_stdin(command, session)
+    # Reserving terminal input must not turn prose into command intent or
+    # serialize headless turns that do not have an interactive prompt.
+    assert not loop_input_policy.turn_needs_exclusive_stdin(command.removeprefix("/"), session)
+    monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: False)
+    assert not loop_input_policy.turn_needs_exclusive_stdin(command, session)
+
+
+def test_non_table_subcommands_keep_concurrent_prompt_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)
+    for command in ("/history pause", "/memory path", "/work path", "/loops stop loop-id"):
+        assert not loop_input_policy.turn_needs_exclusive_stdin(command, Session())
 
 
 @pytest.mark.parametrize(
