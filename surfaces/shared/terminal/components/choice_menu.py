@@ -86,11 +86,15 @@ def repl_tty_interactive() -> bool:
 
 
 def console_output_is_tty(console: Console) -> bool:
-    """True when this console's own file is a TTY.
+    """True when this console is a live terminal, including an explicit force.
 
     ``Console.is_terminal`` is also true when color is forced, including
     ``FORCE_COLOR=0``, so a redirected buffer would otherwise open a picker.
+    An explicit ``force_terminal`` still wins, which is how a caller opts in.
     """
+    forced = console._force_terminal
+    if forced is not None:
+        return bool(forced)
     isatty = getattr(console.file, "isatty", None)
     if not callable(isatty):
         return False
