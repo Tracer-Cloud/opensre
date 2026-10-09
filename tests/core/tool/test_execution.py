@@ -115,8 +115,12 @@ def test_before_hook_can_block_with_structured_result() -> None:
     )[0]
 
     assert result.is_error is True
-    assert result.content == "blocked"
-    assert result.details == {"policy": "deny"}
+    assert result.details == {
+        "policy": "deny",
+        "error": "blocked",
+        "failure_state": "denied",
+    }
+    assert '"failure_state": "denied"' in str(result.provider_content())
 
 
 def test_composed_before_hooks_stop_at_first_block() -> None:
@@ -796,6 +800,8 @@ def test_execute_tool_calls_span_marks_error_on_unknown_tool(
         with bind_session_trace(session_id):
             result = execute_tool_calls([_call("missing")], [], {})[0]
         assert result.is_error is True
+        assert result.details["failure_state"] == "no_match"
+        assert '"failure_state": "no_match"' in str(result.provider_content())
         lines = [json.loads(line) for line in path.read_text(encoding="utf-8").strip().splitlines()]
         tool_spans = [
             rec
@@ -1061,6 +1067,16 @@ def test_a_raising_tool_reports_its_exception_type_and_declared_kind(
     assert event["outcome"] == "exception"
     assert event["exception_type"] == "_PushRejected"
     assert event["error_class"] == "push_rejected"
+
+
+def test_a_transport_exception_returns_a_distinct_failure_state() -> None:
+    def execute(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        raise ConnectionError("backend unreachable")
+
+    result = execute_tool_calls([_call()], [_tool(execute=execute)], {})[0]
+
+    assert result.details["failure_state"] == "transport_failure"
+    assert '"failure_state": "transport_failure"' in str(result.provider_content())
 
 
 def test_an_unavailable_integration_reports_its_source_and_setup_command(

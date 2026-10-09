@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _terminal_env_for_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Match a normal terminal so layout tests see the width they pass in.
+
+    ``FORCE_COLOR=0`` still marks a Rich console as a terminal, and ``TERM=dumb``
+    makes that console report 80 columns instead of an explicit width.
+    """
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    if os.environ.get("TERM", "").lower() in {"", "dumb", "unknown"}:
+        monkeypatch.setenv("TERM", "xterm-256color")
 
 
 @pytest.fixture(autouse=True)

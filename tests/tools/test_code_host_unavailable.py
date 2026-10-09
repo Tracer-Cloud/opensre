@@ -17,5 +17,6 @@ def test_code_host_unavailable_payload_shape() -> None:
         "source": "github",
         "available": False,
         "error": "GitHub MCP integration is not configured.",
+        "failure_state": "missing_config",
         "matches": [],
     }

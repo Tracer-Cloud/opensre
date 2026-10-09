@@ -235,6 +235,7 @@ def _result(report: CiAnalyticsReport, owner: str, repo: str, window: int) -> di
     name=TOOL_NAME,
     source=_SOURCE,
     display_name="Analyze CI reliability",
+    compact_description="Measure recent GitHub Actions reliability and developer wait time.",
     description=(
         "Read a repository's recent GitHub Actions history and report CI/CD "
         "reliability KPIs: executions, PR failure rate, failures classified as "

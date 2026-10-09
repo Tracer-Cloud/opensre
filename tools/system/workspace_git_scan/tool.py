@@ -194,6 +194,7 @@ def _repo_payload(snapshot: WorkspaceSnapshot) -> list[dict[str, Any]]:
     name="scan_local_git_workspace",
     source="system",
     display_name="Scan local repositories",
+    compact_description="Find local git repositories and summarize recent activity.",
     description=(
         "Find git repositories on this machine, count their commits in a recent "
         "window and their uncommitted files, note which have GitHub Actions "

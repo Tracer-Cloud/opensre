@@ -93,6 +93,7 @@ def test_run_returns_unavailable_without_credentials() -> None:
         "source": "bitbucket",
         "available": False,
         "error": "Bitbucket integration is not configured.",
+        "failure_state": "missing_config",
         "results": [],
     }
 

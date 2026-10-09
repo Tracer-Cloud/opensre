@@ -32,6 +32,7 @@ _COMPONENT = "integrations.hosted_gateway.tools.gateway_health.check_hosted_gate
     name=TOOL_NAME,
     source=SOURCE,
     display_name="Check hosted gateway",
+    compact_description="Check whether the signed-in organization's hosted gateway is running.",
     description=(
         "Check whether the signed-in user's organization has an OpenSRE hosted gateway "
         "(the managed Fargate container that runs CI/CD repair loops remotely) and "

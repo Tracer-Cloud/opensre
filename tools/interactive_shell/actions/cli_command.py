@@ -57,6 +57,7 @@ def run_cli_command(*, payload: str, context: Any) -> dict[str, Any]:
 
 cli_exec_tool = RegisteredTool(
     name="cli_exec",
+    compact_description="Run an explicit `opensre` CLI subcommand requested by the user.",
     description=(
         "Run an `opensre` CLI subcommand the user asked for (payload without the leading "
         "`opensre ` prefix), such as integrations/status/list/show/synthetic checks. "

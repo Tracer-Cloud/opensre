@@ -673,6 +673,25 @@ def test_generic_tool_end_hides_a_json_blob() -> None:
     assert "login" not in out
 
 
+def test_model_only_discovery_result_drops_its_buffered_action() -> None:
+    observer, buffer = _observer_with_buffer()
+
+    observer("tool_start", {"id": "search-1", "name": "tool_search", "input": {}})
+    observer(
+        "tool_end",
+        {
+            "id": "search-1",
+            "name": "tool_search",
+            "output": {"state": "no_match", "summary": "internal discovery text"},
+            "model_only": True,
+        },
+    )
+    observer("agent_end", {})
+
+    assert buffer.getvalue() == ""
+    assert observer.session.terminal.action_log_entries == []
+
+
 def test_skill_block_renders_live_not_buffered() -> None:
     """Skill blocks print live with one gap; tool calls are buffered, not shown yet."""
     observer, buffer = _observer_with_buffer()

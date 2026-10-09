@@ -9,7 +9,10 @@ from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import render_tools_table
 from surfaces.interactive_shell.ui.tool_browser import browse_tools
-from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
+from surfaces.shared.terminal.components.choice_menu import (
+    console_output_is_tty,
+    repl_tty_interactive,
+)
 from surfaces.shared.terminal.tables.tool_catalog import build_tool_catalog
 
 
@@ -22,7 +25,7 @@ def _cmd_tools(_session: Session, console: Console, _args: list[str]) -> bool:
     if (
         entries
         and repl_tty_interactive()
-        and console.is_terminal
+        and console_output_is_tty(console)
         and not interactive_override_env()
     ):
         browse_tools(entries)

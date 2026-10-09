@@ -12,6 +12,7 @@ _SENSITIVE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _RUNTIME_KEY_RE = re.compile(r"(^_|backend$|_backend$)", re.IGNORECASE)
+_SAFE_METRIC_KEYS = frozenset({"schema_tokens"})
 
 _REDACTED_PLACEHOLDER = "[redacted]"
 _RUNTIME_OBJECT_PLACEHOLDER = "[runtime object]"
@@ -61,7 +62,9 @@ def redact_sensitive(value: Any) -> Any:
         redacted: dict[str, Any] = {}
         for key, item in value.items():
             key_str = str(key)
-            if _SENSITIVE_KEY_RE.search(key_str):
+            if key_str in _SAFE_METRIC_KEYS:
+                redacted[key_str] = redact_sensitive(item)
+            elif _SENSITIVE_KEY_RE.search(key_str):
                 redacted[key_str] = _REDACTED_PLACEHOLDER
             elif _RUNTIME_KEY_RE.search(key_str):
                 redacted[key_str] = _RUNTIME_OBJECT_PLACEHOLDER

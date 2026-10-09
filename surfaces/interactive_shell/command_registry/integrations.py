@@ -32,6 +32,7 @@ from surfaces.interactive_shell.ui import (
 from surfaces.interactive_shell.ui.integration_browser import IntegrationEntry, browse_integrations
 from surfaces.shared.terminal.components.choice_menu import (
     CRUMB_SEP,
+    console_output_is_tty,
     prepare_repl_output_line,
     repl_choose_one,
     repl_tty_interactive,
@@ -310,7 +311,9 @@ def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bo
 
 
 def _use_browser(console: Console) -> bool:
-    return repl_tty_interactive() and console.is_terminal and not interactive_override_env()
+    return (
+        repl_tty_interactive() and console_output_is_tty(console) and not interactive_override_env()
+    )
 
 
 def _browse_connections(session: Session, console: Console, *, mcp: bool) -> bool:

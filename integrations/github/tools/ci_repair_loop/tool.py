@@ -99,6 +99,7 @@ def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float)
     name="schedule_ci_repair_loop",
     source="github",
     display_name="Schedule bounded CI repair",
+    compact_description="Schedule one bounded background repair for a GitHub pull request.",
     use_cases=["Repair one selected PR in the background"],
     description=(
         "Schedule repair of one open GitHub PR whose branch is in the same repository. "
@@ -184,6 +185,7 @@ def schedule_ci_repair_loop(
     name="get_ci_repair_loop",
     source="github",
     display_name="Inspect CI repair",
+    compact_description="Read or wait for a scheduled CI repair run and its evidence.",
     use_cases=[
         "Observe an active CI repair run",
         "Retrieve a completed repair report and its evidence links",

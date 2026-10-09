@@ -97,6 +97,7 @@ def _failed(exc: Exception) -> dict[str, Any]:
     name="probe_github_repair_access",
     source="github",
     display_name="Probe GitHub repair access",
+    compact_description="Check which GitHub owners can host a private CI repair demo.",
     use_cases=["See which GitHub owners can host a private CI repair demo"],
     description=(
         "Read this token's GitHub login, whether it is a classic PAT (scopes from the "

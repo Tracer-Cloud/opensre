@@ -122,15 +122,32 @@ def tool_items_from_run(
             )
             pending_ids = call_ids
         elif isinstance(message, ToolResultRuntimeMessage) and pending_ids:
+            hidden_raw = message.metadata.get("model_only_result_indices", ())
+            hidden = {
+                index
+                for index in hidden_raw
+                if isinstance(index, int) and 0 <= index < len(pending_ids)
+            }
+            kept_indices = [index for index in range(len(pending_ids)) if index not in hidden]
+            if not kept_indices:
+                # Discovery observations are scoped to this request. Replaying
+                # them after the next request rebuilds its initial catalog would
+                # describe expansion state that no longer exists.
+                items.pop()
+                pending_ids = []
+                continue
+            original_ids = pending_ids
+            if hidden and items and items[-1].get("kind") == ITEM_ASSISTANT:
+                calls = list(items[-1].get("tool_calls") or ())
+                items[-1]["tool_calls"] = [calls[index] for index in kept_indices]
+            pending_ids = [original_ids[index] for index in kept_indices]
             results = []
-            for index, (call, content) in enumerate(
-                zip(message.tool_calls, message.results, strict=False)
-            ):
-                call_id = (
-                    pending_ids[index]
-                    if index < len(pending_ids)
-                    else replay_call_id(call.id, f"call_{len(items)}_{index}")
-                )
+            pairs = list(zip(message.tool_calls, message.results, strict=False))
+            for result_index, original_index in enumerate(kept_indices):
+                if original_index >= len(pairs):
+                    continue
+                call, content = pairs[original_index]
+                call_id = pending_ids[result_index]
                 text = truncate_output_text(_content_text(content), result_byte_budget)
                 if result_limit is not None:
                     text = cap_text(text, result_limit)

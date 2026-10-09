@@ -85,6 +85,25 @@ def repl_tty_interactive() -> bool:
     return bool(sys.stdin.isatty() and sys.stdout.isatty())
 
 
+def console_output_is_tty(console: Console) -> bool:
+    """True when this console is a live terminal, including an explicit force.
+
+    ``Console.is_terminal`` is also true when color is forced, including
+    ``FORCE_COLOR=0``, so a redirected buffer would otherwise open a picker.
+    An explicit ``force_terminal`` still wins, which is how a caller opts in.
+    """
+    forced = console._force_terminal
+    if forced is not None:
+        return bool(forced)
+    isatty = getattr(console.file, "isatty", None)
+    if not callable(isatty):
+        return False
+    try:
+        return bool(isatty())
+    except (ValueError, OSError):
+        return False
+
+
 def ensure_tty_column_zero() -> None:
     """Reset the cursor column before Rich output when a TTY is active."""
     if repl_tty_interactive():
@@ -739,6 +758,7 @@ __all__ = [
     "menu_columns",
     "print_valid_choice_list",
     "read_menu_action",
+    "console_output_is_tty",
     "repl_choose_one",
     "ensure_tty_column_zero",
     "prepare_repl_output_line",
