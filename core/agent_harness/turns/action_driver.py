@@ -902,12 +902,18 @@ def _build_action_agent(
         on_runtime_event = tap_executed_tool_names(on_runtime_event, executed_tool_names)
         on_runtime_event = tap_executed_tool_outcomes(on_runtime_event, executed_outcomes)
 
+    host_limit = getattr(session, "action_iteration_limit", None)
+    iteration_limit = (
+        min(_MAX_TOOL_CALLING_ITERATIONS, max(1, host_limit))
+        if host_limit is not None
+        else _MAX_TOOL_CALLING_ITERATIONS
+    )
     config = AgentConfig(
         llm=llm,
         system=system,
         tools=tuple(agent_tools),
         resolved_integrations=resolved_integrations,
-        max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
+        max_iterations=iteration_limit,
         max_stagnant_iterations=_MAX_STAGNANT_TOOL_ITERATIONS,
         tool_resources=tool_resources,
         tool_hooks=tool_hooks,
@@ -920,7 +926,7 @@ def _build_action_agent(
         history=history,
         prompt_size=prompt_size,
         llm=llm,
-        max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
+        max_iterations=iteration_limit,
         deferred_replies=deferred_replies,
         value_insights=value_insights,
         prompt_skill=prompt_skill,

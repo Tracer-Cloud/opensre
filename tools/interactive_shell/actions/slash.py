@@ -37,10 +37,12 @@ from tools.interactive_shell.shared.slash_catalog import (
 # literal keystrokes. Defer them through ``set_auto_command`` so the loop
 # re-dispatches the command as a deterministic turn it runs with exclusive stdin.
 _INTERACTIVE_PICKER_MENUS: frozenset[str] = frozenset(
-    {"/auth", "/choose", "/cron", "/login", "/sessions", "/tools"}
+    {"/auth", "/choose", "/cron", "/login", "/sessions", "/tools", "/triage"}
 )
 _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
+        ("/triage", "connect"),
+        ("/triage", "demo"),
         ("/auth", "login"),
         ("/auth", "logout"),
         ("/integrations", "list"),

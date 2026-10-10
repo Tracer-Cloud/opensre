@@ -88,6 +88,7 @@ class GatewayController:
     ) -> None:
         self.logger: logging.Logger | None = None
         self.surfaces: gateway_startup.StartedGateway | None = None
+        self.triage_worker: Any = None
         self.scheduler: Any = None
         self._scheduler_runners: Any = None
         self._scheduler_reload_thread: threading.Thread | None = None
@@ -136,6 +137,7 @@ class GatewayController:
         else:
             self.components["scheduler"] = "external (dedicated MODE=scheduler service)"
             logger.info("[gateway] in-process scheduler disabled; run it as its own service")
+        self.start_triage()
         self._publish_status(logger)
         # Deploy health waits (EC2 Docker + AMI) match this line for Telegram
         # and/or Slack — do not rely on transport-specific log strings alone.
@@ -148,6 +150,14 @@ class GatewayController:
         if wait:
             self.wait()
         return self
+
+    def start_triage(self) -> None:
+        """Host durable alert investigations on the shared process turn gate."""
+        from bootstrap.triage import build_triage_worker
+
+        self.triage_worker = build_triage_worker(self.turn_gate)
+        self.triage_worker.start()
+        self.components["triage"] = "running (1 worker)"
 
     def start_surfaces(
         self,
@@ -203,6 +213,11 @@ class GatewayController:
         set_ready(False)
         self._stopped.set()
         stopped = True
+        if self.triage_worker is not None:
+            started = budget.mark()
+            stopped = self.triage_worker.stop(timeout=min(5.0, budget.remaining))
+            budget.consume(started)
+            self.triage_worker = None
         if self._scheduler_reload_thread is not None:
             started = budget.mark()
             self._scheduler_reload_thread.join(

@@ -13,6 +13,7 @@ from core.domain.alerts import inbox as _alert_inbox
 from infrastructure.scheduling.scheduler.background_service import (
     restart_stale_background_service,
 )
+from surfaces.interactive_shell.runtime.background.triage_notifications import watch_triage
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.runtime.startup.deferred_work import DeferredJob
 from surfaces.interactive_shell.session import Session
@@ -59,6 +60,7 @@ class BackgroundTaskPool:
         self.tasks = [
             ("processor", asyncio.create_task(processor_coro())),
             ("alert watcher", asyncio.create_task(self._alert_watcher())),
+            ("triage watcher", asyncio.create_task(watch_triage(self.session, self.state))),
             ("spinner ticker", asyncio.create_task(self._spinner_ticker())),
         ]
         session = self.session

@@ -1680,3 +1680,45 @@ if TYPE_CHECKING:
     from config.constants.yandex_cloud import (
         YC_USE_METADATA_ENV as YC_USE_METADATA_ENV,
     )
+
+if TYPE_CHECKING:
+    from config.constants.triage import (
+        TRIAGE_CREDENTIAL_PREFIX as TRIAGE_CREDENTIAL_PREFIX,
+    )
+    from config.constants.triage import (
+        TRIAGE_LEASE_SECONDS as TRIAGE_LEASE_SECONDS,
+    )
+    from config.constants.triage import (
+        TRIAGE_MODEL_ITERATIONS as TRIAGE_MODEL_ITERATIONS,
+    )
+    from config.constants.triage import (
+        TRIAGE_PENDING_LIMIT as TRIAGE_PENDING_LIMIT,
+    )
+    from config.constants.triage import (
+        TRIAGE_POLL_SECONDS as TRIAGE_POLL_SECONDS,
+    )
+    from config.constants.triage import (
+        TRIAGE_SECONDS as TRIAGE_SECONDS,
+    )
+    from config.constants.triage import (
+        TRIAGE_TEXT_LIMIT as TRIAGE_TEXT_LIMIT,
+    )
+    from config.constants.triage import (
+        TRIAGE_TOOL_CALLS as TRIAGE_TOOL_CALLS,
+    )
+    from config.constants.triage import (
+        TRIAGE_WINDOW_SECONDS as TRIAGE_WINDOW_SECONDS,
+    )
+
+if TYPE_CHECKING:
+    from config.constants.triage_demo import DEMO_COLLECTOR_VERSION as DEMO_COLLECTOR_VERSION
+    from config.constants.triage_demo import DEMO_DISK_BYTES as DEMO_DISK_BYTES
+    from config.constants.triage_demo import DEMO_FOUNDRY_CHECKSUMS as DEMO_FOUNDRY_CHECKSUMS
+    from config.constants.triage_demo import DEMO_FOUNDRY_VERSION as DEMO_FOUNDRY_VERSION
+    from config.constants.triage_demo import DEMO_LABEL as DEMO_LABEL
+    from config.constants.triage_demo import DEMO_OTEL_ARCHIVE_SHA256 as DEMO_OTEL_ARCHIVE_SHA256
+    from config.constants.triage_demo import DEMO_OTEL_COMMIT as DEMO_OTEL_COMMIT
+    from config.constants.triage_demo import DEMO_OTEL_VERSION as DEMO_OTEL_VERSION
+    from config.constants.triage_demo import DEMO_PREFIX as DEMO_PREFIX
+    from config.constants.triage_demo import DEMO_RAM_BYTES as DEMO_RAM_BYTES
+    from config.constants.triage_demo import DEMO_SIGNOZ_VERSION as DEMO_SIGNOZ_VERSION

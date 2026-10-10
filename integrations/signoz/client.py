@@ -43,8 +43,18 @@ def _clamp_limit(limit: int, config: SigNozConfig) -> int:
     return max(1, min(limit, config.max_results))
 
 
-def _time_bounds(minutes: int) -> tuple[datetime, datetime]:
+def _time_bounds(
+    minutes: int, start_time: str | None = None, end_time: str | None = None
+) -> tuple[datetime, datetime]:
     """Return (start, end) datetimes for the last *minutes*."""
+    if start_time is not None or end_time is not None:
+        if not start_time or not end_time:
+            raise ValueError("Absolute bounds require both start_time and end_time")
+        start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+        if start.tzinfo is None or end.tzinfo is None or start >= end:
+            raise ValueError("Absolute bounds must be timezone-aware and ordered")
+        return start.astimezone(UTC), end.astimezone(UTC)
     end = datetime.now(UTC)
     start = end - timedelta(minutes=max(1, minutes))
     return start, end
@@ -534,7 +544,7 @@ class SigNozClient:
         base_filter = _signoz_filter_expression(filter_parts)
 
         error_filter_parts = list(filter_parts)
-        error_filter_parts.append("has_error = true")
+        error_filter_parts.append("hasError = true")
         error_filter = _signoz_filter_expression(error_filter_parts)
 
         def _trace_scalar_spec(
@@ -609,6 +619,9 @@ class SigNozClient:
         time_range_minutes: int = DEFAULT_TIME_RANGE_MINUTES,
         severity: str | None = None,
         limit: int = 50,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> dict[str, Any]:
         """Query SigNoz logs via Query Range API."""
         config_error = self._configuration_error()
@@ -616,7 +629,7 @@ class SigNozClient:
             return tool_unavailable("signoz_logs", config_error, total=0, logs=[])
 
         effective_limit = _clamp_limit(limit, self.config)
-        start, end = _time_bounds(time_range_minutes)
+        start, end = _time_bounds(time_range_minutes, start_time, end_time)
         return self._query_logs_via_api(
             service=service,
             start=start,
@@ -634,6 +647,9 @@ class SigNozClient:
         time_range_minutes: int = DEFAULT_TIME_RANGE_MINUTES,
         aggregation: str = "avg",
         limit: int = 50,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> dict[str, Any]:
         """Query SigNoz metrics via Query Range API."""
         resolved_metric = _CURATED_METRICS.get(metric_name, metric_name)
@@ -649,7 +665,7 @@ class SigNozClient:
             )
 
         effective_limit = _clamp_limit(limit, self.config)
-        start, end = _time_bounds(time_range_minutes)
+        start, end = _time_bounds(time_range_minutes, start_time, end_time)
         return self._query_metrics_via_api(
             metric_name=metric_name,
             resolved_metric=resolved_metric,
@@ -668,6 +684,9 @@ class SigNozClient:
         time_range_minutes: int = DEFAULT_TIME_RANGE_MINUTES,
         error_only: bool = False,
         limit: int = 50,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> dict[str, Any]:
         """Query SigNoz traces via Query Range API."""
         config_error = self._configuration_error()
@@ -675,7 +694,7 @@ class SigNozClient:
             return tool_unavailable("signoz_traces", config_error, total=0, traces=[])
 
         effective_limit = _clamp_limit(limit, self.config)
-        start, end = _time_bounds(time_range_minutes)
+        start, end = _time_bounds(time_range_minutes, start_time, end_time)
         return self._query_traces_via_api(
             service=service,
             start=start,
@@ -690,11 +709,14 @@ class SigNozClient:
         self,
         service: str | None = None,
         time_range_minutes: int = DEFAULT_TIME_RANGE_MINUTES,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> dict[str, Any]:
         """Return aggregate trace stats (error rate, p99 latency, call count)."""
         config_error = self._configuration_error()
         if config_error:
             return tool_unavailable("signoz_traces", config_error)
 
-        start, end = _time_bounds(time_range_minutes)
+        start, end = _time_bounds(time_range_minutes, start_time, end_time)
         return self._query_trace_summary_via_api(service=service, start=start, end=end)

@@ -33,6 +33,7 @@ from core.agent_harness.session import SessionManager
 
 if TYPE_CHECKING:
     from core.agent_harness.ports import (
+        LlmFactory,
         OutputSink,
         PromptContextProvider,
         ToolEventObserver,
@@ -151,6 +152,7 @@ class AgentSession:
         is_tty: bool | None = None,
         tool_hooks: ToolExecutionHooks | None = None,
         tool_event_observer: ToolEventObserver | None = None,
+        llm_factory: LlmFactory | None = None,
         unattended: bool = False,
         cancel_requested: Callable[[], bool] | None = None,
     ) -> AgentSession:
@@ -180,9 +182,10 @@ class AgentSession:
         events from the default tool provider. ``cancel_requested`` writes the
         host cancel Event so ReAct and tools stop when the caller (a disabled
         cron task, a gateway ``/stop``) says the turn is cancelled. A host that
-        needs more (its own sink, prompts, error reporter, an action
-        ``llm_factory``) builds through :class:`DefaultHeadlessBuild` itself and
-        calls :meth:`attach_agent`.
+        needs more (its own error reporter or agent family) builds through
+        :class:`DefaultHeadlessBuild` itself and calls :meth:`attach_agent`.
+        ``llm_factory`` lets a host enforce provider-call budgets without
+        changing the process provider configuration.
         """
         from core.agent_harness.turns.headless_adapters import BufferOutputSink
 
@@ -208,6 +211,7 @@ class AgentSession:
             is_tty=is_tty,
             tool_hooks=tool_hooks,
             tool_event_observer=tool_event_observer,
+            llm_factory=llm_factory,
             unattended=unattended,
         )
         return agent_session
@@ -372,6 +376,7 @@ class AgentSession:
         is_tty: bool | None = None,
         tool_hooks: ToolExecutionHooks | None = None,
         tool_event_observer: ToolEventObserver | None = None,
+        llm_factory: LlmFactory | None = None,
         unattended: bool = False,
     ) -> None:
         """Attach the agent built on the default port family (one construction recipe).
@@ -391,7 +396,7 @@ class AgentSession:
             surface=surface,
             tool_event_observer=tool_event_observer,
             unattended=unattended,
-        ).agent(tools=tools, prompts=prompts)
+        ).agent(tools=tools, prompts=prompts, llm_factory=llm_factory)
         agent.bind_turn(TurnBinding(is_tty=is_tty, tool_hooks=tool_hooks))
         self.attach_agent(agent)
 
