@@ -6,7 +6,6 @@ import os
 import subprocess
 import tempfile
 import threading
-from typing import BinaryIO
 
 from rich.console import Console
 from rich.markup import escape
@@ -133,14 +132,14 @@ def _hand_off_kept_cli_command(
     thread.start()
 
 
-def _captured_file_snapshot(stream: BinaryIO) -> bytes:
+def _captured_file_snapshot(path: str) -> bytes:
     """Read only bytes already written, even if a background child keeps appending."""
-    size = os.fstat(stream.fileno()).st_size
     # A separate open has its own offset: seeking the inherited descriptor
     # would also move the child's write offset. Windows requires delete sharing
     # when reopening a NamedTemporaryFile marked for deletion on last close.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_TEMPORARY", 0)
-    with os.fdopen(os.open(stream.name, flags), "rb") as snapshot:
+    with os.fdopen(os.open(path, flags), "rb") as snapshot:
+        size = os.fstat(snapshot.fileno()).st_size
         return snapshot.read(size)
 
 
@@ -166,8 +165,8 @@ def _run_captured_keep_running(
             try:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                partial_stdout = _captured_file_snapshot(stdout)
-                partial_stderr = _captured_file_snapshot(stderr)
+                partial_stdout = _captured_file_snapshot(stdout.name)
+                partial_stderr = _captured_file_snapshot(stderr.name)
                 _hand_off_kept_cli_command(process, detach_on_shutdown=detach_on_shutdown)
                 handed_off = True
                 raise subprocess.TimeoutExpired(
@@ -179,8 +178,8 @@ def _run_captured_keep_running(
             return subprocess.CompletedProcess(
                 cmd,
                 process.returncode if process.returncode is not None else 1,
-                _captured_file_snapshot(stdout).decode("utf-8", errors="replace"),
-                _captured_file_snapshot(stderr).decode("utf-8", errors="replace"),
+                _captured_file_snapshot(stdout.name).decode("utf-8", errors="replace"),
+                _captured_file_snapshot(stderr.name).decode("utf-8", errors="replace"),
             )
         finally:
             if not handed_off and process.poll() is None:

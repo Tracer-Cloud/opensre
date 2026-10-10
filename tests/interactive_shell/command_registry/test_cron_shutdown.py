@@ -18,11 +18,11 @@ def test_foreground_snapshot_preserves_child_write_offset() -> None:
     with tempfile.NamedTemporaryFile() as output:
         output.write(b"first\n")
         output.flush()
-        assert _captured_file_snapshot(output) == b"first\n"
+        assert _captured_file_snapshot(output.name) == b"first\n"
         assert output.tell() == len(b"first\n")
         output.write(b"second\n")
         output.flush()
-        assert _captured_file_snapshot(output) == b"first\nsecond\n"
+        assert _captured_file_snapshot(output.name) == b"first\nsecond\n"
 
 
 def test_cron_tick_finishes_after_repl_process_exits(tmp_path: Path) -> None:
