@@ -83,15 +83,12 @@ def _run_pr_readiness(
         "--no-sync",
         "python",
         str(runner),
+        "--pr-ready",
+        "--head",
+        commit,
     ]
     if base:
-        command.extend(["--scope", "--head", commit, "--base", base])
-    else:
-        print(
-            "No remote base is available; running shared quality checks without "
-            "diff-selected tests.",
-            flush=True,
-        )
+        command.extend(["--base", base])
     return subprocess.run(command, cwd=snapshot, env=environment, check=False).returncode
 
 

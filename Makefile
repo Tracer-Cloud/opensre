@@ -173,7 +173,7 @@ pre-push:
 	uv run --no-sync python .github/ci/run_checks.py --quick $(ARGS)
 
 pr-ready:
-	uv run --frozen --extra dev python .github/ci/run_checks.py --scope $(ARGS)
+	uv run --frozen --extra dev python .github/ci/run_checks.py --pr-ready $(ARGS)
 
 check-full:
 	uv run --frozen --extra dev python .github/ci/run_checks.py $(ARGS)
