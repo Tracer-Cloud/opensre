@@ -165,9 +165,14 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
             candidates = choices()
             if candidates:
                 mode = "choice"
-                choice_index = (
-                    candidates.index(current[field]) if current[field] in candidates else 0
-                )
+                selected = current[field]
+                option_type = options[field].type
+                if isinstance(option_type, click.Choice):
+                    selected = option_type.normalize_choice(selected, ctx=None)
+                    candidates = [
+                        option_type.normalize_choice(value, ctx=None) for value in candidates
+                    ]
+                choice_index = candidates.index(selected) if selected in candidates else 0
                 app.layout.focus(selection)
             else:
                 mode = "text"

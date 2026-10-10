@@ -434,3 +434,27 @@ def test_skill_aliases_expose_repairable_required_inputs() -> None:
     assert validate_cron_draft(draft)
     draft["skill_name"] = "morning-report"
     assert "city" in visible_cron_fields(draft)
+
+
+def test_choice_editor_preserves_case_insensitive_supplied_values() -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    from surfaces.interactive_shell.ui.cron_input import build_cron_form
+    from surfaces.interactive_shell.ui.cron_input.arguments import (
+        parse_cron_draft,
+        visible_cron_fields,
+    )
+    from tests.interactive_shell.command_registry.test_command_inputs import run_keys
+
+    draft = parse_cron_draft(COMPLETE[1:])
+    draft.update(kind="MANUAL_LOOP", provider="INTERACTIVE_SHELL")
+    with create_app_session(output=DummyOutput()):
+        app = build_cron_form(draft)
+        # Open and accept both existing choices without changing their selection.
+        keys = "\r\r" + "\t" * visible_cron_fields(draft).index("provider") + "\r\r\x13\x03"
+        result = run_keys(app, keys)
+    assert result is not None
+    saved = parse_cron_draft(result)
+    assert saved["kind"] == "manual_loop"
+    assert saved["provider"] == "interactive_shell"
