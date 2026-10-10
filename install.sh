@@ -7,6 +7,10 @@
 
 set -euo pipefail
 
+# Keep the optional canary credential in this shell, not in child environments.
+GITHUB_METADATA_TOKEN="${GITHUB_TOKEN:-}"
+unset GITHUB_TOKEN
+
 if [ -t 1 ]; then
   COLOR_RESET=$'\033[0m'
   COLOR_RED=$'\033[31m'
@@ -313,7 +317,8 @@ github_curl() {
   local url="$1"
   local destination="$2"
   local http1="$3"
-  shift 3
+  local auth_token="${4:-}"
+  shift 4
 
   local attempt=1
   local max_attempts=6
@@ -332,17 +337,32 @@ github_curl() {
   header_file="$(mktemp)"
 
   while true; do
-    # ${name[@]+...} keeps an empty array from tripping `set -u` on bash 3.2.
-    http_code="$(
-      curl --silent --location \
-        --connect-timeout 20 --max-time 180 \
-        ${protocol[@]+"${protocol[@]}"} \
-        -D "$header_file" \
-        -o "$body_file" \
-        -w '%{http_code}' \
-        ${extra[@]+"${extra[@]}"} \
-        "$url" || true
-    )"
+    # Empty arrays must stay safe with set -u on bash 3.2.
+    if [ -n "$auth_token" ]; then
+      http_code="$(
+        printf 'header = "Authorization: Bearer %s"\n' "$auth_token" |
+          curl --silent --location \
+            --connect-timeout 20 --max-time 180 \
+            ${protocol[@]+"${protocol[@]}"} \
+            -D "$header_file" \
+            -o "$body_file" \
+            -w '%{http_code}' \
+            ${extra[@]+"${extra[@]}"} \
+            --config - \
+            "$url" || true
+      )"
+    else
+      http_code="$(
+        curl --silent --location \
+          --connect-timeout 20 --max-time 180 \
+          ${protocol[@]+"${protocol[@]}"} \
+          -D "$header_file" \
+          -o "$body_file" \
+          -w '%{http_code}' \
+          ${extra[@]+"${extra[@]}"} \
+          "$url" || true
+      )"
+    fi
     http_code="${http_code//[[:space:]]/}"
 
     case "$http_code" in
@@ -357,6 +377,13 @@ github_curl() {
         return 0
         ;;
     esac
+
+    # An invalid canary token should fall back immediately instead of spending
+    # the public rate limit on retries with credentials GitHub will reject.
+    if [ -n "$auth_token" ] && { [ "$http_code" = "401" ] || [ "$http_code" = "403" ]; }; then
+      rm -f "$body_file" "$header_file"
+      return 22
+    fi
 
     if ! github_status_retryable "$http_code" || [ "$attempt" -ge "$max_attempts" ]; then
       if [ -n "$http_code" ] && [ "$http_code" != "000" ]; then
@@ -386,16 +413,31 @@ download_to() {
   local url="$1"
   local destination="$2"
 
-  github_curl "$url" "$destination" http1
+  github_curl "$url" "$destination" http1 ""
 }
 
 download_text() {
   local url="$1"
+  local github_token="${GITHUB_METADATA_TOKEN:-}"
 
-  github_curl "$url" "" "" \
+  if [ -n "$github_token" ]; then
+    local authenticated_response
+    if authenticated_response="$(
+      github_curl "$url" "" "" "$github_token" \
+        -H "Accept: application/vnd.github+json" \
+        -H "User-Agent: opensre-install-script" 2>/dev/null
+    )"; then
+      printf '%s' "$authenticated_response"
+      return
+    fi
+    warn "Authenticated GitHub metadata lookup failed; retrying without credentials."
+  fi
+
+  github_curl "$url" "" "" "" \
     -H "Accept: application/vnd.github+json" \
     -H "User-Agent: opensre-install-script"
 }
+
 
 fetch_release_json() {
   local version="${1:-}"
