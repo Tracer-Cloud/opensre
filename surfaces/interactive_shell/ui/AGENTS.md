@@ -19,6 +19,12 @@ as well; keep implementation in its owning package, not necessarily this folder.
 
 - Names/titles are bold and primary. Descriptions and ordinary results use
   `SECONDARY`; IDs, supporting metadata, timestamps, and hints use `DIM`.
+- **Input-form convention:** field descriptions, examples, and required/optional/default
+  markers must remain readable. Use `SECONDARY` (the shared command-input
+  `description` style) or `TEXT`; never `DIM`/`hint` for information needed to
+  fill a field. Reserve `DIM`/`hint` for keyboard shortcuts and tertiary metadata.
+  Keep field labels primary and errors in their semantic error style. Apply
+  this consistently to CLI, REPL, and shared-terminal forms.
 - Do not make every field equally dim: descriptions must remain readable.
   Preserve semantic emphasis for errors, warnings, running progress, and states
   such as **Invalid**, **Failed**, or **Blocked**. Never globally mute diagnostics.

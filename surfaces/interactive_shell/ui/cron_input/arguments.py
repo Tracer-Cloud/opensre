@@ -51,8 +51,8 @@ def parse_cron_draft(args: list[str]) -> dict[str, str]:
     return values
 
 
-def missing_cron_fields(values: dict[str, str]) -> list[str]:
-    """Find missing values, including kind-specific requirements and delivery defaults."""
+def required_cron_fields(values: dict[str, str]) -> list[str]:
+    """Find required fields for this kind, mode, and delivery configuration."""
     required = ["kind", "provider"]
     if not values["template"].strip():
         required.append("cron_expr")
@@ -74,7 +74,12 @@ def missing_cron_fields(values: dict[str, str]) -> list[str]:
             required.extend(("owner", "repo"))
     if values["provider"] and requires_explicit_chat_id(values["provider"]):
         required.append("chat_id")
-    return [field for field in required if not values[field].strip()]
+    return list(dict.fromkeys(required))
+
+
+def missing_cron_fields(values: dict[str, str]) -> list[str]:
+    """Find missing values, including kind-specific requirements and delivery defaults."""
+    return [field for field in required_cron_fields(values) if not values[field].strip()]
 
 
 def cron_add_needs_input(args: list[str]) -> bool:

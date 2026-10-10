@@ -107,18 +107,18 @@ def test_cron_form_real_keys_validate_and_keep_draft_after_errors() -> None:
     from surfaces.interactive_shell.ui.cron_input import build_cron_form
     from surfaces.interactive_shell.ui.cron_input.arguments import (
         parse_cron_draft,
-        visible_cron_fields,
     )
+    from surfaces.interactive_shell.ui.cron_input.presentation import review_fields
     from tests.interactive_shell.command_registry.test_command_inputs import run_keys
 
     values = parse_cron_draft(COMPLETE[1:])
     values["cron_expr"] = "not a schedule"
     values["name"] = "[literal] 日本"
-    names = visible_cron_fields(values)
+    names = review_fields(values)
     with create_app_session(output=DummyOutput()):
         app = build_cron_form(values)
         # Invalid Create stays in the form; fix the schedule without re-entering other fields.
-        keys = "\x13" + "\t" * names.index("cron_expr") + "\r\x01\x0b0 10 * * *\r\x13"
+        keys = "\x13" + "\t" * names.index("cron_expr") + "\r\x01\x0b0 10 * * *\r\x13\x03"
         result = run_keys(app, keys)
     assert result is not None
     draft = parse_cron_draft(result)
@@ -212,22 +212,15 @@ def test_cron_form_persists_only_after_explicit_create(
 
     from surfaces.interactive_shell.command_registry import cli_parity, cron_input, dispatch_slash
     from surfaces.interactive_shell.command_registry import help as help_commands
-    from surfaces.interactive_shell.ui.cron_input.arguments import (
-        parse_cron_draft,
-        visible_cron_fields,
-    )
     from tests.interactive_shell.command_registry.test_command_inputs import run_keys
 
     store = tmp_path / "tasks.json"
     monkeypatch.setattr(task_store, "default_task_store_path", lambda: store)
-    incomplete = COMPLETE[:-2]
-    draft = parse_cron_draft(incomplete[1:])
-    prompt_row = visible_cron_fields(draft).index("prompt")
     creations: list[list[str]] = []
 
     def collect(app: Any) -> Any:
         assert not list_tasks(store)
-        return run_keys(app, "\t" * prompt_row + "\rReview deployment health\r\x13")
+        return run_keys(app, "Review deployment health\r\x13\x03")
 
     def run_cli(_console: Console, args: list[str], **kwargs: Any) -> bool:
         creations.append(args)
@@ -290,8 +283,8 @@ def test_form_scroll_keeps_create_reachable_on_small_terminals(columns: int, row
     from surfaces.interactive_shell.ui.cron_input import build_cron_form
     from surfaces.interactive_shell.ui.cron_input.arguments import (
         parse_cron_draft,
-        visible_cron_fields,
     )
+    from surfaces.interactive_shell.ui.cron_input.presentation import review_fields
 
     class SizedOutput(DummyOutput):
         def get_size(self) -> Size:
@@ -311,10 +304,16 @@ def test_form_scroll_keeps_create_reachable_on_small_terminals(columns: int, row
             cursor = screen.get_cursor_position(app.layout.current_window)
             line = "".join(screen.data_buffer[cursor.y][x].char for x in range(columns))
             if not captured and "Check [literal]" in line:
+                assert "Prompt" in line
+                all_lines = [
+                    "".join(screen.data_buffer[y][x].char for x in range(columns))
+                    for y in range(rows)
+                ]
+                assert any("Create schedule" in text for text in all_lines)
                 captured.append(line)
-                names = visible_cron_fields(draft)
-                pipe.send_text("\t" * (len(names) - names.index("prompt")))
-            elif captured and "Create scheduled task" in line:
+                names = review_fields(draft)
+                pipe.send_text("\t" * (len(names) - names.index("prompt") + 1))
+            elif captured and "Create schedule" in line:
                 captured.append(line)
                 pipe.send_text("\x13")
 
@@ -324,7 +323,7 @@ def test_form_scroll_keeps_create_reachable_on_small_terminals(columns: int, row
 
         def start() -> None:
             app.create_background_task(stop_if_stalled())
-            pipe.send_text("\t" * visible_cron_fields(draft).index("prompt"))
+            pipe.send_text("\t" * review_fields(draft).index("prompt"))
 
         app.after_render += rendered
         result = app.run(pre_run=start)
@@ -443,8 +442,8 @@ def test_choice_editor_preserves_case_insensitive_supplied_values() -> None:
     from surfaces.interactive_shell.ui.cron_input import build_cron_form
     from surfaces.interactive_shell.ui.cron_input.arguments import (
         parse_cron_draft,
-        visible_cron_fields,
     )
+    from surfaces.interactive_shell.ui.cron_input.presentation import review_fields
     from tests.interactive_shell.command_registry.test_command_inputs import run_keys
 
     draft = parse_cron_draft(COMPLETE[1:])
@@ -452,7 +451,7 @@ def test_choice_editor_preserves_case_insensitive_supplied_values() -> None:
     with create_app_session(output=DummyOutput()):
         app = build_cron_form(draft)
         # Open and accept both existing choices without changing their selection.
-        keys = "\r\r" + "\t" * visible_cron_fields(draft).index("provider") + "\r\r\x13\x03"
+        keys = "\r\r" + "\t" * review_fields(draft).index("provider") + "\r\r\x13\x03"
         result = run_keys(app, keys)
     assert result is not None
     saved = parse_cron_draft(result)
@@ -481,3 +480,85 @@ def test_option_looking_text_is_preserved_like_click() -> None:
     assert draft["prompt"] == "--summarize"
     draft["cron_expr"] = "0 9 * * *"
     assert parse_cron_draft(validate_cron_draft(draft))["prompt"] == "--summarize"
+
+
+def test_missing_prompt_opens_editor_before_review() -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    from surfaces.interactive_shell.ui.cron_input import build_cron_form
+    from surfaces.interactive_shell.ui.cron_input.arguments import parse_cron_draft
+    from tests.interactive_shell.command_registry.test_command_inputs import run_keys
+
+    draft = parse_cron_draft(COMPLETE[1:-2])
+    with create_app_session(output=DummyOutput()):
+        result = run_keys(build_cron_form(draft), "Review deployment health\r\x13\x03")
+    assert result is not None
+    saved = parse_cron_draft(result)
+    assert saved["prompt"] == "Review deployment health"
+    assert saved["cron_expr"] == draft["cron_expr"]
+
+
+def test_more_options_edits_survive_return_to_compact_review() -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    from surfaces.interactive_shell.ui.cron_input import build_cron_form
+    from surfaces.interactive_shell.ui.cron_input.arguments import parse_cron_draft
+    from tests.interactive_shell.command_registry.test_command_inputs import run_keys
+
+    draft = parse_cron_draft(COMPLETE[1:])
+    with create_app_session(output=DummyOutput()):
+        # Four essential fields, then More options; edit Name and return to review.
+        keys = "\t\t\t\t\r\rMorning audit\r\x1b\x13\x03"
+        result = run_keys(build_cron_form(draft), keys)
+    assert result is not None
+    saved = parse_cron_draft(result)
+    assert saved["name"] == "Morning audit"
+    assert saved["prompt"] == draft["prompt"]
+
+
+def test_validation_opens_hidden_invalid_field_without_losing_draft() -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    from surfaces.interactive_shell.ui.cron_input import build_cron_form
+    from surfaces.interactive_shell.ui.cron_input.arguments import parse_cron_draft
+    from tests.interactive_shell.command_registry.test_command_inputs import run_keys
+
+    draft = parse_cron_draft([*COMPLETE[1:], "--window", "bad"])
+    with create_app_session(output=DummyOutput()):
+        keys = "\x13\x01\x0b12\r\x1b\x13\x03"
+        result = run_keys(build_cron_form(draft), keys)
+    assert result is not None
+    saved = parse_cron_draft(result)
+    assert saved["window_hours"] == "12"
+    assert saved["prompt"] == draft["prompt"]
+
+
+def test_field_guidance_is_readable_and_only_shortcuts_are_dim() -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.formatted_text import to_formatted_text
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.output import DummyOutput
+
+    from infrastructure.terminal import theme
+    from surfaces.interactive_shell.ui.cron_input import build_cron_form
+    from surfaces.interactive_shell.ui.cron_input.arguments import parse_cron_draft
+
+    draft = parse_cron_draft(COMPLETE[1:])
+    draft["cron_expr"] = ""
+    with create_app_session(output=DummyOutput()):
+        app = build_cron_form(draft)
+        fragments = [
+            fragment
+            for control in app.layout.find_all_controls()
+            if isinstance(control, FormattedTextControl)
+            for fragment in to_formatted_text(control.text)
+        ]
+    assert app.style is not None
+    for text in ("optional leading seconds", " · required"):
+        style = next(style for style, value, *_ in fragments if text in value)
+        assert app.style.get_attrs_for_style_str(style).color == str(theme.SECONDARY).lstrip("#")
+    shortcut_style = next(style for style, value, *_ in fragments if "Enter save field" in value)
+    assert app.style.get_attrs_for_style_str(shortcut_style).color == str(theme.DIM).lstrip("#")
