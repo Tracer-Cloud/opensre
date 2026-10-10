@@ -18,8 +18,8 @@ from config.constants.paths import opensre_home
 from config.constants.triage_demo import DEMO_DISK_BYTES, DEMO_PREFIX, DEMO_RAM_BYTES
 from config.llm_credentials import delete_credential, resolve_env_credential, save_credential
 from core.domain.alerts.triage.storage import TriageStore
-from integrations.signoz import SigNozConfig
 from integrations.signoz.client import SigNozClient
+from integrations.signoz.config import SigNozConfig
 from integrations.signoz.triage_demo.artifacts import prepare, run
 from integrations.signoz.triage_demo.compose import compose, generate
 from integrations.signoz.triage_demo.provision import DemoAdmin
@@ -277,6 +277,12 @@ class PaymentDemo:
     def reset(self) -> dict[str, Any]:
         """Disable the fault, prove checkout recovery, observe native resolved update."""
         with FileLock(str(self.root / "operation.lock"), timeout=0):
+            if self.data["stage"] == "cleaned":
+                raise ValueError("Demo cleaned; start a new demo to run another investigation")
+            if "application" not in self.data or "fault_at" not in self.data:
+                raise ValueError(
+                    "Demo has not enabled its fault; resume setup with triage demo --id " + self.id
+                )
             self.flag(False)
             self.save("resetting")
             wait_for(

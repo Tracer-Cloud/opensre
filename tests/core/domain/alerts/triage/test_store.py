@@ -15,6 +15,33 @@ from core.domain.alerts.triage.storage.database import database
 from core.domain.alerts.triage.storage.store import ClaimLostError, QueueFullError
 
 
+def test_unbound_intake_and_bound_worker_share_deployment_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from config.constants import paths
+    from config.constants.billing import ORGANIZATION_ID_ENV
+    from config.principal import Actor, Principal, StorageScope
+    from config.scope_context import bound_storage_scope
+
+    mount = tmp_path / "durable-mount"
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path / "host")
+    monkeypatch.setenv(paths.CONTEXT_ROOT_ENV, str(mount))
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_triage_test")
+    intake = TriageStore()
+    intake.add_source(source())
+    intake.ingest("test", [event()])
+    scope = StorageScope(principal=Principal.org("org_triage_test"), actor=Actor(id="operator"))
+    with bound_storage_scope(scope):
+        worker = TriageStore()
+        assert worker.path == intake.path == mount / "alerts" / "triage.sqlite3"
+        claim = worker.claim()
+        assert claim is not None
+        worker.finish(claim, {"observed": "Shared durable intake"})
+    assert TriageStore().show(claim.id)["investigations"][0]["report"]["observed"] == (
+        "Shared durable intake"
+    )
+
+
 def source(source_id: str = "test") -> TriageSource:
     return TriageSource(
         id=source_id,

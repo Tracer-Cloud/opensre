@@ -15,7 +15,7 @@ from config.llm_credentials import delete_credential, resolve_env_credential
 from core.domain.alerts.triage.storage import TriageStore
 from infrastructure.process.runtime_flags import is_json_output
 from integrations.catalog import resolve_effective_integrations
-from integrations.signoz.triage_setup import connect_source
+from integrations.signoz import connect_source
 from surfaces.shared.terminal.triage import print_investigations, print_report
 
 
@@ -195,7 +195,7 @@ def triage_remove(source_id: str) -> None:
 @click.pass_context
 def triage_demo(ctx: click.Context, demo_id: str | None) -> None:
     """Start/resume the isolated, fully automated payment-error demonstration."""
-    from integrations.signoz.triage_demo.runtime import PaymentDemo
+    from integrations.signoz import PaymentDemo
 
     if ctx.invoked_subcommand is not None:
         return
@@ -204,8 +204,7 @@ def triage_demo(ctx: click.Context, demo_id: str | None) -> None:
         import os
 
         from config.llm_settings import has_credentials_for_active_llm_provider
-        from gateway.core.process import start_gateway_daemon
-        from surfaces.shared.gateway_entrypoint import gateway_entry_argv
+        from surfaces.cli.commands.gateway import gateway_start_command
 
         if not has_credentials_for_active_llm_provider():
             raise ValueError(
@@ -213,10 +212,8 @@ def triage_demo(ctx: click.Context, demo_id: str | None) -> None:
             )
         store = TriageStore()
         if not store.status()["worker"].get("ready"):
-            ok, _ = start_gateway_daemon(argv=gateway_entry_argv())
-            if not ok:
-                raise RuntimeError("Gateway did not start; inspect opensre gateway status/logs")
-            from integrations.signoz.triage_demo.runtime import wait_for
+            ctx.invoke(gateway_start_command, foreground=False)
+            from integrations.signoz import wait_for
 
             wait_for(
                 lambda: store.status()["worker"].get("ready"),
@@ -267,7 +264,7 @@ def triage_demo_cleanup(demo_id: str) -> None:
 
 
 def _demo_operation(demo_id: str, operation: str) -> None:
-    from integrations.signoz.triage_demo.runtime import PaymentDemo, demo_root
+    from integrations.signoz import PaymentDemo, demo_root
 
     if not (demo_root(demo_id) / "manifest.json").exists():
         raise click.ClickException("Demo not found")

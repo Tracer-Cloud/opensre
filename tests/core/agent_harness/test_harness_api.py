@@ -213,6 +213,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
         {
             "DefaultErrorReporter",
             "DefaultPromptContextProvider",
+            "InMemorySessionStore",
             "JsonlSessionStore",
             "default_session_repo",
             "default_session_store",

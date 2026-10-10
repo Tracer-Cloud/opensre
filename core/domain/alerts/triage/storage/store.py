@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import os
 import sqlite3
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from config.constants.triage import (
     TRIAGE_LEASE_SECONDS,
@@ -277,7 +278,7 @@ class TriageStore:
         ).fetchone()
         if row is None:
             raise ClaimLostError("Investigation owner has changed")
-        return row
+        return cast(sqlite3.Row, row)
 
     def renew(self, claim: InvestigationClaim) -> bool:
         """Keep a live owner fenced against crash recovery."""
@@ -402,7 +403,7 @@ class TriageStore:
                 ]
             return result
 
-    def unread(self, *, acknowledge: bool = False) -> list[dict[str, Any]]:
+    def unread(self, *, acknowledge: bool = False) -> builtins.list[dict[str, Any]]:
         """Read a bounded batch; acknowledge exactly the returned event IDs."""
         with database(self.path) as conn:
             rows = [
@@ -415,7 +416,7 @@ class TriageStore:
                 )
             return rows
 
-    def mark_read(self, event_ids: list[int]) -> None:
+    def mark_read(self, event_ids: builtins.list[int]) -> None:
         """Acknowledge only events whose notification was rendered."""
         with database(self.path) as conn:
             conn.executemany("UPDATE events SET unread=0 WHERE id=?", ((i,) for i in event_ids))

@@ -18,6 +18,28 @@ from integrations.signoz.triage_demo.provision import DemoAdmin, payment_rule
 from integrations.signoz.triage_evidence import TriageEvidenceTools
 
 
+@pytest.mark.parametrize("stage", ["created", "downloaded", "prepared", "cleaned"])
+def test_reset_rejects_incomplete_or_cleaned_demo_without_touching_application(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    from integrations.signoz.triage_demo.runtime import PaymentDemo
+
+    monkeypatch.setattr(
+        "integrations.signoz.triage_demo.runtime.demo_root", lambda _identifier: tmp_path
+    )
+    demo = PaymentDemo("opensre-triage-test", progress=lambda _text: None)
+    demo.data["stage"] = stage
+    if stage != "created":
+        demo.data["application"] = str(tmp_path / "app")
+    if stage == "cleaned":
+        demo.data["fault_at"] = time.time()
+    monkeypatch.setattr(demo, "flag", lambda _enabled: pytest.fail("Reset touched application"))
+    monkeypatch.setattr(demo, "checkout", lambda: pytest.fail("Reset attempted checkout"))
+    with pytest.raises(ValueError, match="Demo cleaned|resume setup"):
+        demo.reset()
+    assert demo.data["stage"] == stage
+
+
 def claim_store(tmp_path: Path) -> tuple[TriageStore, Any]:
     store = TriageStore(tmp_path / "triage.sqlite3")
     store.add_source(

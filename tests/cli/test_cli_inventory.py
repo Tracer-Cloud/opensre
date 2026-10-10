@@ -37,6 +37,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "sentry",
         "setup",
         "skills",
+        "triage",
         "uninstall",
         "update",
         "version",

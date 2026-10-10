@@ -7,14 +7,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from config.constants.paths import opensre_home
+from config.constants.paths import deployment_home
 from core.domain.alerts.triage.storage.migrations import migrate
 from infrastructure.database.sqlite import connection, transaction
 
 
 def default_database_path() -> Path:
     """Return organization-scoped durable alert storage."""
-    return opensre_home() / "alerts" / "triage.sqlite3"
+    return deployment_home() / "alerts" / "triage.sqlite3"
 
 
 @contextmanager

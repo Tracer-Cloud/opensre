@@ -67,3 +67,5 @@ def test_real_harness_never_exceeds_eight_provider_calls(
     assert set(llm.schemas) == {"query_signoz_logs", "query_signoz_metrics", "query_signoz_traces"}
     assert report["likely_cause"] == "Insufficient evidence"
     assert report["cost_usd"] is None
+    assert report["partial"] is True
+    assert report["tokens"] is None

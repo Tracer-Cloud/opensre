@@ -8,11 +8,10 @@ from collections.abc import Callable
 from typing import Any
 
 from config.constants.triage import TRIAGE_MODEL_ITERATIONS, TRIAGE_TEXT_LIMIT
-from core.agent_harness import AgentSession, SessionConfig, SessionCore
-from core.agent_harness.llm_resolution import default_llm_factory
+from core.agent_harness import AgentSession, SessionConfig, SessionCore, SessionManager
 from core.agent_harness.ports import ToolProvider
-from core.agent_harness.session.lifecycle import SessionManager
-from core.agent_harness.session.persistence.memory import InMemorySessionStore
+from core.agent_harness.runtime import default_llm_factory
+from core.agent_harness.spi.defaults import InMemorySessionStore
 from core.domain.alerts.triage.models import InvestigationClaim
 from core.domain.alerts.triage.storage import TriageStore
 
@@ -90,6 +89,7 @@ def run_triage_turn(
     )
     result = session.chat(prompt)
     text = result.primary_response_text[:TRIAGE_TEXT_LIMIT]
+    valid_report = True
     try:
         report = json.loads(text.strip().removeprefix("```json").removesuffix("```").strip())
         if not isinstance(report, dict) or any(
@@ -99,6 +99,7 @@ def run_triage_turn(
             raise ValueError("Report schema not satisfied")
         report = {k: report[k] for k in ("observed", "likely_cause", "unknowns", "next_check")}
     except (ValueError, TypeError):
+        valid_report = False
         report = {
             "observed": "Partial investigation; consult the separately stored evidence.",
             "likely_cause": "Insufficient evidence",
@@ -116,12 +117,18 @@ def run_triage_turn(
     if not has_data:
         report["likely_cause"] = "Insufficient evidence"
         report["observed"] = "No queryable telemetry was retrieved in the alert evidence window."
-    core = session.bound_session
+    action = result.action_result
     report.update(
         elapsed_seconds=round(time.time() - started, 3),
-        tokens=dict(core.tokens.totals) if core and core.tokens.totals else None,
+        tokens={"input": action.input_tokens, "output": action.output_tokens}
+        if action.input_tokens is not None and action.output_tokens is not None
+        else None,
         cost_usd=None,
-        partial=result.cancelled or cancelled(),
+        partial=result.cancelled
+        or cancelled()
+        or action.hit_iteration_cap
+        or action.stop_reason == "error"
+        or not valid_report,
         tool_calls=current["tool_calls"],
         model_iterations=current["model_iterations"],
     )

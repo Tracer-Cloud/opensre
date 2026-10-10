@@ -162,6 +162,7 @@ def generate(
     text = env_file.read_text()
     replacements = {
         "DEMO_VERSION": DEMO_OTEL_VERSION,
+        "IMAGE_VERSION": DEMO_OTEL_VERSION,
         "OTEL_COLLECTOR_HOST": f"{namespace}-ingester",
         "LOCUST_BROWSER_USER_WEIGHT": "0",
         "LOCUST_HTTP_USER_WEIGHT": "1",

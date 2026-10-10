@@ -12,8 +12,8 @@ from config.constants.triage import TRIAGE_CREDENTIAL_PREFIX
 from config.llm_credentials import delete_credential, save_credential
 from core.domain.alerts.triage.models import TriageSource
 from core.domain.alerts.triage.storage import TriageStore
-from integrations.signoz import SigNozConfig
 from integrations.signoz.client import SigNozClient
+from integrations.signoz.config import SigNozConfig
 
 
 def validate_urls(query_url: str, ingress_url: str, *, demo: bool = False) -> None:

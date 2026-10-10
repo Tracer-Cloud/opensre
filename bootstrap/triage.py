@@ -11,7 +11,7 @@ from core.domain.alerts.triage.storage import TriageStore
 from core.domain.alerts.triage.worker import TriageWorker
 from infrastructure.process.turn_capacity import TurnGate
 from infrastructure.turn_host.triage import run_triage_turn
-from integrations.signoz.triage_evidence import TriageEvidenceTools
+from integrations.signoz import TriageEvidenceTools
 
 
 def build_triage_worker(gate: TurnGate) -> TriageWorker:

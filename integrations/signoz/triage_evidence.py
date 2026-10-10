@@ -6,15 +6,15 @@ import json
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from config.constants.triage import TRIAGE_TEXT_LIMIT, TRIAGE_WINDOW_SECONDS
 from core.agent_harness.ports import ConfirmFn, ToolEventObserver
 from core.domain.alerts.triage.models import InvestigationClaim
 from core.domain.alerts.triage.storage import TriageStore
 from core.tool import AgentTool, AgentToolContext
-from integrations.signoz import SigNozConfig
 from integrations.signoz.client import SigNozClient
+from integrations.signoz.config import SigNozConfig
 
 
 class ProvenanceClient(SigNozClient):
@@ -119,12 +119,12 @@ class TriageEvidenceTools:
         args = dict(payload)
         args["limit"] = max(1, min(int(args.get("limit", 50)), 50))
         args.update(start_time=self.start.isoformat(), end_time=self.end.isoformat())
-        method = {
-            "logs": client.query_logs,
-            "metrics": client.query_metrics,
-            "traces": client.query_traces,
-        }[signal]
-        result = method(**args)
+        if signal == "logs":
+            result = client.query_logs(**args)
+        elif signal == "metrics":
+            result = client.query_metrics(**args)
+        else:
+            result = client.query_traces(**args)
         # Keep provider text bounded and never allow a echoed credential into the model.
         encoded = (
             json.dumps(result, default=str).replace(self.api_key, "[redacted]")
@@ -139,7 +139,7 @@ class TriageEvidenceTools:
                 "truncation_note": "Evidence clipped to the report budget",
             }
         else:
-            result = json.loads(encoded)
+            result = cast(dict[str, Any], json.loads(encoded))
         record = {
             "signal": signal,
             "service": args["service"],

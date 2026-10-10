@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from core.domain.alerts.triage.storage import TriageStore
 from core.domain.alerts.triage.storage.store import QueueFullError
-from integrations.signoz.notifications import parse_notification
+from integrations.signoz import parse_notification
 
 router = APIRouter()
 _basic = HTTPBasic(auto_error=False)

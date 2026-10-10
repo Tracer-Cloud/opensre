@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from prompt_toolkit.application import Application
 
-from integrations.signoz.triage_setup import validate_urls
+from integrations.signoz import validate_urls
 from surfaces.shared.terminal.components.input_form import (
     InputField,
     InputFormError,
