@@ -64,7 +64,12 @@ class TriageWorker:
                             self._execute(claim)
             except Exception as exc:
                 self.logger.error("triage worker failed (%s)", type(exc).__name__)
-                self.store.heartbeat(active=None, failure=type(exc).__name__)
+                try:
+                    self.store.heartbeat(active=None, failure=type(exc).__name__)
+                except Exception as reporting_error:
+                    self.logger.error(
+                        "triage failure reporting failed (%s)", type(reporting_error).__name__
+                    )
             self._stop.wait(TRIAGE_POLL_SECONDS)
 
     def _execute(self, claim: InvestigationClaim) -> None:
@@ -96,10 +101,18 @@ class TriageWorker:
 
         thread = threading.Thread(target=run, name="opensre-triage-turn", daemon=True)
         thread.start()
-        while not done.wait(TRIAGE_POLL_SECONDS):
-            self.store.heartbeat(active=claim.id)
-            if not self.store.renew(claim):
-                cancelled.set()
+        try:
+            while not done.wait(TRIAGE_POLL_SECONDS):
+                self.store.heartbeat(active=claim.id)
+                if not self.store.renew(claim):
+                    cancelled.set()
+        except Exception:
+            cancelled.set()
+            raise
+        finally:
+            # A provider call may still be in flight after a database failure.
+            # Keep the physical capacity slot until its runner has exited.
+            thread.join()
         if not cancelled.is_set():
             self.store.finish(claim, result, failure=failure[0] if failure else None)
         self.store.heartbeat(active=None, failure=failure[0] if failure else None)

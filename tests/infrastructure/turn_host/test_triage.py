@@ -55,6 +55,10 @@ def test_real_harness_never_exceeds_eight_provider_calls(
 ) -> None:
     store, claim = claim_store(tmp_path)
     llm = LoopLLM()
+    monkeypatch.setattr(
+        "core.agent_harness.turns.orchestrator.start_memory_consolidation",
+        lambda: pytest.fail("Restricted triage started memory upkeep"),
+    )
     monkeypatch.setattr("infrastructure.turn_host.triage.default_llm_factory", lambda: llm)
     monkeypatch.setattr(
         "integrations.signoz.client.SigNozClient._query_range_post",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from prompt_toolkit.application import Application
 
-from integrations.signoz import validate_urls
+from integrations.signoz import SourceFieldError, validate_source_fields, validate_urls
 from surfaces.shared.terminal.components.input_form import (
     InputField,
     InputFormError,
@@ -50,6 +50,10 @@ def build_connect_form(values: dict[str, str]) -> Application[list[str] | None]:
         for name in ("name", "query_url", "services", "ingress_url"):
             if not current.get(name, "").strip():
                 raise InputFormError("This field is required", field=name)
+        try:
+            validate_source_fields(current["name"], tuple(current["services"].split(",")))
+        except SourceFieldError as exc:
+            raise InputFormError(str(exc), field=exc.field) from exc
         try:
             validate_urls(current["query_url"], current["ingress_url"])
         except ValueError as exc:

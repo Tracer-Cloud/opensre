@@ -41,6 +41,7 @@ demo ID and use:
 SigNoz resolved notification. Evaluation and notification-group timing can take
 several minutes. A timeout records the last successful stage; inspect status and
 resume setup with `/triage demo --id <demo-id>`. Completed setup is idempotent.
+Resuming the `resetting` stage continues recovery with the fault disabled.
 `cleanup` removes only the manifest's validated, namespace-owned Compose
 containers/networks/volumes and demo credentials. It retains reports and leaves
 the gateway running. It never prunes Docker or removes unrelated resources.

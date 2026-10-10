@@ -201,10 +201,8 @@ def triage_demo(ctx: click.Context, demo_id: str | None) -> None:
         return
 
     def ensure_gateway() -> int:
-        import os
-
         from config.llm_settings import has_credentials_for_active_llm_provider
-        from surfaces.cli.commands.gateway import gateway_start_command
+        from surfaces.cli.commands.gateway import gateway_start_command, verified_gateway_web_port
 
         if not has_credentials_for_active_llm_provider():
             raise ValueError(
@@ -221,7 +219,7 @@ def triage_demo(ctx: click.Context, demo_id: str | None) -> None:
                 message="Waiting for gateway triage worker",
                 progress=click.echo,
             )
-        return int(os.environ.get("PORT", "8000"))
+        return verified_gateway_web_port()
 
     try:
         demo = PaymentDemo(demo_id, progress=click.echo)

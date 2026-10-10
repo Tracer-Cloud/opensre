@@ -18,6 +18,14 @@ from config.constants.triage_demo import (
 from integrations.signoz.triage_demo.artifacts import run
 
 
+def write_compose(path: Path, contents: dict[str, Any]) -> None:
+    """Publish a complete checkpoint while preserving the last valid file on failure."""
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(contents, indent=2))
+    temporary.chmod(0o600)
+    temporary.replace(path)
+
+
 def owned(spec: dict[str, Any], namespace: str) -> None:
     """Fail closed before any resource mutation outside the dedicated namespace."""
     if not namespace.startswith(DEMO_PREFIX) or not spec.get("services"):
@@ -198,8 +206,7 @@ def generate(
     pins = freeze_images(signoz, root) | freeze_images(app, root)
     paths = [root / "signoz.compose.json", root / "application.compose.json"]
     for path, contents in zip(paths, (signoz, app), strict=True):
-        path.write_text(json.dumps(contents, indent=2))
-        path.chmod(0o600)
+        write_compose(path, contents)
     return paths, pins
 
 

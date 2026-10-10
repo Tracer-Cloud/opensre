@@ -21,7 +21,7 @@ from core.domain.alerts.triage.storage import TriageStore
 from integrations.signoz.client import SigNozClient
 from integrations.signoz.config import SigNozConfig
 from integrations.signoz.triage_demo.artifacts import prepare, run
-from integrations.signoz.triage_demo.compose import compose, generate
+from integrations.signoz.triage_demo.compose import compose, generate, write_compose
 from integrations.signoz.triage_demo.provision import DemoAdmin
 from integrations.signoz.triage_setup import connect_source
 
@@ -158,6 +158,8 @@ class PaymentDemo:
                 )
             if self.data["stage"] in {"report_ready", "resolved"}:
                 return self.status()
+            if self.data["stage"] == "resetting":
+                return self._reset()
             self.data.pop("failure", None)
             preflight(self.root)
             gateway_port = ensure_gateway()
@@ -178,7 +180,7 @@ class PaymentDemo:
                 spec["services"][f"{self.id}-signoz-0"]["extra_hosts"] = [
                     "host.docker.internal:host-gateway"
                 ]
-                paths[0].write_text(json.dumps(spec, indent=2))
+                write_compose(paths[0], spec)
                 self.data.update(application=str(application), image_digests=pins)
                 self.flag(False)
                 self.save("prepared")
@@ -277,30 +279,34 @@ class PaymentDemo:
     def reset(self) -> dict[str, Any]:
         """Disable the fault, prove checkout recovery, observe native resolved update."""
         with FileLock(str(self.root / "operation.lock"), timeout=0):
-            if self.data["stage"] == "cleaned":
-                raise ValueError("Demo cleaned; start a new demo to run another investigation")
-            if "application" not in self.data or "fault_at" not in self.data:
-                raise ValueError(
-                    "Demo has not enabled its fault; resume setup with triage demo --id " + self.id
-                )
-            self.flag(False)
-            self.save("resetting")
+            return self._reset()
+
+    def _reset(self) -> dict[str, Any]:
+        """Resume recovery while the caller holds the operation lock."""
+        if self.data["stage"] == "cleaned":
+            raise ValueError("Demo cleaned; start a new demo to run another investigation")
+        if "application" not in self.data or "fault_at" not in self.data:
+            raise ValueError(
+                "Demo has not enabled its fault; resume setup with triage demo --id " + self.id
+            )
+        self.flag(False)
+        self.save("resetting")
+        wait_for(
+            self.checkout,
+            seconds=180,
+            message="Waiting for checkout recovery",
+            progress=self.progress,
+        )
+        identifier = self.data.get("occurrence_id")
+        if identifier:
             wait_for(
-                self.checkout,
-                seconds=180,
-                message="Waiting for checkout recovery",
+                lambda: self.store.show(identifier)["lifecycle"] == "resolved",
+                seconds=600,
+                message="Waiting for the native resolved notification",
                 progress=self.progress,
             )
-            identifier = self.data.get("occurrence_id")
-            if identifier:
-                wait_for(
-                    lambda: self.store.show(identifier)["lifecycle"] == "resolved",
-                    seconds=600,
-                    message="Waiting for the native resolved notification",
-                    progress=self.progress,
-                )
-            self.save("resolved")
-            return self.status()
+        self.save("resolved")
+        return self.status()
 
     def cleanup(self) -> dict[str, Any]:
         """Down only validated owned Compose resources; keep durable reports."""

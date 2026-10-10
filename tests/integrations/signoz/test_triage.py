@@ -13,9 +13,34 @@ import pytest
 
 from core.domain.alerts.triage.models import ProviderEvent, TriageSource
 from core.domain.alerts.triage.storage import TriageStore
-from integrations.signoz.triage_demo.compose import isolate, owned
+from integrations.signoz.triage_demo.compose import isolate, owned, write_compose
 from integrations.signoz.triage_demo.provision import DemoAdmin, payment_rule
 from integrations.signoz.triage_evidence import TriageEvidenceTools
+
+
+def test_interrupted_compose_checkpoint_preserves_previous_file_and_can_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "application.compose.json"
+    previous = {"services": {"old": {"image": "old@sha256:abc"}}}
+    replacement = {"services": {"new": {"image": "new@sha256:def"}}}
+    write_compose(path, previous)
+    original = Path.write_text
+
+    def interrupted(file: Path, contents: str, **kwargs: Any) -> int:
+        if file == path.with_suffix(".tmp"):
+            original(file, contents[:10], **kwargs)
+            raise OSError("Interrupted write")
+        return original(file, contents, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Path, "write_text", interrupted)
+        with pytest.raises(OSError, match="Interrupted write"):
+            write_compose(path, replacement)
+    assert json.loads(path.read_text()) == previous
+    write_compose(path, replacement)
+    assert json.loads(path.read_text()) == replacement
+    assert path.stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.parametrize("stage", ["created", "downloaded", "prepared", "cleaned"])
@@ -38,6 +63,28 @@ def test_reset_rejects_incomplete_or_cleaned_demo_without_touching_application(
     with pytest.raises(ValueError, match="Demo cleaned|resume setup"):
         demo.reset()
     assert demo.data["stage"] == stage
+
+
+def test_setup_resume_finishes_an_interrupted_reset_without_reenabling_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.signoz.triage_demo.runtime import PaymentDemo
+
+    monkeypatch.setattr(
+        "integrations.signoz.triage_demo.runtime.demo_root", lambda _identifier: tmp_path
+    )
+    demo = PaymentDemo("opensre-triage-test", progress=lambda _text: None)
+    demo.data.update(stage="resetting", application=str(tmp_path / "app"), fault_at=time.time())
+    flags = []
+    monkeypatch.setattr(demo, "flag", flags.append)
+    monkeypatch.setattr(demo, "checkout", lambda: True)
+    monkeypatch.setattr(
+        "integrations.signoz.triage_demo.runtime.preflight",
+        lambda _root: pytest.fail("Resume restarted setup"),
+    )
+    result = demo.start(lambda: pytest.fail("Resume restarted gateway setup"))
+    assert result["stage"] == "resolved"
+    assert flags == [False]
 
 
 def claim_store(tmp_path: Path) -> tuple[TriageStore, Any]:

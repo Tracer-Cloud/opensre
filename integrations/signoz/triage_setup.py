@@ -16,6 +16,27 @@ from integrations.signoz.client import SigNozClient
 from integrations.signoz.config import SigNozConfig
 
 
+class SourceFieldError(ValueError):
+    """An actionable source edit, shared by the CLI and input form."""
+
+    def __init__(self, message: str, *, field: str) -> None:
+        super().__init__(message)
+        self.field = field
+
+
+def validate_source_fields(name: str, services: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
+    """Normalize the same name and service authority on every setup surface."""
+    if not name.strip() or len(name) > 200:
+        raise SourceFieldError(
+            "Source name must contain between 1 and 200 characters", field="name"
+        )
+    try:
+        services = TriageSource.validate_services(services)
+    except ValueError as exc:
+        raise SourceFieldError(str(exc), field="services") from exc
+    return name.strip(), services
+
+
 def validate_urls(query_url: str, ingress_url: str, *, demo: bool = False) -> None:
     """Require explicit HTTPS ingress for remote sources and reject URL secrets."""
     for name, url in (("Query URL", query_url), ("Gateway ingress", ingress_url)):
@@ -51,8 +72,9 @@ def connect_source(
 ) -> tuple[TriageSource, str]:
     """Verify query access and create independent authenticated webhook credentials."""
     validate_urls(query_url, ingress_url, demo=demo)
-    if not name.strip() or len(name) > 200 or not api_key.strip():
-        raise ValueError("Source name and query-only API key are required")
+    name, services = validate_source_fields(name, services)
+    if not api_key.strip():
+        raise ValueError("Query-only API key is required")
     identifier = source_id or uuid.uuid4().hex
     if any(s.id == identifier for s in store.sources()):
         raise ValueError("Source ID already exists; reuse the existing connection")

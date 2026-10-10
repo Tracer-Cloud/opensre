@@ -33,17 +33,25 @@ if TYPE_CHECKING:
     )
     from integrations.signoz.triage_evidence import TriageEvidenceTools as TriageEvidenceTools
     from integrations.signoz.triage_setup import (
+        SourceFieldError as SourceFieldError,
+    )
+    from integrations.signoz.triage_setup import (
         connect_source as connect_source,
+    )
+    from integrations.signoz.triage_setup import (
+        validate_source_fields as validate_source_fields,
     )
     from integrations.signoz.triage_setup import (
         validate_urls as validate_urls,
     )
 
 _TRIAGE_EXPORTS = {
+    "SourceFieldError": "triage_setup",
     "parse_notification": "notifications",
     "TriageEvidenceTools": "triage_evidence",
     "connect_source": "triage_setup",
     "validate_urls": "triage_setup",
+    "validate_source_fields": "triage_setup",
     "PaymentDemo": "triage_demo.runtime",
     "demo_root": "triage_demo.runtime",
     "wait_for": "triage_demo.runtime",
@@ -64,6 +72,7 @@ __all__ = [
     "PaymentDemo",
     "SigNozConfig",
     "SigNozValidationResult",
+    "SourceFieldError",
     "TriageEvidenceTools",
     "build_signoz_config",
     "classify",
@@ -76,6 +85,7 @@ __all__ = [
     "signoz_extract_params",
     "signoz_is_available",
     "validate_signoz_config",
+    "validate_source_fields",
     "validate_urls",
     "wait_for",
 ]
