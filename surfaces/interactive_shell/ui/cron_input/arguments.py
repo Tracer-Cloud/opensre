@@ -8,7 +8,7 @@ from types import MappingProxyType
 
 import click
 
-from core.agent_harness import load_loop_template
+from core.agent_harness import load_loop_template, normalize_skill_name
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from surfaces.shared.cron_options import cron_add_parameters
 from surfaces.shared.cron_tasks import prepare_cron_task
@@ -27,7 +27,7 @@ def parse_cron_draft(args: list[str]) -> dict[str, str]:
     options = cron_options()
     by_flag = {flag: option for option in options.values() for flag in option.opts}
     values = {
-        name: str(option.default) if option.default is not None else ""
+        name: "" if option.required or option.default is None else str(option.default)
         for name, option in options.items()
     }
     index = 0
@@ -60,17 +60,17 @@ def missing_cron_fields(values: dict[str, str]) -> list[str]:
     if kind == "manual_loop":
         if values["template"].strip():
             required.extend(("owner", "repo"))
-        elif not (values["mode"].lower() == "agent" and values["skill_name"].strip()):
+        elif not (_effective_mode(values) == "agent" and values["skill_name"].strip()):
             required.append("prompt")
     if (
         kind == "manual_loop"
-        and values["mode"].lower() == "agent"
+        and _effective_mode(values) == "agent"
         and any(values[name].strip() for name in ("owner", "repo", "branch", "pr_number"))
     ):
         required.extend(("owner", "repo"))
     if kind == "recurring_skill":
         required.append("skill_name")
-        if values["skill_name"].strip() == "reporting-github-ci-failures":
+        if normalize_skill_name(values["skill_name"]) == "reporting-github-ci-failures":
             required.extend(("owner", "repo"))
     if values["provider"] and requires_explicit_chat_id(values["provider"]):
         required.append("chat_id")
@@ -113,7 +113,9 @@ def validate_cron_draft(values: dict[str, str]) -> list[str]:
 def visible_cron_fields(values: dict[str, str]) -> list[str]:
     """Show relevant options and retain supplied values even when their kind changes."""
     names = ["kind", "name", "description", "cron_expr", "timezone", "provider", "chat_id"]
-    kind, mode, skill = values["kind"].lower(), values["mode"].lower(), values["skill_name"]
+    kind = values["kind"].lower()
+    mode = _effective_mode(values)
+    skill = normalize_skill_name(values["skill_name"])
     if kind == "manual_loop":
         names.extend(("template", "prompt", "mode"))
         if mode == "agent":
@@ -152,4 +154,11 @@ def cron_template_defaults(name: str) -> Mapping[str, str]:
             "cron_expr": template.cron,
             "mode": template.mode or "report",
         }
+    )
+
+
+def _effective_mode(values: dict[str, str]) -> str:
+    """Use an explicit mode before the template's default, as task preparation does."""
+    return values["mode"].lower() or cron_template_defaults(values["template"]).get(
+        "mode", "report"
     )

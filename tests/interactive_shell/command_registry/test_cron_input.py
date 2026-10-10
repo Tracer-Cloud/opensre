@@ -383,5 +383,54 @@ def test_template_defaults_match_task_preparation_and_keep_supplied_values() -> 
         [*args[1:], "--name", "Custom name", "--city", "Invalid for this kind"]
     )
     assert draft["name"] == "Custom name"
+    agent_fields = {"skill_name", "stateless", "branch", "pr_number"}
+    assert agent_fields <= set(visible_cron_fields(draft))
+    draft["mode"] = "report"
+    assert not agent_fields.intersection(visible_cron_fields(draft))
     # An incompatible supplied option must remain editable, not be silently dropped.
+    assert "city" in visible_cron_fields(draft)
+
+
+@pytest.mark.parametrize("flag", ["--kind", "--provider"])
+def test_required_click_options_without_defaults_open_the_form(flag: str) -> None:
+    from surfaces.interactive_shell.ui.cron_input.arguments import (
+        cron_add_needs_input,
+        missing_cron_fields,
+        parse_cron_draft,
+    )
+
+    args = [*COMPLETE, "--chat-id", "example-destination"]
+    index = args.index(flag)
+    del args[index : index + 2]
+    draft = parse_cron_draft(args[1:])
+    assert draft[flag[2:]] == ""
+    assert flag[2:] in missing_cron_fields(draft)
+    assert cron_add_needs_input(args)
+
+
+def test_skill_aliases_expose_repairable_required_inputs() -> None:
+    from surfaces.interactive_shell.ui.cron_input.arguments import (
+        cron_add_needs_input,
+        parse_cron_draft,
+        validate_cron_draft,
+        visible_cron_fields,
+    )
+
+    args = [
+        "add",
+        "--kind",
+        "recurring_skill",
+        "--skill",
+        "github-ci-health",
+        "--provider",
+        "interactive_shell",
+        "--cron",
+        "0 9 * * *",
+    ]
+    assert cron_add_needs_input(args)
+    draft = parse_cron_draft(args[1:])
+    assert {"owner", "repo"} <= set(visible_cron_fields(draft))
+    draft.update(owner="example", repo="app")
+    assert validate_cron_draft(draft)
+    draft["skill_name"] = "morning-report"
     assert "city" in visible_cron_fields(draft)
