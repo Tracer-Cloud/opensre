@@ -20,6 +20,7 @@ class LoopLLM:
     def __init__(self) -> None:
         self.calls = 0
         self.schemas: list[Any] = []
+        self.inputs: list[str] = []
 
     def tool_schemas(self, tools: list[Any]) -> list[Any]:
         self.schemas = [t.name for t in tools]
@@ -27,6 +28,7 @@ class LoopLLM:
 
     def invoke(self, _messages: list[Any], **_kwargs: Any) -> AgentLLMResponse:
         self.calls += 1
+        self.inputs.append(json.dumps(_messages, default=str))
         return AgentLLMResponse(
             content="",
             tool_calls=[
@@ -73,3 +75,34 @@ def test_real_harness_never_exceeds_eight_provider_calls(
     assert report["cost_usd"] is None
     assert report["partial"] is True
     assert report["tokens"] is None
+
+
+def test_large_alert_and_previous_report_cannot_clip_followup_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace
+
+    store, initial = claim_store(tmp_path)
+    store.finish(initial, {"observed": "prior report " * 2000})
+    question = "Which checkout evidence should I verify next?"
+    store.ask(initial.occurrence_id, question)
+    claim = store.claim()
+    assert claim is not None
+    claim = replace(
+        claim,
+        alert={
+            **claim.alert,
+            "labels": {"large": "x" * 15900},
+            "annotations": {"large": "y" * 15900},
+        },
+    )
+    llm = LoopLLM()
+    monkeypatch.setattr("infrastructure.turn_host.triage.default_llm_factory", lambda: llm)
+    monkeypatch.setattr(
+        "integrations.signoz.client.SigNozClient._query_range_post",
+        lambda _self, _payload: ({"data": {"data": {"results": []}}}, None),
+    )
+    tools = TriageEvidenceTools(claim, store, "secret", lambda: False)
+    run_triage_turn(claim, store, tools, lambda: False)
+    assert llm.inputs
+    assert all(question in text for text in llm.inputs)

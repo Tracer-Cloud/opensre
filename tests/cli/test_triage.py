@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
+
 import httpx
 import pytest
 
@@ -21,7 +23,9 @@ def test_demo_gateway_port_comes_from_verified_running_address(
 
     def response(url: str, **_kwargs: object) -> httpx.Response:
         requested.append(url)
-        return httpx.Response(200, json={"status": "ready"}, request=httpx.Request("GET", url))
+        return httpx.Response(
+            HTTPStatus.OK, json={"status": "ready"}, request=httpx.Request("GET", url)
+        )
 
     monkeypatch.setattr(gateway.httpx, "get", response)
     assert gateway.verified_gateway_web_port() == 9000

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,34 @@ def test_setup_resume_finishes_an_interrupted_reset_without_reenabling_fault(
     assert flags == [False]
 
 
+@pytest.mark.parametrize("stage", ["downloaded", "prepared"])
+def test_resume_rebuilds_a_compose_file_without_a_complete_preparation_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    from integrations.signoz.triage_demo.runtime import PaymentDemo
+
+    monkeypatch.setattr(
+        "integrations.signoz.triage_demo.runtime.demo_root", lambda _identifier: tmp_path
+    )
+    monkeypatch.setattr("integrations.signoz.triage_demo.runtime.preflight", lambda _root: None)
+    application = tmp_path / "application"
+    monkeypatch.setattr(
+        "integrations.signoz.triage_demo.runtime.prepare",
+        lambda _root: (tmp_path / "foundry", application),
+    )
+
+    def regenerate(*_args: Any) -> Any:
+        raise RuntimeError("Preparation retried")
+
+    monkeypatch.setattr("integrations.signoz.triage_demo.runtime.generate", regenerate)
+    demo = PaymentDemo("opensre-triage-test", progress=lambda _text: None)
+    demo.data["stage"] = stage
+    (tmp_path / "application.compose.json").write_text("{}")
+    with pytest.raises(RuntimeError, match="Preparation retried"):
+        demo.start(lambda: 8000)
+    assert demo.data["application"] == str(application)
+
+
 def claim_store(tmp_path: Path) -> tuple[TriageStore, Any]:
     store = TriageStore(tmp_path / "triage.sqlite3")
     store.add_source(
@@ -127,7 +156,9 @@ def test_scope_is_enforced_at_execution_and_provenance_has_absolute_bounds(
         assert url == "https://signoz.example/api/v5/query_range"
         payloads.append(kwargs["json"])
         return httpx.Response(
-            200, request=httpx.Request("POST", url), json={"data": {"data": {"results": []}}}
+            HTTPStatus.OK,
+            request=httpx.Request("POST", url),
+            json={"data": {"data": {"results": []}}},
         )
 
     monkeypatch.setattr("integrations.signoz.client.httpx.post", post)

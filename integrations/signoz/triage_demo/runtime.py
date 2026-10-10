@@ -163,7 +163,15 @@ class PaymentDemo:
             self.data.pop("failure", None)
             preflight(self.root)
             gateway_port = ensure_gateway()
-            if not (self.root / "application.compose.json").exists():
+            if (
+                self.data["stage"] in {"created", "downloaded"}
+                or not self.data.get("application")
+                or not self.data.get("image_digests")
+                or not all(
+                    (self.root / filename).exists()
+                    for filename in ("signoz.compose.json", "application.compose.json")
+                )
+            ):
                 binary, application = prepare(self.root)
                 self.data["application"] = str(application)
                 self.save("downloaded")

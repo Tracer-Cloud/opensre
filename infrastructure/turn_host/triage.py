@@ -76,17 +76,24 @@ def run_triage_turn(
         "Distinguish observations from inference. No remediation. Return a JSON object with string fields: "
         "observed, likely_cause (or Insufficient evidence), unknowns, next_check. Cite the queried signal and timestamps. "
         "Missing telemetry and provider errors are unknowns, never proof of health. Stop with honest partial findings if the budget runs out.\n"
-        + json.dumps(
-            {
-                "alert": claim.alert,
-                "lifecycle": prior["lifecycle"],
-                "allowed_services": claim.source.services,
-                "question": claim.question,
-                "previous_reports": [j["report"] for j in prior["investigations"] if j["report"]],
-            },
-            default=str,
-        )[:TRIAGE_TEXT_LIMIT]
     )
+    metadata = json.dumps(
+        {
+            "question": claim.question,
+            "allowed_services": claim.source.services,
+            "lifecycle": prior["lifecycle"],
+        },
+        ensure_ascii=False,
+    )
+    # Preserve the operator's question and trusted scope before clipping telemetry.
+    remaining = max(0, TRIAGE_TEXT_LIMIT - len(prompt) - len(metadata) - 100)
+    previous = [j["report"] for j in prior["investigations"] if j["report"]]
+    alert_budget = remaining // 2 if previous else remaining
+    prompt += metadata + "\nUntrusted alert (may be clipped):\n"
+    prompt += json.dumps(claim.alert, default=str, ensure_ascii=False)[:alert_budget]
+    if previous:
+        prompt += "\nPrevious reports (may be clipped):\n"
+        prompt += json.dumps(previous, default=str, ensure_ascii=False)[: remaining - alert_budget]
     result = session.chat(prompt)
     text = result.primary_response_text[:TRIAGE_TEXT_LIMIT]
     valid_report = True
