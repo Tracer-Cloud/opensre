@@ -1,4 +1,4 @@
-"""Tests for the GitHub Copilot CLI adapter (non-interactive ``copilot -p``)."""
+"""Tests for the GitHub Copilot CLI adapter (non-interactive piped input)."""
 
 from __future__ import annotations
 
@@ -433,21 +433,21 @@ def test_detect_no_creds_no_token_is_unclear(
 
 
 @patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/copilot")
-def test_build_argv_uses_non_interactive_flags(
+def test_build_pipes_prompt_without_adding_it_to_argv(
     mock_which: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clean_copilot_env(monkeypatch)
-    inv = CopilotAdapter().build(prompt="hello world", model=None, workspace="")
+    prompt = "x" * 170_000
+    inv = CopilotAdapter().build(prompt=prompt, model=None, workspace="")
 
     assert inv.argv[0] == "/usr/bin/copilot"
-    assert "-p" in inv.argv
-    idx = inv.argv.index("-p")
-    assert inv.argv[idx + 1] == "hello world"
+    assert "-p" not in inv.argv
+    assert prompt not in inv.argv
     assert "--no-color" in inv.argv
     assert "--no-ask-user" in inv.argv
     assert "--silent" in inv.argv
-    assert inv.stdin is None
+    assert inv.stdin == prompt
     assert inv.cwd
     assert inv.env is None
     mock_which.assert_called()
