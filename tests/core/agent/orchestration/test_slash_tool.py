@@ -455,6 +455,7 @@ def test_cron_list_output_reaches_the_model(monkeypatch: pytest.MonkeyPatch) -> 
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False, highlight=False)
     session = Session()
+    session.terminal.exclusive_stdin_active = True
     ctx = ActionToolScope(
         session=session,
         console=console,

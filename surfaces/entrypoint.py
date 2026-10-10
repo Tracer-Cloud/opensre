@@ -10,7 +10,10 @@ both start here, so neither loses the shell.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
+
+from config.constants.cli_handoff import CLI_HANDOFF_FLAG
 
 if TYPE_CHECKING:
     from config.repl_config import ReplConfig
@@ -50,6 +53,12 @@ def _host() -> CliHost:
 
 def main(argv: list[str] | None = None) -> int:
     """Run ``opensre`` with the shell and the gateway entry wired in; return the exit status."""
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == CLI_HANDOFF_FLAG:
+        from infrastructure.process.cli_handoff import run_cli_handoff
+
+        return run_cli_handoff(args[1:])
+
     from surfaces.cli.app import main as cli_main
 
     return cli_main(argv, host=_host())
