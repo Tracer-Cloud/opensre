@@ -215,7 +215,7 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
 
     def heading() -> StyleAndTextTuples:
         if mode == "summary":
-            return [("bold", "More options" if expanded else "New schedule · save without running")]
+            return [("bold", "More options" if expanded else "New schedule · save only")]
         return [
             ("bold", field_label(field)),
             ("class:description", f" · {field_status(field, current)}"),
