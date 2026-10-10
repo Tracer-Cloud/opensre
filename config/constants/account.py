@@ -11,10 +11,11 @@ OPENSRE_ACCOUNT_TOKEN_ENV = "OPENSRE_ACCOUNT_TOKEN"
 OPENSRE_ACCOUNT_LLM_BASE_PATH = "/api/llm/v1"
 # A hosted gateway never logs in, so it cannot learn the served model the way a
 # CLI does. The webapp enforces its own model on every request; this name only
-# has to pick the matching OpenAI endpoint (gpt-5.6* → Responses API) and size
-# the context window. Override it when the webapp's model changes family.
+# has to pick the matching OpenAI endpoint (gpt-6.1* → Responses API) and size
+# the context window. Paired effort, when unset, is extra high (``xhigh``).
+# Override the model when the webapp's model changes family.
 OPENSRE_ACCOUNT_LLM_MODEL_ENV = "OPENSRE_ACCOUNT_LLM_MODEL"
-OPENSRE_GATEWAY_LLM_MODEL_DEFAULT = "gpt-5.6-sol"
+OPENSRE_GATEWAY_LLM_MODEL_DEFAULT = "gpt-6.1-sol"
 OPENSRE_ACCOUNT_LOGIN_PATH = "/cli/auth/start"
 OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH = "/cli/auth/success"
 OPENSRE_ACCOUNT_EXCHANGE_PATH = "/api/auth/cli/exchange"

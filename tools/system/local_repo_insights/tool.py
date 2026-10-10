@@ -201,6 +201,7 @@ def _record(analysis: LocalAnalysis, *, reason: str, github_error: str, duration
     name=TOOL_NAME,
     source="system",
     display_name="Analyze local repositories",
+    compact_description="Analyze local git history and CI files without network access.",
     description=(
         "Read the user's local git history and CI files, with no GitHub token and no network, "
         "and return ranked insights about how they work: follow-up fixes, CI trial and error, "

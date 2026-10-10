@@ -25,6 +25,7 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
+    compact_description: str | None = None,
     display_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
     input_model: type[BaseModel] | None = None,
@@ -61,6 +62,7 @@ def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
     description: str | None = None,
+    compact_description: str | None = None,
     display_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
     input_model: type[BaseModel] | None = None,
@@ -97,6 +99,7 @@ def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
     description: str | None = None,
+    compact_description: str | None = None,
     display_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
     input_model: type[BaseModel] | None = None,
@@ -132,6 +135,7 @@ def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
     description: str | None = None,
+    compact_description: str | None = None,
     display_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
     input_model: type[BaseModel] | None = None,
@@ -171,6 +175,7 @@ def tool[F: Callable[..., Any]](
             [
                 name is not None,
                 description is not None,
+                compact_description is not None,
                 display_name is not None,
                 input_schema is not None,
                 input_model is not None,
@@ -203,7 +208,8 @@ def tool[F: Callable[..., Any]](
     def attach(target: F | BaseTool) -> F | BaseTool:
         if isinstance(target, BaseTool):
             if (
-                surfaces is not None
+                compact_description is not None
+                or surfaces is not None
                 or retrieval_controls is not None
                 or tags is not None
                 or requires_approval is not None
@@ -218,6 +224,7 @@ def tool[F: Callable[..., Any]](
                     REGISTERED_TOOL_ATTR,
                     RegisteredTool.from_base_tool(
                         target,
+                        compact_description=compact_description,
                         surfaces=surfaces,
                         retrieval_controls=retrieval_controls,
                         tags=tags,
@@ -239,6 +246,7 @@ def tool[F: Callable[..., Any]](
                     target,
                     name=name,
                     description=description,
+                    compact_description=compact_description,
                     display_name=display_name,
                     input_schema=input_schema,
                     input_model=input_model,

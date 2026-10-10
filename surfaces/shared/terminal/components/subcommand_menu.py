@@ -45,6 +45,7 @@ _FRAME_COLUMNS = 4
 # Chrome, one option row, and the spare row ``erase_menu_lines`` needs to delete
 # the block instead of clearing it in place.
 MIN_MENU_HEIGHT = _CHROME_ROWS + 2
+# Physical terminal columns, including the cell reserved against autowrap.
 MIN_MENU_WIDTH = 24
 
 
@@ -139,7 +140,7 @@ def _visible_rows(total: int, height: int) -> int:
 
 
 def too_small(width: int, height: int) -> bool:
-    """True when the frame cannot be painted and later deleted in full.
+    """True when the physical terminal cannot fit and later delete the frame.
 
     ``erase_menu_lines`` can only delete a block of at most ``lines - 1`` rows;
     a taller one is cleared in place and leaves fragments behind. The smallest
@@ -187,7 +188,9 @@ def _draw(
     height = get_terminal_size(fallback=(80, 24)).lines
     if erase_lines:
         erase_menu_lines(erase_lines)
-    if too_small(width, height):
+    # menu_columns() leaves the terminal's last cell unused for DEC autowrap.
+    # The minimum and resize notice describe physical terminal columns.
+    if too_small(width + 1, height):
         rows_painted = _notice_rows(width, height)
         for row in rows_painted:
             write_menu_line(row)

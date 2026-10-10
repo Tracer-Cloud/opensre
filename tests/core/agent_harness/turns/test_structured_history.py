@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from config.constants.conversation_history import OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV
+from config.constants.tool_output import OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV
 from core.agent_harness.turns.headless_adapters import NullToolProvider
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
 from core.agent_harness.turns.structured_history import (
@@ -28,6 +29,7 @@ from core.messages import (
     ToolResultRuntimeMessage,
     UserRuntimeMessage,
 )
+from core.tool import tool_output_byte_budget, truncate_output_text
 
 
 class _ScriptedLLM:
@@ -91,6 +93,62 @@ class _CiRunsTool:
 class _OneToolProvider(NullToolProvider):
     def action_tools(self, **_kwargs: Any) -> list[Any]:
         return [_CiRunsTool()]
+
+
+class _LargeOutputTool(_CiRunsTool):
+    def run(self, **kwargs: Any) -> dict[str, Any]:
+        _ = kwargs
+        return {"output": "START\n" + "x" * 12_000 + "\nrun-id-9312\n" + "x" * 12_000 + "\nEND"}
+
+
+class _LargeOutputProvider(NullToolProvider):
+    def action_tools(self, **_kwargs: Any) -> list[Any]:
+        return [_LargeOutputTool()]
+
+
+def test_replay_keeps_shell_status_when_the_token_limit_is_small(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV, "10")
+
+    observed = "\n".join(
+        (
+            "Process exited with code 0",
+            "Timed out: False",
+            "Cancelled: False",
+            "Output:",
+            truncate_output_text("x" * 10_000, tool_output_byte_budget()),
+        )
+    )
+    messages = [
+        UserRuntimeMessage(content="history"),
+        UserRuntimeMessage(content="now"),
+        AssistantRuntimeMessage(
+            content="",
+            tool_calls=(ToolCall(id="call_1", name="shell_run", input={}),),
+        ),
+        ToolResultRuntimeMessage(
+            tool_calls=(ToolCall(id="call_1", name="shell_run", input={}),),
+            results=(observed,),
+        ),
+    ]
+
+    items = tool_items_from_run(messages, history_count=1)
+
+    assert items[1]["results"][0]["content"] == observed
+
+
+def test_follow_up_preserves_the_same_observation_within_codex_budget() -> None:
+    llm = _ScriptedLLM(iter([_call("call_1", "ci_runs"), _text("Observed."), _text("Done.")]))
+    agent = InMemoryHeadlessBuild().agent(tools=_LargeOutputProvider(), llm_factory=lambda: llm)
+
+    agent.dispatch("Inspect the run")
+    first = llm.requests[-1][2]["results"][0]["output"]
+    agent.dispatch("Use that run ID")
+    replayed = llm.requests[-1][2]["results"][0]["output"]
+
+    assert "run-id-9312" in first
+    assert replayed == first
 
 
 def _text(content: str) -> AgentLLMResponse:

@@ -126,6 +126,21 @@ def test_openai_llm_client_omits_reasoning_effort_for_non_reasoning_models(monke
     assert "reasoning_effort" not in kwargs
 
 
+def test_openai_llm_client_defaults_only_gpt_6_1_to_extra_high(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "core.llm.providers.provider_credentials.resolve_llm_api_key",
+        lambda env_var: "stored-openai-key" if env_var == "OPENAI_API_KEY" else "",
+    )
+    monkeypatch.setattr(sdk_llm, "OpenAI", _FakeOpenAI)
+    monkeypatch.delenv("OPENSRE_REASONING_EFFORT", raising=False)
+
+    gpt_6_1 = sdk_llm.OpenAILLMClient(model="gpt-6.1-sol")._build_request_kwargs("hello")
+    gpt_5_6 = sdk_llm.OpenAILLMClient(model="gpt-5.6-sol")._build_request_kwargs("hello")
+
+    assert gpt_6_1["reasoning_effort"] == "xhigh"
+    assert "reasoning_effort" not in gpt_5_6
+
+
 def test_openai_llm_client_invoke_fails_when_key_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env_var: ""

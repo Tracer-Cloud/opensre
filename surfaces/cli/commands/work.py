@@ -273,10 +273,9 @@ def work_path() -> None:
 
 def _render_items(rows: Sequence[WorkItem]) -> None:
     if not rows:
-        _console.print(f"[dim]No matching work items. Store: {work_items_path()}[/dim]")
+        _console.print("[dim]No matching work items. Add one with opensre work add <title>.[/dim]")
         return
     _console.print(work_items_table(rows))
-    _console.print(f"[dim]Store: {work_items_path()}[/dim]")
 
 
 def _validate_datetime(label: str, value: str) -> None:

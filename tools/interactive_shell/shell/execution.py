@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import codecs
 import contextlib
+import io
 import os
 import subprocess
 import threading
@@ -12,7 +14,9 @@ from typing import IO
 from config.constants.terminal_host import (
     BASH_EXPORTED_FUNCTION_ENV_PREFIX,
 )
+from core.tool import truncate_output_text
 from infrastructure.process.windows_job import WindowsJobProcess, spawn_windows_job
+from tools.interactive_shell.shell.output_capture import OutputStream, ShellOutputCapture
 from tools.interactive_shell.subprocess import OwnedProcessTree, watch_subprocess_until_exit
 
 
@@ -28,12 +32,12 @@ class ShellExecutionResult:
     truncated: bool
     executed_with_shell: bool
     cancelled: bool = False
+    combined_output: str = ""
 
 
-def _truncate_output(text: str, *, max_chars: int) -> tuple[str, bool]:
-    if len(text) <= max_chars:
-        return text, False
-    return f"{text[:max_chars].rstrip()}\n... output truncated ...", True
+def _truncate_output(text: str, *, max_bytes: int) -> tuple[str, bool]:
+    preview = truncate_output_text(text, max_bytes)
+    return preview, preview != text
 
 
 def _shell_argv(command: str) -> str | list[str]:
@@ -74,13 +78,22 @@ def _shell_environment() -> dict[str, str]:
     }
 
 
-def _drain_pipe(pipe: IO[str] | None, buffer: list[str]) -> None:
+def _drain_pipe(pipe: IO[str] | None, capture: ShellOutputCapture, stream: OutputStream) -> None:
     """Read *pipe* to EOF so a chatty child cannot deadlock on a full buffer."""
     if pipe is None:
         return
     try:
-        for line in pipe:
-            buffer.append(line)
+        # Decode raw pipe bytes incrementally so a UTF-8 character split across
+        # reads stays intact. Streams without a binary buffer are already text.
+        buffer = pipe.buffer if isinstance(pipe, io.TextIOWrapper) else None
+        if isinstance(buffer, io.BufferedReader):
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            while chunk := buffer.read1(8192):
+                capture.append(stream, decoder.decode(chunk))
+            capture.append(stream, decoder.decode(b"", final=True))
+        else:
+            while text := pipe.read(8192):
+                capture.append(stream, text)
     except (OSError, ValueError):
         # Cancellation can close the pipe while this reader is draining it.
         pass
@@ -109,7 +122,7 @@ def execute_shell_command(
     *,
     command: str,
     timeout_seconds: int,
-    max_output_chars: int,
+    max_output_bytes: int,
     cancel_event: threading.Event | None = None,
 ) -> ShellExecutionResult:
     """Execute a command and return a structured result object.
@@ -149,7 +162,7 @@ def execute_shell_command(
             command=command,
             watch_cancel=watch_cancel,
             timeout_seconds=timeout_seconds,
-            max_output_chars=max_output_chars,
+            max_output_bytes=max_output_bytes,
             owned_tree=owned_tree,
         )
 
@@ -160,14 +173,13 @@ def _collect_shell_result(
     command: str,
     watch_cancel: threading.Event,
     timeout_seconds: int,
-    max_output_chars: int,
+    max_output_bytes: int,
     owned_tree: OwnedProcessTree | None,
 ) -> ShellExecutionResult:
-    out_buf: list[str] = []
-    err_buf: list[str] = []
+    capture = ShellOutputCapture()
     readers = (
-        threading.Thread(target=_drain_pipe, args=(proc.stdout, out_buf), daemon=True),
-        threading.Thread(target=_drain_pipe, args=(proc.stderr, err_buf), daemon=True),
+        threading.Thread(target=_drain_pipe, args=(proc.stdout, capture, "stdout"), daemon=True),
+        threading.Thread(target=_drain_pipe, args=(proc.stderr, capture, "stderr"), daemon=True),
     )
     for reader in readers:
         reader.start()
@@ -183,13 +195,14 @@ def _collect_shell_result(
     for reader in readers:
         reader.join(timeout=2.0)
 
+    captured_stdout, captured_stderr, combined, capture_truncated = capture.snapshot()
     stdout, truncated_stdout = _truncate_output(
-        "".join(out_buf),
-        max_chars=max_output_chars,
+        captured_stdout,
+        max_bytes=max_output_bytes,
     )
     stderr, truncated_stderr = _truncate_output(
-        "".join(err_buf),
-        max_chars=max_output_chars,
+        captured_stderr,
+        max_bytes=max_output_bytes,
     )
     return ShellExecutionResult(
         command=command,
@@ -197,9 +210,10 @@ def _collect_shell_result(
         stderr=stderr,
         exit_code=watch.exit_code,
         timed_out=watch.timed_out,
-        truncated=truncated_stdout or truncated_stderr,
+        truncated=capture_truncated or truncated_stdout or truncated_stderr,
         executed_with_shell=True,
         cancelled=watch.cancelled,
+        combined_output=combined,
     )
 
 

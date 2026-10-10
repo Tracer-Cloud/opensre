@@ -719,8 +719,10 @@ def test_openai_agent_client_enables_parallel_tool_calls_for_openai(
     assert captured["parallel_tool_calls"] is True
 
 
-def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
+@pytest.mark.parametrize("model", ["gpt-5.6", "gpt-6.1-sol"])
+def test_openai_reasoning_agent_uses_responses_api_and_replays_reasoning(
     monkeypatch: pytest.MonkeyPatch,
+    model: str,
 ) -> None:
     _install_fake_openai(monkeypatch)
     monkeypatch.setenv("OPENSRE_REASONING_EFFORT", "high")
@@ -763,11 +765,11 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
         responses=types.SimpleNamespace(create=responses_create),
         chat=types.SimpleNamespace(
             completions=types.SimpleNamespace(
-                create=lambda **_: pytest.fail("GPT-5.6 must not use Chat Completions")
+                create=lambda **_: pytest.fail("This model must use Responses")
             )
         ),
     )
-    client._model = "gpt-5.6"
+    client._model = model
     client._max_tokens = 4096
     client._api_key_env = "OPENAI_API_KEY"
     tools = [
@@ -824,6 +826,35 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
         "call_id": "call_1",
         "output": '{"ok":true}',
     }
+
+
+def test_gpt_6_1_sol_sends_extra_high_when_effort_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_openai(monkeypatch)
+    monkeypatch.delenv("OPENSRE_REASONING_EFFORT", raising=False)
+    captured: dict[str, Any] = {}
+
+    def responses_create(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return types.SimpleNamespace(output=[], output_text="ok", usage=None)
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        responses=types.SimpleNamespace(create=responses_create),
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(
+                create=lambda **_: pytest.fail("GPT-6.1 tool calls must use Responses")
+            )
+        ),
+    )
+    client._model = "gpt-6.1-sol"
+    client._max_tokens = 4096
+    client._api_key_env = "OPENAI_API_KEY"
+
+    client.invoke(messages=[{"role": "user", "content": "hi"}])
+
+    assert captured["reasoning"] == {"effort": "xhigh"}
 
 
 def _responses_client(create: Any) -> OpenAIAgentClient:

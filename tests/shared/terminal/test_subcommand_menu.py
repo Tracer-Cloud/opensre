@@ -116,6 +116,28 @@ def test_minimum_height_leaves_room_to_delete_the_whole_block() -> None:
     assert painted <= height - 1
 
 
+@pytest.mark.parametrize("columns", [23, 24])
+def test_draw_uses_the_advertised_physical_minimum_width(
+    monkeypatch: pytest.MonkeyPatch, columns: int
+) -> None:
+    painted: list[str] = []
+    monkeypatch.setattr(subcommand_menu, "menu_columns", lambda: columns - 1)
+    monkeypatch.setattr(
+        subcommand_menu, "get_terminal_size", lambda **_k: os.terminal_size((columns, 8))
+    )
+    monkeypatch.setattr(subcommand_menu, "write_menu_line", lambda row="": painted.append(row))
+
+    frame = subcommand_menu._draw("/model", _OPTIONS, selected=0, top=0, erase_lines=0)
+
+    assert frame.showed_options is (columns >= 24)
+    assert frame.height <= 7
+    assert all(len(_plain(row)) <= columns - 1 for row in painted)
+    if not frame.showed_options:
+        assert any("Resize to at least" in _plain(row) for row in painted)
+        notice = subcommand_menu._notice_rows(80, 8)
+        assert "Resize to at least 24×8" in _plain(notice[1])
+
+
 def _drive_sized(keys: list[str], heights: list[int]) -> tuple[str | None, list[str]]:
     """Run the picker against a scripted key stream and a changing terminal height."""
     pressed: Iterator[str] = iter(keys)

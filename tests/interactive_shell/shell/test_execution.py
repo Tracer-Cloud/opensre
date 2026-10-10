@@ -16,6 +16,7 @@ import pytest
 from config.constants.terminal_host import BASH_EXPORTED_FUNCTION_ENV_PREFIX
 from tools.interactive_shell.shell import execution as shell_execution
 from tools.interactive_shell.shell.execution import execute_shell_command
+from tools.interactive_shell.shell.output_capture import OutputStream, ShellOutputCapture
 
 
 def _execute(
@@ -26,7 +27,7 @@ def _execute(
     return execute_shell_command(
         command=command,
         timeout_seconds=8,
-        max_output_chars=10_000,
+        max_output_bytes=10_000,
         cancel_event=cancel_event,
     )
 
@@ -142,7 +143,7 @@ def test_execute_shell_command_reports_timeout() -> None:
     result = execute_shell_command(
         command="sleep 30",
         timeout_seconds=1,
-        max_output_chars=10_000,
+        max_output_bytes=10_000,
     )
 
     assert result.timed_out is True
@@ -242,7 +243,7 @@ def test_execute_shell_command_times_out_and_reaps_background_child(
         result = execute_shell_command(
             command=command,
             timeout_seconds=1,
-            max_output_chars=10_000,
+            max_output_bytes=10_000,
         )
         background_pid = int(marker.read_text())
 
@@ -265,3 +266,65 @@ PY"""
     assert result.timed_out is False
     assert result.exit_code == 0
     assert "hello-heredoc" in result.stdout
+
+
+def test_chatty_command_preserves_final_error_and_exit_status() -> None:
+    script = "print('START'); print('x' * 30000); print('FINAL_ERROR'); raise SystemExit(7)"
+
+    result = _execute(shlex.join([sys.executable, "-c", script]))
+
+    assert result.exit_code == 7
+    assert result.truncated
+    assert result.stdout.startswith("START")
+    assert result.stdout.endswith("FINAL_ERROR\n")
+    assert "truncated" in result.stdout
+
+
+def test_pipe_capture_reads_partial_output_and_preserves_split_utf8() -> None:
+    head_ready = threading.Event()
+    tail_ready = threading.Event()
+
+    class NotifyingCapture(ShellOutputCapture):
+        def append(self, stream: OutputStream, text: str) -> None:
+            super().append(stream, text)
+            if text == "HEAD":
+                head_ready.set()
+            if "TAIL" in text:
+                tail_ready.set()
+
+    reader_fd, writer_fd = os.pipe()
+    pipe = os.fdopen(reader_fd, "r", encoding="utf-8", errors="replace")
+    capture = NotifyingCapture()
+    reader = threading.Thread(target=shell_execution._drain_pipe, args=(pipe, capture, "stdout"))
+    reader.start()
+    try:
+        encoded = "HEAD🙂TAIL".encode()
+        os.write(writer_fd, encoded[:6])
+        assert head_ready.wait(timeout=2.0), "capture waited for EOF or a full chunk"
+        os.write(writer_fd, encoded[6:])
+        assert tail_ready.wait(timeout=2.0)
+    finally:
+        os.close(writer_fd)
+        reader.join(timeout=2.0)
+
+    assert capture.snapshot()[0] == "HEAD🙂TAIL"
+
+
+def test_both_streams_share_codex_capture_limit_without_losing_final_diagnostics() -> None:
+    script = (
+        "import sys; print('START', flush=True); print('x' * 700000, flush=True); "
+        "print('y' * 700000, file=sys.stderr, flush=True); "
+        "print('FINAL_ERROR', file=sys.stderr, flush=True)"
+    )
+
+    result = execute_shell_command(
+        command=shlex.join([sys.executable, "-c", script]),
+        timeout_seconds=8,
+        max_output_bytes=2 * 1024 * 1024,
+    )
+
+    assert result.truncated
+    assert "START" in result.stdout
+    assert "FINAL_ERROR" in result.stderr
+    assert "bytes omitted" in result.combined_output
+    assert len(result.combined_output.encode("utf-8")) <= 1024 * 1024 + 100

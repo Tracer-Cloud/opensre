@@ -6,28 +6,35 @@ from dataclasses import dataclass
 from typing import Literal
 
 from rich import box
+from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, RenderResult
+from rich.padding import Padding
 from rich.text import Text
 
 from infrastructure.terminal.theme import BOLD_BRAND, DIM
 from surfaces.shared.terminal.components.rendering import repl_table
 
+_MAX_PRIMARY_COLUMN_WIDTH = 48
+_OUTER_PADDING = 2
+_COLUMN_GAP = 4
+_DETAIL_INDENT = 2
+
 
 @dataclass(frozen=True)
 class RecordColumn:
-    """A summary column; the first column receives the remaining width."""
+    """A content-sized summary column."""
 
     header: str
-    width: int = 20
     justify: Literal["left", "right"] = "left"
 
 
 @dataclass(frozen=True)
 class RecordRow:
-    """Summary cells and full-width secondary lines, already escaped as Text."""
+    """Summary cells, supporting details and identifiers rendered as literal Text."""
 
     cells: tuple[Text, ...]
     details: tuple[Text, ...] = ()
+    metadata: tuple[Text, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -40,32 +47,71 @@ class RecordTable:
     subtitle: str = ""
     caption: str = ""
 
-    def __rich_console__(self, _console: Console, options: ConsoleOptions) -> RenderResult:
-        yield Text(f"{self.title} · {len(self.rows)}", style=BOLD_BRAND)
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        # Size only summary cells; full identifiers must not widen the name column.
+        widths = [cell_len(column.header) for column in self.columns]
+        for row in self.rows:
+            for index, cell in enumerate(row.cells):
+                content_width = max((cell_len(line) for line in cell.plain.splitlines()), default=0)
+                widths[index] = max(widths[index], content_width)
+        if widths:
+            widths[0] = min(widths[0], _MAX_PRIMARY_COLUMN_WIDTH)
+        available = max(1, options.max_width - 2 * _OUTER_PADDING)
+        wide = sum(widths) + _COLUMN_GAP * (len(widths) - 1) <= available
+        yield Padding(
+            Text(f"{self.title} · {len(self.rows)}", style=BOLD_BRAND),
+            (0, _OUTER_PADDING),
+            expand=False,
+        )
         if self.subtitle:
-            yield Text(self.subtitle, style=DIM)
+            yield Padding(Text(self.subtitle, style=DIM), (0, _OUTER_PADDING), expand=False)
         yield Text("")
-        first_width = options.max_width - sum(col.width + 3 for col in self.columns[1:])
-        wide = options.max_width >= 72 and first_width >= self.columns[0].width
         for index, row in enumerate(self.rows):
             if wide:
-                table = repl_table(box=box.SIMPLE_HEAD, show_header=index == 0)
-                for column_index, column in enumerate(self.columns):
+                # SIMPLE_HEAD contributes one separator cell in addition to padding.
+                table = repl_table(
+                    box=box.SIMPLE_HEAD,
+                    show_header=index == 0,
+                    padding=(0, _COLUMN_GAP - 1),
+                    collapse_padding=True,
+                )
+                for column, width in zip(self.columns, widths, strict=True):
                     table.add_column(
-                        column.header,
-                        width=first_width if column_index == 0 else column.width,
-                        justify=column.justify,
-                        overflow="fold",
+                        column.header, width=width, justify=column.justify, overflow="fold"
                     )
                 table.add_row(*row.cells)
-                yield table
+                yield Padding(table, (0, _OUTER_PADDING), expand=False)
             else:
-                yield row.cells[0]
+                yield Padding(row.cells[0], (0, _OUTER_PADDING), expand=False)
+            if row.metadata:
+                yield Text("")
+                for line in row.metadata:
+                    yield Padding(line, (0, _OUTER_PADDING), expand=False)
+            if not wide and len(self.columns) > 1:
+                yield Text("")
                 for column, cell in zip(self.columns[1:], row.cells[1:], strict=True):
-                    yield Text.assemble((f"{column.header}: ", DIM), cell)
-            yield from row.details
+                    if not cell.plain.strip():
+                        continue
+                    yield Padding(
+                        Text.assemble((f"{column.header}: ", DIM), cell),
+                        (0, _OUTER_PADDING, 0, _OUTER_PADDING + _DETAIL_INDENT),
+                        expand=False,
+                    )
+            # Description helpers may already supply separators. Normalize them here
+            # so absent summaries never create leading, trailing or doubled gaps.
+            separator = True
+            for line in row.details:
+                if not line.plain.strip():
+                    separator = True
+                    continue
+                if separator:
+                    yield Text("")
+                yield Padding(
+                    line, (0, _OUTER_PADDING, 0, _OUTER_PADDING + _DETAIL_INDENT), expand=False
+                )
+                separator = False
             if index < len(self.rows) - 1:
                 yield Text("")
         if self.caption:
             yield Text("")
-            yield Text(self.caption, style=DIM)
+            yield Padding(Text(self.caption, style=DIM), (0, _OUTER_PADDING), expand=False)

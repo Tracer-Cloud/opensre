@@ -157,6 +157,7 @@ def test_run_returns_unavailable_when_config_missing() -> None:
         "source": "gitlab",
         "available": False,
         "error": "gitlab integration is not configured.",
+        "failure_state": "missing_config",
         "file": {},
     }
 

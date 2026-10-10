@@ -4,8 +4,8 @@ The text transcript (``MutableAgentState.messages``) keeps one ``(role, text)``
 pair per message. A :class:`TurnEvidence` keeps the same turn as JSON-safe items
 in order: the user's message, each assistant tool-call batch with its results,
 and the final reply. A later turn replays those items instead of a paraphrase.
-Items are bounded when the turn is recorded; the full tool output stays in the
-session log.
+Items are bounded when the turn is recorded; audit records are independently
+bounded and do not provide a lossless output archive.
 
 Evidence is matched to transcript pairs by their text, newest first. A
 transcript rewritten elsewhere (seeded from a chat thread, compacted, restored)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from config.constants.tool_output import TOOL_OUTPUT_BYTES_PER_TOKEN
+from core.tool import tool_output_byte_budget
 from infrastructure.terminal.theme import DIM, ERROR, GLYPH_ERROR
 from tools.interactive_shell.shell import execution as shell_execution
 from tools.interactive_shell.shell.display import (
@@ -14,7 +16,6 @@ from tools.interactive_shell.shell.display import (
 from tools.interactive_shell.shell.parsing import parse_shell_command
 from tools.interactive_shell.shell.policy import plan_shell_execution
 from tools.interactive_shell.subprocess import (
-    MAX_COMMAND_OUTPUT_CHARS,
     SHELL_COMMAND_TIMEOUT_SECONDS,
     SubprocessPresenter,
 )
@@ -32,6 +33,7 @@ def _shell_payload(
     truncated: bool = False,
     executed_with_shell: bool | None = None,
     cancelled: bool = False,
+    output: str = "",
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "ok": ok,
@@ -47,6 +49,8 @@ def _shell_payload(
         payload["executed_with_shell"] = executed_with_shell
     if response_text:
         payload["response_text"] = response_text.strip()
+    if output:
+        payload["output"] = output
     return payload
 
 
@@ -56,6 +60,7 @@ def run_shell_command(
     *,
     quiet: bool = False,
     cancel_event: threading.Event | None = None,
+    max_output_tokens: int | None = None,
 ) -> dict[str, Any]:
     session = presenter.session
     parsed = parse_shell_command(command)
@@ -85,10 +90,15 @@ def run_shell_command(
     response_text: str | None = None
 
     try:
+        output_budget = tool_output_byte_budget()
+        if max_output_tokens is not None:
+            output_budget = min(
+                output_budget, max(max_output_tokens, 0) * TOOL_OUTPUT_BYTES_PER_TOKEN
+            )
         result = shell_execution.execute_shell_command(
             command=parsed.command,
             timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS,
-            max_output_chars=MAX_COMMAND_OUTPUT_CHARS,
+            max_output_bytes=output_budget,
             cancel_event=cancel_event,
         )
     except Exception as exc:
@@ -125,6 +135,7 @@ def run_shell_command(
             truncated=result.truncated,
             executed_with_shell=result.executed_with_shell,
             cancelled=True,
+            output=result.combined_output,
         )
     if result.timed_out:
         response_text = f"command timed out after {SHELL_COMMAND_TIMEOUT_SECONDS} seconds"
@@ -144,6 +155,7 @@ def run_shell_command(
             timed_out=True,
             truncated=result.truncated,
             executed_with_shell=result.executed_with_shell,
+            output=result.combined_output,
         )
     ok = result.exit_code == 0
     had_stdout = bool((result.stdout or "").strip())
@@ -179,6 +191,7 @@ def run_shell_command(
         timed_out=False,
         truncated=result.truncated,
         executed_with_shell=result.executed_with_shell,
+        output=result.combined_output,
     )
 
 

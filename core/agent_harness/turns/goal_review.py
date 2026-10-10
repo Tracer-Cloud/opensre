@@ -42,6 +42,7 @@ from core.agent_harness.turns.gather_discovery_budget import (
 )
 from core.agent_harness.turns.work_outcome import (
     ExecutedToolOutcome,
+    counts_toward_work,
     format_outcomes_for_review,
     last_work_blocked,
     last_work_classified,
@@ -111,7 +112,7 @@ def tap_executed_tool_names(
     """Wrap ``inner`` to record each executed tool's name into ``names``."""
 
     def _callback(event: RuntimeEvent) -> None:
-        if isinstance(event, ToolExecutionEndEvent):
+        if isinstance(event, ToolExecutionEndEvent) and counts_toward_work(event):
             names.append(event.tool_name)
         if inner is not None:
             inner(event)
@@ -126,7 +127,7 @@ def tap_executed_tool_calls(
     """Wrap ``inner`` to record ``(tool_name, args)`` for each executed tool."""
 
     def _callback(event: RuntimeEvent) -> None:
-        if isinstance(event, ToolExecutionEndEvent):
+        if isinstance(event, ToolExecutionEndEvent) and counts_toward_work(event):
             calls.append((event.tool_name, dict(event.args or {})))
         if inner is not None:
             inner(event)

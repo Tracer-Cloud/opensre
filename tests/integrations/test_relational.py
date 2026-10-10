@@ -65,6 +65,7 @@ class TestReadOnlyQueryGuard:
             "source": "fakedb",
             "available": False,
             "error": "Not configured.",
+            "failure_state": "missing_config",
         }
 
     def test_unconfigured_never_connects(self) -> None:
@@ -149,6 +150,7 @@ class TestReadOnlyQueryErrors:
             "source": "fakedb",
             "available": False,
             "error": "table gone",
+            "failure_state": "missing_config",
         }
 
     def test_connection_closed_when_query_fails(self) -> None:

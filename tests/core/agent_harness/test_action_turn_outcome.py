@@ -106,11 +106,11 @@ def test_iteration_cap_is_preserved_on_turn_result() -> None:
     )
 
     assert result.hit_iteration_cap is True
-    assert result.stop_reason == "stagnation_limit"
+    assert result.stop_reason == "discovery_stagnation"
     assert result.response_streamed is True
-    assert "repeated tool calls produced no new result" in result.response_text
-    assert _console_text(harness).count("repeated tool calls produced no new result") == 1
-    assert harness.llm.invocations == 5
+    assert "repeated tool discovery found no new capability" in result.response_text
+    assert _console_text(harness).count("repeated tool discovery found no new capability") == 1
+    assert harness.llm.invocations == 4
 
 
 def test_a_menu_answered_this_turn_is_not_asked_again_through_the_real_turn() -> None:

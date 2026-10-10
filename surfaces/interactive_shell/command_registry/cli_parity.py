@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import tempfile
 import threading
-from typing import BinaryIO
 
 from rich.console import Console
 from rich.markup import escape
 
+import surfaces.interactive_shell.command_registry.cron_cmds as cron_cmds
+from config.cli_command_choices import CLI_COMMAND_CHOICES
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
+from config.constants.cli_handoff import CLI_HANDOFF_FLAG
 from config.interactive_override import interactive_override_env
 from config.scope_handoff import hand_off_scope
 from core.agent_harness.spi.session_state import session_terminal, set_turn_outcome_hint
+from infrastructure.process.entrypoint import opensre_command
+from infrastructure.process.termination import terminate_process_tree
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.subprocess_runner import build_opensre_cli_argv
@@ -33,7 +39,6 @@ from tools.interactive_shell.subprocess import (
 
 _UPDATE_SUBPROCESS_TIMEOUT_SECONDS = 300
 _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS = 90.0
-_PIPE_DRAIN_CHUNK = 65536
 _STILL_RUNNING_OUTCOME = "still_running"
 _KEPT_CLI_COMMANDS: list[threading.Thread] = []
 _KEPT_CLI_LOCK = threading.Lock()
@@ -99,60 +104,16 @@ def _cli_command_succeeded(exit_code: int | None) -> bool:
 
 
 def shutdown_kept_cli_commands() -> None:
-    """Wait until background CLI children have exited and their pipes are drained.
-
-    Not used on session teardown: the gateway closes the session before it
-    publishes the prompt result, and a stuck tick must not block that. The
-    reaper is non-daemon, so interpreter shutdown waits for it instead.
-    Children are not killed; stopping one is what blocked the task's later ticks.
-    """
+    """Explicitly wait for kept CLI children; interactive teardown must not call this."""
     with _KEPT_CLI_LOCK:
         threads = tuple(_KEPT_CLI_COMMANDS)
     for thread in threads:
         thread.join()
 
 
-def _pump_pipe(
-    stream: BinaryIO,
-    sink: bytearray,
-    discard: threading.Event,
-    lock: threading.Lock,
-) -> None:
-    """Read ``stream`` until EOF, keeping bytes only until ``discard`` is set."""
+def _reap_kept_cli_command(process: subprocess.Popen[bytes]) -> None:
+    """Reap a kept child and release its tracking entry when it exits."""
     try:
-        while True:
-            chunk = stream.read(_PIPE_DRAIN_CHUNK)
-            if not chunk:
-                return
-            with lock:
-                if not discard.is_set():
-                    sink.extend(chunk)
-    finally:
-        stream.close()
-
-
-def _snapshot_and_discard(
-    stdout_buf: bytearray,
-    stderr_buf: bytearray,
-    discard: threading.Event,
-    lock: threading.Lock,
-) -> tuple[bytes, bytes]:
-    with lock:
-        discard.set()
-        stdout = bytes(stdout_buf)
-        stderr = bytes(stderr_buf)
-        stdout_buf.clear()
-        stderr_buf.clear()
-    return stdout, stderr
-
-
-def _reap_kept_cli_command(
-    process: subprocess.Popen[bytes], readers: list[threading.Thread]
-) -> None:
-    """Join pipe readers and reap the child once it exits. Output is discarded."""
-    try:
-        for reader in readers:
-            reader.join()
         process.wait()
     finally:
         with _KEPT_CLI_LOCK:
@@ -162,100 +123,73 @@ def _reap_kept_cli_command(
 
 
 def _hand_off_kept_cli_command(
-    process: subprocess.Popen[bytes], readers: list[threading.Thread]
+    process: subprocess.Popen[bytes], *, detach_on_shutdown: bool
 ) -> None:
     thread = threading.Thread(
         target=_reap_kept_cli_command,
-        args=(process, readers),
+        args=(process,),
         name="cli-command-reaper",
-        daemon=False,
+        daemon=detach_on_shutdown,
     )
     with _KEPT_CLI_LOCK:
         _KEPT_CLI_COMMANDS.append(thread)
     thread.start()
 
 
-def _start_pipe_readers(
-    process: subprocess.Popen[bytes],
-    stdout_buf: bytearray,
-    stderr_buf: bytearray,
-    discard: threading.Event,
-    lock: threading.Lock,
-) -> list[threading.Thread]:
-    readers: list[threading.Thread] = []
-    for stream, sink, name in (
-        (process.stdout, stdout_buf, "cli-command-stdout"),
-        (process.stderr, stderr_buf, "cli-command-stderr"),
-    ):
-        if stream is None:
-            continue
-        reader = threading.Thread(
-            target=_pump_pipe,
-            args=(stream, sink, discard, lock),
-            name=name,
-            daemon=False,
-        )
-        reader.start()
-        readers.append(reader)
-    return readers
-
-
-def _decode_pipe(data: bytes) -> str:
-    return data.decode("utf-8", errors="replace")
+def _captured_file_snapshot(path: str) -> bytes:
+    """Read only bytes already written, even if a background child keeps appending."""
+    # A separate open has its own offset: seeking the inherited descriptor
+    # would also move the child's write offset. Windows requires delete sharing
+    # when reopening a NamedTemporaryFile marked for deletion on last close.
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_TEMPORARY", 0)
+    with os.fdopen(os.open(path, flags), "rb") as snapshot:
+        size = os.fstat(snapshot.fileno()).st_size
+        return snapshot.read(size)
 
 
 def _run_captured_keep_running(
-    cmd: list[str], *, timeout: float | None, env: dict[str, str]
+    cmd: list[str], *, timeout: float | None, env: dict[str, str], detach_on_shutdown: bool
 ) -> subprocess.CompletedProcess[str]:
-    """``subprocess.run`` with captured output, except a timeout leaves the child running.
+    """Capture a child without stopping its work at the foreground timeout.
 
-    After the timeout, pipe readers discard further output and a non-daemon
-    reaper waits for the child. The child is not killed: its claim stays live
-    until the tick finishes, and a full pipe must not stall it.
+    A detached host caps foreground output and drains later bytes to discard.
+    Its temporary output descriptors survive the REPL's exit without growing.
+    Interactive reapers are daemon threads; headless hosts wait for completion.
     """
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        env=env,
-    )
-    discard = threading.Event()
-    lock = threading.Lock()
-    stdout_buf = bytearray()
-    stderr_buf = bytearray()
-    readers = _start_pipe_readers(process, stdout_buf, stderr_buf, discard, lock)
-    handed_off = False
-    try:
-        try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            partial_stdout, partial_stderr = _snapshot_and_discard(
-                stdout_buf, stderr_buf, discard, lock
-            )
-            _hand_off_kept_cli_command(process, readers)
-            handed_off = True
-            raise subprocess.TimeoutExpired(
-                cmd,
-                0.0 if timeout is None else timeout,
-                output=partial_stdout,
-                stderr=partial_stderr,
-            ) from None
-        for reader in readers:
-            reader.join()
-        return subprocess.CompletedProcess(
-            cmd,
-            process.returncode if process.returncode is not None else 1,
-            _decode_pipe(bytes(stdout_buf)),
-            _decode_pipe(bytes(stderr_buf)),
+    with tempfile.NamedTemporaryFile() as stdout, tempfile.NamedTemporaryFile() as stderr:
+        process = subprocess.Popen(
+            opensre_command(CLI_HANDOFF_FLAG, json.dumps(cmd), str(timeout)),
+            stdin=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=True,
+            env=env,
         )
-    finally:
-        if not handed_off and process.poll() is None:
-            process.kill()
-            process.wait()
-        if not handed_off:
-            for reader in readers:
-                reader.join()
+        handed_off = False
+        try:
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                partial_stdout = _captured_file_snapshot(stdout.name)
+                partial_stderr = _captured_file_snapshot(stderr.name)
+                _hand_off_kept_cli_command(process, detach_on_shutdown=detach_on_shutdown)
+                handed_off = True
+                raise subprocess.TimeoutExpired(
+                    cmd,
+                    0.0 if timeout is None else timeout,
+                    output=partial_stdout,
+                    stderr=partial_stderr,
+                ) from None
+            return subprocess.CompletedProcess(
+                cmd,
+                process.returncode if process.returncode is not None else 1,
+                _captured_file_snapshot(stdout.name).decode("utf-8", errors="replace"),
+                _captured_file_snapshot(stderr.name).decode("utf-8", errors="replace"),
+            )
+        finally:
+            if not handed_off and process.poll() is None:
+                terminate_process_tree(process.pid, grace_seconds=0, force_wait_seconds=1)
+                process.wait()
 
 
 def run_cli_command(
@@ -326,7 +260,10 @@ def run_cli_command(
         if should_capture:
             if keep_running_hint is not None:
                 captured_result = _run_captured_keep_running(
-                    cmd, timeout=subprocess_timeout, env=child_env
+                    cmd,
+                    timeout=subprocess_timeout,
+                    env=child_env,
+                    detach_on_shutdown=session is not None and not headless,
                 )
             else:
                 captured_result = subprocess.run(
@@ -572,21 +509,7 @@ def _cmd_messaging(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
-    # ``cron start`` blocks as the scheduler daemon and must stream to the real
-    # TTY. Every other subcommand is a printer; the captured output reaches the
-    # slash history row, where the action agent reads it back (e.g. task ids
-    # from ``/cron list`` to chain a remove).
-    if len(args) >= 2 and args[0].lower() == "run":
-        # A tick holds its claim until it finishes, so a headless reply window
-        # must not kill it: the task's later ticks would stay blocked.
-        return run_cli_command(
-            console,
-            ["cron", *args],
-            session=session,
-            keep_running_hint=f"Read its outcome with `/cron logs {args[1]}`.",
-        )
-    capture_output = not args or args[0].lower() != "start"
-    return run_cli_command(console, ["cron", *args], capture_output=capture_output, session=session)
+    return cron_cmds.cmd_cron(session, console, args, run_cli=run_cli_command)
 
 
 def _cmd_sentry(session: Session, console: Console, args: list[str]) -> bool:
@@ -632,6 +555,7 @@ COMMANDS: list[SlashCommand] = [
         "/auth",
         "Log in to LLM providers and inspect local auth state.",
         _cmd_auth,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/auth",)],
         usage=("/auth", "/auth status", "/auth login deepseek", "/auth logout deepseek"),
     ),
     SlashCommand(
@@ -675,6 +599,7 @@ COMMANDS: list[SlashCommand] = [
         "/guardrails",
         "Manage sensitive information guardrail rules.",
         _cmd_guardrails,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/guardrails",)],
         usage=(
             "/guardrails audit",
             "/guardrails init",
@@ -696,12 +621,14 @@ COMMANDS: list[SlashCommand] = [
         "/config",
         "Show or edit local OpenSRE config.",
         _cmd_config,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/config",)],
         usage=("/config show", "/config set <key> <value>"),
     ),
     SlashCommand(
         "/runbooks",
         "Manage trusted runbook sources for guided investigations.",
         _cmd_runbooks,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/runbooks",)],
         usage=(
             "/runbooks list",
             "/runbooks add github --name <name> --repo <owner/repo>",
@@ -713,6 +640,7 @@ COMMANDS: list[SlashCommand] = [
         "/skills",
         "Publish skills and inspect the live skills release in use.",
         _cmd_skills,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/skills",)],
         usage=(
             "/skills status",
             "/skills update",
@@ -724,6 +652,7 @@ COMMANDS: list[SlashCommand] = [
         "/messaging",
         "Manage messaging security and identities.",
         _cmd_messaging,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/messaging",)],
         usage=(
             "/messaging pair",
             "/messaging allow",
@@ -735,18 +664,23 @@ COMMANDS: list[SlashCommand] = [
         "/cron",
         "Manage cron-driven scheduled deliveries.",
         _cmd_cron,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/cron",)],
         usage=(
+            "/cron",
             "/cron list",
             "/cron add --name <name>",
             "/cron remove <id>",
             "/cron run <id>",
             "/cron logs <id>",
+            "/cron status",
+            "/cron start [--service]",
         ),
     ),
     SlashCommand(
         "/sentry",
         "Schedule and run automated Sentry morning digests or uptime watches.",
         _cmd_sentry,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/sentry",)],
         usage=(
             "/sentry digest run",
             "/sentry digest schedule list",
@@ -764,6 +698,7 @@ COMMANDS: list[SlashCommand] = [
         "/posthog",
         "Schedule and run automated PostHog per-metric summary reports.",
         _cmd_posthog,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/posthog",)],
         usage=(
             "/posthog report run",
             "/posthog report schedule list",
@@ -776,5 +711,6 @@ COMMANDS: list[SlashCommand] = [
         "/debug",
         "run targeted runtime diagnostics",
         _cmd_debug,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/debug",)],
     ),
 ]

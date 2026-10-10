@@ -318,6 +318,7 @@ if TYPE_CHECKING:
     from config.constants.clerk import (
         CLERK_JWKS_URL_ENV as CLERK_JWKS_URL_ENV,
     )
+    from config.constants.cli_handoff import CLI_HANDOFF_FLAG as CLI_HANDOFF_FLAG
     from config.constants.coding_agent import CODEX_HOME_ENV as CODEX_HOME_ENV
     from config.constants.coding_agent import (
         CODEX_ISOLATED_HOME_PREFIX as CODEX_ISOLATED_HOME_PREFIX,
@@ -1466,6 +1467,77 @@ if TYPE_CHECKING:
     )
     from config.constants.tls import (
         SSL_CERT_FILE_ENV as SSL_CERT_FILE_ENV,
+    )
+    from config.constants.tool_discovery import (
+        DISCOVERY_DETAIL_KEYS_KEY as DISCOVERY_DETAIL_KEYS_KEY,
+    )
+    from config.constants.tool_discovery import (
+        DISCOVERY_PROGRESS_KEY as DISCOVERY_PROGRESS_KEY,
+    )
+    from config.constants.tool_discovery import (
+        INITIAL_TOOL_CATALOG_LIMIT as INITIAL_TOOL_CATALOG_LIMIT,
+    )
+    from config.constants.tool_discovery import (
+        INITIAL_TOOL_CATALOG_ORDER as INITIAL_TOOL_CATALOG_ORDER,
+    )
+    from config.constants.tool_discovery import (
+        INITIAL_TOOL_SCHEMA_TOKEN_LIMIT as INITIAL_TOOL_SCHEMA_TOKEN_LIMIT,
+    )
+    from config.constants.tool_discovery import (
+        MAX_STAGNANT_DISCOVERY_ITERATIONS as MAX_STAGNANT_DISCOVERY_ITERATIONS,
+    )
+    from config.constants.tool_discovery import (
+        MODEL_ONLY_PRESENTATION_KEY as MODEL_ONLY_PRESENTATION_KEY,
+    )
+    from config.constants.tool_discovery import (
+        SESSION_GOAL_CONTROL_TOOL_NAMES as SESSION_GOAL_CONTROL_TOOL_NAMES,
+    )
+    from config.constants.tool_discovery import (
+        TOOL_DISCOVERY_STATE_DENIED as TOOL_DISCOVERY_STATE_DENIED,
+    )
+    from config.constants.tool_discovery import (
+        TOOL_DISCOVERY_STATE_MATCHED as TOOL_DISCOVERY_STATE_MATCHED,
+    )
+    from config.constants.tool_discovery import (
+        TOOL_DISCOVERY_STATE_MISSING_CONFIG as TOOL_DISCOVERY_STATE_MISSING_CONFIG,
+    )
+    from config.constants.tool_discovery import (
+        TOOL_DISCOVERY_STATE_MISSING_DATA as TOOL_DISCOVERY_STATE_MISSING_DATA,
+    )
+    from config.constants.tool_discovery import (
+        TOOL_DISCOVERY_STATE_NO_MATCH as TOOL_DISCOVERY_STATE_NO_MATCH,
+    )
+    from config.constants.tool_discovery import (
+        TOOL_DISCOVERY_STATE_TRANSPORT_FAILURE as TOOL_DISCOVERY_STATE_TRANSPORT_FAILURE,
+    )
+    from config.constants.tool_discovery import (
+        TOOL_FAILURE_STATE_KEY as TOOL_FAILURE_STATE_KEY,
+    )
+    from config.constants.tool_discovery import TOOL_FAILURE_STATES as TOOL_FAILURE_STATES
+    from config.constants.tool_discovery import (
+        TOOL_SEARCH_MAX_RESULTS as TOOL_SEARCH_MAX_RESULTS,
+    )
+    from config.constants.tool_discovery import TOOL_SEARCH_NAME as TOOL_SEARCH_NAME
+    from config.constants.tool_output import (
+        DEFAULT_TOOL_OUTPUT_TOKENS as DEFAULT_TOOL_OUTPUT_TOKENS,
+    )
+    from config.constants.tool_output import (
+        OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV as OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_BYTES_PER_TOKEN as TOOL_OUTPUT_BYTES_PER_TOKEN,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_CAPTURE_MAX_BYTES as TOOL_OUTPUT_CAPTURE_MAX_BYTES,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_HISTORY_DENOMINATOR as TOOL_OUTPUT_HISTORY_DENOMINATOR,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_HISTORY_NUMERATOR as TOOL_OUTPUT_HISTORY_NUMERATOR,
+    )
+    from config.constants.tool_output import (
+        TOOL_OUTPUT_PERSIST_MAX_BYTES as TOOL_OUTPUT_PERSIST_MAX_BYTES,
     )
     from config.constants.tooling import (
         CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS as CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS,

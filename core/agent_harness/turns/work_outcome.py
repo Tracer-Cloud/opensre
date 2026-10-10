@@ -34,6 +34,16 @@ class ExecutedToolOutcome:
     details: Any
 
 
+def counts_toward_work(event: ToolExecutionEndEvent) -> bool:
+    """True when this call is evidence for the goal gate.
+
+    Successful model-only discovery stays hidden. A failed model-only call
+    still counts: ``skill_view(reference=...)`` is step work, and hiding that
+    error lets the turn accept a conclusion.
+    """
+    return not (bool(event.data.get("model_only")) and not event.is_error)
+
+
 def tap_executed_tool_outcomes(
     inner: RuntimeEventCallback | None,
     outcomes: list[ExecutedToolOutcome],
@@ -45,7 +55,11 @@ def tap_executed_tool_outcomes(
     """
 
     def _callback(event: RuntimeEvent) -> None:
-        if isinstance(event, ToolExecutionEndEvent) and not event.data.get("skipped"):
+        if (
+            isinstance(event, ToolExecutionEndEvent)
+            and not event.data.get("skipped")
+            and counts_toward_work(event)
+        ):
             outcomes.append(
                 ExecutedToolOutcome(
                     name=event.tool_name,
@@ -156,6 +170,7 @@ def format_outcomes_for_review(outcomes: Sequence[ExecutedToolOutcome]) -> str:
 
 __all__ = [
     "ExecutedToolOutcome",
+    "counts_toward_work",
     "format_outcomes_for_review",
     "last_work_classified",
     "last_work_needs_setup",

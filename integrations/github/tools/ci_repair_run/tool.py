@@ -419,6 +419,7 @@ def _finish_scheduled(
     name="run_ci_repair_demo",
     source="github",
     display_name="Run CI repair demo",
+    compact_description="Run the bounded private GitHub CI repair demo end to end.",
     use_cases=["Run the bounded private CI repair demo through seed, repair, and evidence"],
     description=(
         "Seed one private CI repair demo, schedule repair of the pull request it returns, "

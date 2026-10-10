@@ -42,7 +42,7 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and clone the repository (see [SETUP.md](SETUP.md) for Windows and alternatives)
 2. Install dependencies: `make install`
-3. Run checks: `make lint && make format-check && make typecheck && make test-cov`
+3. Follow the validation workflow in [CI.md](CI.md).
     - When invoking the CLI from your checkout, prefer **`uv run opensre …`** (see `SETUP.md` troubleshooting if another `opensre` shadows `.venv`).
 4. Build release artifacts when needed: `make build`
 
@@ -119,18 +119,11 @@ verification) follow [docs/adding-tools-and-integrations.md](docs/adding-tools-a
 - **No Inline Tests:** Avoid adding `*_test.py` files directly inside source packages. We are phasing out existing inline tests to keep the core logic clean.
 - Bug fixes should include a test that would have caught the bug
 - New features should have corresponding tests
-- Aim for >80% code coverage (run `make test-cov` to check)
+- Aim for >80% code coverage; `make test-cov` is available for an optional local report.
 
-### 4. Run Local Checks (Required Before PR)
+### 4. Validate Changes
 
-```bash
-make lint          # ruff: check code style
-make format-check  # ruff: check formatting (read-only)
-make typecheck     # mypy: check type annotations
-make test-cov      # pytest: run tests with coverage report
-```
-
-All four must pass. **CI will block merging if any fail.**
+See [CI.md](CI.md) for local validation, required PR checks, and review follow-through.
 
 ### Run one focused test
 
@@ -161,7 +154,7 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 ### PR Checklist Before Submitting
 
 - Linked to the relevant issue
-- All local checks pass: `make lint && make format-check && make typecheck && make test-cov`
+- Followed [CI.md](CI.md) and reported validation results in the PR.
 - Added tests for bug fixes or new features
 - Updated documentation if behavior changed
 - Code follows project style (see **Code Quality** section below)
@@ -170,21 +163,9 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 
 ### Greptile Code Review
 
-We use [Greptile](https://greptile.com) for automated code review. Before a PR can be merged it must reach a **5/5 confidence score** with zero unresolved comments.
-
-**How Greptile, human review, and CI fit together:** see the public
+See [CI.md §8](CI.md#8-post-pr-follow-through) for review triggers and merge
+requirements. For an overview of automated and human review, see the
 [Pull request review flow](docs/guides/pr-review-flow.mdx) guide.
-
-**Trigger a review** by posting this comment on your PR:
-
-```
-@greptile review
-```
-
-Give it about **5–10 minutes** (sometimes longer), then address each comment and
-re-trigger until you hit 5/5.
-
-> **Automate the loop** — the [greploop skill](https://skills.sh/greptileai/skills/greploop) handles triggering, waiting, fixing, and re-reviewing automatically until 5/5 is reached.
 
 ### If Your PR Includes Screenshots or Logs
 
@@ -223,15 +204,6 @@ We use:
 - **mypy** for strict type checking
 - **Black-compatible** formatting (4-space indents)
 - **pytest** for testing with coverage tracking
-
-Run these before every commit:
-
-```bash
-make lint          # Auto-fixes many style issues
-make format-check  # Checks formatting without modifying files
-make typecheck     # Catches type errors
-make test-cov      # Ensures tests pass and coverage is tracked
-```
 
 To verify the package can be shipped, run:
 

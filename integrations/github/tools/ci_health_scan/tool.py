@@ -126,6 +126,7 @@ def _clean_owners(owners: Any) -> list[str]:
     name=TOOL_NAME,
     source=_SOURCE,
     display_name="Scan CI health across repositories",
+    compact_description="Find failing GitHub checks across owners, repositories, PRs, and branches.",
     description=(
         "Find every open pull request and branch whose head commit has a failing check, "
         "across all repositories of one or more GitHub owners in a single call. Without "

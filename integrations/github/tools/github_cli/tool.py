@@ -90,6 +90,7 @@ def _normalize_args(args: list[str] | None) -> list[str]:
 @tool(
     name="github_cli",
     source="github",
+    compact_description="Run authenticated GitHub CLI commands for repository, issue, and PR work.",
     description=(
         "Run GitHub CLI (`gh`) with OpenSRE-configured auth — reads and writes. "
         "Use for issue/PR create, list, view, assign, label, merge, repo list, "

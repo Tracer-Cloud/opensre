@@ -155,6 +155,7 @@ def seed_ci_repair_demo(
     name="finish_ci_repair_demo",
     source="github",
     display_name="Finish CI repair demo",
+    compact_description="Save CI repair demo evidence and remove its scheduled repair task.",
     use_cases=["Save CI repair demo evidence and remove its scheduled task"],
     description=(
         "Write demo evidence under ~/.opensre/demo-results/ for the approved owner/repo, "

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from rich.console import Console
 from rich.markup import escape
 
+from config.cli_command_choices import CLI_COMMAND_CHOICES
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import ERROR
@@ -170,11 +171,15 @@ def _command_text(command: SlashCommand) -> str | None:
     browser should offer the same choice the composer tray offers while typing
     it, not silently run whichever subcommand happens to be the default.
     """
+    path: tuple[str, ...] = (command.name,)
     options = _subcommand_options(command)
-    if not options:
-        return command.name
-    chosen = repl_choose_subcommand(parent=command.name, options=options)
-    return None if chosen is None else f"{command.name} {chosen}"
+    while options:
+        chosen = repl_choose_subcommand(parent=" ".join(path), options=options)
+        if chosen is None:
+            return None
+        path = (*path, chosen)
+        options = CLI_COMMAND_CHOICES.get(path, ())
+    return " ".join(path)
 
 
 def _cmd_help(_session: Session, console: Console, args: list[str]) -> bool:

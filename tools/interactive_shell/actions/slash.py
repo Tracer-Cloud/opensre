@@ -7,6 +7,7 @@ from typing import Any
 
 from rich.markup import escape
 
+from config.command_inputs import needs_command_input
 from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.spi.session_state import (
     arm_setup_resume,
@@ -37,7 +38,7 @@ from tools.interactive_shell.shared.slash_catalog import (
 # literal keystrokes. Defer them through ``set_auto_command`` so the loop
 # re-dispatches the command as a deterministic turn it runs with exclusive stdin.
 _INTERACTIVE_PICKER_MENUS: frozenset[str] = frozenset(
-    {"/auth", "/choose", "/login", "/sessions", "/tools"}
+    {"/auth", "/choose", "/cron", "/login", "/sessions", "/tools"}
 )
 _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
@@ -73,6 +74,8 @@ def _slash_drives_interactive_picker(
         return False
     if not ports.tty_interactive():
         return False
+    if needs_command_input(name, slash_args):
+        return True
     if name == "/login":
         return True
     if not slash_args:
@@ -337,6 +340,7 @@ def run_slash(*, command: str, args: list[str] | None = None, context: Any) -> d
 
 slash_invoke_tool = RegisteredTool(
     name="slash_invoke",
+    compact_description="Run an OpenSRE interactive slash command.",
     description=slash_invoke_tool_description(),
     input_schema=slash_invoke_input_schema(),
     source="interactive_shell",

@@ -22,9 +22,8 @@ from surfaces.interactive_shell.ui import (
     DIM,
     ERROR,
     HIGHLIGHT,
-    print_repl_table,
-    repl_table,
 )
+from surfaces.interactive_shell.ui.memory import render_memories
 
 
 def _disabled_notice(console: Console) -> bool:
@@ -44,23 +43,10 @@ def _show_list(console: Console) -> bool:
         )
         return True
 
-    table = repl_table(title="Long-term memory\n", title_style=BOLD_BRAND)
-    table.add_column("name", style="bold")
-    table.add_column("type", style=DIM)
-    table.add_column("description", overflow="fold")
-    table.add_column("updated", style=DIM)
-    for record in records:
-        table.add_row(
-            escape(record.slug),
-            record.memory_type,
-            escape(record.description),
-            record.updated_at[:10],
-        )
-    print_repl_table(console, table)
+    render_memories(console, records)
     console.print(
-        f"[{DIM}]stored unencrypted in {memory_dir()} — edit or delete the files "
-        f"directly, or use[/] [{HIGHLIGHT}]/memory forget <name>[/][{DIM}]. "
-        f"Disable with {OPENSRE_MEMORY_DISABLED_ENV}=1.[/]"
+        f"[{DIM}]stored unencrypted ·[/] [{HIGHLIGHT}]/memory path[/] "
+        f"[{DIM}]·[/] [{HIGHLIGHT}]/memory forget <name>[/]"
     )
     return True
 
@@ -108,6 +94,8 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  #
         return _show_list(console)
 
     sub = args[0].lower()
+    if sub == "list":
+        return _show_list(console)
     if sub == "show":
         return _show_one(console, args[1:])
     if sub == "forget":
@@ -115,11 +103,12 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  #
     if sub == "path":
         return _show_path(console)
 
-    console.print(f"[{ERROR}]usage:[/] /memory [show <name>|forget <name>|path]")
+    console.print(f"[{ERROR}]usage:[/] /memory [list|show <name>|forget <name>|path]")
     return True
 
 
 _MEMORY_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("list", "list stored memories"),
     ("show", "print one memory in full (/memory show <name>)"),
     ("forget", "delete one memory (/memory forget <name>)"),
     ("path", "print the memory directory path"),
@@ -132,6 +121,7 @@ COMMANDS: list[SlashCommand] = [
         _cmd_memory,
         usage=(
             "/memory",
+            "/memory list",
             "/memory show <name>",
             "/memory forget <name>",
             "/memory path",
@@ -139,6 +129,7 @@ COMMANDS: list[SlashCommand] = [
         notes=(
             "Memories are plain markdown files under ~/.opensre/memory; "
             "edit or delete them directly at any time.",
+            f"Disable memory with {OPENSRE_MEMORY_DISABLED_ENV}=1.",
         ),
         first_arg_completions=_MEMORY_FIRST_ARGS,
     ),

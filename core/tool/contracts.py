@@ -299,6 +299,7 @@ class ToolMetadata(StrictConfigModel):
 
     name: str
     description: str
+    compact_description: str | None = None
     display_name: str | None = None
     input_schema: dict[str, Any]
     source: EvidenceSource
@@ -317,7 +318,7 @@ class ToolMetadata(StrictConfigModel):
         description="Declares which structured retrieval controls this tool supports",
     )
 
-    @field_validator("name", "description", "display_name")
+    @field_validator("name", "description", "compact_description", "display_name")
     @classmethod
     def _require_non_empty_strings(cls, value: str | None) -> str | None:
         if value is None:
@@ -352,6 +353,7 @@ class BaseTool(ABC):
 
     name: ClassVar[str]
     description: ClassVar[str]
+    compact_description: ClassVar[str | None] = None
     display_name: ClassVar[str | None] = None
     input_schema: ClassVar[dict[str, Any]]  # JSON Schema — consumed by LLM planner
     input_model: ClassVar[type[BaseModel] | None] = None
@@ -385,6 +387,7 @@ class BaseTool(ABC):
         metadata = cls.metadata()
         cls.name = metadata.name
         cls.description = metadata.description
+        cls.compact_description = metadata.compact_description
         cls.display_name = metadata.display_name
         cls.input_schema = metadata.input_schema
         cls.source = metadata.source
@@ -411,6 +414,7 @@ class BaseTool(ABC):
             {
                 "name": getattr(cls, "name", ""),
                 "description": getattr(cls, "description", ""),
+                "compact_description": getattr(cls, "compact_description", None),
                 "display_name": getattr(cls, "display_name", None),
                 "input_schema": getattr(cls, "input_schema", {}),
                 "source_id": getattr(cls, "source_id", None),
@@ -491,6 +495,7 @@ class RegisteredTool:
     input_schema: dict[str, Any]
     source: EvidenceSource
     run: Callable[..., Any] = field(repr=False)
+    compact_description: str | None = None
     display_name: str | None = None
     source_id: str | None = None
     evidence_type: EvidenceType | None = None
@@ -530,6 +535,7 @@ class RegisteredTool:
             {
                 "name": self.name,
                 "description": self.description,
+                "compact_description": self.compact_description,
                 "display_name": self.display_name,
                 "input_schema": self.input_schema,
                 "source": self.source,
@@ -548,6 +554,7 @@ class RegisteredTool:
         )
         self.name = metadata.name
         self.description = metadata.description
+        self.compact_description = metadata.compact_description
         self.display_name = metadata.display_name
         self.input_schema = metadata.input_schema
         self.source = metadata.source
@@ -618,6 +625,7 @@ class RegisteredTool:
         cls,
         tool: BaseTool,
         *,
+        compact_description: str | None = None,
         surfaces: Iterable[ToolSurface] | None = None,
         retrieval_controls: RetrievalControls | None = None,
         tags: tuple[str, ...] | None = None,
@@ -645,6 +653,11 @@ class RegisteredTool:
         return cls(
             name=metadata.name,
             description=metadata.description,
+            compact_description=(
+                compact_description
+                if compact_description is not None
+                else metadata.compact_description
+            ),
             display_name=metadata.display_name,
             input_schema=resolved_input_schema,
             source=metadata.source,
@@ -699,6 +712,7 @@ class RegisteredTool:
         *,
         name: str | None = None,
         description: str | None = None,
+        compact_description: str | None = None,
         display_name: str | None = None,
         input_schema: dict[str, Any] | None = None,
         input_model: type[BaseModel] | None = None,
@@ -741,6 +755,7 @@ class RegisteredTool:
         return cls(
             name=name or func.__name__,
             description=description or inferred_description,
+            compact_description=compact_description,
             display_name=display_name,
             input_schema=resolved_input_schema,
             source=source,

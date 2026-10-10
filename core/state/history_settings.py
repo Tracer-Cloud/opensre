@@ -6,7 +6,6 @@ import os
 
 from config.constants.conversation_history import (
     DEFAULT_HISTORY_TOKEN_BUDGET,
-    DEFAULT_HISTORY_TOOL_RESULT_CHARS,
     OPENSRE_HISTORY_TOKEN_BUDGET_ENV,
     OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV,
     OPENSRE_LLM_COMPACTION_ENV,
@@ -47,13 +46,10 @@ def history_token_budget() -> int:
     )
 
 
-def history_tool_result_chars() -> int:
-    """Characters of one tool result kept when a turn is recorded."""
-    return _positive_int(
-        OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV,
-        DEFAULT_HISTORY_TOOL_RESULT_CHARS,
-        _MIN_TOOL_RESULT_CHARS,
-    )
+def history_tool_result_chars() -> int | None:
+    """Return an explicit legacy character cap; otherwise use the tool output policy."""
+    raw = os.getenv(OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV, "").strip()
+    return max(_MIN_TOOL_RESULT_CHARS, int(raw)) if raw.isdigit() else None
 
 
 __all__ = [

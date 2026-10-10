@@ -11,6 +11,7 @@ def test_base_envelope_without_optional_fields() -> None:
         "source": "posthog_mcp",
         "available": False,
         "error": "not configured",
+        "failure_state": "missing_config",
     }
 
 
@@ -57,6 +58,7 @@ def test_all_fields_together() -> None:
         "source": "sentry_mcp",
         "available": False,
         "error": "tool call failed",
+        "failure_state": "missing_config",
         "tool": "get_issue",
         "arguments": {"issue_id": "42"},
     }

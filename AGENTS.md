@@ -56,26 +56,8 @@ into the skill.
 
 ## CI failures and tests (mandatory — every PR / push)
 
-Agents **must** close the loop on CI and tests. Do not treat "pushed a fix" or "opened a PR" as done.
-
-1. **After every push** to a branch with an open PR, run:
-   ```bash
-   gh pr checks --watch
-   # or: gh pr view --json statusCheckRollup,url
-   ```
-2. **On any failure** (`CI Gate`, `quality`, `test (*)`, import graph, etc.):
-   - Pull the failing job log (`gh run view <id> --log-failed`).
-   - Fix the root cause in product or test code (not by skipping / constant-condition toggles).
-   - Re-run the **focused** local commands from [CI.md](CI.md) for the touched modules, then push.
-   - Re-check `gh pr checks` until required jobs are green (or skipped for docs-only).
-3. **Tests that fail under CI load** (xdist, barriers, fan-out concurrency) are real bugs in the test harness — harden synchronization; do not ignore flakes.
-4. **Import / API-border failures** (`check_imports.py`, `test_integrations_api_border`) mean the wrong module edge was used — import the package API allowlisted in `.importlinter.strict` / the border allowlist, not an internal leaf, unless the ignore list explicitly names that edge.
-5. Keep monitoring until merge requirements in [CI.md §8](CI.md) (green checks + Greptile 5/5) are met.
-6. After merge, monitor the merge commit's `main` CI, full CodeQL, and release
-   workflows. A post-merge failure is unfinished delivery: fix or revert it
-   before reporting completion.
-
-The Cursor project hook [`.cursor/hooks/check-ci-failures.sh`](.cursor/hooks/check-ci-failures.sh) (wired in `.cursor/hooks.json`) re-injects this checklist on agent stop when the current branch's PR has failing checks — treat that follow-up as blocking work, not a suggestion.
+Follow [CI.md](CI.md) for local validation and PR follow-through. Do not add
+broader local validation requirements beyond that policy.
 
 ## Build and Run commands
 
@@ -85,6 +67,7 @@ The Cursor project hook [`.cursor/hooks/check-ci-failures.sh`](.cursor/hooks/che
 
 ## Code Style
 
+- **CLI/UI inputs:** Clearly mark required/optional fields and defaults, validate all values consistently across forms and direct commands before saving, and preserve entered values when showing actionable errors.
 - Use strict typing, follow DRY principle
 - One clear purpose per file (separation of concerns)
 - Keep every Python `__init__.py` as a lightweight package facade: declare the
@@ -218,6 +201,10 @@ asymptotic need, and no more.
 
 ### File placement (all packages)
 
+For CLI, REPL, and shared-terminal presentation changes, read
+[`surfaces/interactive_shell/ui/AGENTS.md`](surfaces/interactive_shell/ui/AGENTS.md)
+for the shared design and visual-verification conventions.
+
 When adding or changing behavior, put code in the **owning module first** — not the nearest
 shared file that already imports something similar.
 
@@ -254,8 +241,6 @@ that already serves multiple providers, stop and extract a dedicated module inst
 Persistence ownership, storage package layout, migration boundaries, and concurrency
 requirements follow [PERSISTENCE.md](PERSISTENCE.md).
 
-Before any push or PR creation follow [**CI.md**](CI.md) — lint, format, typecheck, and test commands all live there.
-
 When opening a PR, fill out the [**PR template**](.github/PULL_REQUEST_TEMPLATE.md) — it is not optional boilerplate; it has a required AI-usage disclosure section.
 
 ## 1. Repo Map
@@ -281,7 +266,7 @@ When opening a PR, fill out the [**PR template**](.github/PULL_REQUEST_TEMPLATE.
 | `docs/tool-placement-policy.md`               | Decision rule for where a tool lives: `integrations/<vendor>/tools/` vs. `tools/system/` vs. `tools/cross_vendor/` vs. `surfaces/shared/`.                                                                                                                                                                                             |
 | `docs/NAMING.md`                              | Naming conventions for `core/`: the glossary (State/Snapshot/RunInput/RunResult/Slice/Resources/Budget), the `{domain}_{role}.py` file rule, type naming (`Mixin` suffix, role-named Protocols, no package-name prefix), and anti-patterns.                                                                                            |
 | `SETUP.md`                                    | Machine setup (all platforms, Windows, MCP, troubleshooting).                                                                                                                                                                                                                                                                          |
-| `CI.md`                                       | Mandatory pre-push checklist: lint, format, typecheck, tests — agents MUST follow before pushing.                                                                                                                                                                                                                                      |
+| `CI.md`                                       | Fast local push checks, focused development tests, and mandatory remote CI follow-through.                                                                                                                                                                                                                                      |
 | `CONTRIBUTING.md`                             | Contribution workflow, branch/PR guidance, and quality expectations.                                                                                                                                                                                                                                                                   |
 
 Main packages one level deeper:

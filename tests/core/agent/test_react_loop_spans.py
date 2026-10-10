@@ -259,6 +259,7 @@ def test_agent_run_writes_operations_log_without_prompt_content(
     events = [record["event"] for record in records]
     assert events == [
         "agent_loop_started",
+        "tool_catalog_snapshot",
         "agent_loop_iteration",
         "agent_loop_finished",
     ]
@@ -268,6 +269,11 @@ def test_agent_run_writes_operations_log_without_prompt_content(
     assert finished["stop_reason"] == "no_tools_needed"
     assert finished["iterations_used"] == 1
     assert finished["final_text_chars"] == len("done")
+    catalog = records[1]["data"]
+    assert catalog["reason"] == "initial"
+    assert catalog["catalog_names"] == []
+    assert catalog["serialized_size_bytes"] > 0
+    assert int(catalog["schema_tokens"]) >= 0
     serialized = json.dumps(records)
     assert "hello secret prompt" not in serialized
     assert '"done"' not in serialized

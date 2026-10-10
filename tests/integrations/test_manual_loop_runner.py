@@ -674,4 +674,7 @@ def test_a_stateless_tick_neither_sees_nor_writes_long_term_memory(
     prompt = "\n".join(seen)
     assert ("opensre-repair-loop-coordination" in prompt) is not stateless
     assert ("Acquire repair.claim" in prompt) is not stateless
-    assert ("memory_remember" in llm.tool_schema_names) is not stateless
+    # A stateful tick keeps memory tools available, in the opening schema or
+    # behind tool_search. A stateless tick drops them before the catalog.
+    offered = "memory_remember" in llm.tool_schema_names or "tool_search" in llm.tool_schema_names
+    assert offered is not stateless

@@ -47,8 +47,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_AUTO_COMPACTION_CHARS = 48_000
 _KEEP_RECENT_MESSAGES = 8
-# Characters of one tool result shown to the summarizer, and of its whole input.
-_SUMMARY_INPUT_RESULT_CHARS = 2_000
+# Characters of the complete summarizer input.
 _SUMMARY_INPUT_MAX_CHARS = 200_000
 
 COMPACTION_PROMPT = """\
@@ -398,9 +397,7 @@ def _render_turns(
                     lines.append(f"Tool call: {call.get('name')} {call.get('input')}")
             elif item.get("kind") == ITEM_TOOL_RESULTS:
                 for result in item.get("results") or ():
-                    content = cap_text(
-                        str(result.get("content") or ""), _SUMMARY_INPUT_RESULT_CHARS
-                    )
+                    content = str(result.get("content") or "")
                     lines.append(f"Tool result ({result.get('name')}): {content}")
         lines.append(f"Assistant: {record.assistant_text}")
         blocks.append("\n".join(lines))

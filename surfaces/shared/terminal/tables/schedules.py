@@ -4,15 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from rich.cells import cell_len
 from rich.console import Console
 from rich.text import Text
 
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import TaskRun
 from infrastructure.terminal.theme import DIM, HIGHLIGHT, WARNING
+from surfaces.shared.terminal.components.rendering import print_repl_renderable
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
+
+
+def schedule_channels(loop: LoopSummary) -> str:
+    """Use the same concise channel labels for CLI and REPL schedules."""
+    return ", ".join(
+        "local" if channel == "interactive_shell" else channel
+        for channel in (loop.channels or (loop.provider.value,))
+    )
 
 
 def print_schedules(
@@ -32,11 +41,8 @@ def print_schedules(
             if loop.enabled and not loop.schedule_error
             else "—"
         )
-        channels = ", ".join(loop.channels) or loop.provider.value
-        details = [
-            Text(f"ID: {loop.id}", style=DIM),
-            Text(f"{channels} · TZ: {loop.timezone}", style=DIM),
-        ]
+        channels = schedule_channels(loop)
+        details: list[Text] = []
         run = latest.get(loop.id)
         if run is None:
             last = (
@@ -59,33 +65,35 @@ def print_schedules(
             )
             if run.work_error_kind:
                 details.append(Text(f"Work detail: {run.work_error_kind}", style=WARNING))
-        if loop.description:
-            details.append(Text(f"What it does: {loop.description}", style=DIM))
-        if loop.schedule_error:
-            details.append(Text(f"Requires action: {loop.schedule_error}", style=WARNING))
+        details.extend(description_details(loop.description))
         rows.append(
             RecordRow(
                 (
                     Text(loop.name or loop.id, style="bold"),
+                    Text(channels),
                     Text(state, style=state_style),
                     Text(loop.cron),
+                    Text(loop.timezone),
                     Text(next_run),
                 ),
                 tuple(details),
+                metadata=(Text(f"ID: {loop.id}", style=DIM),),
             )
         )
-    schedule_width = max(13, max((cell_len(loop.cron) for loop in loops), default=0))
-    console.print(
+    print_repl_renderable(
+        console,
         RecordTable(
             "Scheduled tasks",
             (
                 RecordColumn("Task"),
-                RecordColumn("State", 8),
-                RecordColumn("Schedule", schedule_width),
-                RecordColumn("Next run", 19),
+                RecordColumn("Channel"),
+                RecordColumn("State"),
+                RecordColumn("Schedule"),
+                RecordColumn("TZ"),
+                RecordColumn("Next run"),
             ),
             tuple(rows),
-            subtitle="Run times: UTC",
+            subtitle="Run times: UTC · TZ: schedule timezone",
             caption="History: opensre cron logs <task_id>\nConfiguration: opensre --json cron list",
-        )
+        ),
     )

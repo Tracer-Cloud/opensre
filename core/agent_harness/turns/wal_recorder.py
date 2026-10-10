@@ -18,6 +18,7 @@ import json
 import logging
 from typing import Any
 
+from config.constants.tool_output import TOOL_OUTPUT_PERSIST_MAX_BYTES
 from core.agent_harness.session import default_session_store
 from core.events import (
     RuntimeEvent,
@@ -25,10 +26,9 @@ from core.events import (
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
 )
+from core.tool import truncate_output_text
 
 logger = logging.getLogger(__name__)
-
-_COMMIT_RESULT_MAX_CHARS = 2_000
 
 # Marks WAL commit records so readers can tell them apart from the
 # integration-gathering tool rows that share the ``tool_call`` type.
@@ -37,11 +37,12 @@ WAL_SOURCE = "wal"
 
 def _bounded_result(result: Any) -> str:
     if isinstance(result, str):
-        return result[:_COMMIT_RESULT_MAX_CHARS]
+        return truncate_output_text(result, TOOL_OUTPUT_PERSIST_MAX_BYTES, tokens=False)
     try:
-        return json.dumps(result, ensure_ascii=False, default=str)[:_COMMIT_RESULT_MAX_CHARS]
+        text = json.dumps(result, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
-        return str(result)[:_COMMIT_RESULT_MAX_CHARS]
+        text = str(result)
+    return truncate_output_text(text, TOOL_OUTPUT_PERSIST_MAX_BYTES, tokens=False)
 
 
 def wal_event_recorder(session: Any, *, user_text: str | None = None) -> RuntimeEventCallback:

@@ -9,7 +9,7 @@ export
 	install-gateway-on-new-server destroy-gateway-on-new-server \
 	test test-full test-cov test-scope test-cli-smoke test-grafana \
 	clean lint format-check format typecheck vulture \
-	check-imports check-cycles check-layers check-imports-strict check-layers-strict check pre-push install-hooks help
+	check-imports check-cycles check-layers check-imports-strict check-layers-strict check check-full pre-push install-hooks help
 
 
 ifneq ($(wildcard .venv/bin/python),)
@@ -166,11 +166,15 @@ check-imports-strict:
 
 check-layers-strict: check-imports-strict
 
-# Run the repository pre-push gate (full tests remain a separate explicit target).
+# Run fast local feedback; broader validation remains an explicit target.
 check: pre-push
 
 pre-push:
-	uv run --frozen --extra dev python .github/ci/run_checks.py --scope $(ARGS)
+	uv run --no-sync python .github/ci/run_checks.py --quick $(ARGS)
+
+check-full:
+	uv run --frozen --extra dev python .github/ci/run_checks.py $(ARGS)
+	$(MAKE) test-full
 
 install-hooks:
 	uv run --no-sync python .github/ci/install_hooks.py
@@ -215,5 +219,6 @@ help:
 	@echo "  make typecheck       - Type check with mypy"
 	@echo "  make check-imports   - Import cycles, layers, and direct-edge checks"
 	@echo "  make check-layers-strict - Full transitive layer contracts (.importlinter.strict)"
+	@echo "  make check-full      - All quality checks and full test suite (opt-in)"
 	@echo "  make install-hooks   - Install blocking push validation in this checkout"
-	@echo "  make pre-push        - Shared quality checks and affected tests (60-second target)"
+	@echo "  make pre-push        - Ruff lint and format checks on changed Python files"

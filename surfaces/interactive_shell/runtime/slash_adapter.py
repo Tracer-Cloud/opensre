@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+import shlex
 from collections.abc import Callable
 from typing import Any, Protocol
 
@@ -12,6 +14,7 @@ from surfaces.interactive_shell.command_registry.slash_catalog import (
     slash_invoke_input_schema,
     slash_invoke_tool_description,
 )
+from surfaces.interactive_shell.runtime.exclusive_output import with_exclusive_output
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.telemetry.turn_outcome import (
     format_terminal_turn_outcome,
@@ -119,7 +122,8 @@ class ReplSlashPorts:
         is_tty: bool | None,
         policy_precleared: bool = False,
     ) -> bool:
-        return dispatch_slash(
+        dispatch = functools.partial(
+            dispatch_slash,
             command,
             session,
             console,
@@ -127,6 +131,16 @@ class ReplSlashPorts:
             is_tty=is_tty,
             policy_precleared=policy_precleared,
         )
+        # A list observation can feed the next action in the same agent turn.
+        # Suspend the prompt for rendering instead of ending that turn with a
+        # queued command that loses the remaining work (e.g. remove by task ID).
+        try:
+            is_cron_list = shlex.split(command)[:2] == ["/cron", "list"]
+        except ValueError:
+            is_cron_list = False
+        if is_tty is not False and self.tty_interactive() and is_cron_list:
+            return with_exclusive_output(session, dispatch)
+        return dispatch()
 
 
 class HeadlessSlashPorts(ReplSlashPorts):

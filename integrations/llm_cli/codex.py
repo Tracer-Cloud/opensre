@@ -267,6 +267,10 @@ class CodexAdapter:
                 resolved_model = hosted_route.model
         if resolved_model:
             argv.extend(["-m", resolved_model])
+        if not reasoning_effort:
+            from config.llm_reasoning_effort import model_default_reasoning_effort
+
+            reasoning_effort = model_default_reasoning_effort(resolved_model)
         if reasoning_effort:
             argv.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
 

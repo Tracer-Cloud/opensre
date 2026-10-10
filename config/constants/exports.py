@@ -7,6 +7,7 @@ from config.package_exports import bind_package_exports
 # Re-exported name -> leaf module. Importing this package must not load
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
+    "CLI_HANDOFF_FLAG": "cli_handoff",
     "ANALYTICS_CICD_ENV": "analytics",
     "CONNECT_INTEGRATIONS_HEADING": "skill_prerequisites",
     "GITHUB_INTEGRATION_SETUP_CLI": "github",
@@ -352,6 +353,14 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV": "conversation_history",
     "OPENSRE_LLM_COMPACTION_ENV": "conversation_history",
     "OPENSRE_STRUCTURED_HISTORY_ENV": "conversation_history",
+    # tool output
+    "DEFAULT_TOOL_OUTPUT_TOKENS": "tool_output",
+    "OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV": "tool_output",
+    "TOOL_OUTPUT_BYTES_PER_TOKEN": "tool_output",
+    "TOOL_OUTPUT_CAPTURE_MAX_BYTES": "tool_output",
+    "TOOL_OUTPUT_HISTORY_DENOMINATOR": "tool_output",
+    "TOOL_OUTPUT_HISTORY_NUMERATOR": "tool_output",
+    "TOOL_OUTPUT_PERSIST_MAX_BYTES": "tool_output",
     # memory
     "MEMORY_TOOL_NAMES": "memory",
     "OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV": "memory",
@@ -593,6 +602,25 @@ EXPORTS: dict[str, str] = {
     "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "ToolBlockedBy": "tooling",
     "ToolSkippedBy": "tooling",
+    # tool discovery
+    "DISCOVERY_PROGRESS_KEY": "tool_discovery",
+    "DISCOVERY_DETAIL_KEYS_KEY": "tool_discovery",
+    "INITIAL_TOOL_CATALOG_LIMIT": "tool_discovery",
+    "INITIAL_TOOL_CATALOG_ORDER": "tool_discovery",
+    "INITIAL_TOOL_SCHEMA_TOKEN_LIMIT": "tool_discovery",
+    "MAX_STAGNANT_DISCOVERY_ITERATIONS": "tool_discovery",
+    "MODEL_ONLY_PRESENTATION_KEY": "tool_discovery",
+    "SESSION_GOAL_CONTROL_TOOL_NAMES": "tool_discovery",
+    "TOOL_DISCOVERY_STATE_DENIED": "tool_discovery",
+    "TOOL_DISCOVERY_STATE_MATCHED": "tool_discovery",
+    "TOOL_DISCOVERY_STATE_MISSING_CONFIG": "tool_discovery",
+    "TOOL_DISCOVERY_STATE_MISSING_DATA": "tool_discovery",
+    "TOOL_DISCOVERY_STATE_NO_MATCH": "tool_discovery",
+    "TOOL_DISCOVERY_STATE_TRANSPORT_FAILURE": "tool_discovery",
+    "TOOL_FAILURE_STATE_KEY": "tool_discovery",
+    "TOOL_FAILURE_STATES": "tool_discovery",
+    "TOOL_SEARCH_MAX_RESULTS": "tool_discovery",
+    "TOOL_SEARCH_NAME": "tool_discovery",
     # tracer
     "TRACER_BASE_URL_DEV": "tracer",
     "TRACER_BASE_URL_ENV": "tracer",

@@ -71,15 +71,16 @@ def _apply_completion(
 ) -> bool:
     """Apply a completion and optionally continue into its first-argument choices."""
     buffer.apply_completion(completion)
-    return open_subcommands and _open_subcommand_tray(buffer, completion.text)
+    return open_subcommands and _open_subcommand_tray(buffer, buffer.text)
 
 
 def _open_subcommand_tray(buffer: Buffer, command_name: str) -> bool:
     """Append the command separator and present registered first-argument choices."""
-    subcommands = subcommand_completions(command_name)
+    subcommands = subcommand_completions(command_name.strip())
     if not subcommands:
         return False
-    buffer.insert_text(" ")
+    if not buffer.text.endswith(" "):
+        buffer.insert_text(" ")
     buffer.complete_state = CompletionState(buffer.document, list(subcommands))
     return True
 

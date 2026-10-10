@@ -283,6 +283,7 @@ def _generic_tool_results(result: Any) -> list[tuple[ToolCall, Any]]:
         (tool_call, tool_result)
         for tool_call, tool_result in getattr(result, "tool_results", [])
         if tool_call.name not in SELF_RECORDING_ACTION_TOOL_NAMES
+        and not getattr(tool_result, "model_only", False)
     ]
 
 
@@ -546,7 +547,11 @@ def _self_recording_tools_only(result: Any) -> bool:
     invented without the command's on-screen output (e.g. claiming ``/health``
     was all-green after the report already showed failures).
     """
-    names = [tool_call.name for tool_call, _tool_result in getattr(result, "tool_results", [])]
+    names = [
+        tool_call.name
+        for tool_call, tool_result in getattr(result, "tool_results", [])
+        if not getattr(tool_result, "model_only", False)
+    ]
     return bool(names) and all(name in SELF_RECORDING_ACTION_TOOL_NAMES for name in names)
 
 
@@ -571,7 +576,11 @@ def _grounded_output_tools_only(result: Any) -> bool:
     any skipped step) instead of ending on raw output, matching how a teammate
     would confirm the outcome.
     """
-    names = [tool_call.name for tool_call, _tool_result in getattr(result, "tool_results", [])]
+    names = [
+        tool_call.name
+        for tool_call, tool_result in getattr(result, "tool_results", [])
+        if not getattr(tool_result, "model_only", False)
+    ]
     return bool(names) and all(name in _GROUNDED_OUTPUT_TOOL_NAMES for name in names)
 
 

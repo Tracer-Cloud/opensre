@@ -112,6 +112,22 @@ def _session_with_evidence(turns: int, *, result_chars: int) -> _FakeSession:
     return session
 
 
+def test_summarizer_receives_the_recorded_observation_without_an_extra_cut() -> None:
+    session = _session_with_evidence(12, result_chars=8_000)
+    result = session.agent.turn_evidence[0].items[2]["results"][0]
+    result["content"] = "START\n" + "x" * 4_000 + "\nrun-id-9312\n" + "x" * 4_000 + "\nEND"
+    prompts: list[str] = []
+
+    def summarize(prompt: str) -> str:
+        prompts.append(prompt)
+        return "Retain run-id-9312."
+
+    compacted = compact_session_branch(session, summarizer=summarize)
+
+    assert compacted is not None
+    assert result["content"] in prompts[0]
+
+
 def test_structured_compaction_summarizes_old_turns_and_keeps_recent_evidence() -> None:
     session = _session_with_evidence(12, result_chars=8_000)
     prompts: list[str] = []

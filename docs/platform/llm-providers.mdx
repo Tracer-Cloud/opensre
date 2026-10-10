@@ -86,12 +86,13 @@ Local provider configuration supports custom model IDs for OpenAI, OpenRouter, T
 
 ```bash
 export LLM_PROVIDER=openai
-export OPENAI_REASONING_MODEL=gpt-5.6-sol
-export OPENAI_TOOLCALL_MODEL=gpt-5.6-luna
+export OPENAI_REASONING_MODEL=gpt-6.1-sol
+export OPENAI_TOOLCALL_MODEL=gpt-6.1-sol
 ```
 
-GPT-5.6 has three tiers: `gpt-5.6-sol` (flagship), `gpt-5.6-terra` (balanced),
-and `gpt-5.6-luna` (lower cost). The bare `gpt-5.6` name maps to Sol.
+`gpt-6.1-sol` is the hosted account default. On the native OpenAI SDK and Codex, unset reasoning effort sends extra high (`xhigh`) for that model. LiteLLM and OpenRouter leave effort unset unless you set it. Tool calls on the native OpenAI SDK use the Responses API.
+
+GPT-5.6 remains available as `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`. The bare `gpt-5.6` name maps to Sol.
 
 Override defaults with env vars:
 
@@ -817,6 +818,8 @@ Outside the REPL, set a default with:
 ```bash
 export OPENSRE_REASONING_EFFORT=high   # low | medium | high | xhigh
 ```
+
+On the native OpenAI SDK and Codex, GPT-6.1 Sol sends `xhigh` (extra high) when this variable and `/effort` are both unset. LiteLLM and OpenRouter do not add an effort value.
 
 Session `/effort` overrides this for interactive runs. Implementation:
 [`config/llm_reasoning_effort.py`](https://github.com/Tracer-Cloud/opensre/blob/main/config/llm_reasoning_effort.py).

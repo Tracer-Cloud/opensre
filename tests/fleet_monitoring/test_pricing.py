@@ -145,6 +145,24 @@ class TestGpt56Family:
         assert usd_per_token_blended("openai/gpt-5.6-sol") == usd_per_token_blended("gpt-5.6-sol")
 
 
+class TestGpt61SolPrice:
+    """GPT-6.1 Sol published rates, including the 5% cached-input price."""
+
+    def test_published_rates(self) -> None:
+        from tools.system.fleet_monitoring.pricing import _LOCAL_MODEL_PRICES
+
+        price = _LOCAL_MODEL_PRICES["gpt-6.1-sol"]
+        assert price.usd_per_input_token == pytest.approx(2.00 / 1e6)
+        assert price.usd_per_output_token == pytest.approx(10.00 / 1e6)
+        assert price.usd_per_cache_read_input_token == pytest.approx(0.10 / 1e6)
+        assert price.usd_per_cache_creation_input_token == pytest.approx(2.50 / 1e6)
+
+    def test_bare_alias_and_provider_prefix_resolve_to_sol(self) -> None:
+        assert usd_per_token_blended("gpt-6.1") == usd_per_token_blended("gpt-6.1-sol")
+        assert normalize_model_name("gpt-6.1") == "gpt-6.1-sol"
+        assert usd_per_token_blended("openai/gpt-6.1-sol") == usd_per_token_blended("gpt-6.1-sol")
+
+
 class TestUsdPerHour:
     def test_zero_tokens_per_min_is_zero_cost(self) -> None:
         # An idle agent costs $0/hr — the cell shows ``$0.00``, not

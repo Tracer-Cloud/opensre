@@ -34,6 +34,7 @@ from core.state import TurnEvidence, match_turn_evidence
 from core.state.history_settings import history_tool_result_chars
 from core.state.transcript_window import is_summary_message, summary_text
 from core.state.turn_evidence import ITEM_ASSISTANT, ITEM_TOOL_RESULTS, ITEM_USER, cap_text
+from core.tool import history_replay_byte_budget, truncate_output_text
 from core.tool.execution import public_tool_input
 
 #: Header of the compacted-history message that opens a long conversation.
@@ -97,6 +98,7 @@ def tool_items_from_run(
     transcript tell the same story.
     """
     result_limit = history_tool_result_chars()
+    result_byte_budget = history_replay_byte_budget()
     items: list[dict[str, Any]] = []
     pending_ids: list[str] = []
     for message in messages[history_count + 1 :]:
@@ -120,20 +122,40 @@ def tool_items_from_run(
             )
             pending_ids = call_ids
         elif isinstance(message, ToolResultRuntimeMessage) and pending_ids:
+            hidden_raw = message.metadata.get("model_only_result_indices", ())
+            hidden = {
+                index
+                for index in hidden_raw
+                if isinstance(index, int) and 0 <= index < len(pending_ids)
+            }
+            kept_indices = [index for index in range(len(pending_ids)) if index not in hidden]
+            if not kept_indices:
+                # Discovery observations are scoped to this request. Replaying
+                # them after the next request rebuilds its initial catalog would
+                # describe expansion state that no longer exists.
+                items.pop()
+                pending_ids = []
+                continue
+            original_ids = pending_ids
+            if hidden and items and items[-1].get("kind") == ITEM_ASSISTANT:
+                calls = list(items[-1].get("tool_calls") or ())
+                items[-1]["tool_calls"] = [calls[index] for index in kept_indices]
+            pending_ids = [original_ids[index] for index in kept_indices]
             results = []
-            for index, (call, content) in enumerate(
-                zip(message.tool_calls, message.results, strict=False)
-            ):
-                call_id = (
-                    pending_ids[index]
-                    if index < len(pending_ids)
-                    else replay_call_id(call.id, f"call_{len(items)}_{index}")
-                )
+            pairs = list(zip(message.tool_calls, message.results, strict=False))
+            for result_index, original_index in enumerate(kept_indices):
+                if original_index >= len(pairs):
+                    continue
+                call, content = pairs[original_index]
+                call_id = pending_ids[result_index]
+                text = truncate_output_text(_content_text(content), result_byte_budget)
+                if result_limit is not None:
+                    text = cap_text(text, result_limit)
                 results.append(
                     {
                         "id": call_id,
                         "name": call.name,
-                        "content": cap_text(_content_text(content), result_limit),
+                        "content": text,
                     }
                 )
             if len(results) == len(pending_ids):

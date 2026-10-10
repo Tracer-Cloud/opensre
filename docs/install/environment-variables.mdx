@@ -191,7 +191,7 @@ Want credentials only from the environment, never on disk? Set
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OPENSRE_REASONING_EFFORT` |  | Effort for extended-thinking models: `low`, `medium`, `high`, or `xhigh` |
+| `OPENSRE_REASONING_EFFORT` |  | Effort for extended-thinking models: `low`, `medium`, `high`, or `xhigh`. Unset keeps the provider default, except GPT-6.1 Sol on the native OpenAI SDK and Codex, which sends `xhigh` (extra high) |
 
 ## CLI providers
 
@@ -351,7 +351,7 @@ Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_
 | `OPENSRE_DISABLE_KEYRING` | `0` | Disable local credential storage; credentials must come from the environment |
 | `OPENSRE_ACCOUNT_TOKEN` |  | Personal OpenSRE account token; with `OPENSRE_DISABLE_KEYRING=1`, also set `OPENSRE_APP_URL` |
 | `OPENSRE_APP_URL` | `https://app.opensre.com` | OpenSRE app origin; set it explicitly with an environment-only account token |
-| `OPENSRE_ACCOUNT_LLM_MODEL` | `gpt-5.6-sol` | Model-family hint for a non-interactive hosted gateway using the account LLM route; override only when the web app's hosted model changes family |
+| `OPENSRE_ACCOUNT_LLM_MODEL` | `gpt-6.1-sol` | Model-family hint for a non-interactive hosted gateway using the account LLM route; override only when the web app's hosted model changes family |
 | `OPENSRE_LLM_AUTH_METADATA_PATH` | `~/.opensre/llm-auth.json` | Non-secret LLM auth metadata path used by prompt-safe status checks |
 
 ## Telemetry & Monitoring
@@ -391,7 +391,8 @@ Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OPENSRE_HISTORY_TOKEN_BUDGET` | `48000` | Estimated tokens of conversation history before it is compacted |
-| `OPENSRE_HISTORY_TOOL_RESULT_CHARS` | `8000` | Characters of each tool result kept in conversation history |
+| `OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT` | `10000` | Approximate tokens per tool observation; output keeps its beginning and end, using four UTF-8 bytes per token |
+| `OPENSRE_HISTORY_TOOL_RESULT_CHARS` |  | Optional additional character cap for recorded tool results; unset keeps the tool observation budget with 20% extra space |
 | `OPENSRE_LLM_COMPACTION` | `1` | Set to `0` to compact history without a model-written summary |
 | `OPENSRE_STRUCTURED_HISTORY` | `1` | Set to `0` to send earlier turns as one text block instead of replaying them |
 
