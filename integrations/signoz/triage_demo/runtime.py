@@ -15,7 +15,13 @@ import httpx
 from filelock import FileLock
 
 from config.constants.paths import opensre_home
-from config.constants.triage_demo import DEMO_DISK_BYTES, DEMO_PREFIX, DEMO_RAM_BYTES
+from config.constants.triage_demo import (
+    DEMO_CREDENTIAL_SUFFIXES,
+    DEMO_DISK_BYTES,
+    DEMO_PREFIX,
+    DEMO_RAM_BYTES,
+    demo_credential_ref,
+)
 from config.llm_credentials import delete_credential, resolve_env_credential, save_credential
 from core.domain.alerts.triage.storage import TriageStore
 from integrations.signoz.client import SigNozClient
@@ -209,9 +215,7 @@ class PaymentDemo:
             admin.login()
             key = admin.query_key()
             if not any(s.id == self.id for s in self.store.sources()):
-                ref = (
-                    "OPENSRE_TRIAGE_DEMO_" + self.id.upper().replace("-", "_") + "_WEBHOOK_PASSWORD"
-                )
+                ref = demo_credential_ref(self.id, "WEBHOOK_PASSWORD")
                 password = resolve_env_credential(ref) or secrets.token_urlsafe(32)
                 save_credential(ref, password)
                 source, _ = connect_source(
@@ -234,9 +238,7 @@ class PaymentDemo:
                     or source.query_url != self.signoz_url
                 ):
                     raise ValueError("Demo source changed; inspect it before resuming")
-            password = resolve_env_credential(
-                "OPENSRE_TRIAGE_DEMO_" + self.id.upper().replace("-", "_") + "_WEBHOOK_PASSWORD"
-            )
+            password = resolve_env_credential(demo_credential_ref(self.id, "WEBHOOK_PASSWORD"))
             if not password:
                 raise ValueError("Saved demo webhook credential is unavailable")
             admin.alerts(source.webhook_url, source.username, password)
@@ -336,9 +338,7 @@ class PaymentDemo:
                         self.store.control(source.id, "remove")
                     if source.credential_kind == "owned":
                         delete_credential(source.credential_ref)
-            for suffix in ("ADMIN_PASSWORD", "QUERY_KEY", "WEBHOOK_PASSWORD"):
-                delete_credential(
-                    "OPENSRE_TRIAGE_DEMO_" + self.id.upper().replace("-", "_") + "_" + suffix
-                )
+            for suffix in DEMO_CREDENTIAL_SUFFIXES:
+                delete_credential(demo_credential_ref(self.id, suffix))
             self.save("cleaned")
             return self.status()

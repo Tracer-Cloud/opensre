@@ -1,4 +1,4 @@
-"""Release pins for the disposable SigNoz auto-triage demonstration."""
+"""Release pins and credential names for the disposable SigNoz triage demo."""
 
 DEMO_SIGNOZ_VERSION = "v0.145.0"
 DEMO_COLLECTOR_VERSION = "0.144.10"
@@ -16,3 +16,10 @@ DEMO_RAM_BYTES = 8 * 1024**3
 DEMO_DISK_BYTES = 15 * 1024**3
 DEMO_LABEL = "io.opensre.triage.demo"
 DEMO_PREFIX = "opensre-triage-"
+DEMO_CREDENTIAL_PREFIX = "OPENSRE_TRIAGE_DEMO_"
+DEMO_CREDENTIAL_SUFFIXES = ("ADMIN_PASSWORD", "QUERY_KEY", "WEBHOOK_PASSWORD")
+
+
+def demo_credential_ref(identifier: str, suffix: str) -> str:
+    """Use the same saved secret names for setup, resume, and cleanup."""
+    return f"{DEMO_CREDENTIAL_PREFIX}{identifier.upper().replace('-', '_')}_{suffix}"

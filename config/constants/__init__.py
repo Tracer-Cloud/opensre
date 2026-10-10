@@ -1712,6 +1712,8 @@ if TYPE_CHECKING:
 
 if TYPE_CHECKING:
     from config.constants.triage_demo import DEMO_COLLECTOR_VERSION as DEMO_COLLECTOR_VERSION
+    from config.constants.triage_demo import DEMO_CREDENTIAL_PREFIX as DEMO_CREDENTIAL_PREFIX
+    from config.constants.triage_demo import DEMO_CREDENTIAL_SUFFIXES as DEMO_CREDENTIAL_SUFFIXES
     from config.constants.triage_demo import DEMO_DISK_BYTES as DEMO_DISK_BYTES
     from config.constants.triage_demo import DEMO_FOUNDRY_CHECKSUMS as DEMO_FOUNDRY_CHECKSUMS
     from config.constants.triage_demo import DEMO_FOUNDRY_VERSION as DEMO_FOUNDRY_VERSION
@@ -1722,3 +1724,4 @@ if TYPE_CHECKING:
     from config.constants.triage_demo import DEMO_PREFIX as DEMO_PREFIX
     from config.constants.triage_demo import DEMO_RAM_BYTES as DEMO_RAM_BYTES
     from config.constants.triage_demo import DEMO_SIGNOZ_VERSION as DEMO_SIGNOZ_VERSION
+    from config.constants.triage_demo import demo_credential_ref as demo_credential_ref

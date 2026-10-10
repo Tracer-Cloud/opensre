@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from config.constants.triage_demo import demo_credential_ref
 from config.llm_credentials import resolve_env_credential, save_credential
 
 
@@ -35,7 +36,7 @@ class DemoAdmin:
 
     def login(self) -> None:
         """Register once on the owned fresh stack; resume using the saved credential."""
-        ref = f"OPENSRE_TRIAGE_DEMO_{self.namespace.upper().replace('-', '_')}_ADMIN_PASSWORD"
+        ref = demo_credential_ref(self.namespace, "ADMIN_PASSWORD")
         password = resolve_env_credential(ref)
         if not password:
             password = secrets.token_urlsafe(32)
@@ -67,7 +68,7 @@ class DemoAdmin:
 
     def query_key(self) -> str:
         """Grant only signoz-viewer and mint a separately saved service-account key."""
-        ref = f"OPENSRE_TRIAGE_DEMO_{self.namespace.upper().replace('-', '_')}_QUERY_KEY"
+        ref = demo_credential_ref(self.namespace, "QUERY_KEY")
         name = self.namespace + "-viewer"
         accounts = self.request("GET", "/api/v1/service_accounts")
         account = next((a for a in accounts if a["name"] == name), None)
