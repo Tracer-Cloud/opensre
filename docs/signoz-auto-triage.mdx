@@ -1,0 +1,151 @@
+---
+title: "SigNoz automatic alert triage"
+description: "Connect authenticated alerts and run bounded automatic investigations"
+---
+
+`/triage` opens the interactive-shell menu. The equivalent terminal commands
+start with `opensre triage`. The gateway owns investigations; closing the shell
+does not stop accepted work. Run `opensre gateway start` for live intake.
+
+## Local payment-error demonstration
+
+Start `/triage demo` (or `opensre triage demo`). It prepares an isolated SigNoz
+stack using official Foundry and a pinned OpenTelemetry demo, provisions an
+admin for setup and a **viewer-only** service account for queries, configures a
+native webhook and a payment-error-span alert, verifies a healthy synthetic
+checkout and queryable baseline traces, enables `paymentFailure`, and waits for
+a real alert and the gateway's automatic report. The investigator receives the
+alert and scoped telemetry; it does not receive the injected-fault setting.
+
+Requirements: an existing Docker daemon and Compose v2, Linux/macOS or Linux in
+WSL on amd64/arm64, at least 8 GiB Docker RAM and 15 GiB free disk, Internet
+access to upstream release downloads/container registries, and a configured
+OpenSRE model. Model calls can incur your provider's normal charges. Setup does
+not install Docker, change paging, configure a tunnel, or install a service at
+boot. An existing gateway is reused; otherwise the normal gateway daemon is
+started. Its normal authentication still protects generic remote `/alerts` and
+prompt intake. The demo's native endpoint always requires source Basic auth.
+Run the disposable demo from a local installation with credential storage enabled.
+
+The shell returns after three seconds while setup continues. Read the printed
+demo ID and use:
+
+```text
+/triage demo status <demo-id>
+/triage list
+/triage show <occurrence-id>
+/triage demo reset <demo-id>
+/triage demo cleanup <demo-id>
+```
+
+`reset` disables the fault, verifies checkout recovery, and waits for the real
+SigNoz resolved notification. Evaluation and notification-group timing can take
+several minutes. A timeout records the last successful stage; inspect status and
+resume setup with `/triage demo --id <demo-id>`. Completed setup is idempotent.
+Resuming the `resetting` stage continues recovery with the fault disabled.
+`cleanup` removes only the manifest's validated, namespace-owned Compose
+containers/networks/volumes and demo credentials. It retains reports and leaves
+the gateway running. It never prunes Docker or removes unrelated resources.
+
+Application and SigNoz UI ports bind loopback; OTLP is internal to the dedicated
+network. Host filesystem and Docker-socket telemetry mounts are removed. Raw-PII
+emission stays disabled, and checkouts use synthetic fixture data. Image tags are
+resolved to digests before launching, and those digests are saved in the demo
+manifest.
+
+Release inputs: Foundry **v0.3.0** (platform release checksums), SigNoz
+**v0.145.0**, SigNoz collector **0.144.10** (collector versions do not track
+SigNoz application versions one-to-one), and OpenTelemetry demo **3.1.0** source
+commit `dedc0178918e260823323b8d95005a8cb924b007`. Downloads are checksum checked
+before extraction/execution. Missing tags, pull failures, or incompatible APIs
+stop setup with a resumable checkpoint; they do not silently substitute latest.
+Real Docker/model E2E verification is performed separately by the operator.
+
+## Guided connection to your SigNoz
+
+Choose `/triage connect`. The form requires a source name, query URL, exact
+allowed service names, and the gateway ingress URL **reachable from SigNoz**.
+The existing SigNoz query URL/key can be reused, but the source is independent
+of ordinary chat integrations. Use a query-only service-account key. An empty
+scoped query proves API access, not the presence of telemetry.
+
+For noninteractive setup, place the query key in a credential/environment name,
+then run (do not put the key itself on the command line):
+
+```sh
+opensre triage connect --name payments \
+  --query-url https://your-signoz.example \
+  --services payment,checkout,frontend \
+  --ingress-url https://your-gateway.example \
+  --api-key-env SIGNOZ_API_KEY
+```
+
+For a deployed gateway or an environment-only installation, reuse a managed
+SigNoz integration or provide `--api-key-env` with a key supplied to the gateway
+after every restart. Do not use a temporary shell export that the gateway cannot
+read. Configure managed keys through your existing deployment controls.
+
+OpenSRE verifies a scoped query and shows the source-specific webhook URL,
+username, and random password once. Save them in SigNoz's Webhook notification
+channel with Basic auth and **Send resolved** enabled. Choose this channel on
+the alerts you want investigated; your existing paging policy stays under your
+control. Remote live ingress requires your own
+HTTPS endpoint. Localhost HTTP works only when SigNoz can actually reach that
+host; localhost inside a container points to that container.
+
+Use SigNoz's channel Test and `/triage status` to check delivery. Query readiness,
+webhook delivery, and gateway-worker liveness are separate status fields. The
+native SigNoz test notification confirms delivery and does not create an incident
+or spend a model budget. Then verify a genuine alert reaches `/triage list`.
+
+## Reports, follow-ups, and controls
+
+- `/triage show <occurrence-id>` shows the current alert lifecycle, all report
+  revisions, query windows/payloads, and separate stored evidence.
+- `/triage ask <occurrence-id> "Which evidence is missing?"` queues a restricted
+  follow-up using the same source/service authority and a new bounded budget.
+- `/triage pause <source-id>` records incoming lifecycle updates, cancels active
+  work cooperatively, and skips new automatic investigations.
+- `/triage resume <source-id>` permits future occurrences; it does not replay
+  paused backlog or reinvestigate a duplicate firing notification.
+- `/triage remove <source-id>` revokes source authority while retaining accepted
+  events/reports. It deletes a source's dedicated credential; a shared managed
+  credential remains available
+  to its other users. If credential cleanup fails, retry the same remove command.
+  Remove its channel in SigNoz when you no longer want delivery retries.
+
+Reports distinguish observed evidence, likely cause, unknowns, and the next
+check. Missing telemetry never proves health. Provider errors and budget stops
+produce honest partial/failed findings. Token usage is recorded when the provider
+reports it; unavailable token/cost information is displayed as unknown.
+
+Native grouped notifications are persisted atomically before acknowledgement.
+Occurrence identity is `(trusted source, fingerprint, canonical startsAt)`;
+repeats update counts, resolution is monotonic, and a new startsAt is a new
+occurrence. A resolved notification can update an existing completed report's
+lifecycle without rewriting the report. Overload returns HTTP 503 with Retry-After
+so SigNoz can retry; no part of that batch is acknowledged or committed.
+
+A worker shares the gateway turn-capacity gate and runs one investigation at a
+time. Each claim has an original 180-second deadline, 12 tool calls, 8 actual
+provider invocations (including any final handoff), at most 50 rows/query, and an
+event-anchored window clipped to 20 minutes and never exceeding one hour. Deadline
+and pause cancellation are cooperative at provider/tool boundaries; an in-flight
+provider call must return before the physical turn slot is released. A crashed
+worker's expired lease gets at most one retry within the **original** deadline
+and remaining call budget. Fenced old owners cannot overwrite evidence/reports.
+
+Only three explicitly scoped SigNoz read tools are exposed. There is no shell,
+MCP discovery, remediation, memory-writing, or alert-configuration tool. Incoming
+labels, annotations, receiver names, URLs, and follow-up text cannot change the
+trusted source URL, credential, services, or evidence window.
+
+Unread lifecycle notifications appear in the shell without taking over the
+prompt. On restart the shell summarizes stored unread events. Use `/triage list`
+and `/triage show` for the durable record.
+
+## Further reading
+
+Use the [SigNoz webhook guide](https://signoz.io/docs/alerts-management/notification-channel/webhook/)
+when configuring notification delivery and the [supported Docker installation guide](https://signoz.io/docs/install/docker/)
+when checking your self-hosted stack.

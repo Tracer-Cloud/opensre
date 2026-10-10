@@ -139,6 +139,9 @@ class SessionCore:
     skill_discovery_enabled: bool = True
     """Host-owned policy for the skill index and skill_view; never restored from history."""
 
+    action_iteration_limit: int | None = None
+    """Host-owned cap for restricted embedded runs; never restored from history."""
+
     long_term_memory_enabled: bool = True
     """Host-owned policy for memory prompt blocks, memory tools and extraction; never restored."""
 

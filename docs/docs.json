@@ -124,6 +124,7 @@
               "integrations/monitoring/posthog",
               "integrations/monitoring/posthog-mcp",
               "integrations/monitoring/signoz",
+              "signoz-auto-triage",
               "integrations/monitoring/splunk",
               "integrations/monitoring/tempo",
               "integrations/monitoring/victoria_logs",

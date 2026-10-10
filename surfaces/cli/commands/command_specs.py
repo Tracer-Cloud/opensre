@@ -30,6 +30,11 @@ class CommandSpec:
 # the real Click object and fails if these drift.
 COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
+        "triage",
+        "Manage automatic SigNoz alert investigations.",
+        "surfaces.cli.commands.triage:triage_command",
+    ),
+    CommandSpec(
         CI_REPAIR_WORKER_COMMAND,
         "",
         "surfaces.cli.commands.ci_repair_worker:ci_repair_worker_command",

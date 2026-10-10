@@ -6,11 +6,13 @@ from core.agent_harness.error_reporting import DefaultErrorReporter
 from core.agent_harness.prompts.grounding import DefaultPromptContextProvider
 from core.agent_harness.session import default_session_repo, default_session_store
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.session.persistence.paths import sessions_dir
 
 __all__ = [
     "DefaultErrorReporter",
     "DefaultPromptContextProvider",
+    "InMemorySessionStore",
     "JsonlSessionStore",
     "default_session_repo",
     "default_session_store",

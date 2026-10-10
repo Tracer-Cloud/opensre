@@ -440,6 +440,11 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to change the REPL color theme or palette",
         anti_examples=("User asks about light/dark mode in a web UI",),
     ),
+    "/triage": _mcp(
+        "Manage automatic SigNoz alert investigations: demo, connect, status, list, show, ask, pause, resume, remove. Demo reset and cleanup retain reports.",
+        "User configures read-only alert investigations or asks about a persisted report",
+        anti_examples=("User wants generic /alerts intake or automatic remediation",),
+    ),
     "/trust": _mcp(
         "Enable or disable trust mode (skip execution confirmation prompts). on | off.",
         "User asks to enable or disable trust mode or auto-approve",

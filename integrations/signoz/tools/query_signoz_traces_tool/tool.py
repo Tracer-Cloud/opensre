@@ -92,6 +92,14 @@ def _traces_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
         "properties": {
             "service": {"type": "string", "description": "Service name filter"},
             "time_range_minutes": {"type": "integer", "default": 60},
+            "start_time": {
+                "type": "string",
+                "description": "Optional absolute ISO-8601 start; requires end_time",
+            },
+            "end_time": {
+                "type": "string",
+                "description": "Optional absolute ISO-8601 end; requires start_time",
+            },
             "error_only": {"type": "boolean", "default": False},
             "limit": {"type": "integer", "default": 50},
         },
@@ -106,20 +114,29 @@ def query_signoz_traces(
     time_range_minutes: int = 60,
     error_only: bool = False,
     limit: int = 50,
+    start_time: str | None = None,
+    end_time: str | None = None,
     signoz_backend: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Query SigNoz traces for error rate, latency, and slow spans."""
+    absolute = (
+        {"start_time": start_time, "end_time": end_time}
+        if start_time is not None or end_time is not None
+        else {}
+    )
     if signoz_backend is not None:
         traces_result = signoz_backend.query_traces(
             service=service,
             time_range_minutes=time_range_minutes,
             error_only=error_only,
             limit=limit,
+            **absolute,
         )
         summary = signoz_backend.query_trace_summary(
             service=service,
             time_range_minutes=time_range_minutes,
+            **absolute,
         )
         return {
             **traces_result,
@@ -140,10 +157,12 @@ def query_signoz_traces(
         time_range_minutes=time_range_minutes,
         error_only=error_only,
         limit=limit,
+        **absolute,
     )
     summary = client.query_trace_summary(
         service=service,
         time_range_minutes=time_range_minutes,
+        **absolute,
     )
     return {
         **traces_result,

@@ -50,6 +50,7 @@ _CORE_FIELDS = (
     "available_capabilities",
     "accumulated_context",
     "reasoning_effort",
+    "action_iteration_limit",
     "tokens",
     "task_registry",
     "agent",

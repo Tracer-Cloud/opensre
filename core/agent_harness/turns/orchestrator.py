@@ -198,7 +198,8 @@ def _run_turn(
     prefetch_hosted_credits()
     # Here, not at session start: a gateway transport binds its surface (and so
     # the member's memory opt-in) only around the turn.
-    start_memory_consolidation()
+    if getattr(session, "long_term_memory_enabled", True):
+        start_memory_consolidation()
     auto_compact_if_needed(session)
     prior_messages = getattr(session, "cli_agent_messages", None) or ()
     typed_text = text

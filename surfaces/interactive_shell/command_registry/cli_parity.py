@@ -20,6 +20,7 @@ from config.scope_handoff import hand_off_scope
 from core.agent_harness.spi.session_state import session_terminal, set_turn_outcome_hint
 from infrastructure.process.entrypoint import opensre_command
 from infrastructure.process.termination import terminate_process_tree
+from surfaces.interactive_shell.command_registry.triage_cmds import cmd_triage
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.subprocess_runner import build_opensre_cli_argv
@@ -508,6 +509,10 @@ def _cmd_messaging(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["messaging", *args], session=session)
 
 
+def _cmd_triage(session: Session, console: Console, args: list[str]) -> bool:
+    return cmd_triage(session, console, args, run_cli=run_cli_command)
+
+
 def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
     return cron_cmds.cmd_cron(session, console, args, run_cli=run_cli_command)
 
@@ -658,6 +663,26 @@ COMMANDS: list[SlashCommand] = [
             "/messaging allow",
             "/messaging revoke",
             "/messaging status",
+        ),
+    ),
+    SlashCommand(
+        "/triage",
+        "Manage automatic SigNoz alert investigations.",
+        _cmd_triage,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/triage",)],
+        usage=(
+            "/triage",
+            "/triage demo",
+            "/triage connect",
+            "/triage status",
+            "/triage list",
+            "/triage show <id>",
+            '/triage ask <id> "<question>"',
+            "/triage pause <source>",
+            "/triage resume <source>",
+            "/triage remove <source>",
+            "/triage demo reset",
+            "/triage demo cleanup",
         ),
     ),
     SlashCommand(

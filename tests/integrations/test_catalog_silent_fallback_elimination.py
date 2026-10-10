@@ -130,7 +130,7 @@ _CLASSIFY_PATCH_TARGETS: list[tuple[str, str, str]] = [
     # specifically). All five now route through report_classify_failure like every
     # other vendor above.
     ("bitbucket", "integrations.bitbucket.config", "BitbucketConfig"),
-    ("signoz", "integrations.signoz", "build_signoz_config"),
+    ("signoz", "integrations.signoz.config", "build_signoz_config"),
     ("tempo", "integrations.tempo", "build_tempo_config"),
     ("twilio", "integrations.twilio", "TwilioIntegrationConfig"),
     ("whatsapp", "integrations.whatsapp", "WhatsAppConfig"),

@@ -1,0 +1,25 @@
+"""Release pins and credential names for the disposable SigNoz triage demo."""
+
+DEMO_SIGNOZ_VERSION = "v0.145.0"
+DEMO_COLLECTOR_VERSION = "0.144.10"
+DEMO_FOUNDRY_VERSION = "v0.3.0"
+DEMO_OTEL_COMMIT = "dedc0178918e260823323b8d95005a8cb924b007"
+DEMO_OTEL_VERSION = "3.1.0"
+DEMO_OTEL_ARCHIVE_SHA256 = "60bc2420ede659375b54302799fc312443345457a6894b26ba5c2d7acc6895f7"
+DEMO_FOUNDRY_CHECKSUMS = {
+    "linux_amd64": "7555f91ee87a9d0d517009fc859ef64be76ad8b045446b2fe4360b896dc5838d",
+    "linux_arm64": "97d5017b97f163f466216f0680bdaf80d561180ed47cd675544fda283ebc284e",
+    "darwin_amd64": "8012e7854454102501fc9d8ab2f4d02ce210bc00b4613e0801b82cae04cf548c",
+    "darwin_arm64": "2b3e8d7324044ff49cda9774d120bdb03558cff7b82142f2073153fdaeddf0ec",
+}
+DEMO_RAM_BYTES = 8 * 1024**3
+DEMO_DISK_BYTES = 15 * 1024**3
+DEMO_LABEL = "io.opensre.triage.demo"
+DEMO_PREFIX = "opensre-triage-"
+DEMO_CREDENTIAL_PREFIX = "OPENSRE_TRIAGE_DEMO_"
+DEMO_CREDENTIAL_SUFFIXES = ("ADMIN_PASSWORD", "QUERY_KEY", "WEBHOOK_PASSWORD")
+
+
+def demo_credential_ref(identifier: str, suffix: str) -> str:
+    """Use the same saved secret names for setup, resume, and cleanup."""
+    return f"{DEMO_CREDENTIAL_PREFIX}{identifier.upper().replace('-', '_')}_{suffix}"

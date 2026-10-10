@@ -50,6 +50,7 @@ _EXCLUSIVE_STDIN_COMMANDS: frozenset[str] = frozenset(
         "/status",
         "/cost",
         "/cron",
+        "/triage",
         "/credits",
         "/tasks",
         "/alerts",
@@ -64,6 +65,11 @@ _EXCLUSIVE_STDIN_COMMANDS: frozenset[str] = frozenset(
 )
 _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
+        ("/triage", "list"),
+        ("/triage", "show"),
+        ("/triage", "status"),
+        ("/triage", "connect"),
+        ("/triage", "demo"),
         ("/integrations", "list"),
         ("/integrations", "show"),
         ("/integrations", "verify"),

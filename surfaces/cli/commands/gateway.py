@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import time
+from urllib.parse import urlsplit
 
 import click
+import httpx
 
 from gateway.core.process import (
     GATEWAY_LOG_FILE,
@@ -18,6 +20,26 @@ from gateway.core.process import (
 from infrastructure.process.runtime_flags import is_json_output
 from surfaces.cli.host import cli_host
 from surfaces.shared.gateway_entrypoint import gateway_entry_argv
+
+
+def verified_gateway_web_port() -> int:
+    """Discover the live daemon's published address and verify its web readiness."""
+    detail = read_component_status().get("web", "")
+    words = detail.split()
+    try:
+        address = urlsplit(words[1] if len(words) > 1 and words[0] == "serving" else "")
+        port = address.port
+        if address.scheme != "http" or port is None:
+            raise ValueError("Missing listening address")
+        response = httpx.get(f"http://127.0.0.1:{port}/readyz", timeout=5)
+        response.raise_for_status()
+        if response.json().get("status") != "ready":
+            raise ValueError("Gateway web is not ready")
+    except (httpx.HTTPError, ValueError, AttributeError):
+        raise RuntimeError(
+            "Gateway web address is unavailable; inspect opensre gateway status/logs"
+        ) from None
+    return port
 
 
 def _echo_components() -> None:

@@ -212,7 +212,12 @@ async def test_launch_snapshots_go_to_the_deferral_instead_of_starting_with_the_
     await asyncio.gather(*(task for _label, task in tasks))
     await asyncio.sleep(0.05)
 
-    assert [label for label, _task in tasks] == ["processor", "alert watcher", "spinner ticker"]
+    assert [label for label, _task in tasks] == [
+        "processor",
+        "alert watcher",
+        "triage watcher",
+        "spinner ticker",
+    ]
     assert started == []
     done = threading.Event()
     work.defer("marker", done.set)
