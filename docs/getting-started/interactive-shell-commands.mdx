@@ -1066,7 +1066,7 @@ Read/write `~/.opensre/config.yml`. Prefer env vars for secrets; use config for 
 /cron logs &lt;id&gt;
 ```
 
-Scheduled report delivery. Press Enter or Tab after `/cron` to choose a subcommand. Choices needing task IDs or schedule options return to the composer for editing. `/cron list` displays all tasks with their IDs and timezone context; `/cron logs <id>` shows execution history. In the interactive shell, `/cron run <id>` waits up to five seconds before returning control while the task continues in the background; read its outcome with `/cron logs <id>`. `/cron start` runs the scheduler in the foreground until interrupted. See [Cron](/platform/cron).
+Scheduled report delivery. Press Enter or Tab after `/cron` to choose a subcommand. When `/cron add` is missing required values, an editable form preserves any supplied options. Choose the task kind, schedule and delivery, then edit the relevant details. Fields show required values and defaults. Choose **Create scheduled task** or press **Ctrl-S** to save; **Esc** from the review screen cancels without saving. Creating a schedule does not run it immediately. Complete commands and non-interactive calls keep their usual behavior. Choices needing task IDs still return to the composer for editing. `/cron list` displays all tasks with their IDs and timezone context; `/cron logs <id>` shows execution history. In the interactive shell, `/cron run <id>` waits up to five seconds before returning control while the task continues in the background; read its outcome with `/cron logs <id>`. `/cron start` runs the scheduler in the foreground until interrupted. See [Cron](/platform/cron).
 
 </Accordion>
 
