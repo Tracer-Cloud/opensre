@@ -15,6 +15,22 @@ as well; keep implementation in its owning package, not necessarily this folder.
 - Share presentation between CLI and REPL where their contracts match. Do not
   introduce another generic framework or force non-record views into a table.
 
+## Editable command inputs
+
+- Reuse `build_input_form`, `InputField`, and `InputChoice` from
+  `surfaces/shared/terminal/components/input_form.py` for editable CLI/REPL forms.
+  Do not copy a command's prompt-toolkit layout, navigation, or editing state machine.
+- Keep field definitions, defaults, conditional visibility, and domain validation in
+  the owning command's UI module. Follow `ui/work_input.py` and `ui/cron_input/form.py`.
+  Use `InputFormError` for actionable errors, with a field name when it can be reopened.
+- The shared component owns text/choice/search editing, readable descriptions,
+  compact review, More options, and pinned submit/cancel actions. Field definitions
+  refresh after accepted edits, not on every redraw; resolve external settings once
+  per form/configuration key rather than reading credentials while rendering.
+- Validation must be side-effect-free. Persist only after explicit submission;
+  cancellation must not save. Use `run_command_input` for terminal lifecycle and
+  preserve exclusive-stdin ownership, complete-command bypass, and non-TTY behavior.
+
 ## Hierarchy and spacing
 
 - Names/titles are bold and primary. Descriptions and ordinary results use

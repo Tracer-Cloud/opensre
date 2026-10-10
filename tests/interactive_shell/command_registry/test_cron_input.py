@@ -562,3 +562,32 @@ def test_field_guidance_is_readable_and_only_shortcuts_are_dim() -> None:
         assert app.style.get_attrs_for_style_str(style).color == str(theme.SECONDARY).lstrip("#")
     shortcut_style = next(style for style, value, *_ in fragments if "Enter save field" in value)
     assert app.style.get_attrs_for_style_str(shortcut_style).color == str(theme.DIM).lstrip("#")
+
+
+def test_slack_destination_lookup_is_reused_within_one_form(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    from infrastructure.scheduling.scheduler import credentials
+    from surfaces.interactive_shell.ui.cron_input import build_cron_form
+    from surfaces.interactive_shell.ui.cron_input.arguments import parse_cron_draft
+    from tests.interactive_shell.command_registry.test_command_inputs import run_keys
+
+    lookups: list[dict[str, str]] = []
+
+    def resolve(params: dict[str, str]) -> dict[str, str]:
+        lookups.append(params)
+        return {"webhook_url": "https://example.test/webhook"}
+
+    monkeypatch.setattr(credentials, "resolve_slack_credentials", resolve)
+    draft = parse_cron_draft(COMPLETE[1:])
+    draft["provider"] = "slack"
+    with create_app_session(output=DummyOutput()):
+        app = build_cron_form(draft)
+        assert run_keys(app, "\t\r\x01\x0bEdited prompt\r\t\t\t\x03") is None
+        assert len(lookups) == 1
+        # A new form must re-read settings rather than reuse a process-global cache.
+        build_cron_form(draft)
+        assert len(lookups) == 2

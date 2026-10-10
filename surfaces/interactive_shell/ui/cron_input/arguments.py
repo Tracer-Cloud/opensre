@@ -51,7 +51,9 @@ def parse_cron_draft(args: list[str]) -> dict[str, str]:
     return values
 
 
-def required_cron_fields(values: dict[str, str]) -> list[str]:
+def required_cron_fields(
+    values: dict[str, str], *, explicit_destination: bool | None = None
+) -> list[str]:
     """Find required fields for this kind, mode, and delivery configuration."""
     required = ["kind", "provider"]
     if not values["template"].strip():
@@ -72,8 +74,11 @@ def required_cron_fields(values: dict[str, str]) -> list[str]:
         required.append("skill_name")
         if normalize_skill_name(values["skill_name"]) == "reporting-github-ci-failures":
             required.extend(("owner", "repo"))
-    if values["provider"] and requires_explicit_chat_id(values["provider"]):
-        required.append("chat_id")
+    if values["provider"]:
+        if explicit_destination is None:
+            explicit_destination = requires_explicit_chat_id(values["provider"])
+        if explicit_destination:
+            required.append("chat_id")
     return list(dict.fromkeys(required))
 
 

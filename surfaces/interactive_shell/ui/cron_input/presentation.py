@@ -11,9 +11,10 @@ from surfaces.interactive_shell.ui.cron_input.arguments import (
 )
 
 
-def review_fields(values: dict[str, str]) -> list[str]:
+def review_fields(values: dict[str, str], *, required: set[str] | None = None) -> list[str]:
     """Keep task intent, schedule, and delivery in the primary review."""
-    required = set(required_cron_fields(values))
+    if required is None:
+        required = set(required_cron_fields(values))
     visible = set(visible_cron_fields(values))
     names = ["kind"]
     if values["name"]:
@@ -57,9 +58,9 @@ def choice_label(name: str, value: str) -> str:
     return value
 
 
-def field_status(name: str, values: dict[str, str]) -> str:
+def field_status(name: str, values: dict[str, str], *, required: bool) -> str:
     """Describe requirements and defaults only while editing a field."""
-    if name in required_cron_fields(values):
+    if required:
         return "required"
     default = _field_default(name, values)
     if default:
@@ -85,10 +86,10 @@ def field_help(name: str, values: dict[str, str]) -> str:
     }.get(name, cron_options()[name].help or "")
 
 
-def summary_value(name: str, values: dict[str, str]) -> str:
+def summary_value(name: str, values: dict[str, str], *, required: bool) -> str:
     value = values[name] or _field_default(name, values)
     if not value:
-        return "Required" if name in required_cron_fields(values) else "—"
+        return "Required" if required else "—"
     if name in {"kind", "provider", "stateless"}:
         value = choice_label(name, value)
     if name == "cron_expr":
