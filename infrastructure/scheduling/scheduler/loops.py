@@ -334,7 +334,7 @@ def create_manual_loop(
     report_args: Mapping[str, str] | None = None,
     mode: str = LOOP_MODE_REPORT,
 ) -> ManualLoop:
-    """Create an active recurring prompt loop.
+    """Create or reactivate an active recurring prompt loop.
 
     ``report`` names a deterministic report builder the runner uses instead
     of a model turn; ``prompt`` then documents the loop and is the fallback
@@ -400,7 +400,7 @@ def create_manual_loop(
         params=params,
     )
     task.next_run = compute_next_run(task)
-    stored_task = add_task(task, store_path)
+    stored_task = add_task(task, store_path, reactivate=True)
     deduplicated = stored_task.id != task.id
     record_scheduler_task_operation(
         "scheduled_loop_reused" if deduplicated else "scheduled_loop_created",

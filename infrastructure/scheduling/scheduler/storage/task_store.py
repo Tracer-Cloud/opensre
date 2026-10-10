@@ -24,6 +24,7 @@ from infrastructure.scheduling.scheduler import reload_signal
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CREATED_BY_PARAM,
     LOOP_DESCRIPTION_PARAM,
+    LOOP_GROUP_ID_PARAM,
     LOOP_PROMPT_PARAM,
     LOOP_TEMPLATE_PARAM,
 )
@@ -32,7 +33,7 @@ from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
 )
 from infrastructure.scheduling.scheduler.storage.run_store import skip_queued_runs
-from infrastructure.scheduling.scheduler.types import ScheduledTask
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
 logger = logging.getLogger(__name__)
 
@@ -246,21 +247,26 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
 
     Full configuration, not just the slot: two rows differing in destination or
     params are separate reports, and merging them would drop one the user asked
-    for. Identity deliberately excludes ``id``, ``name``, skill revision, who
+    for. Identity deliberately excludes ``id``, skill revision, who
     created it, and the run bookkeeping (``created_at``, ``last_run``,
     ``next_run``), which differ between two confirmations of the same schedule.
+    Generated loop group IDs are bookkeeping too, not schedule configuration.
     The owning organization is part of it: two organizations with the same
     schedule hold two rows. A template loop is identified by its template name,
-    not by the prompt and description copied from it.
+    not by the prompt and description copied from it. Other manual loops include
+    their case-insensitive name; other task kinds and templates ignore names.
     """
     raw_params = entry.get("params") or {}
-    ignored = {LOOP_CREATED_BY_PARAM}
+    ignored = {LOOP_CREATED_BY_PARAM, LOOP_GROUP_ID_PARAM}
     if raw_params.get(LOOP_TEMPLATE_PARAM):
         ignored.update(_TEMPLATE_LOOP_TEXT)
     params = {key: value for key, value in raw_params.items() if key not in ignored}
     return (
         _owner_of(entry),
         entry.get("kind"),
+        (entry.get("name") or "").strip().casefold()
+        if entry.get("kind") == TaskKind.MANUAL_LOOP and not raw_params.get(LOOP_TEMPLATE_PARAM)
+        else "",
         entry.get("cron"),
         entry.get("timezone"),
         entry.get("provider"),
@@ -302,12 +308,16 @@ def _owned_by_acting_scope(task: ScheduledTask) -> ScheduledTask:
     return task.model_copy(update=update) if update else task
 
 
-def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
+def add_task(
+    task: ScheduledTask, store_path: Path | None = None, *, reactivate: bool = False
+) -> ScheduledTask:
     """Persist a scheduled task, or update the matching schedule's skill revision.
 
     Confirming the same schedule twice is one schedule. Without this, every
     confirmation appended a row — a real install reached 37 byte-identical
     ``daily_summary`` entries, none of which could deliver.
+    ``reactivate`` enables a disabled match and applies the requested next run
+    atomically, retaining its ID, creation time, and execution history.
     """
     path = store_path or default_task_store_path()
     task = _owned_by_acting_scope(task)
@@ -322,7 +332,15 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
         if existing_index is not None:
             existing = raw[existing_index]
             refreshed = _refresh_template_copies(existing, task)
-            if existing.get("skill_revision", "") == task.skill_revision and not refreshed:
+            reactivated = reactivate and task.enabled and not existing.get("enabled", True)
+            if reactivated:
+                existing["enabled"] = True
+                existing["next_run"] = task.next_run
+            if (
+                existing.get("skill_revision", "") == task.skill_revision
+                and not refreshed
+                and not reactivated
+            ):
                 return ScheduledTask.model_validate(existing)
             existing["skill_revision"] = task.skill_revision
             stored_task = ScheduledTask.model_validate(existing)

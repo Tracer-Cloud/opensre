@@ -7,17 +7,20 @@ from pathlib import Path
 
 import pytest
 
+from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
+from infrastructure.observability.operations_log import read_operations
 from infrastructure.scheduling.scheduler import loops as loop_mod
 from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CHANNELS_PARAM,
     LOOP_DESCRIPTION_PARAM,
+    LOOP_GROUP_ID_PARAM,
     LOOP_PROMPT_PARAM,
     LOOP_SLUG_PARAM,
     LOOP_SOURCE_PARAM,
 )
 from infrastructure.scheduling.scheduler.loops import default_loop_channels, normalize_loop_channels
-from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
+from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks, update_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
 _LEGACY_MORNING_REPORT_PROMPT = (
@@ -50,6 +53,124 @@ def test_generated_weekdays_include_monday_and_skip_the_weekend() -> None:
         "2026-09-25",
         "2026-09-28",
     ]
+
+
+def test_repeated_manual_loop_reuses_saved_schedule_and_resolves_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store_path = tmp_path / "tasks.json"
+    log_path = tmp_path / "operations.jsonl"
+    monkeypatch.setenv(OPENSRE_OPERATIONS_LOG_PATH_ENV, str(log_path))
+
+    first = loop_mod.create_manual_loop(
+        name="SameLoop",
+        time_text="23:59",
+        prompt="Say duplicate audit",
+        channels=["interactive_shell"],
+        store_path=store_path,
+    )
+    first.task.last_run = "2026-10-04T23:59:00+00:00"
+    first.task.next_run = "2026-10-05T23:59:00+00:00"
+    assert update_task(first.task, store_path)
+
+    second = loop_mod.create_manual_loop(
+        name="SameLoop",
+        time_text="23:59",
+        prompt="Say duplicate audit",
+        channels=["interactive_shell"],
+        store_path=store_path,
+    )
+
+    assert second.task == first.task
+    assert second.task.params[LOOP_GROUP_ID_PARAM] == first.task.id
+    assert second.next_run == first.task.next_run
+    assert list_tasks(store_path) == [first.task]
+    summaries = loop_mod.list_loop_summaries(include_disabled=False, store_path=store_path)
+    assert len(summaries) == 1
+    resolved, error = loop_mod.resolve_loop_summary("SameLoop", store_path=store_path)
+    assert not error
+    assert resolved == summaries[0]
+    assert [record["event"] for record in read_operations(path=log_path)] == [
+        "scheduled_loop_created",
+        "scheduled_loop_reused",
+    ]
+
+
+def test_manual_loops_with_distinct_names_remain_separate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store_path = tmp_path / "tasks.json"
+    monkeypatch.setenv(OPENSRE_OPERATIONS_LOG_PATH_ENV, str(tmp_path / "operations.jsonl"))
+    created: list[ScheduledTask] = []
+    for name in ("SameLoop", "demorun"):
+        loop = loop_mod.create_manual_loop(
+            name=name,
+            time_text="23:59",
+            prompt="Say duplicate audit",
+            channels=["interactive_shell"],
+            store_path=store_path,
+        )
+        repeated = loop_mod.create_manual_loop(
+            name=name.upper(),
+            time_text="23:59",
+            prompt="Say duplicate audit",
+            channels=["interactive_shell"],
+            store_path=store_path,
+        )
+        assert repeated.task.id == loop.task.id
+        assert repeated.task.name == name
+        resolved, error = loop_mod.resolve_loop_summary(name, store_path=store_path)
+        assert resolved is not None, error
+        assert resolved.task_ids == (loop.task.id,)
+        created.append(loop.task)
+
+    assert created[0].id != created[1].id
+    assert list_tasks(store_path) == created
+
+
+def test_readding_stopped_manual_loop_reactivates_it_and_signals_scheduler(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store_path = tmp_path / "tasks.json"
+    monkeypatch.setenv(OPENSRE_OPERATIONS_LOG_PATH_ENV, str(tmp_path / "operations.jsonl"))
+    signals: list[bool] = []
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: signals.append(True),
+    )
+    monkeypatch.setattr(
+        loop_mod, "compute_next_run", lambda _task, _now=None: "2030-10-05T23:59:00+00:00"
+    )
+    first = loop_mod.create_manual_loop(
+        name="SameLoop",
+        time_text="23:59",
+        prompt="Say duplicate audit",
+        channels=["interactive_shell"],
+        store_path=store_path,
+    )
+    first.task.last_run = "2026-10-04T23:59:00+00:00"
+    assert update_task(first.task, store_path)
+    stopped, error = loop_mod.set_loop_enabled(first.task.id, enabled=False, store_path=store_path)
+    assert stopped is not None, error
+    assert list_tasks(store_path)[0].next_run is None
+    signals.clear()
+
+    repeated = loop_mod.create_manual_loop(
+        name="SameLoop",
+        time_text="23:59",
+        prompt="Say duplicate audit",
+        channels=["interactive_shell"],
+        store_path=store_path,
+    )
+
+    assert repeated.task.id == first.task.id
+    assert repeated.task.enabled
+    assert repeated.task.created_at == first.task.created_at
+    assert repeated.task.last_run == first.task.last_run
+    assert repeated.task.params == first.task.params
+    assert repeated.task.next_run == repeated.next_run == "2030-10-05T23:59:00+00:00"
+    assert list_tasks(store_path) == [repeated.task]
+    assert signals == [True]
 
 
 @pytest.mark.parametrize(
