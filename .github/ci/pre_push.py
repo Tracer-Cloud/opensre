@@ -89,6 +89,8 @@ def _run_pr_readiness(
     ]
     if base:
         command.extend(["--base", base])
+    else:
+        command.append("--no-base")
     return subprocess.run(command, cwd=snapshot, env=environment, check=False).returncode
 
 
