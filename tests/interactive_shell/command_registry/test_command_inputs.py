@@ -143,9 +143,9 @@ def test_form_requires_title_before_accepting() -> None:
 
 def test_work_rows_select_priority_and_existing_project_without_typing_values() -> None:
     with create_app_session(output=DummyOutput()):
-        app = build_work_form({}, projects=["payments", "platform"])
+        app = build_work_form({}, projects=["", "payments", "platform", "payments"])
         # After the title, Priority is selected. Open it and choose High,
-        # then select the first existing project after None.
+        # then select the first existing project after None, skipping empty names.
         keys = "Checkout\r\r\x1b[B\r\x1b[B\r\x1b[B\r\x13"
         result = run_keys(app, keys)
     assert result is not None

@@ -45,7 +45,7 @@ def build_work_form(
     current = {name: options.get(name, "normal" if name == "priority" else "") for name in _FIELDS}
     current["priority"] = current["priority"].lower()
     local_day = today or datetime.now().astimezone().date()
-    project_names = set(projects)
+    project_names = {name for name in projects if name}
 
     def fields(values: dict[str, str]) -> list[InputField]:
         names = sorted(
