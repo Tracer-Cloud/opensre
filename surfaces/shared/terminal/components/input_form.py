@@ -191,6 +191,9 @@ def build_input_form[Result](
     def create() -> None:
         nonlocal error
         try:
+            for item in field_map.values():
+                if item.required and not current[item.name].strip():
+                    raise InputFormError(f"{item.label} is required.", field=item.name)
             result = validate(dict(current))
         except InputFormError as exc:
             error = strip_terminal_controls(str(exc))
@@ -220,8 +223,6 @@ def build_input_form[Result](
             try:
                 if item.validate is not None:
                     item.validate(value)
-                if item.required and not value:
-                    raise InputFormError(f"{item.label} is required.")
             except InputFormError as exc:
                 error = strip_terminal_controls(str(exc))
                 return

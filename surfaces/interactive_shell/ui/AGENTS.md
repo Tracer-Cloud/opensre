@@ -30,6 +30,9 @@ as well; keep implementation in its owning package, not necessarily this folder.
 - Validation must be side-effect-free. Persist only after explicit submission;
   cancellation must not save. Use `run_command_input` for terminal lifecycle and
   preserve exclusive-stdin ownership, complete-command bypass, and non-TTY behavior.
+- Check conditional completeness on submission, allowing temporary empty edits so
+  dependent fields can be cleared together. Use field-level validators for local
+  value constraints, not rules that depend on the previous draft's other fields.
 
 ## Hierarchy and spacing
 

@@ -591,3 +591,27 @@ def test_slack_destination_lookup_is_reused_within_one_form(
         # A new form must re-read settings rather than reuse a process-global cache.
         build_cron_form(draft)
         assert len(lookups) == 2
+
+
+def test_repository_context_can_be_cleared_without_changing_agent_mode() -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import DummyOutput
+
+    from surfaces.interactive_shell.ui.cron_input import build_cron_form
+    from surfaces.interactive_shell.ui.cron_input.arguments import parse_cron_draft
+    from surfaces.interactive_shell.ui.cron_input.presentation import review_fields
+    from tests.interactive_shell.command_registry.test_command_inputs import run_keys
+
+    draft = parse_cron_draft(
+        [*COMPLETE[1:], "--mode", "agent", "--owner", "example", "--repo", "app"]
+    )
+    with create_app_session(output=DummyOutput()):
+        app = build_cron_form(draft)
+        keys = "\t" * review_fields(draft).index("owner")
+        keys += "\r\x01\x0b\r\t\r\x01\x0b\r\x13\x03"
+        result = run_keys(app, keys)
+    assert result is not None
+    saved = parse_cron_draft(result)
+    assert saved["mode"] == "agent"
+    assert saved["owner"] == saved["repo"] == ""
+    assert saved["prompt"] == draft["prompt"]

@@ -50,3 +50,23 @@ def test_required_searchable_choice_recovers_from_no_matches_without_mutating_in
         result = app.run(pre_run=lambda: pipe.send_text("missing\r\x1b[B\x1b[A\x15ALP\r\x13"))
     assert result == "alpha"
     assert original == {"target": ""}
+
+
+def test_incomplete_draft_cannot_reach_submit_validation() -> None:
+    def fields(_values: dict[str, str]) -> list[InputField]:
+        return [InputField("title", "Title", required=True)]
+
+    def validate(values: dict[str, str]) -> str:
+        return values["title"]
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        app = build_input_form(
+            {"title": ""},
+            title="New item",
+            heading="Review item",
+            submit_label="Confirm",
+            fields=fields,
+            validate=validate,
+        )
+        result = app.run(pre_run=lambda: pipe.send_text("\r\x13Retained title\r\x13\x03"))
+    assert result == "Retained title"
