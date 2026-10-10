@@ -133,7 +133,7 @@ def test_cron_picker_selection_and_headless_delegation(monkeypatch: pytest.Monke
     assert run_cli.call_args.args[1] == ["cron", "list"]
 
 
-@pytest.mark.parametrize("selected", ["add", "logs", "remove", "run"])
+@pytest.mark.parametrize("selected", ["logs", "remove", "run"])
 def test_incomplete_cron_choices_return_to_editable_composer(
     monkeypatch: pytest.MonkeyPatch, selected: str
 ) -> None:

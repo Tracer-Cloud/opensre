@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -142,9 +143,9 @@ def test_form_requires_title_before_accepting() -> None:
 
 def test_work_rows_select_priority_and_existing_project_without_typing_values() -> None:
     with create_app_session(output=DummyOutput()):
-        app = build_work_form({}, projects=["payments", "platform"])
+        app = build_work_form({}, projects=["", "payments", "platform", "payments"])
         # After the title, Priority is selected. Open it and choose High,
-        # then select the first existing project after None.
+        # then select the first existing project after None, skipping empty names.
         keys = "Checkout\r\r\x1b[B\r\x1b[B\r\x1b[B\r\x13"
         result = run_keys(app, keys)
     assert result is not None
@@ -192,6 +193,24 @@ def test_reopening_supplied_project_and_custom_date_keeps_their_selection() -> N
     assert result is not None
     assert result["project"] == "new project"
     assert result["due"] == "2040-01-02"
+
+
+def test_work_search_and_relative_date_choices_preserve_values() -> None:
+    with create_app_session(output=DummyOutput()):
+        app = build_work_form({}, projects=["payments", "platform"], today=date(2026, 10, 10))
+        # Filter an existing project, then choose Tomorrow from the date presets.
+        keys = "Checkout\r\x1b[B\rPAY\r" + "\x1b[B" * 2 + "\r" + "\x1b[B" * 2 + "\r\x13"
+        result = run_keys(app, keys)
+    assert result is not None
+    assert result["project"] == "payments"
+    assert result["due"] == "2026-10-11"
+    assert result["title"] == "Checkout"
+
+
+def test_work_escape_from_initial_empty_title_cancels() -> None:
+    with create_app_session(output=DummyOutput()):
+        app = build_work_form({})
+        assert run_keys(app, "\x1bShould not save\r\x13\x03") is None
 
 
 @pytest.mark.parametrize("columns,rows", [(100, 30), (45, 12)])

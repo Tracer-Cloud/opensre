@@ -7,10 +7,13 @@ from collections.abc import Callable
 from rich.console import Console
 
 from config.cli_command_choices import CLI_COMMAND_CHOICES
-from core.agent_harness.spi.session_state import session_terminal
+from config.interactive_override import interactive_override_env
+from core.agent_harness.spi.session_state import exclusive_stdin_active, session_terminal
 from infrastructure.scheduling.scheduler.loops import list_loop_summaries
 from infrastructure.terminal.theme import DIM
+from surfaces.interactive_shell.command_registry.cron_input import collect_cron_add
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.cron_input.arguments import cron_add_needs_input
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 from surfaces.shared.terminal.tables.schedule_listing import print_loop_schedules
@@ -39,9 +42,20 @@ def cmd_cron(
             args = ["--help"]
     if (
         terminal is not None
+        and exclusive_stdin_active(session)
+        and not interactive_override_env()
+        and repl_tty_interactive()
+        and cron_add_needs_input(args)
+    ):
+        collected = collect_cron_add(args[1:])
+        if collected is None:
+            return True
+        args = ["add", *collected]
+    if (
+        terminal is not None
         and repl_tty_interactive()
         and len(args) == 1
-        and args[0] in {"add", "logs", "remove", "run"}
+        and args[0] in {"logs", "remove", "run"}
     ):
         # Required values belong in the editable composer. Never execute an
         # incomplete choice (or auto-submit a destructive command).
@@ -49,11 +63,7 @@ def cmd_cron(
         terminal.pending_prompt_autosubmit = False
         terminal.pending_prompt_plain_turn = False
         terminal.notify_prompt_changed()
-        guidance = (
-            "Add schedule options; `/cron add --help` shows available fields."
-            if args[0] == "add"
-            else "Add a task ID, then press Enter."
-        )
+        guidance = "Add a task ID, then press Enter."
         console.print(f"[{DIM}]{guidance}[/]")
         return True
     if terminal is not None and args == ["list"]:
