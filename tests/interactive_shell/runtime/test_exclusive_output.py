@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import threading
 
 import pytest
 from prompt_toolkit.application import Application
@@ -27,6 +28,16 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
     session.terminal.main_loop = asyncio.get_running_loop()
     observed: list[tuple[bool, bool]] = []
     removed: list[list[str]] = []
+    fetching = threading.Event()
+    release_fetch = threading.Event()
+    fetched_with_responsive_loop: list[bool] = []
+
+    def _list_schedules() -> list[object]:
+        fetching.set()
+        # A contended task-store lock must not prevent the event loop from
+        # releasing this worker. The timeout bounds a broken implementation.
+        fetched_with_responsive_loop.append(release_fetch.wait(timeout=3))
+        return [object()]
 
     def _print_schedules(console: Console, _loops: object) -> None:
         observed.append((session.terminal.exclusive_stdin_active, app._running_in_terminal))
@@ -37,7 +48,7 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
         return True
 
     monkeypatch.setattr(slash_adapter, "repl_tty_interactive", lambda: True)
-    monkeypatch.setattr(cron_cmds, "list_loop_summaries", lambda: [object()])
+    monkeypatch.setattr(cron_cmds, "list_loop_summaries", _list_schedules)
     monkeypatch.setattr(cron_cmds, "print_loop_schedules", _print_schedules)
     monkeypatch.setattr(
         "surfaces.interactive_shell.command_registry.cli_parity.run_cli_command", _remove
@@ -48,6 +59,7 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
         session.terminal.prompt_app = app
         prompt = asyncio.create_task(app.run_async(pre_run=started.set))
         await started.wait()
+        listing = None
         try:
             ctx = ActionToolScope(
                 session=session,
@@ -56,9 +68,13 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
                 slash_ports=slash_adapter.repl_slash_ports(),
                 turn_user_message="Remove my daily audit schedule",
             )
-            result = await asyncio.to_thread(
-                execute_slash_tool, {"command": "/cron", "args": ["list"]}, ctx
+            listing = asyncio.create_task(
+                asyncio.to_thread(execute_slash_tool, {"command": "/cron", "args": ["list"]}, ctx)
             )
+            assert await asyncio.to_thread(fetching.wait, 2)
+            release_fetch.set()
+            result = await listing
+            assert fetched_with_responsive_loop == [True]
             assert isinstance(result, dict)
             assert "task-123456789" in result["output"]
             assert QUEUED_COMMAND_KEY not in result
@@ -73,5 +89,8 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
             )
             assert removed == [["cron", "remove", "task-123456789"]]
         finally:
+            release_fetch.set()
+            if listing is not None:
+                await listing
             app.exit(result=None)
             await prompt

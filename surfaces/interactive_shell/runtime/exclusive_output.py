@@ -31,7 +31,7 @@ def with_exclusive_output[Result](session: Session, render: Callable[[], Result]
 
     async def _run() -> Result:
         with set_app(app):
-            return await run_in_terminal(_render, in_executor=False)
+            return await run_in_terminal(_render, in_executor=True)
 
     try:
         current = asyncio.get_running_loop()
