@@ -14,7 +14,7 @@ from prompt_toolkit.document import Document
 from rich.cells import cell_len
 from rich.console import Console
 
-from config.cli_command_choices import CLI_COMMAND_CHOICES
+from config.cli_command_choices import CLI_COMMAND_CHOICES, NATIVE_COMMAND_CHOICES
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
 from surfaces.cli.commands.command_specs import COMMAND_SPECS_BY_NAME, load_command
@@ -145,3 +145,45 @@ def test_incomplete_cron_choices_return_to_editable_composer(
     assert cron_cmds.cmd_cron(session, Console(file=io.StringIO()), [], run_cli=run_cli)
     assert session.terminal.pending_prompt_default == f"/cron {selected} "
     assert not session.terminal.pending_prompt_autosubmit
+
+
+def test_native_nested_groups_support_completion_and_help_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from surfaces.interactive_shell.command_registry import help as help_commands
+
+    for path, options in NATIVE_COMMAND_CHOICES.items():
+        buffer = Buffer(document=Document(" ".join(path)))
+        assert _open_exact_command_subcommand_tray(buffer)
+        assert buffer.complete_state is not None
+        assert [c.text for c in buffer.complete_state.completions] == [name for name, _ in options]
+        selections = iter([*path[1:], options[0][0]])
+        monkeypatch.setattr(
+            help_commands,
+            "repl_choose_subcommand",
+            lambda selections=selections, **_: next(selections),
+        )
+        assert help_commands._command_text(SLASH_COMMANDS[path[0]]) == " ".join(
+            (*path, options[0][0])
+        )
+
+
+@pytest.mark.parametrize("args", [[], ["health"], ["ops"], ["pull"], ["trigger"]])
+@pytest.mark.parametrize("headless", [False, True])
+def test_retired_remote_reports_unavailable_without_subprocess(
+    monkeypatch: pytest.MonkeyPatch, args: list[str], headless: bool
+) -> None:
+    from surfaces.interactive_shell.command_registry import cli_parity
+
+    runner = Mock(side_effect=AssertionError("Retired commands must not invoke the CLI"))
+    monkeypatch.setattr(cli_parity, "run_cli_command", runner)
+    session = Session()
+    if headless:
+        session.terminal = None
+    session.record("slash", "/remote " + " ".join(args), ok=True)
+    output = io.StringIO()
+    assert cli_parity._cmd_remote(session, Console(file=output), args) is (not headless)
+    assert session.history[-1]["ok"] is False
+    assert "retired" in output.getvalue()
+    assert "does not control deployed agents" in " ".join(output.getvalue().split())
+    runner.assert_not_called()

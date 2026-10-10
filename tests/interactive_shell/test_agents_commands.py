@@ -105,14 +105,15 @@ class TestAgentsDispatch:
         assert dispatch_slash("/fleet conflicts", session, console) is True
         assert "no conflicts detected" in buf.getvalue()
 
-    def test_no_subcommand_with_empty_registry_renders_empty_state(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("command", ["/fleet", "/fleet list", "/fleet ls"])
+    def test_list_with_empty_registry_renders_empty_state(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
     ) -> None:
         _isolate_registry(monkeypatch, tmp_path / "agents.jsonl")
         session = Session()
         console, buf = _capture()
 
-        assert dispatch_slash("/fleet", session, console) is True
+        assert dispatch_slash(command, session, console) is True
 
         out = buf.getvalue()
         # Caption from agents_view.render_agents_table:

@@ -1,4 +1,4 @@
-"""Lightweight discovery metadata for delegated CLI command groups."""
+"""Lightweight discovery metadata for CLI and native REPL command groups."""
 
 from __future__ import annotations
 
@@ -83,4 +83,16 @@ CLI_COMMAND_CHOICES: dict[tuple[str, ...], tuple[tuple[str, str], ...]] = {
     ),
 }
 
-__all__ = ["CLI_COMMAND_CHOICES"]
+NATIVE_COMMAND_CHOICES: dict[tuple[str, ...], tuple[tuple[str, str], ...]] = {
+    ("/model", "toolcall"): (
+        ("show", "Show the active toolcall model"),
+        ("set", "Choose a toolcall model"),
+    ),
+    ("/loops", "service"): (
+        ("status", "Show background scheduler service status"),
+        ("install", "Install the background scheduler service"),
+        ("remove", "Remove the background scheduler service"),
+    ),
+}
+
+__all__ = ["CLI_COMMAND_CHOICES", "NATIVE_COMMAND_CHOICES"]

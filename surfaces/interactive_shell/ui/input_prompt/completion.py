@@ -8,7 +8,7 @@ from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 
-from config.cli_command_choices import CLI_COMMAND_CHOICES
+from config.cli_command_choices import CLI_COMMAND_CHOICES, NATIVE_COMMAND_CHOICES
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry.help import QUICK_ACCESS_COMMANDS
 from surfaces.interactive_shell.command_registry.types import SlashCommand
@@ -101,14 +101,18 @@ def _slash_completion(cmd: SlashCommand, start_position: int, *, cols: int) -> C
 
 
 def subcommand_completions(command_name: str, prefix: str = "") -> tuple[Completion, ...]:
-    """Return choices for a registered root command or nested CLI group."""
+    """Return choices for a registered root command or nested command group."""
     path = tuple(command_name.lower().split())
     if not path:
         return ()
     entry = SLASH_COMMANDS.get(path[0])
     if entry is None:
         return ()
-    choices = entry.first_arg_completions if len(path) == 1 else CLI_COMMAND_CHOICES.get(path, ())
+    choices = (
+        entry.first_arg_completions
+        if len(path) == 1
+        else CLI_COMMAND_CHOICES.get(path, NATIVE_COMMAND_CHOICES.get(path, ()))
+    )
     sub_prefix = prefix.lower()
     return tuple(
         Completion(

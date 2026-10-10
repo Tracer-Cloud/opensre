@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from rich.console import Console
 from rich.markup import escape
 
-from config.cli_command_choices import CLI_COMMAND_CHOICES
+from config.cli_command_choices import CLI_COMMAND_CHOICES, NATIVE_COMMAND_CHOICES
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import ERROR
@@ -178,7 +178,7 @@ def _command_text(command: SlashCommand) -> str | None:
         if chosen is None:
             return None
         path = (*path, chosen)
-        options = CLI_COMMAND_CHOICES.get(path, ())
+        options = CLI_COMMAND_CHOICES.get(path, NATIVE_COMMAND_CHOICES.get(path, ()))
     return " ".join(path)
 
 

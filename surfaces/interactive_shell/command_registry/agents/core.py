@@ -48,6 +48,7 @@ from tools.system.fleet_monitoring.discovery import registered_and_discovered_ag
 from tools.system.fleet_monitoring.registry import AgentRegistry
 
 _AGENTS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("list", "show registered local AI agents"),
     ("budget", "view or edit per-agent hourly budgets"),
     ("bus", "live-tail the cross-agent context bus"),
     ("claim", "claim a branch for an agent"),
@@ -408,7 +409,7 @@ def _cmd_agents(session: Session, console: Console, args: list[str]) -> bool:
     # The sampler is lazy: the first /fleet renders a cold snapshot and starts
     # the background sampler so CPU/token columns warm up on subsequent views.
     session.terminal.ensure_fleet_sampler_started()
-    if not args:
+    if not args or args[0].lower().strip() in {"list", "ls"}:
         return _cmd_agents_list(console)
 
     sub = args[0].lower().strip()
@@ -456,6 +457,7 @@ COMMANDS: list[SlashCommand] = [
         _cmd_agents,
         usage=(
             "/fleet",
+            "/fleet list",
             "/fleet budget",
             "/fleet bus",
             "/fleet claim",
