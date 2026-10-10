@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from check_catalog import Check, quality_checks, quick_checks
-from git_changes import changed_files, is_documentation
+from git_changes import changed_files, default_base, is_documentation
 from test_scope_rules import select_tests
 
 
@@ -84,6 +84,11 @@ def main(argv: list[str] | None = None) -> int:
         "--scope", action="store_true", help="Include tests selected from the diff."
     )
     parser.add_argument("--quick", action="store_true", help="Only Ruff on changed Python files.")
+    parser.add_argument(
+        "--pr-ready",
+        action="store_true",
+        help="Run shared checks and include affected tests when a remote base is available.",
+    )
     parser.add_argument("--base", help="Explicit branch/commit to compare against.")
     parser.add_argument("--head", help="Compare committed revisions only (used by the push hook).")
     parser.add_argument("--dry-run", action="store_true")
@@ -91,8 +96,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.workers < 1:
         parser.error("--workers must be positive")
-    if args.quick and (args.scope or args.check or args.group != "all"):
-        parser.error("--quick cannot be combined with --scope, --check, or --group")
+    if sum((args.scope, args.quick, args.pr_ready)) > 1:
+        parser.error("--scope, --quick, and --pr-ready are mutually exclusive")
+    if (args.quick or args.pr_ready) and (args.check or args.group != "all"):
+        parser.error("--quick and --pr-ready cannot be combined with --check or --group")
     root = Path.cwd()
     checks = [
         check
@@ -100,9 +107,20 @@ def main(argv: list[str] | None = None) -> int:
         if (check.name == args.check if args.check else args.group in ("all", check.group))
     ]
     errors: tuple[str, ...] = ()
-    if args.scope or args.quick:
+    scope_base = args.base
+    select_scope = args.scope
+    if args.pr_ready:
+        scope_base = scope_base or default_base(root)
+        if scope_base:
+            select_scope = True
+        else:
+            print(
+                "No remote base is available; running shared quality checks without "
+                "diff-selected tests."
+            )
+    if select_scope or args.quick:
         try:
-            changed = changed_files(root, args.base, args.head)
+            changed = changed_files(root, scope_base, args.head)
         except subprocess.CalledProcessError:
             print(
                 "Cannot determine the diff. Fetch the base branch or pass --base explicitly.",

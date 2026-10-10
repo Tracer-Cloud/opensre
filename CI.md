@@ -21,20 +21,27 @@ and a blocking pre-push hook for this checkout. For an existing environment,
 run `make install-hooks`. Installation preserves existing hooks and keeps
 linked worktrees independent.
 
-The hook runs **Ruff lint and formatting checks on changed Python files only**
-from the committed revisions being pushed. Temporary Git worktrees ensure an
-uncommitted source fix cannot hide a committed lint failure. It reuses the checkout's
-installed tooling. Like other local Git hooks, the validation implementation is
-trusted local tooling, not a tamper-proof security boundary. Required PR CI
-remains authoritative.
-It does not install dependencies or run tests, typechecking,
-registry checks, or import checks. Run `make install` if tooling is missing.
-Existing push hooks still run first with Git's original arguments and ref updates.
+The hook runs a broader PR-readiness gate when a branch is first published to a
+remote: locked dependencies, all shared quality checks, and tests selected from
+the branch diff. Later pushes keep feedback fast by running only Ruff lint and
+formatting checks on changed Python files. Temporary Git worktrees ensure an
+uncommitted source fix cannot hide a committed failure. Like other local Git
+hooks, the validation implementation is trusted local tooling, not a tamper-proof
+security boundary. Required PR CI remains authoritative. Existing push hooks
+still run first with Git's original arguments and ref updates.
+
+If the remote has no available default-branch base, the first-push gate runs all
+shared quality checks without diff-selected tests rather than treating every
+tracked file as part of the branch change.
 
 Run `make pre-push` (or `make check`) for the same fast checks on your working
 changes. Use `ARGS='--base upstream/main'` to select a base explicitly. Without
 an available remote base, all tracked Python files are checked. Deleted files
 are ignored; configuration-only changes are validated by PR CI.
+
+Run `make pr-ready` explicitly before opening a pull request from a branch that
+already exists on the remote. The automatic broader gate runs again if a deleted
+remote branch is recreated; it does not run for tags.
 
 ## 2) Focused tests and complete CI
 

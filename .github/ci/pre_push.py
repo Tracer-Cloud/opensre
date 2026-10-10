@@ -58,7 +58,38 @@ def _record_override(root: Path, reason: str, updates: str) -> None:
     )
 
 
-def _validate(root: Path, commit: str, base: str | None) -> int:
+def _run_pr_readiness(
+    snapshot: Path, commit: str, base: str | None, environment: dict[str, str]
+) -> int:
+    print(f"Preparing locked dependencies for {commit[:12]} (outside check timing).", flush=True)
+    setup = subprocess.run(
+        ["uv", "sync", "--frozen", "--extra", "dev", "--quiet"],
+        cwd=snapshot,
+        env=environment,
+        check=False,
+    )
+    if setup.returncode:
+        return setup.returncode
+    runner = snapshot / ".github" / "ci" / "run_checks.py"
+    if not runner.is_file():
+        print(
+            "Push blocked: the committed branch lacks .github/ci/run_checks.py.",
+            file=sys.stderr,
+        )
+        return 1
+    command = [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        str(runner),
+    ]
+    if base:
+        command.extend(["--scope", "--head", commit, "--base", base])
+    return subprocess.run(command, cwd=snapshot, env=environment, check=False).returncode
+
+
+def _validate(root: Path, commit: str, base: str | None, *, pr_readiness: bool = False) -> int:
     # Use a real Git worktree so changed-path detection sees the pushed Git state.
     with tempfile.TemporaryDirectory(prefix="opensre-pre-push-") as directory:
         snapshot = Path(directory) / "checkout"
@@ -69,6 +100,8 @@ def _validate(root: Path, commit: str, base: str | None) -> int:
             environment = {
                 key: value for key, value in os.environ.items() if key not in local_variables
             }
+            if pr_readiness:
+                return _run_pr_readiness(snapshot, commit, base, environment)
             # Reuse installed tooling; Ruff reads configuration from the committed snapshot.
             # Also validate branches created before this gate was introduced.
             # Invoke Ruff directly: old or dirty check runners cannot alter this gate.
@@ -105,7 +138,7 @@ def main(args: list[str] | None = None) -> int:
         _record_override(root, override, updates)
         return 0
     failures = False
-    validated: set[tuple[str, str | None]] = set()
+    validated: set[tuple[str, str | None, bool]] = set()
     remote = arguments[0] if arguments else "origin"
     for line in updates.splitlines():
         fields = line.split()
@@ -123,12 +156,14 @@ def main(args: list[str] | None = None) -> int:
         base = default_base(root, remote)
         if remote_ref == "refs/heads/main" and set(remote_sha) != {"0"}:
             base = remote_sha
-        validation = (commit, base)
+        pr_readiness = remote_ref.startswith("refs/heads/") and set(remote_sha) == {"0"}
+        validation = (commit, base, pr_readiness)
         if validation in validated:
             continue
         validated.add(validation)
-        print(f"Validating {local_ref} at {commit[:12]}.", flush=True)
-        failures = bool(_validate(root, commit, base)) or failures
+        mode = "PR readiness" if pr_readiness else "fast push"
+        print(f"Validating {local_ref} at {commit[:12]} ({mode}).", flush=True)
+        failures = bool(_validate(root, commit, base, pr_readiness=pr_readiness)) or failures
     if failures:
         print(
             "Push blocked. Fix the reported checks and commit the changes before retrying.",

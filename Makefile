@@ -9,7 +9,7 @@ export
 	install-gateway-on-new-server destroy-gateway-on-new-server \
 	test test-full test-cov test-scope test-cli-smoke test-grafana \
 	clean lint format-check format typecheck vulture \
-	check-imports check-cycles check-layers check-imports-strict check-layers-strict check check-full pre-push install-hooks help
+	check-imports check-cycles check-layers check-imports-strict check-layers-strict check check-full pr-ready pre-push install-hooks help
 
 
 ifneq ($(wildcard .venv/bin/python),)
@@ -172,6 +172,9 @@ check: pre-push
 pre-push:
 	uv run --no-sync python .github/ci/run_checks.py --quick $(ARGS)
 
+pr-ready:
+	uv run --frozen --extra dev python .github/ci/run_checks.py --pr-ready $(ARGS)
+
 check-full:
 	uv run --frozen --extra dev python .github/ci/run_checks.py $(ARGS)
 	$(MAKE) test-full
@@ -220,5 +223,6 @@ help:
 	@echo "  make check-imports   - Import cycles, layers, and direct-edge checks"
 	@echo "  make check-layers-strict - Full transitive layer contracts (.importlinter.strict)"
 	@echo "  make check-full      - All quality checks and full test suite (opt-in)"
+	@echo "  make pr-ready        - Shared quality checks and affected tests"
 	@echo "  make install-hooks   - Install blocking push validation in this checkout"
 	@echo "  make pre-push        - Ruff lint and format checks on changed Python files"
