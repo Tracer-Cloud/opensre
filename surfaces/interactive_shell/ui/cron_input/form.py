@@ -6,6 +6,7 @@ import click
 from prompt_toolkit.application import Application
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
+from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -78,8 +79,8 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
             else f"{flag} (optional)"
         )
 
-    def summary_rows() -> list[tuple[str, str]]:
-        rows: list[tuple[str, str]] = []
+    def summary_rows() -> StyleAndTextTuples:
+        rows: StyleAndTextTuples = []
         for index, name in enumerate(visible_cron_fields(current)):
             value = " ".join(strip_terminal_controls(current[name]).split())
             if not value:
@@ -109,7 +110,7 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
         get_cursor_position=lambda: Point(0, row * 2 + (row < len(visible_cron_fields(current)))),
     )
 
-    def choice_rows() -> list[tuple[str, str]]:
+    def choice_rows() -> StyleAndTextTuples:
         return [
             (
                 "class:selected" if index == choice_index else "",

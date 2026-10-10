@@ -10,7 +10,7 @@ import click
 
 from core.agent_harness import load_loop_template
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
-from surfaces.cli.commands.cron import cron_add
+from surfaces.shared.cron_options import cron_add_parameters
 from surfaces.shared.cron_tasks import prepare_cron_task
 
 
@@ -18,7 +18,7 @@ from surfaces.shared.cron_tasks import prepare_cron_task
 def cron_options() -> Mapping[str, click.Option]:
     """Return the same option definitions used by fully specified CLI commands."""
     return MappingProxyType(
-        {p.name: p for p in cron_add.params if isinstance(p, click.Option) and p.name}
+        {p.name: p for p in cron_add_parameters() if isinstance(p, click.Option) and p.name}
     )
 
 
@@ -104,7 +104,8 @@ def cron_arguments(values: dict[str, str]) -> list[str]:
 def validate_cron_draft(values: dict[str, str]) -> list[str]:
     """Apply Click types and shared task validation without persistence or execution."""
     args = cron_arguments(values)
-    with cron_add.make_context("/cron add", args) as context:
+    command = click.Command("/cron add", params=list(cron_options().values()))
+    with command.make_context("/cron add", args) as context:
         prepare_cron_task(**context.params)
     return cron_arguments(values)
 
