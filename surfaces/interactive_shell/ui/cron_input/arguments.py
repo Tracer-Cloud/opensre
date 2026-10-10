@@ -42,7 +42,7 @@ def parse_cron_draft(args: list[str]) -> dict[str, str]:
             value = "True"
         elif not separator:
             index += 1
-            if index >= len(args) or args[index].startswith("--"):
+            if index >= len(args):
                 raise click.UsageError(f"{flag} requires a value.")
             value = args[index]
         assert option.name is not None

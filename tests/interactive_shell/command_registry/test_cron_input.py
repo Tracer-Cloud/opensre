@@ -458,3 +458,26 @@ def test_choice_editor_preserves_case_insensitive_supplied_values() -> None:
     saved = parse_cron_draft(result)
     assert saved["kind"] == "manual_loop"
     assert saved["provider"] == "interactive_shell"
+
+
+def test_option_looking_text_is_preserved_like_click() -> None:
+    from surfaces.interactive_shell.ui.cron_input.arguments import (
+        cron_add_needs_input,
+        parse_cron_draft,
+        validate_cron_draft,
+    )
+
+    args = [
+        "add",
+        "--kind",
+        "manual_loop",
+        "--provider",
+        "interactive_shell",
+        "--prompt",
+        "--summarize",
+    ]
+    assert cron_add_needs_input(args)
+    draft = parse_cron_draft(args[1:])
+    assert draft["prompt"] == "--summarize"
+    draft["cron_expr"] = "0 9 * * *"
+    assert parse_cron_draft(validate_cron_draft(draft))["prompt"] == "--summarize"

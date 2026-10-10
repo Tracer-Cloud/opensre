@@ -167,11 +167,9 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
                 mode = "choice"
                 selected = current[field]
                 option_type = options[field].type
-                if isinstance(option_type, click.Choice):
-                    selected = option_type.normalize_choice(selected, ctx=None)
-                    candidates = [
-                        option_type.normalize_choice(value, ctx=None) for value in candidates
-                    ]
+                if isinstance(option_type, click.Choice) and not option_type.case_sensitive:
+                    selected = selected.casefold()
+                    candidates = [value.casefold() for value in candidates]
                 choice_index = candidates.index(selected) if selected in candidates else 0
                 app.layout.focus(selection)
             else:
