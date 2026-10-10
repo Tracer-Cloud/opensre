@@ -116,6 +116,10 @@ owning area rather than adding more logic to the caller.
     must be added to
     `_INTERACTIVE_PICKER_MENUS` / `_INTERACTIVE_PICKER_SUBCOMMANDS` in
     `tools/interactive_shell/actions/slash.py`.
+  - **Agent-selected listings:** use `runtime/exclusive_output.with_exclusive_output`
+    through the REPL adapter to suspend the prompt while rendering, keep
+    blocking reads off its event loop, and return IDs to the same agent turn.
+    Queuing a listing as a picker ends that turn and loses follow-up actions.
   - **Resume after setup:** a deferred `/integrations setup <service>` inside
     a skill parks the turn's message, as does a skill's prerequisite gate.
     `command_registry/setup_resume.py` (called when the wizard ends and by
@@ -200,6 +204,10 @@ owning area rather than adding more logic to the caller.
   markup and cap what is retained or sent to prompts.
 - Use explicit timeouts and clear cancellation behavior for subprocesses. Avoid
   waits that can hang the REPL indefinitely.
+- Kept CLI children must survive interactive host exit without blocking it or
+  losing writable output pipes. Use independent draining with capped foreground
+  capture and post-timeout discard; preserve headless waiting. Verify actual
+  host exit while a child waits, then writes beyond pipe capacity and finishes.
 
 ## State, history, config, and background work
 
