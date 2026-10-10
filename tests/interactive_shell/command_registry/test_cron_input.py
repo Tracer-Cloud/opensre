@@ -557,7 +557,7 @@ def test_field_guidance_is_readable_and_only_shortcuts_are_dim() -> None:
             for fragment in to_formatted_text(control.text)
         ]
     assert app.style is not None
-    for text in ("optional leading seconds", " · required"):
+    for text in ("optional seconds first", " · required"):
         style = next(style for style, value, *_ in fragments if text in value)
         assert app.style.get_attrs_for_style_str(style).color == str(theme.SECONDARY).lstrip("#")
     shortcut_style = next(style for style, value, *_ in fragments if "Enter save field" in value)

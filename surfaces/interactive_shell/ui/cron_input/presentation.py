@@ -69,7 +69,7 @@ def field_status(name: str, values: dict[str, str]) -> str:
 
 def field_help(name: str, values: dict[str, str]) -> str:
     if name == "cron_expr":
-        help_text = "Example: 0 9 * * * (daily at 09:00).\n5 fields; optional leading seconds."
+        help_text = "Example: 0 9 * * * (09:00 daily).\n5 fields; optional seconds first."
         if values["kind"].lower() == "manual_loop":
             help_text += "\nManual loops run at most hourly."
         return help_text
