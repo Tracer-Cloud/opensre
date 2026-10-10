@@ -90,6 +90,7 @@ def triage_connect(
             api_key=key,
             services=tuple(values["services"].split(",")),
             ingress_url=values["ingress_url"],
+            credential_env=api_key_env,
         )
     except (ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
@@ -161,10 +162,11 @@ def _source_action(source_id: str, action: str) -> None:
     store = TriageStore()
     try:
         source = store.source(source_id)
-        store.control(source_id, action)
-        if action == "remove":
+        if not (action == "remove" and source.removed):
+            store.control(source_id, action)
+        if action == "remove" and source.credential_kind == "owned":
             delete_credential(source.credential_ref)
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
     _emit({"source_id": source_id, "action": action, "reports_retained": True})
 

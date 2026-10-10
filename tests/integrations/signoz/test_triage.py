@@ -116,6 +116,33 @@ def test_resume_rebuilds_a_compose_file_without_a_complete_preparation_checkpoin
     assert demo.data["application"] == str(application)
 
 
+def test_demo_cleanup_retries_its_query_credential_after_source_revocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.signoz.triage_demo.runtime import PaymentDemo
+    from tests.core.domain.alerts.triage.test_store import source
+
+    monkeypatch.setattr(
+        "integrations.signoz.triage_demo.runtime.demo_root", lambda _identifier: tmp_path
+    )
+    demo = PaymentDemo("opensre-triage-test", progress=lambda _text: None)
+    demo.store = TriageStore(tmp_path / "triage.sqlite3")
+    demo.store.add_source(source(demo.id).model_copy(update={"demo": True}))
+    deleted = []
+
+    def remove(reference: str) -> None:
+        deleted.append(reference)
+        if len(deleted) == 1:
+            raise RuntimeError("Credential file locked")
+
+    monkeypatch.setattr("integrations.signoz.triage_demo.runtime.delete_credential", remove)
+    with pytest.raises(RuntimeError, match="locked"):
+        demo.cleanup()
+    assert demo.store.source(demo.id).removed
+    assert demo.cleanup()["stage"] == "cleaned"
+    assert deleted.count("TEST_KEY") == 2
+
+
 def claim_store(tmp_path: Path) -> tuple[TriageStore, Any]:
     store = TriageStore(tmp_path / "triage.sqlite3")
     store.add_source(

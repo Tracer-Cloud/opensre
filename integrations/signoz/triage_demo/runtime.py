@@ -20,6 +20,7 @@ from config.llm_credentials import delete_credential, resolve_env_credential, sa
 from core.domain.alerts.triage.storage import TriageStore
 from integrations.signoz.client import SigNozClient
 from integrations.signoz.config import SigNozConfig
+from integrations.signoz.triage_credentials import managed_credentials_required
 from integrations.signoz.triage_demo.artifacts import prepare, run
 from integrations.signoz.triage_demo.compose import compose, generate, write_compose
 from integrations.signoz.triage_demo.provision import DemoAdmin
@@ -42,6 +43,10 @@ def demo_root(identifier: str) -> Path:
 
 def preflight(root: Path) -> None:
     """Check existing Docker/Compose, Docker RAM, disk; never install system software."""
+    if managed_credentials_required():
+        raise ValueError(
+            "Run the disposable demo from a local OpenSRE installation with credential storage enabled"
+        )
     run(["docker", "compose", "version"], root, timeout=15)
     info = json.loads(run(["docker", "info", "--format", "{{json .}}"], root, timeout=15))
     if int(info.get("MemTotal", 0)) < DEMO_RAM_BYTES:
@@ -326,9 +331,11 @@ class PaymentDemo:
                 if path.exists():
                     compose(self.root, self.id, path, "down", "--volumes")
             for source in self.store.sources():
-                if source.id == self.id and source.demo and not source.removed:
-                    self.store.control(source.id, "remove")
-                    delete_credential(source.credential_ref)
+                if source.id == self.id and source.demo:
+                    if not source.removed:
+                        self.store.control(source.id, "remove")
+                    if source.credential_kind == "owned":
+                        delete_credential(source.credential_ref)
             for suffix in ("ADMIN_PASSWORD", "QUERY_KEY", "WEBHOOK_PASSWORD"):
                 delete_credential(
                     "OPENSRE_TRIAGE_DEMO_" + self.id.upper().replace("-", "_") + "_" + suffix

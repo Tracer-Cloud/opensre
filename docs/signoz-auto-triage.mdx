@@ -25,6 +25,7 @@ not install Docker, change paging, configure a tunnel, or install a service at
 boot. An existing gateway is reused; otherwise the normal gateway daemon is
 started. Its normal authentication still protects generic remote `/alerts` and
 prompt intake. The demo's native endpoint always requires source Basic auth.
+Run the disposable demo from a local installation with credential storage enabled.
 
 The shell returns after three seconds while setup continues. Read the printed
 demo ID and use:
@@ -50,8 +51,7 @@ Application and SigNoz UI ports bind loopback; OTLP is internal to the dedicated
 network. Host filesystem and Docker-socket telemetry mounts are removed. Raw-PII
 emission stays disabled, and checkouts use synthetic fixture data. Image tags are
 resolved to digests before launching, and those digests are saved in the demo
-manifest. Foundry runs with telemetry and updater disabled. Its unused histogram
-binary downloader is disabled because this demonstration uses `count()`.
+manifest.
 
 Release inputs: Foundry **v0.3.0** (platform release checksums), SigNoz
 **v0.145.0**, SigNoz collector **0.144.10** (collector versions do not track
@@ -80,12 +80,16 @@ opensre triage connect --name payments \
   --api-key-env SIGNOZ_API_KEY
 ```
 
+For a deployed gateway or an environment-only installation, reuse a managed
+SigNoz integration or provide `--api-key-env` with a key supplied to the gateway
+after every restart. Do not use a temporary shell export that the gateway cannot
+read. Configure managed keys through your existing deployment controls.
+
 OpenSRE verifies a scoped query and shows the source-specific webhook URL,
 username, and random password once. Save them in SigNoz's Webhook notification
-channel with Basic auth and **Send resolved** enabled. The command also shows
-the supported `/api/v1/channels` receiver JSON if you manage channels through the
-API. Choose this channel on the alerts you want investigated; your existing
-paging policy stays under your control. Remote live ingress requires your own
+channel with Basic auth and **Send resolved** enabled. Choose this channel on
+the alerts you want investigated; your existing paging policy stays under your
+control. Remote live ingress requires your own
 HTTPS endpoint. Localhost HTTP works only when SigNoz can actually reach that
 host; localhost inside a container points to that container.
 
@@ -104,9 +108,11 @@ or spend a model budget. Then verify a genuine alert reaches `/triage list`.
   work cooperatively, and skips new automatic investigations.
 - `/triage resume <source-id>` permits future occurrences; it does not replay
   paused backlog or reinvestigate a duplicate firing notification.
-- `/triage remove <source-id>` revokes local authority and deletes its query-key
-  reference while retaining accepted events/reports. Remove its channel on your
-  SigNoz side when you no longer want delivery retries.
+- `/triage remove <source-id>` revokes source authority while retaining accepted
+  events/reports. It deletes a source's dedicated credential; a shared managed
+  credential remains available
+  to its other users. If credential cleanup fails, retry the same remove command.
+  Remove its channel in SigNoz when you no longer want delivery retries.
 
 Reports distinguish observed evidence, likely cause, unknowns, and the next
 check. Missing telemetry never proves health. Provider errors and budget stops
@@ -138,22 +144,8 @@ Unread lifecycle notifications appear in the shell without taking over the
 prompt. On restart the shell summarizes stored unread events. Use `/triage list`
 and `/triage show` for the durable record.
 
-## Official contracts used
+## Further reading
 
-The implementation is checked against the SigNoz v0.145.0 release source:
-
-- [Webhook documentation](https://signoz.io/docs/alerts-management/notification-channel/webhook/): native Alertmanager grouped webhook v4, Basic auth, fingerprint,
-  startsAt/endsAt and resolved delivery.
-- [Query Range v5 types and request fixtures](https://github.com/SigNoz/signoz/tree/v0.145.0/pkg/types/querybuildertypes/querybuildertypesv5): epoch **milliseconds**, builder-query envelopes, `service.name` and `hasError` filters.
-- [v1 channel routes](https://github.com/SigNoz/signoz/blob/v0.145.0/pkg/apiserver/signozapiserver/alertmanager.go) and [legacy receiver handler](https://github.com/SigNoz/signoz/blob/v0.145.0/pkg/alertmanager/signozalertmanager/handler.go): `/api/v1/channels` accepts receiver JSON (`webhook_configs`);
-  the newer `/api/v2/notification_channels` has a different config envelope and
-  paginated list shape and is not substituted for v1.
-- [Service-account routes](https://github.com/SigNoz/signoz/blob/v0.145.0/pkg/apiserver/signozapiserver/serviceaccount.go): service accounts, viewer roles, and API keys.
-- [Session types](https://github.com/SigNoz/signoz/tree/v0.145.0/pkg/types/authtypes) and [registration handler](https://github.com/SigNoz/signoz/blob/v0.145.0/pkg/query-service/app/http_handler.go): fresh demo registration, organization lookup and email/password session.
-- [Alert rule types](https://github.com/SigNoz/signoz/blob/v0.145.0/pkg/types/ruletypes/api_params.go) and [validation fixtures](https://github.com/SigNoz/signoz/blob/v0.145.0/pkg/types/ruletypes/validate_test.go): v1 rule schema with v5 composite-query builder, count of payment error spans, one-minute evaluation, and an owned preferred channel.
-- [Supported Docker installation](https://signoz.io/docs/install/docker/) and [Foundry release](https://github.com/SigNoz/signoz-foundry/releases/tag/v0.3.0): generated installation rather than deprecated legacy deployment Compose.
-
-SigNoz releases can change these API schemas independently. Live connection does
-not provision admin resources, and any future demo upgrade should update the
-release pins, source-backed request fixtures, and real-stack E2E verification
-together.
+Use the [SigNoz webhook guide](https://signoz.io/docs/alerts-management/notification-channel/webhook/)
+when configuring notification delivery and the [supported Docker installation guide](https://signoz.io/docs/install/docker/)
+when checking your self-hosted stack.

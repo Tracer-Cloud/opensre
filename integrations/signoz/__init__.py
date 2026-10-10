@@ -22,6 +22,7 @@ from integrations.signoz.triage_exports import __getattr__ as __getattr__
 
 if TYPE_CHECKING:
     from integrations.signoz.notifications import parse_notification as parse_notification
+    from integrations.signoz.triage_credentials import resolve_source_key as resolve_source_key
     from integrations.signoz.triage_demo.runtime import (
         PaymentDemo as PaymentDemo,
     )
@@ -59,6 +60,7 @@ __all__ = [
     "connect_source",
     "demo_root",
     "parse_notification",
+    "resolve_source_key",
     "signoz_config_from_env",
     "signoz_count_label",
     "signoz_effective_limit",

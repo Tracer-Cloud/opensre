@@ -6,6 +6,7 @@ import hashlib
 import secrets
 import time
 import uuid
+from typing import Literal
 from urllib.parse import urlsplit
 
 from config.constants.triage import TRIAGE_CREDENTIAL_PREFIX
@@ -14,6 +15,10 @@ from core.domain.alerts.triage.models import TriageSource
 from core.domain.alerts.triage.storage import TriageStore
 from integrations.signoz.client import SigNozClient
 from integrations.signoz.config import SigNozConfig
+from integrations.signoz.triage_credentials import (
+    managed_credentials_required,
+    managed_query_reference,
+)
 
 
 class SourceFieldError(ValueError):
@@ -69,6 +74,7 @@ def connect_source(
     demo: bool = False,
     source_id: str | None = None,
     webhook_password: str | None = None,
+    credential_env: str | None = None,
 ) -> tuple[TriageSource, str]:
     """Verify query access and create independent authenticated webhook credentials."""
     validate_urls(query_url, ingress_url, demo=demo)
@@ -79,12 +85,24 @@ def connect_source(
     if any(s.id == identifier for s in store.sources()):
         raise ValueError("Source ID already exists; reuse the existing connection")
     credential_ref = f"{TRIAGE_CREDENTIAL_PREFIX}{identifier.upper().replace('-', '_')}_API_KEY"
+    credential_kind: Literal["owned", "environment", "integration"] = "owned"
+    credential_instance = ""
+    if managed_credentials_required():
+        if demo:
+            raise ValueError(
+                "Run the disposable demo from a local OpenSRE installation with credential storage enabled"
+            )
+        credential_kind, credential_ref, credential_instance = managed_query_reference(
+            query_url, api_key, credential_env
+        )
     password = webhook_password or secrets.token_urlsafe(32)
     source = TriageSource(
         id=identifier,
         name=name.strip(),
         query_url=query_url.rstrip("/"),
         credential_ref=credential_ref,
+        credential_kind=credential_kind,
+        credential_instance=credential_instance,
         services=services,
         webhook_url=f"{ingress_url.rstrip('/')}/alerts/signoz/{identifier}",
         username=identifier,
@@ -100,10 +118,12 @@ def connect_source(
             "SigNoz query access failed; verify the query URL and read-only service-account key"
         )
     source = source.model_copy(update={"query_ready": True})
-    save_credential(credential_ref, api_key)
+    if source.credential_kind == "owned":
+        save_credential(credential_ref, api_key)
     try:
         store.add_source(source)
     except Exception:
-        delete_credential(credential_ref)
+        if source.credential_kind == "owned":
+            delete_credential(credential_ref)
         raise
     return source, password

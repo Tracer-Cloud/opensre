@@ -5,13 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from config.llm_credentials import resolve_env_credential
 from core.domain.alerts.triage.models import InvestigationClaim
 from core.domain.alerts.triage.storage import TriageStore
 from core.domain.alerts.triage.worker import TriageWorker
 from infrastructure.process.turn_capacity import TurnGate
 from infrastructure.turn_host.triage import run_triage_turn
-from integrations.signoz import TriageEvidenceTools
+from integrations.signoz import TriageEvidenceTools, resolve_source_key
 
 
 def build_triage_worker(gate: TurnGate) -> TriageWorker:
@@ -19,7 +18,7 @@ def build_triage_worker(gate: TurnGate) -> TriageWorker:
     store = TriageStore()
 
     def investigate(claim: InvestigationClaim, stop: Callable[[], bool]) -> dict[str, Any]:
-        key = resolve_env_credential(claim.source.credential_ref)
+        key = resolve_source_key(claim.source)
         if not key:
             raise ValueError("Source query credential is unavailable")
         tools = TriageEvidenceTools(claim, store, key, stop)

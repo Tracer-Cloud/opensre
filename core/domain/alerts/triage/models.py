@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -16,6 +16,8 @@ class TriageSource(BaseModel):
     name: str
     query_url: str
     credential_ref: str
+    credential_kind: Literal["owned", "environment", "integration"] = "owned"
+    credential_instance: str = ""
     services: tuple[str, ...]
     webhook_url: str
     username: str

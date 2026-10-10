@@ -6,6 +6,7 @@ from importlib import import_module
 from typing import Any
 
 _TRIAGE_EXPORTS = {
+    "resolve_source_key": "triage_credentials",
     "SourceFieldError": "triage_setup",
     "parse_notification": "notifications",
     "TriageEvidenceTools": "triage_evidence",
