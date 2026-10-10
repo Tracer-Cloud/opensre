@@ -84,6 +84,9 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/history", "retention"),
         ("/history", "show"),
         ("/fleet", "budget"),
+        # ``/loops run`` prompts for the id it is missing; the branch below
+        # narrows it so a supplied id keeps stdin free.
+        ("/loops", "run"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),
@@ -150,6 +153,13 @@ def turn_needs_exclusive_stdin(text: str, _session: Session) -> bool:
     # the prompt's cancel keys available while waiting; bare run opens editing.
     if name == "/cron" and len(args) >= 2 and args[0] == "run" and "--help" not in args:
         return False
+    # A supplied loop id runs the loop inline — no picker, no table — so stdin
+    # must stay free for /cancel while it runs; only the missing-id form prompts
+    # (the ``("/loops", "run")`` entry in ``_EXCLUSIVE_STDIN_SUBCOMMANDS``).
+    # ``set_auto_command`` re-submits a blank id as ``/loops run ''``, which
+    # shlex hands back as an empty arg.
+    if name == "/loops" and args[:1] == ["run"] and len(args) > 1:
+        return not args[1].strip()
     if name in _WAIT_FOR_COMPLETION_COMMANDS or name in _EXCLUSIVE_STDIN_COMMANDS:
         return True
     if name == "/theme":

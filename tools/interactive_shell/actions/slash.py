@@ -47,6 +47,7 @@ _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/integrations", "list"),
         ("/integrations", "setup"),
         ("/integrations", "remove"),
+        ("/loops", "run"),
         ("/loops", "show"),
         ("/mcp", "list"),
         ("/mcp", "connect"),
@@ -79,8 +80,11 @@ def _slash_drives_interactive_picker(
         return True
     if not slash_args:
         return name in _INTERACTIVE_PICKER_MENUS
+    # ``/loops run`` and ``/loops show`` only prompt while the id is missing;
+    # ``set_auto_command`` re-submits a blank id as ``''``, which ``shlex``
+    # hands back as an empty second arg, so check for blankness too.
     return (name, slash_args[0].lower()) in _INTERACTIVE_PICKER_SUBCOMMANDS and (
-        name != "/loops" or len(slash_args) == 1
+        name != "/loops" or len(slash_args) == 1 or not slash_args[1].strip()
     )
 
 

@@ -1091,6 +1091,8 @@ Scheduled report delivery. Press Enter or Tab after `/cron` to choose a subcomma
 
 List recurring loops from the scheduler store, create manual prompt loops, run a loop once immediately, stop or restart a loop, delete a loop, and debug the next fire time. By default a loop tick only produces a report; add `--mode agent` when the tick should act with tools (for example edit and push CI fixes). Onboarding creates draft examples such as a weekday morning report; active loops run through the cron scheduler when the gateway or `opensre cron start` is running.
 
+In an interactive terminal, `/loops run` without a loop id opens a picker of the configured loops; Esc leaves it without running anything. Scripted and non-TTY invocations still require the id.
+
 Agent-mode prompts must contain the complete task and name the tools to use; each tick starts a fresh session without loading workflow skills. For the CLI equivalent, use `opensre cron add --kind manual_loop --mode agent` with your prompt and schedule. Existing loops retain their stored mode; check `/loops show <id>` before reusing one.
 
 The list shows each loop's latest finding and run status, plus its next scheduled time in your local timezone. Failed and quiet runs replace the previous result in the table.
