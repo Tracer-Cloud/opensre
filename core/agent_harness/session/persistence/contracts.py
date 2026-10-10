@@ -70,8 +70,8 @@ class SessionStore(Protocol):
     def open_session(self, session: SessionPersistenceSource) -> None:
         raise NotImplementedError
 
-    def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> None:
-        raise NotImplementedError
+    def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> str:
+        """Append a turn stub; return the record id, or '' when it was not persisted."""
 
     def append_session_name(self, session_id: str, name: str) -> str:
         """Append a session-name override; an empty name restores the derived title."""
