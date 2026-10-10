@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -122,7 +124,15 @@ def push_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     for name in ("pre_push.py", "git_changes.py", "install_hooks.py", "check_catalog.py"):
         (scripts / name).write_bytes((_ROOT / ".github" / "ci" / name).read_bytes())
     (scripts / "run_checks.py").write_text(
-        "import argparse\n\nargparse.ArgumentParser().parse_args()\n", encoding="utf-8"
+        "import argparse\n"
+        "from pathlib import Path\n\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--scope', action='store_true')\n"
+        "parser.add_argument('--head')\n"
+        "parser.add_argument('--base')\n"
+        "parser.parse_args()\n"
+        "raise SystemExit('missing_name' in Path('bad.py').read_text(encoding='utf-8'))\n",
+        encoding="utf-8",
     )
     (repo / "bad.py").write_text("value = 1\n", encoding="utf-8")
     (repo / ".gitignore").write_text(".venv/\n__pycache__/\n", encoding="utf-8")
@@ -195,6 +205,73 @@ def test_push_of_a_non_head_ref_validates_that_ref(push_repo: Path) -> None:
     blocked = _git(push_repo, "push", "origin", "broken", check=False)
     assert blocked.returncode != 0, blocked.stdout + blocked.stderr
     assert not _git(push_repo, "ls-remote", "origin", "refs/heads/broken").stdout
+
+
+@pytest.mark.parametrize(
+    ("remote_ref", "remote_sha", "expected_readiness"),
+    (
+        ("refs/heads/feature", "0" * 40, True),
+        ("refs/heads/feature", "1" * 40, False),
+        ("refs/tags/v1", "0" * 40, False),
+    ),
+)
+def test_only_new_remote_branches_run_pr_readiness(
+    push_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remote_ref: str,
+    remote_sha: str,
+    expected_readiness: bool,
+) -> None:
+    import pre_push
+
+    commit = _git(push_repo, "rev-parse", "HEAD").stdout.strip()
+    readiness: list[bool] = []
+
+    def _record_validation(
+        _root: Path, _commit: str, _base: str | None, *, pr_readiness: bool
+    ) -> int:
+        readiness.append(pr_readiness)
+        return 0
+
+    monkeypatch.setattr(pre_push, "_validate", _record_validation)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"HEAD {commit} {remote_ref} {remote_sha}\n"))
+    monkeypatch.chdir(push_repo)
+
+    assert pre_push.main(["origin"]) == 0
+    assert readiness == [expected_readiness]
+
+
+def test_pr_readiness_runs_scoped_checks_in_the_snapshot_environment(
+    push_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from pre_push import _validate
+
+    base = _git(push_repo, "rev-parse", "HEAD").stdout.strip()
+    source = push_repo / "bad.py"
+    source.write_text("value = 2\n", encoding="utf-8")
+    _git(push_repo, "commit", "-am", "runtime change")
+    witness = tmp_path / "readiness-args"
+    runner = push_repo / ".github" / "ci" / "run_checks.py"
+    runner.write_text(
+        "from pathlib import Path\n"
+        "import json\n"
+        "import os\n"
+        "import sys\n\n"
+        "Path(os.environ['OPENSRE_READINESS_WITNESS']).write_text(\n"
+        "    json.dumps({'args': sys.argv[1:], 'executable': sys.executable}),\n"
+        "    encoding='utf-8',\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    _git(push_repo, "add", ".github/ci/run_checks.py")
+    _git(push_repo, "commit", "-m", "record readiness invocation")
+    head = _git(push_repo, "rev-parse", "HEAD").stdout.strip()
+    monkeypatch.setenv("OPENSRE_READINESS_WITNESS", str(witness))
+
+    assert _validate(push_repo, head, base, pr_readiness=True) == 0
+    invocation = json.loads(witness.read_text(encoding="utf-8"))
+    assert invocation["args"] == ["--scope", "--head", head, "--base", base]
+    assert ".venv" in Path(invocation["executable"]).parts
 
 
 def test_install_is_idempotent_and_does_not_change_a_sibling_worktree(push_repo: Path) -> None:
