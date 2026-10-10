@@ -241,12 +241,16 @@ def test_only_new_remote_branches_run_pr_readiness(
     assert readiness == [expected_readiness]
 
 
-def test_pr_readiness_runs_scoped_checks_in_the_snapshot_environment(
-    push_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize("base_available", (True, False))
+def test_pr_readiness_uses_scoped_checks_only_with_a_remote_base(
+    push_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    base_available: bool,
 ) -> None:
     from pre_push import _validate
 
-    base = _git(push_repo, "rev-parse", "HEAD").stdout.strip()
+    base_commit = _git(push_repo, "rev-parse", "HEAD").stdout.strip()
     source = push_repo / "bad.py"
     source.write_text("value = 2\n", encoding="utf-8")
     _git(push_repo, "commit", "-am", "runtime change")
@@ -268,9 +272,11 @@ def test_pr_readiness_runs_scoped_checks_in_the_snapshot_environment(
     head = _git(push_repo, "rev-parse", "HEAD").stdout.strip()
     monkeypatch.setenv("OPENSRE_READINESS_WITNESS", str(witness))
 
+    base = base_commit if base_available else None
     assert _validate(push_repo, head, base, pr_readiness=True) == 0
     invocation = json.loads(witness.read_text(encoding="utf-8"))
-    assert invocation["args"] == ["--scope", "--head", head, "--base", base]
+    expected_args = ["--scope", "--head", head, "--base", base_commit] if base else []
+    assert invocation["args"] == expected_args
     assert ".venv" in Path(invocation["executable"]).parts
 
 

@@ -30,6 +30,10 @@ hooks, the validation implementation is trusted local tooling, not a tamper-proo
 security boundary. Required PR CI remains authoritative. Existing push hooks
 still run first with Git's original arguments and ref updates.
 
+If the remote has no available default-branch base, the first-push gate runs all
+shared quality checks without diff-selected tests rather than treating every
+tracked file as part of the branch change.
+
 Run `make pre-push` (or `make check`) for the same fast checks on your working
 changes. Use `ARGS='--base upstream/main'` to select a base explicitly. Without
 an available remote base, all tracked Python files are checked. Deleted files
