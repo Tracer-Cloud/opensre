@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import threading
 from typing import BinaryIO
 
@@ -35,7 +36,6 @@ from tools.interactive_shell.subprocess import (
 
 _UPDATE_SUBPROCESS_TIMEOUT_SECONDS = 300
 _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS = 90.0
-_PIPE_DRAIN_CHUNK = 65536
 _STILL_RUNNING_OUTCOME = "still_running"
 _KEPT_CLI_COMMANDS: list[threading.Thread] = []
 _KEPT_CLI_LOCK = threading.Lock()
@@ -101,60 +101,16 @@ def _cli_command_succeeded(exit_code: int | None) -> bool:
 
 
 def shutdown_kept_cli_commands() -> None:
-    """Wait until background CLI children have exited and their pipes are drained.
-
-    Not used on session teardown: the gateway closes the session before it
-    publishes the prompt result, and a stuck tick must not block that. The
-    reaper is non-daemon, so interpreter shutdown waits for it instead.
-    Children are not killed; stopping one is what blocked the task's later ticks.
-    """
+    """Explicitly wait for kept CLI children; interactive teardown must not call this."""
     with _KEPT_CLI_LOCK:
         threads = tuple(_KEPT_CLI_COMMANDS)
     for thread in threads:
         thread.join()
 
 
-def _pump_pipe(
-    stream: BinaryIO,
-    sink: bytearray,
-    discard: threading.Event,
-    lock: threading.Lock,
-) -> None:
-    """Read ``stream`` until EOF, keeping bytes only until ``discard`` is set."""
+def _reap_kept_cli_command(process: subprocess.Popen[bytes]) -> None:
+    """Reap a kept child and release its tracking entry when it exits."""
     try:
-        while True:
-            chunk = stream.read(_PIPE_DRAIN_CHUNK)
-            if not chunk:
-                return
-            with lock:
-                if not discard.is_set():
-                    sink.extend(chunk)
-    finally:
-        stream.close()
-
-
-def _snapshot_and_discard(
-    stdout_buf: bytearray,
-    stderr_buf: bytearray,
-    discard: threading.Event,
-    lock: threading.Lock,
-) -> tuple[bytes, bytes]:
-    with lock:
-        discard.set()
-        stdout = bytes(stdout_buf)
-        stderr = bytes(stderr_buf)
-        stdout_buf.clear()
-        stderr_buf.clear()
-    return stdout, stderr
-
-
-def _reap_kept_cli_command(
-    process: subprocess.Popen[bytes], readers: list[threading.Thread]
-) -> None:
-    """Join pipe readers and reap the child once it exits. Output is discarded."""
-    try:
-        for reader in readers:
-            reader.join()
         process.wait()
     finally:
         with _KEPT_CLI_LOCK:
@@ -164,100 +120,72 @@ def _reap_kept_cli_command(
 
 
 def _hand_off_kept_cli_command(
-    process: subprocess.Popen[bytes], readers: list[threading.Thread]
+    process: subprocess.Popen[bytes], *, detach_on_shutdown: bool
 ) -> None:
     thread = threading.Thread(
         target=_reap_kept_cli_command,
-        args=(process, readers),
+        args=(process,),
         name="cli-command-reaper",
-        daemon=False,
+        daemon=detach_on_shutdown,
     )
     with _KEPT_CLI_LOCK:
         _KEPT_CLI_COMMANDS.append(thread)
     thread.start()
 
 
-def _start_pipe_readers(
-    process: subprocess.Popen[bytes],
-    stdout_buf: bytearray,
-    stderr_buf: bytearray,
-    discard: threading.Event,
-    lock: threading.Lock,
-) -> list[threading.Thread]:
-    readers: list[threading.Thread] = []
-    for stream, sink, name in (
-        (process.stdout, stdout_buf, "cli-command-stdout"),
-        (process.stderr, stderr_buf, "cli-command-stderr"),
-    ):
-        if stream is None:
-            continue
-        reader = threading.Thread(
-            target=_pump_pipe,
-            args=(stream, sink, discard, lock),
-            name=name,
-            daemon=False,
-        )
-        reader.start()
-        readers.append(reader)
-    return readers
-
-
-def _decode_pipe(data: bytes) -> str:
-    return data.decode("utf-8", errors="replace")
+def _captured_file_snapshot(stream: BinaryIO) -> bytes:
+    """Read only bytes already written, even if a background child keeps appending."""
+    size = os.fstat(stream.fileno()).st_size
+    # A separate open has its own offset: seeking the inherited descriptor
+    # would also move the child's write offset. Windows requires delete sharing
+    # when reopening a NamedTemporaryFile marked for deletion on last close.
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_TEMPORARY", 0)
+    with os.fdopen(os.open(stream.name, flags), "rb") as snapshot:
+        return snapshot.read(size)
 
 
 def _run_captured_keep_running(
-    cmd: list[str], *, timeout: float | None, env: dict[str, str]
+    cmd: list[str], *, timeout: float | None, env: dict[str, str], detach_on_shutdown: bool
 ) -> subprocess.CompletedProcess[str]:
-    """``subprocess.run`` with captured output, except a timeout leaves the child running.
+    """Capture a child without stopping its work at the foreground timeout.
 
-    After the timeout, pipe readers discard further output and a non-daemon
-    reaper waits for the child. The child is not killed: its claim stays live
-    until the tick finishes, and a full pipe must not stall it.
+    Temporary output files survive in the child's inherited descriptors after
+    the parent closes them or exits, so no pipe can fill or break at REPL exit.
+    Interactive reapers are daemon threads; headless hosts wait for completion.
     """
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        env=env,
-    )
-    discard = threading.Event()
-    lock = threading.Lock()
-    stdout_buf = bytearray()
-    stderr_buf = bytearray()
-    readers = _start_pipe_readers(process, stdout_buf, stderr_buf, discard, lock)
-    handed_off = False
-    try:
-        try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            partial_stdout, partial_stderr = _snapshot_and_discard(
-                stdout_buf, stderr_buf, discard, lock
-            )
-            _hand_off_kept_cli_command(process, readers)
-            handed_off = True
-            raise subprocess.TimeoutExpired(
-                cmd,
-                0.0 if timeout is None else timeout,
-                output=partial_stdout,
-                stderr=partial_stderr,
-            ) from None
-        for reader in readers:
-            reader.join()
-        return subprocess.CompletedProcess(
+    with tempfile.NamedTemporaryFile() as stdout, tempfile.NamedTemporaryFile() as stderr:
+        process = subprocess.Popen(
             cmd,
-            process.returncode if process.returncode is not None else 1,
-            _decode_pipe(bytes(stdout_buf)),
-            _decode_pipe(bytes(stderr_buf)),
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=True,
+            env=env,
         )
-    finally:
-        if not handed_off and process.poll() is None:
-            process.kill()
-            process.wait()
-        if not handed_off:
-            for reader in readers:
-                reader.join()
+        handed_off = False
+        try:
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                partial_stdout = _captured_file_snapshot(stdout)
+                partial_stderr = _captured_file_snapshot(stderr)
+                _hand_off_kept_cli_command(process, detach_on_shutdown=detach_on_shutdown)
+                handed_off = True
+                raise subprocess.TimeoutExpired(
+                    cmd,
+                    0.0 if timeout is None else timeout,
+                    output=partial_stdout,
+                    stderr=partial_stderr,
+                ) from None
+            return subprocess.CompletedProcess(
+                cmd,
+                process.returncode if process.returncode is not None else 1,
+                _captured_file_snapshot(stdout).decode("utf-8", errors="replace"),
+                _captured_file_snapshot(stderr).decode("utf-8", errors="replace"),
+            )
+        finally:
+            if not handed_off and process.poll() is None:
+                process.kill()
+                process.wait()
 
 
 def run_cli_command(
@@ -328,7 +256,10 @@ def run_cli_command(
         if should_capture:
             if keep_running_hint is not None:
                 captured_result = _run_captured_keep_running(
-                    cmd, timeout=subprocess_timeout, env=child_env
+                    cmd,
+                    timeout=subprocess_timeout,
+                    env=child_env,
+                    detach_on_shutdown=session is not None and not headless,
                 )
             else:
                 captured_result = subprocess.run(
