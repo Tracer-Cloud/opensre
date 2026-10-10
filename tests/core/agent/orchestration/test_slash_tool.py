@@ -87,29 +87,6 @@ def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
     assert buf.getvalue() == ""
 
 
-def test_agent_selected_cron_list_replays_only_after_stdin_is_reserved(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from surfaces.interactive_shell.runtime import input_policy
-
-    monkeypatch.setattr(input_policy, "repl_tty_interactive", lambda: True)
-
-    ctx, _buf, session, ports = _ctx(ports=FakeSlashPorts(tty=True))
-    result = slash_tool.execute_slash_tool({"command": "/cron", "args": ["list"]}, ctx)
-    assert isinstance(result, dict)
-    queued = result[QUEUED_COMMAND_KEY]
-    assert ports.dispatched == []
-    assert input_policy.turn_needs_exclusive_stdin(queued, session)
-
-    session.terminal.exclusive_stdin_active = True
-    session.terminal.pending_prompt_default = None
-    session.terminal.pending_prompt_autosubmit = False
-    result = slash_tool.execute_slash_tool({"command": "/cron", "args": ["list"]}, ctx)
-    assert result is True
-    assert ports.dispatched == ["/cron list"]
-    assert session.terminal.pending_prompt_default is None
-
-
 @pytest.mark.parametrize(
     ("active_skill", "turn_message", "parks"),
     [

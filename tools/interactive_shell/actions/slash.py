@@ -44,7 +44,6 @@ _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
         ("/auth", "login"),
         ("/auth", "logout"),
-        ("/cron", "list"),
         ("/integrations", "list"),
         ("/integrations", "setup"),
         ("/integrations", "remove"),

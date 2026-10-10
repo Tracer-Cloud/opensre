@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -13,9 +14,12 @@ from rich.markup import escape
 import surfaces.interactive_shell.command_registry.cron_cmds as cron_cmds
 from config.cli_command_choices import CLI_COMMAND_CHOICES
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
+from config.constants.cli_handoff import CLI_HANDOFF_FLAG
 from config.interactive_override import interactive_override_env
 from config.scope_handoff import hand_off_scope
 from core.agent_harness.spi.session_state import session_terminal, set_turn_outcome_hint
+from infrastructure.process.entrypoint import opensre_command
+from infrastructure.process.termination import terminate_process_tree
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.subprocess_runner import build_opensre_cli_argv
@@ -148,13 +152,14 @@ def _run_captured_keep_running(
 ) -> subprocess.CompletedProcess[str]:
     """Capture a child without stopping its work at the foreground timeout.
 
-    Temporary output files survive in the child's inherited descriptors after
-    the parent closes them or exits, so no pipe can fill or break at REPL exit.
+    A detached host caps foreground output and drains later bytes to discard.
+    Its temporary output descriptors survive the REPL's exit without growing.
     Interactive reapers are daemon threads; headless hosts wait for completion.
     """
     with tempfile.NamedTemporaryFile() as stdout, tempfile.NamedTemporaryFile() as stderr:
         process = subprocess.Popen(
-            cmd,
+            opensre_command(CLI_HANDOFF_FLAG, json.dumps(cmd), str(timeout)),
+            stdin=subprocess.DEVNULL,
             stdout=stdout,
             stderr=stderr,
             start_new_session=True,
@@ -183,7 +188,7 @@ def _run_captured_keep_running(
             )
         finally:
             if not handed_off and process.poll() is None:
-                process.kill()
+                terminate_process_tree(process.pid, grace_seconds=0, force_wait_seconds=1)
                 process.wait()
 
 

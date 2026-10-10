@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,41 @@ from contextlib import suppress
 from pathlib import Path
 
 import psutil
+import pytest
+
+
+@pytest.mark.parametrize("timeout", [None, 0.0])
+def test_kept_cli_output_is_capped_and_later_bytes_are_discarded(
+    tmp_path: Path, timeout: float | None
+) -> None:
+    from infrastructure.process.cli_handoff import _CAPTURE_LIMIT_BYTES
+    from surfaces.interactive_shell.command_registry import cli_parity
+
+    finished = tmp_path / "finished"
+    child = (
+        "import pathlib, sys\n"
+        "sys.stdout.write('x' * 2_000_000); sys.stdout.flush()\n"
+        "sys.stderr.write('y' * 2_000_000); sys.stderr.flush()\n"
+        f"pathlib.Path({str(finished)!r}).write_text('done')\n"
+        "sys.exit(7)\n"
+    )
+    command = [sys.executable, "-c", child]
+    if timeout is None:
+        result = cli_parity._run_captured_keep_running(
+            command, timeout=None, env=os.environ.copy(), detach_on_shutdown=False
+        )
+        assert result.returncode == 7
+        assert len(result.stdout) == _CAPTURE_LIMIT_BYTES
+        assert len(result.stderr) == _CAPTURE_LIMIT_BYTES
+    else:
+        with pytest.raises(subprocess.TimeoutExpired) as captured:
+            cli_parity._run_captured_keep_running(
+                command, timeout=timeout, env=os.environ.copy(), detach_on_shutdown=True
+            )
+        assert not captured.value.stdout
+        assert not captured.value.stderr
+        cli_parity.shutdown_kept_cli_commands()
+    assert finished.read_text() == "done"
 
 
 def test_foreground_snapshot_preserves_child_write_offset() -> None:
