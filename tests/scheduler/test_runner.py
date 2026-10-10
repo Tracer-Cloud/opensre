@@ -820,7 +820,7 @@ class TestMissedFireCatchUp:
     def test_a_sub_hourly_loop_waits_for_its_capped_hour(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Every five minutes is stored as hourly at :05, so the 02:25 slot is
+        # Every five minutes is stored as hourly at :00, so the 02:25 slot is
         # not caught up when the scheduler starts at 02:26.
         job, stored = _register_after_gap(
             tmp_path,
@@ -832,8 +832,8 @@ class TestMissedFireCatchUp:
 
         assert "next_run_time" not in job
         assert stored is not None
-        assert stored.cron == "5 * * * *"
-        assert stored.next_run == datetime(2026, 10, 4, 3, 5, tzinfo=UTC).isoformat()
+        assert stored.cron == "0 * * * *"
+        assert stored.next_run == datetime(2026, 10, 4, 3, 0, tzinfo=UTC).isoformat()
 
     def test_a_live_resync_never_fires_a_past_slot(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
