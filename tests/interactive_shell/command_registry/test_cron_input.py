@@ -306,11 +306,15 @@ def test_form_scroll_keeps_create_reachable_on_small_terminals(columns: int, row
 
         def rendered(_app: Any) -> None:
             screen = app.renderer.last_rendered_screen
-            if screen is None or captured:
+            if screen is None or len(captured) == 2:
                 return
             cursor = screen.get_cursor_position(app.layout.current_window)
             line = "".join(screen.data_buffer[cursor.y][x].char for x in range(columns))
-            if "Create scheduled task" in line:
+            if not captured and "Check [literal]" in line:
+                captured.append(line)
+                names = visible_cron_fields(draft)
+                pipe.send_text("\t" * (len(names) - names.index("prompt")))
+            elif captured and "Create scheduled task" in line:
                 captured.append(line)
                 pipe.send_text("\x13")
 
@@ -320,11 +324,11 @@ def test_form_scroll_keeps_create_reachable_on_small_terminals(columns: int, row
 
         def start() -> None:
             app.create_background_task(stop_if_stalled())
-            pipe.send_text("\t" * len(visible_cron_fields(draft)))
+            pipe.send_text("\t" * visible_cron_fields(draft).index("prompt"))
 
         app.after_render += rendered
         result = app.run(pre_run=start)
-    assert captured, "Create must remain visible and keyboard-accessible"
+    assert len(captured) == 2, "Selected values and Create must stay visible and accessible"
     assert result is not None
     assert parse_cron_draft(result)["name"] == draft["name"]
 

@@ -33,7 +33,7 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
     mode = "summary"
     error = ""
     choice_index = 0
-    editor = TextArea(height=Dimension(min=1, max=6), multiline=False, prompt="› ")
+    editor = TextArea(height=1, multiline=False, prompt="› ")
 
     def choices() -> list[str]:
         option = options[field]
@@ -104,7 +104,9 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
         return rows
 
     summary = FormattedTextControl(
-        summary_rows, focusable=True, get_cursor_position=lambda: Point(0, row * 2)
+        summary_rows,
+        focusable=True,
+        get_cursor_position=lambda: Point(0, row * 2 + (row < len(visible_cron_fields(current)))),
     )
 
     def choice_rows() -> list[tuple[str, str]]:
@@ -222,6 +224,7 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
                                 FormattedTextControl(heading),
                                 height=Dimension(min=1, max=3),
                                 wrap_lines=True,
+                                dont_extend_height=True,
                             ),
                             Window(
                                 FormattedTextControl(
@@ -229,18 +232,24 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
                                 ),
                                 height=Dimension(min=2, max=4),
                                 wrap_lines=True,
+                                dont_extend_height=True,
                             ),
                             ConditionalContainer(
                                 Window(
                                     summary,
                                     height=Dimension(min=2, preferred=12, max=18),
                                     wrap_lines=True,
+                                    dont_extend_height=True,
                                 ),
                                 filter=Condition(lambda: mode == "summary"),
                             ),
                             ConditionalContainer(editor, filter=Condition(lambda: mode == "text")),
                             ConditionalContainer(
-                                Window(selection, height=Dimension(min=2, max=8)),
+                                Window(
+                                    selection,
+                                    height=Dimension(min=2, max=8),
+                                    dont_extend_height=True,
+                                ),
                                 filter=Condition(lambda: mode == "choice"),
                             ),
                             ConditionalContainer(
@@ -248,12 +257,14 @@ def build_cron_form(values: dict[str, str]) -> Application[list[str] | None]:
                                     FormattedTextControl(lambda: [("class:error", error)]),
                                     height=Dimension(min=1, max=4),
                                     wrap_lines=True,
+                                    dont_extend_height=True,
                                 ),
                                 filter=Condition(lambda: bool(error)),
                             ),
                             Window(
                                 FormattedTextControl(lambda: [("class:hint", hint())]),
                                 wrap_lines=True,
+                                dont_extend_height=True,
                             ),
                         ]
                     ),
