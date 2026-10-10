@@ -22,6 +22,7 @@ from prompt_toolkit.input import DummyInput
 from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.output import DummyOutput
+from prompt_toolkit.output.color_depth import ColorDepth
 
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
@@ -194,6 +195,19 @@ def test_full_screen_transcript_takes_the_wheel_through_mouse_reporting() -> Non
         prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
 
     assert prompt.app.renderer.mouse_support() is True
+    assert prompt.app.layout.container.style == "class:terminal"
+
+
+def test_full_screen_terminal_background_honors_no_color(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The full-screen surface must not introduce colour when it is disabled."""
+    monkeypatch.setenv("NO_COLOR", "1")
+
+    with create_app_session(input=DummyInput(), output=DummyOutput()):
+        prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
+
+    assert prompt.app.color_depth is ColorDepth.DEPTH_1_BIT
 
 
 def test_a_bare_composer_leaves_mouse_reporting_off() -> None:
@@ -609,11 +623,17 @@ def test_build_prompt_style_tracks_active_theme() -> None:
     assert amber_attrs.color != teal_attrs.color
 
 
-def test_prompt_style_keeps_transparent_filler_unstyled() -> None:
+def test_prompt_style_paints_the_full_screen_terminal_background() -> None:
+    set_active_theme("blue")
     style = _build_prompt_style()
+    terminal = style.get_attrs_for_style_str("class:terminal")
+    transcript = style.get_attrs_for_style_str("class:transcript")
     filler = style.get_attrs_for_style_str("")
-    default = style.get_attrs_for_style_str("class:default")
 
+    assert terminal.bgcolor == THEME_REGISTRY["blue"].BG.lstrip("#")
+    assert transcript.color == THEME_REGISTRY["blue"].TEXT.lstrip("#")
+    # The base filler remains transparent. The full-screen root owns the
+    # background, avoiding foreground-only padding during terminal resizes.
     assert not any(
         (
             filler.color,
@@ -624,7 +644,6 @@ def test_prompt_style_keeps_transparent_filler_unstyled() -> None:
             filler.reverse,
         )
     )
-    assert default.color
 
 
 def test_command_tray_current_item_uses_highlight_style() -> None:
