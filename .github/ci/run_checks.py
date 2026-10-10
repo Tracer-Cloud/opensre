@@ -90,11 +90,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Run shared checks and include affected tests when a remote base is available.",
     )
     parser.add_argument("--base", help="Explicit branch/commit to compare against.")
-    parser.add_argument(
-        "--no-base",
-        action="store_true",
-        help="Run PR readiness without diff-selected tests even if origin has a base.",
-    )
     parser.add_argument("--head", help="Compare committed revisions only (used by the push hook).")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--workers", type=int, default=3)
@@ -105,8 +100,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--scope, --quick, and --pr-ready are mutually exclusive")
     if (args.quick or args.pr_ready) and (args.check or args.group != "all"):
         parser.error("--quick and --pr-ready cannot be combined with --check or --group")
-    if args.no_base and (not args.pr_ready or args.base):
-        parser.error("--no-base requires --pr-ready and cannot be combined with --base")
     root = Path.cwd()
     checks = [
         check
@@ -114,11 +107,10 @@ def main(argv: list[str] | None = None) -> int:
         if (check.name == args.check if args.check else args.group in ("all", check.group))
     ]
     errors: tuple[str, ...] = ()
-    scope_base = None if args.no_base else args.base
+    scope_base = args.base
     select_scope = args.scope
     if args.pr_ready:
-        if not args.no_base:
-            scope_base = scope_base or default_base(root)
+        scope_base = scope_base or default_base(root)
         if scope_base:
             select_scope = True
         else:

@@ -83,14 +83,9 @@ def _run_pr_readiness(
         "--no-sync",
         "python",
         str(runner),
-        "--pr-ready",
-        "--head",
-        commit,
     ]
     if base:
-        command.extend(["--base", base])
-    else:
-        command.append("--no-base")
+        command.extend(["--scope", "--head", commit, "--base", base])
     return subprocess.run(command, cwd=snapshot, env=environment, check=False).returncode
 
 

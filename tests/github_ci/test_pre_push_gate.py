@@ -128,8 +128,6 @@ def push_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "from pathlib import Path\n\n"
         "parser = argparse.ArgumentParser()\n"
         "parser.add_argument('--scope', action='store_true')\n"
-        "parser.add_argument('--pr-ready', action='store_true')\n"
-        "parser.add_argument('--no-base', action='store_true')\n"
         "parser.add_argument('--head')\n"
         "parser.add_argument('--base')\n"
         "parser.parse_args()\n"
@@ -275,13 +273,11 @@ def test_pr_readiness_uses_scoped_checks_only_with_a_remote_base(
     monkeypatch.setenv("OPENSRE_READINESS_WITNESS", str(witness))
 
     base = base_commit if base_available else None
+    if not base_available:
+        _git(push_repo, "update-ref", "refs/remotes/origin/main", base_commit)
     assert _validate(push_repo, head, base, pr_readiness=True) == 0
     invocation = json.loads(witness.read_text(encoding="utf-8"))
-    expected_args = ["--pr-ready", "--head", head]
-    if base:
-        expected_args.extend(["--base", base_commit])
-    else:
-        expected_args.append("--no-base")
+    expected_args = ["--scope", "--head", head, "--base", base_commit] if base else []
     assert invocation["args"] == expected_args
     assert ".venv" in Path(invocation["executable"]).parts
 
@@ -346,11 +342,9 @@ def test_pr_readiness_without_a_base_runs_shared_checks_without_scope_selection(
     (tmp_path / ".dockerignore").write_text(".venv\n", encoding="utf-8")
     _git(tmp_path, "add", ".dockerignore")
     _git(tmp_path, "commit", "-m", "base-less fixture")
-    head = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
-    _git(tmp_path, "update-ref", "refs/remotes/origin/main", head)
     monkeypatch.chdir(tmp_path)
 
-    assert runner.main(["--pr-ready", "--no-base", "--dry-run"]) == 0
+    assert runner.main(["--pr-ready", "--dry-run"]) == 0
     output = capsys.readouterr().out
     assert "No remote base is available" in output
     assert "lint:" in output
