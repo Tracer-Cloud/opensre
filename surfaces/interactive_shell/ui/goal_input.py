@@ -41,33 +41,32 @@ def parse_max_turns(raw: str, *, allow_blank: bool = True) -> int:
     return max(1, int(text))
 
 
+_MAX_TURNS_ERROR = "Enter a positive integer for max turns, or leave empty for unbounded."
+
+
 def _validate_condition(value: str) -> None:
     if not value:
         raise InputFormError("Enter a completion condition.", field="condition")
 
 
 def _validate_max_turns(value: str) -> None:
+    text = value.strip()
+    if not text:
+        return
     try:
-        parse_max_turns(value)
+        number = int(text)
     except ValueError as exc:
-        raise InputFormError(
-            "Enter a positive integer for max turns, or leave empty for unbounded.",
-            field="max_turns",
-        ) from exc
+        raise InputFormError(_MAX_TURNS_ERROR, field="max_turns") from exc
+    if number <= 0:
+        raise InputFormError(_MAX_TURNS_ERROR, field="max_turns")
 
 
 def _validate(values: dict[str, str]) -> GoalSetValues:
     condition = values["condition"].strip()
     if not condition:
         raise InputFormError("Enter a completion condition.", field="condition")
-    try:
-        max_turns = parse_max_turns(values["max_turns"])
-    except ValueError as exc:
-        raise InputFormError(
-            "Enter a positive integer for max turns, or leave empty for unbounded.",
-            field="max_turns",
-        ) from exc
-    return GoalSetValues(condition=condition, max_turns=max_turns)
+    _validate_max_turns(values["max_turns"])
+    return GoalSetValues(condition=condition, max_turns=parse_max_turns(values["max_turns"]))
 
 
 def build_goal_set_form(options: dict[str, str]) -> Application[GoalSetValues | None]:

@@ -107,6 +107,14 @@ def test_goal_set_form_rejects_blank_condition() -> None:
     assert values.max_turns == 0
 
 
+def test_goal_set_form_rejects_nonpositive_budget() -> None:
+    with create_app_session(output=DummyOutput()):
+        values = run_keys(build_goal_set_form({}), "Zero budget\r\t\r0\r\x01\x0b3\r\x13")
+    assert values is not None
+    assert values.condition == "Zero budget"
+    assert values.max_turns == 3
+
+
 def test_goal_set_cancel_leaves_existing_goal_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
