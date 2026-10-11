@@ -514,6 +514,14 @@ Set a finish line and keep working toward it across turns:
 ```
 
 Bare `/goal` shows the current goal. `/goal set` starts work immediately.
+
+In an interactive terminal, `/goal set` without a condition asks for one, then
+shows the turn budget for review. The condition is required; max turns is
+optional and empty leaves the goal unbounded. Use arrow keys or Tab/Shift-Tab
+to move between rows, then Enter to edit a row or choose **Set goal**. Ctrl-S
+attaches the goal from the summary and runs the condition as the next turn.
+Esc returns from an edit without applying it; Esc on the summary cancels
+without attaching anything. Fully specified commands still execute directly.
 See [Goals](/getting-started/goals) for the full workflow.
 
 </Accordion>
