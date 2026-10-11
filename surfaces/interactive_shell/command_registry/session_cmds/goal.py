@@ -111,7 +111,7 @@ def _set(session: Session, console: Console, args: list[str]) -> bool:
         flag = rest.pop(0)
         if flag in {"--max-turns", "--max_turns"} and rest:
             try:
-                max_turns = parse_max_turns(rest.pop(0))
+                max_turns = parse_max_turns(rest.pop(0), allow_blank=False)
             except ValueError:
                 _print_set_usage(console)
                 return True

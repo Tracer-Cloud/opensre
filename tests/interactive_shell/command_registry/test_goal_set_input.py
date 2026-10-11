@@ -54,6 +54,10 @@ def test_parse_max_turns_matches_direct_command_semantics() -> None:
     assert parse_max_turns("-2") == 1
     with pytest.raises(ValueError):
         parse_max_turns("many")
+    with pytest.raises(ValueError):
+        parse_max_turns("", allow_blank=False)
+    with pytest.raises(ValueError):
+        parse_max_turns("   ", allow_blank=False)
 
 
 @pytest.mark.parametrize("via_help", [False, True])
@@ -144,6 +148,15 @@ def test_complete_and_noninteractive_set_never_opens_form(
     output, session = dispatch("/goal set --max-turns bogus", tty=False)
     assert "usage:" in output
     assert session.session_goal is None
+
+    # An explicitly supplied empty budget never starts unbounded work, on TTY or not.
+    for tty in (True, False):
+        output, session = dispatch('/goal set --max-turns "" Ship it', tty=tty)
+        assert "usage:" in output
+        assert session.session_goal is None
+        output, session = dispatch('/goal set --max-turns " " Ship it', tty=tty)
+        assert "usage:" in output
+        assert session.session_goal is None
 
     # Unknown flags keep the direct error path even on a TTY that owns stdin.
     fresh = Session()

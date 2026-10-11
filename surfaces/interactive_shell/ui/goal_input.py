@@ -24,15 +24,20 @@ class GoalSetValues:
     max_turns: int
 
 
-def parse_max_turns(raw: str) -> int:
-    """Parse a ``--max-turns`` value; blank means unbounded.
+def parse_max_turns(raw: str, *, allow_blank: bool = True) -> int:
+    """Parse a ``--max-turns`` value; blank means unbounded when allowed.
 
-    Raise ValueError when the value is not an integer. Non-positive integers
-    clamp to a single turn, matching direct-command semantics.
+    Raise ValueError when the value is not an integer — and always for a blank
+    value when ``allow_blank`` is False, so direct commands keep rejecting an
+    explicitly supplied empty budget instead of starting unbounded work.
+    Non-positive integers clamp to a single turn, matching direct-command
+    semantics.
     """
     text = raw.strip()
     if not text:
-        return SESSION_GOAL_UNBOUNDED_TURNS
+        if allow_blank:
+            return SESSION_GOAL_UNBOUNDED_TURNS
+        raise ValueError(f"invalid --max-turns value: {raw!r}")
     return max(1, int(text))
 
 
