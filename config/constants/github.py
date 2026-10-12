@@ -20,6 +20,7 @@ GITHUB_MCP_TOOLSETS_ENV = "GITHUB_MCP_TOOLSETS"
 # Distinct ecosystem names: GitHub Actions injects GITHUB_TOKEN; the gh CLI reads GH_TOKEN.
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 GH_TOKEN_ENV = "GH_TOKEN"
+OPENSRE_INSTALL_GITHUB_TOKEN_ENV = "OPENSRE_INSTALL_GITHUB_TOKEN"
 #: Shell command that hands GitHub setup to the app.
 GITHUB_INTEGRATION_SETUP_SLASH = "/integrations setup github"
 #: Same app handoff from a terminal that is not already inside the interactive shell.
@@ -64,4 +65,5 @@ __all__ = [
     "GITHUB_MCP_TOOLSETS_ENV",
     "GITHUB_MCP_URL_ENV",
     "GITHUB_TOKEN_ENV",
+    "OPENSRE_INSTALL_GITHUB_TOKEN_ENV",
 ]

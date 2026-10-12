@@ -582,6 +582,9 @@ if TYPE_CHECKING:
     from config.constants.github import (
         GITHUB_TOKEN_ENV as GITHUB_TOKEN_ENV,
     )
+    from config.constants.github import (
+        OPENSRE_INSTALL_GITHUB_TOKEN_ENV as OPENSRE_INSTALL_GITHUB_TOKEN_ENV,
+    )
     from config.constants.gitlab import (
         GITLAB_AUTH_TOKEN_ENV as GITLAB_AUTH_TOKEN_ENV,
     )

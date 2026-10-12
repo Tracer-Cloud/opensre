@@ -21,8 +21,12 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.github import OPENSRE_INSTALL_GITHUB_TOKEN_ENV
 from config.constants.paths import REPO_ROOT
 from tests.e2e.install._shared import assert_binary_smoke, assert_checksum_verified
+
+# Remove the canary token from the test process and add it only to installer subprocesses.
+_CANARY_GITHUB_TOKEN = os.environ.pop(OPENSRE_INSTALL_GITHUB_TOKEN_ENV, None)
 
 pytestmark = [
     pytest.mark.e2e,
@@ -60,6 +64,8 @@ def test_live_cdn_serves_install_sh() -> None:
 def _sanitized_install_env(home: Path, *, extra_path: str = "") -> dict[str, str]:
     """PATH without repo ``.venv/bin`` so ensure_on_path cannot clobber editable installs."""
     env = os.environ.copy()
+    if _CANARY_GITHUB_TOKEN:
+        env[OPENSRE_INSTALL_GITHUB_TOKEN_ENV] = _CANARY_GITHUB_TOKEN
     env["HOME"] = str(home)
     env["OPENSRE_AUTO_LAUNCH"] = "0"
     env["OPENSRE_SKIP_GH_INSTALL"] = "1"
