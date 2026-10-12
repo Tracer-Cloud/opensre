@@ -43,10 +43,7 @@ def _map_query_signoz_logs(
 
 
 def _logs_is_available(sources: dict[str, dict]) -> bool:
-    if signoz_available_or_backend(sources):
-        return True
-    signoz = sources.get("signoz", {})
-    return bool(signoz.get("url") and signoz.get("api_key"))
+    return signoz_available_or_backend(sources)
 
 
 def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -63,10 +60,15 @@ def _normalize_logs_payload(
     result: dict[str, Any],
     *,
     service: str | None,
+    integration_id: str = "",
 ) -> dict[str, Any]:
     """Normalize logs output to the canonical envelope expected by the agent."""
+    resolved_id = str(result.get("integration_id") or integration_id or "").strip()
     if not result.get("available"):
-        return result
+        return {
+            **result,
+            "integration_id": resolved_id,
+        }
 
     logs = result.get("logs", [])
     error_keywords = ("error", "fail", "exception", "traceback", "panic", "fatal")
@@ -87,6 +89,7 @@ def _normalize_logs_payload(
         "error_logs": compacted_error_logs,
         "total": result.get("total", 0),
         "service": service,
+        "integration_id": resolved_id,
     }
     if "effective_limit" in result:
         result_data["effective_limit"] = result["effective_limit"]
@@ -128,6 +131,7 @@ def query_signoz_logs(
     severity: str | None = None,
     limit: int = 50,
     signoz_backend: Any = None,
+    integration_id: str = "",
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Query SigNoz logs by service, severity, and time window."""
@@ -141,7 +145,9 @@ def query_signoz_logs(
                 limit=limit,
             ),
         )
-        return _normalize_logs_payload(backend_result, service=service)
+        return _normalize_logs_payload(
+            backend_result, service=service, integration_id=integration_id
+        )
 
     config = SigNozConfig.model_validate(_kwargs)
     if not config.is_configured:
@@ -149,6 +155,7 @@ def query_signoz_logs(
             "signoz_logs",
             "SigNoz logs not configured. Provide SIGNOZ_URL and SIGNOZ_API_KEY.",
             logs=[],
+            integration_id=integration_id,
         )
 
     client = SigNozClient(config)
@@ -158,4 +165,4 @@ def query_signoz_logs(
         severity=severity,
         limit=limit,
     )
-    return _normalize_logs_payload(result, service=service)
+    return _normalize_logs_payload(result, service=service, integration_id=integration_id)

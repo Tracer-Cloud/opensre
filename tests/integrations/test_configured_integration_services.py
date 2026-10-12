@@ -164,6 +164,20 @@ def test_google_docs_absent_without_both_env_vars(monkeypatch: Any) -> None:
     assert "google_docs" not in catalog.load_env_integration_services()
 
 
+def test_signoz_env_marks_signoz_configured(monkeypatch: Any) -> None:
+    """Both SIGNOZ_URL and SIGNOZ_API_KEY must be present to detect signoz."""
+    monkeypatch.setenv("SIGNOZ_URL", "http://signoz.example.com")
+    monkeypatch.setenv("SIGNOZ_API_KEY", "test-api-key")
+    assert "signoz" in catalog.load_env_integration_services()
+
+
+def test_signoz_absent_without_api_key(monkeypatch: Any) -> None:
+    """SIGNOZ_URL alone is not enough; the API key is also required."""
+    monkeypatch.setenv("SIGNOZ_URL", "http://signoz.example.com")
+    monkeypatch.delenv("SIGNOZ_API_KEY", raising=False)
+    assert "signoz" not in catalog.load_env_integration_services()
+
+
 class TestConfiguredIntegrationHealth:
     """Offline health for the welcome banner: present vs. minimally usable.
 

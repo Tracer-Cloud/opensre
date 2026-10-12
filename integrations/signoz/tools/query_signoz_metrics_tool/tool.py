@@ -40,10 +40,7 @@ def _map_query_signoz_metrics(
 
 
 def _metrics_is_available(sources: dict[str, dict]) -> bool:
-    if signoz_available_or_backend(sources):
-        return True
-    signoz = sources.get("signoz", {})
-    return bool(signoz.get("url") and signoz.get("api_key"))
+    return signoz_available_or_backend(sources)
 
 
 def _metrics_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -103,11 +100,12 @@ def query_signoz_metrics(
     aggregation: str = "avg",
     limit: int = 50,
     signoz_backend: Any = None,
+    integration_id: str = "",
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Query SigNoz metrics by service and time window."""
     if signoz_backend is not None:
-        return cast(
+        result = cast(
             "dict[str, Any]",
             signoz_backend.query_metrics(
                 metric_name=metric_name,
@@ -117,20 +115,25 @@ def query_signoz_metrics(
                 limit=limit,
             ),
         )
+    else:
+        config = SigNozConfig.model_validate(_kwargs)
+        if not config.is_configured:
+            return tool_unavailable(
+                "signoz_metrics",
+                "SigNoz metrics not configured. Provide SIGNOZ_URL and SIGNOZ_API_KEY.",
+                metrics=[],
+                integration_id=integration_id,
+            )
 
-    config = SigNozConfig.model_validate(_kwargs)
-    if not config.is_configured:
-        return tool_unavailable(
-            "signoz_metrics",
-            "SigNoz metrics not configured. Provide SIGNOZ_URL and SIGNOZ_API_KEY.",
-            metrics=[],
+        client = SigNozClient(config)
+        result = client.query_metrics(
+            metric_name=metric_name,
+            service=service,
+            time_range_minutes=time_range_minutes,
+            aggregation=aggregation,
+            limit=limit,
         )
 
-    client = SigNozClient(config)
-    return client.query_metrics(
-        metric_name=metric_name,
-        service=service,
-        time_range_minutes=time_range_minutes,
-        aggregation=aggregation,
-        limit=limit,
-    )
+    resolved_id = str(result.get("integration_id") or integration_id or "").strip()
+    result["integration_id"] = resolved_id
+    return result

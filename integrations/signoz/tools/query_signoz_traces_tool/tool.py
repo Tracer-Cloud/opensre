@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from core.domain.types.evidence import record_evidence_entry
 from core.tool_framework import tool
@@ -58,10 +58,7 @@ def _map_query_signoz_traces(
 
 
 def _traces_is_available(sources: dict[str, dict]) -> bool:
-    if signoz_available_or_backend(sources):
-        return True
-    signoz = sources.get("signoz", {})
-    return bool(signoz.get("url") and signoz.get("api_key"))
+    return signoz_available_or_backend(sources)
 
 
 def _traces_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -107,45 +104,50 @@ def query_signoz_traces(
     error_only: bool = False,
     limit: int = 50,
     signoz_backend: Any = None,
+    integration_id: str = "",
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Query SigNoz traces for error rate, latency, and slow spans."""
     if signoz_backend is not None:
-        traces_result = signoz_backend.query_traces(
-            service=service,
-            time_range_minutes=time_range_minutes,
-            error_only=error_only,
-            limit=limit,
+        traces_result = cast(
+            "dict[str, Any]",
+            signoz_backend.query_traces(
+                service=service,
+                time_range_minutes=time_range_minutes,
+                error_only=error_only,
+                limit=limit,
+            ),
         )
         summary = signoz_backend.query_trace_summary(
             service=service,
             time_range_minutes=time_range_minutes,
         )
-        return {
-            **traces_result,
-            "summary": summary,
-        }
+    else:
+        config = SigNozConfig.model_validate(_kwargs)
+        if not config.is_configured:
+            return tool_unavailable(
+                "signoz_traces",
+                "SigNoz traces not configured. Provide SIGNOZ_URL and SIGNOZ_API_KEY.",
+                traces=[],
+                integration_id=integration_id,
+            )
 
-    config = SigNozConfig.model_validate(_kwargs)
-    if not config.is_configured:
-        return tool_unavailable(
-            "signoz_traces",
-            "SigNoz traces not configured. Provide SIGNOZ_URL and SIGNOZ_API_KEY.",
-            traces=[],
+        client = SigNozClient(config)
+        traces_result = client.query_traces(
+            service=service,
+            time_range_minutes=time_range_minutes,
+            error_only=error_only,
+            limit=limit,
+        )
+        summary = client.query_trace_summary(
+            service=service,
+            time_range_minutes=time_range_minutes,
         )
 
-    client = SigNozClient(config)
-    traces_result = client.query_traces(
-        service=service,
-        time_range_minutes=time_range_minutes,
-        error_only=error_only,
-        limit=limit,
-    )
-    summary = client.query_trace_summary(
-        service=service,
-        time_range_minutes=time_range_minutes,
-    )
-    return {
+    resolved_id = str(traces_result.get("integration_id") or integration_id or "").strip()
+    result: dict[str, Any] = {
         **traces_result,
         "summary": summary,
+        "integration_id": resolved_id,
     }
+    return result

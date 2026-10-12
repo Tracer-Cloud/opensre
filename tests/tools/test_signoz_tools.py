@@ -101,7 +101,13 @@ class _FakeSigNozBackend:
 
 
 class TestQuerySignozLogs:
-    def test_available_with_query_api_credentials_only(self) -> None:
+    def test_unverified_credentials_do_not_make_logs_available(self) -> None:
+        """Regression: url+api_key alone must not bypass connection_verified.
+
+        Callers with incomplete credentials see the tool as unavailable and
+        receive a clear error message rather than a misleading success flag.
+        The backend path is the correct bypass for synthetic test harnesses.
+        """
         from integrations.signoz.tools import _logs_is_available
 
         assert (
@@ -114,7 +120,7 @@ class TestQuerySignozLogs:
                     }
                 }
             )
-            is True
+            is False
         )
 
     def test_backend_injection(self) -> None:
@@ -125,6 +131,7 @@ class TestQuerySignozLogs:
             severity="ERROR",
             limit=10,
             signoz_backend=backend,
+            integration_id="signoz-logs-backend-id",
         )
         assert result["source"] == "signoz_logs"
         assert result["available"] is True
@@ -132,11 +139,62 @@ class TestQuerySignozLogs:
         assert len(result["logs"]) == 2
         assert len(result["error_logs"]) == 1
         assert result["error_logs"][0]["severity"] == "ERROR"
+        assert result["integration_id"] == "signoz-logs-backend-id"
+
+    def test_integration_id_stamped_on_result(self) -> None:
+        """integration_id from the store record is stamped on the result envelope.
+
+        The normalizer receives integration_id via the tool function parameter
+        and writes it to the result so evidence records can cross-reference the
+        store connection that produced this data.
+        """
+        from integrations.signoz.tools.query_signoz_logs_tool.tool import (
+            _normalize_logs_payload,
+        )
+
+        raw = {
+            "available": True,
+            "total": 1,
+            "logs": [
+                {
+                    "timestamp": "2024-01-01T00:00:00Z",
+                    "severity": "INFO",
+                    "message": "ok",
+                    "trace_id": "",
+                    "span_id": "",
+                    "attributes": {},
+                    "resources": {},
+                }
+            ],
+        }
+        result = _normalize_logs_payload(raw, service="api", integration_id="signoz-prod-123")
+        assert result["integration_id"] == "signoz-prod-123"
+
+    def test_end_to_end_extract_params_and_run(self) -> None:
+        from integrations.signoz.tools.query_signoz_logs_tool.tool import (
+            _logs_extract_params,
+        )
+
+        backend = _FakeSigNozBackend()
+        sources = {
+            "signoz": {
+                "url": "http://signoz.internal",
+                "api_key": "secret",
+                "integration_id": "signoz-int-logs",
+                "connection_verified": True,
+                "_backend": backend,
+            }
+        }
+        params = _logs_extract_params(sources)
+        assert params["integration_id"] == "signoz-int-logs"
+        result = query_signoz_logs(**params)
+        assert result["integration_id"] == "signoz-int-logs"
 
     def test_not_configured_without_backend(self) -> None:
         result = query_signoz_logs(service="api")
         assert result["source"] == "signoz_logs"
         assert result["available"] is False
+        assert result["integration_id"] == ""
         assert "not configured" in result.get("error", "").lower()
 
 
@@ -150,19 +208,43 @@ class TestQuerySignozMetrics:
             aggregation="avg",
             limit=10,
             signoz_backend=backend,
+            integration_id="signoz-metrics-backend-id",
         )
         assert result["source"] == "signoz_metrics"
         assert result["available"] is True
         assert result["metric_name"] == "cpu_usage"
         assert len(result["metrics"]) == 1
+        assert result["integration_id"] == "signoz-metrics-backend-id"
+
+    def test_end_to_end_extract_params_and_run(self) -> None:
+        from integrations.signoz.tools.query_signoz_metrics_tool.tool import (
+            _metrics_extract_params,
+        )
+
+        backend = _FakeSigNozBackend()
+        sources = {
+            "signoz": {
+                "url": "http://signoz.internal",
+                "api_key": "secret",
+                "integration_id": "signoz-int-metrics",
+                "connection_verified": True,
+                "_backend": backend,
+            }
+        }
+        params = _metrics_extract_params(sources)
+        assert params["integration_id"] == "signoz-int-metrics"
+        result = query_signoz_metrics(**params)
+        assert result["integration_id"] == "signoz-int-metrics"
 
     def test_not_configured_without_backend(self) -> None:
         result = query_signoz_metrics(metric_name="cpu_usage")
         assert result["source"] == "signoz_metrics"
         assert result["available"] is False
+        assert result["integration_id"] == ""
         assert "not configured" in result.get("error", "").lower()
 
-    def test_available_with_metrics_api_credentials_only(self) -> None:
+    def test_unverified_credentials_do_not_make_metrics_available(self) -> None:
+        """Regression: url+api_key alone must not bypass connection_verified."""
         assert (
             _metrics_is_available(
                 {
@@ -173,12 +255,13 @@ class TestQuerySignozMetrics:
                     }
                 }
             )
-            is True
+            is False
         )
 
 
 class TestQuerySignozTraces:
-    def test_available_with_query_api_credentials_only(self) -> None:
+    def test_unverified_credentials_do_not_make_traces_available(self) -> None:
+        """Regression: url+api_key alone must not bypass connection_verified."""
         from integrations.signoz.tools import _traces_is_available
 
         assert (
@@ -191,7 +274,7 @@ class TestQuerySignozTraces:
                     }
                 }
             )
-            is True
+            is False
         )
 
     def test_backend_injection(self) -> None:
@@ -202,17 +285,101 @@ class TestQuerySignozTraces:
             error_only=True,
             limit=10,
             signoz_backend=backend,
+            integration_id="signoz-traces-backend-id",
         )
         assert result["source"] == "signoz_traces"
         assert result["available"] is True
         assert result["total"] == 1
         assert result["summary"]["error_rate"] == 0.05
+        assert result["integration_id"] == "signoz-traces-backend-id"
+
+    def test_end_to_end_extract_params_and_run(self) -> None:
+        from integrations.signoz.tools.query_signoz_traces_tool.tool import (
+            _traces_extract_params,
+        )
+
+        backend = _FakeSigNozBackend()
+        sources = {
+            "signoz": {
+                "url": "http://signoz.internal",
+                "api_key": "secret",
+                "integration_id": "signoz-int-traces",
+                "connection_verified": True,
+                "_backend": backend,
+            }
+        }
+        params = _traces_extract_params(sources)
+        assert params["integration_id"] == "signoz-int-traces"
+        result = query_signoz_traces(**params)
+        assert result["integration_id"] == "signoz-int-traces"
 
     def test_not_configured_without_backend(self) -> None:
         result = query_signoz_traces(service="api")
         assert result["source"] == "signoz_traces"
         assert result["available"] is False
+        assert result["integration_id"] == ""
         assert "not configured" in result.get("error", "").lower()
+
+
+class TestSignozExtractParams:
+    def test_extract_params_flat_sources(self) -> None:
+        from integrations.signoz import signoz_extract_params
+
+        sources = {
+            "signoz": {
+                "url": "http://signoz.internal",
+                "api_key": "key-123",
+                "integration_id": "int-flat",
+            }
+        }
+        extracted = signoz_extract_params(sources)
+        assert extracted == {
+            "url": "http://signoz.internal",
+            "api_key": "key-123",
+            "integration_id": "int-flat",
+        }
+
+    def test_extract_params_nested_config_sources(self) -> None:
+        from integrations.signoz import signoz_extract_params
+
+        sources = {
+            "signoz": {
+                "source": "local env",
+                "config": {
+                    "url": "http://signoz.internal",
+                    "api_key": "key-456",
+                    "integration_id": "int-nested",
+                },
+            }
+        }
+        extracted = signoz_extract_params(sources)
+        assert extracted == {
+            "url": "http://signoz.internal",
+            "api_key": "key-456",
+            "integration_id": "int-nested",
+        }
+
+    def test_extract_params_fallback_id(self) -> None:
+        from integrations.signoz import signoz_extract_params
+
+        sources = {
+            "signoz": {
+                "url": "http://signoz.internal",
+                "api_key": "key-789",
+                "id": "int-fallback-id",
+            }
+        }
+        extracted = signoz_extract_params(sources)
+        assert extracted["integration_id"] == "int-fallback-id"
+
+    def test_extract_params_empty(self) -> None:
+        from integrations.signoz import signoz_extract_params
+
+        assert signoz_extract_params({}) == {
+            "url": "",
+            "api_key": "",
+            "integration_id": "",
+        }
 
 
 class TestMapQuerySignozLogs:

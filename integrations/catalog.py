@@ -15,6 +15,7 @@ from config.constants.new_relic import (
     NEW_RELIC_API_KEY_ENV,
     NEW_RELIC_INSTANCES_ENV,
 )
+from config.constants.signoz import SIGNOZ_API_KEY_ENV, SIGNOZ_URL_ENV
 from config.constants.yandex_cloud import (
     YC_FOLDER_ID_ENV,
     YC_IAM_TOKEN_ENV,
@@ -198,6 +199,7 @@ def load_env_integration_services() -> list[str]:
     add("x_mcp", _any_env("X_MCP_COMMAND", "X_MCP_URL", "X_MCP_AUTH_TOKEN"))
     add("mariadb", _all_env("MARIADB_HOST", "MARIADB_DATABASE"))
     add("opensearch", _env_is_set("OPENSEARCH_URL"))
+    add("signoz", _all_env(SIGNOZ_URL_ENV, SIGNOZ_API_KEY_ENV))
     add(
         "yandex_cloud",
         # A folder plus one credential, or the instance metadata service, which

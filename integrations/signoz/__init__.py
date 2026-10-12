@@ -133,10 +133,22 @@ def signoz_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     Credentials are resolved from the integration store or environment, so the
     LLM never needs to supply URL or API key directly.
     """
-    sz = sources.get("signoz", {})
+    sz: dict[str, Any] = sources.get("signoz") or {}
+    raw_cfg = sz.get("config")
+    cfg: dict[str, Any] = raw_cfg if isinstance(raw_cfg, dict) else sz
+    integration_id = (
+        cfg.get("integration_id")
+        or sz.get("integration_id")
+        or cfg.get("id")
+        or sz.get("id")
+        or ""
+    )
+    url = cfg.get("url") or sz.get("url") or ""
+    api_key = cfg.get("api_key") or sz.get("api_key") or ""
     return {
-        "url": str(sz.get("url", "")).strip(),
-        "api_key": str(sz.get("api_key", "")).strip(),
+        "url": str(url).strip(),
+        "api_key": str(api_key).strip(),
+        "integration_id": str(integration_id).strip(),
     }
 
 
