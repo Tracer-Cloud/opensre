@@ -5,6 +5,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
+from config.command_inputs import MEMORY_SHOW_INPUT
 from config.constants import OPENSRE_MEMORY_DISABLED_ENV
 from core.domain.memory import (
     delete_memory,
@@ -15,6 +16,7 @@ from core.domain.memory import (
     memory_path,
     slugify,
 )
+from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -24,11 +26,20 @@ from surfaces.interactive_shell.ui import (
     HIGHLIGHT,
 )
 from surfaces.interactive_shell.ui.memory import render_memories
+from surfaces.interactive_shell.ui.memory_input import build_memory_picker
+from surfaces.shared.terminal.components.command_input import run_command_input
 
 
 def _disabled_notice(console: Console) -> bool:
     console.print(f"[{DIM}]memory is disabled ({OPENSRE_MEMORY_DISABLED_ENV}=1).[/]")
     return True
+
+
+def _empty_store_notice(console: Console) -> None:
+    console.print(
+        f"[{DIM}]no memories stored yet. Share durable facts in normal chat "
+        "(e.g. our prod cluster is eks-prod-1) — useful ones are saved automatically.[/]"
+    )
 
 
 def _show_list(console: Console) -> bool:
@@ -37,10 +48,7 @@ def _show_list(console: Console) -> bool:
     ensure_memory_store()
     records = list_memories()
     if not records:
-        console.print(
-            f"[{DIM}]no memories stored yet. Share durable facts in normal chat "
-            "(e.g. our prod cluster is eks-prod-1) — useful ones are saved automatically.[/]"
-        )
+        _empty_store_notice(console)
         return True
 
     render_memories(console, records)
@@ -49,6 +57,18 @@ def _show_list(console: Console) -> bool:
         f"[{DIM}]·[/] [{HIGHLIGHT}]/memory forget <name>[/]"
     )
     return True
+
+
+def _choose_and_show(console: Console) -> bool:
+    """Open the searchable picker for a memory to display; cancelling shows nothing."""
+    records = list_memories()
+    if not records:
+        _empty_store_notice(console)
+        return True
+    slug = run_command_input(build_memory_picker(records))
+    if slug is None:
+        return True
+    return _show_one(console, [slug])
 
 
 def _show_one(console: Console, args: list[str]) -> bool:
@@ -87,7 +107,7 @@ def _show_path(console: Console) -> bool:
     return True
 
 
-def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:
     if not memory_enabled():
         return _disabled_notice(console)
     if not args:
@@ -97,6 +117,8 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  #
     if sub == "list":
         return _show_list(console)
     if sub == "show":
+        if can_collect_input(session, MEMORY_SHOW_INPUT, args):
+            return _choose_and_show(console)
         return _show_one(console, args[1:])
     if sub == "forget":
         return _forget(console, args[1:])

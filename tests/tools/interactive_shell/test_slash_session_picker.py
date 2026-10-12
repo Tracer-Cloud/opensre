@@ -25,6 +25,7 @@ def test_agent_selected_sessions_picker_is_deferred_to_exclusive_stdin_turn() ->
         ("/integrations", ["list"]),
         ("/mcp", ["list"]),
         ("/work", ["add", "--priority", "high"]),
+        ("/memory", ["show"]),
     ],
 )
 def test_agent_selected_connection_list_browser_is_deferred(command: str, args: list[str]) -> None:
@@ -58,7 +59,7 @@ def test_complete_work_command_and_headless_missing_input_are_not_deferred() -> 
 
 
 @pytest.mark.parametrize(
-    "command,args", [("/work", ["done"]), ("/work", ["complete"]), ("/memory", ["show"])]
+    "command,args", [("/work", ["done"]), ("/work", ["complete"]), ("/memory", ["forget"])]
 )
 def test_other_missing_arguments_are_not_deferred(command: str, args: list[str]) -> None:
     session = SimpleNamespace(terminal=object())

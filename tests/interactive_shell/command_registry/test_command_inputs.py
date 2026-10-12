@@ -279,7 +279,7 @@ def test_tab_navigation_reaches_create_from_priority() -> None:
     assert result["priority"] == "normal"
 
 
-@pytest.mark.parametrize("command", ["/work done", "/work complete", "/memory show"])
+@pytest.mark.parametrize("command", ["/work done", "/work complete"])
 def test_other_missing_arguments_keep_usage_response(command: str) -> None:
     assert "usage:" in dispatch(command)
 
