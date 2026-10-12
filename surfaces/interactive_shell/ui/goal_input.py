@@ -14,6 +14,8 @@ from surfaces.shared.terminal.components.input_form import (
 )
 
 _FIELDS = ("condition", "max_turns")
+_GOAL_CONDITION_DESCRIPTION = "What should OpenSRE achieve?\nExample: Identify checkout 502s."
+_MISSING_CONDITION_ERROR = "Add a goal condition to continue."
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,7 @@ _MAX_TURNS_ERROR = "Enter a positive integer for max turns, or leave empty for u
 
 def _validate_condition(value: str) -> None:
     if not value:
-        raise InputFormError("Enter a completion condition.", field="condition")
+        raise InputFormError(_MISSING_CONDITION_ERROR, field="condition")
 
 
 def _validate_max_turns(value: str) -> None:
@@ -64,7 +66,7 @@ def _validate_max_turns(value: str) -> None:
 def _validate(values: dict[str, str]) -> GoalSetValues:
     condition = values["condition"].strip()
     if not condition:
-        raise InputFormError("Enter a completion condition.", field="condition")
+        raise InputFormError(_MISSING_CONDITION_ERROR, field="condition")
     _validate_max_turns(values["max_turns"])
     return GoalSetValues(condition=condition, max_turns=parse_max_turns(values["max_turns"]))
 
@@ -73,14 +75,12 @@ def build_goal_set_form(options: dict[str, str]) -> Application[GoalSetValues | 
     """Collect a condition, then confirm; attach only after explicit Set goal."""
     current = {name: options.get(name, "") for name in _FIELDS}
 
-    def fields(_values: dict[str, str]) -> list[InputField]:
+    def fields(values: dict[str, str]) -> list[InputField]:
         return [
             InputField(
                 "condition",
                 "Condition",
-                description=(
-                    "Confirming attaches the goal and runs this condition as the next turn."
-                ),
+                description=_GOAL_CONDITION_DESCRIPTION,
                 status="required",
                 required=True,
                 validate=_validate_condition,
@@ -89,8 +89,9 @@ def build_goal_set_form(options: dict[str, str]) -> Application[GoalSetValues | 
             InputField(
                 "max_turns",
                 "Max turns",
-                description="Optional · positive integer; empty leaves the goal unbounded.",
+                description="Optional · enter a positive integer, or leave blank for unbounded.",
                 status="default Unbounded",
+                summary=values["max_turns"] or "Unbounded",
                 validate=_validate_max_turns,
             ),
         ]
@@ -98,7 +99,7 @@ def build_goal_set_form(options: dict[str, str]) -> Application[GoalSetValues | 
     return build_input_form(
         current,
         title="/goal set",
-        heading="New goal",
+        heading="Set a goal",
         submit_label="Set goal",
         fields=fields,
         validate=_validate,

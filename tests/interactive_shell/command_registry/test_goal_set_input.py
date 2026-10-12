@@ -107,6 +107,86 @@ def test_goal_set_form_rejects_blank_condition() -> None:
     assert values.max_turns == 0
 
 
+@pytest.mark.parametrize("columns,rows", [(80, 30), (40, 12)])
+def test_goal_set_form_guides_the_initial_condition_without_an_error(
+    columns: int, rows: int
+) -> None:
+
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=rows, columns=columns)
+
+    captured: list[str] = []
+    with create_pipe_input() as pipe, create_app_session(output=SizedOutput()):
+        app = build_goal_set_form({})
+        app.input = pipe
+
+        def capture_initial_form(_app: Any) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or captured:
+                return
+            captured.extend(
+                "".join(screen.data_buffer[y][x].char for x in range(columns))
+                for y in range(screen.height)
+            )
+            pipe.send_text("\x03")
+
+        app.after_render += capture_initial_form
+        result = app.run()
+
+    rendered = "\n".join(captured)
+    assert result is None
+    assert "Condition · required" in rendered
+    assert "What should OpenSRE achieve?" in rendered
+    assert "Example: Identify checkout 502s." in rendered
+    assert "Add a goal condition to continue." not in rendered
+
+
+@pytest.mark.parametrize("columns,rows", [(80, 30), (40, 12)])
+def test_goal_set_form_shows_an_empty_condition_error_after_attempted_entry(
+    columns: int, rows: int
+) -> None:
+
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=rows, columns=columns)
+
+    frames: list[str] = []
+    with create_pipe_input() as pipe, create_app_session(output=SizedOutput()):
+        app = build_goal_set_form({})
+        app.input = pipe
+
+        async def stop_if_stalled() -> None:
+            await asyncio.sleep(2)
+            app.exit(result=None)
+
+        def observe(_app: Any) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None:
+                return
+            rendered = "\n".join(
+                "".join(screen.data_buffer[y][x].char for x in range(columns))
+                for y in range(screen.height)
+            )
+            if not frames:
+                frames.append(rendered)
+                pipe.send_text("\r")
+                return
+            if "Add a goal condition to continue." in rendered:
+                frames.append(rendered)
+                pipe.send_text("\x03")
+
+        def start() -> None:
+            app.create_background_task(stop_if_stalled())
+
+        app.after_render += observe
+        result = app.run(pre_run=start)
+
+    assert result is None
+    assert "Add a goal condition to continue." not in frames[0]
+    assert "Add a goal condition to continue." in frames[-1]
+
+
 def test_goal_set_form_rejects_nonpositive_budget() -> None:
     with create_app_session(output=DummyOutput()):
         values = run_keys(build_goal_set_form({}), "Zero budget\r\t\r0\r\x01\x0b3\r\x13")
@@ -258,6 +338,8 @@ def test_goal_set_form_actions_visible_at_widths(
     assert captured, "Goal summary did not render before the timeout"
     assert "Set goal" in selected_rows[0]
     assert any("Cancel" in line for line in captured)
+    assert any("Condition     Width check" in line for line in captured)
+    assert any("Max turns" in line and "Unbounded" in line for line in captured)
     assert len(captured) <= rows
     assert result is not None and result.condition == "Width check"
     assert result.max_turns == 0
