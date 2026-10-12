@@ -12,7 +12,13 @@ from core.agent_harness.spi.skill_releases import (
 )
 from infrastructure.analytics.capture import capture_skills_release_activated
 
-_installed = False
+
+class _InstallState:
+    """Whether the activation listener is registered. Later calls read this holder."""
+
+    done: bool = False
+
+
 _installed_lock = threading.Lock()
 
 
@@ -33,12 +39,11 @@ def _announce(new: SkillCatalogSnapshot, previous: SkillCatalogSnapshot | None) 
 
 def install_skills_activation_telemetry() -> None:
     """Register the activation listener once per process."""
-    global _installed
     with _installed_lock:
-        if _installed:
+        if _InstallState.done:
             return
         active_skill_catalog().add_listener(_announce)
-        _installed = True
+        _InstallState.done = True
 
 
 __all__ = ["install_skills_activation_telemetry"]

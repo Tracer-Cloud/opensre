@@ -64,7 +64,6 @@ class SlackMessagingClient(Protocol):
 
     def stop_stream(self, *, channel: str, ts: str, blocks: Blocks | None = None) -> bool:
         """Finish a streamed message, optionally attaching final blocks."""
-        ...
 
     def set_thread_status(
         self,
@@ -79,7 +78,6 @@ class SlackMessagingClient(Protocol):
         This is Slack's assistant status on that thread, not a reply. An empty
         ``status`` clears it.
         """
-        ...
 
 
 # API errors that mean streaming will never work for this app/workspace

@@ -18,7 +18,7 @@ import logging
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from rich.console import Console
 
@@ -176,7 +176,8 @@ async def _run_daemon_turn(
     except Exception:
         slot.release()
         raise
-    await future
+    # Widen the empty future so waiting on it is an assignment, not a bare await.
+    _ = await cast(asyncio.Future[object], future)
 
 
 @dataclass(frozen=True)

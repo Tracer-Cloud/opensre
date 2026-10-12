@@ -314,6 +314,7 @@ def test_cmd_reaps_descendants_after_shell_exits(
         try:
             psutil.Process(shell_pid).wait(timeout=10)
         except psutil.NoSuchProcess:
+            # The shell already exited, so there is no process left to wait on.
             pass
         except psutil.TimeoutExpired:
             return

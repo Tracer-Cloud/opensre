@@ -513,7 +513,7 @@ async def test_exit_control_stops_the_running_dispatch_without_queueing(
         assert not shutdown.done()
         assert flushed_after_turn == []
         release_turn.set()
-        await shutdown
+        _ = await shutdown
 
         assert turn_finished.is_set()
         assert flushed_after_turn == [True]
@@ -967,7 +967,7 @@ def test_inflight_goal_pause_keeps_input_open_and_does_not_leak_to_queued_turns(
         finally:
             controller.state.request_exit()
             await controller.state.queue.put("")
-            await worker
+            _ = await worker
 
     asyncio.run(_scenario())
 
@@ -1049,7 +1049,7 @@ async def test_goal_pause_after_dispatch_finish_still_pauses_before_queued_work(
     finally:
         controller.state.request_exit()
         await controller.state.queue.put("")
-        await worker
+        _ = await worker
 
 
 @pytest.mark.asyncio
@@ -1123,7 +1123,7 @@ async def test_goal_clear_does_not_remove_a_goal_created_by_earlier_queued_work(
     finally:
         controller.state.request_exit()
         await controller.state.queue.put("")
-        await worker
+        _ = await worker
 
 
 @pytest.mark.asyncio
@@ -1202,13 +1202,13 @@ async def test_shutdown_persists_pause_after_boundary_wait_is_cancelled() -> Non
     import contextlib
     import threading
 
+    import surfaces.interactive_shell.runtime.session_shutdown as session_shutdown
     from core.agent_harness.session import InMemorySessionStore, SessionManager
     from core.agent_harness.session_goal.goal import SessionGoal, attach_session_goal
     from core.agent_harness.session_goal.persist import SESSION_GOAL_STATE_CUSTOM_TYPE
     from core.agent_harness.spi.cancel import HostCancelEvent, HostCancelReason
     from infrastructure.turn_host.session_lock import session_execution_lock
     from surfaces.interactive_shell.controller import InteractiveShellController
-    from surfaces.interactive_shell.runtime.session_shutdown import close_repl_session
     from surfaces.interactive_shell.runtime.turn_host import run_agent_turn_queue
     from surfaces.interactive_shell.session import Session
 
@@ -1267,13 +1267,13 @@ async def test_shutdown_persists_pause_after_boundary_wait_is_cancelled() -> Non
 
         queue_worker.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await queue_worker
+            _ = await queue_worker
 
         assert controller.state.requested_goal_control() is HostCancelReason.GOAL_PAUSE
         release_lease.set()
         await asyncio.to_thread(lease_worker.join, 1)
         assert not lease_worker.is_alive()
-        await asyncio.to_thread(close_repl_session, session, controller.state)
+        await asyncio.to_thread(session_shutdown.close_repl_session, session, controller.state)
 
         records = [
             record
@@ -1288,16 +1288,16 @@ async def test_shutdown_persists_pause_after_boundary_wait_is_cancelled() -> Non
         if not queue_worker.done():
             queue_worker.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await queue_worker
+                _ = await queue_worker
 
 
 def test_shutdown_persists_a_pending_goal_clear() -> None:
+    import surfaces.interactive_shell.runtime.session_shutdown as session_shutdown
     from core.agent_harness.session import InMemorySessionStore, SessionManager
     from core.agent_harness.session_goal.goal import SessionGoal, attach_session_goal
     from core.agent_harness.session_goal.persist import SESSION_GOAL_STATE_CUSTOM_TYPE
     from core.agent_harness.spi.cancel import HostCancelEvent, HostCancelReason
     from surfaces.interactive_shell.runtime.core.state import ReplState
-    from surfaces.interactive_shell.runtime.session_shutdown import close_repl_session
     from surfaces.interactive_shell.session import Session
 
     store = InMemorySessionStore()
@@ -1315,7 +1315,7 @@ def test_shutdown_persists_a_pending_goal_clear() -> None:
     state.attach_cancel_event(cancel)
     state.request_exit()
 
-    close_repl_session(session, state)
+    session_shutdown.close_repl_session(session, state)
 
     records = [
         record

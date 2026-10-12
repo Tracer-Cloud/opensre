@@ -21,7 +21,7 @@ def with_exclusive_output[Result](session: Session, render: Callable[[], Result]
     if loop is None or not loop.is_running():
         raise RuntimeError("Live prompt has no running event loop")
 
-    def _render() -> Result:
+    def _render():
         previous = terminal.exclusive_stdin_active
         terminal.exclusive_stdin_active = True
         try:
@@ -29,7 +29,7 @@ def with_exclusive_output[Result](session: Session, render: Callable[[], Result]
         finally:
             terminal.exclusive_stdin_active = previous
 
-    async def _run() -> Result:
+    async def _run():
         with set_app(app):
             return await run_in_terminal(_render, in_executor=True)
 
@@ -39,7 +39,8 @@ def with_exclusive_output[Result](session: Session, render: Callable[[], Result]
         current = None
     if current is loop:
         raise RuntimeError("Exclusive output must be requested by the turn worker")
-    return asyncio.run_coroutine_threadsafe(_run(), loop).result()
+    outcome: Result = asyncio.run_coroutine_threadsafe(_run(), loop).result()
+    return outcome
 
 
 __all__ = ["with_exclusive_output"]

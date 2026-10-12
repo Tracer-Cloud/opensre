@@ -51,7 +51,7 @@ def require_webapp_github[**P](
     )
 
     @wraps(function)
-    def run(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
+    def run(*args: Any, **kwargs: Any) -> dict[str, Any]:
         supplied = dict(kwargs)
         explicit = supplied.get("github_token")
         origin = supplied.pop(GITHUB_CONNECTION_ORIGIN_PARAM, None)

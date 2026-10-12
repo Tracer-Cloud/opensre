@@ -91,6 +91,6 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
         finally:
             release_fetch.set()
             if listing is not None:
-                await listing
+                _ = await listing
             app.exit(result=None)
-            await prompt
+            _ = await prompt

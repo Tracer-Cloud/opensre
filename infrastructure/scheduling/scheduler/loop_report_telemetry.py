@@ -29,7 +29,13 @@ _RESEND_WINDOW = timedelta(hours=6)
 _RESEND_INTERVAL_SECONDS = 30 * 60
 _RESEND_LIMIT = 50
 
-_last_resend: float | None = None
+
+class _ResendState:
+    """Last resend time. Later calls read the write through this holder."""
+
+    last: float | None = None
+
+
 _resend_lock = threading.Lock()
 
 
@@ -76,16 +82,15 @@ def report_loop_delivery(
 
 def resend_recent_loop_reports(*, now: datetime | None = None) -> int:
     """Resend the inbox's recent reports at most once per interval; return how many were sent."""
-    global _last_resend
     from infrastructure.analytics.provider import analytics_opted_out
 
     if analytics_opted_out():
         return 0
     with _resend_lock:
         tick = time.monotonic()
-        if _last_resend is not None and tick - _last_resend < _RESEND_INTERVAL_SECONDS:
+        if _ResendState.last is not None and tick - _ResendState.last < _RESEND_INTERVAL_SECONDS:
             return 0
-        _last_resend = tick
+        _ResendState.last = tick
     try:
         cutoff = (now or datetime.now(UTC)) - _RESEND_WINDOW
         owners = {task.id: task.organization for task in list_tasks()}
@@ -117,9 +122,8 @@ def resend_recent_loop_reports(*, now: datetime | None = None) -> int:
 
 def reset_loop_report_resend() -> None:
     """Allow the next registration pass to resend immediately."""
-    global _last_resend
     with _resend_lock:
-        _last_resend = None
+        _ResendState.last = None
 
 
 __all__ = [

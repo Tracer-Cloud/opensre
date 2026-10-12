@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import ExitStack
 from dataclasses import replace
 from typing import Any
 
@@ -128,17 +129,20 @@ def run_turn(
     tool driving a headless turn) inherits it rather than stamping its own. It
     also binds the turn's skill catalog, which nested turns reuse.
     """
-    with (
-        # One skill catalog per turn: a release pulled mid-turn applies to the next.
-        active_skill_catalog().bind_turn(),
-        record_prompt_turn(text, session, surface=surface) as recorder,
-        inherit_trace_session(getattr(session, "session_id", None)) as trace_session,
-        observe_span(
-            _TURN_OBSERVATION_NAME,
-            input=text,
-            trace=_trace_attributes(trace_session, surface),
-        ) as observation,
-    ):
+    # One skill catalog per turn: a release pulled mid-turn applies to the next.
+    with ExitStack() as stack:
+        stack.enter_context(active_skill_catalog().bind_turn())
+        recorder = stack.enter_context(record_prompt_turn(text, session, surface=surface))
+        trace_session = stack.enter_context(
+            inherit_trace_session(getattr(session, "session_id", None))
+        )
+        observation = stack.enter_context(
+            observe_span(
+                _TURN_OBSERVATION_NAME,
+                input=text,
+                trace=_trace_attributes(trace_session, surface),
+            )
+        )
         result = _run_turn(
             text,
             session,

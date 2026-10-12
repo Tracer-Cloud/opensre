@@ -56,7 +56,13 @@ _TASK_KEY_BUDGET = 320
 _TASK_BYTE_BUDGET = 128 * 1024
 _REPORT_REFRESH_SECONDS = 30 * 60
 
-_last_reported: tuple[str, float] | None = None
+
+class _ReportState:
+    """Last registry digest and time. Later calls read the write through this holder."""
+
+    last: tuple[str, float] | None = None
+
+
 _report_lock = threading.Lock()
 
 
@@ -133,7 +139,6 @@ def build_registry_properties(
 
 def report_task_registry() -> None:
     """Send the saved tasks on change, or again once the last report is stale; never raises."""
-    global _last_reported
     try:
         from infrastructure.analytics.events import Event
         from infrastructure.analytics.provider import analytics_opted_out, get_analytics
@@ -145,20 +150,19 @@ def report_task_registry() -> None:
         digest = hashlib.sha256(json.dumps(properties, sort_keys=True).encode()).hexdigest()
         now = time.monotonic()
         with _report_lock:
-            last = _last_reported
+            last = _ReportState.last
             if last is not None and last[0] == digest and now - last[1] < _REPORT_REFRESH_SECONDS:
                 return
             get_analytics().capture(Event.SCHEDULED_TASKS_REGISTERED, properties)
-            _last_reported = (digest, now)
+            _ReportState.last = (digest, now)
     except Exception:
         logger.debug("Failed to report the scheduler task registry", exc_info=True)
 
 
 def reset_reported_registry() -> None:
     """Forget the last report so the next pass sends again."""
-    global _last_reported
     with _report_lock:
-        _last_reported = None
+        _ReportState.last = None
 
 
 __all__ = [

@@ -423,6 +423,12 @@ class _Slack:
         return True, "", "msg-1"
 
 
+_PREVIOUS_RUN_NOTE = (
+    "Commented on PR #6555.\n\nNOTE FOR NEXT RUN: PR #6555 waits on a human; "
+    "skip it until head 1a2b3c4 changes."
+)
+
+
 def test_a_loop_tick_sees_what_its_previous_run_did_and_the_note_it_left(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -435,13 +441,7 @@ def test_a_loop_tick_sees_what_its_previous_run_did_and_the_note_it_left(
     slack = _Slack()
     delivery_bundle.ScheduledDeliveryAdapters({Provider.SLACK: slack}).install()
     prompts: list[str] = []
-    replies = iter(
-        [
-            "Commented on PR #6555.\n\nNOTE FOR NEXT RUN: PR #6555 waits on a human; "
-            "skip it until head 1a2b3c4 changes.",
-            "Nothing new to do.",
-        ]
-    )
+    replies = iter([_PREVIOUS_RUN_NOTE, "Nothing new to do."])
 
     class _Agent:
         def __init__(self, tool_hooks: ToolExecutionHooks | None) -> None:
