@@ -17,6 +17,7 @@ from pydantic import Field
 from config.constants.signoz import SIGNOZ_API_KEY_ENV, SIGNOZ_URL_ENV
 from config.strict_config import StrictConfigModel
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
+from integrations.signoz.availability import signoz_extract_params
 
 logger = logging.getLogger(__name__)
 
@@ -127,31 +128,6 @@ def signoz_is_available(sources: dict[str, dict]) -> bool:
     return bool(sources.get("signoz", {}).get("connection_verified"))
 
 
-def signoz_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    """Extract SigNoz connection params from resolved integrations.
-
-    Credentials are resolved from the integration store or environment, so the
-    LLM never needs to supply URL or API key directly.
-    """
-    sz: dict[str, Any] = sources.get("signoz") or {}
-    raw_cfg = sz.get("config")
-    cfg: dict[str, Any] = raw_cfg if isinstance(raw_cfg, dict) else sz
-    integration_id = (
-        cfg.get("integration_id")
-        or sz.get("integration_id")
-        or cfg.get("id")
-        or sz.get("id")
-        or ""
-    )
-    url = cfg.get("url") or sz.get("url") or ""
-    api_key = cfg.get("api_key") or sz.get("api_key") or ""
-    return {
-        "url": str(url).strip(),
-        "api_key": str(api_key).strip(),
-        "integration_id": str(integration_id).strip(),
-    }
-
-
 def signoz_count_label(count: int, requested_limit: int) -> str:
     """Format a list count, appending "+" when the page may be truncated.
 
@@ -200,3 +176,19 @@ def classify(credentials: dict[str, Any], record_id: str) -> tuple[SigNozConfig 
     if cfg.is_configured:
         return cfg, "signoz"
     return None, None
+
+
+__all__ = [
+    "DEFAULT_SIGNOZ_MAX_RESULTS",
+    "DEFAULT_SIGNOZ_TIMEOUT_SECONDS",
+    "SigNozConfig",
+    "SigNozValidationResult",
+    "build_signoz_config",
+    "classify",
+    "signoz_config_from_env",
+    "signoz_count_label",
+    "signoz_effective_limit",
+    "signoz_extract_params",
+    "signoz_is_available",
+    "validate_signoz_config",
+]

@@ -105,7 +105,7 @@ def query_signoz_metrics(
 ) -> dict[str, Any]:
     """Query SigNoz metrics by service and time window."""
     if signoz_backend is not None:
-        result = cast(
+        raw_result = cast(
             "dict[str, Any]",
             signoz_backend.query_metrics(
                 metric_name=metric_name,
@@ -115,6 +115,7 @@ def query_signoz_metrics(
                 limit=limit,
             ),
         )
+        result = dict(raw_result)
     else:
         config = SigNozConfig.model_validate(_kwargs)
         if not config.is_configured:
@@ -134,6 +135,7 @@ def query_signoz_metrics(
             limit=limit,
         )
 
-    resolved_id = str(result.get("integration_id") or integration_id or "").strip()
+    resolved_id = str(integration_id or result.get("integration_id") or "").strip()
+    result = dict(result)
     result["integration_id"] = resolved_id
     return result

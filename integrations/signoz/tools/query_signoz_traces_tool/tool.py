@@ -144,7 +144,7 @@ def query_signoz_traces(
             time_range_minutes=time_range_minutes,
         )
 
-    resolved_id = str(traces_result.get("integration_id") or integration_id or "").strip()
+    resolved_id = str(integration_id or traces_result.get("integration_id") or "").strip()
     result: dict[str, Any] = {
         **traces_result,
         "summary": summary,

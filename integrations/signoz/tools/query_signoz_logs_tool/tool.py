@@ -63,7 +63,7 @@ def _normalize_logs_payload(
     integration_id: str = "",
 ) -> dict[str, Any]:
     """Normalize logs output to the canonical envelope expected by the agent."""
-    resolved_id = str(result.get("integration_id") or integration_id or "").strip()
+    resolved_id = str(integration_id or result.get("integration_id") or "").strip()
     if not result.get("available"):
         return {
             **result,

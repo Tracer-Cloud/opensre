@@ -258,6 +258,41 @@ class TestQuerySignozMetrics:
             is False
         )
 
+    def test_reused_backend_dict_not_mutated_and_isolated_across_calls(self) -> None:
+        """Regression: backend returning the same dict object must not be mutated
+        and subsequent calls must not inherit stale integration_id."""
+        shared_payload: dict[str, Any] = {
+            "source": "signoz_metrics",
+            "available": True,
+            "total": 1,
+            "metric_name": "cpu_usage",
+            "metrics": [{"value": 1.0}],
+        }
+
+        class _ReusingBackend:
+            def query_metrics(self, **_kwargs: Any) -> dict[str, Any]:
+                return shared_payload
+
+        backend = _ReusingBackend()
+
+        result1 = query_signoz_metrics(
+            metric_name="cpu_usage",
+            signoz_backend=backend,
+            integration_id="id-call-1",
+        )
+        assert result1["integration_id"] == "id-call-1"
+        assert result1 is not shared_payload
+        assert "integration_id" not in shared_payload
+
+        result2 = query_signoz_metrics(
+            metric_name="cpu_usage",
+            signoz_backend=backend,
+            integration_id="id-call-2",
+        )
+        assert result2["integration_id"] == "id-call-2"
+        assert result2 is not shared_payload
+        assert "integration_id" not in shared_payload
+
 
 class TestQuerySignozTraces:
     def test_unverified_credentials_do_not_make_traces_available(self) -> None:
@@ -379,6 +414,22 @@ class TestSignozExtractParams:
             "url": "",
             "api_key": "",
             "integration_id": "",
+        }
+
+    def test_extract_params_import_from_availability_module(self) -> None:
+        from integrations.signoz.availability import signoz_extract_params as extract_from_avail
+
+        sources = {
+            "signoz": {
+                "url": "http://signoz.internal",
+                "api_key": "key-avail",
+                "integration_id": "int-avail",
+            }
+        }
+        assert extract_from_avail(sources) == {
+            "url": "http://signoz.internal",
+            "api_key": "key-avail",
+            "integration_id": "int-avail",
         }
 
 
