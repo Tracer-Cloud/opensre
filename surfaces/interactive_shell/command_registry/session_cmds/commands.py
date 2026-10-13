@@ -77,13 +77,14 @@ COMMANDS: list[SlashCommand] = [
             "/goal set [--max-turns N] <condition>",
             "/goal pause",
             "/goal resume",
-            "/goal edit <condition>",
+            "/goal edit [condition]",
             "/goal clear",
         ),
         notes=(
             "Sugar over chat_until_goal — distinct from /work durable todos.",
             "Setting a goal queues the condition as the next turn (autosubmit).",
             "Pause keeps state without continuation; resume queues the condition again.",
+            "Bare edit reviews the current condition in an interactive terminal before Save changes.",
         ),
         first_arg_completions=(
             ("show", "show the goal (duration, turns, tokens)"),

@@ -30,7 +30,7 @@ from infrastructure.scheduling.scheduler.sources import (
     SCHEDULED_SENTRY_MORNING_DIGEST,
     SCHEDULED_SENTRY_UPTIME_WATCH,
 )
-from infrastructure.scheduling.scheduler.storage import update_task
+from infrastructure.scheduling.scheduler.storage import patch_scheduler_skill_pin
 from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
 logger = logging.getLogger(__name__)
@@ -254,15 +254,24 @@ def _record_followed_revision(task: ScheduledTask, revision: str) -> None:
     """Store the pin of a skill edit the schedule followed, and report the change."""
     previous = task.skill_revision
     task.skill_revision = revision
-    if not update_task(task):
+    stored = patch_scheduler_skill_pin(
+        task.id,
+        previous_name=task.skill_name,
+        previous_revision=previous,
+        skill_name=task.skill_name,
+        skill_revision=revision,
+    )
+    if stored is None:
         logger.warning(
             "Recurring skill task %s is not in the task store; running with an unsaved pin.",
             task.id,
         )
         return
+    if stored.skill_name != task.skill_name or stored.skill_revision != revision:
+        return
     record_scheduler_task_operation(
         "scheduled_skill_revision_changed",
-        task,
+        stored,
         extra={"from_revision": previous[:24], "to_revision": revision[:24]},
     )
 
@@ -275,10 +284,18 @@ def _migrate_renamed_skill(task: ScheduledTask) -> None:
     this never accepts an arbitrary recipe change unattended.
     """
     previous = task.skill_name
+    previous_revision = task.skill_revision
     skill_name, skill_revision = pin_recurring_skill(normalize_skill_name(previous))
     task.skill_name = skill_name
     task.skill_revision = skill_revision
-    if not update_task(task):
+    stored = patch_scheduler_skill_pin(
+        task.id,
+        previous_name=previous,
+        previous_revision=previous_revision,
+        skill_name=skill_name,
+        skill_revision=skill_revision,
+    )
+    if stored is None:
         logger.warning(
             "Recurring skill task %s (%s -> %s) is not in the task store; running unmigrated.",
             task.id,
@@ -286,9 +303,11 @@ def _migrate_renamed_skill(task: ScheduledTask) -> None:
             skill_name,
         )
         return
+    if stored.skill_name != skill_name or stored.skill_revision != skill_revision:
+        return
     record_scheduler_task_operation(
         "scheduled_skill_renamed",
-        task,
+        stored,
         extra={"from_skill_name": previous},
     )
 

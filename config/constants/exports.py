@@ -518,6 +518,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV": "scheduler",
     "OPENSRE_SCHEDULER_BUILD_ENV": "scheduler",
     "SCHEDULER_MISSED_FIRE_GRACE_SECONDS": "scheduler",
+    "SCHEDULER_SCHEDULE_CHANGED_AT_PARAM": "scheduler",
     "STATELESS_LOOP_IDLE_REPLY": "scheduler",
     "SCHEDULED_TASK_TRACE_KEY": "scheduler",
     # secrets

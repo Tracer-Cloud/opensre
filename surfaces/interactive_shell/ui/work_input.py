@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 
 from prompt_toolkit.application import Application
@@ -31,19 +31,32 @@ def _validate_due(value: str) -> None:
             raise InputFormError("Use YYYY-MM-DD or an ISO datetime.", field="due") from exc
 
 
-def _validate(values: dict[str, str]) -> dict[str, str]:
-    _validate_title(values["title"])
-    if values["priority"] not in WORK_ITEM_PRIORITIES:
+def validate_work_values(
+    values: dict[str, str], *, original: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """Validate and normalize editable work fields without changing the store."""
+    normalized = {name: value.strip() for name, value in values.items()}
+    normalized["priority"] = normalized["priority"].lower()
+    _validate_title(normalized["title"])
+    if normalized["priority"] not in WORK_ITEM_PRIORITIES:
         raise InputFormError("Choose a valid priority.", field="priority")
-    return dict(values)
+    if original is None or normalized["due"] != original["due"]:
+        _validate_due(normalized["due"])
+    return normalized
 
 
 def build_work_form(
-    options: dict[str, str], *, projects: Sequence[str] = (), today: date | None = None
+    options: dict[str, str],
+    *,
+    projects: Sequence[str] = (),
+    today: date | None = None,
+    editing: bool = False,
+    original: Mapping[str, str] | None = None,
 ) -> Application[dict[str, str] | None]:
     """Collect a title, then edit selected details; persist only after explicit Create."""
     current = {name: options.get(name, "normal" if name == "priority" else "") for name in _FIELDS}
     current["priority"] = current["priority"].lower()
+    original_values = original if original is not None else current
     local_day = today or datetime.now().astimezone().date()
     project_names = {name for name in projects if name}
 
@@ -63,7 +76,7 @@ def build_work_form(
             InputField(
                 "priority",
                 "Priority",
-                status="default Normal",
+                status="optional" if editing else "default Normal",
                 choices=tuple(
                     InputChoice(value, value.capitalize()) for value in WORK_ITEM_PRIORITIES
                 ),
@@ -100,11 +113,13 @@ def build_work_form(
 
     return build_input_form(
         current,
-        title="/work add",
-        heading="New work item",
-        submit_label="Create work item",
+        title="/work edit" if editing else "/work add",
+        heading="Edit work item" if editing else "New work item",
+        submit_label="Save changes" if editing else "Create work item",
         fields=fields,
-        validate=_validate,
-        initial_field="title",
-        initial_review_field="priority",
+        validate=lambda values: validate_work_values(
+            values, original=original_values if editing else None
+        ),
+        initial_field=None if editing else "title",
+        initial_review_field=None if editing else "priority",
     )

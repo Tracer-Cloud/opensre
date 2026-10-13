@@ -23,7 +23,7 @@ when you come back.
 | `/goal <condition>` | Shorthand for `/goal set <condition>` |
 | `/goal pause` | Stop the next turn, keep the condition and progress |
 | `/goal resume` | Start working again from where it paused |
-| `/goal edit <condition>` | Change the condition without losing progress |
+| `/goal edit [condition]` | Review or change the condition without losing progress |
 | `/goal clear` | Drop the goal entirely (`/goal unset` also works) |
 
 ## Try it
@@ -109,7 +109,11 @@ side question without losing your place.
 ## Change the condition
 
 `/goal edit` rewrites the finish line in place, keeping the turns already spent.
-Use it when the goal was nearly right but you want to redirect it:
+Use it when the goal was nearly right but you want to redirect it.
+
+In an interactive terminal, bare `/goal edit` opens the current condition for
+review. Enter edits the condition; **Save changes** applies it and Esc cancels.
+The turn budget stays unchanged. You can also supply the replacement directly:
 
 ```text
 /goal edit How many Windows users in the last 7 days, broken down by country?

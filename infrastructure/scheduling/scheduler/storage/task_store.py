@@ -6,9 +6,10 @@ import contextlib
 import json
 import logging
 import os
+import sqlite3
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,12 +19,14 @@ from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_DIR
 from config.constants.organization import organization_id
+from config.constants.scheduler import SCHEDULER_SCHEDULE_CHANGED_AT_PARAM
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from config.scope_handoff import acting_scope
 from infrastructure.scheduling.scheduler import reload_signal
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CREATED_BY_PARAM,
     LOOP_DESCRIPTION_PARAM,
+    LOOP_GROUP_ID_PARAM,
     LOOP_PROMPT_PARAM,
     LOOP_TEMPLATE_PARAM,
 )
@@ -31,8 +34,11 @@ from infrastructure.scheduling.scheduler.storage.database import run_database_pa
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
 )
-from infrastructure.scheduling.scheduler.storage.run_store import skip_queued_runs
-from infrastructure.scheduling.scheduler.types import ScheduledTask
+from infrastructure.scheduling.scheduler.storage.run_store import (
+    retire_pending_runs,
+    skip_queued_runs,
+)
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
 logger = logging.getLogger(__name__)
 
@@ -264,7 +270,7 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     not by the prompt and description copied from it.
     """
     raw_params = entry.get("params") or {}
-    ignored = {LOOP_CREATED_BY_PARAM}
+    ignored = {LOOP_CREATED_BY_PARAM, SCHEDULER_SCHEDULE_CHANGED_AT_PARAM}
     if raw_params.get(LOOP_TEMPLATE_PARAM):
         ignored.update(_TEMPLATE_LOOP_TEXT)
     params = {key: value for key, value in raw_params.items() if key not in ignored}
@@ -388,6 +394,166 @@ def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
     return True
 
 
+def _stored_loop_group_id(entry: Mapping[str, object]) -> str:
+    params = entry.get("params")
+    group = str(params.get(LOOP_GROUP_ID_PARAM, "")).strip() if isinstance(params, dict) else ""
+    return group or str(entry.get("id", ""))
+
+
+def patch_task_definitions(
+    task_ids: Sequence[str],
+    patch: Callable[[ScheduledTask], Mapping[str, object]],
+    store_path: Path | None = None,
+    *,
+    group_id: str | None = None,
+) -> tuple[ScheduledTask, ...] | None:
+    """Atomically patch existing tasks using their latest locked definitions."""
+    return _patch_task_definitions(task_ids, patch, store_path, group_id=group_id, check_scope=True)
+
+
+def patch_scheduler_task(
+    task_id: str,
+    patch: Callable[[ScheduledTask], Mapping[str, object]],
+    store_path: Path | None = None,
+) -> ScheduledTask | None:
+    """Patch service-owned cron, next-run, or enabled state on the latest locked row."""
+
+    def _scheduler_patch(current: ScheduledTask) -> Mapping[str, object]:
+        changes = patch(current)
+        if changes.keys() - {"cron", "next_run", "enabled"}:
+            raise ValueError("scheduler progress patches cannot change task configuration")
+        return changes
+
+    updated = _patch_task_definitions((task_id,), _scheduler_patch, store_path, check_scope=False)
+    return updated[0] if updated is not None else None
+
+
+def patch_scheduler_skill_pin(
+    task_id: str,
+    *,
+    previous_name: str,
+    previous_revision: str,
+    skill_name: str,
+    skill_revision: str,
+    store_path: Path | None = None,
+) -> ScheduledTask | None:
+    """Advance a matching recurring-skill pin without replacing current task configuration."""
+
+    def _skill_patch(current: ScheduledTask) -> Mapping[str, object]:
+        if (
+            current.kind is not TaskKind.RECURRING_SKILL
+            or current.skill_name != previous_name
+            or current.skill_revision != previous_revision
+        ):
+            return {}
+        return {"skill_name": skill_name, "skill_revision": skill_revision}
+
+    updated = _patch_task_definitions((task_id,), _skill_patch, store_path, check_scope=False)
+    return updated[0] if updated is not None else None
+
+
+def patch_scheduler_skill_definition(
+    task_id: str,
+    patch: Callable[[ScheduledTask], Mapping[str, object]],
+    store_path: Path | None = None,
+) -> ScheduledTask | None:
+    """Patch skill migration fields on the latest service-owned task definition."""
+
+    def _skill_patch(current: ScheduledTask) -> Mapping[str, object]:
+        changes = patch(current)
+        if changes.keys() - {"kind", "skill_name", "skill_revision", "skill_inputs", "params"}:
+            raise ValueError("skill migrations cannot change other task configuration")
+        return changes
+
+    updated = _patch_task_definitions((task_id,), _skill_patch, store_path, check_scope=False)
+    return updated[0] if updated is not None else None
+
+
+def _patch_task_definitions(
+    task_ids: Sequence[str],
+    patch: Callable[[ScheduledTask], Mapping[str, object]],
+    store_path: Path | None = None,
+    *,
+    group_id: str | None = None,
+    check_scope: bool,
+) -> tuple[ScheduledTask, ...] | None:
+    if not task_ids:
+        return None
+    path = store_path or default_task_store_path()
+    if not path.exists():
+        return None
+    should_reload = False
+    updated_tasks: list[ScheduledTask] = []
+    changed_schedules: list[str] = []
+    disabled_tasks: list[str] = []
+    with FileLock(_lock_path(path)):
+        raw, complete, _missing = _read_raw(path)
+        if not complete:
+            raise ValueError("the scheduler task store could not be read safely")
+        indices = {str(entry.get("id", "")): index for index, entry in enumerate(raw)}
+        if any(task_id not in indices for task_id in task_ids):
+            return None
+        if group_id is not None:
+            current_members = {
+                str(entry.get("id", ""))
+                for entry in raw
+                if _stored_loop_group_id(entry) == group_id
+            }
+            if current_members != set(task_ids):
+                raise ValueError("the loop group changed while editing; open /loops edit again")
+        scope = acting_scope()
+        if (
+            check_scope
+            and scope is not None
+            and any(_owner_of(raw[indices[task_id]]) != scope.principal.id for task_id in task_ids)
+        ):
+            raise ValueError("the loop is not available in this organization")
+        selected_entries = [raw[indices[task_id]] for task_id in dict.fromkeys(task_ids)]
+        changed = migrate_legacy_task_entries(selected_entries, read_only=True)
+        cutover = datetime.now(UTC)
+        for task_id in dict.fromkeys(task_ids):
+            index = indices[task_id]
+            entry = raw[index]
+            current = ScheduledTask.model_validate(entry)
+            changes = patch(current)
+            updated = {**entry, **changes}
+            validated = ScheduledTask.model_validate(updated)
+            if entry.get("cron") != updated.get("cron") or entry.get("timezone") != updated.get(
+                "timezone"
+            ):
+                params = dict(validated.params)
+                params[SCHEDULER_SCHEDULE_CHANGED_AT_PARAM] = cutover.isoformat()
+                updated["params"] = params
+                changed_schedules.append(task_id)
+                validated = ScheduledTask.model_validate(updated)
+            if validated.id != task_id:
+                raise ValueError("a task definition patch cannot change its ID")
+            if "enabled" in changes and not validated.enabled:
+                disabled_tasks.append(task_id)
+            should_reload = should_reload or _job_registration_changed(entry, updated)
+            changed = changed or entry != updated
+            raw[index] = updated
+            updated_tasks.append(validated)
+        if changed:
+            _save_raw(path, raw)
+        if changed_schedules:
+            try:
+                retire_pending_runs(
+                    changed_schedules,
+                    reason="schedule_changed",
+                    before_started_at=cutover,
+                    db_path=_run_database_for_store(path),
+                )
+            except (OSError, sqlite3.Error):
+                # The persisted cutoff still fences late admission and recovery.
+                logger.warning("Could not retire pending ticks after schedule edit", exc_info=True)
+    if should_reload:
+        reload_signal.request_scheduler_reload()
+    for task_id in disabled_tasks:
+        skip_queued_runs(task_id, reason="disabled", db_path=_run_database_for_store(path))
+    return tuple(updated_tasks)
+
+
 def _job_registration_changed(previous: dict[str, object], updated: dict[str, object]) -> bool:
     """True when APScheduler must drop or replace the job for this row."""
     previous_params = previous.get("params")
@@ -434,6 +600,10 @@ __all__ = [
     "get_task",
     "get_task_store_snapshot",
     "list_tasks",
+    "patch_scheduler_skill_definition",
+    "patch_scheduler_skill_pin",
+    "patch_scheduler_task",
+    "patch_task_definitions",
     "record_task_success",
     "remove_task",
     "update_task",

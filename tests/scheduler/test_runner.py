@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -36,6 +37,16 @@ from infrastructure.scheduling.scheduler.types import (
     TaskStatus,
 )
 from tests.scheduler._bundle import real_runners
+
+
+def _patch_registration_in_memory(
+    task_id: str, patch_definition: Callable[[ScheduledTask], Mapping[str, object]]
+) -> ScheduledTask:
+    """Keep scheduler timing tests' in-memory store on the latest-row patch API."""
+    current = scheduler_runner.get_task(task_id)
+    assert current is not None
+    current = current.model_copy(deep=True)
+    return current.model_copy(update=dict(patch_definition(current)))
 
 
 @pytest.fixture(autouse=True)
@@ -194,7 +205,7 @@ class TestScheduledConcurrency:
         run_at = datetime.now(UTC) - timedelta(minutes=5)
         monkeypatch.setattr(runner, "list_tasks", lambda: list(tasks.values()))
         monkeypatch.setattr(runner, "get_task", tasks.get)
-        monkeypatch.setattr(runner, "update_task", lambda _task: None)
+        monkeypatch.setattr(runner, "patch_scheduler_task", _patch_registration_in_memory)
         monkeypatch.setattr(runner, "record_task_success", lambda _task_id: None)
         monkeypatch.setattr(runner, "_make_trigger", lambda _task: DateTrigger(run_date=run_at))
         first_wave = threading.Barrier(limit + 1)
@@ -257,7 +268,7 @@ class TestScheduledConcurrency:
         peak_active = 0
         active_lock = threading.Lock()
 
-        def blocking_job(*_args: object) -> None:
+        def blocking_job(*_args: object, **_kwargs: object) -> None:
             nonlocal active, peak_active
             with active_lock:
                 active += 1
@@ -334,7 +345,7 @@ class TestComputeFireTime:
         )
         monkeypatch.setattr(
             "infrastructure.scheduling.scheduler.runner.execute_task",
-            lambda _task, fire_time, _runners: observed.append(fire_time) or False,
+            lambda _task, fire_time, _runners, **_kwargs: observed.append(fire_time) or False,
         )
 
         _scheduled_job(
@@ -473,6 +484,7 @@ class TestRegisterJobs:
             _task: ScheduledTask,
             fire_time: str,
             _runners: object,
+            **_kwargs: object,
         ) -> bool:
             observed_fire_times.append(fire_time)
             execution_finished.set()
@@ -491,8 +503,8 @@ class TestRegisterJobs:
             _make_date_trigger,
         )
         monkeypatch.setattr(
-            "infrastructure.scheduling.scheduler.runner.update_task",
-            lambda _task: None,
+            "infrastructure.scheduling.scheduler.runner.patch_scheduler_task",
+            _patch_registration_in_memory,
         )
         monkeypatch.setattr(
             "infrastructure.scheduling.scheduler.runner.execute_task",
@@ -1075,7 +1087,7 @@ def test_real_scheduler_recovers_pending_after_restart(
     assert try_queue_run(task.id, fire_time)
     monkeypatch.setattr(runner, "list_tasks", lambda: [task])
     monkeypatch.setattr(runner, "get_task", lambda _id: task)
-    monkeypatch.setattr(runner, "update_task", lambda _task: None)
+    monkeypatch.setattr(runner, "patch_scheduler_task", _patch_registration_in_memory)
     monkeypatch.setattr(runner, "record_task_success", lambda _task_id: None)
     future = datetime.now(UTC) + timedelta(days=1)
     monkeypatch.setattr(runner, "_make_trigger", lambda _task: DateTrigger(run_date=future))
@@ -1144,7 +1156,7 @@ def test_real_scheduler_runs_a_missed_tick_under_its_own_fire_time(
     )
     monkeypatch.setattr(runner, "list_tasks", lambda: [task])
     monkeypatch.setattr(runner, "get_task", lambda _id: task)
-    monkeypatch.setattr(runner, "update_task", lambda _task: None)
+    monkeypatch.setattr(runner, "patch_scheduler_task", _patch_registration_in_memory)
     monkeypatch.setattr(runner, "record_task_success", lambda _task_id: None)
     built = threading.Event()
 

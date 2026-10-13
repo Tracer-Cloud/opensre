@@ -134,12 +134,42 @@ LOOPS_TARGET_INPUT = CommandInput(
 WORK_DONE_INPUT = CommandInput(
     "/work", ("done", "complete"), max_positionals=1, missing_target=True
 )
+GOAL_EDIT_INPUT = CommandInput("/goal", ("edit",))
+WORK_EDIT_INPUT = CommandInput("/work", ("edit",), max_positionals=1)
+LOOPS_EDIT_INPUT = CommandInput("/loops", ("edit",), max_positionals=1)
+WORK_EDIT_TARGET_INPUT = CommandInput(
+    "/work",
+    ("edit",),
+    value_options=WORK_ADD_INPUT.value_options | {"--title"},
+    empty_value_options=frozenset({"--title", "--project", "--owner", "--due"}),
+    max_positionals=1,
+    missing_target=True,
+)
+LOOPS_EDIT_TARGET_INPUT = CommandInput(
+    "/loops",
+    ("edit",),
+    value_options=frozenset(
+        {"--name", "--prompt", "--time", "--tz", "--cron", "--window", "--mode"}
+    ),
+    flag_options=frozenset({"--daily", "--weekdays"}),
+    greedy_value_options=frozenset({"--name", "--prompt", "--cron"}),
+    empty_value_options=frozenset(
+        {"--name", "--prompt", "--time", "--tz", "--cron", "--window", "--mode"}
+    ),
+    max_positionals=1,
+    missing_target=True,
+)
 COMMAND_INPUTS = (
     WORK_ADD_INPUT,
     GOAL_SET_INPUT,
     LOOPS_ADD_INPUT,
     LOOPS_TARGET_INPUT,
     WORK_DONE_INPUT,
+    GOAL_EDIT_INPUT,
+    WORK_EDIT_INPUT,
+    LOOPS_EDIT_INPUT,
+    WORK_EDIT_TARGET_INPUT,
+    LOOPS_EDIT_TARGET_INPUT,
 )
 
 
