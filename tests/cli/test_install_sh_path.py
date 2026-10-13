@@ -195,15 +195,16 @@ def test_macos_warmup_does_not_consume_installer_analytics(
         INSTALL_DIR={shlex.quote(str(tmp_path))}
         INSTALL_CHANNEL=main
         installed_version=2026.9.17
-        warm_first_launch {shlex.quote(str(binary))}
         record_install_analytics
+        warm_first_launch {shlex.quote(str(binary))}
+        wait "$warm_pid"
         """
     )
 
     assert result.returncode == 0, result.stderr
     assert calls.read_text().splitlines() == [
-        "_package-smoke|1||||",
         f"--record-install|{analytics_disabled}|posix_installer|main|2026.9.17|unknown",
+        "_package-smoke|1||||",
     ]
 
 
@@ -617,6 +618,26 @@ def test_ensure_github_cli_skips_when_gh_present(tmp_path: Path) -> None:
     assert "Installing GitHub CLI" not in result.stdout
 
 
+def test_ensure_github_cli_installs_via_homebrew_without_auto_update(tmp_path: Path) -> None:
+    """Homebrew's auto-update alone costs ~10s; a soft dependency must not pay it."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    brew_log = tmp_path / "brew.log"
+    brew = bin_dir / "brew"
+    brew.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s|%s\\n" "$*" "$HOMEBREW_NO_AUTO_UPDATE" >> {shlex.quote(str(brew_log))}\n'
+    )
+    brew.chmod(0o755)
+
+    # No system dirs on PATH: CI runners ship gh in /usr/bin.
+    result = _run_ensure_github_cli(path_dirs=[bin_dir])
+
+    assert result.returncode == 0, result.stderr
+    assert brew_log.read_text().splitlines() == ["install gh|1"]
+    assert "Installed GitHub CLI (gh) via Homebrew" in result.stdout
+
+
 def test_ensure_github_cli_respects_skip_env(tmp_path: Path) -> None:
     empty_bin = tmp_path / "empty-bin"
     empty_bin.mkdir()
@@ -649,33 +670,47 @@ def test_warm_first_launch_skips_package_smoke_off_darwin() -> None:
     assert "done" in result.stdout
 
 
-def test_warm_first_launch_runs_package_smoke_on_darwin() -> None:
+def test_warm_first_launch_runs_package_smoke_on_darwin_without_blocking(
+    tmp_path: Path,
+) -> None:
+    """The warm-up is detached: the installer returns while the smoke still runs."""
+    marker = tmp_path / "smoke-ran"
+    release = tmp_path / "release"
     result = _run_logging_snippet(
-        """
-        uname() { printf 'Darwin\\n'; }
-        package_smoke_quiet() { printf 'SMOKE_RAN\\n'; return 0; }
+        f"""
+        uname() {{ printf 'Darwin\\n'; }}
+        package_smoke_quiet() {{
+            while [ ! -e {shlex.quote(str(release))} ]; do sleep 0.05; done
+            : > {shlex.quote(str(marker))}
+        }}
         BIN_NAME=opensre
         warm_first_launch /tmp/opensre
+        test ! -e {shlex.quote(str(marker))}
+        : > {shlex.quote(str(release))}
+        wait "$warm_pid"
         """
     )
 
     assert result.returncode == 0, result.stderr
-    assert "SMOKE_RAN" in result.stdout
-    assert "Preparing OpenSRE for first launch" in result.stderr
+    assert marker.exists()
+    assert "Preparing OpenSRE for first launch" not in result.stderr
 
 
-def test_install_release_binary_verifies_and_warms_the_staged_tree_before_activation() -> None:
-    """Signature validation is cached per file: check and warm the tree that gets renamed
-    into place, and never copy it afterwards (a copy is validated all over again)."""
+def test_install_verifies_the_staged_tree_and_warms_the_activated_one() -> None:
+    """Signature validation is cached per file: check the tree that gets renamed into
+    place, warm it after activation, and never copy it (a copy is validated again)."""
     source = INSTALL_SH.read_text(encoding="utf-8")
     pipeline = source.split("install_release_binary()")[1].split("\nprint_install_confirmation()")[
         0
     ]
     assert pipeline.index('verify_staged_binary "$staged_path"') < pipeline.index(
-        'warm_first_launch "$staged_path"'
-    )
-    assert pipeline.index('warm_first_launch "$staged_path"') < pipeline.index(
         'activate_staged_binary "$staged_path"'
+    )
+    assert "warm_first_launch" not in pipeline
+    finish = source.split("finish_install()")[1].split("\nmain()")[0]
+    # The analytics record runs first so it does not queue behind the warm-up.
+    assert finish.index("record_install_analytics") < finish.index(
+        'warm_first_launch "${INSTALL_DIR}/${BIN_NAME}"'
     )
     assert "cp -R" not in source
     # prepare_and_verify must not invoke warm (comment may still name it).

@@ -276,7 +276,7 @@ def _write_curl_shim(
               [ -f "$src" ] || {{ echo "curl-shim: missing asset $src for $url" >&2; exit 1; }}
               if [ -n "$out" ]; then cp "$src" "$out"; elif [ "$write_out" != true ]; then cat "$src"; fi
               if [ "$write_out" = true ]; then printf '%s' "200"; fi
-              printf 'asset 200\\n' >> "$calls"
+              printf 'asset 200 %s\\n' "$name" >> "$calls"
               exit 0
             fi
             echo "curl-shim: unhandled url $url" >&2
@@ -644,7 +644,21 @@ def test_install_sh_retries_github_rate_limit_then_installs(tmp_path: Path) -> N
     assert "404" in missing_out
     assert "retrying" not in missing_out
     missing_calls = (tmp_path / "missing" / "shim-bin" / "calls.log").read_text(encoding="utf-8")
-    assert missing_calls.splitlines() == ["api 404"]
+    # A pinned version starts its download alongside the lookup; only the
+    # lookup is subject to retries.
+    assert [line for line in missing_calls.splitlines() if line.startswith("api ")] == ["api 404"]
+
+
+@pytest.mark.parametrize("args", [("--main",), ("--version", "2026.4.29")])
+def test_install_sh_reuses_the_prefetched_archive(tmp_path: Path, args: tuple[str, ...]) -> None:
+    """The download that overlaps the metadata lookup is the one installed, not a second."""
+    result = _run_install_sh(tmp_path, *args)
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (tmp_path / "shim-bin" / "calls.log").read_text(encoding="utf-8").splitlines()
+    assets = sorted(line for line in calls if line.startswith("asset "))
+    assert len(assets) == 2, calls
+    assert assets[0].endswith(".tar.gz")
+    assert assets[1].endswith(".tar.gz.sha256")
 
 
 def test_install_sh_main_channel_end_to_end(tmp_path: Path) -> None:
