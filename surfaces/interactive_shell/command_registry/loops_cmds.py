@@ -5,12 +5,13 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
-from config.command_inputs import LOOPS_ADD_INPUT
+from config.command_inputs import LOOPS_ADD_INPUT, LOOPS_TARGET_INPUT
 from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
 from core.agent_harness.tools import capability_values
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_TIME_PARAM
 from infrastructure.scheduling.scheduler.types import DeliveryStatus, TaskRun
 from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
+from surfaces.interactive_shell.command_registry.target_collection import collect_loop_target
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -44,11 +45,11 @@ _USAGE = (
     "/loops active",
     "/loops show [NAME_OR_ID] [--run RUN]",
     "/loops add --name NAME --time HH:MM --prompt PROMPT [--mode report|agent] [--run-now]",
-    "/loops run LOOP_ID",
-    "/loops stop LOOP_ID",
-    "/loops start LOOP_ID",
-    "/loops delete LOOP_ID",
-    "/loops next LOOP_ID",
+    "/loops run [LOOP_ID]",
+    "/loops stop [LOOP_ID]",
+    "/loops start [LOOP_ID]",
+    "/loops delete [LOOP_ID]",
+    "/loops next [LOOP_ID]",
     "/loops messages [--limit N]",
     "/loops service [install|remove]",
 )
@@ -178,6 +179,11 @@ def _validate_loops_args(args: list[str]) -> str | None:
 def _cmd_loops(session: Session, console: Console, args: list[str]) -> bool:
     sub = args[0].lower() if args else "list"
     rest = args[1:] if args else []
+    if sub in LOOPS_TARGET_INPUT.subcommands:
+        collected = collect_loop_target(session, console, sub, rest)
+        if collected is None:
+            return True
+        rest = collected
     if sub in {"list", "all", "active"}:
         return _cmd_loops_list(session, console, args)
     if sub == "show":
@@ -503,6 +509,7 @@ COMMANDS: list[SlashCommand] = [
             "/loops next abc123",
         ),
         first_arg_completions=_LOOPS_FIRST_ARGS,
+        notes=("Omit an action's loop ID to choose a loop in the interactive terminal.",),
         validate_args=_validate_loops_args,
     ),
 ]

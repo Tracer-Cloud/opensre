@@ -371,7 +371,7 @@ def test_tab_navigation_reaches_create_from_priority() -> None:
 
 @pytest.mark.parametrize("command", ["/work done", "/work complete", "/memory show"])
 def test_other_missing_arguments_keep_usage_response(command: str) -> None:
-    assert "usage:" in dispatch(command)
+    assert "usage:" in dispatch(command, tty=False)
 
 
 @pytest.mark.parametrize("tty", [True, False])

@@ -267,8 +267,11 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     "/loops": _mcp(
         "List, create, stop, start, delete, run once, and debug recurring prompt loops, "
         "including latest findings, execution status, and next fire time. "
-        "Subcommands: list, active, all, add, run <id>, stop <id>, start <id>, delete <id>, "
-        "show [name-or-id] [--run <run-id>], next <id>, messages, service [install|remove]. "
+        "Subcommands: list, active, all, add, run [id], stop [id], start [id], delete [id], "
+        "show [name-or-id] [--run <run-id>], next [id], messages, service [install|remove]. "
+        "Prefer a supplied target ID for direct execution. In the interactive terminal, "
+        "omitting an action target opens a searchable picker; run and delete require explicit "
+        "action review. Noninteractive commands require a target ID. "
         "Use show to read full reports, run history, and loop configuration. "
         "Use add with --prompt, --time or --cron, optional --channel, --run-now, and "
         "--mode agent when the tick must act with tools (edit, push) instead of only reporting. "
@@ -280,6 +283,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to set up a manual recurring loop from a prompt",
         "User asks to add a loop and execute it once immediately",
         "User asks to stop, disable, resume, start, delete, or remove a recurring loop",
+        "User explicitly requests a loop action and wants to choose its target interactively",
         "User asks to keep loops running when the shell is closed, or to install, "
         "check, or remove the background scheduler service",
         anti_examples=("User wants low-level cron task logs by task id (use /cron)",),
@@ -472,6 +476,9 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     ),
     "/work": _mcp(
         "Manage durable human work items. Subcommands: list, add, done, next, path. "
+        "Prefer explicit completion IDs; done or complete without a target opens a searchable "
+        "unfinished-item picker in the interactive terminal. Noninteractive completion requires "
+        "one or more targets. "
         "Reminder delivery requires the destination-aware work_task_* tools or opensre work CLI.",
         "User explicitly types /work to list, add, complete, or prioritize work items",
         "User asks for a durable task list or hackathon task overview via the slash command",

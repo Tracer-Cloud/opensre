@@ -27,13 +27,13 @@ _RETIRED_TASK_KINDS = frozenset(
 )
 
 
-def migrate_legacy_task_entries(entries: Iterable[object]) -> bool:
+def migrate_legacy_task_entries(entries: Iterable[object], *, read_only: bool = False) -> bool:
     """Normalize retired task kinds in place before strict model validation."""
     changed = False
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        if _migrate_legacy_work_item_reminder(entry):
+        if _migrate_legacy_work_item_reminder(entry, read_only=read_only):
             changed = True
         legacy_kind = entry.get("kind")
         if legacy_kind not in _RETIRED_TASK_KINDS:
@@ -61,7 +61,9 @@ def migrate_legacy_task_entries(entries: Iterable[object]) -> bool:
     return changed
 
 
-def _migrate_legacy_work_item_reminder(entry: dict[str, object]) -> bool:
+def _migrate_legacy_work_item_reminder(
+    entry: dict[str, object], *, read_only: bool = False
+) -> bool:
     """Add an absolute fire time to one legacy work-item reminder entry."""
     if entry.get("kind") != TaskKind.WORK_ITEM_REMINDER.value:
         return False
@@ -88,7 +90,7 @@ def _migrate_legacy_work_item_reminder(entry: dict[str, object]) -> bool:
     )
 
     try:
-        item = get_work_item(item_id, store_path=Path(store_path).expanduser())
+        item = get_work_item(item_id, store_path=Path(store_path).expanduser(), read_only=read_only)
         if item is None:
             return False
         resolved = resolve_work_item_datetime(item.remind_at, timezone)

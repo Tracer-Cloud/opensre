@@ -817,6 +817,11 @@ remain unset unless supplied, and the existing Normal priority is shown explicit
 Esc returns from an edit without applying it; Esc on the summary cancels creation.
 Fully specified commands still execute directly.
 
+Use `/work done` or `/work complete` without a target to choose an unfinished work
+item in an interactive terminal. Type to search, use arrow keys to choose, and
+Enter to mark it complete. You can still pass one or more IDs directly. Outside
+the interactive terminal, a completion target is required.
+
 `/work add` creates durable human todos; it does not schedule reminder delivery.
 For reminders, use the destination-aware `opensre work add` command with
 `--remind-at` and `--target provider:chat-id`, or ask from a connected chat whose
@@ -1102,6 +1107,13 @@ List recurring loops from the scheduler store, create manual prompt loops, run a
 Agent-mode prompts must contain the complete task and name the tools to use; each tick starts a fresh session without loading workflow skills. For the CLI equivalent, use `opensre cron add --kind manual_loop --mode agent` with your prompt and schedule. Existing loops retain their stored mode; check `/loops show <id>` before reusing one.
 
 The list shows each loop's latest finding and run status, plus its next scheduled time in your local timezone. Failed and quiet runs replace the previous result in the table.
+
+In an interactive terminal, omit the ID from `/loops run`, `/loops start`,
+`/loops stop`, `/loops delete`, or `/loops next` to choose a loop from a searchable
+list. Start offers stopped and draft loops; stop offers active loops. Running a
+loop requires the **Run now** action after reviewing its configuration. Deleting
+requires **Delete permanently** confirmation. Esc cancels selection; Esc during
+action review returns to the list. Outside the interactive terminal, supply an ID.
 
 Use `/loops show` to pick a loop, or pass its name or ID directly. Details contain the full report, recent runs, and configuration. Open an earlier report with the run ID shown in its history. New reports are retained even when delivery fails; older reports may be unavailable.
 

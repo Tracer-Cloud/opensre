@@ -19,6 +19,7 @@ from core.domain.work_items import (
     work_items_path,
 )
 from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
+from surfaces.interactive_shell.command_registry.target_collection import collect_work_target
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -190,7 +191,8 @@ def _cmd_work(session: Session, console: Console, args: list[str]) -> bool:
             return _create_work(console, values["title"], values)
         return _add(console, args[1:])
     if sub in {"done", "complete"}:
-        return _done(console, args[1:])
+        collected = collect_work_target(session, console, sub, args[1:])
+        return True if collected is None else _done(console, collected)
     if sub in {"next", "prioritize"}:
         return _next(console, args[1:])
     if sub == "path":
@@ -216,12 +218,13 @@ COMMANDS: list[SlashCommand] = [
             "/work",
             "/work list [open|active|blocked|deferred|completed|all] [project]",
             "/work add <title> [--project <name>] [--priority <low|normal|high|urgent>]",
-            "/work done <id-or-title> [more...]",
+            "/work done [id-or-title] [more...]",
             "/work next [project]",
             "/work path",
         ),
         notes=(
             "Use /tasks for OpenSRE runtime jobs; /work is for durable human todos.",
+            "Omit the completion target to choose an unfinished work item in the interactive terminal.",
             "To schedule a reminder, use `opensre work add <title> --remind-at <datetime> "
             "--target <provider>:<chat-id>`, or ask from a connected chat.",
         ),

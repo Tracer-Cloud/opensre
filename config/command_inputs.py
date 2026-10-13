@@ -17,15 +17,24 @@ class CommandInput:
     empty_value_options: frozenset[str] = frozenset()
     required_options: frozenset[str] = frozenset()
     alternative_options: tuple[frozenset[str], ...] = ()
+    max_positionals: int = 0
+    missing_target: bool = False
 
     def matches(self, command: str, args: list[str]) -> bool:
         """Return whether this input applies to a valid but incomplete invocation."""
         if command.lower() != self.command or not args or args[0].lower() not in self.subcommands:
             return False
         nonempty: set[str] = set()
+        positionals = 0
+        supplied_target = False
         index = 1
         while index < len(args):
             option = args[index]
+            if not option.startswith("--") and positionals < self.max_positionals:
+                positionals += 1
+                supplied_target = supplied_target or bool(option.strip())
+                index += 1
+                continue
             if option in self.flag_options:
                 has_value = True
                 index += 1
@@ -52,6 +61,8 @@ class CommandInput:
                 nonempty.add(option)
             else:
                 nonempty.discard(option)
+        if self.missing_target:
+            return not supplied_target
         if self.required_options or self.alternative_options:
             missing_required = not self.required_options.issubset(nonempty)
             missing_alternative = any(
@@ -102,7 +113,34 @@ LOOPS_ADD_INPUT = CommandInput(
     required_options=frozenset({"--name", "--prompt"}),
     alternative_options=(frozenset({"--time", "--cron"}),),
 )
-COMMAND_INPUTS = (WORK_ADD_INPUT, GOAL_SET_INPUT, LOOPS_ADD_INPUT)
+LOOPS_TARGET_INPUT = CommandInput(
+    "/loops",
+    (
+        "run",
+        "start",
+        "resume",
+        "enable",
+        "stop",
+        "pause",
+        "disable",
+        "delete",
+        "remove",
+        "next",
+        "debug",
+    ),
+    max_positionals=1,
+    missing_target=True,
+)
+WORK_DONE_INPUT = CommandInput(
+    "/work", ("done", "complete"), max_positionals=1, missing_target=True
+)
+COMMAND_INPUTS = (
+    WORK_ADD_INPUT,
+    GOAL_SET_INPUT,
+    LOOPS_ADD_INPUT,
+    LOOPS_TARGET_INPUT,
+    WORK_DONE_INPUT,
+)
 
 
 def needs_command_input(command: str, args: list[str]) -> bool:

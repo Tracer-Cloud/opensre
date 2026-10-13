@@ -182,15 +182,25 @@ def _save_raw(store_path: Path, data: list[dict[str, object]]) -> None:
 
 
 def get_task_store_snapshot(
-    store_path: Path | None = None, *, lock_timeout_seconds: float | None = None
+    store_path: Path | None = None,
+    *,
+    lock_timeout_seconds: float | None = None,
+    read_only: bool = False,
 ) -> TaskStoreSnapshot:
     """Return validated tasks, optionally bounding the task-store lock wait."""
     path = store_path or default_task_store_path()
+    if read_only and not path.exists():
+        return TaskStoreSnapshot(tasks=(), complete=True, missing=True)
     lock_timeout = -1 if lock_timeout_seconds is None else lock_timeout_seconds
     lock = FileLock(_lock_path(path), timeout=lock_timeout)
     with lock:
         raw, complete, missing = _read_raw(path)
-        if complete and migrate_legacy_task_entries(raw):
+        migrated = complete and (
+            migrate_legacy_task_entries(raw, read_only=True)
+            if read_only
+            else migrate_legacy_task_entries(raw)
+        )
+        if migrated and not read_only:
             try:
                 _save_raw(path, raw)
             except OSError:
@@ -210,9 +220,9 @@ def get_task_store_snapshot(
     return TaskStoreSnapshot(tasks=tuple(tasks), complete=complete, missing=missing)
 
 
-def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
+def list_tasks(store_path: Path | None = None, *, read_only: bool = False) -> list[ScheduledTask]:
     """Return all valid persisted scheduled tasks, skipping unreadable content."""
-    return list(get_task_store_snapshot(store_path).tasks)
+    return list(get_task_store_snapshot(store_path, read_only=read_only).tasks)
 
 
 def get_task(task_id: str, store_path: Path | None = None) -> ScheduledTask | None:

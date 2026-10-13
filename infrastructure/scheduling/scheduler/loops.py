@@ -452,9 +452,10 @@ def list_loop_summaries(
     include_disabled: bool = True,
     store_path: Path | None = None,
     now: datetime | None = None,
+    read_only: bool = False,
 ) -> list[LoopSummary]:
     """Return configured loops from the store, sorted with active loops first."""
-    tasks = list_tasks(store_path)
+    tasks = list_tasks(store_path, read_only=True) if read_only else list_tasks(store_path)
     return summarize_loops(tasks, include_disabled=include_disabled, now=now)
 
 
@@ -464,6 +465,7 @@ def resolve_loop_summary(
     include_disabled: bool = True,
     store_path: Path | None = None,
     now: datetime | None = None,
+    read_only: bool = False,
 ) -> tuple[LoopSummary | None, str]:
     """Resolve a loop by id prefix, task id prefix, or exact name."""
     query = identifier.strip()
@@ -477,6 +479,7 @@ def resolve_loop_summary(
             include_disabled=include_disabled,
             store_path=store_path,
             now=now,
+            read_only=read_only,
         )
         if loop.id.startswith(query)
         or lowered == loop.name.casefold()
