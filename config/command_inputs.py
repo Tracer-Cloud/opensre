@@ -27,23 +27,27 @@ class CommandInput:
         while index < len(args):
             option = args[index]
             if option in self.flag_options:
-                nonempty.add(option)
+                has_value = True
                 index += 1
-                continue
-            if option not in self.value_options or index + 1 >= len(args):
-                return False
-            value = args[index + 1]
-            if (not value.strip() and option not in self.empty_value_options) or value.startswith(
-                "--"
-            ):
-                return False
-            has_value = bool(value.strip())
-            index += 2
-            if option in self.greedy_value_options:
-                while index < len(args) and not args[index].startswith("--"):
-                    if args[index].strip():
-                        has_value = True
-                    index += 1
+            else:
+                if option not in self.value_options or index + 1 >= len(args):
+                    return False
+                value = args[index + 1]
+                if (
+                    not value.strip() and option not in self.empty_value_options
+                ) or value.startswith("--"):
+                    return False
+                has_value = bool(value.strip())
+                index += 2
+                if option in self.greedy_value_options:
+                    while index < len(args) and not args[index].startswith("--"):
+                        if args[index].strip():
+                            has_value = True
+                        index += 1
+            alternatives = next(
+                (options for options in self.alternative_options if option in options), ()
+            )
+            nonempty.difference_update(alternatives)
             if has_value:
                 nonempty.add(option)
             else:
