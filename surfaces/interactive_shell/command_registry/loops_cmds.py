@@ -108,11 +108,13 @@ def _parse_add_args(args: list[str]) -> tuple[LoopInput | None, str]:
             parsed.prompt, index, error = _take_text_value(args, index, flag)
         elif flag == "--time":
             parsed.time_text, index, error = _take_flag_value(args, index, flag)
+            parsed.cron = ""
             parsed.cron_selected = False
         elif flag == "--tz":
             parsed.timezone, index, error = _take_flag_value(args, index, flag)
         elif flag == "--cron":
             parsed.cron, index, error = _take_text_value(args, index, flag)
+            parsed.time_text = ""
             parsed.cron_selected = True
         elif flag in {"--channel", "--channels"}:
             value, index, error = _take_flag_value(args, index, flag)
