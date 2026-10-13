@@ -75,7 +75,7 @@ def _validate(values: dict[str, str]) -> LoopInput:
     timezone = values["timezone"].strip() or "UTC"
     try:
         ZoneInfo(timezone)
-    except ZoneInfoNotFoundError as exc:
+    except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
         raise InputFormError("Enter a valid IANA timezone, such as UTC.", field="timezone") from exc
 
     schedule_type = values["schedule_type"]

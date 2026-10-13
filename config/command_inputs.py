@@ -37,14 +37,17 @@ class CommandInput:
                 "--"
             ):
                 return False
-            if value.strip():
-                nonempty.add(option)
+            has_value = bool(value.strip())
             index += 2
             if option in self.greedy_value_options:
                 while index < len(args) and not args[index].startswith("--"):
                     if args[index].strip():
-                        nonempty.add(option)
+                        has_value = True
                     index += 1
+            if has_value:
+                nonempty.add(option)
+            else:
+                nonempty.discard(option)
         if self.required_options or self.alternative_options:
             missing_required = not self.required_options.issubset(nonempty)
             missing_alternative = any(

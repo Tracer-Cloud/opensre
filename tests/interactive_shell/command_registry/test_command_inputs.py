@@ -143,6 +143,17 @@ def test_all_registered_inputs_reserve_stdin() -> None:
         [
             "add",
             "--name",
+            "old",
+            "--name",
+            "",
+            "--prompt",
+            "Review risk",
+            "--time",
+            "08:30",
+        ],
+        [
+            "add",
+            "--name",
             "Morning ops",
             "--prompt",
             "Review risk",

@@ -168,6 +168,26 @@ def test_form_repairs_invalid_schedule_and_lookback_without_losing_values() -> N
     assert not result.run_now
 
 
+def test_form_repairs_timezone_path_without_losing_values() -> None:
+    draft = LoopInput(
+        name="Morning ops",
+        prompt="Review open incidents",
+        time_text="08:30",
+        timezone="/etc/passwd",
+        channels=["interactive_shell"],
+    )
+    with create_app_session(output=DummyOutput()):
+        result = run_keys(build_loop_form(draft), "\x13\x01\x0bUTC\r\x1b\x13")
+
+    assert result is not None
+    assert (result.name, result.prompt, result.time_text, result.timezone) == (
+        draft.name,
+        draft.prompt,
+        draft.time_text,
+        "UTC",
+    )
+
+
 @pytest.mark.parametrize("columns,rows", [(40, 12), (100, 30), (160, 40)])
 def test_form_keeps_create_action_reachable(columns: int, rows: int) -> None:
     class SizedOutput(DummyOutput):
