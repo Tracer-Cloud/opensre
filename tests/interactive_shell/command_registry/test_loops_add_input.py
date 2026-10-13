@@ -188,6 +188,36 @@ def test_form_repairs_timezone_path_without_losing_values() -> None:
     )
 
 
+def test_empty_supplied_cron_opens_the_cron_editor() -> None:
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=30, columns=100)
+
+    draft, error = loops_cmds._parse_add_args(
+        ["--name", "Morning ops", "--prompt", "Review incidents", "--cron", ""]
+    )
+    assert draft is not None and not error
+
+    rendered: list[str] = []
+    with create_pipe_input() as pipe, create_app_session(output=SizedOutput()):
+        app = build_loop_form(draft)
+        app.input = pipe
+
+        async def capture() -> None:
+            await asyncio.sleep(0.05)
+            screen = app.renderer.last_rendered_screen
+            assert screen is not None
+            text = "\n".join(
+                "".join(screen.data_buffer[y][x].char for x in range(100)) for y in range(30)
+            )
+            rendered.append(text)
+            app.exit(result=None)
+
+        app.run(pre_run=lambda: app.create_background_task(capture()))
+
+    assert "Cron schedule · required" in rendered[0]
+
+
 @pytest.mark.parametrize("columns,rows", [(40, 12), (100, 30), (160, 40)])
 def test_form_keeps_create_action_reachable(columns: int, rows: int) -> None:
     class SizedOutput(DummyOutput):

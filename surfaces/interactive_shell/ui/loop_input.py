@@ -36,6 +36,7 @@ class LoopInput:
     time_text: str = ""
     timezone: str = "UTC"
     cron: str = ""
+    cron_selected: bool = False
     weekdays: bool = False
     run_now: bool = False
     channels: list[str] = field(default_factory=list)
@@ -46,7 +47,9 @@ class LoopInput:
 
 
 def _form_values(draft: LoopInput) -> dict[str, str]:
-    schedule_type = _CRON if draft.cron else (_WEEKDAYS if draft.weekdays else _DAILY)
+    schedule_type = (
+        _CRON if draft.cron or draft.cron_selected else (_WEEKDAYS if draft.weekdays else _DAILY)
+    )
     return {
         "name": draft.name,
         "prompt": draft.prompt,
@@ -120,6 +123,7 @@ def _validate(values: dict[str, str]) -> LoopInput:
         time_text=time_text,
         timezone=timezone,
         cron=cron,
+        cron_selected=schedule_type == _CRON,
         weekdays=schedule_type == _WEEKDAYS,
         run_now=values["run_now"] == _TRUE,
         channels=channels,
