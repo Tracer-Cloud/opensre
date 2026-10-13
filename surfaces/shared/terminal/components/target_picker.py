@@ -137,7 +137,7 @@ def build_target_picker(
         ]
 
     def detail_height() -> Dimension:
-        count = sum(text_height(text.rstrip("\n")) for _, text in details())
+        count = sum(text_height(fragment[1].rstrip("\n")) for fragment in details())
         if reviewing:
             reserved = (
                 6
