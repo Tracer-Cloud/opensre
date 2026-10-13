@@ -49,4 +49,9 @@ def signoz_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     }
 
 
-__all__ = ["signoz_available_or_backend", "signoz_extract_params"]
+def signoz_is_available(sources: dict[str, dict]) -> bool:
+    """Check if SigNoz integration params are present in available sources."""
+    return bool(sources.get("signoz", {}).get("connection_verified"))
+
+
+__all__ = ["signoz_available_or_backend", "signoz_extract_params", "signoz_is_available"]
