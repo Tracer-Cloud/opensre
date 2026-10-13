@@ -22,7 +22,14 @@ from config.command_inputs import (
 )
 from config.constants import OPENSRE_WORK_ITEMS_DIR_ENV
 from config.interactive_override import forced_non_interactive
-from core.domain.work_items import add_work_item, list_work_items, work_items_path
+from core.domain.work_items import (
+    WorkItem,
+    WorkItemPriority,
+    WorkItemStatus,
+    add_work_item,
+    list_work_items,
+    work_items_path,
+)
 from infrastructure.scheduling.scheduler.loops import LoopSummary, create_manual_loop
 from infrastructure.scheduling.scheduler.storage import task_store
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
@@ -34,7 +41,7 @@ from surfaces.interactive_shell.command_registry import (
 )
 from surfaces.interactive_shell.runtime import input_policy
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.ui.target_input import build_loop_picker
+from surfaces.interactive_shell.ui.target_input import build_loop_picker, build_work_picker
 from surfaces.shared.terminal.components.target_picker import TargetChoice, build_target_picker
 
 
@@ -436,4 +443,56 @@ def test_render_preserves_selected_identity_context_and_action(
         else "Cannot be undone" in content
     )
     assert "Esc back" in content
+    assert max(len(line.rstrip()) for line in captured) <= min(columns, 96)
+
+
+@pytest.mark.parametrize(
+    "columns,rows,action_label",
+    [
+        (40, 12, "Mark complete"),
+        (40, 12, "Complete work item"),
+        (40, 24, "Mark complete"),
+        (90, 24, "Mark complete"),
+        (160, 30, "Mark complete"),
+    ],
+)
+def test_work_picker_keeps_full_title_route_for_blocked_items(
+    columns: int, rows: int, action_label: str
+) -> None:
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=rows, columns=columns)
+
+    captured: list[str] = []
+    identifier = "12345678-1234-1234-1234-123456789012"
+    item = WorkItem(
+        id=identifier,
+        title="Latency [literal] 中文 with a very long descriptive work title",
+        status=WorkItemStatus.BLOCKED,
+        priority=WorkItemPriority.HIGH,
+        project="Payments",
+        owner="Service team",
+    )
+    with create_pipe_input() as pipe, create_app_session(output=SizedOutput()):
+        app = build_work_picker([item], command="/work done", action_label=action_label)
+        app.input = pipe
+
+        def capture(_app: Any) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or captured:
+                return
+            captured.extend(
+                "".join(screen.data_buffer[y][x].char for x in range(columns))
+                for y in range(screen.height)
+            )
+            pipe.send_text("\x03")
+
+        app.after_render += capture
+        assert app.run() is None
+    content = "".join(line.strip(" │") for line in captured)
+    assert identifier in content
+    assert "[literal]" in content and "中文" in content
+    assert "Blocked" in content
+    assert "Full titles: /work list all" in content
+    assert "Esc cancel" in content
     assert max(len(line.rstrip()) for line in captured) <= min(columns, 96)

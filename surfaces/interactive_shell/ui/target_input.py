@@ -90,11 +90,14 @@ def build_work_picker(
                     f"Due: {format_repl_timestamp(item.due_at, style='utc')}"
                     if item.due_at
                     else "",
+                    "Full titles: /work list all",
                 )
                 if value
             ),
             search_text=item.notes,
             compact_summary=f"{item.status.value.capitalize()} · {item.priority.value.capitalize()}",
+            compact_details=("Full titles: /work list all",),
+            minimal_details=("Full titles: /work list all",),
         )
         for item in items
     )

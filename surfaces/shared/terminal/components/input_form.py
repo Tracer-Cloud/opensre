@@ -130,6 +130,9 @@ def build_input_form[Result](
         size = app.output.get_size()
         return record_mode() and (size.rows < 24 or (size.columns < 60 and size.rows < 28))
 
+    def record_count_visible() -> bool:
+        return app.output.get_size().rows >= 16
+
     def action_labels() -> tuple[str, ...]:
         if expanded:
             return ("Back to review",)
@@ -485,7 +488,12 @@ def build_input_form[Result](
             )
             reserved += 0 if compact_records() else 5
         else:
-            reserved = 7 + wrapped_rows(hint()) + (0 if compact_records() else 3)
+            reserved = (
+                6
+                + int(record_count_visible())
+                + wrapped_rows(hint())
+                + (0 if compact_records() else 3)
+            )
         available = max(1, app.output.get_size().rows - reserved - error_height().min)
         return Dimension(min=min(count, available), preferred=count, max=count)
 
@@ -562,7 +570,9 @@ def build_input_form[Result](
                             ),
                             height=1,
                         ),
-                        filter=Condition(lambda: mode == "choice" and record_mode()),
+                        filter=Condition(
+                            lambda: mode == "choice" and record_mode() and record_count_visible()
+                        ),
                     ),
                     ConditionalContainer(
                         Window(
