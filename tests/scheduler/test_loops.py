@@ -259,3 +259,73 @@ class TestNormalizeLoopChannels:
 
         with pytest.raises(ValueError, match="SLACK_DEFAULT_CHAT_ID"):
             normalize_loop_channels(["slack"])
+
+
+def test_a_cron_that_can_never_fire_is_rejected_at_loop_creation(tmp_path: Path) -> None:
+    """February 31st builds an APScheduler trigger but must not become an active loop."""
+    from infrastructure.scheduling.scheduler.cron_expression import CRON_NEVER_FIRES_ERROR
+    from infrastructure.scheduling.scheduler.loops import create_manual_loop
+
+    store_path = tmp_path / "scheduler_tasks.json"
+
+    with pytest.raises(ValueError, match=CRON_NEVER_FIRES_ERROR):
+        create_manual_loop(
+            name="NeverFire",
+            prompt="Impossible date audit",
+            cron="0 8 31 2 *",
+            channels=["interactive_shell"],
+            store_path=store_path,
+        )
+
+    assert list_tasks(store_path) == []
+
+
+def test_an_existing_loop_with_a_cron_that_can_never_fire_is_flagged_not_running(
+    tmp_path: Path,
+) -> None:
+    """A stored impossible schedule shows a schedule error instead of silent dormancy."""
+    from infrastructure.scheduling.scheduler.cron_expression import CRON_NEVER_FIRES_ERROR
+    from infrastructure.scheduling.scheduler.loops import list_loop_summaries
+
+    store_path = tmp_path / "scheduler_tasks.json"
+    add_task(
+        ScheduledTask(
+            name="NeverFire",
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 8 31 2 *",
+            provider=Provider.INTERACTIVE_SHELL,
+        ),
+        store_path,
+    )
+
+    summary = next(loop for loop in list_loop_summaries(store_path=store_path))
+
+    assert summary.enabled is True
+    assert CRON_NEVER_FIRES_ERROR in summary.schedule_error
+    assert summary.next_run is None
+
+
+def test_a_finished_one_shot_reminder_is_not_flagged_for_its_passed_run_at(
+    tmp_path: Path,
+) -> None:
+    """A reminder whose run_at has passed has no next fire time, and that is not an error."""
+    from infrastructure.scheduling.scheduler.loops import list_loop_summaries
+
+    store_path = tmp_path / "scheduler_tasks.json"
+    add_task(
+        ScheduledTask(
+            name="Old reminder",
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="* * * * *",
+            provider=Provider.INTERACTIVE_SHELL,
+            params={
+                "work_item_id": "W-1",
+                "run_at": "2026-01-01T09:00:00+00:00",
+            },
+        ),
+        store_path,
+    )
+
+    summary = next(loop for loop in list_loop_summaries(store_path=store_path))
+
+    assert summary.schedule_error == ""

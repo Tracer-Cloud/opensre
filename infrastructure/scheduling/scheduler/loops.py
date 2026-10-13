@@ -12,6 +12,7 @@ from pathlib import Path
 
 from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
 from config.constants.scheduler import WEEKDAY_CRON_FIELD
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from config.scope_handoff import acting_scope
 from core.agent_harness import pin_recurring_skill
 from infrastructure.scheduling.scheduler.credentials import (
@@ -20,7 +21,11 @@ from infrastructure.scheduling.scheduler.credentials import (
     resolve_telegram_credentials,
     resolve_telegram_default_chat_id,
 )
-from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
+from infrastructure.scheduling.scheduler.cron_expression import (
+    CRON_NEVER_FIRES_ERROR,
+    assert_cron_can_fire,
+    cap_cron_at_most_hourly,
+)
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CHANNELS_PARAM,
     LOOP_CREATED_BY_PARAM,
@@ -358,6 +363,7 @@ def create_manual_loop(
         cron_expr = cron_for_time(time_text, weekdays=weekdays)
     if report.strip() != CI_REPAIR_REPORT_BUILDER:
         cron_expr = cap_cron_at_most_hourly(cron_expr, timezone.strip() or "UTC")
+    assert_cron_can_fire(cron_expr, timezone.strip() or "UTC")
 
     channel_providers = normalize_loop_channels(
         channels,
@@ -660,6 +666,10 @@ def _summarize_group(
         else:
             if computed_next_run:
                 next_runs.append(computed_next_run)
+            elif task.enabled and not _is_finished_one_shot(task):
+                # APScheduler accepts schedules that can never fire ("0 8 31 2 *");
+                # their next run is always None. Say so instead of reporting the loop healthy.
+                schedule_errors.append(CRON_NEVER_FIRES_ERROR)
 
     channels: list[str] = []
     seen_channels: set[str] = set()
@@ -693,6 +703,18 @@ def _summarize_group(
 
 def _loop_group_id(task: ScheduledTask) -> str:
     return task.params.get(LOOP_GROUP_ID_PARAM, "").strip() or task.id
+
+
+def _is_finished_one_shot(task: ScheduledTask) -> bool:
+    """Whether the task fires once at a fixed ``run_at``, so ``next_run is None`` just means it is over.
+
+    A cron schedule with no next fire time is broken (see
+    :func:`infrastructure.scheduling.scheduler.cron_expression.assert_cron_can_fire`);
+    a one-shot reminder whose moment has passed simply ran and is done.
+    """
+    return task.kind is TaskKind.WORK_ITEM_REMINDER and bool(
+        task.params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM, "").strip()
+    )
 
 
 def _description_from_prompt(prompt: str) -> str:

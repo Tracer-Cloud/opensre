@@ -23,7 +23,10 @@ from core.domain.work_items import (
     work_items_path,
 )
 from infrastructure.process.runtime_flags import is_json_output
-from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
+from infrastructure.scheduling.scheduler.cron_expression import (
+    assert_cron_can_fire,
+    build_cron_trigger,
+)
 from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from surfaces.shared.terminal.tables.work_items import next_work_table, work_items_table
@@ -330,6 +333,7 @@ def _validate_cron(cron_expr: str, timezone: str) -> None:
         raise click.BadParameter("cron must have exactly 5 fields")
     try:
         build_cron_trigger(cron_expr, timezone)
+        assert_cron_can_fire(cron_expr, timezone)
     except ValueError as exc:
         raise click.BadParameter(str(exc)) from None
 

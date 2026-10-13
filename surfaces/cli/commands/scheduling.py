@@ -18,6 +18,7 @@ from infrastructure.scheduling.scheduler.cron_expression import (
     CRON_FIELD_COUNT_ERROR,
     CRON_FIELD_COUNT_WITH_SECONDS,
     CRON_FORMAT_HELP,
+    assert_cron_can_fire,
     build_cron_trigger,
 )
 
@@ -30,7 +31,9 @@ _console = Console()
 def validate_cron_and_timezone(cron_expr: str, timezone: str) -> None:
     """Validate cron expression and timezone by constructing an APScheduler trigger.
 
-    Fails fast with a clear error message instead of creating inert tasks.
+    Fails fast with a clear error message instead of creating inert tasks —
+    including schedules APScheduler accepts but that can never fire
+    (``0 8 31 2 *``, February 31st).
     """
     if len(cron_expr.split()) not in (CRON_FIELD_COUNT, CRON_FIELD_COUNT_WITH_SECONDS):
         _console.print(f"[red]Error: {CRON_FIELD_COUNT_ERROR}.[/red]")
@@ -41,6 +44,7 @@ def validate_cron_and_timezone(cron_expr: str, timezone: str) -> None:
 
     try:
         build_cron_trigger(cron_expr, timezone)
+        assert_cron_can_fire(cron_expr, timezone)
     except ValueError as exc:
         _console.print(f"[red]Error: {exc}[/red]")
         raise SystemExit(1) from exc

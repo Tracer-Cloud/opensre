@@ -14,7 +14,7 @@ built through :func:`build_cron_trigger`, which translates them.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import groupby
 from typing import Any
 
@@ -124,6 +124,43 @@ def build_cron_trigger(cron: str, timezone: str | None) -> Any:
         )
     except (ValueError, TypeError, KeyError) as exc:
         raise ValueError(f"invalid cron expression or timezone: {exc}") from exc
+
+
+#: Error for a syntactically valid schedule that can never fire, such as
+#: ``0 8 31 2 *`` (February 31st).
+CRON_NEVER_FIRES_ERROR = "this cron schedule has no possible future execution time"
+#: Sampling horizon for :func:`assert_cron_can_fire`: long enough to span the
+#: four-year leap-day cycle, so ``0 8 29 2 *`` stays reachable.
+_CRON_HORIZON_YEARS = 4
+#: The cursor steps through the horizon in year-sized jumps, so the check also
+#: holds for an APScheduler whose single ``get_next_fire_time`` call only
+#: searches about a year ahead.
+_CRON_PROBE_STEP = timedelta(days=366)
+
+
+def assert_cron_can_fire(
+    cron: str,
+    timezone: str | None,
+    horizon_years: int = _CRON_HORIZON_YEARS,
+    now: datetime | None = None,
+) -> None:
+    """Reject a schedule that has no fire time within ``horizon_years`` years.
+
+    APScheduler builds a ``CronTrigger`` even for an unsatisfiable
+    day-of-month/month pair such as ``0 8 31 2 *``, whose
+    ``get_next_fire_time`` always comes back ``None``. Sampling forward in
+    year-sized jumps also covers an APScheduler whose single call only
+    searches about a year ahead, and the horizon spans the leap-day cycle, so
+    ``0 8 29 2 *`` stays reachable. Raises ``ValueError`` when nothing can
+    fire.
+    """
+    trigger = build_cron_trigger(cron, timezone)
+    cursor = now or datetime.now(UTC)
+    for _ in range(max(horizon_years, 1)):
+        if trigger.get_next_fire_time(None, cursor) is not None:
+            return
+        cursor += _CRON_PROBE_STEP
+    raise ValueError(f"{CRON_NEVER_FIRES_ERROR}: {cron!r}")
 
 
 _MIN_FIRE_GAP_SECONDS = 60 * 60

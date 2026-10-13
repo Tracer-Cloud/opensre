@@ -6,7 +6,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
+from infrastructure.scheduling.scheduler.cron_expression import (
+    CRON_NEVER_FIRES_ERROR,
+    assert_cron_can_fire,
+    build_cron_trigger,
+)
 from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
@@ -61,3 +65,40 @@ def test_the_stored_next_run_skips_the_weekend() -> None:
 
     # Assert: Monday, not Saturday
     assert next_run == "2026-10-12T08:00:00+00:00"
+
+
+def test_a_schedule_that_can_never_fire_is_rejected() -> None:
+    """APScheduler builds a trigger for February 31st; the reachability check must not."""
+    with pytest.raises(ValueError, match=CRON_NEVER_FIRES_ERROR):
+        assert_cron_can_fire("0 8 31 2 *", "UTC")
+
+
+def test_a_schedule_that_can_never_fire_is_rejected_from_any_starting_point() -> None:
+    """The impossible pair stays impossible however far forward the search starts."""
+    with pytest.raises(ValueError, match=CRON_NEVER_FIRES_ERROR):
+        assert_cron_can_fire("0 8 31 2 *", "UTC", now=datetime(2031, 2, 1, tzinfo=UTC))
+
+
+def test_a_leap_day_schedule_can_fire_within_the_horizon() -> None:
+    """Asked just after a leap year, the next Feb 29 is almost four years out."""
+    assert_cron_can_fire("0 8 29 2 *", "UTC", now=datetime(2032, 3, 5, tzinfo=UTC))
+
+
+def test_a_leap_day_schedule_can_fire_today() -> None:
+    assert_cron_can_fire("0 8 29 2 *", "UTC")
+
+
+@pytest.mark.parametrize(
+    "cron",
+    [
+        "0 9 * * mon-fri",  # the documented weekday example
+        "0 */30 * * * *",  # six fields with a leading seconds field
+        "0 8 29 2 *",  # reachable only across the leap-day cycle
+    ],
+)
+def test_a_reachable_cron_passes_the_reachability_check(cron: str) -> None:
+    assert_cron_can_fire(cron, "UTC")
+
+
+def test_a_dst_timezone_passes_the_reachability_check() -> None:
+    assert_cron_can_fire("0 8 * * *", "America/New_York")

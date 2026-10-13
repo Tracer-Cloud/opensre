@@ -7,6 +7,7 @@ import click
 from core.agent_harness import load_loop_template, pin_recurring_skill, validate_skill_inputs
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.cron_expression import (
+    assert_cron_can_fire,
     build_cron_trigger,
     cap_cron_at_most_hourly,
 )
@@ -63,6 +64,7 @@ def prepare_cron_task(
     # Validate cron expression by constructing the APScheduler trigger
     try:
         build_cron_trigger(cron_expr, timezone)
+        assert_cron_can_fire(cron_expr, timezone)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     _validate_chat_id_for_provider(provider, chat_id)
