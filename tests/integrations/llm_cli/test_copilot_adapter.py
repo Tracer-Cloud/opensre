@@ -442,15 +442,32 @@ def test_build_argv_uses_non_interactive_flags(
 
     assert inv.argv[0] == "/usr/bin/copilot"
     assert "-p" in inv.argv
-    idx = inv.argv.index("-p")
-    assert inv.argv[idx + 1] == "hello world"
     assert "--no-color" in inv.argv
     assert "--no-ask-user" in inv.argv
     assert "--silent" in inv.argv
-    assert inv.stdin is None
+    # The prompt is piped on stdin rather than inlined after -p: Windows caps a
+    # command line at 32 767 characters, so an inlined prompt fails WinError
+    # 206 once the injected context gets large.
+    assert "hello world" not in inv.argv
+    assert inv.stdin == "hello world"
     assert inv.cwd
     assert inv.env is None
     mock_which.assert_called()
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/copilot")
+def test_build_pipes_large_prompt_on_stdin_keeping_argv_short(
+    _mock_which: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A large injected prompt must not be inlined into argv (WinError 206)."""
+    _clean_copilot_env(monkeypatch)
+    prompt = "x" * 170_000
+
+    inv = CopilotAdapter().build(prompt=prompt, model=None, workspace="")
+
+    assert inv.stdin == prompt
+    assert max(len(arg) for arg in inv.argv) < 1_000
 
 
 @patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/copilot")
