@@ -258,6 +258,9 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
         console.print(_loops_usage_error())
         return True
 
+    channels = [
+        part.strip() for value in parsed.channels for part in value.split(",") if part.strip()
+    ]
     try:
         created = create_manual_loop(
             name=parsed.name,
@@ -266,7 +269,7 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
             timezone=parsed.timezone,
             weekdays=parsed.weekdays,
             cron=parsed.cron,
-            channels=parsed.channels or None,
+            channels=channels or None,
             telegram_chat_id=parsed.telegram_chat_id,
             slack_chat_id=parsed.slack_chat_id,
             window_hours=window_hours,

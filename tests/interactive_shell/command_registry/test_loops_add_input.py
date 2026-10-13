@@ -148,6 +148,24 @@ def test_complete_add_bypasses_form_and_does_not_run_now(
     assert not run_now
 
 
+def test_empty_channel_defaults_consistently_without_opening_form(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store = tmp_path / "tasks.json"
+    monkeypatch.setattr(task_store, "default_task_store_path", lambda: store)
+    monkeypatch.setattr(loops_cmds, "_reload_loop_scheduler", lambda *_args: None)
+
+    def unexpected(_app: Any) -> None:
+        raise AssertionError("A complete command must execute directly")
+
+    monkeypatch.setattr(loops_cmds, "run_command_input", unexpected)
+    _dispatch('/loops add --name "Morning ops" --prompt Review --time 08:30 --channel ""')
+
+    task = list_tasks(store)[0]
+    assert "interactive_shell" in task.params["loop_channels"].split(",")
+
+
 def test_uppercase_mode_remains_invalid_when_form_collects_schedule(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
