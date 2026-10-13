@@ -167,6 +167,22 @@ def test_incomplete_loops_add_needs_input(args: list[str]) -> None:
 
 
 @pytest.mark.parametrize(
+    "option",
+    [
+        "--tz",
+        "--mode",
+        "--channel",
+        "--channels",
+        "--telegram-chat-id",
+        "--slack-chat-id",
+    ],
+)
+def test_empty_defaulted_loops_add_option_needs_input(option: str) -> None:
+    args = ["add", "--name", "Morning ops", "--prompt", "Review risk", option, ""]
+    assert needs_command_input("/loops", args)
+
+
+@pytest.mark.parametrize(
     "args",
     [
         [

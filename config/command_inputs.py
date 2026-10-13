@@ -81,7 +81,20 @@ LOOPS_ADD_INPUT = CommandInput(
     ),
     flag_options=frozenset({"--weekdays", "--daily", "--run-now"}),
     greedy_value_options=frozenset({"--name", "--prompt", "--cron"}),
-    empty_value_options=frozenset({"--name", "--prompt", "--time", "--cron"}),
+    empty_value_options=frozenset(
+        {
+            "--name",
+            "--prompt",
+            "--time",
+            "--cron",
+            "--tz",
+            "--mode",
+            "--channel",
+            "--channels",
+            "--telegram-chat-id",
+            "--slack-chat-id",
+        }
+    ),
     required_options=frozenset({"--name", "--prompt"}),
     alternative_options=(frozenset({"--time", "--cron"}),),
 )
