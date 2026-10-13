@@ -103,7 +103,7 @@ def _validate(values: dict[str, str]) -> LoopInput:
     if window_hours < 1:
         raise InputFormError("Lookback must be at least 1 hour.", field="window_hours")
 
-    mode = values["mode"].lower()
+    mode = values["mode"]
     if mode not in LOOP_MODES:
         raise InputFormError(f"Choose one of {', '.join(LOOP_MODES)}.", field="mode")
 

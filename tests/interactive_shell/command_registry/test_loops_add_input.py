@@ -146,6 +146,27 @@ def test_complete_add_bypasses_form_and_does_not_run_now(
     assert not run_now
 
 
+def test_uppercase_mode_remains_invalid_when_form_collects_schedule(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store = tmp_path / "tasks.json"
+    monkeypatch.setattr(task_store, "default_task_store_path", lambda: store)
+    monkeypatch.setattr(loops_cmds, "_reload_loop_scheduler", lambda *_args: None)
+
+    def collect(app: Any) -> Any:
+        return run_keys(app, "08:30\r\x13\x03")
+
+    monkeypatch.setattr(loops_cmds, "run_command_input", collect)
+    with create_app_session(output=DummyOutput()):
+        _dispatch('/loops add --name "Morning ops" --prompt Review --mode AGENT')
+    assert not list_tasks(store)
+
+    output = _dispatch('/loops add --name "Morning ops" --prompt Review --time 08:30 --mode AGENT')
+    assert "mode" in output.lower()
+    assert not list_tasks(store)
+
+
 def test_form_repairs_invalid_schedule_and_lookback_without_losing_values() -> None:
     draft = LoopInput(
         name="Morning [ops] 日本",
