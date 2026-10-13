@@ -10,9 +10,10 @@ from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
-from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, Window
+from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Box, Frame, TextArea
 
 from infrastructure.safety.terminal_output import strip_terminal_controls
@@ -26,6 +27,13 @@ class InputChoice:
 
     value: str | None
     label: str
+    summary: str = ""
+    details: tuple[str, ...] = ()
+    search_text: str = ""
+    summary_style: str = "hint"
+    compact_summary: str = ""
+    compact_details: tuple[str, ...] = ()
+    minimal_details: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -44,6 +52,7 @@ class InputField:
     advanced: bool = False
     validate: Callable[[str], None] | None = None
     cancel_on_back_if_empty: bool = False
+    record_choices: bool = False
 
 
 class InputFormError(ValueError):
@@ -64,8 +73,12 @@ def build_input_form[Result](
     validate: Callable[[dict[str, str]], Result],
     initial_field: str | None = None,
     initial_review_field: str | None = None,
+    submit_on_choice: bool = False,
+    focus_submit_on_choice: bool = False,
+    confirmation: str = "",
+    compact_confirmation: str = "",
 ) -> Application[Result | None]:
-    """Return a draft only after explicit submission; validation must not persist it."""
+    """Validate after submission or opted-in choice acceptance without persisting a draft."""
     current = dict(values)
     field_map = {item.name: item for item in fields(dict(current))}
     row = 0
@@ -74,13 +87,48 @@ def build_input_form[Result](
     expanded = False
     error = ""
     choice_index = 0
-    editor = TextArea(height=1, multiline=False, prompt="› ")
+
+    def record_mode() -> bool:
+        item = field_map.get(field)
+        return item is not None and item.record_choices
+
+    editor = TextArea(
+        height=1, multiline=False, prompt=lambda: "Search › " if record_mode() else "› "
+    )
+
+    def search_catalog() -> dict[str, tuple[tuple[InputChoice, str], ...]]:
+        return {
+            item.name: tuple(
+                (
+                    choice,
+                    " ".join(
+                        (
+                            choice.value or "",
+                            choice.label,
+                            choice.summary,
+                            *choice.details,
+                            choice.search_text,
+                        )
+                    ).casefold()
+                    if item.record_choices
+                    else choice.label.casefold(),
+                )
+                for choice in item.choices
+            )
+            for item in field_map.values()
+        }
+
+    choice_catalog = search_catalog()
 
     def review_fields() -> list[InputField]:
         return [item for item in field_map.values() if item.advanced == expanded]
 
     def active_field() -> InputField:
         return field_map[field]
+
+    def compact_records() -> bool:
+        size = app.output.get_size()
+        return record_mode() and (size.rows < 24 or (size.columns < 60 and size.rows < 28))
 
     def action_labels() -> tuple[str, ...]:
         if expanded:
@@ -93,10 +141,8 @@ def build_input_form[Result](
         query = editor.text.strip().casefold() if item.searchable else ""
         return [
             choice
-            for choice in item.choices
-            if not query
-            or choice.value is None
-            or (choice.value != "" and query in choice.label.casefold())
+            for choice, search_text in choice_catalog[field]
+            if not query or choice.value is None or (choice.value != "" and query in search_text)
         ]
 
     def reset_choice(_buffer: object) -> None:
@@ -118,6 +164,15 @@ def build_input_form[Result](
 
     def summary_rows() -> StyleAndTextTuples:
         width = max(1, min(96, app.output.get_size().columns) - 8)
+        if record_mode():
+            limit = width if compact_records() else width * 2
+            return [
+                (style + " bold", text)
+                for index, item in enumerate(review_fields())
+                for style, text in (
+                    marked(index, clip_prompt_text(summary_value(item), limit - 2)),
+                )
+            ]
         # Full values are editable; keep the summary short enough to navigate on narrow screens.
         return [
             marked(
@@ -140,19 +195,78 @@ def build_input_form[Result](
         focusable=True,
         get_cursor_position=lambda: Point(0, max(0, row - len(review_fields()))),
     )
-    selection = FormattedTextControl(
-        lambda: [
-            (
-                "class:selected" if index == choice_index else "",
-                ("› " if index == choice_index else "  ")
-                + strip_terminal_controls(choice.label)
-                + "\n",
+
+    def choice_rows() -> StyleAndTextTuples:
+        candidates = choices()
+        if record_mode() and not candidates:
+            return [("class:description", "No matches. Clear the search or Esc cancel.")]
+        width = max(1, min(96, app.output.get_size().columns) - 10)
+        rows: StyleAndTextTuples = []
+        for index, choice in enumerate(candidates):
+            style = "class:selected" if index == choice_index else ""
+            label = strip_terminal_controls(choice.label)
+            if record_mode():
+                label = clip_prompt_text(" ".join(label.split()), width)
+            rows.append(
+                (
+                    style + (" bold" if record_mode() else ""),
+                    ("› " if index == choice_index else "  ") + label + "\n",
+                )
             )
-            for index, choice in enumerate(choices())
-        ],
+            if record_mode():
+                rows.append(
+                    (
+                        style + f" class:{choice.summary_style}",
+                        "  "
+                        + clip_prompt_text(
+                            " ".join(strip_terminal_controls(choice.summary).split()), width
+                        )
+                        + "\n",
+                    )
+                )
+        return rows
+
+    selection = FormattedTextControl(
+        choice_rows,
         focusable=True,
-        get_cursor_position=lambda: Point(0, choice_index),
+        get_cursor_position=lambda: Point(0, choice_index * (2 if record_mode() else 1)),
     )
+
+    def selected_record() -> InputChoice | None:
+        if not record_mode():
+            return None
+        candidates = choices()
+        if mode == "choice":
+            return candidates[choice_index] if candidates else None
+        return next(
+            (choice for choice in active_field().choices if choice.value == current[field]), None
+        )
+
+    def record_details() -> StyleAndTextTuples:
+        choice = selected_record()
+        if choice is None:
+            return []
+        summary = (
+            choice.compact_summary
+            if compact_records() and choice.compact_summary
+            else choice.summary
+        )
+        lines = [
+            ("class:hint", f"ID: {choice.value or ''}"),
+            (f"class:{choice.summary_style}", summary),
+        ]
+        details = choice.compact_details if compact_records() else choice.details
+        if compact_records() and app.output.get_size().rows < 16 and choice.minimal_details:
+            details = choice.minimal_details
+        lines.extend(("class:description", detail) for detail in details if detail.strip())
+        return [
+            (
+                style,
+                " ".join(strip_terminal_controls(text).split())
+                + ("\n" if index < len(lines) - 1 else ""),
+            )
+            for index, (style, text) in enumerate(lines)
+        ]
 
     def focus_row() -> None:
         app.layout.focus(summary if row < len(review_fields()) else actions)
@@ -169,7 +283,7 @@ def build_input_form[Result](
         item = active_field()
         expanded = item.advanced
         row = next(index for index, item in enumerate(review_fields()) if item.name == name)
-        if item.choices:
+        if item.choices or item.record_choices:
             mode = "choice"
             editor.text = ""
             selected = current[field]
@@ -206,7 +320,7 @@ def build_input_form[Result](
 
     @keys.add("enter")
     def accept(event: KeyPressEvent) -> None:
-        nonlocal mode, expanded, error, row, field_map
+        nonlocal mode, expanded, error, row, field_map, choice_catalog
         if mode != "summary":
             item = active_field()
             candidates = choices() if mode == "choice" else []
@@ -228,8 +342,15 @@ def build_input_form[Result](
                 return
             current[field] = value
             field_map = {item.name: item for item in fields(dict(current))}
+            choice_catalog = search_catalog()
             error = ""
+            if submit_on_choice and mode == "choice":
+                create()
+                return
             show_summary()
+            if focus_submit_on_choice:
+                row = len(review_fields())
+                focus_row()
             return
         items = review_fields()
         if row < len(items):
@@ -265,7 +386,9 @@ def build_input_form[Result](
     def back(event: KeyPressEvent) -> None:
         nonlocal expanded, row, error
         if mode != "summary":
-            if active_field().cancel_on_back_if_empty and not current[field]:
+            if active_field().record_choices or (
+                active_field().cancel_on_back_if_empty and not current[field]
+            ):
                 event.app.exit(result=None)
             else:
                 show_summary()
@@ -274,6 +397,8 @@ def build_input_form[Result](
             row = len(review_fields())
             error = ""
             focus_row()
+        elif record_mode() and focus_submit_on_choice:
+            open_field(field)
         else:
             event.app.exit(result=None)
 
@@ -290,10 +415,25 @@ def build_input_form[Result](
         if mode == "summary":
             return [("bold", "More options" if expanded else heading)]
         item = active_field()
+        if item.record_choices:
+            return [("bold", item.label)]
         status = "required" if item.required else item.status or "optional"
         return [("bold", item.label), ("class:description", f" · {status}")]
 
     def hint() -> str:
+        if record_mode():
+            if mode == "summary":
+                return (
+                    "Enter confirm · Esc back"
+                    if compact_records()
+                    else f"↑↓/Tab · Enter {submit_label.lower()} · Esc back"
+                )
+            action = "review" if confirmation else submit_label.lower()
+            return (
+                f"Enter {action} · Esc cancel"
+                if compact_records()
+                else f"Type to filter · ↑↓/Tab · Enter {action} · Esc cancel"
+            )
         if mode == "summary":
             return "↑↓/Tab · Enter select · Esc " + ("back" if expanded else "cancel")
         if mode == "choice":
@@ -301,90 +441,207 @@ def build_input_form[Result](
             return prefix + "↑↓ choose · Enter select · Esc back"
         return "Enter save field · Esc back"
 
-    def spacer() -> Window:
-        return Window(height=Dimension(min=0, preferred=1, max=1))
+    def spacer() -> ConditionalContainer:
+        return ConditionalContainer(
+            Window(height=Dimension(min=0, preferred=1, max=1)),
+            filter=Condition(lambda: not compact_records()),
+        )
+
+    def wrapped_rows(text: str) -> int:
+        width = max(1, min(96, app.output.get_size().columns) - 6)
+        return sum(
+            max(1, (get_cwidth(line) + width - 1) // width) for line in text.splitlines() or ("",)
+        )
+
+    def shortcut_height() -> Dimension:
+        rows = wrapped_rows(hint())
+        return Dimension(min=rows, max=rows)
+
+    def error_height() -> Dimension:
+        if not error:
+            return Dimension(min=0, max=0)
+        # Summary actions, one review row, heading, borders and the action gap stay visible.
+        reserved = 5 + len(action_labels()) if mode == "summary" else 5
+        available = max(1, app.output.get_size().rows - wrapped_rows(hint()) - reserved)
+        rows = min(4, wrapped_rows(error), available)
+        return Dimension(min=rows, max=rows)
+
+    def confirmation_text() -> str:
+        return compact_confirmation if compact_records() and compact_confirmation else confirmation
+
+    def confirmation_height() -> Dimension:
+        count = wrapped_rows(confirmation_text())
+        return Dimension(min=count, max=count)
+
+    def record_detail_height() -> Dimension:
+        count = sum(wrapped_rows(fragment[1].rstrip("\n")) for fragment in record_details())
+        if mode == "summary":
+            reserved = (
+                3
+                + review_height().min
+                + len(action_labels())
+                + wrapped_rows(hint())
+                + wrapped_rows(confirmation_text())
+            )
+            reserved += 0 if compact_records() else 5
+        else:
+            reserved = 7 + wrapped_rows(hint()) + (0 if compact_records() else 3)
+        available = max(1, app.output.get_size().rows - reserved - error_height().min)
+        return Dimension(min=min(count, available), preferred=count, max=count)
 
     def review_height() -> Dimension:
+        if record_mode():
+            count = sum(wrapped_rows(fragment[1].rstrip("\n")) for fragment in summary_rows())
+            return Dimension(min=count, max=count)
         count = max(1, min(8, len(review_fields())))
-        # Reserve borders, heading, one-line shortcuts, the action gap and all actions.
-        available = max(1, app.output.get_size().rows - len(action_labels()) - 5)
-        return Dimension(min=min(count, available), max=count)
+        # Keep diagnostics and the complete footer outside the scrolling review.
+        available = max(
+            1,
+            app.output.get_size().rows
+            - len(action_labels())
+            - wrapped_rows(hint())
+            - error_height().min
+            - 6,
+        )
+        visible = min(count, available)
+        return Dimension(min=visible, max=visible)
 
-    app: Application[Result | None] = Application(
-        layout=Layout(
-            Frame(
-                Box(
-                    HSplit(
-                        [
-                            Window(FormattedTextControl(heading_text), height=1),
-                            spacer(),
-                            ConditionalContainer(
-                                HSplit(
-                                    [
-                                        Window(
-                                            summary,
-                                            height=review_height,
-                                            dont_extend_height=True,
-                                        ),
-                                        Window(height=1),
-                                        Window(actions, height=lambda: len(action_labels())),
-                                    ]
-                                ),
-                                filter=Condition(lambda: mode == "summary"),
+    summary_window = Window(
+        summary, height=review_height, dont_extend_height=True, wrap_lines=Condition(record_mode)
+    )
+    actions_window = Window(actions, height=lambda: len(action_labels()))
+    frame = Frame(
+        Box(
+            HSplit(
+                [
+                    Window(FormattedTextControl(heading_text), height=1),
+                    spacer(),
+                    ConditionalContainer(
+                        HSplit(
+                            [
+                                summary_window,
+                                Window(height=1),
+                                actions_window,
+                            ]
+                        ),
+                        filter=Condition(lambda: mode == "summary" and not record_mode()),
+                    ),
+                    ConditionalContainer(
+                        summary_window,
+                        filter=Condition(lambda: mode == "summary" and record_mode()),
+                    ),
+                    ConditionalContainer(
+                        Window(
+                            FormattedTextControl(
+                                lambda: [("class:description", active_field().description)]
                             ),
-                            ConditionalContainer(
+                            wrap_lines=True,
+                            dont_extend_height=True,
+                        ),
+                        filter=Condition(
+                            lambda: mode != "summary" and bool(active_field().description)
+                        ),
+                    ),
+                    ConditionalContainer(
+                        editor,
+                        filter=Condition(
+                            lambda: (
+                                mode == "text" or (mode == "choice" and active_field().searchable)
+                            )
+                        ),
+                    ),
+                    ConditionalContainer(
+                        Window(
+                            FormattedTextControl(
+                                lambda: [
+                                    (
+                                        "class:hint",
+                                        f"{len(choices())} of {len(active_field().choices)}",
+                                    )
+                                ]
+                            ),
+                            height=1,
+                        ),
+                        filter=Condition(lambda: mode == "choice" and record_mode()),
+                    ),
+                    ConditionalContainer(
+                        Window(
+                            selection,
+                            height=lambda: (
+                                Dimension(min=2, max=8)
+                                if record_mode()
+                                else Dimension(min=1, max=6)
+                            ),
+                            dont_extend_height=True,
+                            wrap_lines=Condition(record_mode),
+                        ),
+                        filter=Condition(lambda: mode == "choice"),
+                    ),
+                    ConditionalContainer(
+                        HSplit(
+                            [
+                                spacer(),
+                                Window(
+                                    FormattedTextControl(record_details),
+                                    height=record_detail_height,
+                                    wrap_lines=True,
+                                    dont_extend_height=True,
+                                ),
+                            ]
+                        ),
+                        filter=Condition(lambda: selected_record() is not None),
+                    ),
+                    ConditionalContainer(
+                        HSplit(
+                            [
+                                spacer(),
                                 Window(
                                     FormattedTextControl(
-                                        lambda: [("class:description", active_field().description)]
+                                        lambda: [("class:description", confirmation_text())]
                                     ),
+                                    height=confirmation_height,
                                     wrap_lines=True,
                                     dont_extend_height=True,
                                 ),
-                                filter=Condition(
-                                    lambda: mode != "summary" and bool(active_field().description)
-                                ),
-                            ),
-                            ConditionalContainer(
-                                editor,
-                                filter=Condition(
-                                    lambda: (
-                                        mode == "text"
-                                        or (mode == "choice" and active_field().searchable)
-                                    )
-                                ),
-                            ),
-                            ConditionalContainer(
-                                Window(
-                                    selection,
-                                    height=Dimension(min=1, max=6),
-                                    dont_extend_height=True,
-                                ),
-                                filter=Condition(lambda: mode == "choice"),
-                            ),
-                            ConditionalContainer(
-                                Window(
-                                    FormattedTextControl(lambda: [("class:error", error)]),
-                                    height=Dimension(min=1, max=4),
-                                    wrap_lines=True,
-                                    dont_extend_height=True,
-                                ),
-                                filter=Condition(lambda: bool(error)),
-                            ),
-                            spacer(),
-                            Window(
-                                FormattedTextControl(lambda: [("class:hint", hint())]),
-                                wrap_lines=True,
-                                dont_extend_height=True,
-                            ),
-                        ]
+                            ]
+                        ),
+                        filter=Condition(lambda: mode == "summary" and bool(confirmation)),
                     ),
-                    padding=0,
-                    padding_left=2,
-                    padding_right=2,
-                ),
-                title=title,
-                width=Dimension(max=96),
+                    ConditionalContainer(
+                        HSplit([spacer(), actions_window]),
+                        filter=Condition(lambda: mode == "summary" and record_mode()),
+                    ),
+                    ConditionalContainer(
+                        Window(
+                            FormattedTextControl(lambda: [("class:error", error)]),
+                            height=error_height,
+                            wrap_lines=True,
+                            dont_extend_height=True,
+                        ),
+                        filter=Condition(lambda: bool(error)),
+                    ),
+                    spacer(),
+                    Window(
+                        FormattedTextControl(lambda: [("class:hint", hint())]),
+                        height=shortcut_height,
+                        wrap_lines=True,
+                        dont_extend_height=True,
+                    ),
+                ]
             ),
+            padding=0,
+            padding_left=2,
+            padding_right=2,
+        ),
+        title=title,
+        width=lambda: (
+            min(96, app.output.get_size().columns) if record_mode() else Dimension(max=96)
+        ),
+    )
+    has_records = any(item.record_choices for item in field_map.values())
+    app: Application[Result | None] = Application(
+        layout=Layout(
+            VSplit([frame, Window(width=Dimension(min=0, preferred=0))]) if has_records else frame,
             focused_element=summary,
         ),
         key_bindings=keys,

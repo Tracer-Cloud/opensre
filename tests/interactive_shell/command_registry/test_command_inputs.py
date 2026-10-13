@@ -345,8 +345,14 @@ def test_work_form_spacing_keeps_selected_action_visible(columns: int, rows: int
     assert "Create work item" in selected_rows[0]
     assert result is not None and result["title"] == "Spacing check"
     assert any("Cancel" in line for line in captured)
-    title_line = next(line for line in captured if "Title" in line)
-    assert title_line.index("Title") >= 5
+    # A short review scrolls earlier fields while the submit action is selected.
+    visible_label = next(
+        label
+        for label in ("Title", "Priority", "Project", "Owner", "Due")
+        if any(label in line for line in captured)
+    )
+    detail_line = next(line for line in captured if visible_label in line)
+    assert detail_line.index(visible_label) >= 5
     due_row = next(index for index, line in enumerate(captured) if "Due" in line)
     create_row = next(index for index, line in enumerate(captured) if "Create work item" in line)
     assert create_row == due_row + 2

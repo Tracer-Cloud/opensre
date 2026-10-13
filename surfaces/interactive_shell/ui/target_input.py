@@ -47,6 +47,8 @@ def build_loop_picker(
             search_text=" ".join((loop.description, loop.prompt, loop.cron, *loop.task_ids)),
             summary_style="error" if loop.schedule_error else "hint",
             compact_summary=f"{'Invalid' if loop.schedule_error else loop.mode.capitalize()} · TZ {loop.timezone}",
+            compact_details=(f"Full details: /loops show {loop.id}",),
+            minimal_details=("Full details: /loops show <id>",),
         )
         for loop in loops
     )

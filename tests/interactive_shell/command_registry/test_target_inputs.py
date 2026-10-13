@@ -23,8 +23,9 @@ from config.command_inputs import (
 from config.constants import OPENSRE_WORK_ITEMS_DIR_ENV
 from config.interactive_override import forced_non_interactive
 from core.domain.work_items import add_work_item, list_work_items, work_items_path
-from infrastructure.scheduling.scheduler.loops import create_manual_loop
+from infrastructure.scheduling.scheduler.loops import LoopSummary, create_manual_loop
 from infrastructure.scheduling.scheduler.storage import task_store
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind
 from surfaces.interactive_shell.command_registry import (
     dispatch_slash,
     input_collection,
@@ -33,6 +34,7 @@ from surfaces.interactive_shell.command_registry import (
 )
 from surfaces.interactive_shell.runtime import input_policy
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.target_input import build_loop_picker
 from surfaces.shared.terminal.components.target_picker import TargetChoice, build_target_picker
 
 
@@ -115,6 +117,31 @@ def test_search_matches_hidden_descriptions_and_returns_stable_id() -> None:
             records, title="/loops next", heading="Choose loop", action_label="Show next run"
         )
         assert run_keys(app, "no match\r\x03") is None
+        app = build_target_picker(
+            [], title="/loops next", heading="Choose loop", action_label="Show next run"
+        )
+        assert run_keys(app, "invented\r\x13\x03") is None
+
+
+def test_action_review_escape_returns_to_picker_then_cancels_or_reselects() -> None:
+    records = [TargetChoice("first-id", "Alpha"), TargetChoice("second-id", "Beta")]
+    with create_app_session(output=DummyOutput()):
+        app = build_target_picker(
+            records,
+            title="/loops run",
+            heading="Choose loop",
+            action_label="Run now",
+            confirmation="Run this loop now?",
+        )
+        assert run_keys(app, "\r\x1b\x1b") is None
+        app = build_target_picker(
+            records,
+            title="/loops run",
+            heading="Choose loop",
+            action_label="Run now",
+            confirmation="Run this loop now?",
+        )
+        assert run_keys(app, "\r\x1bBeta\r\r") == "second-id"
 
 
 @pytest.mark.parametrize(
@@ -326,6 +353,7 @@ def test_cancelled_work_picker_does_not_import_legacy_items(
         (40, 12, "Delete permanently"),
         (40, 16, "Run now"),
         (40, 20, "Delete permanently"),
+        (40, 24, "Run now"),
         (40, 30, "Run now"),
         (90, 24, "Run now"),
         (160, 30, "Run now"),
@@ -340,22 +368,30 @@ def test_render_preserves_selected_identity_context_and_action(
 
     captured: list[str] = []
     identifier = "12345678-1234-1234-1234-123456789012"
-    choice = TargetChoice(
-        identifier,
-        "Payment [literal] 中文 with a very long descriptive name",
-        "Invalid · 08:30 weekdays · TZ Asia/Kolkata · interactive shell",
-        (
-            "Check checkout errors and summarize incident risks.",
-            f"Full details: /loops show {identifier}",
-        ),
-        summary_style="error",
-        compact_summary="Agent · TZ Asia/Kolkata",
+    cursor_rows: list[str] = []
+    choice = LoopSummary(
+        id=identifier,
+        task_ids=(identifier,),
+        name="Payment [literal] 中文 with a very long descriptive name",
+        description="Check checkout errors and summarize incident risks.",
+        prompt="Investigate checkout errors",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="30 8 * * mon-fri",
+        timezone="Asia/Kolkata",
+        provider=Provider.INTERACTIVE_SHELL,
+        chat_id="local",
+        channels=("interactive_shell",),
+        enabled=True,
+        window_hours=24,
+        last_run=None,
+        next_run=None,
+        schedule_error="Invalid schedule",
+        mode="agent",
     )
     with create_pipe_input() as pipe, create_app_session(output=SizedOutput()):
-        app = build_target_picker(
+        app = build_loop_picker(
             [choice],
-            title="/loops run",
-            heading="Choose a loop · Run now",
+            command="/loops run",
             action_label=action_label,
             confirmation="Run this loop now with its configured delivery channels?"
             if action_label == "Run now"
@@ -377,17 +413,23 @@ def test_render_preserves_selected_identity_context_and_action(
             if not any("Cancel" in line for line in lines):
                 return
             captured.extend(lines)
+            assert app.layout.current_window in screen.visible_windows
+            cursor = screen.get_cursor_position(app.layout.current_window)
+            cursor_rows.append(lines[cursor.y])
             pipe.send_text("\x03")
 
         app.after_render += capture
         assert app.run(pre_run=lambda: pipe.send_text("\r")) is None
     content = "".join(line.strip(" │") for line in captured)
     assert identifier in content
-    if columns >= 60 or rows >= 28:
+    if rows >= 16:
         assert f"/loops show {identifier}" in content
+    else:
+        assert "Full details: /loops show <id>" in content
     assert "Asia/Kolkata" in content
     assert "[literal]" in content and "中文" in content
     assert f"› {action_label}" in content and "Cancel" in content
+    assert action_label in cursor_rows[0]
     assert (
         "configured delivery" in content
         if action_label == "Run now"
