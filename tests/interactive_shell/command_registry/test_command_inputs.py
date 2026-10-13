@@ -15,7 +15,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from rich.console import Console
 
-from config.command_inputs import COMMAND_INPUTS
+from config.command_inputs import COMMAND_INPUTS, needs_command_input
 from config.constants import (
     OPENSRE_INTERACTIVE_ENV,
     OPENSRE_MEMORY_DIR_ENV,
@@ -131,6 +131,58 @@ def test_all_registered_inputs_reserve_stdin() -> None:
             assert input_policy.turn_needs_exclusive_stdin(
                 f"{spec.command} {subcommand}", Session()
             )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["add"],
+        ["add", "--name", "Morning ops", "--weekdays", "--run-now"],
+        ["add", "--name", "Morning", "ops", "--prompt", "Review", "risk"],
+        ["add", "--name", "", "--time", "", "--prompt", "Review risk"],
+        [
+            "add",
+            "--name",
+            "Morning ops",
+            "--prompt",
+            "Review risk",
+            "--channel",
+            "interactive_shell",
+        ],
+    ],
+)
+def test_incomplete_loops_add_needs_input(args: list[str]) -> None:
+    assert needs_command_input("/loops", args)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [
+            "add",
+            "--name",
+            "Morning ops",
+            "--time",
+            "08:30",
+            "--prompt",
+            "Review risk",
+        ],
+        [
+            "add",
+            "--name",
+            "Morning ops",
+            "--cron",
+            "0 8 * * mon-fri",
+            "--prompt",
+            "Review risk",
+            "--run-now",
+        ],
+        ["add", "--name"],
+        ["add", "--unknown", "value"],
+    ],
+)
+def test_complete_or_malformed_loops_add_bypasses_input(args: list[str]) -> None:
+    assert not needs_command_input("/loops", args)
 
 
 def test_form_requires_title_before_accepting() -> None:
