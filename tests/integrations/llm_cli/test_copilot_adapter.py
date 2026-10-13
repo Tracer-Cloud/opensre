@@ -441,7 +441,10 @@ def test_build_argv_uses_non_interactive_flags(
     inv = CopilotAdapter().build(prompt="hello world", model=None, workspace="")
 
     assert inv.argv[0] == "/usr/bin/copilot"
-    assert "-p" in inv.argv
+    # A bare -p is rejected ("a value is required for '--prompt <text>'") and
+    # copilot ignores piped stdin whenever -p is present, so it must be absent.
+    assert "-p" not in inv.argv
+    assert "--prompt" not in inv.argv
     assert "--no-color" in inv.argv
     assert "--no-ask-user" in inv.argv
     assert "--silent" in inv.argv

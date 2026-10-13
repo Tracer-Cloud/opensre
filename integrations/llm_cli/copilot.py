@@ -286,19 +286,22 @@ class CopilotAdapter:
 
         # Each flag is required for a non-interactive run; do not drop these
         # without checking `copilot --help`:
-        #   -p              enters one-shot mode (without it, copilot opens a TUI).
-        #                   The prompt itself is piped on stdin, not inlined as
-        #                   ``-p PROMPT``: Windows caps a command line at 32 767
-        #                   characters and a large injected context overruns it
-        #                   with WinError 206 even for a short user question.
-        #                   This mirrors the stdin path in claude_code.py/kimi.py.
+        #   (stdin)         the prompt is piped on stdin, which runs copilot in
+        #                   one-shot mode just like ``-p PROMPT``. It is not
+        #                   inlined as ``-p PROMPT``: Windows caps a command line
+        #                   at 32 767 characters and a large injected context
+        #                   overruns it with WinError 206 even for a short user
+        #                   question. Do not add a bare ``-p`` either: it
+        #                   requires a value (``error: a value is required for
+        #                   '--prompt <text>'``) and copilot ignores piped input
+        #                   whenever ``-p`` is given. This mirrors the stdin path
+        #                   in claude_code.py/kimi.py.
         #   --no-color      strips ANSI so stdout is parseable.
         #   --no-ask-user   disables the agent's `ask_user` tool, otherwise the
-        #                   agent can pause waiting for input even with -p.
+        #                   agent can pause waiting for input in one-shot mode.
         #   --silent        emits only the agent response, not stats / banner.
         argv: list[str] = [
             binary,
-            "-p",
             "--no-color",
             "--no-ask-user",
             "--silent",
