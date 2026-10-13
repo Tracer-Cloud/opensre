@@ -246,6 +246,11 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
             return True
         parsed = collected
 
+    if not parsed.name.strip():
+        console.print(f"[{ERROR}]could not add loop:[/] name is required")
+        console.print(_loops_usage_error())
+        return True
+
     try:
         window_hours = int(parsed.window_hours)
     except ValueError:

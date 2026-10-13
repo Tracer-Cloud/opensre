@@ -117,6 +117,8 @@ def test_cancel_and_noninteractive_dispatch_do_not_create(
 
     monkeypatch.setattr(loops_cmds, "run_command_input", unexpected)
     assert "could not add loop" in _dispatch("/loops add", tty=False)
+    output = _dispatch('/loops add --prompt "Review incidents" --time 08:30', tty=False)
+    assert "name is required" in output
     assert not list_tasks(store)
 
 
