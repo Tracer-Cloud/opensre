@@ -362,7 +362,7 @@ def test_render_preserves_selected_identity_context_and_action(
             else "Permanently delete this loop and its tasks? This cannot be undone.",
             compact_confirmation="Run with configured delivery?"
             if action_label == "Run now"
-            else "Delete permanently? Cannot be undone.",
+            else "Cannot be undone.",
         )
         app.input = pipe
 

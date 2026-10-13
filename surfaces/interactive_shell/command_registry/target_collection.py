@@ -40,7 +40,7 @@ def collect_loop_target(
         confirmation = (
             "Permanently delete this loop and all its scheduled tasks? This cannot be undone."
         )
-        compact_confirmation = "Delete permanently? Cannot be undone."
+        compact_confirmation = "Cannot be undone."
     elif sub == "run":
         action = "Run now"
         empty = "No loops to run."
