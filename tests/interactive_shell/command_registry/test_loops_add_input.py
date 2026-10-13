@@ -167,6 +167,28 @@ def test_uppercase_mode_remains_invalid_when_form_collects_schedule(
     assert not list_tasks(store)
 
 
+def test_form_strips_mode_whitespace_like_direct_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store = tmp_path / "tasks.json"
+    monkeypatch.setattr(task_store, "default_task_store_path", lambda: store)
+    monkeypatch.setattr(loops_cmds, "_reload_loop_scheduler", lambda *_args: None)
+
+    _dispatch('/loops add --name Direct --prompt Review --time 08:30 --mode " agent "')
+
+    def collect(app: Any) -> Any:
+        return run_keys(app, "09:00\r\x13\x03")
+
+    monkeypatch.setattr(loops_cmds, "run_command_input", collect)
+    with create_app_session(output=DummyOutput()):
+        _dispatch('/loops add --name Form --prompt Review --mode " agent "')
+
+    tasks = list_tasks(store)
+    assert [task.name for task in tasks] == ["Direct", "Form"]
+    assert all(task.params["loop_mode"] == "agent" for task in tasks)
+
+
 def test_form_repairs_invalid_schedule_and_lookback_without_losing_values() -> None:
     draft = LoopInput(
         name="Morning [ops] 日本",
