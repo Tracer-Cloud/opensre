@@ -84,8 +84,10 @@ def _split_options(args: list[str]) -> tuple[list[str], dict[str, str], str | No
     return remaining, options, None
 
 
-def _render_work_table(console: Console, rows: Sequence[WorkItem], *, title: str) -> bool:
-    if console.is_terminal:
+def _render_work_table(
+    console: Console, rows: Sequence[WorkItem], *, title: str, interactive: bool = False
+) -> bool:
+    if interactive:
         print_repl_renderable(console, work_list_panel(rows, title=title))
         return True
     if not rows:
@@ -107,10 +109,11 @@ def _show_list(session: Session, console: Console, args: list[str]) -> bool:
         rows = [item for item in list_work_items(status=None, project=project) if item.is_active]
     else:
         rows = list_work_items(status=None if status == "all" else status, project=project)
-    if rows and can_browse_records(session, console):
+    interactive = can_browse_records(session, console)
+    if rows and interactive:
         print_record_list(console, work_items_table(rows), title="/work list", browse=True)
         return True
-    return _render_work_table(console, rows, title="Work items")
+    return _render_work_table(console, rows, title="Work items", interactive=interactive)
 
 
 def _add(console: Console, args: list[str]) -> bool:

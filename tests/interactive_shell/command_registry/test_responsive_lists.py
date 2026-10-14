@@ -29,7 +29,7 @@ def test_interactive_work_list_has_bounded_content_height_frame(width: int) -> N
     )
     output = io.StringIO()
     console = Console(file=output, width=width, height=80, force_terminal=True)
-    work_cmds._render_work_table(console, [item], title="Work items")
+    work_cmds._render_work_table(console, [item], title="Work items", interactive=True)
     text = Text.from_ansi(output.getvalue()).plain
     lines = text.splitlines()
     assert lines[0].startswith("┌") and "/work list" in lines[0]
@@ -88,8 +88,8 @@ def test_work_list_panel_reflows_on_replay_and_keeps_header_alignment() -> None:
 @pytest.mark.parametrize("interactive", [False, True])
 def test_work_list_empty_keeps_add_hint_in_compact_frame(interactive: bool) -> None:
     output = io.StringIO()
-    console = Console(file=output, width=160, height=80, force_terminal=interactive)
-    work_cmds._render_work_table(console, [], title="Work items")
+    console = Console(file=output, width=160, height=80, force_terminal=True)
+    work_cmds._render_work_table(console, [], title="Work items", interactive=interactive)
     text = Text.from_ansi(output.getvalue()).plain
     assert "no matching work items." in text and "/work add <title>" in text
     assert ("┌" in text) is interactive

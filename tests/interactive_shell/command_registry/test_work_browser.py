@@ -114,6 +114,7 @@ def test_work_browser_dispatch_preserves_filters_and_noninteractive_fallback(
     console = Console(file=output, width=90, force_terminal=True, color_system=None)
     assert dispatch_slash(command, session, console, is_tty=tty)
     assert bool(browsed) is expected_browser
+    assert ("┌" in output.getvalue()) is expected_browser
     assert first.id in output.getvalue()
     assert (second.id in output.getvalue()) is ("Payments" not in command)
     assert work_items_path().read_bytes() == before
