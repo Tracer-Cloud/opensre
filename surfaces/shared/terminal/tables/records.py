@@ -52,8 +52,7 @@ class RecordTable:
         """Return the shared gutter between summary columns."""
         return _COLUMN_GAP
 
-    def summary_widths(self, available: int) -> tuple[int, ...] | None:
-        """Return content-sized columns, or ``None`` when labeled rows are needed."""
+    def _summary_widths(self) -> tuple[int, ...]:
         # Size only summary cells; full identifiers must not widen the name column.
         widths = [cell_len(column.header) for column in self.columns]
         for row in self.rows:
@@ -62,8 +61,20 @@ class RecordTable:
                 widths[index] = max(widths[index], content_width)
         if widths:
             widths[0] = min(widths[0], _MAX_PRIMARY_COLUMN_WIDTH)
-        if sum(widths) + _COLUMN_GAP * (len(widths) - 1) <= available:
-            return tuple(widths)
+        return tuple(widths)
+
+    @property
+    def summary_content_width(self) -> int:
+        """Return the width needed to keep all summary columns on one row."""
+        widths = self._summary_widths()
+        gaps = _COLUMN_GAP * max(0, len(widths) - 1)
+        return sum(widths) + gaps + 2 * _OUTER_PADDING
+
+    def summary_widths(self, available: int) -> tuple[int, ...] | None:
+        """Return content-sized columns, or ``None`` when labeled rows are needed."""
+        widths = self._summary_widths()
+        if sum(widths) + _COLUMN_GAP * max(0, len(widths) - 1) <= available:
+            return widths
         return None
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:

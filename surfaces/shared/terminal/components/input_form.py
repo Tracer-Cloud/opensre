@@ -90,6 +90,7 @@ def build_input_form[Result](
     confirmation: str = "",
     compact_confirmation: str = "",
     browse_only: bool = False,
+    max_width: int = 96,
 ) -> Application[Result | None]:
     """Validate accepted drafts; browse-only views never accept or submit values."""
     current = dict(values)
@@ -162,8 +163,11 @@ def build_input_form[Result](
 
     record_views = record_catalog()
 
+    def frame_width() -> int:
+        return min(max(1, max_width), app.output.get_size().columns)
+
     def record_width() -> int:
-        return max(1, min(96, app.output.get_size().columns) - 6)
+        return max(1, frame_width() - 6)
 
     def record_header() -> StyleAndTextTuples:
         view = record_views.get(field)
@@ -225,7 +229,7 @@ def build_input_form[Result](
         return " ".join(strip_terminal_controls(value).split())
 
     def summary_rows() -> StyleAndTextTuples:
-        width = max(1, min(96, app.output.get_size().columns) - 8)
+        width = max(1, frame_width() - 8)
         if record_mode():
             limit = width if compact_records() else width * 2
             return [
@@ -263,7 +267,7 @@ def build_input_form[Result](
         if record_mode() and not candidates:
             close = "close" if browse_only else "cancel"
             return [("class:description", f"No matches. Clear the search or Esc {close}.")]
-        width = max(1, min(96, app.output.get_size().columns) - 10)
+        width = max(1, frame_width() - 10)
         rows: StyleAndTextTuples = []
         view = record_views.get(field)
         for index, choice in enumerate(candidates):
@@ -555,7 +559,7 @@ def build_input_form[Result](
         ]
 
     def wrapped_rows(text: str) -> int:
-        width = max(1, min(96, app.output.get_size().columns) - 6)
+        width = max(1, frame_width() - 6)
         return sum(
             max(1, (get_cwidth(line) + width - 1) // width) for line in text.splitlines() or ("",)
         )
@@ -746,13 +750,13 @@ def build_input_form[Result](
             padding_right=2,
         ),
         title=title,
-        width=lambda: min(96, app.output.get_size().columns),
+        width=frame_width,
     )
 
     def frame_height() -> Dimension:
         # CPR and earlier renders can reserve extra rows; keep paint inside the frame.
         size = app.output.get_size()
-        height = frame.container.preferred_height(min(96, size.columns), size.rows).preferred
+        height = frame.container.preferred_height(frame_width(), size.rows).preferred
         return Dimension(preferred=height, max=height)
 
     app: Application[Result | None] = Application(
