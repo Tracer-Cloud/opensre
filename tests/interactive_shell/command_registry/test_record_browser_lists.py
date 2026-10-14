@@ -161,7 +161,7 @@ def test_browser_searches_details_without_inventing_ids() -> None:
         (
             RecordRow(
                 (Text("prod-cluster"),),
-                details=(Text("First detail"), Text("Unique second detail")),
+                details=(Text("First detail"), Text("x" * 130 + " Unique second detail")),
             ),
         ),
         subtitle="List-level context belongs with the columns, not the selected record.",
@@ -182,8 +182,10 @@ def test_browser_searches_details_without_inventing_ids() -> None:
             assert content.count("List-level context") == 1
             if len(frames) < 2:
                 assert "First detail" in content
+            if not frames:
+                assert "Unique second detail" not in content
+            elif len(frames) == 1:
                 assert "Unique second detail" in content
-            if len(frames) == 1:
                 assert content.index("Unique second detail") < content.index("First detail")
             if not frames:
                 pipe.send_text("UNIQUE")

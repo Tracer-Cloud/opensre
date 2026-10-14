@@ -31,6 +31,27 @@ from surfaces.shared.terminal.components.record_choices import RecordChoices
 from surfaces.shared.terminal.prompt_layout import clip_prompt_text
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow
 
+_RECORD_DETAIL_PREVIEW_WIDTH = 120
+
+
+def _record_detail_preview(text: str, query: str = "") -> str:
+    """Keep a matching segment visible when a record detail needs truncation."""
+    visible = strip_terminal_controls(text)
+    preview = clip_prompt_text(visible, _RECORD_DETAIL_PREVIEW_WIDTH)
+    if not query or query in preview.casefold():
+        return preview
+    folded_match = visible.casefold().find(query)
+    if folded_match < 0:
+        return preview
+    folded_offset = 0
+    source_index = 0
+    for index, char in enumerate(visible):
+        folded_offset += len(char.casefold())
+        if folded_offset > folded_match:
+            source_index = index
+            break
+    return clip_prompt_text(f"…{visible[source_index:]}", _RECORD_DETAIL_PREVIEW_WIDTH)
+
 
 @dataclass(frozen=True)
 class InputChoice:
@@ -334,18 +355,20 @@ def build_input_form[Result](
         )
         if browse_only and choice.record is not None:
             lines = [(str(line.style), line.plain) for line in choice.record.metadata]
-            record_details = [line for line in choice.record.details if line.plain.strip()]
             query = editor.text.strip().casefold()
-            matched: list[Text] = []
-            remaining: list[Text] = []
-            for line in record_details:
-                (matched if query and query in line.plain.casefold() else remaining).append(line)
-            if matched:
-                record_details = [*matched, *remaining]
+            matched: list[tuple[Text, bool]] = []
+            remaining: list[tuple[Text, bool]] = []
+            for line in choice.record.details:
+                if not line.plain.strip():
+                    continue
+                is_match = bool(query and query in line.plain.casefold())
+                (matched if is_match else remaining).append((line, is_match))
+            record_details = [*matched, *remaining] if matched else remaining
             if compact_records():
                 record_details = matched[:1]
             lines.extend(
-                (str(line.style), clip_prompt_text(line.plain, 120)) for line in record_details
+                (str(line.style), _record_detail_preview(line.plain, query if is_match else ""))
+                for line, is_match in record_details
             )
         else:
             lines = [] if inline_id else [("class:hint", f"ID: {choice.value or ''}")]
