@@ -12,15 +12,7 @@ from infrastructure.terminal.theme import HIGHLIGHT, INPUT_SURFACE, TEXT
 from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.input_form import InputChoice, InputField, build_input_form
 from surfaces.shared.terminal.components.rendering import print_repl_renderable
-from surfaces.shared.terminal.tables.records import RecordTable
-
-_DEFAULT_FRAME_WIDTH = 96
-_FRAME_CHROME_WIDTH = 4
-
-
-def _record_frame_width(table: RecordTable) -> int:
-    """Keep compact lists bounded while giving dense columns the width they need."""
-    return max(_DEFAULT_FRAME_WIDTH, table.summary_content_width + _FRAME_CHROME_WIDTH)
+from surfaces.shared.terminal.tables.records import RecordTable, record_frame_width
 
 
 def build_record_browser(table: RecordTable, *, title: str) -> Application[None]:
@@ -57,7 +49,7 @@ def build_record_browser(table: RecordTable, *, title: str) -> Application[None]
         validate=lambda _values: None,
         initial_field="record",
         browse_only=True,
-        max_width=_record_frame_width(table),
+        max_width=record_frame_width(table),
     )
 
 
@@ -73,7 +65,7 @@ def print_record_list(
             table,
             title=Text(title),
             box=box.SQUARE,
-            width=_record_frame_width(table),
+            width=record_frame_width(table),
             padding=(1, 0),
             style=f"{TEXT} on {INPUT_SURFACE}",
             border_style=str(HIGHLIGHT),

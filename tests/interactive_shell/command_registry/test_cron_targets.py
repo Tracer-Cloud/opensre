@@ -452,6 +452,9 @@ def test_terminal_render_matches_cron_list_without_duplicate_metadata(
     if subcommand == "logs":
         for value in ("slack", "Active", first.cron, first.timezone, "Next run"):
             assert value in text
+        if width == 160:
+            for label in ("Channel:", "State:", "Schedule:", "TZ:", "Next run:"):
+                assert label not in text
         assert "Enter show logs" in text
     else:
         action = "Run now" if subcommand == "run" else "Remove permanently"
@@ -466,4 +469,4 @@ def test_terminal_render_matches_cron_list_without_duplicate_metadata(
     assert "Kind:" not in text
     assert "Destination:" not in text
     assert first.chat_id not in text
-    assert max(len(line.rstrip()) for line in captured) <= min(width, 96)
+    assert max(len(line.rstrip()) for line in captured) <= width

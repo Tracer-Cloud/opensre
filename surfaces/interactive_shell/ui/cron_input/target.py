@@ -86,4 +86,5 @@ def build_cron_target_picker(
             RecordColumn("TZ"),
             RecordColumn("Next run"),
         ),
+        fit_columns=True,
     )

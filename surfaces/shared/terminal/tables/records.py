@@ -18,6 +18,8 @@ _MAX_PRIMARY_COLUMN_WIDTH = 48
 _OUTER_PADDING = 2
 _COLUMN_GAP = 4
 _DETAIL_INDENT = 2
+_DEFAULT_FRAME_WIDTH = 96
+_FRAME_CHROME_WIDTH = 4
 
 
 @dataclass(frozen=True)
@@ -136,3 +138,8 @@ class RecordTable:
         if self.caption:
             yield Text("")
             yield Padding(Text(self.caption, style=DIM), (0, _OUTER_PADDING), expand=False)
+
+
+def record_frame_width(table: RecordTable) -> int:
+    """Keep compact lists bounded while giving dense columns the width they need."""
+    return max(_DEFAULT_FRAME_WIDTH, table.summary_content_width + _FRAME_CHROME_WIDTH)

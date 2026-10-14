@@ -9,7 +9,12 @@ from prompt_toolkit.application import Application
 from rich.text import Text
 
 from surfaces.shared.terminal.components.input_form import InputChoice, InputField, build_input_form
-from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow
+from surfaces.shared.terminal.tables.records import (
+    RecordColumn,
+    RecordRow,
+    RecordTable,
+    record_frame_width,
+)
 
 
 @dataclass(frozen=True)
@@ -37,9 +42,13 @@ def build_target_picker(
     confirmation: str = "",
     compact_confirmation: str = "",
     columns: tuple[RecordColumn, ...] = (),
+    fit_columns: bool = False,
 ) -> Application[str | None]:
     """Collect a stable target with the shared form's selection and submission flow."""
     by_id = {choice.value: choice for choice in choices}
+    records = tuple(
+        RecordRow((Text(choice.title, style="bold"), *choice.cells)) for choice in choices
+    )
     options = tuple(
         InputChoice(
             choice.value,
@@ -51,11 +60,9 @@ def build_target_picker(
             compact_summary=choice.compact_summary,
             compact_details=choice.compact_details,
             minimal_details=choice.minimal_details,
-            record=RecordRow((Text(choice.title, style="bold"), *choice.cells))
-            if columns
-            else None,
+            record=record if columns else None,
         )
-        for choice in choices
+        for choice, record in zip(choices, records, strict=True)
     )
 
     def fields(values: dict[str, str]) -> list[InputField]:
@@ -85,4 +92,7 @@ def build_target_picker(
         focus_submit_on_choice=bool(confirmation),
         confirmation=confirmation,
         compact_confirmation=compact_confirmation,
+        max_width=(
+            record_frame_width(RecordTable("", columns, records)) if columns and fit_columns else 96
+        ),
     )
