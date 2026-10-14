@@ -60,6 +60,8 @@ def test_work_browser_filters_records_and_enter_never_submits(
             content = "\n".join(lines)
             assert count in content
             assert "Esc close" in content and "Enter" not in content
+            assert "Esc closes to the full list" not in content
+            assert "Due times: UTC" not in content
             assert "Search ›" in content
             assert max(len(line.rstrip()) for line in lines) <= min(width, 96)
             if query == "absent":

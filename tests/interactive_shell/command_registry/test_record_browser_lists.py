@@ -117,6 +117,7 @@ def test_browser_searches_details_without_inventing_ids() -> None:
         "Memories",
         (RecordColumn("Name"),),
         (RecordRow((Text("prod-cluster"),), details=(Text("Unique detail"),)),),
+        subtitle="List-level context belongs with the columns, not the selected record.",
     )
     frames: list[str] = []
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
@@ -131,6 +132,9 @@ def test_browser_searches_details_without_inventing_ids() -> None:
                 for y in range(screen.height)
             )
             assert "ID:" not in content
+            assert "List-level context" not in content
+            if len(frames) < 2:
+                assert "Unique detail" in content
             if not frames:
                 pipe.send_text("UNIQUE")
             elif len(frames) == 1:

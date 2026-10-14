@@ -21,11 +21,6 @@ def build_record_browser(table: RecordTable, *, title: str) -> Application[None]
         InputChoice(
             str(index),
             row.cells[0].plain,
-            summary=table.subtitle,
-            summary_style="description",
-            details=("Esc closes to the full list.",),
-            compact_details=("Esc closes to the full list.",),
-            minimal_details=("Esc closes to the full list.",),
             search_text=" ".join(line.plain for line in (*row.metadata, *row.details)),
             record=row,
         )
