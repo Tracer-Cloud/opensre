@@ -25,6 +25,13 @@ from surfaces.shared.account_credits import AccountCredits, AccountCreditsStatus
 from surfaces.shared.account_session import AccountSessionState, AccountStatus
 
 
+@pytest.fixture(autouse=True)
+def _pin_gui_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep browser-handoff tests deterministic in any terminal (issue #6719)."""
+    for variable in ("SSH_CONNECTION", "SSH_TTY", "TMUX"):
+        monkeypatch.delenv(variable, raising=False)
+
+
 class _RecordingProgress:
     def __init__(self) -> None:
         self.events: list[str] = []

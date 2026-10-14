@@ -105,6 +105,23 @@ class AccountLoginPresenter:
         console.print()
         console.print(f"  [{SECONDARY}]Waiting for browser approval…[/]")
 
+    def ssh_tunnel_hint(self, command: str) -> None:
+        console = self._console
+        console.print()
+        console.print(
+            f"  [{SECONDARY}]"
+            "No browser over SSH. Open the link above on your local machine, then forward"
+            " the callback port to this host:"
+            "[/]"
+        )
+        line = Text()
+        line.append(f"     {command}", style=TEXT)
+        console.print(line)
+        console.print(
+            f"  [{SECONDARY}]Or from your local machine add the same -L forward to the "
+            "SSH session you already have (Enter, then ~C).[/]"
+        )
+
     def authorization_received(self) -> None:
         console = self._console
         console.print()

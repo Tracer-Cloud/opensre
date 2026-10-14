@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import base64
+import getpass
 import hashlib
 import hmac
 import json
 import os
 import queue
 import secrets
+import sys
 import time
 import webbrowser
 from collections.abc import Callable, Mapping
@@ -54,6 +56,9 @@ class LoginProgress(Protocol):
     def prompt_sign_in(self, url: str, *, opened: bool) -> None:
         """Show the sign-in URL, numbered browser steps, and wait state."""
 
+    def ssh_tunnel_hint(self, command: str) -> None:
+        """Show how to forward the loopback callback port from a remote session."""
+
     def authorization_received(self) -> None:
         """Show that the loopback callback arrived and setup continues."""
 
@@ -64,6 +69,9 @@ class LoginProgress(Protocol):
 class _SilentLoginProgress:
     def prompt_sign_in(self, url: str, *, opened: bool) -> None:
         _ = (url, opened)
+
+    def ssh_tunnel_hint(self, command: str) -> None:
+        _ = command
 
     def authorization_received(self) -> None:
         return
@@ -332,6 +340,40 @@ def open_usage_page(
     return url, opened
 
 
+def _headless_environment(
+    environ: Mapping[str, str] | None = None,
+    *,
+    platform: str | None = None,
+) -> bool:
+    """Report whether this session has no usable graphical browser.
+
+    SSH sessions run on a remote host, so ``webbrowser`` falls back to text
+    browsers such as w3m and the loopback callback stays unreachable from the
+    user's machine. ``TMUX`` alone only implies headless off macOS with no
+    display: local macOS tmux keeps a working ``open``-based browser.
+    """
+    env = os.environ if environ is None else environ
+    if env.get("SSH_CONNECTION") or env.get("SSH_TTY"):
+        return True
+    if env.get("TMUX"):
+        resolved_platform = platform if platform is not None else sys.platform
+        if resolved_platform != "darwin" and not env.get("DISPLAY"):
+            return True
+    return False
+
+
+def _ssh_tunnel_hint(callback_port: int, environ: Mapping[str, str] | None = None) -> str:
+    """Build a copy-pasteable ``ssh -L`` command for the loopback callback port."""
+    env = os.environ if environ is None else environ
+    connection = env.get("SSH_CONNECTION", "").split()
+    host = connection[2] if len(connection) >= 4 else "<remote-host>"
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "<user>"
+    return f"ssh -L {callback_port}:127.0.0.1:{callback_port} {user}@{host}"
+
+
 def login_account(
     *,
     app_url: str | None = None,
@@ -370,9 +412,15 @@ def login_account(
             cli_auth_attempt_id=cli_auth_attempt_id,
         )
         opened = False
+        headless = open_browser and _headless_environment()
         if open_browser:
             try:
-                opened = bool(browser_open(authorization_url))
+                if not headless:
+                    opened = bool(browser_open(authorization_url))
+            except Exception:
+                # A failing opener must not abort sign-in: fall back to the
+                # printed URL and keep waiting on the loopback callback.
+                opened = False
             finally:
                 from infrastructure.analytics.capture import capture_browser_open_requested
 
@@ -380,6 +428,8 @@ def login_account(
                     target="account_login", opened=opened, cli_auth_attempt_id=cli_auth_attempt_id
                 )
         reporter.prompt_sign_in(authorization_url, opened=opened)
+        if headless:
+            reporter.ssh_tunnel_hint(_ssh_tunnel_hint(callback_port))
         callback = _wait_for_callback(server, results, timeout_seconds=timeout_seconds)
     finally:
         server.server_close()
