@@ -11,7 +11,10 @@ from config.interactive_override import interactive_override_env
 from core.agent_harness.spi.session_state import exclusive_stdin_active, session_terminal
 from infrastructure.scheduling.scheduler.loops import list_loop_summaries
 from infrastructure.terminal.theme import DIM
-from surfaces.interactive_shell.command_registry.cron_input import collect_cron_add
+from surfaces.interactive_shell.command_registry.cron_input import (
+    collect_cron_add,
+    collect_cron_target,
+)
 from surfaces.interactive_shell.command_registry.input_collection import can_browse_records
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.cron_input.arguments import cron_add_needs_input
@@ -52,21 +55,11 @@ def cmd_cron(
         if collected is None:
             return True
         args = ["add", *collected]
-    if (
-        terminal is not None
-        and repl_tty_interactive()
-        and len(args) == 1
-        and args[0] in {"logs", "remove", "run"}
-    ):
-        # Required values belong in the editable composer. Never execute an
-        # incomplete choice (or auto-submit a destructive command).
-        terminal.pending_prompt_default = f"/cron {args[0]} "
-        terminal.pending_prompt_autosubmit = False
-        terminal.pending_prompt_plain_turn = False
-        terminal.notify_prompt_changed()
-        guidance = "Add a task ID, then press Enter."
-        console.print(f"[{DIM}]{guidance}[/]")
-        return True
+    if terminal is not None:
+        collected = collect_cron_target(session, console, args)
+        if collected is None:
+            return True
+        args = collected
     if terminal is not None and args == ["list"]:
         loops = list_loop_summaries()
         if not loops:

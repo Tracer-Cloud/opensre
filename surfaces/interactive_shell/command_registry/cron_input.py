@@ -1,12 +1,43 @@
-"""Collect missing cron-add values without saving before explicit confirmation."""
+"""Collect missing cron inputs without saving or executing during selection."""
 
 from __future__ import annotations
 
+import shlex
+
+from rich.console import Console
+
+from config.command_inputs import CRON_TARGET_INPUT
+from core.agent_harness.spi.session_state import set_auto_command
+from infrastructure.scheduling.scheduler.storage import list_tasks
+from infrastructure.terminal.theme import DIM, HIGHLIGHT
+from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
+from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.cron_input import build_cron_form
 from surfaces.interactive_shell.ui.cron_input.arguments import parse_cron_draft
+from surfaces.interactive_shell.ui.cron_input.target import build_cron_target_picker
 from surfaces.shared.terminal.components.command_input import run_command_input
 
 
 def collect_cron_add(args: list[str]) -> list[str] | None:
     """Return validated argv after Create, or None when cancelled."""
     return run_command_input(build_cron_form(parse_cron_draft(args)))
+
+
+def collect_cron_target(session: Session, console: Console, args: list[str]) -> list[str] | None:
+    """Select an exact scheduled task, preserving explicit arguments and flags."""
+    if not can_collect_input(session, CRON_TARGET_INPUT, args):
+        return args
+    tasks = list_tasks(read_only=True)
+    if not tasks:
+        console.print(
+            f"[{DIM}]No scheduled tasks configured. Create one with[/] "
+            f"[{HIGHLIGHT}]/cron add[/][{DIM}].[/]"
+        )
+        return None
+    sub = args[0].lower()
+    target = run_command_input(build_cron_target_picker(tasks, subcommand=sub))
+    if target is not None and sub == "run":
+        # Release the picker's exclusive stdin before a potentially long run.
+        set_auto_command(session, shlex.join(("/cron", "run", target)))
+        return None
+    return [sub, target] if target is not None else None

@@ -69,9 +69,7 @@ class SlashPorts(ExecutionGate, Protocol):
 
 class ReplSlashPorts:
     def command_needs_input(self, name: str, args: list[str]) -> bool:
-        if name == "/cron":
-            return cron_add_needs_input(args)
-        return needs_command_input(name, args)
+        return needs_command_input(name, args) or (name == "/cron" and cron_add_needs_input(args))
 
     def command_exists(self, name: str) -> bool:
         return name in SLASH_COMMANDS

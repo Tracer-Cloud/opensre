@@ -134,12 +134,16 @@ LOOPS_TARGET_INPUT = CommandInput(
 WORK_DONE_INPUT = CommandInput(
     "/work", ("done", "complete"), max_positionals=1, missing_target=True
 )
+CRON_TARGET_INPUT = CommandInput(
+    "/cron", ("logs", "run", "remove"), max_positionals=1, missing_target=True
+)
 COMMAND_INPUTS = (
     WORK_ADD_INPUT,
     GOAL_SET_INPUT,
     LOOPS_ADD_INPUT,
     LOOPS_TARGET_INPUT,
     WORK_DONE_INPUT,
+    CRON_TARGET_INPUT,
 )
 
 

@@ -147,7 +147,7 @@ def turn_needs_exclusive_stdin(text: str, _session: Session) -> bool:
     args = [arg.lower() for arg in parts[1:]]
 
     # Long ticks keep running after their short foreground reply window. Keep
-    # the prompt's cancel keys available while waiting; bare run opens editing.
+    # the prompt's cancel keys available while waiting; bare run opens a picker.
     if name == "/cron" and len(args) >= 2 and args[0] == "run" and "--help" not in args:
         return False
     if name in _WAIT_FOR_COMPLETION_COMMANDS or name in _EXCLUSIVE_STDIN_COMMANDS:

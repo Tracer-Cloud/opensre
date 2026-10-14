@@ -72,6 +72,15 @@ opensre cron start
 
 ## CLI Commands
 
+In the interactive shell, bare `/cron logs`, `/cron run`, and `/cron remove`
+open a searchable scheduled-task picker. Search by name, kind, channel,
+destination, schedule, timezone, or full task ID. Each choice is one exact
+scheduled task, even when `/cron list` groups several channels into one loop.
+Selecting logs opens its history; run requires **Run now**, and remove requires
+**Remove permanently**. Cancel leaves the task unchanged. Supplying an ID
+and any flags runs the command directly; scripts and gateway sessions still
+require an explicit task ID.
+
 ### `opensre cron add`
 
 Create a new scheduled delivery task.
