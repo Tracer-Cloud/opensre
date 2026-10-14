@@ -385,7 +385,7 @@ def test_agent_selected_target_action_defers_then_explicit_id_dispatches(
 
 @pytest.mark.parametrize("width", [40, 90, 160])
 @pytest.mark.parametrize("subcommand", ["logs", "run", "remove"])
-def test_terminal_render_preserves_identity_metadata_and_explicit_actions(
+def test_terminal_render_matches_cron_list_without_duplicate_metadata(
     width: int, subcommand: str
 ) -> None:
     first, _ = seed_tasks()
@@ -416,19 +416,11 @@ def test_terminal_render_preserves_identity_metadata_and_explicit_actions(
         # Capture run/remove after selection, while waiting on the explicit action.
         assert app.run(pre_run=lambda: pipe.send_text("\r" if subcommand != "logs" else "")) is None
     text = "".join(line.strip(" │") for line in captured)
-    for value in (
-        first.id,
-        "[literal]",
-        "日本",
-        "Manual loop",
-        "Slack",
-        "Enabled",
-        first.cron,
-        first.timezone,
-        first.chat_id,
-    ):
+    for value in (first.id, "[literal]", "日本"):
         assert value in text
     if subcommand == "logs":
+        for value in ("slack", "Active", first.cron, first.timezone, "Next run"):
+            assert value in text
         assert "Enter show logs" in text
     else:
         action = "Run now" if subcommand == "run" else "Remove permanently"
@@ -438,4 +430,9 @@ def test_terminal_render_preserves_identity_metadata_and_explicit_actions(
             if subcommand == "run"
             else "cannot be undone" in text.lower()
         )
+        for value in ("Active", first.cron, first.timezone, "Next run"):
+            assert value not in text
+    assert "Kind:" not in text
+    assert "Destination:" not in text
+    assert first.chat_id not in text
     assert max(len(line.rstrip()) for line in captured) <= min(width, 96)
