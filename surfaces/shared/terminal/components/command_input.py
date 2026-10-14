@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+from contextlib import nullcontext
+
 from prompt_toolkit.application import Application
 from prompt_toolkit.styles import Style
 
@@ -37,8 +40,11 @@ def run_command_input[Result](app: Application[Result]) -> Result | None:
     """Run an exclusively owned input surface without leaving menu paint behind."""
     if not repl_tty_interactive():
         return None
-    enter_inline_menu()
-    try:
-        return app.run()
-    finally:
-        leave_inline_menu()
+    defer_output = getattr(sys.stdout, "defer_output", None)
+    deferred = defer_output() if app.full_screen and callable(defer_output) else nullcontext()
+    with deferred:
+        enter_inline_menu()
+        try:
+            return app.run()
+        finally:
+            leave_inline_menu()

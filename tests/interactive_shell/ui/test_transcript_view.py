@@ -8,6 +8,8 @@ import sys
 import threading
 
 import pytest
+from prompt_toolkit.application import Application, create_app_session
+from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
 from rich.console import Console
@@ -21,6 +23,8 @@ from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.interactive_shell.ui.transcript_view import TranscriptControl, TranscriptStore
 from surfaces.interactive_shell.ui.transcript_view.store import render_rows, trim_row_padding
 from surfaces.shared.terminal.banner import ResponsiveLaunchBanner
+from surfaces.shared.terminal.components import command_input
+from surfaces.shared.terminal.components.input_form import InputField, build_input_form
 from surfaces.shared.terminal.components.rendering import record_in_transcript
 
 _PARAGRAPH = "OpenSRE found three failing jobs and the flaky one burned two hours of runner time"
@@ -164,7 +168,9 @@ class _FakeApp:
         self.context = None
 
 
-def _proxy(store: TranscriptStore, terminal: io.StringIO, app: _FakeApp) -> _AppBoundStdoutProxy:
+def _proxy(
+    store: TranscriptStore | None, terminal: io.StringIO, app: _FakeApp
+) -> _AppBoundStdoutProxy:
     proxy = _AppBoundStdoutProxy(app, raw=True, transcript=store)  # type: ignore[arg-type]
     proxy._output = Vt100_Output(  # type: ignore[assignment]
         terminal, get_size=lambda: Size(rows=24, columns=80), term="xterm", enable_cpr=False
@@ -186,6 +192,71 @@ def test_menu_paint_reaches_the_terminal_but_not_the_transcript() -> None:
 
     assert "(A) option" in terminal.getvalue()
     assert _plain_rows(store, width=40) == ["reply line", "after menu"]
+
+
+@pytest.mark.parametrize(
+    ("record_transcript", "fail"), [(True, False), (True, True), (False, False)]
+)
+def test_form_defers_background_output_until_close(
+    monkeypatch: pytest.MonkeyPatch, record_transcript: bool, fail: bool
+) -> None:
+    store = TranscriptStore() if record_transcript else None
+    terminal = io.StringIO()
+    proxy = _proxy(store, terminal, _FakeApp(None))
+    flushed = threading.Event()
+    flush = proxy._write_and_flush
+    during: list[str] = []
+
+    def observe_flush(loop: asyncio.AbstractEventLoop | None, text: str) -> None:
+        flush(loop, text)
+        if "incoming alert" in text:
+            flushed.set()
+
+    def emit_alert() -> None:
+        if not proxy.write_renderable(Text("alert details")):
+            proxy.write("alert details\n")
+        proxy.write("incoming alert\n")
+
+    monkeypatch.setattr(proxy, "_write_and_flush", observe_flush)
+    monkeypatch.setattr(command_input, "repl_tty_interactive", lambda: True)
+    with proxy, create_pipe_input() as pipe, create_app_session(input=pipe, output=proxy._output):
+        monkeypatch.setattr(sys, "stdout", proxy)
+        app = build_input_form(
+            {"name": "audit"},
+            title="/records",
+            heading="Review record",
+            submit_label="Save",
+            fields=lambda _values: [InputField("name", "Name")],
+            validate=lambda _values: None,
+        )
+
+        def capture(_app: Application[None]) -> None:
+            if during:
+                return
+            writer = threading.Thread(target=emit_alert)
+            writer.start()
+            writer.join(timeout=5)
+            processed = flushed.wait(timeout=5)
+            during.append(terminal.getvalue())
+            if not processed:
+                app.exit(exception=AssertionError("Background output was not processed"))
+            elif fail:
+                app.exit(exception=RuntimeError("form failed"))
+            else:
+                app.exit()
+
+        app.after_render += capture
+        if fail:
+            with pytest.raises(RuntimeError, match="form failed"):
+                command_input.run_command_input(app)
+        else:
+            assert command_input.run_command_input(app) is None
+
+    assert "incoming alert" not in during[0]
+    assert "alert details" not in during[0]
+    assert terminal.getvalue().index("incoming alert") > terminal.getvalue().index("\x1b[?1049l")
+    if store is not None:
+        assert _plain_rows(store, width=40) == ["alert details", "incoming alert"]
 
 
 def test_output_cannot_forge_the_transient_marker() -> None:

@@ -22,8 +22,10 @@ from surfaces.interactive_shell.ui.transcript_view import TranscriptStore, rende
 # ``write`` strips NUL from captured output, so no output can spell a marker.
 _TRANSIENT_START = "\x00opensre-transient-start\x00"
 _TRANSIENT_END = "\x00opensre-transient-end\x00"
+_DEFERRED_START = "\x00opensre-deferred-start\x00"
+_DEFERRED_END = "\x00opensre-deferred-end\x00"
 _RENDERABLE_MARKER = "\x00opensre-renderable-{}\x00"
-_MARKER = re.compile(r"\x00opensre-(?:transient-start|transient-end|renderable-(\d+))\x00")
+_MARKER = re.compile(r"\x00opensre-(?:(?:transient|deferred)-(?:start|end)|renderable-(\d+))\x00")
 
 
 class _AppBoundStdoutProxy(StdoutProxy):
@@ -45,6 +47,8 @@ class _AppBoundStdoutProxy(StdoutProxy):
         self._transcript = transcript
         # Read and written only by the flush thread.
         self._transient = False
+        self._deferred_depth = 0
+        self._deferred_output: list[str] = []
         self._renderables: dict[int, RenderableType] = {}
         self._renderable_ids = itertools.count()
         # Repaint sooner than the inline default: a full-screen redraw is cheap.
@@ -52,7 +56,7 @@ class _AppBoundStdoutProxy(StdoutProxy):
 
     def write(self, data: str) -> int:
         """Queue ``data``; NUL is dropped so output cannot forge a marker."""
-        if self._transcript is not None and "\x00" in data:
+        if "\x00" in data:
             super().write(data.replace("\x00", ""))
             return len(data)
         return super().write(data)
@@ -77,6 +81,15 @@ class _AppBoundStdoutProxy(StdoutProxy):
         """Resume recording output into the transcript."""
         self._queue_marker(_TRANSIENT_END)
 
+    @contextmanager
+    def defer_output(self) -> Iterator[None]:
+        """Hold background output until a temporary full-screen surface closes."""
+        self._queue_marker(_DEFERRED_START)
+        try:
+            yield
+        finally:
+            self._queue_marker(_DEFERRED_END)
+
     def _queue_marker(self, marker: str) -> None:
         # One lock hold: no other writer's text can land between the flush of
         # earlier output and the marker.
@@ -94,14 +107,23 @@ class _AppBoundStdoutProxy(StdoutProxy):
         loop: asyncio.AbstractEventLoop | None,
         text: str,
     ) -> None:
-        if self._transcript is None:
-            self._write_to_terminal(loop, text)
-            return
         for segment in _split_markers(text):
-            if segment == _TRANSIENT_START:
+            if segment == _DEFERRED_START:
+                self._deferred_depth += 1
+            elif segment == _DEFERRED_END:
+                self._deferred_depth -= 1
+                if not self._deferred_depth:
+                    pending = "".join(self._deferred_output)
+                    self._deferred_output.clear()
+                    self._write_and_flush(loop, pending)
+            elif segment == _TRANSIENT_START:
                 self._transient = True
             elif segment == _TRANSIENT_END:
                 self._transient = False
+            elif self._deferred_depth:
+                self._deferred_output.append(segment)
+            elif self._transcript is None:
+                self._write_to_terminal(loop, segment)
             elif (match := _MARKER.fullmatch(segment)) is not None:
                 self._flush_renderable(loop, self._renderables.pop(int(match.group(1))))
             elif self._transient:
