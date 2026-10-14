@@ -420,6 +420,7 @@ def _prepare_job_registration(
     missed: datetime | None = None
     if immediate is None and catch_up:
         immediate = missed = _missed_fire(task, trigger, now)
+    next_run: str | None
     if immediate is not None:
         # Keep the stored due time until this tick finishes.
         next_run = immediate.isoformat()

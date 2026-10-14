@@ -52,8 +52,8 @@ def _validate_work_args(args: list[str]) -> str | None:
     if args and args[0].lower() == "edit":
         from surfaces.interactive_shell.command_registry.work_edit import parse_work_edit_args
 
-        _, _, error = parse_work_edit_args(args[1:])
-        return error or None
+        _, _, edit_error = parse_work_edit_args(args[1:])
+        return edit_error or None
     if args and args[0].lower() == "add":
         reminder_error = _unsupported_reminder_error(args[1:])
         if reminder_error is not None:
