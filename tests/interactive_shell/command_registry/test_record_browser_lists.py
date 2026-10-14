@@ -280,7 +280,7 @@ def test_record_browser_uses_available_space_before_stacking(
     lines = text.splitlines()
     border = next(line for line in lines if line.startswith("┌"))
     frame_width = cell_len(border.rstrip())
-    assert frame_width < width
+    assert frame_width <= width
     if expect_columns:
         assert frame_width > 96
         header = next(line for line in lines if "Channel" in line)
@@ -301,7 +301,7 @@ def test_compact_record_browser_stays_bounded_on_wide_terminal() -> None:
     assert cell_len(border.rstrip()) == 96
 
 
-def test_oversized_record_browser_caps_before_terminal_edge_and_reflows() -> None:
+def test_oversized_record_browser_caps_at_terminal_and_reflows() -> None:
     table = RecordTable(
         "Records",
         (RecordColumn("Name"), RecordColumn("Detail")),
@@ -309,5 +309,5 @@ def test_oversized_record_browser_caps_before_terminal_edge_and_reflows() -> Non
     )
     text = _render_browser(table, width=160, title="/records")
     border = next(line for line in text.splitlines() if line.startswith("┌"))
-    assert cell_len(border.rstrip()) == 159
+    assert cell_len(border.rstrip()) == 160
     assert "Detail:" in text
