@@ -8,7 +8,10 @@ from config.command_inputs import CommandInput
 from config.interactive_override import interactive_override_env
 from core.agent_harness.spi.session_state import exclusive_stdin_active
 from surfaces.interactive_shell.runtime import Session
-from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
+from surfaces.shared.terminal.components.choice_menu import (
+    console_output_is_tty,
+    repl_tty_interactive,
+)
 
 
 def can_collect_input(session: Session, spec: CommandInput, args: list[str]) -> bool:
@@ -24,7 +27,7 @@ def can_collect_input(session: Session, spec: CommandInput, args: list[str]) -> 
 def can_browse_records(session: Session, console: Console) -> bool:
     """Browse only with an interactive output and explicitly reserved stdin."""
     return (
-        console.is_terminal
+        console_output_is_tty(console)
         and not interactive_override_env()
         and exclusive_stdin_active(session)
         and repl_tty_interactive()

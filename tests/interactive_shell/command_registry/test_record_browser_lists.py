@@ -11,7 +11,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from rich.console import Console
 
-from config.constants import OPENSRE_MEMORY_DIR_ENV
+from config.constants import FORCE_COLOR_ENV, OPENSRE_MEMORY_DIR_ENV
 from core.domain.memory import save_memory
 from infrastructure.scheduling.scheduler.loops import summarize_loop
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
@@ -85,6 +85,27 @@ def test_record_lists_share_browser_and_keep_full_output(
         assert "[literal] unavailable" in output.getvalue()
     if "memory" in command:
         assert "unencrypted" in output.getvalue()
+
+
+def test_forced_color_redirected_output_never_opens_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(FORCE_COLOR_ENV, "0")
+    monkeypatch.setattr(input_collection, "repl_tty_interactive", lambda: True)
+    session = Session()
+    session.terminal.exclusive_stdin_active = True
+    task = session.task_registry.create(RuntimeTaskKind.CLI_COMMAND, command="Check rollout")
+
+    def unexpected_browser(_app: Application[None]) -> None:
+        pytest.fail("Redirected output must not read from the terminal")
+
+    monkeypatch.setattr(record_browser, "run_command_input", unexpected_browser)
+    output = io.StringIO()
+    console = Console(file=output, width=90)
+    assert console.is_terminal
+    assert dispatch_slash("/tasks", session, console, is_tty=True)
+    assert task.task_id in output.getvalue()
+    assert "┌" not in output.getvalue()
 
 
 def test_browser_searches_details_without_inventing_ids() -> None:
