@@ -33,6 +33,7 @@ from core.domain.work_items import (
 from infrastructure.scheduling.scheduler.loops import LoopSummary, create_manual_loop
 from infrastructure.scheduling.scheduler.storage import task_store
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.terminal import theme
 from surfaces.interactive_shell.command_registry import (
     dispatch_slash,
     input_collection,
@@ -212,18 +213,30 @@ def test_run_picker_queues_selected_tasks_and_full_id_keeps_stdin_available(
     captured: list[str] = []
 
     def collect(app: Any) -> Any:
-        def capture(_app: Any) -> None:
-            screen = app.renderer.last_rendered_screen
-            if screen is not None and not captured:
+        with create_pipe_input() as pipe:
+            app.input = pipe
+            app.output = DummyOutput()
+            searching = False
+
+            def capture(_app: Any) -> None:
+                nonlocal searching
+                screen = app.renderer.last_rendered_screen
+                if screen is None or captured:
+                    return
+                if not searching:
+                    searching = True
+                    pipe.send_text("Beta")
+                    return
                 captured.append(
                     "\n".join(
                         "".join(screen.data_buffer[y][x].char for x in range(80))
                         for y in range(screen.height)
                     )
                 )
+                pipe.send_text("\r\r")
 
-        app.after_render += capture
-        return run_keys(app, "Beta\r\r")
+            app.after_render += capture
+            return app.run()
 
     def run(_console: Console, task_ids: tuple[str, ...]) -> bool:
         calls.append(task_ids)
@@ -496,3 +509,161 @@ def test_work_picker_keeps_full_title_route_for_blocked_items(
     assert "Full titles: /work list all" in content
     assert "Esc cancel" in content
     assert max(len(line.rstrip()) for line in captured) <= min(columns, 96)
+
+
+def test_work_picker_aligns_headers_and_cells_and_paints_the_complete_selection() -> None:
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=30, columns=90)
+
+    items = [
+        WorkItem(
+            id="first-id",
+            title="Latency [literal] 中文",
+            project="Payments",
+            status=WorkItemStatus.OPEN,
+            priority=WorkItemPriority.HIGH,
+        ),
+        WorkItem(
+            id="second-id",
+            title="Other work",
+            project="Platform",
+            status=WorkItemStatus.OPEN,
+            priority=WorkItemPriority.NORMAL,
+        ),
+    ]
+    frames = []
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=SizedOutput()):
+        app = build_work_picker(items, command="/work done", action_label="Mark complete")
+
+        def capture(_app: Any) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is not None and not frames:
+                frames.append(screen)
+                pipe.send_text("\x03")
+
+        app.after_render += capture
+        assert app.run() is None
+    screen = frames[0]
+    lines = [
+        "".join(screen.data_buffer[y][x].char or " " for x in range(90))
+        for y in range(screen.height)
+    ]
+    header = next((line for line in lines if "Title" in line and "Priority" in line), "")
+    assert header, "Picker needs explicit column headings, separate from the search hint"
+    selected_y = next(y for y, line in enumerate(lines) if "› Latency" in line)
+    selected = lines[selected_y]
+    for heading, value in (
+        ("Title", "Latency"),
+        ("Project", "Payments"),
+        ("Priority", "High"),
+        ("ID", "first-id"),
+    ):
+        assert selected.index(value) == header.index(heading)
+    assert app.style is not None
+    for x in range(3, 87):
+        if not screen.data_buffer[selected_y][x].char:
+            continue  # The leading cell paints both cells of a wide Unicode glyph.
+        attrs = app.style.get_attrs_for_style_str(screen.data_buffer[selected_y][x].style)
+        assert attrs.bgcolor == theme.menu_selection_hex().lstrip("#")
+    attrs = app.style.get_attrs_for_style_str(
+        screen.data_buffer[selected_y][header.index("Project")].style
+    )
+    assert attrs.color == str(theme.SECONDARY).lstrip("#")
+    assert "Full titles: /work list all" in "\n".join(lines)
+
+
+def test_picker_background_stops_at_frame_after_filtering_in_a_wide_terminal() -> None:
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=40, columns=212)
+
+    items = [
+        WorkItem(
+            id=f"item-{index}",
+            title=f"Item {index}",
+            status=WorkItemStatus.OPEN,
+            priority=WorkItemPriority.NORMAL,
+        )
+        for index in range(4)
+    ]
+    frames = []
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=SizedOutput()):
+        app = build_work_picker(items, command="/work done", action_label="Mark complete")
+
+        def capture(_app: Any) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or len(frames) >= 2:
+                return
+            frames.append(screen)
+            pipe.send_text("Item 3" if len(frames) == 1 else "\x03")
+
+        app.after_render += capture
+        assert app.run(pre_run=lambda: app.renderer.report_absolute_cursor_row(1)) is None
+    assert len(frames) == 2
+    assert app.style is not None
+    for screen in frames:
+        bottom = next(y for y in range(screen.height) if screen.data_buffer[y][0].char == "└")
+        for y in range(screen.height):
+            for x in range(212):
+                cell = screen.data_buffer[y][x]
+                attrs = app.style.get_attrs_for_style_str(cell.style)
+                if y > bottom or x >= 96:
+                    assert not attrs.bgcolor, f"Background leaked outside the frame at {x}, {y}"
+                elif cell.char:
+                    assert attrs.bgcolor, f"Frame lost its background at {x}, {y}"
+
+
+def test_scrolled_selection_survives_resize_and_searches_record_columns() -> None:
+    class ResizableOutput(DummyOutput):
+        columns = 90
+
+        def get_size(self) -> Size:
+            return Size(rows=24, columns=self.columns)
+
+    output = ResizableOutput()
+    items = [
+        WorkItem(
+            id=f"item-{index:02}",
+            title=f"Item {index:02}",
+            project=f"Project-{index:02}",
+            status=WorkItemStatus.OPEN,
+            priority=WorkItemPriority.NORMAL,
+        )
+        for index in range(12)
+    ]
+    frames: list[str] = []
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+        app = build_work_picker(items, command="/work done", action_label="Mark complete")
+
+        def capture(_app: Any) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or len(frames) >= 5:
+                return
+            frames.append(
+                "\n".join(
+                    "".join(screen.data_buffer[y][x].char for x in range(output.columns))
+                    for y in range(screen.height)
+                )
+            )
+            match len(frames):
+                case 1:
+                    pipe.send_text("\t" * 10)
+                case 2 | 3:
+                    output.columns = 40 if len(frames) == 2 else 160
+                    app.invalidate()
+                case 4:
+                    pipe.send_text("project-11")
+                case 5:
+                    pipe.send_text("\r")
+
+        app.after_render += capture
+        assert app.run() == "item-11"
+    for frame in frames[1:4]:
+        assert "› Item 10" in frame
+        assert "Project-10" in frame
+        assert "Normal" in frame
+    assert "ID: item-10" in frames[2]
+    assert "Project: Project-10" in frames[2]
+    assert "Priority: Normal" in frames[2]
+    assert "1 of 12 items" in frames[4] and "› Item 11" in frames[4]

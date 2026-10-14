@@ -8,6 +8,7 @@ from prompt_toolkit.data_structures import Size
 from prompt_toolkit.formatted_text import to_formatted_text
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.screen import Screen
 from prompt_toolkit.output import DummyOutput
 
 from surfaces.shared.terminal.components.input_form import (
@@ -202,3 +203,61 @@ def test_submission_error_keeps_actions_and_shortcuts_on_short_terminal(message:
     assert "Save changes" in rendered and "Cancel" in rendered
     assert "Esc cancel" in rendered
     assert message.rsplit(" ", 1)[-1] in rendered
+
+
+def test_form_bounds_background_through_text_choice_review_and_validation() -> None:
+    class WideOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=40, columns=212)
+
+    def fields(_values: dict[str, str]) -> list[InputField]:
+        return [
+            InputField("name", "Name", required=True, description="A short, readable name."),
+            InputField(
+                "mode",
+                "Mode",
+                choices=(InputChoice("report", "Report"), InputChoice("agent", "Agent")),
+            ),
+        ]
+
+    def validate(_values: dict[str, str]) -> dict[str, str]:
+        raise InputFormError("Review the delivery settings before saving.")
+
+    frames: list[Screen] = []
+    keys = ("Synthetic loop\r", "\t\r", "\x1b[B\r", "\x13", "\x03")
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=WideOutput()):
+        app = build_input_form(
+            {"name": "", "mode": "report"},
+            title="/loops add",
+            heading="New loop",
+            submit_label="Create loop",
+            fields=fields,
+            validate=validate,
+        )
+
+        def capture(_app: Application[dict[str, str] | None]) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or len(frames) >= len(keys):
+                return
+            frames.append(screen)
+            pipe.send_text(keys[len(frames) - 1])
+
+        app.after_render += capture
+        assert app.run(pre_run=lambda: app.renderer.report_absolute_cursor_row(1)) is None
+    assert len(frames) == len(keys)
+    assert app.style is not None
+    for screen in frames:
+        bottom = next(y for y in range(screen.height) if screen.data_buffer[y][0].char == "└")
+        assert screen.data_buffer[bottom][95].char == "┘"
+        for y in range(screen.height):
+            for x in range(212):
+                if y > bottom or x >= 96:
+                    cell = screen.data_buffer[y][x]
+                    assert not app.style.get_attrs_for_style_str(cell.style).bgcolor
+    content = "\n".join(
+        "".join(frames[-1].data_buffer[y][x].char for x in range(96))
+        for y in range(frames[-1].height)
+    )
+    assert "Synthetic loop" in content and "agent" in content
+    assert "Review the delivery settings before saving." in content
+    assert "Create loop" in content and "Esc cancel" in content

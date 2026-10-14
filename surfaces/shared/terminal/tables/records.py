@@ -47,7 +47,13 @@ class RecordTable:
     subtitle: str = ""
     caption: str = ""
 
-    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+    @property
+    def column_gap(self) -> int:
+        """Return the shared gutter between summary columns."""
+        return _COLUMN_GAP
+
+    def summary_widths(self, available: int) -> tuple[int, ...] | None:
+        """Return content-sized columns, or ``None`` when labeled rows are needed."""
         # Size only summary cells; full identifiers must not widen the name column.
         widths = [cell_len(column.header) for column in self.columns]
         for row in self.rows:
@@ -56,8 +62,12 @@ class RecordTable:
                 widths[index] = max(widths[index], content_width)
         if widths:
             widths[0] = min(widths[0], _MAX_PRIMARY_COLUMN_WIDTH)
-        available = max(1, options.max_width - 2 * _OUTER_PADDING)
-        wide = sum(widths) + _COLUMN_GAP * (len(widths) - 1) <= available
+        if sum(widths) + _COLUMN_GAP * (len(widths) - 1) <= available:
+            return tuple(widths)
+        return None
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        widths = self.summary_widths(max(1, options.max_width - 2 * _OUTER_PADDING))
         yield Padding(
             Text(f"{self.title} · {len(self.rows)}", style=BOLD_BRAND),
             (0, _OUTER_PADDING),
@@ -67,7 +77,7 @@ class RecordTable:
             yield Padding(Text(self.subtitle, style=DIM), (0, _OUTER_PADDING), expand=False)
         yield Text("")
         for index, row in enumerate(self.rows):
-            if wide:
+            if widths is not None:
                 # SIMPLE_HEAD contributes one separator cell in addition to padding.
                 table = repl_table(
                     box=box.SIMPLE_HEAD,
@@ -87,7 +97,7 @@ class RecordTable:
                 yield Text("")
                 for line in row.metadata:
                     yield Padding(line, (0, _OUTER_PADDING), expand=False)
-            if not wide and len(self.columns) > 1:
+            if widths is None and len(self.columns) > 1:
                 yield Text("")
                 for column, cell in zip(self.columns[1:], row.cells[1:], strict=True):
                     if not cell.plain.strip():

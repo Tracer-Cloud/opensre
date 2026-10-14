@@ -10,15 +10,25 @@ from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
-from prompt_toolkit.layout import ConditionalContainer, HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout import (
+    ConditionalContainer,
+    HSplit,
+    Layout,
+    ScrollOffsets,
+    VSplit,
+    Window,
+)
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.layout.processors import AfterInput, ConditionalProcessor
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Box, Frame, TextArea
 
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.shared.terminal.components.command_input import command_input_style
+from surfaces.shared.terminal.components.record_choices import RecordChoices
 from surfaces.shared.terminal.prompt_layout import clip_prompt_text
+from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow
 
 
 @dataclass(frozen=True)
@@ -34,6 +44,7 @@ class InputChoice:
     compact_summary: str = ""
     compact_details: tuple[str, ...] = ()
     minimal_details: tuple[str, ...] = ()
+    record: RecordRow | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +64,7 @@ class InputField:
     validate: Callable[[str], None] | None = None
     cancel_on_back_if_empty: bool = False
     record_choices: bool = False
+    record_columns: tuple[RecordColumn, ...] = ()
 
 
 class InputFormError(ValueError):
@@ -93,7 +105,15 @@ def build_input_form[Result](
         return item is not None and item.record_choices
 
     editor = TextArea(
-        height=1, multiline=False, prompt=lambda: "Search › " if record_mode() else "› "
+        height=1,
+        multiline=False,
+        prompt=lambda: "Search › " if record_mode() else "› ",
+        input_processors=[
+            ConditionalProcessor(
+                AfterInput([("class:hint", "Filter items…")]),
+                filter=Condition(lambda: record_mode() and not editor.text),
+            )
+        ],
     )
 
     def search_catalog() -> dict[str, tuple[tuple[InputChoice, str], ...]]:
@@ -108,6 +128,11 @@ def build_input_form[Result](
                             choice.summary,
                             *choice.details,
                             choice.search_text,
+                            *(
+                                (cell.plain for cell in choice.record.cells)
+                                if choice.record
+                                else ()
+                            ),
                         )
                     ).casefold()
                     if item.record_choices
@@ -119,6 +144,39 @@ def build_input_form[Result](
         }
 
     choice_catalog = search_catalog()
+
+    def record_catalog() -> dict[str, RecordChoices]:
+        return {
+            item.name: RecordChoices(
+                item.record_columns,
+                {
+                    choice.value: choice.record
+                    for choice in item.choices
+                    if choice.value is not None and choice.record is not None
+                },
+            )
+            for item in field_map.values()
+            if item.record_columns
+        }
+
+    record_views = record_catalog()
+
+    def record_width() -> int:
+        return max(1, min(96, app.output.get_size().columns) - 6)
+
+    def record_header() -> StyleAndTextTuples:
+        view = record_views.get(field)
+        return view.header(record_width()) if view is not None else []
+
+    def record_row_height() -> int:
+        view = record_views.get(field)
+        return view.row_height(record_width()) if view is not None else 2
+
+    def choice_cursor() -> Point:
+        if not record_mode():
+            return Point(0, choice_index)
+        gap = int(field in record_views and not compact_records())
+        return Point(0, choice_index * (record_row_height() + gap))
 
     def review_fields() -> list[InputField]:
         return [item for item in field_map.values() if item.advanced == expanded]
@@ -205,7 +263,13 @@ def build_input_form[Result](
             return [("class:description", "No matches. Clear the search or Esc cancel.")]
         width = max(1, min(96, app.output.get_size().columns) - 10)
         rows: StyleAndTextTuples = []
+        view = record_views.get(field)
         for index, choice in enumerate(candidates):
+            if view is not None and choice.value is not None:
+                if index and not compact_records():
+                    rows.append(("", "\n"))
+                rows.extend(view.row(choice.value, record_width(), selected=index == choice_index))
+                continue
             style = "class:selected" if index == choice_index else ""
             label = strip_terminal_controls(choice.label)
             if record_mode():
@@ -227,12 +291,14 @@ def build_input_form[Result](
                         + "\n",
                     )
                 )
+        if view is not None and rows and rows[-1][1] == "\n":
+            rows.pop()
         return rows
 
     selection = FormattedTextControl(
         choice_rows,
         focusable=True,
-        get_cursor_position=lambda: Point(0, choice_index * (2 if record_mode() else 1)),
+        get_cursor_position=choice_cursor,
     )
 
     def selected_record() -> InputChoice | None:
@@ -254,10 +320,14 @@ def build_input_form[Result](
             if compact_records() and choice.compact_summary
             else choice.summary
         )
-        lines = [
-            ("class:hint", f"ID: {choice.value or ''}"),
-            (f"class:{choice.summary_style}", summary),
-        ]
+        inline_id = (
+            mode == "choice"
+            and bool(record_header())
+            and any(column.header == "ID" for column in active_field().record_columns)
+        )
+        lines = [] if inline_id else [("class:hint", f"ID: {choice.value or ''}")]
+        if summary:
+            lines.append((f"class:{choice.summary_style}", summary))
         details = choice.compact_details if compact_records() else choice.details
         if compact_records() and app.output.get_size().rows < 16 and choice.minimal_details:
             details = choice.minimal_details
@@ -323,7 +393,7 @@ def build_input_form[Result](
 
     @keys.add("enter")
     def accept(event: KeyPressEvent) -> None:
-        nonlocal mode, expanded, error, row, field_map, choice_catalog
+        nonlocal mode, expanded, error, row, field_map, choice_catalog, record_views
         if mode != "summary":
             item = active_field()
             candidates = choices() if mode == "choice" else []
@@ -346,6 +416,7 @@ def build_input_form[Result](
             current[field] = value
             field_map = {item.name: item for item in fields(dict(current))}
             choice_catalog = search_catalog()
+            record_views = record_catalog()
             error = ""
             if submit_on_choice and mode == "choice":
                 create()
@@ -419,6 +490,10 @@ def build_input_form[Result](
             return [("bold", "More options" if expanded else heading)]
         item = active_field()
         if item.record_choices:
+            count = f"{len(choices())} of {len(item.choices)} items"
+            gap = record_width() - get_cwidth(item.label) - get_cwidth(count)
+            if record_count_visible() and gap >= 2:
+                return [("bold", item.label), ("class:hint", " " * gap + count)]
             return [("bold", item.label)]
         status = "required" if item.required else item.status or "optional"
         return [("bold", item.label), ("class:description", f" · {status}")]
@@ -435,7 +510,7 @@ def build_input_form[Result](
             return (
                 f"Enter {action} · Esc cancel"
                 if compact_records()
-                else f"Type to filter · ↑↓/Tab · Enter {action} · Esc cancel"
+                else f"↑↓/Tab move · Enter {action} · Esc cancel"
             )
         if mode == "summary":
             return "↑↓/Tab · Enter select · Esc " + ("back" if expanded else "cancel")
@@ -449,6 +524,20 @@ def build_input_form[Result](
             Window(height=Dimension(min=0, preferred=1, max=1)),
             filter=Condition(lambda: not compact_records()),
         )
+
+    def shortcut_text() -> StyleAndTextTuples:
+        if not record_mode():
+            return [("class:hint", hint())]
+        words = hint().split()
+        return [
+            (
+                "class:record-marker"
+                if word in {"↑↓/Tab", "Enter", "Esc"}
+                else "class:description",
+                word + (" " if index < len(words) - 1 else ""),
+            )
+            for index, word in enumerate(words)
+        ]
 
     def wrapped_rows(text: str) -> int:
         width = max(1, min(96, app.output.get_size().columns) - 6)
@@ -490,9 +579,9 @@ def build_input_form[Result](
         else:
             reserved = (
                 6
-                + int(record_count_visible())
+                + (1 if compact_records() else 2) * int(bool(record_header()))
                 + wrapped_rows(hint())
-                + (0 if compact_records() else 3)
+                + (0 if compact_records() else 4)
             )
         available = max(1, app.output.get_size().rows - reserved - error_height().min)
         return Dimension(min=min(count, available), preferred=count, max=count)
@@ -559,31 +648,29 @@ def build_input_form[Result](
                         ),
                     ),
                     ConditionalContainer(
+                        spacer(),
+                        filter=Condition(lambda: mode == "choice" and record_mode()),
+                    ),
+                    ConditionalContainer(
                         Window(
-                            FormattedTextControl(
-                                lambda: [
-                                    (
-                                        "class:hint",
-                                        f"{len(choices())} of {len(active_field().choices)}",
-                                    )
-                                ]
-                            ),
-                            height=1,
+                            FormattedTextControl(record_header),
+                            height=lambda: 1 if compact_records() else 2,
                         ),
-                        filter=Condition(
-                            lambda: mode == "choice" and record_mode() and record_count_visible()
-                        ),
+                        filter=Condition(lambda: mode == "choice" and bool(record_header())),
                     ),
                     ConditionalContainer(
                         Window(
                             selection,
                             height=lambda: (
-                                Dimension(min=2, max=8)
+                                Dimension(min=2, max=12)
                                 if record_mode()
                                 else Dimension(min=1, max=6)
                             ),
                             dont_extend_height=True,
                             wrap_lines=Condition(record_mode),
+                            scroll_offsets=ScrollOffsets(
+                                bottom=lambda: record_row_height() - 1 if record_mode() else 0
+                            ),
                         ),
                         filter=Condition(lambda: mode == "choice"),
                     ),
@@ -632,7 +719,7 @@ def build_input_form[Result](
                     ),
                     spacer(),
                     Window(
-                        FormattedTextControl(lambda: [("class:hint", hint())]),
+                        FormattedTextControl(shortcut_text),
                         height=shortcut_height,
                         wrap_lines=True,
                         dont_extend_height=True,
@@ -644,14 +731,25 @@ def build_input_form[Result](
             padding_right=2,
         ),
         title=title,
-        width=lambda: (
-            min(96, app.output.get_size().columns) if record_mode() else Dimension(max=96)
-        ),
+        width=lambda: min(96, app.output.get_size().columns),
     )
-    has_records = any(item.record_choices for item in field_map.values())
+
+    def frame_height() -> Dimension:
+        # CPR and earlier renders can reserve extra rows; keep paint inside the frame.
+        size = app.output.get_size()
+        height = frame.container.preferred_height(min(96, size.columns), size.rows).preferred
+        return Dimension(preferred=height, max=height)
+
     app: Application[Result | None] = Application(
         layout=Layout(
-            VSplit([frame, Window(width=Dimension(min=0, preferred=0))]) if has_records else frame,
+            HSplit(
+                [
+                    VSplit(
+                        [frame, Window(width=Dimension(min=0, preferred=0), height=0)],
+                        height=frame_height,
+                    )
+                ]
+            ),
             focused_element=summary,
         ),
         key_bindings=keys,

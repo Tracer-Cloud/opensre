@@ -5,12 +5,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from prompt_toolkit.application import Application
+from rich.text import Text
 
 from core.domain.work_items import WorkItem
 from infrastructure.scheduling.scheduler.loops import LoopSummary
+from infrastructure.terminal.theme import DIM, ERROR, SECONDARY
 from surfaces.shared.terminal.components.target_picker import TargetChoice, build_target_picker
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
 from surfaces.shared.terminal.tables.descriptions import description_details
+from surfaces.shared.terminal.tables.records import RecordColumn
 
 
 def _preview(description: str) -> tuple[str, ...]:
@@ -45,20 +48,36 @@ def build_loop_picker(
                 f"Full details: /loops show {loop.id}",
             ),
             search_text=" ".join((loop.description, loop.prompt, loop.cron, *loop.task_ids)),
-            summary_style="error" if loop.schedule_error else "hint",
+            summary_style="error" if loop.schedule_error else "description",
             compact_summary=f"{'Invalid' if loop.schedule_error else loop.mode.capitalize()} · TZ {loop.timezone}",
             compact_details=(f"Full details: /loops show {loop.id}",),
             minimal_details=("Full details: /loops show <id>",),
+            cells=(
+                Text(
+                    "Invalid" if loop.schedule_error else loop.status.capitalize(),
+                    style=str(ERROR if loop.schedule_error else SECONDARY),
+                ),
+                Text(loop.cron, style=str(SECONDARY)),
+                Text(loop.timezone, style=str(SECONDARY)),
+                Text(loop.id, style=str(DIM)),
+            ),
         )
         for loop in loops
     )
     return build_target_picker(
         choices,
         title=command,
-        heading=f"Choose a loop · {action_label}",
+        heading=action_label,
         action_label=action_label,
         confirmation=confirmation,
         compact_confirmation=compact_confirmation,
+        columns=(
+            RecordColumn("Name"),
+            RecordColumn("State"),
+            RecordColumn("Schedule"),
+            RecordColumn("TZ"),
+            RecordColumn("ID"),
+        ),
     )
 
 
@@ -70,19 +89,13 @@ def build_work_picker(
     confirmation: str = "",
 ) -> Application[str | None]:
     """Show durable work titles, stable IDs and relevant project context."""
+    show_project = any(item.project.strip() for item in items)
     choices = tuple(
         TargetChoice(
             value=item.id,
             title=item.title,
-            summary=" · ".join(
-                value
-                for value in (
-                    item.status.value.capitalize(),
-                    item.priority.value.capitalize(),
-                    f"Project {item.project}" if item.project else "",
-                )
-                if value
-            ),
+            summary=f"Status: {item.status.value.capitalize()}",
+            summary_style="warning" if item.status.value == "blocked" else "description",
             details=tuple(
                 value
                 for value in (
@@ -98,13 +111,28 @@ def build_work_picker(
             compact_summary=f"{item.status.value.capitalize()} · {item.priority.value.capitalize()}",
             compact_details=("Full titles: /work list all",),
             minimal_details=("Full titles: /work list all",),
+            cells=(
+                *(
+                    (Text(item.project.strip() or "None", style=str(SECONDARY)),)
+                    if show_project
+                    else ()
+                ),
+                Text(item.priority.value.capitalize(), style=str(SECONDARY)),
+                Text(item.id, style=str(DIM)),
+            ),
         )
         for item in items
     )
     return build_target_picker(
         choices,
         title=command,
-        heading=f"Choose a work item · {action_label}",
+        heading=action_label,
         action_label=action_label,
         confirmation=confirmation,
+        columns=(
+            RecordColumn("Title"),
+            *((RecordColumn("Project"),) if show_project else ()),
+            RecordColumn("Priority"),
+            RecordColumn("ID"),
+        ),
     )

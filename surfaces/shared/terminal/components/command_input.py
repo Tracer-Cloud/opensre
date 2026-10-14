@@ -17,13 +17,17 @@ def command_input_style() -> Style:
     """Use the active terminal theme for input surfaces."""
     return Style.from_dict(
         {
-            "": f"{theme.TEXT} bg:{theme.INPUT_SURFACE}",
+            "": str(theme.TEXT),
+            "frame": f"bg:{theme.INPUT_SURFACE}",
             "frame.border": str(theme.HIGHLIGHT),
             "frame.label": str(theme.HIGHLIGHT),
             "selected": f"{theme.TEXT} bg:{theme.menu_selection_hex()}",
+            "record-selected": f"bg:{theme.menu_selection_hex()}",
+            "record-marker": f"bold {theme.HIGHLIGHT}",
             "description": str(theme.SECONDARY),
             "hint": str(theme.DIM),
             "error": str(theme.ERROR),
+            "warning": str(theme.WARNING),
             "text-area": f"{theme.TEXT} bg:{theme.INPUT_SURFACE}",
         }
     )
