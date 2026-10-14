@@ -2335,6 +2335,15 @@ def test_extract_json_payload_preserves_outer_container_in_prose(payload: Any) -
     assert extract_json_payload(text) == payload
 
 
+def test_extract_json_payload_prefers_answer_object_over_separate_earlier_array() -> None:
+    from core.agent_harness.closed_llm_verdict import ClosedGoalVerdict
+
+    text = 'Checked items [1, 2].\n{"verdict":"GOAL_REACHED"}'
+    payload = extract_json_payload(text)
+
+    assert ClosedGoalVerdict.model_validate(payload).verdict == "GOAL_REACHED"
+
+
 def test_extract_json_payload_leading_fence() -> None:
     text = '```json\n{"a": 1}\n```'
     assert extract_json_payload(text) == {"a": 1}

@@ -138,8 +138,14 @@ def extract_json_payload(text: str) -> Any:
         for pattern in (r"\{.*\}", r"\[.*\]")
         if (match := re.search(pattern, cleaned, re.DOTALL)) is not None
     ]
-    # The outer container opens first; a list's object items are not envelopes.
-    for match in sorted(matches, key=lambda candidate: candidate.start()):
+    # Prefer an enclosing array, but keep objects ahead of unrelated prose lists.
+    if (
+        len(matches) == 2
+        and matches[1].start() < matches[0].start()
+        and matches[1].end() > matches[0].end()
+    ):
+        matches.reverse()
+    for match in matches:
         try:
             return safe_json_loads(match.group(0))
         except json.JSONDecodeError:
