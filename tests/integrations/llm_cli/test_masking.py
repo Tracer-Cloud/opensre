@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel, RootModel
 
 from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
-from core.llm.types import ToolCall
+from core.llm.types import ModelType, ToolCall
 from integrations.llm_cli.base import CLIInvocation, CLIProbe
 from integrations.llm_cli.copilot import CopilotAdapter
 from integrations.llm_cli.runner import CLIBackedLLMClient, _StreamedProcessResult
@@ -263,3 +263,19 @@ def test_quoted_non_json_answers_restore_as_plain_text(
     monkeypatch.setattr("integrations.llm_cli.runner.subprocess.run", run)
     response = CLIBackedLLMClient(adapter).invoke(EMAIL)
     assert response.content == output.replace("<EMAIL_0>", EMAIL)
+
+
+@pytest.mark.parametrize("model_type", [ModelType.REASONING, ModelType.TOOLCALL])
+def test_same_quoted_reply_uses_the_requested_response_format(
+    adapter: CopilotAdapter, monkeypatch: pytest.MonkeyPatch, model_type: ModelType
+) -> None:
+    identifier = 'private"value\\path'
+    monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", json.dumps({"custom": r'private"value\\path'}))
+    output = json.dumps("<CUSTOM_0>")
+    run = MagicMock(return_value=MagicMock(returncode=0, stdout=output, stderr=""))
+    monkeypatch.setattr("integrations.llm_cli.runner.subprocess.run", run)
+    client = CLIBackedLLMClient(adapter, model_type=model_type)
+    structured = client.with_structured_output(RootModel[str]).invoke(identifier)
+    assert structured.root == identifier
+    plain = client.invoke(identifier)
+    assert plain.content == f'"{identifier}"'

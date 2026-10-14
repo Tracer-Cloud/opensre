@@ -36,7 +36,7 @@ from integrations.llm_cli.errors import (
     CLIInterruptedError,
     CLITimeoutError,
 )
-from integrations.llm_cli.masking import unmask_cli_response
+from integrations.llm_cli.masking import CLIResponseFormat, unmask_cli_response
 from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
 from integrations.llm_cli.text import flatten_messages_to_prompt
 
@@ -99,6 +99,14 @@ class _StreamedProcessResult:
     emitted: bool
 
 
+@dataclass(frozen=True)
+class _StructuredCLIClient:
+    client: CLIBackedLLMClient
+
+    def invoke(self, prompt: str) -> LLMResponse:
+        return self.client._invoke(prompt, response_format="json")
+
+
 class CLIBackedLLMClient:
     """Drives any `LLMCLIAdapter` with a single non-interactive subprocess call per invoke."""
 
@@ -139,7 +147,7 @@ class CLIBackedLLMClient:
 
     def with_structured_output(self, model: type[BaseModel]) -> Any:
         """JSON-schema prompt + parse; same contract as API `StructuredOutputClient`."""
-        return StructuredOutputClient(self, model)
+        return StructuredOutputClient(_StructuredCLIClient(self), model)
 
     def _prepare_invocation(self, prompt_or_messages: Any) -> _PreparedInvocation:
         # max_tokens is stored for API parity but ignored here: CLI adapters
@@ -205,6 +213,7 @@ class CLIBackedLLMClient:
         auth_probe_unclear: bool,
         auth_probe_detail: str,
         masker: MaskingRules | None = None,
+        response_format: CLIResponseFormat = "text",
     ) -> LLMResponse:
         out = _strip_ansi(stdout or "")
         err = _strip_ansi(stderr or "")
@@ -277,15 +286,21 @@ class CLIBackedLLMClient:
         )
         return LLMResponse(
             content=(
-                unmask_cli_response(
-                    content, masker, tool_calls=_is_toolcall_model_type(self._model_type)
-                )
+                unmask_cli_response(content, masker, response_format=response_format)
                 if masker is not None
                 else content
             )
         )
 
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        response_format: CLIResponseFormat = (
+            "tool_calls" if _is_toolcall_model_type(self._model_type) else "text"
+        )
+        return self._invoke(prompt_or_messages, response_format=response_format)
+
+    def _invoke(
+        self, prompt_or_messages: Any, *, response_format: CLIResponseFormat
+    ) -> LLMResponse:
         prepared = self._prepare_invocation(prompt_or_messages)
         invocation = prepared.invocation
 
@@ -330,6 +345,7 @@ class CLIBackedLLMClient:
                 auth_probe_unclear=prepared.auth_probe_unclear,
                 auth_probe_detail=prepared.auth_probe_detail,
                 masker=prepared.masker,
+                response_format=response_format,
             )
 
         raise CLITimeoutError(f"{self._adapter.name} reported repeated temporary failures.")
