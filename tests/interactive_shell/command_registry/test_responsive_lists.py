@@ -7,11 +7,93 @@ import io
 import pytest
 from rich.cells import cell_len
 from rich.console import Console
+from rich.text import Text
 
 from core.domain.work_items import WorkItem, WorkItemPriority, WorkItemStatus
 from infrastructure.scheduling.task_types import TaskKind
 from surfaces.interactive_shell.command_registry import tasks_cmds, work_cmds
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.work_list import work_list_panel
+from surfaces.shared.terminal.tables.work_items import work_items_table
+
+
+@pytest.mark.parametrize("width", [40, 90, 160])
+def test_interactive_work_list_has_bounded_content_height_frame(width: int) -> None:
+    item = WorkItem(
+        id="work-item-123456789abcdef",
+        title="[bold]Checkout 日本 reliability[/bold]",
+        project="platform-services",
+        priority=WorkItemPriority.URGENT,
+        status=WorkItemStatus.BLOCKED,
+        due_at="2026-10-09T14:00:00+05:30",
+    )
+    output = io.StringIO()
+    console = Console(file=output, width=width, height=80, force_terminal=True)
+    work_cmds._render_work_table(console, [item], title="Work items")
+    text = Text.from_ansi(output.getvalue()).plain
+    lines = text.splitlines()
+    assert lines[0].startswith("┌") and "/work list" in lines[0]
+    assert lines[-1].startswith("└")
+    assert all(cell_len(line) == min(width, 96) for line in lines)
+    assert len(lines) < 25
+    assert f"ID: {item.id}" in text
+    assert "[bold]" in text and "[/bold]" in text and "日本" in text
+    assert "platform-services" in text and "Blocked" in text
+    assert "08:30:00" in text and "UTC" in text
+    assert "Search" not in text and "Esc" not in text
+
+
+def test_work_list_pipe_keeps_existing_plain_output() -> None:
+    item = WorkItem(
+        id="work-123",
+        title="Verify rollout",
+        status=WorkItemStatus.OPEN,
+        priority=WorkItemPriority.NORMAL,
+    )
+    output = io.StringIO()
+    console = Console(file=output, width=160, force_terminal=False)
+    work_cmds._render_work_table(console, [item], title="Work items")
+    expected = io.StringIO()
+    Console(file=expected, width=160).print(work_items_table([item]))
+    assert output.getvalue() == expected.getvalue()
+
+
+def test_work_list_panel_reflows_on_replay_and_keeps_header_alignment() -> None:
+    item = WorkItem(
+        id="work-replay-123",
+        title="Verify rollout",
+        status=WorkItemStatus.BLOCKED,
+        priority=WorkItemPriority.URGENT,
+        project="payments",
+    )
+    panel = work_list_panel([item], title="Work items")
+    for width in (160, 40, 90):
+        output = io.StringIO()
+        Console(file=output, width=width, color_system=None).print(panel)
+        text = output.getvalue()
+        assert "ID: work-replay-123" in text
+        assert ("State:" in text) == (width == 40)
+        assert max(cell_len(line) for line in text.splitlines()) == min(width, 96)
+        if width != 40:
+            header = next(line for line in text.splitlines() if "Project" in line)
+            row = next(line for line in text.splitlines() if "Verify rollout" in line)
+            for label, value in (
+                ("Project", "payments"),
+                ("State", "Blocked"),
+                ("Priority", "Urgent"),
+            ):
+                assert header.index(label) == row.index(value)
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_work_list_empty_keeps_add_hint_in_compact_frame(interactive: bool) -> None:
+    output = io.StringIO()
+    console = Console(file=output, width=160, height=80, force_terminal=interactive)
+    work_cmds._render_work_table(console, [], title="Work items")
+    text = Text.from_ansi(output.getvalue()).plain
+    assert "no matching work items." in text and "/work add <title>" in text
+    assert ("┌" in text) is interactive
+    assert len(text.splitlines()) <= 5
 
 
 @pytest.mark.parametrize("width", [40, 80, 120])

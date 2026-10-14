@@ -28,6 +28,7 @@ from surfaces.interactive_shell.ui import (
     HIGHLIGHT,
 )
 from surfaces.interactive_shell.ui.work_input import build_work_form
+from surfaces.interactive_shell.ui.work_list import work_list_panel
 from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.rendering import print_repl_renderable
 from surfaces.shared.terminal.tables.work_items import next_work_table, work_items_table
@@ -80,6 +81,9 @@ def _split_options(args: list[str]) -> tuple[list[str], dict[str, str], str | No
 
 
 def _render_work_table(console: Console, rows: Sequence[WorkItem], *, title: str) -> bool:
+    if console.is_terminal:
+        print_repl_renderable(console, work_list_panel(rows, title=title))
+        return True
     if not rows:
         console.print(
             f"[{DIM}]no matching work items. Add one with[/] [{HIGHLIGHT}]/work add <title>[/][{DIM}].[/]"
