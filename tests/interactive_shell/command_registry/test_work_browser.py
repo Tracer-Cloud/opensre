@@ -88,7 +88,7 @@ def test_work_browser_filters_records_and_enter_never_submits(
         ("/work list", True, False, False),
     ],
 )
-def test_work_browser_dispatch_preserves_filters_and_noninteractive_fallback(
+def test_work_browser_dispatch_closes_without_reprinting_and_preserves_fallback(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     command: str,
@@ -117,7 +117,9 @@ def test_work_browser_dispatch_preserves_filters_and_noninteractive_fallback(
     console = Console(file=output, width=90, force_terminal=True, color_system=None)
     assert dispatch_slash(command, session, console, is_tty=tty)
     assert bool(browsed) is expected_browser
-    assert ("┌" in output.getvalue()) is expected_browser
-    assert first.id in output.getvalue()
-    assert (second.id in output.getvalue()) is ("Payments" not in command)
+    rendered = output.getvalue()
+    assert (rendered == "") is expected_browser
+    assert ("Work items" in rendered) is not expected_browser
+    assert (first.id in rendered) is not expected_browser
+    assert (second.id in rendered) is (not expected_browser and "Payments" not in command)
     assert work_items_path().read_bytes() == before
