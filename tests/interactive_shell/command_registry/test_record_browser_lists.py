@@ -63,7 +63,7 @@ def _wide_record_table() -> RecordTable:
 
 @pytest.mark.parametrize("command", ["/memory list", "/loops list", "/cron list", "/tasks"])
 @pytest.mark.parametrize("interactive", [True, False])
-def test_record_lists_share_browser_and_keep_full_output(
+def test_record_lists_use_browser_without_reprinting_on_close(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: str, interactive: bool
 ) -> None:
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
@@ -120,11 +120,14 @@ def test_record_lists_share_browser_and_keep_full_output(
     expected = (
         "prod-cluster" if "memory" in command else task.task_id if command == "/tasks" else loop.id
     )
-    assert expected in output.getvalue()
-    if command == "/tasks":
-        assert "[literal] unavailable" in output.getvalue()
-    if "memory" in command:
-        assert "unencrypted" in output.getvalue()
+    if interactive:
+        assert expected not in output.getvalue()
+    else:
+        assert expected in output.getvalue()
+        if command == "/tasks":
+            assert "[literal] unavailable" in output.getvalue()
+        if "memory" in command:
+            assert "unencrypted" in output.getvalue()
 
 
 def test_forced_color_redirected_output_never_opens_browser(
@@ -242,25 +245,44 @@ def test_compact_browser_shows_the_detail_that_matched_search() -> None:
     assert len(frames) == 2
 
 
+def _render_browser(table: RecordTable, *, width: int, title: str) -> str:
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=30, columns=width)
+
+    frames: list[str] = []
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=SizedOutput()):
+        app = record_browser.build_record_browser(table, title=title)
+
+        def capture(_app: Application[None]) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or frames:
+                return
+            frames.append(
+                "\n".join(
+                    "".join(screen.data_buffer[y][x].char for x in range(width))
+                    for y in range(screen.height)
+                )
+            )
+            pipe.send_text("\x03")
+
+        app.after_render += capture
+        assert app.run() is None
+    assert len(frames) == 1
+    return frames[0]
+
+
 @pytest.mark.parametrize(("width", "expect_columns"), [(40, False), (90, False), (160, True)])
-def test_record_list_uses_available_space_before_stacking(
-    monkeypatch: pytest.MonkeyPatch, width: int, expect_columns: bool
+def test_record_browser_uses_available_space_before_stacking(
+    width: int, expect_columns: bool
 ) -> None:
-    monkeypatch.setenv("COLUMNS", str(width))
-    monkeypatch.setattr(record_browser, "run_command_input", lambda _app: None)
-    output = io.StringIO()
-    record_browser.print_record_list(
-        Console(file=output, width=width, force_terminal=True),
-        _wide_record_table(),
-        title="/cron list",
-        browse=True,
-    )
-    text = Text.from_ansi(output.getvalue()).plain
+    text = _render_browser(_wide_record_table(), width=width, title="/cron list")
     lines = text.splitlines()
-    frame_width = cell_len(lines[0])
-    assert frame_width <= width
+    border = next(line for line in lines if line.startswith("┌"))
+    frame_width = cell_len(border.rstrip())
+    assert frame_width < width
     if expect_columns:
-        assert 96 < frame_width < width
+        assert frame_width > 96
         header = next(line for line in lines if "Channel" in line)
         assert all(label in header for label in ("Task", "State", "Schedule", "TZ", "Next run"))
         assert "Channel:" not in text
@@ -268,73 +290,24 @@ def test_record_list_uses_available_space_before_stacking(
         assert "Channel:" in text and "Next run:" in text
 
 
-def test_compact_record_list_stays_bounded_on_wide_terminal(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("COLUMNS", "160")
-    monkeypatch.setattr(record_browser, "run_command_input", lambda _app: None)
+def test_compact_record_browser_stays_bounded_on_wide_terminal() -> None:
     table = RecordTable(
         "Memories",
         (RecordColumn("Name"), RecordColumn("Type")),
         (RecordRow((Text("prod-cluster"), Text("infrastructure"))),),
     )
-    output = io.StringIO()
-    record_browser.print_record_list(
-        Console(file=output, width=160, force_terminal=True),
-        table,
-        title="/memory list",
-        browse=True,
-    )
-    assert cell_len(Text.from_ansi(output.getvalue()).plain.splitlines()[0]) == 96
+    text = _render_browser(table, width=160, title="/memory list")
+    border = next(line for line in text.splitlines() if line.startswith("┌"))
+    assert cell_len(border.rstrip()) == 96
 
 
-def test_oversized_record_list_caps_at_terminal_and_reflows(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("COLUMNS", "160")
-    monkeypatch.setattr(record_browser, "run_command_input", lambda _app: None)
+def test_oversized_record_browser_caps_before_terminal_edge_and_reflows() -> None:
     table = RecordTable(
         "Records",
         (RecordColumn("Name"), RecordColumn("Detail")),
         (RecordRow((Text("audit"), Text("long detail " * 30))),),
     )
-    output = io.StringIO()
-    record_browser.print_record_list(
-        Console(file=output, width=160, force_terminal=True),
-        table,
-        title="/records",
-        browse=True,
-    )
-    text = Text.from_ansi(output.getvalue()).plain
-    assert max(cell_len(line) for line in text.splitlines()) <= 160
+    text = _render_browser(table, width=160, title="/records")
+    border = next(line for line in text.splitlines() if line.startswith("┌"))
+    assert cell_len(border.rstrip()) == 159
     assert "Detail:" in text
-
-
-def test_dense_record_browser_uses_wide_columns_when_space_is_available() -> None:
-    class WideOutput(DummyOutput):
-        def get_size(self) -> Size:
-            return Size(rows=30, columns=160)
-
-    output = WideOutput()
-    frames: list[str] = []
-    with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
-        app = record_browser.build_record_browser(_wide_record_table(), title="/cron list")
-
-        def capture(_app: Application[None]) -> None:
-            screen = app.renderer.last_rendered_screen
-            if screen is None or frames:
-                return
-            content = "\n".join(
-                "".join(screen.data_buffer[y][x].char for x in range(160))
-                for y in range(screen.height)
-            )
-            header = next(line for line in content.splitlines() if "Channel" in line)
-            assert all(label in header for label in ("Task", "State", "Schedule", "TZ", "Next run"))
-            border = next(line for line in content.splitlines() if line.startswith("┌"))
-            assert 96 < cell_len(border.rstrip()) < 160
-            frames.append(content)
-            pipe.send_text("\x1b")
-
-        app.after_render += capture
-        assert app.run() is None
-    assert len(frames) == 1

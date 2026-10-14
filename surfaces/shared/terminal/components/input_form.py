@@ -28,7 +28,7 @@ from rich.text import Text
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.shared.terminal.components.command_input import command_input_style
 from surfaces.shared.terminal.components.record_choices import RecordChoices
-from surfaces.shared.terminal.prompt_layout import clip_prompt_text
+from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_line_width
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow
 
 _RECORD_DETAIL_PREVIEW_WIDTH = 120
@@ -186,7 +186,7 @@ def build_input_form[Result](
     record_views = record_catalog()
 
     def frame_width() -> int:
-        return min(max(1, max_width), app.output.get_size().columns)
+        return min(max(1, max_width), prompt_line_width(app.output.get_size().columns))
 
     def record_width() -> int:
         return max(1, frame_width() - 6)
@@ -565,7 +565,10 @@ def build_input_form[Result](
                 else f"↑↓/Tab move · Enter {action} · Esc cancel"
             )
         if mode == "summary":
-            return "↑↓/Tab · Enter select · Esc " + ("back" if expanded else "cancel")
+            destination = "back" if expanded else "cancel"
+            if frame_width() < 40:
+                return f"↑↓/Tab · Enter · Esc {destination}"
+            return f"↑↓/Tab · Enter select · Esc {destination}"
         if mode == "choice":
             prefix = "Type to filter · " if active_field().searchable else ""
             return prefix + "↑↓ choose · Enter select · Esc back"

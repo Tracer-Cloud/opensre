@@ -202,7 +202,7 @@ def test_submission_error_keeps_actions_and_shortcuts_on_short_terminal(message:
     assert len(frames[-1]) <= 12
     assert "Save changes" in rendered and "Cancel" in rendered
     assert "Esc cancel" in rendered
-    assert message.rsplit(" ", 1)[-1] in rendered
+    assert message.rsplit(" ", 1)[-1].rstrip(".") in rendered
 
 
 def test_form_bounds_background_through_text_choice_review_and_validation() -> None:
@@ -261,3 +261,35 @@ def test_form_bounds_background_through_text_choice_review_and_validation() -> N
     assert "Synthetic loop" in content and "agent" in content
     assert "Review the delivery settings before saving." in content
     assert "Create loop" in content and "Esc cancel" in content
+
+
+def test_form_leaves_last_terminal_column_clear_for_resize_repaints() -> None:
+    class NarrowOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=30, columns=60)
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=NarrowOutput()):
+        app = build_input_form(
+            {"name": "audit"},
+            title="/records",
+            heading="Records",
+            submit_label="Close",
+            fields=lambda _values: [InputField("name", "Name")],
+            validate=lambda _values: None,
+            max_width=120,
+        )
+        screens: list[Screen] = []
+
+        def capture(_app: Application[None]) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is not None and not screens:
+                screens.append(screen)
+                pipe.send_text("\x03")
+
+        app.after_render += capture
+        assert app.run() is None
+
+    assert len(screens) == 1
+    top = screens[0].data_buffer[0]
+    assert top[58].char == "┐"
+    assert top[59].char == " "

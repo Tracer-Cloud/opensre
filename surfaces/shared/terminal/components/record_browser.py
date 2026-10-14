@@ -64,9 +64,10 @@ def build_record_browser(table: RecordTable, *, title: str) -> Application[None]
 def print_record_list(
     console: Console, table: RecordTable, *, title: str, browse: bool = False
 ) -> None:
-    """Optionally browse, then retain the full records in the transcript."""
+    """Browse interactively, or render the complete static list when non-interactive."""
     if browse and table.rows:
         run_command_input(build_record_browser(table, title=title))
+        return
     renderable = (
         Panel(
             table,
