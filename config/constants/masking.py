@@ -1,0 +1,13 @@
+"""Identifier masking environment variable names."""
+
+from __future__ import annotations
+
+OPENSRE_MASK_ENABLED_ENV = "OPENSRE_MASK_ENABLED"
+OPENSRE_MASK_KINDS_ENV = "OPENSRE_MASK_KINDS"
+OPENSRE_MASK_EXTRA_REGEX_ENV = "OPENSRE_MASK_EXTRA_REGEX"
+
+__all__ = [
+    "OPENSRE_MASK_ENABLED_ENV",
+    "OPENSRE_MASK_EXTRA_REGEX_ENV",
+    "OPENSRE_MASK_KINDS_ENV",
+]

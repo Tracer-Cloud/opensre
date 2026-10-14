@@ -10,6 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel, RootModel
 
+from config.constants.masking import (
+    OPENSRE_MASK_ENABLED_ENV,
+    OPENSRE_MASK_EXTRA_REGEX_ENV,
+    OPENSRE_MASK_KINDS_ENV,
+)
 from core.agent_harness.session import memory_extraction
 from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
 from core.llm.types import ModelType, ToolCall
@@ -27,7 +32,7 @@ def test_memory_extraction_restores_json_identifiers(
     adapter: CopilotAdapter, monkeypatch: pytest.MonkeyPatch, bare_list: bool
 ) -> None:
     identifier = 'private"value\\path'
-    monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", json.dumps({"custom": re.escape(identifier)}))
+    monkeypatch.setenv(OPENSRE_MASK_EXTRA_REGEX_ENV, json.dumps({"custom": re.escape(identifier)}))
     memories = [{"content": "<CUSTOM_0>"}, "ignored malformed item"]
     payload = memories if bare_list else {"memories": memories, "session_summary": "<CUSTOM_0>"}
     run = MagicMock(return_value=MagicMock(returncode=0, stdout=json.dumps(payload), stderr=""))
@@ -47,9 +52,9 @@ def test_memory_extraction_restores_json_identifiers(
 
 @pytest.fixture
 def adapter(monkeypatch: pytest.MonkeyPatch) -> CopilotAdapter:
-    monkeypatch.setenv("OPENSRE_MASK_ENABLED", "true")
-    monkeypatch.setenv("OPENSRE_MASK_KINDS", "")
-    monkeypatch.delenv("OPENSRE_MASK_EXTRA_REGEX", raising=False)
+    monkeypatch.setenv(OPENSRE_MASK_ENABLED_ENV, "true")
+    monkeypatch.setenv(OPENSRE_MASK_KINDS_ENV, "")
+    monkeypatch.delenv(OPENSRE_MASK_EXTRA_REGEX_ENV, raising=False)
     monkeypatch.setattr(
         "infrastructure.safety.guardrails.apply.apply_guardrails_to_text", lambda text: text
     )
@@ -68,7 +73,7 @@ def adapter(monkeypatch: pytest.MonkeyPatch) -> CopilotAdapter:
 def test_prepared_prompt_masks_identifiers_only_when_enabled(
     adapter: CopilotAdapter, monkeypatch: pytest.MonkeyPatch, enabled: bool, stdin: bool
 ) -> None:
-    monkeypatch.setenv("OPENSRE_MASK_ENABLED", str(enabled))
+    monkeypatch.setenv(OPENSRE_MASK_ENABLED_ENV, str(enabled))
     if stdin:
 
         def build_stdin(**kwargs: object) -> CLIInvocation:
@@ -183,7 +188,7 @@ def test_restored_custom_identifier_keeps_tool_json_valid(
     adapter: CopilotAdapter, monkeypatch: pytest.MonkeyPatch, encoded_arguments: bool
 ) -> None:
     identifier = 'private"value\\path'
-    monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", json.dumps({"custom": r'private"value\\path'}))
+    monkeypatch.setenv(OPENSRE_MASK_EXTRA_REGEX_ENV, json.dumps({"custom": r'private"value\\path'}))
     arguments = {"value": "<CUSTOM_0>", "query": '"<CUSTOM_0>"'}
     output = json.dumps(
         {
@@ -252,7 +257,7 @@ def test_structured_output_restores_top_level_json_string(
     adapter: CopilotAdapter, monkeypatch: pytest.MonkeyPatch, fenced: bool
 ) -> None:
     identifier = 'private"value\\path'
-    monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", json.dumps({"custom": r'private"value\\path'}))
+    monkeypatch.setenv(OPENSRE_MASK_EXTRA_REGEX_ENV, json.dumps({"custom": r'private"value\\path'}))
     output = json.dumps("<CUSTOM_0>")
     if fenced:
         output = f"```json\n{output}\n```"
@@ -269,7 +274,7 @@ def test_structured_output_restores_quoted_text_without_extra_escaping(
         query: str
 
     identifier = 'private"value\\path'
-    monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", json.dumps({"custom": r'private"value\\path'}))
+    monkeypatch.setenv(OPENSRE_MASK_EXTRA_REGEX_ENV, json.dumps({"custom": r'private"value\\path'}))
     output = json.dumps({"query": '"<CUSTOM_0>"'})
     run = MagicMock(return_value=MagicMock(returncode=0, stdout=output, stderr=""))
     monkeypatch.setattr("integrations.llm_cli.runner.subprocess.run", run)
@@ -295,7 +300,7 @@ def test_same_quoted_reply_uses_the_requested_response_format(
     adapter: CopilotAdapter, monkeypatch: pytest.MonkeyPatch, model_type: ModelType
 ) -> None:
     identifier = 'private"value\\path'
-    monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", json.dumps({"custom": r'private"value\\path'}))
+    monkeypatch.setenv(OPENSRE_MASK_EXTRA_REGEX_ENV, json.dumps({"custom": r'private"value\\path'}))
     output = json.dumps("<CUSTOM_0>")
     run = MagicMock(return_value=MagicMock(returncode=0, stdout=output, stderr=""))
     monkeypatch.setattr("integrations.llm_cli.runner.subprocess.run", run)
