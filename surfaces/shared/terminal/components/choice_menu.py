@@ -86,16 +86,27 @@ def repl_tty_interactive() -> bool:
 
 
 def console_output_is_tty(console: Console) -> bool:
-    """True when this console is a live terminal, including an explicit force.
+    """True when this console's effective destination is a live terminal.
 
     ``Console.is_terminal`` is also true when color is forced, including
     ``FORCE_COLOR=0``, so a redirected buffer would otherwise open a picker.
-    An explicit ``force_terminal`` still wins, which is how a caller opts in.
+    A delegating console inherits the destination's decision rather than its
+    own derived force flag. An explicit force on the destination still wins,
+    which is how a caller opts in.
     """
-    forced = console._force_terminal
+    destination = console
+    seen = {id(destination)}
+    while True:
+        delegated = getattr(destination, "_output", None)
+        if not isinstance(delegated, Console) or id(delegated) in seen:
+            break
+        destination = delegated
+        seen.add(id(destination))
+
+    forced = destination._force_terminal
     if forced is not None:
         return bool(forced)
-    isatty = getattr(console.file, "isatty", None)
+    isatty = getattr(destination.file, "isatty", None)
     if not callable(isatty):
         return False
     try:

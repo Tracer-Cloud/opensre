@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import threading
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,16 @@ from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, T
 from infrastructure.scheduling.task_types import TaskKind as RuntimeTaskKind
 from surfaces.interactive_shell.command_registry import cron_cmds, dispatch_slash, input_collection
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.shared.terminal.components import record_browser
+
+
+class _Spinner:
+    bytes_in = 0
+    streaming = False
+
+    def stop(self) -> None:
+        """Satisfy the streaming-console progress contract."""
 
 
 @pytest.mark.parametrize("command", ["/memory list", "/loops list", "/cron list", "/tasks"])
@@ -101,8 +111,14 @@ def test_forced_color_redirected_output_never_opens_browser(
 
     monkeypatch.setattr(record_browser, "run_command_input", unexpected_browser)
     output = io.StringIO()
-    console = Console(file=output, width=90)
-    assert console.is_terminal
+    destination = Console(file=output, width=90)
+    assert destination.is_terminal
+    console = StreamingConsole(
+        _Spinner(),
+        threading.Event(),
+        output=destination,
+        force_terminal=destination.is_terminal,
+    )
     assert dispatch_slash("/tasks", session, console, is_tty=True)
     assert task.task_id in output.getvalue()
     assert "┌" not in output.getvalue()
