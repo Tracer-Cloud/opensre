@@ -20,6 +20,8 @@ _logger = logging.getLogger(__name__)
 def print_loop_schedules(
     console: Console,
     loops: Sequence[LoopSummary],
+    *,
+    browse: bool = False,
 ) -> None:
     """Keep schedules inspectable even when retained run history is unavailable."""
     history_available = True
@@ -32,4 +34,4 @@ def print_loop_schedules(
         console.print(
             Text("Run history unavailable; showing schedule configuration.", style=WARNING)
         )
-    print_schedules(console, loops, latest, history_available=history_available)
+    print_schedules(console, loops, latest, history_available=history_available, browse=browse)

@@ -15,6 +15,7 @@ from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import TaskRun, TaskStatus
 from infrastructure.terminal.markdown import ReplyMarkdown, UnpaddedRows
 from infrastructure.terminal.theme import BOLD_BRAND, DIM, ERROR, HIGHLIGHT, WARNING
+from surfaces.shared.terminal.components.record_browser import print_record_list
 from surfaces.shared.terminal.components.rendering import (
     print_repl_renderable,
 )
@@ -118,6 +119,7 @@ def render_loops(
     *,
     now: datetime | None = None,
     local_timezone: tzinfo | None = None,
+    browse: bool = False,
 ) -> None:
     """Show schedule records with purpose, latest findings and full-report navigation."""
     timestamp = now or datetime.now(UTC)
@@ -161,7 +163,7 @@ def render_loops(
                 metadata=(Text(f"ID: {loop.id}", style=DIM),),
             )
         )
-    print_repl_renderable(
+    print_record_list(
         console,
         RecordTable(
             "Loops",
@@ -177,6 +179,8 @@ def render_loops(
             subtitle="Next run: local time · TZ: schedule timezone",
             caption="/loops show <name-or-id> — full reports and configuration",
         ),
+        title="/loops list",
+        browse=browse,
     )
 
 

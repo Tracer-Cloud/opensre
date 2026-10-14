@@ -10,7 +10,10 @@ from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_H
 from core.agent_harness.tools import capability_values
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_TIME_PARAM
 from infrastructure.scheduling.scheduler.types import DeliveryStatus, TaskRun
-from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
+from surfaces.interactive_shell.command_registry.input_collection import (
+    can_browse_records,
+    can_collect_input,
+)
 from surfaces.interactive_shell.command_registry.target_collection import collect_loop_target
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
@@ -233,7 +236,9 @@ def _cmd_loops_list(session: Session, console: Console, args: list[str]) -> bool
             )
         return True
 
-    render_loops(console, loops, latest_loop_runs(loops))
+    render_loops(
+        console, loops, latest_loop_runs(loops), browse=can_browse_records(session, console)
+    )
     return True
 
 

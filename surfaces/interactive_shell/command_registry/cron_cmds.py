@@ -12,6 +12,7 @@ from core.agent_harness.spi.session_state import exclusive_stdin_active, session
 from infrastructure.scheduling.scheduler.loops import list_loop_summaries
 from infrastructure.terminal.theme import DIM
 from surfaces.interactive_shell.command_registry.cron_input import collect_cron_add
+from surfaces.interactive_shell.command_registry.input_collection import can_browse_records
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.cron_input.arguments import cron_add_needs_input
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
@@ -71,7 +72,7 @@ def cmd_cron(
         if not loops:
             console.print(f"[{DIM}]No scheduled tasks configured.[/]")
         else:
-            print_loop_schedules(console, loops)
+            print_loop_schedules(console, loops, browse=can_browse_records(session, console))
         return True
     if len(args) >= 2 and args[0].lower() == "run":
         return run_cli(

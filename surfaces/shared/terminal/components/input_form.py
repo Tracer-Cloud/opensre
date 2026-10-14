@@ -89,8 +89,9 @@ def build_input_form[Result](
     focus_submit_on_choice: bool = False,
     confirmation: str = "",
     compact_confirmation: str = "",
+    browse_only: bool = False,
 ) -> Application[Result | None]:
-    """Validate after submission or opted-in choice acceptance without persisting a draft."""
+    """Validate accepted drafts; browse-only views never accept or submit values."""
     current = dict(values)
     field_map = {item.name: item for item in fields(dict(current))}
     row = 0
@@ -123,7 +124,7 @@ def build_input_form[Result](
                     choice,
                     " ".join(
                         (
-                            choice.value or "",
+                            (choice.value or "") if not browse_only else "",
                             choice.label,
                             choice.summary,
                             *choice.details,
@@ -260,7 +261,8 @@ def build_input_form[Result](
     def choice_rows() -> StyleAndTextTuples:
         candidates = choices()
         if record_mode() and not candidates:
-            return [("class:description", "No matches. Clear the search or Esc cancel.")]
+            close = "close" if browse_only else "cancel"
+            return [("class:description", f"No matches. Clear the search or Esc {close}.")]
         width = max(1, min(96, app.output.get_size().columns) - 10)
         rows: StyleAndTextTuples = []
         view = record_views.get(field)
@@ -325,7 +327,14 @@ def build_input_form[Result](
             and bool(record_header())
             and any(column.header == "ID" for column in active_field().record_columns)
         )
-        lines = [] if inline_id else [("class:hint", f"ID: {choice.value or ''}")]
+        if browse_only and choice.record is not None:
+            lines = [(str(line.style), line.plain) for line in choice.record.metadata]
+            if not compact_records():
+                detail = next((line for line in choice.record.details if line.plain.strip()), None)
+                if detail is not None:
+                    lines.append((str(detail.style), clip_prompt_text(detail.plain, 120)))
+        else:
+            lines = [] if inline_id else [("class:hint", f"ID: {choice.value or ''}")]
         if summary:
             lines.append((f"class:{choice.summary_style}", summary))
         details = choice.compact_details if compact_records() else choice.details
@@ -377,6 +386,8 @@ def build_input_form[Result](
 
     def create() -> None:
         nonlocal error
+        if browse_only:
+            return
         try:
             for item in field_map.values():
                 if item.required and not current[item.name].strip():
@@ -394,6 +405,8 @@ def build_input_form[Result](
     @keys.add("enter")
     def accept(event: KeyPressEvent) -> None:
         nonlocal mode, expanded, error, row, field_map, choice_catalog, record_views
+        if browse_only:
+            return
         if mode != "summary":
             item = active_field()
             candidates = choices() if mode == "choice" else []
@@ -500,6 +513,8 @@ def build_input_form[Result](
 
     def hint() -> str:
         if record_mode():
+            if browse_only:
+                return "↑↓/Tab move · Esc close"
             if mode == "summary":
                 return (
                     "Enter confirm · Esc back"

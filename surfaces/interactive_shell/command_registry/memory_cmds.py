@@ -15,6 +15,7 @@ from core.domain.memory import (
     memory_path,
     slugify,
 )
+from surfaces.interactive_shell.command_registry.input_collection import can_browse_records
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -31,7 +32,7 @@ def _disabled_notice(console: Console) -> bool:
     return True
 
 
-def _show_list(console: Console) -> bool:
+def _show_list(session: Session, console: Console) -> bool:
     from core.domain.memory import ensure_memory_store
 
     ensure_memory_store()
@@ -43,7 +44,7 @@ def _show_list(console: Console) -> bool:
         )
         return True
 
-    render_memories(console, records)
+    render_memories(console, records, browse=can_browse_records(session, console))
     console.print(
         f"[{DIM}]stored unencrypted ·[/] [{HIGHLIGHT}]/memory path[/] "
         f"[{DIM}]·[/] [{HIGHLIGHT}]/memory forget <name>[/]"
@@ -91,11 +92,11 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  #
     if not memory_enabled():
         return _disabled_notice(console)
     if not args:
-        return _show_list(console)
+        return _show_list(session, console)
 
     sub = args[0].lower()
     if sub == "list":
-        return _show_list(console)
+        return _show_list(session, console)
     if sub == "show":
         return _show_one(console, args[1:])
     if sub == "forget":

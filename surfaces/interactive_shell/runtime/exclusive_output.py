@@ -8,6 +8,7 @@ from collections.abc import Callable
 from prompt_toolkit.application import run_in_terminal
 from prompt_toolkit.application.current import set_app
 
+from config.interactive_override import forced_non_interactive
 from surfaces.interactive_shell.session import Session
 
 
@@ -25,7 +26,8 @@ def with_exclusive_output[Result](session: Session, render: Callable[[], Result]
         previous = terminal.exclusive_stdin_active
         terminal.exclusive_stdin_active = True
         try:
-            return render()
+            with forced_non_interactive():
+                return render()
         finally:
             terminal.exclusive_stdin_active = previous
 

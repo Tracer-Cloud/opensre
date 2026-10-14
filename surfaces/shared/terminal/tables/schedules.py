@@ -10,7 +10,7 @@ from rich.text import Text
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import TaskRun
 from infrastructure.terminal.theme import DIM, HIGHLIGHT, WARNING
-from surfaces.shared.terminal.components.rendering import print_repl_renderable
+from surfaces.shared.terminal.components.record_browser import print_record_list
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
 from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
@@ -30,6 +30,7 @@ def print_schedules(
     latest: Mapping[str, TaskRun],
     *,
     history_available: bool = True,
+    browse: bool = False,
 ) -> None:
     """Keep IDs and secondary details outside width-constrained summary columns."""
     rows: list[RecordRow] = []
@@ -80,7 +81,7 @@ def print_schedules(
                 metadata=(Text(f"ID: {loop.id}", style=DIM),),
             )
         )
-    print_repl_renderable(
+    print_record_list(
         console,
         RecordTable(
             "Scheduled tasks",
@@ -96,4 +97,6 @@ def print_schedules(
             subtitle="Run times: UTC · TZ: schedule timezone",
             caption="History: opensre cron logs <task_id>\nConfiguration: opensre --json cron list",
         ),
+        title="/cron list",
+        browse=browse,
     )

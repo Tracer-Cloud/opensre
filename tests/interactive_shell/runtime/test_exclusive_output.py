@@ -39,7 +39,8 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
         fetched_with_responsive_loop.append(release_fetch.wait(timeout=3))
         return [object()]
 
-    def _print_schedules(console: Console, _loops: object) -> None:
+    def _print_schedules(console: Console, _loops: object, *, browse: bool = False) -> None:
+        assert not browse
         observed.append((session.terminal.exclusive_stdin_active, app._running_in_terminal))
         console.print("Daily audit · ID: task-123456789")
 
@@ -48,6 +49,10 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
         return True
 
     monkeypatch.setattr(slash_adapter, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.command_registry.input_collection.repl_tty_interactive",
+        lambda: True,
+    )
     monkeypatch.setattr(cron_cmds, "list_loop_summaries", _list_schedules)
     monkeypatch.setattr(cron_cmds, "print_loop_schedules", _print_schedules)
     monkeypatch.setattr(
@@ -63,7 +68,7 @@ async def test_cron_list_returns_ids_to_the_same_agent_turn_with_prompt_suspende
         try:
             ctx = ActionToolScope(
                 session=session,
-                console=Console(file=io.StringIO()),
+                console=Console(file=io.StringIO(), force_terminal=True),
                 is_tty=True,
                 slash_ports=slash_adapter.repl_slash_ports(),
                 turn_user_message="Remove my daily audit schedule",

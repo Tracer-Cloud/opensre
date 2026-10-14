@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from rich.console import Console
+
 from config.command_inputs import CommandInput
 from config.interactive_override import interactive_override_env
 from core.agent_harness.spi.session_state import exclusive_stdin_active
@@ -13,6 +15,16 @@ def can_collect_input(session: Session, spec: CommandInput, args: list[str]) -> 
     """Collect only registered missing inputs while this interactive turn owns stdin."""
     return (
         spec.matches(spec.command, args)
+        and not interactive_override_env()
+        and exclusive_stdin_active(session)
+        and repl_tty_interactive()
+    )
+
+
+def can_browse_records(session: Session, console: Console) -> bool:
+    """Browse only with an interactive output and explicitly reserved stdin."""
+    return (
+        console.is_terminal
         and not interactive_override_env()
         and exclusive_stdin_active(session)
         and repl_tty_interactive()

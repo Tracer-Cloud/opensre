@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
 
+from surfaces.interactive_shell.command_registry.input_collection import can_browse_records
 from surfaces.interactive_shell.command_registry.types import (
     SlashCommand,
 )
@@ -18,7 +19,7 @@ from surfaces.interactive_shell.ui import (
     HIGHLIGHT,
     WARNING,
 )
-from surfaces.shared.terminal.components.rendering import print_repl_renderable
+from surfaces.shared.terminal.components.record_browser import print_record_list
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
 from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
@@ -100,7 +101,7 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
                 metadata=(Text(f"ID: {task.task_id}", style=DIM),),
             )
         )
-    print_repl_renderable(
+    print_record_list(
         console,
         RecordTable(
             "Tasks",
@@ -115,6 +116,8 @@ def _cmd_tasks(session: Session, console: Console, _args: list[str]) -> bool:
             subtitle="Started times: UTC",
             caption="Cancel: /cancel <task_id>",
         ),
+        title="/tasks",
+        browse=can_browse_records(session, console),
     )
     return True
 

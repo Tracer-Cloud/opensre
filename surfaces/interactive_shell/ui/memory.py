@@ -9,14 +9,16 @@ from rich.text import Text
 
 from core.domain.memory import MemoryRecord
 from infrastructure.terminal.theme import DIM
-from surfaces.shared.terminal.components.rendering import print_repl_renderable
+from surfaces.shared.terminal.components.record_browser import print_record_list
 from surfaces.shared.terminal.tables.descriptions import description_details
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
-def render_memories(console: Console, records: Sequence[MemoryRecord]) -> None:
+def render_memories(
+    console: Console, records: Sequence[MemoryRecord], *, browse: bool = False
+) -> None:
     """Show memory metadata and descriptions without exposing the stored bodies."""
-    print_repl_renderable(
+    print_record_list(
         console,
         RecordTable(
             "Long-term memory",
@@ -38,4 +40,6 @@ def render_memories(console: Console, records: Sequence[MemoryRecord]) -> None:
             ),
             caption="Open: /memory show <name>",
         ),
+        title="/memory list",
+        browse=browse,
     )

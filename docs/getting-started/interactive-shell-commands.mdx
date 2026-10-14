@@ -808,6 +808,13 @@ Shows up to **50** recent tasks, newest first. Use the **id** column (short pref
 /work path
 ```
 
+Interactive record lists (`/work list`, `/work next`, `/loops list`, `/cron list`,
+`/memory list`, and `/tasks`, including their list aliases) share read-only search.
+Type a name, ID, or displayed detail to filter; use arrow keys or Tab to move
+through matches. Enter never changes a record. Esc closes search and leaves the
+full listing in your terminal. Command filters still apply. CLI, piped, and
+agent-requested listings remain plain output; logs and reports are unchanged.
+
 In an interactive terminal, `/work add` without a title asks for one, then shows
 selectable detail rows with Priority selected. Use arrow keys or Tab/Shift-Tab to
 move between rows, then Enter to edit a row or choose **Create work item**.
