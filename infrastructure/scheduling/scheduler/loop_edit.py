@@ -90,7 +90,10 @@ def _definition_patch(
         cron = changes.get("cron", task.cron)
         build_cron_trigger(cron, timezone)
         if "cron" in changes:
-            if params.get(LOOP_REPORT_PARAM, "") != CI_REPAIR_REPORT_BUILDER:
+            if (
+                task.kind is TaskKind.MANUAL_LOOP
+                and params.get(LOOP_REPORT_PARAM, "") != CI_REPAIR_REPORT_BUILDER
+            ):
                 cron = cap_cron_at_most_hourly(cron, timezone)
             patch["cron"] = cron
             time_label = loop_time_label(cron)
