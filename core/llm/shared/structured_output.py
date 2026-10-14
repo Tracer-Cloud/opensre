@@ -133,18 +133,16 @@ def extract_json_payload(text: str) -> Any:
     except json.JSONDecodeError:
         logger.debug("Direct JSON parse failed, trying regex extraction")
 
-    obj_match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-    if obj_match:
+    matches = [
+        match
+        for pattern in (r"\{.*\}", r"\[.*\]")
+        if (match := re.search(pattern, cleaned, re.DOTALL)) is not None
+    ]
+    # The outer container opens first; a list's object items are not envelopes.
+    for match in sorted(matches, key=lambda candidate: candidate.start()):
         try:
-            return safe_json_loads(obj_match.group(0))
+            return safe_json_loads(match.group(0))
         except json.JSONDecodeError:
-            logger.debug("Object regex JSON parse failed, trying array extraction")
-
-    list_match = re.search(r"\[.*\]", cleaned, re.DOTALL)
-    if list_match:
-        try:
-            return safe_json_loads(list_match.group(0))
-        except json.JSONDecodeError:
-            logger.debug("Array regex JSON parse also failed")
+            logger.debug("Container regex JSON parse failed, trying next candidate")
 
     raise ValueError("LLM did not return valid JSON payload")

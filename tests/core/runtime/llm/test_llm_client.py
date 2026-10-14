@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from typing import Any
+
 import pytest
 from anthropic import AuthenticationError, NotFoundError, PermissionDeniedError
 from anthropic import BadRequestError as AnthropicBadRequestError
@@ -2324,6 +2327,12 @@ def test_format_openai_connection_error_timeout_returns_timeout_message() -> Non
 
 def test_extract_json_payload_bare_json() -> None:
     assert extract_json_payload('{"a": 1}') == {"a": 1}
+
+
+@pytest.mark.parametrize("payload", [[{"items": [1]}], {"items": [{"a": 1}]}])
+def test_extract_json_payload_preserves_outer_container_in_prose(payload: Any) -> None:
+    text = "Here is the result:\n" + json.dumps(payload) + "\nEnd of reply."
+    assert extract_json_payload(text) == payload
 
 
 def test_extract_json_payload_leading_fence() -> None:

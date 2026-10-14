@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 import core.agent_harness.session.memory_extraction as extraction
 from config.constants import (
@@ -25,6 +26,7 @@ from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
 from core.agent_harness.session.session_core import SessionCore
 from core.domain.memory import delete_memory, list_memories, load_memory, memory_dir, save_memory
 from core.domain.memory.summaries import recent_session_summaries
+from core.llm.types import LLMResponse
 
 
 @pytest.fixture(autouse=True)
@@ -376,9 +378,85 @@ class _FakeLLM:
         self.prompts: list[str] = []
         self._response = response
 
-    def invoke(self, prompt: str) -> str:
+    def invoke(self, prompt: str) -> LLMResponse:
         self.prompts.append(prompt)
-        return self._response
+        return LLMResponse(content=self._response)
+
+    def with_structured_output(self, model: type[BaseModel]) -> Any:
+        from core.llm.shared.structured_output import StructuredOutputClient
+
+        return StructuredOutputClient(self, model)
+
+
+def test_extraction_native_schema_avoids_prompt_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from openai.lib._pydantic import to_strict_json_schema
+
+    from config.constants.llm import OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV
+
+    class NativeLLM(_FakeLLM):
+        def invoke_structured(self, model: type[BaseModel], _prompt: str) -> BaseModel:
+            schema = to_strict_json_schema(model)
+            objects = [schema, *schema.get("$defs", {}).values()]
+            for obj in objects:
+                assert obj["additionalProperties"] is False
+                assert set(obj["required"]) == set(obj["properties"])
+                for prop in obj["properties"].values():
+                    assert "type" in prop or "$ref" in prop
+                    if prop.get("type") == "array":
+                        assert "$ref" in prop["items"]
+            return model.model_validate(json.loads(_response(_item())))
+
+    llm = NativeLLM()
+    monkeypatch.setenv(OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV, "1")
+    monkeypatch.setattr(extraction, "_extraction_llm", lambda: llm)
+
+    result = extraction.parse_extraction(extraction._invoke_extraction_llm("extract"))
+
+    assert result.items[0]["content"] == _item()["content"]
+    assert llm.prompts == []
+
+
+@pytest.mark.parametrize("response", ["not JSON", '"not an extraction object"'])
+def test_invalid_structured_extraction_does_not_write_memory(
+    monkeypatch: pytest.MonkeyPatch, response: str
+) -> None:
+    llm = _FakeLLM(response)
+    monkeypatch.setattr(extraction, "_extraction_llm", lambda: llm)
+
+    extraction.extract_memories_from_session(_FakeSession())
+
+    assert llm.prompts
+    assert list_memories() == []
+
+
+def test_structured_extraction_keeps_valid_items_without_coercing_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    malformed = {**_item(), "content": 123}
+    unverified = {**_item(), "verified": "true"}
+    llm = _FakeLLM(
+        json.dumps({"session_summary": 123, "memories": ["invalid", malformed, unverified]})
+    )
+    monkeypatch.setattr(extraction, "_extraction_llm", lambda: llm)
+
+    extraction.extract_memories_from_session(_FakeSession())
+
+    [record] = list_memories()
+    assert record.verified is False
+    assert load_memory(record.slug).body == _item()["content"]
+
+
+def test_structured_extraction_keeps_prose_wrapped_memories_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    memories = [_item()]
+    llm = _FakeLLM("Here are the memories:\n" + json.dumps(memories) + "\nEnd of reply.")
+    monkeypatch.setattr(extraction, "_extraction_llm", lambda: llm)
+
+    result = extraction.parse_extraction(extraction._invoke_extraction_llm("extract"))
+
+    assert result.items == tuple(memories)
+    assert result.session_summary == ""
 
 
 def test_prompt_carries_the_shared_policy_and_redacts_secrets(

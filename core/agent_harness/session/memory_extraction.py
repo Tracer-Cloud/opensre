@@ -44,6 +44,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
+from pydantic import BaseModel, Field, field_validator, model_validator
+
 from core.agent_harness.session.memory_digest import build_session_digest
 from core.agent_harness.session.memory_turns import (
     DemoTurns,
@@ -160,6 +162,51 @@ class ExtractionResult:
     session_summary: str = ""
     outcome: str = ""
     items: tuple[dict[str, Any], ...] = ()
+
+
+class _ExtractionMemory(BaseModel):
+    """Typed model claims, normalized before the existing provenance checks."""
+
+    name: str = ""
+    type: str = ""
+    description: str = ""
+    content: str = ""
+    source: str = ""
+    evidence: str = ""
+    verified: bool = False
+
+    @field_validator("name", "type", "description", "content", "source", "evidence", mode="before")
+    @classmethod
+    def _text_or_empty(cls, value: Any) -> str:
+        return value if isinstance(value, str) else ""
+
+    @field_validator("verified", mode="before")
+    @classmethod
+    def _explicitly_verified(cls, value: Any) -> bool:
+        return value is True
+
+
+class _ExtractionPayload(BaseModel):
+    """JSON extraction object or legacy bare memories list, before item checks."""
+
+    session_summary: str = ""
+    outcome: str = ""
+    memories: list[_ExtractionMemory] = Field(default_factory=list)
+
+    @field_validator("session_summary", "outcome", mode="before")
+    @classmethod
+    def _text_or_empty(cls, value: Any) -> str:
+        return value if isinstance(value, str) else ""
+
+    @field_validator("memories", mode="before")
+    @classmethod
+    def _memory_objects(cls, value: Any) -> list[dict[str, Any]]:
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_memories_list(cls, value: Any) -> Any:
+        return {"memories": value} if isinstance(value, list) else value
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,9 +447,8 @@ def _invoke_extraction_llm(prompt: str) -> str:
     except Exception:
         logger.debug("[memory] extraction LLM unavailable", exc_info=True)
         return ""
-    result = llm.invoke(prompt)
-    content = getattr(result, "content", result)
-    return content if isinstance(content, str) else str(content)
+    result = llm.with_structured_output(_ExtractionPayload).invoke(prompt)
+    return result.model_dump_json(exclude_unset=True)
 
 
 def _json_payload(response: str) -> Any:

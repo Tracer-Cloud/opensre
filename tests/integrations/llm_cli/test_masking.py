@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel, RootModel
 
+from core.agent_harness.session import memory_extraction
 from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
 from core.llm.types import ModelType, ToolCall
 from integrations.llm_cli.base import CLIInvocation, CLIProbe
@@ -18,6 +20,29 @@ from integrations.llm_cli.runner import CLIBackedLLMClient, _StreamedProcessResu
 IP = "192.0.2.42"
 EMAIL = "privacy-check@example.invalid"
 PROMPT = f"Investigate pod privacy-test-7b5b4cbd55-abcde in namespace privacy-test. {IP} {EMAIL}"
+
+
+@pytest.mark.parametrize("bare_list", [False, True])
+def test_memory_extraction_restores_json_identifiers(
+    adapter: CopilotAdapter, monkeypatch: pytest.MonkeyPatch, bare_list: bool
+) -> None:
+    identifier = 'private"value\\path'
+    monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", json.dumps({"custom": re.escape(identifier)}))
+    memories = [{"content": "<CUSTOM_0>"}, "ignored malformed item"]
+    payload = memories if bare_list else {"memories": memories, "session_summary": "<CUSTOM_0>"}
+    run = MagicMock(return_value=MagicMock(returncode=0, stdout=json.dumps(payload), stderr=""))
+    monkeypatch.setattr("integrations.llm_cli.runner.subprocess.run", run)
+    client = CLIBackedLLMClient(adapter)
+    monkeypatch.setattr(memory_extraction, "_extraction_llm", lambda: client)
+
+    response = memory_extraction._invoke_extraction_llm(identifier)
+    result = memory_extraction.parse_extraction(response)
+
+    assert result.items == ({"content": identifier},)
+    assert result.session_summary == ("" if bare_list else identifier)
+    outgoing = run.call_args.args[0]
+    assert identifier not in " ".join(outgoing)
+    assert "<CUSTOM_0>" in " ".join(outgoing)
 
 
 @pytest.fixture
