@@ -287,7 +287,7 @@ def test_the_fallback_row_waits_for_its_skill_to_be_in_the_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Until the fallback skill ships in the catalog this process serves, the menu does not offer it."""
-    monkeypatch.setattr(gate, "active_skill_catalog", lambda: _catalog_with())
+    monkeypatch.setattr(gate, "active_skill_catalog", _catalog_with)
     session = _held_demo()
 
     pending = gate.prerequisite_menu("github", skill=ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME)

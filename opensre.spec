@@ -26,7 +26,12 @@ datas += collect_data_files(
 )
 datas += collect_data_files("surfaces.cli")
 datas += collect_data_files("config")
-datas += collect_data_files("litellm")
+# The SDK never serves litellm's proxy admin UI or Swagger pages; they are
+# ~19MB (~6MB compressed) of every download and ~600 extracted files.
+datas += collect_data_files(
+    "litellm",
+    excludes=["proxy/_experimental/out/**", "proxy/swagger/**"],
+)
 datas += copy_metadata("opensre")
 datas += list(skill_data_entries(ROOT))
 

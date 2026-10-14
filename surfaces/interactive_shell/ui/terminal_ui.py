@@ -148,7 +148,6 @@ def render_prompt_region(
 
     if state.is_ctrl_c_exit_hint_visible():
         prefix = prompt_rendering.ctrl_c_exit_hint_ansi()
-        inline_spinner = ""
     else:
         inline_spinner = spinner.inline_spinner_ansi()
         prefix = strip_cpr_sequences(

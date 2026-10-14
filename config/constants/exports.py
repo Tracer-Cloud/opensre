@@ -274,6 +274,7 @@ EXPORTS: dict[str, str] = {
     "GITHUB_MCP_TOOLSETS_ENV": "github",
     "GITHUB_MCP_URL_ENV": "github",
     "GITHUB_TOKEN_ENV": "github",
+    "OPENSRE_INSTALL_GITHUB_TOKEN_ENV": "github",
     # gitlab
     "GITLAB_AUTH_TOKEN_ENV": "gitlab",
     "GITLAB_BASE_URL_ENV": "gitlab",

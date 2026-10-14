@@ -7,6 +7,10 @@
 
 set -euo pipefail
 
+# Keep the optional canary credential in this shell, not in child environments.
+GITHUB_METADATA_TOKEN="${OPENSRE_INSTALL_GITHUB_TOKEN:-}"
+unset OPENSRE_INSTALL_GITHUB_TOKEN
+
 if [ -t 1 ]; then
   COLOR_RESET=$'\033[0m'
   COLOR_RED=$'\033[31m'
@@ -237,6 +241,16 @@ skip_github_cli_install() {
 
 ensure_github_cli() {
   # Soft dependency for github_cli chat tools. Never fails the OpenSRE install.
+  [ -n "${gh_install_pid:-}" ] || start_github_cli_install
+  if [ -n "${gh_install_pid:-}" ]; then
+    if run_with_dots "Installing GitHub CLI (gh) for OpenSRE GitHub tools" wait "$gh_install_pid"; then
+      success "Installed GitHub CLI (gh) via Homebrew"
+      return 0
+    fi
+    warn "Homebrew failed to install gh. Install manually from https://cli.github.com/"
+    return 0
+  fi
+
   if command -v gh >/dev/null 2>&1; then
     if install_verbose; then
       log "GitHub CLI (gh) already on PATH: $(command -v gh)"
@@ -250,15 +264,6 @@ ensure_github_cli() {
     return 0
   fi
 
-  if command -v brew >/dev/null 2>&1; then
-    if run_with_dots "Installing GitHub CLI (gh) for OpenSRE GitHub tools" brew install gh; then
-      success "Installed GitHub CLI (gh) via Homebrew"
-      return 0
-    fi
-    warn "Homebrew failed to install gh. Install manually from https://cli.github.com/"
-    return 0
-  fi
-
   if command -v apt-get >/dev/null 2>&1; then
     # Soft dependency only — never require sudo for the OpenSRE installer.
     warn "GitHub CLI (gh) is missing and apt is available but auto-install needs sudo."
@@ -268,6 +273,26 @@ ensure_github_cli() {
 
   warn "GitHub CLI (gh) is not on PATH and no supported package manager was found."
   warn "Install from https://cli.github.com/ for OpenSRE GitHub chat tools."
+}
+
+github_cli_install_needed() {
+  ! command -v gh >/dev/null 2>&1 \
+    && ! skip_github_cli_install \
+    && command -v brew >/dev/null 2>&1
+}
+
+start_github_cli_install() {
+  # Homebrew is the slowest step on a Mac without gh, and it is independent
+  # of the OpenSRE download, so it runs alongside it; ensure_github_cli waits
+  # for it. Auto-update alone costs ~10s and only refreshes formulae that a
+  # soft dependency does not need to be the newest of.
+  github_cli_install_needed || return 0
+  (
+    trap '' HUP
+    HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 \
+      brew install gh
+  ) </dev/null >/dev/null 2>&1 &
+  gh_install_pid=$!
 }
 
 require_prerequisites() {
@@ -313,7 +338,8 @@ github_curl() {
   local url="$1"
   local destination="$2"
   local http1="$3"
-  shift 3
+  local auth_token="${4:-}"
+  shift 4
 
   local attempt=1
   local max_attempts=6
@@ -332,17 +358,32 @@ github_curl() {
   header_file="$(mktemp)"
 
   while true; do
-    # ${name[@]+...} keeps an empty array from tripping `set -u` on bash 3.2.
-    http_code="$(
-      curl --silent --location \
-        --connect-timeout 20 --max-time 180 \
-        ${protocol[@]+"${protocol[@]}"} \
-        -D "$header_file" \
-        -o "$body_file" \
-        -w '%{http_code}' \
-        ${extra[@]+"${extra[@]}"} \
-        "$url" || true
-    )"
+    # Empty arrays must stay safe with set -u on bash 3.2.
+    if [ -n "$auth_token" ]; then
+      http_code="$(
+        printf 'header = "Authorization: Bearer %s"\n' "$auth_token" |
+          curl --silent --location \
+            --connect-timeout 20 --max-time 180 \
+            ${protocol[@]+"${protocol[@]}"} \
+            -D "$header_file" \
+            -o "$body_file" \
+            -w '%{http_code}' \
+            ${extra[@]+"${extra[@]}"} \
+            --config - \
+            "$url" || true
+      )"
+    else
+      http_code="$(
+        curl --silent --location \
+          --connect-timeout 20 --max-time 180 \
+          ${protocol[@]+"${protocol[@]}"} \
+          -D "$header_file" \
+          -o "$body_file" \
+          -w '%{http_code}' \
+          ${extra[@]+"${extra[@]}"} \
+          "$url" || true
+      )"
+    fi
     http_code="${http_code//[[:space:]]/}"
 
     case "$http_code" in
@@ -357,6 +398,13 @@ github_curl() {
         return 0
         ;;
     esac
+
+    # An invalid canary token should fall back immediately instead of spending
+    # the public rate limit on retries with credentials GitHub will reject.
+    if [ -n "$auth_token" ] && { [ "$http_code" = "401" ] || [ "$http_code" = "403" ]; }; then
+      rm -f "$body_file" "$header_file"
+      return 22
+    fi
 
     if ! github_status_retryable "$http_code" || [ "$attempt" -ge "$max_attempts" ]; then
       if [ -n "$http_code" ] && [ "$http_code" != "000" ]; then
@@ -386,13 +434,27 @@ download_to() {
   local url="$1"
   local destination="$2"
 
-  github_curl "$url" "$destination" http1
+  github_curl "$url" "$destination" http1 ""
 }
 
 download_text() {
   local url="$1"
+  local github_token="${GITHUB_METADATA_TOKEN:-}"
 
-  github_curl "$url" "" "" \
+  if [ -n "$github_token" ]; then
+    local authenticated_response
+    if authenticated_response="$(
+      github_curl "$url" "" "" "$github_token" \
+        -H "Accept: application/vnd.github+json" \
+        -H "User-Agent: opensre-install-script" 2>/dev/null
+    )"; then
+      printf '%s' "$authenticated_response"
+      return
+    fi
+    warn "Authenticated GitHub metadata lookup failed; retrying without credentials."
+  fi
+
+  github_curl "$url" "" "" "" \
     -H "Accept: application/vnd.github+json" \
     -H "User-Agent: opensre-install-script"
 }
@@ -679,11 +741,11 @@ install_binary() {
 }
 
 # Install is two renames with the checks in between: stage the extracted tree
-# under INSTALL_DIR, verify and warm it there, then swap it into place. A binary
-# that fails its checks never replaces a working install, and nothing is
-# copied: macOS caches signature validation per file, so a renamed tree keeps
-# what the checks paid for while a copied tree is validated again on the
-# user's first launch.
+# under INSTALL_DIR, verify it there, then swap it into place. A binary that
+# fails its checks never replaces a working install, and nothing is copied:
+# macOS caches signature validation per file, so a renamed tree keeps what the
+# checks (and the later warm-up) paid for while a copied tree is validated
+# again on the user's first launch.
 
 stage_binary() {
   local source_path="$1"
@@ -753,11 +815,11 @@ discard_staged_binary() {
 }
 
 download_and_verify_checksum() {
-  local checksum_url="$1"
-  local checksum_path="$2"
-  local archive_path="$3"
+  local checksum_path="$1"
+  local archive_path="$2"
 
-  download_to "$checksum_url" "$checksum_path"
+  # The checksum download started alongside the archive (start_release_downloads).
+  wait "$checksum_pid" || return 1
   verify_checksum "$checksum_path" "$archive_path"
 }
 
@@ -789,13 +851,16 @@ warm_first_launch() {
   # and would otherwise pay for a full registry/verifier/skills import.
   [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] || return 0
 
-  # macOS validates each Mach-O image on first load and caches the result per
-  # file. ``--version`` loads only a few images; the smoke imports the whole
-  # tool registry and loads nearly all of them, so the user's first ``opensre``
-  # starts warm (~0.2s) instead of paying ~6s of validation. The staged tree
-  # is renamed into place afterwards, which keeps the cache.
-  run_with_dots "Preparing OpenSRE for first launch" package_smoke_quiet "$binary_path" \
-    || printf 'warning: first-launch warm-up did not complete; the first "%s" may start slowly.\n' "$BIN_NAME" >&2
+  # macOS validates each Mach-O image on first load (~0.2s each, serialized
+  # system-wide) and caches the result per file. ``--version`` loads only a
+  # few images; the smoke imports the whole tool registry and loads nearly all
+  # of them, so the user's first ``opensre`` starts warm instead of paying ~6s
+  # of validation. It runs detached after activation: a failed warm-up never
+  # blocked activation, and the installer should not wait on it. The activated
+  # tree is the staged tree renamed, so the cache lands on the files the user
+  # runs. SIGHUP is ignored so closing the terminal does not cut it short.
+  ( trap '' HUP; package_smoke_quiet "$binary_path" ) </dev/null >/dev/null 2>&1 &
+  warm_pid=$!
 }
 
 package_smoke_quiet() {
@@ -1034,6 +1099,10 @@ ensure_on_path_impl() {
 }
 
 cleanup() {
+  # A failed install must not leave downloads running. The gh install is left
+  # alone: interrupting Homebrew mid-pour can leave a broken keg.
+  stop_background_job "${archive_pid:-}"
+  stop_background_job "${checksum_pid:-}"
   if [ -n "${tmp_dir:-}" ] && [ -d "$tmp_dir" ]; then
     rm -rf "$tmp_dir"
   fi
@@ -1134,7 +1203,6 @@ select_archive_asset() {
 prepare_download() {
   download_url="https://github.com/${REPO}/releases/download/${release_tag}/${archive}"
   checksum_asset="${archive}.sha256"
-  checksum_url="${download_url}.sha256"
 
   if [ "$asset_arch" != "$target_arch" ]; then
     log "Using release asset built for ${platform}/${asset_arch}."
@@ -1190,6 +1258,55 @@ create_temp_workspace() {
   trap cleanup EXIT
 }
 
+stop_background_job() {
+  local pid="$1"
+  local child
+
+  [ -n "$pid" ] || return 0
+  # github_curl runs curl in a command substitution, so the job's own pid is a
+  # subshell; stop its children too or curl keeps downloading after exit.
+  if command -v pgrep >/dev/null 2>&1; then
+    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+      stop_background_job "$child"
+    done
+  fi
+  kill "$pid" 2>/dev/null || true
+}
+
+start_release_downloads() {
+  local url="$1"
+  local name="$2"
+
+  # The checksum is tiny and may not be published; its errors surface later
+  # only when the release metadata says it exists.
+  download_to "$url" "${tmp_dir}/${name}" &
+  archive_pid=$!
+  download_to "${url}.sha256" "${tmp_dir}/${name}.sha256" 2>/dev/null &
+  checksum_pid=$!
+  started_download_url="$url"
+}
+
+prefetch_release_archive() {
+  local tag
+  local name
+
+  # When the asset URL is known without the release metadata (the main build,
+  # or a pinned --version), start the download now so the metadata lookup
+  # overlaps it. Windows is excluded: its ARM64 build can fall back to x64,
+  # which only the metadata decides.
+  [ "$platform" != "windows" ] || return 0
+  if [ "$INSTALL_CHANNEL" = "main" ]; then
+    tag="$MAIN_RELEASE_TAG"
+  elif [ -n "$requested_version" ]; then
+    tag="v${requested_version}"
+  else
+    return 0
+  fi
+
+  name="$(build_archive_name "$requested_version" "$target_arch")"
+  start_release_downloads "https://github.com/${REPO}/releases/download/${tag}/${name}" "$name"
+}
+
 download_release_archive() {
   local download_label
 
@@ -1200,8 +1317,15 @@ download_release_archive() {
     download_label="Downloading OpenSRE v${version} for ${platform}-${asset_arch}"
   fi
 
-  run_with_dots "$download_label" download_to "$download_url" "$archive_path" \
+  if [ "${started_download_url:-}" != "$download_url" ]; then
+    stop_background_job "${archive_pid:-}"
+    stop_background_job "${checksum_pid:-}"
+    start_release_downloads "$download_url" "$archive"
+  fi
+
+  run_with_dots "$download_label" wait "$archive_pid" \
     || die "Failed to download '${archive}'."
+  archive_pid=""
 }
 
 verify_release_checksum() {
@@ -1210,8 +1334,9 @@ verify_release_checksum() {
   if release_has_asset "$release_json" "$checksum_asset"; then
     checksum_path="${tmp_dir}/${checksum_asset}"
     run_with_dots "Fetching and verifying checksum" \
-      download_and_verify_checksum "$checksum_url" "$checksum_path" "$archive_path" \
+      download_and_verify_checksum "$checksum_path" "$archive_path" \
       || die "Failed to download or verify checksum '${checksum_asset}'."
+    checksum_pid=""
     muted "Checksum verification passed"
     return
   fi
@@ -1243,7 +1368,6 @@ install_release_binary() {
     discard_staged_binary "$staged_path"
     die "Failed to verify '${archive}'."
   fi
-  warm_first_launch "$staged_path"
   activate_staged_binary "$staged_path" "${INSTALL_DIR}/${BIN_NAME}" \
     || die "Failed to install ${BIN_NAME} to '${INSTALL_DIR}'."
 }
@@ -1334,6 +1458,9 @@ snapshot_install_marker() {
 
 finish_install() {
   record_install_analytics
+  # After the analytics record, so that short run does not queue behind the
+  # warm-up's signature validation.
+  warm_first_launch "${INSTALL_DIR}/${BIN_NAME}"
   print_install_confirmation
   ensure_on_path
   ensure_github_cli
@@ -1347,10 +1474,12 @@ main() {
   require_prerequisites
   detect_platform
   resolve_install_dir
+  create_temp_workspace
+  start_github_cli_install
+  prefetch_release_archive
   resolve_release_metadata
   select_archive_asset
   prepare_download
-  create_temp_workspace
   download_release_archive
   verify_release_checksum
   extract_release_binary

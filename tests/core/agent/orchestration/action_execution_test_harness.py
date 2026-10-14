@@ -90,6 +90,11 @@ class FakeSlashPorts:
     allowed: bool = True
     dispatched: list[str] = field(default_factory=list)
 
+    def command_needs_input(self, name: str, args: list[str]) -> bool:
+        from config.command_inputs import needs_command_input
+
+        return needs_command_input(name, args)
+
     def command_exists(self, _name: str) -> bool:
         return True
 

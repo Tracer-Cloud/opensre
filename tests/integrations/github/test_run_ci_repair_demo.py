@@ -549,7 +549,7 @@ def test_a_token_without_a_login_does_not_seed(monkeypatch: pytest.MonkeyPatch) 
 
     class _Client:
         def __init__(self, token: str) -> None:
-            del token
+            self.token = token
 
         def request(self, method: str, path: str) -> dict[str, Any]:
             del method, path

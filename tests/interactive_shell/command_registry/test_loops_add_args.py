@@ -43,3 +43,13 @@ def test_mode_requires_a_value() -> None:
 
     assert parsed is None
     assert error == "--mode requires a value"
+
+
+def test_later_schedule_option_replaces_the_earlier_value() -> None:
+    parsed, error = _parse_add_args(["--cron", "0 8 * * *", "--time", "09:00"])
+    assert parsed is not None and not error
+    assert (parsed.cron, parsed.time_text, parsed.cron_selected) == ("", "09:00", False)
+
+    parsed, error = _parse_add_args(["--time", "09:00", "--cron", "0 8 * * *"])
+    assert parsed is not None and not error
+    assert (parsed.cron, parsed.time_text, parsed.cron_selected) == ("0 8 * * *", "", True)

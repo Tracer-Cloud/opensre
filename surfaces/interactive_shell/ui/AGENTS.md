@@ -15,10 +15,35 @@ as well; keep implementation in its owning package, not necessarily this folder.
 - Share presentation between CLI and REPL where their contracts match. Do not
   introduce another generic framework or force non-record views into a table.
 
+## Editable command inputs
+
+- Reuse `build_input_form`, `InputField`, and `InputChoice` from
+  `surfaces/shared/terminal/components/input_form.py` for editable CLI/REPL forms.
+  Do not copy a command's prompt-toolkit layout, navigation, or editing state machine.
+- Keep field definitions, defaults, conditional visibility, and domain validation in
+  the owning command's UI module. Follow `ui/work_input.py` and `ui/cron_input/form.py`.
+  Use `InputFormError` for actionable errors, with a field name when it can be reopened.
+- The shared component owns text/choice/search editing, readable descriptions,
+  compact review, More options, and pinned submit/cancel actions. Field definitions
+  refresh after accepted edits, not on every redraw; resolve external settings once
+  per form/configuration key rather than reading credentials while rendering.
+- Validation must be side-effect-free. Persist only after explicit submission;
+  cancellation must not save. Use `run_command_input` for terminal lifecycle and
+  preserve exclusive-stdin ownership, complete-command bypass, and non-TTY behavior.
+- Check conditional completeness on submission, allowing temporary empty edits so
+  dependent fields can be cleared together. Use field-level validators for local
+  value constraints, not rules that depend on the previous draft's other fields.
+
 ## Hierarchy and spacing
 
 - Names/titles are bold and primary. Descriptions and ordinary results use
   `SECONDARY`; IDs, supporting metadata, timestamps, and hints use `DIM`.
+- **Input-form convention:** field descriptions, examples, and required/optional/default
+  markers must remain readable. Use `SECONDARY` (the shared command-input
+  `description` style) or `TEXT`; never `DIM`/`hint` for information needed to
+  fill a field. Reserve `DIM`/`hint` for keyboard shortcuts and tertiary metadata.
+  Keep field labels primary and errors in their semantic error style. Apply
+  this consistently to CLI, REPL, and shared-terminal forms.
 - Do not make every field equally dim: descriptions must remain readable.
   Preserve semantic emphasis for errors, warnings, running progress, and states
   such as **Invalid**, **Failed**, or **Blocked**. Never globally mute diagnostics.

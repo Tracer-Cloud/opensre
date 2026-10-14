@@ -120,8 +120,11 @@ current, and addressed threads are resolved, trigger the required automated
 reviews. Request Greptile with `@greptile review`; repeat until it reports 5/5
 with no unresolved comments. Reviews commonly take 5–10 minutes or longer. If
 Codex review is available for the repository, request it with `@codex review`
-and address its actionable feedback. Do not re-trigger either reviewer while
-its review is already running.
+and address its actionable feedback. Keep follow-up review cycles reviewer-specific:
+after a change that addresses only Codex feedback, re-trigger Codex only; after
+a change that addresses only Greptile feedback, re-trigger Greptile only. Trigger
+both only when the update addresses feedback from both reviewers. Do not
+re-trigger either reviewer while its review is already running.
 
 When available, use the [greploop skill](https://skills.sh/greptileai/skills/greploop)
 to manage this review loop.

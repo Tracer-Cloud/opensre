@@ -743,60 +743,6 @@ def _posthog_mcp_call_tool_case() -> ToolFailureCase:
     )
 
 
-def _patch_pipedream_runtime(mp: pytest.MonkeyPatch) -> None:
-    from integrations.pipedream.tools import pipedream_tool as mod
-
-    mp.setattr(mod, "open_app", MagicMock(return_value=SimpleNamespace(app_slug="notion")))
-
-
-def _pipedream_list_case() -> ToolFailureCase:
-    def patch(mp: pytest.MonkeyPatch) -> None:
-        from integrations.pipedream.tools import pipedream_tool as mod
-
-        _patch_pipedream_runtime(mp)
-        mp.setattr(mod, "list_app_tools", MagicMock(side_effect=RuntimeError("mcp")))
-
-    def invoke() -> dict[str, Any]:
-        from integrations.pipedream.tools.pipedream_tool import list_pipedream_tools
-
-        return list_pipedream_tools(
-            pipedream={"apps": [{"service": "notion", "app_slug": "notion"}]}
-        )
-
-    return ToolFailureCase(
-        "pipedream_list_tools",
-        patch,
-        invoke,
-        "list_pipedream_tools",
-        "pipedream",
-    )
-
-
-def _pipedream_call_tool_case() -> ToolFailureCase:
-    def patch(mp: pytest.MonkeyPatch) -> None:
-        from integrations.pipedream.tools import pipedream_tool as mod
-
-        _patch_pipedream_runtime(mp)
-        mp.setattr(mod, "call_app_tool", MagicMock(side_effect=RuntimeError("mcp")))
-
-    def invoke() -> dict[str, Any]:
-        from integrations.pipedream.tools.pipedream_tool import call_pipedream_tool
-
-        return call_pipedream_tool(
-            tool_name="notion-search",
-            arguments={},
-            pipedream={"apps": [{"service": "notion", "app_slug": "notion"}]},
-        )
-
-    return ToolFailureCase(
-        "pipedream_call_tool",
-        patch,
-        invoke,
-        "call_pipedream_tool",
-        "pipedream",
-    )
-
-
 def _patch_sentry_mcp_runtime(mp: pytest.MonkeyPatch) -> None:
     """Shared patches for Sentry MCP cases — bypass the config/runtime guards."""
     from integrations.sentry_mcp.tools import sentry_mcp_tool as mod

@@ -10,6 +10,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import click
 import pytest
 from click.testing import CliRunner
 from rich.console import Console
@@ -27,7 +28,9 @@ def _isolate_runtime_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cron_add_provider_choices_match_full_provider_enum() -> None:
     """cron delivery genuinely supports every Provider member."""
-    assert set(cron_module._PROVIDER_CHOICES) == {p.value for p in Provider}
+    option = next(p for p in cron_module.cron_add.params if p.name == "provider")
+    assert isinstance(option.type, click.Choice)
+    assert set(option.type.choices) == {p.value for p in Provider}
 
 
 @pytest.mark.parametrize("global_json", [False, True])
@@ -265,7 +268,9 @@ def test_cron_status_fails_closed_for_an_unreadable_task_store(
 
 def test_cron_add_kind_choices_exclude_sentry_kinds() -> None:
     """Sentry-kind tasks go through `opensre sentry`, not generic cron add."""
-    assert set(cron_module._KIND_CHOICES) == {k.value for k in TaskKind} - {
+    option = next(p for p in cron_module.cron_add.params if p.name == "kind")
+    assert isinstance(option.type, click.Choice)
+    assert set(option.type.choices) == {k.value for k in TaskKind} - {
         TaskKind.SENTRY_MORNING_DIGEST.value,
         TaskKind.SENTRY_UPTIME_WATCH.value,
     }

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 from rich.console import Console
 from rich.markup import escape
 
+from config.command_inputs import LOOPS_ADD_INPUT
 from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
 from core.agent_harness.spi.session_state import exclusive_stdin_active
 from core.agent_harness.tools import capability_values
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_TIME_PARAM
 from infrastructure.scheduling.scheduler.types import DeliveryStatus, TaskRun
+from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -21,7 +21,9 @@ from surfaces.interactive_shell.ui import (
     HIGHLIGHT,
     WARNING,
 )
+from surfaces.interactive_shell.ui.loop_input import LoopInput, build_loop_form
 from surfaces.shared.terminal.components.choice_menu import repl_choose_one, repl_tty_interactive
+from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.time_format import format_repl_timestamp
 
 _LOOPS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
@@ -52,22 +54,6 @@ _USAGE = (
     "/loops messages [--limit N]",
     "/loops service [install|remove]",
 )
-
-
-@dataclass(slots=True)
-class _AddLoopArgs:
-    name: str = ""
-    prompt: str = ""
-    time_text: str = ""
-    timezone: str = "UTC"
-    cron: str = ""
-    weekdays: bool = False
-    run_now: bool = False
-    channels: list[str] = field(default_factory=list)
-    telegram_chat_id: str = ""
-    slack_chat_id: str = ""
-    window_hours: int = 24
-    mode: str = ""
 
 
 def _channel_label(channel: str) -> str:
@@ -113,8 +99,8 @@ def _take_text_value(args: list[str], index: int, flag: str) -> tuple[str, int, 
     return " ".join(values), next_index - 1, ""
 
 
-def _parse_add_args(args: list[str]) -> tuple[_AddLoopArgs | None, str]:
-    parsed = _AddLoopArgs()
+def _parse_add_args(args: list[str]) -> tuple[LoopInput | None, str]:
+    parsed = LoopInput()
     index = 0
     while index < len(args):
         flag = args[index]
@@ -124,10 +110,14 @@ def _parse_add_args(args: list[str]) -> tuple[_AddLoopArgs | None, str]:
             parsed.prompt, index, error = _take_text_value(args, index, flag)
         elif flag == "--time":
             parsed.time_text, index, error = _take_flag_value(args, index, flag)
+            parsed.cron = ""
+            parsed.cron_selected = False
         elif flag == "--tz":
             parsed.timezone, index, error = _take_flag_value(args, index, flag)
         elif flag == "--cron":
             parsed.cron, index, error = _take_text_value(args, index, flag)
+            parsed.time_text = ""
+            parsed.cron_selected = True
         elif flag in {"--channel", "--channels"}:
             value, index, error = _take_flag_value(args, index, flag)
             parsed.channels.append(value)
@@ -136,12 +126,7 @@ def _parse_add_args(args: list[str]) -> tuple[_AddLoopArgs | None, str]:
         elif flag == "--slack-chat-id":
             parsed.slack_chat_id, index, error = _take_flag_value(args, index, flag)
         elif flag == "--window":
-            value, index, error = _take_flag_value(args, index, flag)
-            if not error:
-                try:
-                    parsed.window_hours = int(value)
-                except ValueError:
-                    return None, "--window must be an integer"
+            parsed.window_hours, index, error = _take_flag_value(args, index, flag)
         elif flag == "--mode":
             parsed.mode, index, error = _take_flag_value(args, index, flag)
         elif flag == "--weekdays":
@@ -248,7 +233,7 @@ def _cmd_loops_list(session: Session, console: Console, args: list[str]) -> bool
     return True
 
 
-def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
     from infrastructure.scheduling.scheduler.loops import create_manual_loop
 
     parsed, parse_error = _parse_add_args(args)
@@ -257,6 +242,27 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
         console.print(_loops_usage_error())
         return True
 
+    if can_collect_input(session, LOOPS_ADD_INPUT, ["add", *args]):
+        collected = run_command_input(build_loop_form(parsed))
+        if collected is None:
+            return True
+        parsed = collected
+
+    if not parsed.name.strip():
+        console.print(f"[{ERROR}]could not add loop:[/] name is required")
+        console.print(_loops_usage_error())
+        return True
+
+    try:
+        window_hours = int(parsed.window_hours)
+    except ValueError:
+        console.print(f"[{ERROR}]could not add loop:[/] --window must be an integer")
+        console.print(_loops_usage_error())
+        return True
+
+    channels = [
+        part.strip() for value in parsed.channels for part in value.split(",") if part.strip()
+    ]
     try:
         created = create_manual_loop(
             name=parsed.name,
@@ -265,10 +271,10 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
             timezone=parsed.timezone,
             weekdays=parsed.weekdays,
             cron=parsed.cron,
-            channels=parsed.channels or None,
+            channels=channels or None,
             telegram_chat_id=parsed.telegram_chat_id,
             slack_chat_id=parsed.slack_chat_id,
-            window_hours=parsed.window_hours,
+            window_hours=window_hours,
             mode=parsed.mode,
         )
     except ValueError as exc:

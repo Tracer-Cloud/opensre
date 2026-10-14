@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from rich.console import Console
 
+from config.command_inputs import needs_command_input
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry.slash_catalog import (
     slash_invoke_input_schema,
@@ -20,12 +21,16 @@ from surfaces.interactive_shell.telemetry.turn_outcome import (
     format_terminal_turn_outcome,
 )
 from surfaces.interactive_shell.ui import repl_tty_interactive
+from surfaces.interactive_shell.ui.cron_input.arguments import cron_add_needs_input
 from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
 from tools.interactive_shell.shared.execution_policy import ExecutionPolicyResult
 from tools.interactive_shell.shared.host_contracts import ExecutionGate
 
 
 class SlashPorts(ExecutionGate, Protocol):
+    def command_needs_input(self, name: str, args: list[str]) -> bool:
+        """Whether an incomplete command requires an exclusively owned input surface."""
+
     def command_exists(self, name: str) -> bool:
         raise NotImplementedError
 
@@ -63,6 +68,11 @@ class SlashPorts(ExecutionGate, Protocol):
 
 
 class ReplSlashPorts:
+    def command_needs_input(self, name: str, args: list[str]) -> bool:
+        if name == "/cron":
+            return cron_add_needs_input(args)
+        return needs_command_input(name, args)
+
     def command_exists(self, name: str) -> bool:
         return name in SLASH_COMMANDS
 

@@ -21,6 +21,7 @@ def command_input_style() -> Style:
             "frame.border": str(theme.HIGHLIGHT),
             "frame.label": str(theme.HIGHLIGHT),
             "selected": f"{theme.TEXT} bg:{theme.menu_selection_hex()}",
+            "description": str(theme.SECONDARY),
             "hint": str(theme.DIM),
             "error": str(theme.ERROR),
             "text-area": f"{theme.TEXT} bg:{theme.INPUT_SURFACE}",
