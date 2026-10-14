@@ -40,6 +40,7 @@ def build_record_browser(table: RecordTable, *, title: str) -> Application[None]
             InputField(
                 "record",
                 table.title,
+                description=table.subtitle,
                 searchable=True,
                 record_choices=True,
                 record_columns=table.columns,

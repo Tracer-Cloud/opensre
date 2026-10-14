@@ -158,7 +158,12 @@ def test_browser_searches_details_without_inventing_ids() -> None:
     table = RecordTable(
         "Memories",
         (RecordColumn("Name"),),
-        (RecordRow((Text("prod-cluster"),), details=(Text("Unique detail"),)),),
+        (
+            RecordRow(
+                (Text("prod-cluster"),),
+                details=(Text("First detail"), Text("Unique second detail")),
+            ),
+        ),
         subtitle="List-level context belongs with the columns, not the selected record.",
     )
     frames: list[str] = []
@@ -174,9 +179,12 @@ def test_browser_searches_details_without_inventing_ids() -> None:
                 for y in range(screen.height)
             )
             assert "ID:" not in content
-            assert "List-level context" not in content
+            assert content.count("List-level context") == 1
             if len(frames) < 2:
-                assert "Unique detail" in content
+                assert "First detail" in content
+                assert "Unique second detail" in content
+            if len(frames) == 1:
+                assert content.index("Unique second detail") < content.index("First detail")
             if not frames:
                 pipe.send_text("UNIQUE")
             elif len(frames) == 1:
@@ -190,6 +198,46 @@ def test_browser_searches_details_without_inventing_ids() -> None:
         app.after_render += capture
         assert app.run() is None
     assert len(frames) == 3
+
+
+def test_compact_browser_shows_the_detail_that_matched_search() -> None:
+    class CompactOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=15, columns=40)
+
+    table = RecordTable(
+        "Memories",
+        (RecordColumn("Name"),),
+        (
+            RecordRow(
+                (Text("prod-cluster"),),
+                details=(Text("First detail"), Text("Unique second detail")),
+            ),
+        ),
+    )
+    frames: list[str] = []
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=CompactOutput()):
+        app = record_browser.build_record_browser(table, title="/memory list")
+
+        def capture(_app: Application[None]) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or len(frames) == 2:
+                return
+            content = "\n".join(
+                "".join(screen.data_buffer[y][x].char for x in range(40))
+                for y in range(screen.height)
+            )
+            if not frames:
+                assert "Unique second detail" not in content
+                pipe.send_text("UNIQUE")
+            else:
+                assert "Unique second detail" in content
+                pipe.send_text("\x1b")
+            frames.append(content)
+
+        app.after_render += capture
+        assert app.run() is None
+    assert len(frames) == 2
 
 
 @pytest.mark.parametrize(("width", "expect_columns"), [(40, False), (90, False), (160, True)])

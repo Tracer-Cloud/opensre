@@ -23,6 +23,7 @@ from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.processors import AfterInput, ConditionalProcessor
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Box, Frame, TextArea
+from rich.text import Text
 
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.shared.terminal.components.command_input import command_input_style
@@ -333,10 +334,17 @@ def build_input_form[Result](
         )
         if browse_only and choice.record is not None:
             lines = [(str(line.style), line.plain) for line in choice.record.metadata]
-            if not compact_records():
-                detail = next((line for line in choice.record.details if line.plain.strip()), None)
-                if detail is not None:
-                    lines.append((str(detail.style), clip_prompt_text(detail.plain, 120)))
+            details = [line for line in choice.record.details if line.plain.strip()]
+            query = editor.text.strip().casefold()
+            matched: list[Text] = []
+            remaining: list[Text] = []
+            for line in details:
+                (matched if query and query in line.plain.casefold() else remaining).append(line)
+            if matched:
+                details = [*matched, *remaining]
+            if compact_records():
+                details = matched[:1]
+            lines.extend((str(line.style), clip_prompt_text(line.plain, 120)) for line in details)
         else:
             lines = [] if inline_id else [("class:hint", f"ID: {choice.value or ''}")]
         if summary:
