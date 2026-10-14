@@ -31,13 +31,14 @@ from infrastructure.scheduling.scheduler.run_history import (
 )
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.schedule_cancel import schedule_cancel_reason
+from infrastructure.scheduling.scheduler.schedule_change import obsolete_schedule_tick
 from infrastructure.scheduling.scheduler.storage import (
     ExecutionClaim,
     complete_run,
     get_task,
+    patch_scheduler_task,
     record_run_report,
     try_claim,
-    update_task,
 )
 from infrastructure.scheduling.scheduler.storage.run_store import get_claim_run
 from infrastructure.scheduling.scheduler.tasks import build_message
@@ -64,16 +65,19 @@ def execute_task(
     target_filter: frozenset[TargetKey] | None = None,
     replay_report: TaskReport | None = None,
     on_result: Callable[[TaskRun], None] | None = None,
+    scheduled: bool = False,
 ) -> bool:
     """Execute a scheduled task with claim-based dedup.
 
     Args:
         task: The scheduled task definition.
-        fire_time: The canonical fire time string (UTC, minute-precision) from the
+        fire_time: The canonical fire time string (UTC, second-precision) from the
             scheduler trigger, used as the dedup key.
         target_filter: When given, narrows delivery to destinations whose
             ``(provider, chat_id)`` is in the set -- a rerun retrying only the
             destinations a previous run failed at.
+        scheduled: Apply edited-schedule fences before unstarted automatic work;
+            explicit run-now/rerun execution keeps its fractional fire-time key.
 
     Returns:
         True if the task was executed and delivered successfully.
@@ -105,7 +109,9 @@ def execute_task(
             collect_run_activity() as activity,
             default_claim_lease_renewer.hold(claim) as ownership,
         ):
-            completed = _execute_claimed_task(claim, ownership, task, fire_time, runners)
+            completed = _execute_claimed_task(
+                claim, ownership, task, fire_time, runners, scheduled=scheduled
+            )
     finally:
         record_run_finished(task, claim, submitted, activity)
     if on_result is not None:
@@ -146,6 +152,8 @@ def _execute_claimed_task(
     task: ScheduledTask,
     fire_time: str,
     runners: SchedulerRunners,
+    *,
+    scheduled: bool = False,
 ) -> bool:
     """Build and deliver a task while its fenced lease remains valid."""
     logger.info("Executing task %s (kind=%s, fire_time=%s)", task.id, task.kind, fire_time)
@@ -159,6 +167,22 @@ def _execute_claimed_task(
 
     if _skip_cancelled_schedule(claim, task, fire_time):
         return False
+
+    if scheduled and claim.report is None:
+        current = get_task(task.id)
+        if current is not None and obsolete_schedule_tick(
+            current, fire_time, first_started_at=claim.first_started_at
+        ):
+            record_scheduler_execution_operation(
+                "scheduled_task_execution_skipped",
+                task,
+                fire_time=fire_time,
+                status=TaskStatus.SKIPPED,
+                extra={"reason": "schedule_changed"},
+            )
+            if complete_run(claim, status=TaskStatus.SKIPPED, error="schedule_changed"):
+                _emit_analytics(claim, task, TaskStatus.SKIPPED, error="schedule_changed")
+            return False
 
     if claim.target_filter == frozenset():
         _record_failure(
@@ -209,11 +233,15 @@ def _execute_claimed_task(
         return False
     paused_for_outcome = False
     if message.stop_schedule or message.outcome.terminal_block:
-        current = get_task(task.id)
-        if current is not None and current.enabled:
-            current.enabled = False
-            update_task(current)
-            paused_for_outcome = True
+
+        def _pause_current(current: ScheduledTask) -> dict[str, object]:
+            nonlocal paused_for_outcome
+            paused_for_outcome = current.enabled
+            return {"enabled": False} if current.enabled else {}
+
+        paused = patch_scheduler_task(task.id, _pause_current)
+        if paused is None:
+            paused_for_outcome = False
 
     def _user_cancelled_this_tick() -> bool:
         """True when the user removed or disabled the task during this tick.

@@ -13,6 +13,8 @@ OPENSRE_GATEWAY_HOST_SCHEDULER_ENV = "OPENSRE_GATEWAY_HOST_SCHEDULER"
 # Trace-session metadata key a scheduled tick binds to its task id, so analytics
 # emitted by the turns the tick runs can name the loop they ran for.
 SCHEDULED_TASK_TRACE_KEY = "task_id"
+SCHEDULER_SCHEDULE_CHANGED_AT_PARAM = "schedule_changed_at"
+"""Definition cutover used to reject unstarted ticks from an edited schedule."""
 
 # Build stamp recorded in the per-user background scheduler service definition
 # (launchd plist / systemd unit). A stamp that differs from the running code's
@@ -50,6 +52,7 @@ __all__ = [
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV",
     "OPENSRE_SCHEDULER_BUILD_ENV",
     "SCHEDULED_TASK_TRACE_KEY",
+    "SCHEDULER_SCHEDULE_CHANGED_AT_PARAM",
     "SCHEDULER_MISSED_FIRE_GRACE_SECONDS",
     "STATELESS_LOOP_IDLE_REPLY",
     "WEEKDAY_CRON_FIELD",

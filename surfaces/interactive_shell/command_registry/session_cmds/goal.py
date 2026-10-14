@@ -12,7 +12,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape as _rich_escape
 
-from config.command_inputs import GOAL_SET_INPUT
+from config.command_inputs import GOAL_EDIT_INPUT, GOAL_SET_INPUT
 from core.agent_harness import SessionManager
 from core.agent_harness.spi.cancel import HostCancelReason
 from core.agent_harness.spi.session_goal import (
@@ -40,6 +40,7 @@ from surfaces.interactive_shell.command_registry.input_collection import can_col
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.goal_controls import consume_inflight_goal_control
 from surfaces.interactive_shell.ui.goal_input import (
+    build_goal_edit_form,
     build_goal_set_form,
     parse_max_turns,
 )
@@ -245,6 +246,19 @@ def _edit(session: Session, console: Console, args: list[str]) -> bool:
         )
         return True
     condition = " ".join(args).strip()
+    if not condition and can_collect_input(session, GOAL_EDIT_INPUT, ["edit", *args]):
+        draft_condition = run_command_input(
+            build_goal_edit_form(goal.condition, paused=session_goal_is_paused(session))
+        )
+        if draft_condition is None:
+            return True
+        condition = draft_condition
+        if session.session_goal is not goal:
+            console.print(f"[{ERROR}]goal changed while editing. Open /goal edit again.[/]")
+            return True
+        if condition == goal.condition:
+            console.print(f"[{DIM}]no changes.[/]")
+            return True
     if not condition:
         console.print(f"[{ERROR}]usage:[/] /goal edit <condition>")
         console.print(f"[{DIM}]e.g.[/] [{HIGHLIGHT}]{_EDIT_EXAMPLE}[/]")

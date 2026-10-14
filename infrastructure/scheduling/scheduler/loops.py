@@ -55,8 +55,9 @@ from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import (
     add_task,
     list_tasks,
+    patch_scheduler_skill_definition,
+    patch_task_definitions,
     remove_task,
-    update_task,
 )
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
@@ -505,27 +506,19 @@ def set_loop_enabled(
     if loop is None:
         return None, error
 
-    task_ids = set(loop.task_ids)
-    updated: list[str] = []
-    for task in list_tasks(store_path):
-        if task.id not in task_ids:
-            continue
-        task.enabled = enabled
-        if enabled:
-            try:
-                task.next_run = compute_next_run(task, now)
-            except ValueError as exc:
-                return None, str(exc)
-        else:
-            task.next_run = None
-        if not update_task(task, store_path):
-            return None, f"loop {loop.id!r} could not be updated"
-        updated.append(task.id)
+    def _enabled_patch(current: ScheduledTask) -> Mapping[str, object]:
+        return {"enabled": enabled, "next_run": compute_next_run(current, now) if enabled else None}
 
-    if not updated:
+    try:
+        updated = patch_task_definitions(
+            loop.task_ids, _enabled_patch, store_path, group_id=loop.id
+        )
+    except ValueError as exc:
+        return None, str(exc)
+    if updated is None:
         return None, f"loop {loop.id!r} has no persisted tasks"
-    refreshed_loop, _ = resolve_loop_summary(loop.id, store_path=store_path, now=now)
-    mutation = LoopMutation(summary=refreshed_loop or loop, task_ids=tuple(updated))
+    [refreshed_loop] = summarize_loops(updated, now=now)
+    mutation = LoopMutation(summary=refreshed_loop, task_ids=tuple(task.id for task in updated))
     record_scheduler_loop_operation(
         "scheduled_loop_started" if enabled else "scheduled_loop_stopped",
         mutation.summary,
@@ -616,31 +609,43 @@ def _upgrade_legacy_skill_starter(
     store_path: Path | None,
 ) -> ScheduledTask | None:
     """Upgrade only an untouched disabled onboarding prompt to its named skill."""
-    if (
-        not starter.skill_name
-        or task.enabled
-        or task.kind is not TaskKind.MANUAL_LOOP
-        or task.params.get(LOOP_SOURCE_PARAM) != _ONBOARDING_LOOP_SOURCE
-        or task.params.get(LOOP_PROMPT_PARAM) != _LEGACY_MORNING_REPORT_PROMPT
-        or task.skill_name
-    ):
+    if not starter.skill_name:
         return None
 
-    skill_name, skill_revision = pin_recurring_skill(starter.skill_name)
-    task.kind = TaskKind.RECURRING_SKILL
-    task.skill_name = skill_name
-    task.skill_revision = skill_revision
-    task.skill_inputs = {}
-    task.params.pop(LOOP_PROMPT_PARAM, None)
-    task.params[LOOP_DESCRIPTION_PARAM] = starter.description
-    if not update_task(task, store_path):
+    upgraded = False
+
+    def _upgrade_current(current: ScheduledTask) -> Mapping[str, object]:
+        nonlocal upgraded
+        if (
+            current.enabled
+            or current.kind is not TaskKind.MANUAL_LOOP
+            or current.params.get(LOOP_SOURCE_PARAM) != _ONBOARDING_LOOP_SOURCE
+            or current.params.get(LOOP_PROMPT_PARAM) != _LEGACY_MORNING_REPORT_PROMPT
+            or current.skill_name
+        ):
+            return {}
+        skill_name, skill_revision = pin_recurring_skill(starter.skill_name)
+        params = dict(current.params)
+        params.pop(LOOP_PROMPT_PARAM, None)
+        params[LOOP_DESCRIPTION_PARAM] = starter.description
+        upgraded = True
+        return {
+            "kind": TaskKind.RECURRING_SKILL,
+            "skill_name": skill_name,
+            "skill_revision": skill_revision,
+            "skill_inputs": {},
+            "params": params,
+        }
+
+    stored = patch_scheduler_skill_definition(task.id, _upgrade_current, store_path)
+    if stored is None or not upgraded:
         return None
     record_scheduler_task_operation(
         "scheduled_loop_upgraded",
-        task,
+        stored,
         extra={"from_kind": TaskKind.MANUAL_LOOP.value},
     )
-    return task
+    return stored
 
 
 def _summarize_group(

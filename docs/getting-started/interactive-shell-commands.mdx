@@ -509,6 +509,7 @@ Set a finish line and keep working toward it across turns:
 /goal set --max-turns 4 Prefer live PostHog if connected
 /goal pause
 /goal resume
+/goal edit
 /goal edit <updated condition>
 /goal clear
 ```
@@ -523,6 +524,10 @@ attaches the goal from the summary and runs the condition as the next turn.
 Esc returns from an edit without applying it; Esc on the summary cancels
 without attaching anything. Fully specified commands still execute directly.
 See [Goals](/getting-started/goals) for the full workflow.
+
+Bare `/goal edit` reviews the current condition in the same form. Choose **Save changes**
+to apply it. The existing turn budget and progress stay attached; an active goal
+continues with the updated condition, while a paused goal stays paused.
 
 </Accordion>
 
@@ -803,6 +808,8 @@ Shows up to **50** recent tasks, newest first. Use the **id** column (short pref
 ```text
 /work
 /work add &lt;title&gt;
+/work edit
+/work edit &lt;id-or-title&gt; --priority high --due 2026-10-20
 /work done &lt;id-or-title&gt;
 /work next
 /work path
@@ -828,6 +835,13 @@ Use `/work done` or `/work complete` without a target to choose an unfinished wo
 item in an interactive terminal. Type to search, use arrow keys to choose, and
 Enter to mark it complete. You can still pass one or more IDs directly. Outside
 the interactive terminal, a completion target is required.
+
+Use `/work edit` to choose an existing item, or `/work edit <id-or-title>` to open
+its prefilled title, priority, project, owner, and due date. Choose **Save changes**
+after reviewing. An explicit field command executes directly; use a quoted empty
+value such as `--owner ""` or `--due ""` to clear an optional field.
+Missing-target edit options such as `/work edit --priority high` are kept for
+review after you choose an item.
 
 `/work add` creates durable human todos; it does not schedule reminder delivery.
 For reminders, use the destination-aware `opensre work add` command with
@@ -1101,6 +1115,8 @@ Scheduled report delivery. Press Enter or Tab after `/cron` to choose a subcomma
 /loops show &lt;name-or-id&gt; --run &lt;run-id&gt;
 /loops add --name "Morning ops" --time 08:30 --prompt "Check open incidents and summarize production risk" --run-now
 /loops add --name "CI fix agent" --cron "*/30 * * * * *" --mode agent --prompt "Repair failing PR checks with fix_github_pr_ci"
+/loops edit
+/loops edit &lt;name-or-id&gt; --time 09:30 --weekdays
 /loops run &lt;loop_id&gt;
 /loops stop &lt;loop_id&gt;
 /loops start &lt;loop_id&gt;
@@ -1123,6 +1139,16 @@ requires **Delete permanently** confirmation. Esc cancels selection; Esc during
 action review returns to the list. Outside the interactive terminal, supply an ID.
 
 Use `/loops show` to pick a loop, or pass its name or ID directly. Details contain the full report, recent runs, and configuration. Open an earlier report with the run ID shown in its history. New reports are retained even when delivery fails; older reports may be unavailable.
+
+Use `/loops edit` to pick a recurring loop, or pass its name or ID to review the
+current settings. Edit its name and schedule, with timezone and lookback under
+**More options**. Ordinary prompt loops also expose their prompt and Report/Agent
+mode; managed instructions remain tied to their template, report, or skill.
+Choose **Save changes** to update the existing loop. Editing does not run it,
+change its delivery destinations, or enable a stopped loop. Complete commands
+with explicit edit options also work without an interactive terminal.
+If you omit the target but supply options, such as `/loops edit --time 09:30`,
+those values are kept for review after you choose a loop.
 
 You can also ask naturally:
 

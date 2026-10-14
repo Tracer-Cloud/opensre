@@ -79,6 +79,7 @@ class ExecutionClaim:
     lease_expires_at: datetime
     target_filter: frozenset[tuple[Provider, str]] | None = None
     report: TaskReport | None = None
+    first_started_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +230,15 @@ def try_claim(
             else:
                 attempt = 1
 
+            first_started_at = now
+            if attempt > 1:
+                first_attempt = conn.execute(
+                    "SELECT started_at FROM task_runs WHERE task_id = ? AND fire_time = ? "
+                    "ORDER BY attempt LIMIT 1",
+                    (task_id, fire_time),
+                ).fetchone()
+                if first_attempt is not None:
+                    first_started_at = _parse_datetime(first_attempt[0]) or now
             owner_token = uuid4().hex
             conn.execute(
                 "INSERT INTO task_runs "
@@ -262,6 +272,7 @@ def try_claim(
                 now + timedelta(seconds=_CLAIM_LEASE_SECONDS),
                 target_filter,
                 replay_report,
+                first_started_at,
             )
     except sqlite3.IntegrityError:
         return None
@@ -404,6 +415,39 @@ def skip_queued_runs(
             skipped += 1
         if progressed == 0:
             return skipped
+
+
+def retire_pending_runs(
+    task_ids: Collection[str],
+    *,
+    reason: str,
+    fire_time: str | None = None,
+    before_started_at: datetime | None = None,
+    db_path: Path | None = None,
+) -> int:
+    """Skip unstarted ticks without disturbing live claims or retained-report recovery."""
+    path = db_path if db_path is not None else database.default_run_database_path()
+    if not task_ids or not path.exists():
+        return 0
+    with database.transaction(path, immediate=True) as conn:
+        cursor = conn.execute(
+            "UPDATE task_runs SET status = ?, finished_at = ?, error = ? "
+            "WHERE task_id IN (SELECT value FROM json_each(?)) "
+            "AND status = ? AND report IS NULL AND (? IS NULL OR fire_time = ?) "
+            "AND (? IS NULL OR started_at <= ?) AND instr(fire_time, '.') = 0",
+            (
+                TaskStatus.SKIPPED.value,
+                datetime.now(UTC).isoformat(),
+                reason,
+                json.dumps(list(task_ids)),
+                TaskStatus.PENDING.value,
+                fire_time,
+                fire_time,
+                before_started_at.isoformat() if before_started_at is not None else None,
+                before_started_at.isoformat() if before_started_at is not None else None,
+            ),
+        )
+        return cursor.rowcount
 
 
 def complete_run(
@@ -695,6 +739,7 @@ __all__ = [
     "has_live_claim",
     "record_run_report",
     "renew_claims",
+    "retire_pending_runs",
     "skip_queued_runs",
     "try_claim",
     "try_queue_run",

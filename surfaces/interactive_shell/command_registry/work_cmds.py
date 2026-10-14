@@ -54,6 +54,11 @@ def _unsupported_reminder_error(args: Sequence[str]) -> str | None:
 
 
 def _validate_work_args(args: list[str]) -> str | None:
+    if args and args[0].lower() == "edit":
+        from surfaces.interactive_shell.command_registry.work_edit import parse_work_edit_args
+
+        _, _, edit_error = parse_work_edit_args(args[1:])
+        return edit_error or None
     if args and args[0].lower() == "add":
         reminder_error = _unsupported_reminder_error(args[1:])
         if reminder_error is not None:
@@ -209,6 +214,10 @@ def _cmd_work(session: Session, console: Console, args: list[str]) -> bool:
                 return True
             return _create_work(console, values["title"], values)
         return _add(console, args[1:])
+    if sub == "edit":
+        from surfaces.interactive_shell.command_registry.work_edit import edit_work
+
+        return edit_work(session, console, args[1:])
     if sub in {"done", "complete"}:
         collected = collect_work_target(session, console, sub, args[1:])
         return True if collected is None else _done(console, collected)
@@ -216,13 +225,14 @@ def _cmd_work(session: Session, console: Console, args: list[str]) -> bool:
         return _next(session, console, args[1:])
     if sub == "path":
         return _path(console)
-    console.print(f"[{ERROR}]usage:[/] /work [list|add|done|next|path]")
+    console.print(f"[{ERROR}]usage:[/] /work [list|add|edit|done|next|path]")
     return True
 
 
 _WORK_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("list", "list work items (/work list [status])"),
     ("add", "add a durable work item (/work add <title>)"),
+    ("edit", "edit a work item's title and details (/work edit [id])"),
     ("done", "mark one or more work items complete (/work done <id>)"),
     ("next", "rank open work items by priority and due date"),
     ("path", "print the work-item store path"),
@@ -237,6 +247,7 @@ COMMANDS: list[SlashCommand] = [
             "/work",
             "/work list [open|active|blocked|deferred|completed|all] [project]",
             "/work add <title> [--project <name>] [--priority <low|normal|high|urgent>]",
+            "/work edit [id-or-title] [--title <title>] [--priority <priority>] [--project <name>] [--owner <name>] [--due <date>]",
             "/work done [id-or-title] [more...]",
             "/work next [project]",
             "/work path",

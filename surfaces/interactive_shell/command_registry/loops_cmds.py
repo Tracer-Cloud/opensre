@@ -34,6 +34,7 @@ _LOOPS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("all", "active and draft loops"),
     ("show", "full report, run history, and configuration"),
     ("add", "create a recurring prompt loop"),
+    ("edit", "edit a loop's name, prompt, and schedule"),
     ("run", "execute one loop immediately"),
     ("stop", "disable a loop without deleting it"),
     ("start", "enable a stopped or draft loop"),
@@ -48,6 +49,7 @@ _USAGE = (
     "/loops active",
     "/loops show [NAME_OR_ID] [--run RUN]",
     "/loops add --name NAME --time HH:MM --prompt PROMPT [--mode report|agent] [--run-now]",
+    "/loops edit [NAME_OR_ID] [--name NAME] [--prompt PROMPT] [--time HH:MM | --cron CRON] [--tz TIMEZONE] [--window HOURS] [--mode report|agent]",
     "/loops run [LOOP_ID]",
     "/loops stop [LOOP_ID]",
     "/loops start [LOOP_ID]",
@@ -76,7 +78,7 @@ def _short(text: str, *, max_chars: int = 120) -> str:
 def _loops_usage_error() -> str:
     return (
         f"[{ERROR}]usage:[/] "
-        "/loops [list|active|all|show|add|run|stop|start|delete|next|messages|service]\n"
+        "/loops [list|active|all|show|add|edit|run|stop|start|delete|next|messages|service]\n"
         f'[{DIM}]example:[/] /loops add --name "Morning ops" --time 08:30 '
         '--prompt "Check open incidents and summarize risk" --run-now\n'
         f"[{DIM}]add --mode agent lets the tick act with tools instead of only reporting[/]"
@@ -154,6 +156,11 @@ def _validate_loops_args(args: list[str]) -> str | None:
     if not args:
         return None
     sub = args[0].lower()
+    if sub == "edit":
+        from surfaces.interactive_shell.command_registry.loop_edit import parse_loop_edit_args
+
+        _, _, error = parse_loop_edit_args(args[1:])
+        return error or None
     if sub in {
         "active",
         "add",
@@ -195,6 +202,15 @@ def _cmd_loops(session: Session, console: Console, args: list[str]) -> bool:
         return show_loop(session, console, rest)
     if sub == "add":
         return _cmd_loops_add(session, console, rest)
+    if sub == "edit":
+        from surfaces.interactive_shell.command_registry.loop_edit import edit_loop_command
+
+        return edit_loop_command(
+            session,
+            console,
+            rest,
+            on_schedule_change=lambda: _reload_loop_scheduler(session, console),
+        )
     if sub == "run":
         return _cmd_loops_run(session, console, rest)
     if sub in {"stop", "pause", "disable"}:

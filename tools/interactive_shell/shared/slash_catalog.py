@@ -204,9 +204,10 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks to send a single Telegram message (use messaging tools)",),
     ),
     "/goal": _mcp(
-        "Show, set, or clear the session goal that keeps a multi-step ask "
-        "running across turns. Subcommands: show, set, clear.",
-        "User asks to set, inspect, or clear an ongoing goal for the session",
+        "Show, set, edit, pause, resume, or clear the session goal that keeps a multi-step ask "
+        "running across turns. Bare edit reviews the current condition in an interactive terminal; "
+        "edit <condition> changes it directly while preserving its turn budget.",
+        "User asks to set, inspect, edit, pause, resume, or clear an ongoing goal for the session",
         anti_examples=("User wants a durable todo list item (use /work)",),
     ),
     "/guardrails": _mcp(
@@ -267,7 +268,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     "/loops": _mcp(
         "List, create, stop, start, delete, run once, and debug recurring prompt loops, "
         "including latest findings, execution status, and next fire time. "
-        "Subcommands: list, active, all, add, run [id], stop [id], start [id], delete [id], "
+        "Subcommands: list, active, all, add, edit [name-or-id], run [id], stop [id], start [id], delete [id], "
         "show [name-or-id] [--run <run-id>], next [id], messages, service [install|remove]. "
         "Prefer a supplied target ID for direct execution. In the interactive terminal, "
         "omitting an action target opens a searchable picker; run and delete require explicit "
@@ -281,6 +282,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks when configured loops will run next",
         "User asks what a loop found or wants to read its full report",
         "User asks to set up a manual recurring loop from a prompt",
+        "User asks to edit an existing recurring loop's name, prompt, or schedule",
         "User asks to add a loop and execute it once immediately",
         "User asks to stop, disable, resume, start, delete, or remove a recurring loop",
         "User explicitly requests a loop action and wants to choose its target interactively",
@@ -475,12 +477,12 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks for version information",
     ),
     "/work": _mcp(
-        "Manage durable human work items. Subcommands: list, add, done, next, path. "
+        "Manage durable human work items. Subcommands: list, add, edit [id-or-title], done, next, path. "
         "Prefer explicit completion IDs; done or complete without a target opens a searchable "
         "unfinished-item picker in the interactive terminal. Noninteractive completion requires "
         "one or more targets. "
         "Reminder delivery requires the destination-aware work_task_* tools or opensre work CLI.",
-        "User explicitly types /work to list, add, complete, or prioritize work items",
+        "User explicitly types /work to list, add, edit, complete, or prioritize work items",
         "User asks for a durable task list or hackathon task overview via the slash command",
         anti_examples=(
             "User asks to manage OpenSRE runtime background jobs (use /tasks)",

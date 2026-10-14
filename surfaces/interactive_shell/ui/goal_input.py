@@ -105,3 +105,30 @@ def build_goal_set_form(options: dict[str, str]) -> Application[GoalSetValues | 
         validate=_validate,
         initial_field="condition",
     )
+
+
+def build_goal_edit_form(condition: str, *, paused: bool) -> Application[str | None]:
+    """Review the current condition before saving an edit to the attached goal."""
+
+    def validate(values: dict[str, str]) -> str:
+        value = values["condition"].strip()
+        _validate_condition(value)
+        return value
+
+    return build_input_form(
+        {"condition": condition},
+        title="/goal edit",
+        heading="Edit paused goal" if paused else "Edit active goal",
+        submit_label="Save changes",
+        fields=lambda _values: [
+            InputField(
+                "condition",
+                "Condition",
+                description=_GOAL_CONDITION_DESCRIPTION,
+                status="required",
+                required=True,
+                validate=_validate_condition,
+            )
+        ],
+        validate=validate,
+    )

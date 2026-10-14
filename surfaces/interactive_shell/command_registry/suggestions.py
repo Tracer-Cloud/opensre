@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from difflib import get_close_matches
 from typing import Literal
@@ -85,7 +86,10 @@ def resolve_literal_slash_typo(
     if not stripped.startswith("/"):
         return None
 
-    parts = stripped.split()
+    try:
+        parts = shlex.split(stripped, posix=True)
+    except ValueError:
+        parts = stripped.split()
     if not parts:
         return None
 
