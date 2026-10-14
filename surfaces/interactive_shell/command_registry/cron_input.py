@@ -8,8 +8,8 @@ from rich.console import Console
 
 from config.command_inputs import CRON_TARGET_INPUT
 from core.agent_harness.spi.session_state import set_auto_command
-from infrastructure.scheduling.scheduler.storage import list_tasks
-from infrastructure.terminal.theme import DIM, HIGHLIGHT
+from infrastructure.scheduling.scheduler.storage.task_store import get_task_store_snapshot
+from infrastructure.terminal.theme import DIM, HIGHLIGHT, WARNING
 from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.cron_input import build_cron_form
@@ -27,15 +27,21 @@ def collect_cron_target(session: Session, console: Console, args: list[str]) -> 
     """Select an exact scheduled task, preserving explicit arguments and flags."""
     if not can_collect_input(session, CRON_TARGET_INPUT, args):
         return args
-    tasks = list_tasks(read_only=True)
-    if not tasks:
+    snapshot = get_task_store_snapshot(read_only=True)
+    if not snapshot.complete:
+        console.print(
+            f"[{WARNING}]Could not read all scheduled tasks. Check /cron status --json, "
+            "repair the scheduler task store, then retry.[/]"
+        )
+        return None
+    if not snapshot.tasks:
         console.print(
             f"[{DIM}]No scheduled tasks configured. Create one with[/] "
             f"[{HIGHLIGHT}]/cron add[/][{DIM}].[/]"
         )
         return None
     sub = args[0].lower()
-    target = run_command_input(build_cron_target_picker(tasks, subcommand=sub))
+    target = run_command_input(build_cron_target_picker(snapshot.tasks, subcommand=sub))
     if target is not None and sub == "run":
         # Release the picker's exclusive stdin before a potentially long run.
         set_auto_command(session, shlex.join(("/cron", "run", target)))

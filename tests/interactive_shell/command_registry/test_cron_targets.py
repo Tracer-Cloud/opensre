@@ -19,6 +19,7 @@ from config.command_inputs import needs_command_input
 from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from config.interactive_override import forced_non_interactive
 from core.agent_harness.tools.tool_context import ActionToolScope
+from infrastructure.scheduling.scheduler import delivery_plan, loops
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_GROUP_ID_PARAM
 from infrastructure.scheduling.scheduler.loops import list_loop_summaries
 from infrastructure.scheduling.scheduler.storage import task_store
@@ -195,6 +196,49 @@ def test_confirmed_run_queues_exact_task_and_releases_stdin_before_execution(
     assert task.id in calls[0][1]["keep_running_hint"]
 
 
+@pytest.mark.parametrize("destination", ["C-param-payments", "-100-param-payments"])
+def test_parameter_backed_destinations_from_loop_creation_are_searchable_without_credentials(
+    monkeypatch: pytest.MonkeyPatch, destination: str
+) -> None:
+    monkeypatch.setattr(
+        loops, "resolve_slack_credentials", lambda _params: {"access_token": "fake"}
+    )
+    monkeypatch.setattr(
+        loops, "resolve_telegram_credentials", lambda _params: {"bot_token": "fake"}
+    )
+    task = loops.create_manual_loop(
+        name="Fanout payments",
+        prompt="Inspect payments",
+        time_text="08:30",
+        channels=["interactive_shell", "slack", "telegram"],
+        slack_chat_id="C-param-payments",
+        telegram_chat_id="-100-param-payments",
+    ).task
+    assert not task.chat_id
+    path = task_store.default_task_store_path()
+    before = path.read_bytes()
+    calls: list[list[str]] = []
+
+    def unexpected(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("Picker metadata must not resolve credentials or implicit defaults")
+
+    def collect(app: Any) -> Any:
+        return run_keys(app, destination + "\r")
+
+    def run_cli(_console: Console, args: list[str], **_kwargs: Any) -> bool:
+        calls.append(args)
+        return True
+
+    monkeypatch.setattr(delivery_plan, "resolve_slack_credentials", unexpected)
+    monkeypatch.setattr(delivery_plan, "resolve_telegram_default_chat_id", unexpected)
+    monkeypatch.setattr(cron_input, "run_command_input", collect)
+    monkeypatch.setattr(cli_parity, "run_cli_command", run_cli)
+    with create_app_session(output=DummyOutput()):
+        dispatch("/cron logs")
+    assert calls == [["cron", "logs", task.id]]
+    assert path.read_bytes() == before
+
+
 def test_confirmed_remove_deletes_only_selected_channel_task_and_logs_handles_no_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -234,6 +278,28 @@ def test_empty_store_is_actionable_without_opening_picker_or_creating_files(
     assert not task_store.default_task_store_path().parent.exists()
 
 
+@pytest.mark.parametrize("content", ["{malformed", '[{"kind": "invalid"}]', "partial"])
+def test_incomplete_task_store_warns_without_creation_advice_or_partial_selection(
+    monkeypatch: pytest.MonkeyPatch, content: str
+) -> None:
+    first, _ = seed_tasks()
+    path = task_store.default_task_store_path()
+    if content == "partial":
+        content = json.dumps([first.model_dump(mode="json"), {"kind": "invalid"}])
+    path.write_text(content)
+    before = path.read_bytes()
+
+    def unexpected(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("Incomplete stores must not open a picker or execute anything")
+
+    monkeypatch.setattr(cron_input, "run_command_input", unexpected)
+    monkeypatch.setattr(cli_parity, "run_cli_command", unexpected)
+    output = dispatch("/cron remove")
+    assert "Could not read all scheduled tasks" in output and "/cron status --json" in output
+    assert "No scheduled tasks" not in output and "/cron add" not in output
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -257,7 +323,7 @@ def test_explicit_ids_and_flags_bypass_collection_unchanged(
         calls.append(argv)
         return True
 
-    monkeypatch.setattr(cron_input, "list_tasks", unexpected)
+    monkeypatch.setattr(cron_input, "get_task_store_snapshot", unexpected)
     session = Session()
     session.terminal.exclusive_stdin_active = True
     cron_cmds.cmd_cron(session, Console(file=io.StringIO()), args, run_cli=run_cli)
@@ -273,7 +339,7 @@ def test_noninteractive_commands_keep_cli_usage_without_reading_targets(
     def unexpected(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("Noninteractive commands must not read targets or consume stdin")
 
-    monkeypatch.setattr(cron_input, "list_tasks", unexpected)
+    monkeypatch.setattr(cron_input, "get_task_store_snapshot", unexpected)
     session = Session()
     if host == "gateway":
         session.terminal = None

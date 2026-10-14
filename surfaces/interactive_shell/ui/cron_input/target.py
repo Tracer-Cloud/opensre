@@ -7,7 +7,8 @@ from collections.abc import Sequence
 from prompt_toolkit.application import Application
 from rich.text import Text
 
-from infrastructure.scheduling.scheduler.loops import loop_channels, loop_name
+from infrastructure.scheduling.scheduler.delivery_plan import configured_target_keys
+from infrastructure.scheduling.scheduler.loops import loop_name
 from infrastructure.scheduling.scheduler.types import ScheduledTask
 from infrastructure.terminal.theme import SECONDARY
 from surfaces.interactive_shell.ui.cron_input.presentation import choice_label
@@ -35,15 +36,22 @@ def build_cron_target_picker(
     choices: list[TargetChoice] = []
     for task in tasks:
         kind = choice_label("kind", task.kind.value)
+        targets = configured_target_keys(task)
         channels = ", ".join(
-            choice_label("provider", channel.value) for channel in loop_channels(task)
+            dict.fromkeys(choice_label("provider", provider.value) for provider, _chat in targets)
         )
         state = "Enabled" if task.enabled else "Disabled"
         summary = f"Kind: {kind} · Channel: {channels} · State: {state}"
         details = (
             f"Schedule: {task.cron}",
             f"TZ: {task.timezone}",
-            *((f"Destination: {task.chat_id}",) if task.chat_id else ()),
+            *(
+                f"{choice_label('provider', provider.value)} destination: {chat_id}"
+                if len(targets) > 1
+                else f"Destination: {chat_id}"
+                for provider, chat_id in targets
+                if chat_id
+            ),
         )
         choices.append(
             TargetChoice(

@@ -349,8 +349,8 @@ class FailureRecordingSlashPorts(FakeSlashPorts):
     """Fake ports whose dispatch records a failing slash row, like a real
     handler whose delegated CLI subprocess exited non-zero."""
 
-    error_text: str = "Usage: opensre cron remove [OPTIONS] TASK_ID"
-    fail_commands: frozenset[str] = frozenset({"/cron remove"})
+    error_text: str = "Error: task missing-task not found"
+    fail_commands: frozenset[str] = frozenset({"/cron remove missing-task"})
 
     def dispatch(self, command: str, *, session: Any = None, **_kwargs: Any) -> bool:
         self.dispatched.append(command)
@@ -369,12 +369,14 @@ def test_failed_dispatch_returns_error_observation() -> None:
     ports = FailureRecordingSlashPorts(tty=True)
     ctx, _buf, _session, _ports = _ctx(ports=ports)
 
-    result = slash_tool.execute_slash_tool({"command": "/cron", "args": ["remove"]}, ctx)
+    result = slash_tool.execute_slash_tool(
+        {"command": "/cron", "args": ["remove", "missing-task"]}, ctx
+    )
 
     assert result == {
         "ok": False,
-        "command": "/cron remove",
-        "error": "Usage: opensre cron remove [OPTIONS] TASK_ID",
+        "command": "/cron remove missing-task",
+        "error": "Error: task missing-task not found",
     }
 
 
@@ -383,21 +385,25 @@ def test_corrected_retry_after_failure_executes_in_same_turn() -> None:
     ports = FailureRecordingSlashPorts(tty=True)
     ctx, _buf, _session, _ports = _ctx(ports=ports)
 
-    first = slash_tool.execute_slash_tool({"command": "/cron", "args": ["remove"]}, ctx)
+    first = slash_tool.execute_slash_tool(
+        {"command": "/cron", "args": ["remove", "missing-task"]}, ctx
+    )
     retry = slash_tool.execute_slash_tool(
         {"command": "/cron", "args": ["remove", "ecf7c2580b83"]}, ctx
     )
 
     assert isinstance(first, dict) and first["ok"] is False
     assert retry is True
-    assert ports.dispatched == ["/cron remove", "/cron remove ecf7c2580b83"]
+    assert ports.dispatched == ["/cron remove missing-task", "/cron remove ecf7c2580b83"]
 
 
 def test_error_observation_excerpt_is_capped() -> None:
     ports = FailureRecordingSlashPorts(tty=True, error_text="x" * 5000)
     ctx, _buf, _session, _ports = _ctx(ports=ports)
 
-    result = slash_tool.execute_slash_tool({"command": "/cron", "args": ["remove"]}, ctx)
+    result = slash_tool.execute_slash_tool(
+        {"command": "/cron", "args": ["remove", "missing-task"]}, ctx
+    )
 
     assert isinstance(result, dict)
     # Matches _MAX_OBSERVED_ERROR_CHARS in tools.interactive_shell.actions.slash.

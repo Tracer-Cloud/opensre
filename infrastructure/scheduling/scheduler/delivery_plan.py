@@ -25,6 +25,7 @@ from infrastructure.scheduling.scheduler.credentials import (
 from infrastructure.scheduling.scheduler.delivery import resolve_slack_delivery_chat_id
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CHANNELS_PARAM,
+    LOOP_SLACK_CHAT_ID_PARAM,
     LOOP_TELEGRAM_CHAT_ID_PARAM,
 )
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask
@@ -61,6 +62,30 @@ class DeliveryPlan:
     targets: tuple[DeliveryTarget, ...] = ()
     fanned_out: bool = False
     error: str = ""
+
+
+def configured_target_keys(task: ScheduledTask) -> tuple[TargetKey, ...]:
+    """Return persisted destinations without reading credentials or implicit defaults."""
+    explicit = _explicit_targets(task)
+    if explicit:
+        return tuple((target.provider, target.chat_id) for target in explicit)
+    channels, _error = _loop_channels(task)
+    if not channels:
+        return ((task.provider, task.chat_id),)
+    chat_params = {
+        Provider.SLACK: LOOP_SLACK_CHAT_ID_PARAM,
+        Provider.TELEGRAM: LOOP_TELEGRAM_CHAT_ID_PARAM,
+    }
+    targets: list[TargetKey] = []
+    for provider in channels:
+        chat_id = task.chat_id if task.provider == provider else ""
+        param = chat_params.get(provider)
+        if param is not None:
+            chat_id = task.params.get(param, "").strip() or chat_id
+        if provider == Provider.INTERACTIVE_SHELL:
+            chat_id = ""
+        targets.append((provider, chat_id))
+    return tuple(targets)
 
 
 def resolve_delivery_plan(
@@ -203,5 +228,6 @@ __all__ = [
     "DeliveryPlan",
     "DeliveryTarget",
     "TargetKey",
+    "configured_target_keys",
     "resolve_delivery_plan",
 ]

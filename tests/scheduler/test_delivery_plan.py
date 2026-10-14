@@ -6,7 +6,10 @@ import json
 
 import pytest
 
-from infrastructure.scheduling.scheduler.delivery_plan import resolve_delivery_plan
+from infrastructure.scheduling.scheduler.delivery_plan import (
+    configured_target_keys,
+    resolve_delivery_plan,
+)
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_CHANNELS_PARAM
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
@@ -23,6 +26,20 @@ def _task(**overrides: object) -> ScheduledTask:
 
 
 class TestDeliveryPlan:
+    def test_configured_target_keys_preserve_explicit_fanout_precedence(self) -> None:
+        task = _task(
+            params={
+                LOOP_CHANNELS_PARAM: "interactive_shell,telegram",
+                "delivery_targets": json.dumps(
+                    [
+                        {"provider": "slack", "chat_id": "C1"},
+                        {"provider": "slack", "chat_id": "C2"},
+                    ]
+                ),
+            }
+        )
+        assert configured_target_keys(task) == ((Provider.SLACK, "C1"), (Provider.SLACK, "C2"))
+
     def test_a_plain_task_delivers_once_to_its_own_provider(self) -> None:
         plan = resolve_delivery_plan(_task(provider=Provider.SLACK, chat_id="C123"))
 
