@@ -334,17 +334,19 @@ def build_input_form[Result](
         )
         if browse_only and choice.record is not None:
             lines = [(str(line.style), line.plain) for line in choice.record.metadata]
-            details = [line for line in choice.record.details if line.plain.strip()]
+            record_details = [line for line in choice.record.details if line.plain.strip()]
             query = editor.text.strip().casefold()
             matched: list[Text] = []
             remaining: list[Text] = []
-            for line in details:
+            for line in record_details:
                 (matched if query and query in line.plain.casefold() else remaining).append(line)
             if matched:
-                details = [*matched, *remaining]
+                record_details = [*matched, *remaining]
             if compact_records():
-                details = matched[:1]
-            lines.extend((str(line.style), clip_prompt_text(line.plain, 120)) for line in details)
+                record_details = matched[:1]
+            lines.extend(
+                (str(line.style), clip_prompt_text(line.plain, 120)) for line in record_details
+            )
         else:
             lines = [] if inline_id else [("class:hint", f"ID: {choice.value or ''}")]
         if summary:
