@@ -809,7 +809,8 @@ def build_input_form[Result](
         ),
         key_bindings=keys,
         style=command_input_style(),
-        full_screen=False,
+        # Main-buffer reflow can strand old inline rows after a shrink/expand cycle.
+        full_screen=True,
         erase_when_done=True,
     )
     first_missing = next(

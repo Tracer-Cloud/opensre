@@ -561,7 +561,8 @@ def test_work_picker_aligns_headers_and_cells_and_paints_the_complete_selection(
     ):
         assert selected.index(value) == header.index(heading)
     assert app.style is not None
-    for x in range(3, 87):
+    right_border = selected.rindex("│")
+    for x in range(3, right_border - 2):
         if not screen.data_buffer[selected_y][x].char:
             continue  # The leading cell paints both cells of a wide Unicode glyph.
         attrs = app.style.get_attrs_for_style_str(screen.data_buffer[selected_y][x].style)

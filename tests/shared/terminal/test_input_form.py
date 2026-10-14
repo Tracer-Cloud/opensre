@@ -293,3 +293,31 @@ def test_form_leaves_last_terminal_column_clear_for_resize_repaints() -> None:
     top = screens[0].data_buffer[0]
     assert top[58].char == "┐"
     assert top[59].char == " "
+
+
+def test_form_uses_alternate_screen_so_terminal_reflow_cannot_orphan_rows() -> None:
+    class TrackingOutput(DummyOutput):
+        def __init__(self) -> None:
+            self.entered_alternate_screen = 0
+            self.left_alternate_screen = 0
+
+        def enter_alternate_screen(self) -> None:
+            self.entered_alternate_screen += 1
+
+        def quit_alternate_screen(self) -> None:
+            self.left_alternate_screen += 1
+
+    output = TrackingOutput()
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+        app = build_input_form(
+            {"name": "audit"},
+            title="/records",
+            heading="Records",
+            submit_label="Close",
+            fields=lambda _values: [InputField("name", "Name")],
+            validate=lambda _values: None,
+        )
+        assert app.run(pre_run=lambda: pipe.send_text("\x03")) is None
+
+    assert output.entered_alternate_screen == 1
+    assert output.left_alternate_screen == 1
