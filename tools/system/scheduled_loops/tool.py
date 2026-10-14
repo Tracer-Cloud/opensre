@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from config.constants.organization import organization_id
 from config.constants.scheduler import WEEKDAY_CRON_FIELD, WORK_UNVERIFIED_ERROR_KIND
-from config.principal import PrincipalKind
-from config.scope_context import current_scope
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
@@ -16,7 +13,8 @@ from infrastructure.scheduling.scheduler.cron_expression import day_of_week_name
 from infrastructure.scheduling.scheduler.loop_results import latest_loop_runs
 from infrastructure.scheduling.scheduler.loops import LoopSummary, summarize_loops
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
-from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind, TaskRun, TaskStatus
+from infrastructure.scheduling.scheduler.task_visibility import visible_to_current_scope
+from infrastructure.scheduling.scheduler.types import TaskKind, TaskRun, TaskStatus
 
 TOOL_NAME = "list_scheduled_loops"
 _SOURCE = "system"
@@ -36,20 +34,6 @@ _INPUT_SCHEMA: dict[str, Any] = {
     },
     "additionalProperties": False,
 }
-
-
-def _visible_to_this_turn(task: ScheduledTask) -> bool:
-    """A turn bound to an organization sees that organization's tasks and no others.
-
-    Outside any organization scope (the operator's own shell) every task is
-    visible. A task without an owner belongs to the deployment's declared
-    organization; on a deployment that declares none it is shown to no organization.
-    """
-    scope = current_scope()
-    if scope is None or scope.principal.kind != PrincipalKind.ORG:
-        return True
-    owner = task.organization or organization_id()
-    return owner == scope.principal.id
 
 
 _PURPOSE_CHARS = 160
@@ -244,7 +228,7 @@ def list_scheduled_loops(include_disabled: bool = True, **_kwargs: Any) -> dict[
         return tool_unavailable(_SOURCE, _STORE_UNREADABLE)
     # One read: the rows come from the same validated snapshot the check looked at,
     # narrowed to the organization this turn belongs to.
-    own_tasks = [task for task in snapshot.tasks if _visible_to_this_turn(task)]
+    own_tasks = [task for task in snapshot.tasks if visible_to_current_scope(task)]
     loops = summarize_loops(own_tasks, include_disabled=include_disabled)
     runs = latest_loop_runs(loops)
     rows = [_loop_row(loop, runs.get(loop.id)) for loop in loops]

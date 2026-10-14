@@ -18,6 +18,8 @@ from rich.console import Console
 from config.command_inputs import needs_command_input
 from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from config.interactive_override import forced_non_interactive
+from config.principal import Actor, Principal, StorageScope
+from config.scope_context import bound_storage_scope
 from core.agent_harness.tools.tool_context import ActionToolScope
 from infrastructure.scheduling.scheduler import delivery_plan, loops
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_GROUP_ID_PARAM
@@ -298,6 +300,35 @@ def test_incomplete_task_store_warns_without_creation_advice_or_partial_selectio
     assert "Could not read all scheduled tasks" in output and "/cron status --json" in output
     assert "No scheduled tasks" not in output and "/cron add" not in output
     assert path.read_bytes() == before
+
+
+def test_organization_bound_picker_receives_only_visible_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    own, legacy = seed_tasks()
+    own = own.model_copy(update={"organization": "org_A"})
+    legacy = legacy.model_copy(update={"id": "legacy-task", "organization": ""})
+    foreign = legacy.model_copy(
+        update={"id": "foreign-task", "name": "Foreign secret", "organization": "org_B"}
+    )
+    path = task_store.default_task_store_path()
+    path.write_text(json.dumps([task.model_dump(mode="json") for task in (own, legacy, foreign)]))
+    received: list[str] = []
+
+    def build(tasks: tuple[ScheduledTask, ...], *, subcommand: str) -> object:
+        assert subcommand == "logs"
+        received.extend(task.id for task in tasks)
+        return object()
+
+    monkeypatch.setattr(cron_input, "build_cron_target_picker", build)
+    monkeypatch.setattr(cron_input, "run_command_input", lambda _app: None)
+    monkeypatch.setenv("ORGANIZATION_ID", "org_A")
+    scope = StorageScope(principal=Principal.org("org_A"), actor=Actor(id="u1"))
+
+    with bound_storage_scope(scope):
+        dispatch("/cron logs")
+
+    assert received == [own.id, legacy.id]
 
 
 @pytest.mark.parametrize(
