@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -44,7 +42,7 @@ def build_integration_browser(
     entries: Sequence[IntegrationEntry],
     *,
     mcp: bool = False,
-    verify: Callable[[str], dict[str, str] | None] | None = None,
+    verify: Callable[[str], Awaitable[dict[str, str] | None]] | None = None,
 ) -> Application[IntegrationSelection | None]:
     """Reuse the loop-list form; verification refreshes records without leaving it."""
     title = "MCP servers" if mcp else "Integrations"
@@ -114,11 +112,7 @@ def build_integration_browser(
             return
         service = choice.value
         try:
-            executor = ThreadPoolExecutor(max_workers=1)
-            try:
-                result = await asyncio.get_running_loop().run_in_executor(executor, verify, service)
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
+            result = await verify(service)
         except Exception as exc:
             raise InputFormError(
                 "Connectivity check failed. Retry or reconfigure this connection."
@@ -160,7 +154,7 @@ def browse_integrations(
     entries: Sequence[IntegrationEntry],
     *,
     mcp: bool = False,
-    verify: Callable[[str], dict[str, str] | None] | None = None,
+    verify: Callable[[str], Awaitable[dict[str, str] | None]] | None = None,
 ) -> IntegrationSelection | None:
     """Restore the terminal before returning a setup or confirmed-removal request."""
     return run_command_input(build_integration_browser(entries, mcp=mcp, verify=verify))

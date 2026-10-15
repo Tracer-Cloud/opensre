@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import pytest
 from prompt_toolkit.application import Application, create_app_session
@@ -22,7 +22,7 @@ def run_browser(
     mcp: bool = False,
     width: int = 96,
     height: int = 32,
-    verify: Callable[[str], dict[str, str] | None] | None = None,
+    verify: Callable[[str], Awaitable[dict[str, str] | None]] | None = None,
 ) -> browser.IntegrationSelection | None:
     class Output(DummyOutput):
         def get_size(self) -> Size:
@@ -57,7 +57,7 @@ def test_search_and_inline_verification_keep_the_browser_open(mcp: bool) -> None
     calls: list[str] = []
     stage = 0
 
-    def verify(service: str) -> dict[str, str]:
+    async def verify(service: str) -> dict[str, str]:
         calls.append(service)
         return {
             "service": service,
@@ -98,7 +98,7 @@ def test_search_and_inline_verification_keep_the_browser_open(mcp: bool) -> None
 
 @pytest.mark.parametrize("width", [40, 96, 160])
 def test_selection_does_not_probe_and_keeps_unsupported_checks_explicit(width: int) -> None:
-    def no_probe(_service: str) -> dict[str, str]:
+    async def no_probe(_service: str) -> dict[str, str]:
         pytest.fail("Selection and search must not probe connections")
 
     def drive(frame: str, send: Callable[[str], None]) -> None:
@@ -152,7 +152,7 @@ def test_empty_browser_offers_setup_but_never_removes() -> None:
 
 
 def test_unsupported_verification_is_not_offered_or_executed() -> None:
-    def no_probe(_service: str) -> dict[str, str]:
+    async def no_probe(_service: str) -> dict[str, str]:
         pytest.fail("This connection has no verifier")
 
     def drive(frame: str, send: Callable[[str], None]) -> None:
@@ -189,7 +189,7 @@ def test_verification_errors_stay_inline_and_can_be_retried() -> None:
     stage = 0
     calls = 0
 
-    def verify(service: str) -> dict[str, str]:
+    async def verify(service: str) -> dict[str, str]:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -247,20 +247,17 @@ def test_click_changes_details_without_verifying() -> None:
         assert "Full details: /integrations show github" not in details
 
 
-def test_escape_does_not_wait_for_or_apply_a_late_verification() -> None:
-    from threading import Event
-
-    release = Event()
-    completed = Event()
+def test_escape_cancels_inflight_verification() -> None:
+    completed = False
     stage = 0
 
-    def verify(service: str) -> dict[str, str]:
+    async def verify(_service: str) -> dict[str, str]:
+        nonlocal completed
         try:
-            if not release.wait(3):
-                raise TimeoutError("Test did not release verification")
-            return {"service": service, "status": "ok", "detail": "Late result"}
+            await asyncio.Event().wait()
+            raise AssertionError("Cancelled verification cannot return a result")
         finally:
-            completed.set()
+            completed = True
 
     def drive(frame: str, send: Callable[[str], None]) -> None:
         nonlocal stage
@@ -271,9 +268,40 @@ def test_escape_does_not_wait_for_or_apply_a_late_verification() -> None:
             stage = 2
             send("\x1b")
 
-    try:
-        assert run_browser([browser.IntegrationEntry("github", True)], drive, verify=verify) is None
-        assert stage == 2 and not completed.is_set()
-    finally:
-        release.set()
-        assert completed.wait(3)
+    assert run_browser([browser.IntegrationEntry("github", True)], drive, verify=verify) is None
+    assert stage == 2 and completed
+
+
+def test_checked_row_stays_visible_until_the_search_changes() -> None:
+    stage = 0
+
+    async def verify(service: str) -> dict[str, str]:
+        return {"service": service, "status": "ok", "detail": "Reachable"}
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        if stage == 0:
+            stage = 1
+            send("not checked")
+        elif stage == 1 and "Search › not checked" in frame:
+            stage = 2
+            send("\r")
+        elif stage == 2 and "Reachable" in frame:
+            assert "Search › not checked" in frame
+            assert "github" in frame
+            stage = 3
+            send("\x15impossible")
+        elif stage == 3 and "0 of 2 items" in frame:
+            assert "Reachable" not in frame
+            stage = 4
+            send("\x1b")
+
+    assert (
+        run_browser(
+            [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)],
+            drive,
+            verify=verify,
+        )
+        is None
+    )
+    assert stage == 4

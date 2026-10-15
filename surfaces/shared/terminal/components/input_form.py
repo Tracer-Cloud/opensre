@@ -136,6 +136,7 @@ def build_input_form[Result](
     error = ""
     choice_index = 0
     busy = False
+    pinned_record: str | None = None
 
     def record_mode() -> bool:
         item = field_map.get(field)
@@ -243,11 +244,15 @@ def build_input_form[Result](
         return [
             choice
             for choice, search_text in choice_catalog[field]
-            if not query or choice.value is None or (choice.value != "" and query in search_text)
+            if not query
+            or choice.value is None
+            or choice.value == pinned_record
+            or (choice.value != "" and query in search_text)
         ]
 
     def reset_choice(_buffer: object) -> None:
-        nonlocal choice_index
+        nonlocal choice_index, pinned_record
+        pinned_record = None
         if mode == "choice" and active_field().searchable:
             choice_index = 0
 
@@ -586,7 +591,14 @@ def build_input_form[Result](
             error = ""
 
             async def perform() -> None:
-                nonlocal busy, error, field_map, choice_catalog, record_views, choice_index
+                nonlocal \
+                    busy, \
+                    error, \
+                    field_map, \
+                    choice_catalog, \
+                    record_views, \
+                    choice_index, \
+                    pinned_record
                 try:
                     result = await action.handler(choice)
                     if event.app.is_done:
@@ -595,6 +607,7 @@ def build_input_form[Result](
                         event.app.exit(result=result)
                         return
                     selected = selected_record()
+                    pinned_record = choice.value if choice is not None else None
                     field_map = {item.name: item for item in fields(dict(current))}
                     choice_catalog = search_catalog()
                     record_views = record_catalog()

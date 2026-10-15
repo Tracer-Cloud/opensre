@@ -27,7 +27,7 @@ def test_list_subcommand_browses_configured_items_without_verifying(
     seen: list[list[str]] = []
 
     def browse(entries: list[IntegrationEntry], *, mcp: bool, verify: object) -> None:
-        assert verify is commands.repl_data.verify_integration
+        assert verify is commands.verify_connection
         assert mcp == command.startswith("/mcp ")
         seen.append([entry.service for entry in entries])
 
@@ -195,7 +195,7 @@ def test_browser_removal_keeps_confirmation(
 
 def test_browser_marks_integrations_without_a_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
     def browse(entries: list[IntegrationEntry], *, mcp: bool, verify: object) -> None:
-        assert verify is commands.repl_data.verify_integration
+        assert verify is commands.verify_connection
         assert [(entry.service, entry.can_verify) for entry in entries] == [
             ("airflow", False),
             ("github", True),

@@ -14,6 +14,7 @@ from surfaces.interactive_shell.command_registry.cli_parity import (
     publish_headless_slash_response,
     run_cli_command,
 )
+from surfaces.interactive_shell.command_registry.integration_verification import verify_connection
 from surfaces.interactive_shell.command_registry.setup_resume import resume_after_setup
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
@@ -343,7 +344,7 @@ def _browse_connections(session: Session, console: Console, *, mcp: bool) -> boo
         for name in names
     ]
     set_browser_outcome()
-    selected = browse_integrations(entries, mcp=mcp, verify=repl_data.verify_integration)
+    selected = browse_integrations(entries, mcp=mcp, verify=verify_connection)
     if selected is None:
         return True
     if selected.action == "remove":
