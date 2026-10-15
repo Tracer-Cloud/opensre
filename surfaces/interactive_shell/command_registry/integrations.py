@@ -343,13 +343,9 @@ def _browse_connections(session: Session, console: Console, *, mcp: bool) -> boo
         for name in names
     ]
     set_browser_outcome()
-    selected = browse_integrations(entries, mcp=mcp)
+    selected = browse_integrations(entries, mcp=mcp, verify=repl_data.verify_integration)
     if selected is None:
         return True
-    if selected.action == "verify":
-        result = _run_verify(session, console, selected.service)
-        set_browser_outcome()
-        return result
     if selected.action == "remove":
         result = _handle_remove(session, console, selected.service)
         set_browser_outcome()

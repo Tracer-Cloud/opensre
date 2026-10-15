@@ -1,120 +1,279 @@
-"""Connection browsing is bounded, literal, and explicit about mutations."""
+"""Connection lists share the searchable form without probing on selection."""
 
 from __future__ import annotations
 
-from os import terminal_size
-from types import SimpleNamespace
+import asyncio
+from collections.abc import Callable
 
 import pytest
-from prompt_toolkit.output.base import DummyOutput
-from rich.text import Text
+from prompt_toolkit.application import Application, create_app_session
+from prompt_toolkit.data_structures import Size
+from prompt_toolkit.formatted_text import to_formatted_text
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import DummyOutput
 
 from surfaces.interactive_shell.ui import integration_browser as browser
-from surfaces.shared.terminal.prompt_layout import prompt_text_width
 
 
-@pytest.fixture
-def terminal(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    events: list[str] = []
-    state = SimpleNamespace(keys=iter(["cancel"]), width=80, height=24)
-
+def run_browser(
+    entries: list[browser.IntegrationEntry],
+    drive: Callable[[str, Callable[[str], None]], None],
+    *,
+    mcp: bool = False,
+    width: int = 96,
+    height: int = 32,
+    verify: Callable[[str], dict[str, str] | None] | None = None,
+) -> browser.IntegrationSelection | None:
     class Output(DummyOutput):
-        def enter_alternate_screen(self) -> None:
-            events.append("screen")
+        def get_size(self) -> Size:
+            return Size(rows=height, columns=width)
 
-        def quit_alternate_screen(self) -> None:
-            events.append("restore")
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=Output()):
+        app = browser.build_integration_browser(entries, mcp=mcp, verify=verify)
 
-    def size(**_kwargs: object) -> terminal_size:
-        return terminal_size((state.width, state.height))
+        def capture(_app: Application[object]) -> None:
+            screen = app.renderer.last_rendered_screen
+            if screen is None or app.is_done:
+                return
+            frame = "\n".join(
+                "".join(screen.data_buffer[y][x].char for x in range(width))
+                for y in range(screen.height)
+            )
+            try:
+                drive(frame, pipe.send_text)
+            except AssertionError as exc:
+                app.exit(exception=exc)
 
-    def read(*, allow_chars: bool = False) -> str:
-        assert allow_chars, "Action shortcuts require printable-character input"
-        key = next(state.keys)
-        if isinstance(key, Exception):
-            raise key
-        return str(key)
+        async def timeout() -> None:
+            await asyncio.sleep(3)
+            app.exit(exception=AssertionError("Browser journey did not complete"))
 
-    monkeypatch.setattr(browser, "get_terminal_size", size)
-    monkeypatch.setattr(browser, "create_output", Output)
-    monkeypatch.setattr(browser, "read_menu_or_char", read)
-    monkeypatch.setattr(browser, "repl_tty_interactive", lambda: True)
-    monkeypatch.setattr(browser, "enter_inline_menu", lambda: events.append("enter"))
-    monkeypatch.setattr(browser, "leave_inline_menu", lambda: events.append("leave"))
-    state.events = events
-    return state
+        app.after_render += capture
+        return app.run(pre_run=lambda: app.create_background_task(timeout()))
 
 
 @pytest.mark.parametrize("mcp", [False, True])
-@pytest.mark.parametrize("size", [(8, 3), (39, 12), (59, 20), (99, 32), (119, 50)])
-def test_frame_fits_and_keeps_selected_item_visible(mcp: bool, size: tuple[int, int]) -> None:
-    width, height = size
-    names = [browser.IntegrationEntry(f"connection-{n}", True) for n in range(40)]
-    names[30] = browser.IntegrationEntry("界" * 45 + "\x1b[31m\r\nspoof", True)
-    frame = browser._render_frame(names, selected=30, top=0, mcp=mcp, width=width, height=height)
-    rows = [Text.from_ansi(row).plain for row in frame.rows]
-    assert len(rows) < height
-    assert all(prompt_text_width(row) <= width and "\n" not in row for row in rows)
-    assert "Esc" in "\n".join(rows)
-    if width >= 39 and height >= 12:
-        assert any("›" in row and "Not checked" in row for row in rows)
-        assert ("r disconnect" if mcp else "r remove") in "\n".join(rows)
-        assert "31/40" in "\n".join(rows)
+def test_search_and_inline_verification_keep_the_browser_open(mcp: bool) -> None:
+    calls: list[str] = []
+    stage = 0
 
+    def verify(service: str) -> dict[str, str]:
+        calls.append(service)
+        return {
+            "service": service,
+            "source": "local env",
+            "status": "failed",
+            "detail": "Datasource discovery failed: could not reach http://localhost:3000 "
+            "(ConnectionError)",
+        }
 
-@pytest.mark.parametrize(
-    "key,action", [("enter", "verify"), ("s", "setup"), ("r", "remove"), ("cancel", None)]
-)
-def test_actions_target_selection_only_after_explicit_key(
-    terminal: SimpleNamespace, key: str, action: str | None
-) -> None:
-    terminal.keys = iter(["down", key])
-    selected = browser.browse_integrations(
-        [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)]
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        assert ("/mcp list" if mcp else "/integrations list") in frame
+        if stage == 0:
+            assert "Search › Filter items" in frame
+            assert "Not checked" in frame and not calls
+            assert "2 of 2 items" in frame
+            stage = 1
+            send("grafana")
+        elif stage == 1 and "1 of 2 items" in frame:
+            assert not calls
+            stage = 2
+            send("\r")
+        elif stage == 2 and "ConnectionError" in frame:
+            assert "failed" in frame and "local env" in frame
+            assert "Search › grafana" in frame
+            assert calls == ["grafana"]
+            stage = 3
+            send("\x1b")
+
+    result = run_browser(
+        [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)],
+        drive,
+        verify=verify,
+        mcp=mcp,
     )
-    if action is None:
-        assert selected is None
-    else:
-        assert selected is not None
-        assert (selected.action, selected.service) == (action, "grafana")
-    assert terminal.events == ["enter", "screen", "restore", "leave"]
+    assert result is None and stage == 3
 
 
-def test_empty_browser_offers_setup_but_never_removes(terminal: SimpleNamespace) -> None:
-    terminal.keys = iter(["enter", "r", "s", "down", "a"])
-    assert browser.browse_integrations([], mcp=True) == browser.IntegrationSelection("setup")
-    frame = browser._render_frame([], selected=0, top=0, mcp=True, width=79, height=24)
-    text = "\n".join(Text.from_ansi(row).plain for row in frame.rows)
-    assert "No MCP servers configured" in text and "a connect" in text
-    assert "r disconnect" not in text
+@pytest.mark.parametrize("width", [40, 96, 160])
+def test_selection_does_not_probe_and_keeps_unsupported_checks_explicit(width: int) -> None:
+    def no_probe(_service: str) -> dict[str, str]:
+        pytest.fail("Selection and search must not probe connections")
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        assert "Configured" in frame
+        assert "No connectivity check available" in frame
+        assert "Esc" in frame
+        send("\x1b")
+
+    assert (
+        run_browser(
+            [browser.IntegrationEntry("airflow", False)], drive, width=width, verify=no_probe
+        )
+        is None
+    )
 
 
-def test_read_failure_restores_terminal(terminal: SimpleNamespace) -> None:
-    terminal.keys = iter([RuntimeError("read failed")])
-    with pytest.raises(RuntimeError, match="read failed"):
-        browser.browse_integrations([browser.IntegrationEntry("github", True)])
-    assert terminal.events[-2:] == ["restore", "leave"]
+@pytest.mark.parametrize("mcp", [False, True])
+@pytest.mark.parametrize(
+    "key,action", [("\x1bOQ", "setup"), ("\x1bOR", "remove"), ("\x1bOS", "add")]
+)
+def test_management_actions_target_the_filtered_selection(mcp: bool, key: str, action: str) -> None:
+    stage = 0
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        if stage == 0:
+            assert ("F3 disconnect" if mcp else "F3 remove") in frame
+            stage = 1
+            send("grafana")
+        elif stage == 1 and "1 of 2 items" in frame:
+            stage = 2
+            send(key)
+
+    result = run_browser(
+        [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)],
+        drive,
+        mcp=mcp,
+    )
+    assert result == browser.IntegrationSelection(
+        "setup" if action == "add" else action, None if action == "add" else "grafana"
+    )
 
 
-def test_tiny_terminal_cannot_activate_hidden_actions(terminal: SimpleNamespace) -> None:
-    terminal.width = 20
-    terminal.keys = iter(["r", "enter", "a", "cancel"])
+def test_empty_browser_offers_setup_but_never_removes() -> None:
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        assert "No MCP servers configured" in frame
+        assert "F4 connect" in frame and "F3 disconnect" not in frame
+        send("\r\x1bOR\x1bOQ\x1bOS")
+
+    assert run_browser([], drive, mcp=True) == browser.IntegrationSelection("setup")
+
+
+def test_unsupported_verification_is_not_offered_or_executed() -> None:
+    def no_probe(_service: str) -> dict[str, str]:
+        pytest.fail("This connection has no verifier")
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        assert "No connectivity check available" in frame
+        assert "Enter verify" not in frame
+        send("\r\x1bOQ")
+
+    assert run_browser([browser.IntegrationEntry("airflow", False)], drive, verify=no_probe) == (
+        browser.IntegrationSelection("setup", "airflow")
+    )
+
+
+def test_tiny_terminal_cannot_activate_hidden_actions() -> None:
+    def drive(_frame: str, send: Callable[[str], None]) -> None:
+        send("\x1bOR\r\x1bOS\x1b")
+
+    assert (
+        run_browser([browser.IntegrationEntry("github", True)], drive, width=20, height=6) is None
+    )
+
+
+def test_non_tty_never_runs_the_browser(monkeypatch: pytest.MonkeyPatch) -> None:
+    def no_run(_app: Application[object]) -> None:
+        pytest.fail("Non-TTY output must not read input")
+
+    monkeypatch.setattr(
+        "surfaces.shared.terminal.components.command_input.repl_tty_interactive", lambda: False
+    )
+    monkeypatch.setattr(Application, "run", no_run)
     assert browser.browse_integrations([browser.IntegrationEntry("github", True)]) is None
 
 
-def test_non_tty_never_reads_input(
-    terminal: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(browser, "repl_tty_interactive", lambda: False)
-    assert browser.browse_integrations([browser.IntegrationEntry("github", True)]) is None
-    assert terminal.events == []
+def test_verification_errors_stay_inline_and_can_be_retried() -> None:
+    stage = 0
+    calls = 0
+
+    def verify(service: str) -> dict[str, str]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionError("private credential in upstream exception")
+        return {"service": service, "status": "ok", "detail": "Reachable"}
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        assert "private credential" not in frame
+        if stage == 0:
+            stage = 1
+            send("\r\r")
+        elif stage == 1 and "Connectivity check failed" in frame:
+            assert calls == 1
+            stage = 2
+            send("\r")
+        elif stage == 2 and "Reachable" in frame:
+            assert calls == 2 and "Connectivity check failed" not in frame
+            stage = 3
+            send("\x1b")
+
+    assert run_browser([browser.IntegrationEntry("github", True)], drive, verify=verify) is None
+    assert stage == 3
 
 
-def test_unsupported_verification_is_not_offered_or_executed(terminal: SimpleNamespace) -> None:
-    entries = [browser.IntegrationEntry("airflow", False)]
-    frame = browser._render_frame(entries, selected=0, top=0, mcp=False, width=79, height=24)
-    text = "\n".join(Text.from_ansi(row).plain for row in frame.rows)
-    assert "No connectivity check available" in text
-    assert "Configured" in text and "Enter verify" not in text
-    terminal.keys = iter(["enter", "s"])
-    assert browser.browse_integrations(entries) == browser.IntegrationSelection("setup", "airflow")
+def test_click_changes_details_without_verifying() -> None:
+    from prompt_toolkit.data_structures import Point
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        app = browser.build_integration_browser(
+            [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)]
+        )
+        controls = [
+            control
+            for control in app.layout.find_all_controls()
+            if isinstance(control, FormattedTextControl)
+        ]
+        choice = next(
+            control
+            for control in controls
+            if any("grafana" in fragment[1] for fragment in to_formatted_text(control.text))
+        )
+        fragment = next(
+            fragment for fragment in to_formatted_text(choice.text) if "grafana" in fragment[1]
+        )
+        assert len(fragment) == 3
+        assert app.mouse_support()
+        fragment[2](MouseEvent(Point(0, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset()))
+        details = "".join(
+            fragment[1] for control in controls for fragment in to_formatted_text(control.text)
+        )
+        assert "Full details: /integrations show grafana" in details
+        assert "Full details: /integrations show github" not in details
+
+
+def test_escape_does_not_wait_for_or_apply_a_late_verification() -> None:
+    from threading import Event
+
+    release = Event()
+    completed = Event()
+    stage = 0
+
+    def verify(service: str) -> dict[str, str]:
+        try:
+            if not release.wait(3):
+                raise TimeoutError("Test did not release verification")
+            return {"service": service, "status": "ok", "detail": "Late result"}
+        finally:
+            completed.set()
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        if stage == 0:
+            stage = 1
+            send("\r")
+        elif stage == 1 and "Working" in frame:
+            stage = 2
+            send("\x1b")
+
+    try:
+        assert run_browser([browser.IntegrationEntry("github", True)], drive, verify=verify) is None
+        assert stage == 2 and not completed.is_set()
+    finally:
+        release.set()
+        assert completed.wait(3)
