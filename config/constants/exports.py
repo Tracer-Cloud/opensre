@@ -407,6 +407,8 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_OPERATIONS_LOG_FILENAME": "operations_log",
     "OPENSRE_OPERATIONS_LOG_MAX_BYTES_ENV": "operations_log",
     "OPENSRE_OPERATIONS_LOG_PATH_ENV": "operations_log",
+    # otel
+    "OPENSRE_OTEL_OBSERVATIONS_ENV": "otel",
     # pagerduty
     "PAGERDUTY_API_KEY_ENV": "pagerduty",
     "PAGERDUTY_BASE_URL_ENV": "pagerduty",

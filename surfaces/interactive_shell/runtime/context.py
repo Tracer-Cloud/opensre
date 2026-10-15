@@ -143,6 +143,9 @@ def create_repl_runtime(
     from infrastructure.observability.trace.spans import set_session_trace_store
 
     set_session_trace_store(jsonl_trace_store_for_session(prepared_session))
+    from infrastructure.observability.trace.otel_sink import init_otel_observations
+
+    init_otel_observations()
     mutable_state = create_repl_mutable_state(state=state, spinner=spinner)
     return ReplRuntime(
         session=prepared_session,

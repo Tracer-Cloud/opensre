@@ -917,6 +917,9 @@ if TYPE_CHECKING:
     from config.constants.operations_log import (
         OPENSRE_OPERATIONS_LOG_PATH_ENV as OPENSRE_OPERATIONS_LOG_PATH_ENV,
     )
+    from config.constants.otel import (
+        OPENSRE_OTEL_OBSERVATIONS_ENV as OPENSRE_OTEL_OBSERVATIONS_ENV,
+    )
     from config.constants.pagerduty import (
         PAGERDUTY_API_KEY_ENV as PAGERDUTY_API_KEY_ENV,
     )

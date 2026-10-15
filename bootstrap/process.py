@@ -64,6 +64,7 @@ class BootStep(StrEnum):
 
     ENV = "env"
     SENTRY = "sentry"
+    OTEL_OBSERVATIONS = "otel_observations"
     HARNESS_ADAPTERS = "harness_adapters"
     SCHEDULER_RUNNERS = "scheduler_runners"
     CAPABILITY_WARNINGS = "capability_warnings"
@@ -83,8 +84,9 @@ class ProcessProfile:
 # Fixed profiles — surfaces pick one; they do not invent parallel boot orders.
 CLI_PROFILE: Final = ProcessProfile(
     name=ProcessName.CLI,
-    # CLI owns Sentry (update tolerates a missing SDK) and Rich product adapters.
-    steps=frozenset({BootStep.ENV, BootStep.SKILLS_PULL}),
+    # CLI owns Sentry (update tolerates a missing SDK), Rich product adapters,
+    # and opt-in OTLP observation export.
+    steps=frozenset({BootStep.ENV, BootStep.OTEL_OBSERVATIONS, BootStep.SKILLS_PULL}),
 )
 GATEWAY_PROFILE: Final = ProcessProfile(
     name=ProcessName.GATEWAY,
@@ -92,6 +94,7 @@ GATEWAY_PROFILE: Final = ProcessProfile(
         {
             BootStep.ENV,
             BootStep.SENTRY,
+            BootStep.OTEL_OBSERVATIONS,
             BootStep.HARNESS_ADAPTERS,
             BootStep.CAPABILITY_WARNINGS,
             BootStep.PRELOAD_LLM,
@@ -102,7 +105,9 @@ GATEWAY_PROFILE: Final = ProcessProfile(
 )
 WEB_PROFILE: Final = ProcessProfile(
     name=ProcessName.WEB,
-    steps=frozenset({BootStep.ENV, BootStep.SENTRY, BootStep.HARNESS_ADAPTERS}),
+    steps=frozenset(
+        {BootStep.ENV, BootStep.SENTRY, BootStep.OTEL_OBSERVATIONS, BootStep.HARNESS_ADAPTERS}
+    ),
     sentry_entrypoint=SentryEntrypoint.WEBAPP,
 )
 SCHEDULER_WORKER_PROFILE: Final = ProcessProfile(
@@ -115,6 +120,7 @@ SCHEDULER_WORKER_PROFILE: Final = ProcessProfile(
         {
             BootStep.ENV,
             BootStep.SENTRY,
+            BootStep.OTEL_OBSERVATIONS,
             BootStep.HARNESS_ADAPTERS,
             BootStep.SCHEDULER_RUNNERS,
             BootStep.SKILLS_PULL,
@@ -149,6 +155,12 @@ def _run_sentry(profile: ProcessProfile, _log: logging.Logger) -> None:
     from infrastructure.observability.errors.sentry import init_sentry
 
     init_sentry(entrypoint=profile.sentry_entrypoint)
+
+
+def _run_otel_observations(_profile: ProcessProfile, _log: logging.Logger) -> None:
+    from infrastructure.observability.trace.otel_sink import init_otel_observations
+
+    init_otel_observations()
 
 
 def _run_harness_adapters(_profile: ProcessProfile, _log: logging.Logger) -> None:
@@ -203,6 +215,7 @@ _STEP_ORDER: Final[
 ] = (
     (BootStep.ENV, _run_env),
     (BootStep.SENTRY, _run_sentry),
+    (BootStep.OTEL_OBSERVATIONS, _run_otel_observations),
     (BootStep.HARNESS_ADAPTERS, _run_harness_adapters),
     (BootStep.SCHEDULER_RUNNERS, _run_scheduler_runners),
     (BootStep.CAPABILITY_WARNINGS, _run_capability_warnings),
