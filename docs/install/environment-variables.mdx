@@ -386,8 +386,8 @@ point at — Langfuse, Grafana Tempo, or Jaeger all consume them.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OPENSRE_OTEL_OBSERVATIONS` | `0` | Export turn/generation/tool observations as OTel spans |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` |  | OTLP/HTTP endpoint, e.g. `http://127.0.0.1:3300/api/public/otel` for self-hosted Langfuse |
-| `OTEL_EXPORTER_OTLP_HEADERS` |  | Headers for the OTLP endpoint, e.g. `Authorization=Basic <base64 of public_key:secret_key>` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` |  | OTLP/HTTP endpoint, e.g. `http://127.0.0.1:3300/api/public/otel` for self-hosted Langfuse (typically `:4318` for Tempo/Jaeger) |
+| `OTEL_EXPORTER_OTLP_HEADERS` |  | Comma-separated headers for the OTLP endpoint, e.g. `Authorization=Basic <base64 of public_key:secret_key>` for Langfuse |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | Must be `http/protobuf` or `http/json` for Langfuse — it has no gRPC listener |
 
 Self-hosted Langfuse (v4) example:
@@ -395,17 +395,14 @@ Self-hosted Langfuse (v4) example:
 ```bash
 export OPENSRE_OTEL_OBSERVATIONS=1
 export LANGFUSE_AUTH=$(printf '%s:%s' "$LANGFUSE_PUBLIC_KEY" "$LANGFUSE_SECRET_KEY" | base64)
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:3300/api/public/otel"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:3000/api/public/otel"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ${LANGFUSE_AUTH},x-langfuse-ingestion-version=4"
 ```
 
-Without the `x-langfuse-ingestion-version: 4` header (Langfuse v4), traces can
-take up to 10 minutes to appear. For Tempo or Jaeger, keep
-`OPENSRE_OTEL_OBSERVATIONS=1` and point `OTEL_EXPORTER_OTLP_ENDPOINT` at their
-OTLP listener instead (typically `:4318`). Exporting sends prompts and tool
-payloads to the backend you configure — enable only backends you trust with
-that data.
+- This is a shell recipe — do not paste it into `.env`. Values in `.env` are loaded verbatim: `${VAR}` references are **not** expanded, so a pasted recipe sends a literal `${LANGFUSE_AUTH}` and every export fails with a silent `401`. Shell-exported variables win over `.env`; in `.env`, write the values as resolved literals.
+- Without the `x-langfuse-ingestion-version: 4` header, Langfuse v4 can take up to 10 minutes to show traces.
+- Exporting sends prompts and tool payloads to the backend you configure — enable only backends you trust with that data.
 
 ## Paths & Directories
 
