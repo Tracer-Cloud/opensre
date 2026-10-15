@@ -98,6 +98,7 @@ async def test_excess_output_is_bounded_and_the_worker_is_reaped(
 async def test_verification_hands_off_scope_without_mutating_parent_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from config.constants.analytics import ANALYTICS_DISABLED_ENV
     from config.constants.product import OPENSRE_INTERACTIVE_ENV
     from config.constants.tenancy import TURN_ACTOR_ID_ENV, TURN_ORGANIZATION_ID_ENV
     from config.interactive_override import forced_non_interactive
@@ -122,6 +123,7 @@ async def test_verification_hands_off_scope_without_mutating_parent_environment(
         )
 
     monkeypatch.setattr(verification, "execute_process_command", execute)
+    monkeypatch.setenv(ANALYTICS_DISABLED_ENV, "0")
     monkeypatch.setenv(TURN_ORGANIZATION_ID_ENV, "stale-org")
     monkeypatch.setenv(TURN_ACTOR_ID_ENV, "stale-actor")
     scope = StorageScope(principal=Principal.org("current-org"), actor=Actor(id="current-actor"))
@@ -130,5 +132,7 @@ async def test_verification_hands_off_scope_without_mutating_parent_environment(
     assert seen[0][TURN_ORGANIZATION_ID_ENV] == "current-org"
     assert seen[0][TURN_ACTOR_ID_ENV] == "current-actor"
     assert seen[0][OPENSRE_INTERACTIVE_ENV] == "0"
+    assert seen[0][ANALYTICS_DISABLED_ENV] == "1"
+    assert os.environ[ANALYTICS_DISABLED_ENV] == "0"
     assert os.environ[TURN_ORGANIZATION_ID_ENV] == "stale-org"
     assert os.environ[TURN_ACTOR_ID_ENV] == "stale-actor"

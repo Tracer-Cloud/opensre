@@ -142,7 +142,13 @@ def build_integration_browser(
         initial_field="record",
         browse_only=True,
         record_actions=(
-            RecordAction("enter", "Enter verify", check, can_verify),
+            RecordAction(
+                "enter",
+                "Enter verify",
+                check,
+                can_verify,
+                progress_label="Verifying connection…",
+            ),
             RecordAction("f2", "F2 setup", setup, selected),
             RecordAction("f3", "F3 disconnect" if mcp else "F3 remove", remove, selected),
             RecordAction("f4", "F4 connect" if mcp else "F4 add", add),

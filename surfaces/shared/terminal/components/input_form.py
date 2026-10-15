@@ -106,6 +106,7 @@ class RecordAction[Result]:
     label: str
     handler: Callable[[InputChoice | None], Awaitable[Result | None]]
     enabled: Callable[[InputChoice | None], bool] | None = None
+    progress_label: str = "Working…"
 
 
 def build_input_form[Result](
@@ -136,6 +137,7 @@ def build_input_form[Result](
     error = ""
     choice_index = 0
     busy = False
+    progress_label = "Working…"
     pinned_record: str | None = None
     search_revision = 0
 
@@ -587,10 +589,11 @@ def build_input_form[Result](
     def bind_action(action: RecordAction[Result]) -> None:
         @keys.add(action.key, filter=Condition(lambda: not busy and available_action(action)))
         def act(event: KeyPressEvent) -> None:
-            nonlocal busy, error
+            nonlocal busy, error, progress_label
             choice = selected_record()
             action_search_revision = search_revision
             busy = True
+            progress_label = action.progress_label
             error = ""
 
             async def perform() -> None:
@@ -649,7 +652,7 @@ def build_input_form[Result](
         if record_mode():
             if browse_only:
                 if busy:
-                    return "Working… · Esc close"
+                    return f"{progress_label} · Esc close"
                 actions = " · ".join(
                     action.label for action in record_actions if available_action(action)
                 )

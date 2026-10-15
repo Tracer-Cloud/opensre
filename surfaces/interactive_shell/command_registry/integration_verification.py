@@ -8,6 +8,7 @@ import os
 from threading import Event
 from typing import cast
 
+from config.constants.analytics import ANALYTICS_DISABLED_ENV
 from config.interactive_override import interactive_override_env
 from config.scope_handoff import hand_off_scope
 from infrastructure.process.entrypoint import opensre_command
@@ -22,6 +23,8 @@ async def verify_connection(service: str) -> dict[str, str]:
     environment = dict(os.environ)
     hand_off_scope(environment)
     environment.update(interactive_override_env())
+    # This is an internal probe, not another user CLI invocation to snapshot/flush.
+    environment[ANALYTICS_DISABLED_ENV] = "1"
     cancel = Event()
     worker = asyncio.create_task(
         asyncio.to_thread(
