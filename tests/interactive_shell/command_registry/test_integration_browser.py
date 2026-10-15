@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from datetime import UTC, datetime
 
 import pytest
 from rich.console import Console
@@ -11,6 +12,7 @@ from rich.text import Text
 from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.command_registry import integrations as commands
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.session.connection_checks import ConnectionCheck
 from surfaces.interactive_shell.ui.integration_browser import IntegrationEntry
 
 
@@ -26,7 +28,9 @@ def test_list_subcommand_browses_configured_items_without_verifying(
 ) -> None:
     seen: list[list[str]] = []
 
-    def browse(entries: list[IntegrationEntry], *, mcp: bool, verify: object) -> None:
+    def browse(
+        entries: list[IntegrationEntry], *, mcp: bool, verify: object, checks: object
+    ) -> None:
         assert verify is commands.verify_connection
         assert mcp == command.startswith("/mcp ")
         seen.append([entry.service for entry in entries])
@@ -194,7 +198,9 @@ def test_browser_removal_keeps_confirmation(
 
 
 def test_browser_marks_integrations_without_a_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
-    def browse(entries: list[IntegrationEntry], *, mcp: bool, verify: object) -> None:
+    def browse(
+        entries: list[IntegrationEntry], *, mcp: bool, verify: object, checks: object
+    ) -> None:
         assert verify is commands.verify_connection
         assert [(entry.service, entry.can_verify) for entry in entries] == [
             ("airflow", False),
@@ -206,3 +212,58 @@ def test_browser_marks_integrations_without_a_verifier(monkeypatch: pytest.Monke
     )
     monkeypatch.setattr(commands, "browse_integrations", browse)
     commands._browse_connections(Session(), Console(file=io.StringIO()), mcp=False)
+
+
+@pytest.mark.parametrize("organization,actor", [("team-b", "alice"), ("team-a", "bob")])
+def test_connection_lists_reuse_only_the_same_scope_and_source_snapshot(
+    monkeypatch: pytest.MonkeyPatch, organization: str, actor: str
+) -> None:
+    from config.principal import Actor, Principal, StorageScope
+    from config.scope_context import bound_storage_scope
+
+    seen: list[dict[str, ConnectionCheck]] = []
+    stamp = (1, 2, 3)
+
+    def browse(
+        _entries: list[IntegrationEntry],
+        *,
+        checks: dict[str, ConnectionCheck] | None = None,
+        **_kwargs: object,
+    ) -> None:
+        assert checks is not None, "The list must receive session-local check history"
+        seen.append(checks)
+
+    monkeypatch.setattr(commands, "browse_integrations", browse)
+    monkeypatch.setattr(commands.repl_data, "configured_integration_names", lambda: ["github"])
+    monkeypatch.setattr("infrastructure.harness_providers.integration_sources_stamp", lambda: stamp)
+    session = Session()
+    console = Console(file=io.StringIO(), force_terminal=True)
+    scope = StorageScope(principal=Principal.org("team-a"), actor=Actor(id="alice"))
+    with bound_storage_scope(scope):
+        assert commands._browse_connections(session, console, mcp=False)
+        checked = ConnectionCheck(
+            "fixture", "passed", "Reachable", datetime(2026, 1, 1, tzinfo=UTC)
+        )
+        seen[-1]["github"] = checked
+        assert commands._browse_connections(session, console, mcp=True)
+        assert seen[-1]["github"] == checked
+        stamp = (2, 2, 3)
+        assert commands._browse_connections(session, console, mcp=False)
+        assert seen[-1] == {} and seen[-1] is not seen[-2]
+        seen[-1]["github"] = checked
+    other = StorageScope(principal=Principal.org(organization), actor=Actor(id=actor))
+    with bound_storage_scope(other):
+        assert commands._browse_connections(session, console, mcp=False)
+        assert seen[-1] == {} and seen[-1] is not seen[-2]
+
+
+def test_connection_check_history_is_session_local_and_cleared_with_new() -> None:
+    first, second = Session(), Session()
+    first.terminal.connection_checks["grafana"] = ConnectionCheck(
+        "fixture", "failed", "Offline", datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    first.terminal.connection_check_key = (None, (1, 2, 3))
+    assert second.terminal.connection_checks == {}
+    first.clear()
+    assert first.terminal.connection_checks == {}
+    assert first.terminal.connection_check_key is None

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal
 
 from prompt_toolkit.application import Application
 from rich.text import Text
 
 from infrastructure.terminal.theme import DIM, ERROR
+from surfaces.interactive_shell.session.connection_checks import ConnectionCheck
 from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.input_form import (
     InputChoice,
@@ -43,23 +45,33 @@ def build_integration_browser(
     *,
     mcp: bool = False,
     verify: Callable[[str], Awaitable[dict[str, str] | None]] | None = None,
+    checks: dict[str, ConnectionCheck] | None = None,
 ) -> Application[IntegrationSelection | None]:
     """Reuse the loop-list form; verification refreshes records without leaving it."""
     title = "MCP servers" if mcp else "Integrations"
     command = "/mcp list" if mcp else "/integrations list"
     configured = {entry.service: entry for entry in entries}
-    results: dict[str, dict[str, str]] = {}
+    history = {} if checks is None else checks
 
     def fields(_values: dict[str, str]) -> list[InputField]:
         choices: list[InputChoice] = []
         for entry in entries:
-            result = results.get(entry.service, {})
-            status = result.get("status", "Not checked" if entry.can_verify else "Configured")
-            detail = result.get("detail") or (
-                "Configured; connectivity not checked."
-                if entry.can_verify
-                else "No connectivity check available."
-            )
+            checked = history.get(entry.service)
+            status = checked.status if checked else "Configured"
+            if checked:
+                detail = checked.detail or "Connectivity check finished."
+            elif entry.can_verify:
+                detail = "Configured; connectivity not checked."
+            else:
+                detail = "No connectivity check available."
+            details = [Text(detail, style=ERROR if status in {"failed", "missing"} else "")]
+            if checked is not None:
+                details.append(
+                    Text(
+                        f"Last checked: {checked.checked_at.astimezone(UTC):%Y-%m-%d %H:%M:%S} UTC",
+                        style=DIM,
+                    )
+                )
             choices.append(
                 InputChoice(
                     entry.service,
@@ -67,12 +79,10 @@ def build_integration_browser(
                     record=RecordRow(
                         (
                             Text(entry.service, style="bold"),
-                            Text(result.get("source", "—"), style=DIM),
+                            Text(checked.source if checked else "—", style=DIM),
                             Text(status, style=status_style(status)),
                         ),
-                        details=(
-                            Text(detail, style=ERROR if status in {"failed", "missing"} else ""),
-                        ),
+                        details=tuple(details),
                     ),
                     search_text=detail,
                     details=(f"Full details: /integrations show {entry.service}",),
@@ -117,10 +127,13 @@ def build_integration_browser(
             raise InputFormError(
                 "Connectivity check failed. Retry or reconfigure this connection."
             ) from exc
-        results[service] = result or {
-            "status": "missing",
-            "detail": "Connection no longer configured.",
-        }
+        row = result or {"status": "missing", "detail": "Connection no longer configured."}
+        history[service] = ConnectionCheck(
+            source=row.get("source", "—"),
+            status=row.get("status", "missing"),
+            detail=row.get("detail", ""),
+            checked_at=datetime.now(UTC),
+        )
 
     async def setup(choice: InputChoice | None) -> IntegrationSelection:
         return IntegrationSelection("setup", choice.value if choice else None)
@@ -161,6 +174,9 @@ def browse_integrations(
     *,
     mcp: bool = False,
     verify: Callable[[str], Awaitable[dict[str, str] | None]] | None = None,
+    checks: dict[str, ConnectionCheck] | None = None,
 ) -> IntegrationSelection | None:
     """Restore the terminal before returning a setup or confirmed-removal request."""
-    return run_command_input(build_integration_browser(entries, mcp=mcp, verify=verify))
+    return run_command_input(
+        build_integration_browser(entries, mcp=mcp, verify=verify, checks=checks)
+    )

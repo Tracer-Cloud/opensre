@@ -318,6 +318,8 @@ def _use_browser(console: Console) -> bool:
 
 
 def _browse_connections(session: Session, console: Console, *, mcp: bool) -> bool:
+    from config.scope_context import current_scope
+    from infrastructure.harness_providers import integration_sources_stamp
     from integrations.registry import SUPPORTED_VERIFY_SERVICES, resolve_management_service
 
     command = "/mcp list" if mcp else "/integrations list"
@@ -337,6 +339,10 @@ def _browse_connections(session: Session, console: Console, *, mcp: bool) -> boo
         )
 
     names = repl_data.configured_integration_names()
+    check_key = (current_scope(), integration_sources_stamp())
+    if session.terminal.connection_check_key != check_key:
+        session.terminal.connection_checks = {}
+        session.terminal.connection_check_key = check_key
     if mcp:
         names = [name for name in names if name in MCP_INTEGRATION_SERVICES]
     entries = [
@@ -344,7 +350,9 @@ def _browse_connections(session: Session, console: Console, *, mcp: bool) -> boo
         for name in names
     ]
     set_browser_outcome()
-    selected = browse_integrations(entries, mcp=mcp, verify=verify_connection)
+    selected = browse_integrations(
+        entries, mcp=mcp, verify=verify_connection, checks=session.terminal.connection_checks
+    )
     if selected is None:
         return True
     if selected.action == "remove":

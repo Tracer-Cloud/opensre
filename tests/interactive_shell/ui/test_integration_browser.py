@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 import pytest
 from prompt_toolkit.application import Application, create_app_session
@@ -12,6 +13,7 @@ from prompt_toolkit.formatted_text import to_formatted_text
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from surfaces.interactive_shell.session.connection_checks import ConnectionCheck
 from surfaces.interactive_shell.ui import integration_browser as browser
 
 
@@ -23,13 +25,14 @@ def run_browser(
     width: int = 96,
     height: int = 32,
     verify: Callable[[str], Awaitable[dict[str, str] | None]] | None = None,
+    checks: dict[str, ConnectionCheck] | None = None,
 ) -> browser.IntegrationSelection | None:
     class Output(DummyOutput):
         def get_size(self) -> Size:
             return Size(rows=height, columns=width)
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=Output()):
-        app = browser.build_integration_browser(entries, mcp=mcp, verify=verify)
+        app = browser.build_integration_browser(entries, mcp=mcp, verify=verify, checks=checks)
 
         def capture(_app: Application[object]) -> None:
             screen = app.renderer.last_rendered_screen
@@ -72,7 +75,8 @@ def test_search_and_inline_verification_keep_the_browser_open(mcp: bool) -> None
         assert ("/mcp list" if mcp else "/integrations list") in frame
         if stage == 0:
             assert "Search › Filter items" in frame
-            assert "Not checked" in frame and not calls
+            assert "Not checked" not in frame
+            assert "Configured" in frame and "connectivity not checked" in frame and not calls
             assert "2 of 2 items" in frame
             stage = 1
             send("grafana")
@@ -287,12 +291,12 @@ def test_checked_row_stays_visible_until_the_search_changes() -> None:
         nonlocal stage
         if stage == 0:
             stage = 1
-            send("not checked")
-        elif stage == 1 and "Search › not checked" in frame:
+            send("configured")
+        elif stage == 1 and "Search › configured" in frame:
             stage = 2
             send("\r")
         elif stage == 2 and "Reachable" in frame:
-            assert "Search › not checked" in frame
+            assert "Search › configured" in frame
             assert "github" in frame
             stage = 3
             send("\x15impossible")
@@ -347,3 +351,65 @@ def test_late_result_does_not_reappear_in_a_new_search() -> None:
         is None
     )
     assert stage == 4
+
+
+@pytest.mark.parametrize("width", [40, 96, 160])
+def test_reopened_list_shows_last_check_without_probing_and_enter_refreshes(width: int) -> None:
+    previous = datetime(2026, 1, 1, tzinfo=UTC)
+    checks = {"github": ConnectionCheck("fixture", "passed", "Previously reachable", previous)}
+    calls: list[str] = []
+    stage = 0
+
+    async def verify(service: str) -> dict[str, str]:
+        calls.append(service)
+        return {
+            "service": service,
+            "status": "failed",
+            "source": "fixture",
+            "detail": "Now unreachable",
+            "unused_payload": "must not be cached",
+        }
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        if stage == 0:
+            assert "passed" in frame and "Previously reachable" in frame and not calls
+            assert "Last checked:" in frame and "2026-01-01" in frame
+            stage = 1
+            send("\r")
+        elif stage == 1 and "Now unreachable" in frame:
+            assert "failed" in frame and "Last checked:" in frame
+            assert calls == ["github"]
+            stage = 2
+            send("\x1b")
+
+    assert (
+        run_browser(
+            [browser.IntegrationEntry("github", True)],
+            drive,
+            verify=verify,
+            checks=checks,
+            width=width,
+        )
+        is None
+    )
+    assert stage == 2
+    assert checks["github"].checked_at > previous
+    assert "must not be cached" not in repr(checks)
+
+    def reopen(frame: str, send: Callable[[str], None]) -> None:
+        assert "failed" in frame and "Now unreachable" in frame
+        assert "Last checked:" in frame and calls == ["github"]
+        send("\x1b")
+
+    assert (
+        run_browser(
+            [browser.IntegrationEntry("github", True)],
+            reopen,
+            mcp=True,
+            verify=verify,
+            checks=checks,
+            width=width,
+        )
+        is None
+    )

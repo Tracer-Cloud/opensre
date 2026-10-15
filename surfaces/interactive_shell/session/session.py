@@ -53,6 +53,8 @@ class Session(SessionCore):
         super().clear(rotate_identity=rotate_identity)
         self.alerts.clear()
         self.terminal.metrics.reset()
+        self.terminal.connection_checks = {}
+        self.terminal.connection_check_key = None
         self.terminal.pending_prompt_default = None
         self.terminal.pending_prompt_autosubmit = False
         self.terminal.pending_prompt_plain_turn = False

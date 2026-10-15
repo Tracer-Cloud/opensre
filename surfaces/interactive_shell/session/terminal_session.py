@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     from prompt_toolkit.history import History
 
     from core.agent_harness.spi.session_state import SetupResume
+    from surfaces.interactive_shell.session.connection_checks import (
+        ConnectionCheck,
+        ConnectionCheckKey,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +69,14 @@ def _autosubmit_label(text: str) -> str:
 @dataclass
 class TerminalSession:
     """Shell-surface session state, composed onto ``Session`` for the interactive shell."""
+
+    connection_checks: dict[str, ConnectionCheck] = field(
+        default_factory=dict, repr=False, kw_only=True
+    )
+    """Last explicit check results, shared by the connection lists for this session only."""
+
+    connection_check_key: ConnectionCheckKey | None = field(default=None, repr=False, kw_only=True)
+    """Scope/source snapshot that owns the cached display results."""
 
     active_theme_name: str = "green"
     """Interactive shell palette name for this REPL session (``/theme``, prompts)."""
