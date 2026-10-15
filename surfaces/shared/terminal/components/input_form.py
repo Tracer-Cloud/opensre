@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from types import NotImplementedType
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.data_structures import Point
@@ -116,7 +115,7 @@ def build_input_form[Result](
     heading: str,
     submit_label: str,
     fields: Callable[[dict[str, str]], Sequence[InputField]],
-    validate: Callable[[dict[str, str]], Result],
+    validate: Callable[[dict[str, str]], Result | None],
     initial_field: str | None = None,
     initial_review_field: str | None = None,
     submit_on_choice: bool = False,
@@ -343,8 +342,8 @@ def build_input_form[Result](
             rows.pop()
         return rows
 
-    def select_record(value: str) -> Callable[[MouseEvent], NotImplementedType | None]:
-        def clicked(event: MouseEvent) -> NotImplementedType | None:
+    def select_record(value: str) -> Callable[[MouseEvent], object]:
+        def clicked(event: MouseEvent) -> object:
             nonlocal choice_index
             if event.event_type != MouseEventType.MOUSE_UP:
                 return NotImplemented
