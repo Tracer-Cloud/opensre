@@ -8,6 +8,7 @@ import io
 import os
 import subprocess
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import IO
 
@@ -105,6 +106,7 @@ def _drain_pipe(pipe: IO[str] | None, capture: ShellOutputCapture, stream: Outpu
 def _cancelled_result(
     *,
     command: str,
+    executed_with_shell: bool = True,
 ) -> ShellExecutionResult:
     return ShellExecutionResult(
         command=command,
@@ -113,7 +115,7 @@ def _cancelled_result(
         exit_code=None,
         timed_out=False,
         truncated=False,
-        executed_with_shell=True,
+        executed_with_shell=executed_with_shell,
         cancelled=True,
     )
 
@@ -131,31 +133,77 @@ def execute_shell_command(
     (and reap ``start_new_session`` descendants such as ``uv run opensre``)
     instead of blocking on ``subprocess.run`` until timeout.
     """
+    if cancel_event is not None and cancel_event.is_set():
+        return _cancelled_result(command=command)
+    return _execute_command(
+        command=command,
+        exec_argv=_shell_argv(command),
+        executed_with_shell=True,
+        timeout_seconds=timeout_seconds,
+        max_output_bytes=max_output_bytes,
+        cancel_event=cancel_event,
+    )
+
+
+def execute_process_command(
+    *,
+    argv: list[str],
+    timeout_seconds: int,
+    max_output_bytes: int,
+    cancel_event: threading.Event | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> ShellExecutionResult:
+    """Run literal argv with the same owned-tree lifecycle as shell commands."""
+    return _execute_command(
+        command=subprocess.list2cmdline(argv),
+        exec_argv=subprocess.list2cmdline(argv) if os.name == "nt" else argv,
+        executed_with_shell=False,
+        timeout_seconds=timeout_seconds,
+        max_output_bytes=max_output_bytes,
+        cancel_event=cancel_event,
+        environment=environment,
+    )
+
+
+def _execute_command(
+    *,
+    command: str,
+    exec_argv: str | list[str],
+    executed_with_shell: bool,
+    timeout_seconds: int,
+    max_output_bytes: int,
+    cancel_event: threading.Event | None,
+    environment: Mapping[str, str] | None = None,
+) -> ShellExecutionResult:
     watch_cancel = cancel_event if cancel_event is not None else threading.Event()
     if watch_cancel.is_set():
-        return _cancelled_result(command=command)
+        return _cancelled_result(command=command, executed_with_shell=executed_with_shell)
 
-    exec_argv = _shell_argv(command)
-
+    child_env = _shell_environment() if environment is None else dict(environment)
     with contextlib.ExitStack() as process_scope:
         owned_tree: OwnedProcessTree | None = None
         proc: subprocess.Popen[str] | WindowsJobProcess
         if os.name == "nt":
             assert isinstance(exec_argv, str)
             proc = process_scope.enter_context(
-                spawn_windows_job(exec_argv, environment=_shell_environment())
+                spawn_windows_job(
+                    exec_argv,
+                    environment=child_env,
+                    stdin_devnull=not executed_with_shell,
+                )
             )
             owned_tree = proc
         else:
             proc = subprocess.Popen(
                 exec_argv,
+                stdin=None if executed_with_shell else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
                 start_new_session=True,
-                env=_shell_environment(),
+                env=child_env,
             )
         return _collect_shell_result(
             proc,
@@ -164,6 +212,7 @@ def execute_shell_command(
             timeout_seconds=timeout_seconds,
             max_output_bytes=max_output_bytes,
             owned_tree=owned_tree,
+            executed_with_shell=executed_with_shell,
         )
 
 
@@ -175,6 +224,7 @@ def _collect_shell_result(
     timeout_seconds: int,
     max_output_bytes: int,
     owned_tree: OwnedProcessTree | None,
+    executed_with_shell: bool = True,
 ) -> ShellExecutionResult:
     capture = ShellOutputCapture()
     readers = (
@@ -211,10 +261,10 @@ def _collect_shell_result(
         exit_code=watch.exit_code,
         timed_out=watch.timed_out,
         truncated=capture_truncated or truncated_stdout or truncated_stderr,
-        executed_with_shell=True,
+        executed_with_shell=executed_with_shell,
         cancelled=watch.cancelled,
         combined_output=combined,
     )
 
 
-__all__ = ["ShellExecutionResult", "execute_shell_command"]
+__all__ = ["ShellExecutionResult", "execute_process_command", "execute_shell_command"]

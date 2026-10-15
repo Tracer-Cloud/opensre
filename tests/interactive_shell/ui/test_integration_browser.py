@@ -305,3 +305,40 @@ def test_checked_row_stays_visible_until_the_search_changes() -> None:
         is None
     )
     assert stage == 4
+
+
+def test_late_result_does_not_reappear_in_a_new_search() -> None:
+    release = asyncio.Event()
+    stage = 0
+
+    async def verify(service: str) -> dict[str, str]:
+        await release.wait()
+        return {"service": service, "status": "ok", "detail": "Reachable"}
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        if stage == 0:
+            stage = 1
+            send("\r")
+        elif stage == 1 and "Working" in frame:
+            stage = 2
+            send("grafana")
+        elif stage == 2 and "Search › grafana" in frame:
+            stage = 3
+            release.set()
+        elif stage == 3 and "Working" not in frame:
+            assert "1 of 2 items" in frame
+            assert "Full details: /integrations show grafana" in frame
+            assert "github" not in frame and "Reachable" not in frame
+            stage = 4
+            send("\x1b")
+
+    assert (
+        run_browser(
+            [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)],
+            drive,
+            verify=verify,
+        )
+        is None
+    )
+    assert stage == 4

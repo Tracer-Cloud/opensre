@@ -83,10 +83,10 @@ def _pipe(stack: ExitStack) -> tuple[IO[str], _Descriptor, int]:
     return stream, writer, handle
 
 
-def _stdin_handle(stack: ExitStack, api: WindowsAPI) -> _Handle:
+def _stdin_handle(stack: ExitStack, api: WindowsAPI, *, devnull: bool = False) -> _Handle:
     import msvcrt
 
-    source = api.dll.GetStdHandle(_STD_INPUT_HANDLE)
+    source = None if devnull else api.dll.GetStdHandle(_STD_INPUT_HANDLE)
     descriptor: int | None = None
     try:
         if source in (None, 0, ctypes.c_void_p(-1).value):
@@ -221,7 +221,7 @@ class WindowsJobProcess:
 
 @contextmanager
 def spawn_windows_job(
-    command: str, *, environment: Mapping[str, str]
+    command: str, *, environment: Mapping[str, str], stdin_devnull: bool = False
 ) -> Iterator[WindowsJobProcess]:
     """Start a suspended command, assign ownership, then allow it to execute."""
     if "\0" in command:
@@ -246,7 +246,7 @@ def spawn_windows_job(
 
         stdout, stdout_writer, stdout_handle = _pipe(stack)
         stderr, stderr_writer, stderr_handle = _pipe(stack)
-        stdin = _stdin_handle(stack, api)
+        stdin = _stdin_handle(stack, api, devnull=stdin_devnull)
         inherited_handles = (HANDLE * 3)(stdin.value, stdout_handle, stderr_handle)
         attribute_size = SIZE_T()
         api.dll.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(attribute_size))
