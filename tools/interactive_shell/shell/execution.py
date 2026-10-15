@@ -10,7 +10,7 @@ import subprocess
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import IO
+from typing import IO, TypedDict
 
 from config.constants.terminal_host import (
     BASH_EXPORTED_FUNCTION_ENV_PREFIX,
@@ -19,6 +19,10 @@ from core.tool import truncate_output_text
 from infrastructure.process.windows_job import WindowsJobProcess, spawn_windows_job
 from tools.interactive_shell.shell.output_capture import OutputStream, ShellOutputCapture
 from tools.interactive_shell.subprocess import OwnedProcessTree, watch_subprocess_until_exit
+
+
+class _ProcessStdinOptions(TypedDict, total=False):
+    stdin: int
 
 
 @dataclass(frozen=True)
@@ -189,14 +193,17 @@ def _execute_command(
                 spawn_windows_job(
                     exec_argv,
                     environment=child_env,
-                    stdin_devnull=not executed_with_shell,
+                    **({"stdin_devnull": True} if not executed_with_shell else {}),
                 )
             )
             owned_tree = proc
         else:
+            stdin_options: _ProcessStdinOptions = (
+                {} if executed_with_shell else {"stdin": subprocess.DEVNULL}
+            )
             proc = subprocess.Popen(
                 exec_argv,
-                stdin=None if executed_with_shell else subprocess.DEVNULL,
+                **stdin_options,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
