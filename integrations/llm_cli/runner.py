@@ -36,6 +36,8 @@ from integrations.llm_cli.errors import (
     CLITimeoutError,
 )
 from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
+from infrastructure.safety.masking.policy import MaskingPolicy
+from infrastructure.safety.masking.rules import MaskingRules
 from integrations.llm_cli.text import flatten_messages_to_prompt
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,7 @@ class _PreparedInvocation:
     merged_env: dict[str, str]
     auth_probe_unclear: bool
     auth_probe_detail: str
+    masking: MaskingRules | None
 
 
 @dataclass(frozen=True)
@@ -148,6 +151,12 @@ class CLIBackedLLMClient:
         flat = flatten_messages_to_prompt(prompt_or_messages)
         flat = apply_guardrails_to_text(flat)
 
+        masking: MaskingRules | None = None
+        _policy = MaskingPolicy.from_env()
+        if _policy.enabled:
+            masking = MaskingRules(_policy)
+            flat = masking.mask(flat)
+
         probe = self._probe()
         if not probe.installed or not probe.bin_path:
             raise RuntimeError(
@@ -187,6 +196,7 @@ class CLIBackedLLMClient:
             merged_env=merged_env,
             auth_probe_unclear=auth_probe_unclear,
             auth_probe_detail=probe.detail,
+            masking=masking,
         )
 
     def _response_from_completed_process(
@@ -269,7 +279,14 @@ class CLIBackedLLMClient:
         )
         return LLMResponse(content=content)
 
-    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+    def _invoke_raw(
+        self, prompt_or_messages: Any
+    ) -> tuple[LLMResponse, MaskingRules | None]:
+        """Run the CLI and return the response together with the active masking rules.
+
+        Callers that need to unmask after JSON parsing (e.g. StructuredOutputClient)
+        use this instead of invoke() so quote-containing values never corrupt JSON.
+        """
         prepared = self._prepare_invocation(prompt_or_messages)
         invocation = prepared.invocation
 
@@ -313,9 +330,15 @@ class CLIBackedLLMClient:
                 stderr=proc.stderr or "",
                 auth_probe_unclear=prepared.auth_probe_unclear,
                 auth_probe_detail=prepared.auth_probe_detail,
-            )
+            ), prepared.masking
 
         raise CLITimeoutError(f"{self._adapter.name} reported repeated temporary failures.")
+
+    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        response, masking = self._invoke_raw(prompt_or_messages)
+        if masking is not None:
+            response = LLMResponse(content=masking.unmask(response.content))
+        return response
 
     def _run_plain_stdout_stream(
         self,
@@ -455,10 +478,26 @@ class CLIBackedLLMClient:
         prepared = self._prepare_invocation(prompt_or_messages)
         backoff = _TEMPFAIL_BACKOFF_SEC
         for attempt in range(_TEMPFAIL_MAX_RETRIES + 1):
-            result = yield from self._run_plain_stdout_stream(
-                prepared.invocation,
-                merged_env=prepared.merged_env,
-            )
+            if prepared.masking is not None:
+                # Placeholders span multiple chars; buffer the full output so
+                # unmask() can operate on complete tokens before emitting.
+                buffered: list[str] = []
+                _gen = self._run_plain_stdout_stream(
+                    prepared.invocation, merged_env=prepared.merged_env
+                )
+                try:
+                    while True:
+                        buffered.append(next(_gen))
+                except StopIteration as _stop:
+                    result = _stop.value
+                unmasked = prepared.masking.unmask("".join(buffered))
+                if unmasked:
+                    yield unmasked
+            else:
+                result = yield from self._run_plain_stdout_stream(
+                    prepared.invocation,
+                    merged_env=prepared.merged_env,
+                )
             if (
                 result.returncode == _EX_TEMPFAIL
                 and not result.emitted
