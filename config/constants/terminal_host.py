@@ -16,12 +16,15 @@ DUMB_TERMINAL_TYPES = frozenset({"dumb", "unknown"})
 CAPABLE_TERMINAL_TYPE = "xterm-256color"
 # Rich emits ANSI colour on a pipe only when told to.
 FORCE_COLOR_ENV = "FORCE_COLOR"
+# Maximum text fragment held while capturing or replaying deferred form output.
+DEFERRED_OUTPUT_CHUNK_CHARS = 16 * 1024
 
 __all__ = [
     "APPLE_TERMINAL_PROGRAM",
     "BASH_EXPORTED_FUNCTION_ENV_PREFIX",
     "CAPABLE_TERMINAL_TYPE",
     "DUMB_TERMINAL_TYPES",
+    "DEFERRED_OUTPUT_CHUNK_CHARS",
     "FORCE_COLOR_ENV",
     "TERMINAL_COLUMNS_ENV",
     "TERMINAL_LINES_ENV",

@@ -642,6 +642,7 @@ EXPORTS: dict[str, str] = {
     "TWILIO_ACCOUNT_SID_ENV": "twilio",
     "APPLE_TERMINAL_PROGRAM": "terminal_host",
     "BASH_EXPORTED_FUNCTION_ENV_PREFIX": "terminal_host",
+    "DEFERRED_OUTPUT_CHUNK_CHARS": "terminal_host",
     "TERM_PROGRAM_ENV": "terminal_host",
     "WINDOWS_COMMAND_SHELL_ENV": "terminal_host",
     "TERMINAL_COLUMNS_ENV": "terminal_host",

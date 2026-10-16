@@ -171,10 +171,11 @@ class _FakeApp:
 def _proxy(
     store: TranscriptStore | None, terminal: io.StringIO, app: _FakeApp
 ) -> _AppBoundStdoutProxy:
-    proxy = _AppBoundStdoutProxy(app, raw=True, transcript=store)  # type: ignore[arg-type]
-    proxy._output = Vt100_Output(  # type: ignore[assignment]
+    output = Vt100_Output(
         terminal, get_size=lambda: Size(rows=24, columns=80), term="xterm", enable_cpr=False
     )
+    with create_app_session(output=output):
+        proxy = _AppBoundStdoutProxy(app, raw=True, transcript=store)  # type: ignore[arg-type]
     return proxy
 
 
@@ -203,21 +204,15 @@ def test_form_defers_background_output_until_close(
     store = TranscriptStore() if record_transcript else None
     terminal = io.StringIO()
     proxy = _proxy(store, terminal, _FakeApp(None))
-    flushed = threading.Event()
-    flush = proxy._write_and_flush
+    written = threading.Event()
     during: list[str] = []
-
-    def observe_flush(loop: asyncio.AbstractEventLoop | None, text: str) -> None:
-        flush(loop, text)
-        if "incoming alert" in text:
-            flushed.set()
 
     def emit_alert() -> None:
         if not proxy.write_renderable(Text("alert details")):
             proxy.write("alert details\n")
         proxy.write("incoming alert\n")
+        written.set()
 
-    monkeypatch.setattr(proxy, "_write_and_flush", observe_flush)
     monkeypatch.setattr(command_input, "repl_tty_interactive", lambda: True)
     with proxy, create_pipe_input() as pipe, create_app_session(input=pipe, output=proxy._output):
         monkeypatch.setattr(sys, "stdout", proxy)
@@ -236,7 +231,7 @@ def test_form_defers_background_output_until_close(
             writer = threading.Thread(target=emit_alert)
             writer.start()
             writer.join(timeout=5)
-            processed = flushed.wait(timeout=5)
+            processed = written.wait(timeout=5)
             during.append(terminal.getvalue())
             if not processed:
                 app.exit(exception=AssertionError("Background output was not processed"))

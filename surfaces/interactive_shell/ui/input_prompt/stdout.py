@@ -6,14 +6,18 @@ import asyncio
 import itertools
 import re
 import sys
-from collections.abc import Iterator
+from collections import deque
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import TextIO, cast
 
 from prompt_toolkit.application import Application, run_in_terminal
 from prompt_toolkit.patch_stdout import StdoutProxy
 from rich.console import RenderableType
 
+from surfaces.interactive_shell.ui.input_prompt.deferred_output import DeferredOutput
+from surfaces.interactive_shell.ui.input_prompt.replay_transcript import ReplayTranscript
 from surfaces.interactive_shell.ui.input_prompt.synchronized import synchronized_output
 from surfaces.interactive_shell.ui.transcript_view import TranscriptStore, render_text
 
@@ -22,10 +26,64 @@ from surfaces.interactive_shell.ui.transcript_view import TranscriptStore, rende
 # ``write`` strips NUL from captured output, so no output can spell a marker.
 _TRANSIENT_START = "\x00opensre-transient-start\x00"
 _TRANSIENT_END = "\x00opensre-transient-end\x00"
-_DEFERRED_START = "\x00opensre-deferred-start\x00"
-_DEFERRED_END = "\x00opensre-deferred-end\x00"
+_DEFERRED_MARKER = "\x00opensre-deferred-{}\x00"
 _RENDERABLE_MARKER = "\x00opensre-renderable-{}\x00"
-_MARKER = re.compile(r"\x00opensre-(?:(?:transient|deferred)-(?:start|end)|renderable-(\d+))\x00")
+_MARKER = re.compile(r"\x00opensre-(?:transient-(?:start|end)|renderable-(\d+)|deferred-(\d+))\x00")
+
+
+@dataclass
+class _TerminalReplayQueue:
+    """Keep one acknowledged record and ordered disk captures on the app loop."""
+
+    on_close: Callable[[DeferredOutput], None]
+    captures: deque[DeferredOutput] = field(default_factory=deque)
+    current: DeferredOutput | None = None
+    records: Iterator[tuple[bool, str]] | None = None
+    pending: str | None = None
+
+    def next_output(self) -> str | None:
+        if self.pending is not None:
+            return self.pending
+        while True:
+            if self.current is None:
+                if not self.captures:
+                    return None
+                self.current = self.captures.popleft()
+                self.records = iter(self.current)
+            assert self.records is not None
+            try:
+                starts_block, text = next(self.records)
+            except StopIteration:
+                self._close_current()
+                continue
+            self.pending = "\r" + text if starts_block else text
+            return self.pending
+
+    def _close_current(self) -> None:
+        captured = self.current
+        self.current = None
+        self.records = None
+        self.pending = None
+        if captured is not None:
+            self._close_capture(captured)
+
+    def _close_capture(self, captured: DeferredOutput) -> None:
+        self.on_close(captured)
+
+    def close(self) -> None:
+        """Close all captures even when an earlier file cannot be closed."""
+        error: OSError | None = None
+        try:
+            self._close_current()
+        except OSError as exc:
+            error = exc
+        while self.captures:
+            try:
+                self._close_capture(self.captures.popleft())
+            except OSError as exc:
+                error = error or exc
+        if error is not None:
+            raise error
 
 
 class _AppBoundStdoutProxy(StdoutProxy):
@@ -45,10 +103,19 @@ class _AppBoundStdoutProxy(StdoutProxy):
         self._target_app = app
         self._redraw_lock = asyncio.Lock()
         self._transcript = transcript
-        # Read and written only by the flush thread.
+        # Transient state is owned by the flush thread; capture state uses _lock.
         self._transient = False
         self._deferred_depth = 0
-        self._deferred_output: list[str] = []
+        self._deferred_output: DeferredOutput | None = None
+        self._deferred_files: dict[int, DeferredOutput] = {}
+        self._deferred_ids = itertools.count()
+        self._flush_error: Exception | None = None
+        self._closing = False
+        self._terminal_replays = _TerminalReplayQueue(self._terminal_capture_closed)
+        self._terminal_replay_count = 0
+        self._terminal_text_capture: DeferredOutput | None = None
+        self._terminal_replay_loop: asyncio.AbstractEventLoop | None = None
+        self._terminal_replay_task: asyncio.Task[None] | None = None
         self._renderables: dict[int, RenderableType] = {}
         self._renderable_ids = itertools.count()
         # Repaint sooner than the inline default: a full-screen redraw is cheap.
@@ -56,10 +123,15 @@ class _AppBoundStdoutProxy(StdoutProxy):
 
     def write(self, data: str) -> int:
         """Queue ``data``; NUL is dropped so output cannot forge a marker."""
-        if "\x00" in data:
-            super().write(data.replace("\x00", ""))
-            return len(data)
-        return super().write(data)
+        with self._lock:
+            self._ensure_open()
+            self._raise_flush_error()
+            text = data.replace("\x00", "")
+            if self._deferred_output is not None:
+                self._deferred_output.write(text)
+            else:
+                super().write(text)
+        return len(data)
 
     def write_renderable(self, renderable: RenderableType) -> bool:
         """Queue a Rich renderable so the transcript can lay it out at any width.
@@ -68,9 +140,19 @@ class _AppBoundStdoutProxy(StdoutProxy):
         """
         if self._transcript is None:
             return False
-        key = next(self._renderable_ids)
-        self._renderables[key] = renderable
-        self._queue_marker(_RENDERABLE_MARKER.format(key))
+        with self._lock:
+            self._ensure_open()
+            self._raise_flush_error()
+            if self._deferred_output is not None:
+                # Snapshot only deferred renderables so the aggregate backlog
+                # never retains live objects; normal output still reflows.
+                self._deferred_output.write(
+                    render_text(renderable, self._output.get_size().columns), block=True
+                )
+            else:
+                key = next(self._renderable_ids)
+                self._renderables[key] = renderable
+                self._queue_marker(_RENDERABLE_MARKER.format(key))
         return True
 
     def begin_transient_output(self) -> None:
@@ -83,12 +165,61 @@ class _AppBoundStdoutProxy(StdoutProxy):
 
     @contextmanager
     def defer_output(self) -> Iterator[None]:
-        """Hold background output until a temporary full-screen surface closes."""
-        self._queue_marker(_DEFERRED_START)
+        """Capture output on disk until the outermost full-screen form closes."""
+        with self._lock:
+            self._ensure_open()
+            self._raise_flush_error()
+            if not self._deferred_depth:
+                captured = DeferredOutput()
+                self._flush()
+                self._deferred_output = captured
+            self._deferred_depth += 1
         try:
             yield
         finally:
-            self._queue_marker(_DEFERRED_END)
+            with self._lock:
+                self._deferred_depth -= 1
+                if not self._deferred_depth:
+                    self._seal_deferred_output()
+
+    def _seal_deferred_output(self) -> None:
+        captured = self._deferred_output
+        if captured is not None:
+            self._deferred_output = None
+            key = next(self._deferred_ids)
+            self._deferred_files[key] = captured
+            self._queue_marker(_DEFERRED_MARKER.format(key))
+
+    def close(self) -> None:
+        if not self.closed:
+            with self._lock:
+                self._closing = True
+                self._seal_deferred_output()
+                self._flush()
+            try:
+                super().close()
+            finally:
+                for captured in self._deferred_files.values():
+                    captured.close()
+                self._deferred_files.clear()
+        self._raise_flush_error()
+
+    def __exit__(self, *args: object) -> None:
+        try:
+            self.close()
+        except OSError as error:
+            original = args[1] if len(args) > 1 else None
+            if not isinstance(original, BaseException):
+                raise
+            original.add_note(str(error))
+
+    def _raise_flush_error(self) -> None:
+        if self._flush_error is not None:
+            raise OSError("Deferred output could not be replayed") from self._flush_error
+
+    def _ensure_open(self) -> None:
+        if self.closed or self._closing:
+            raise ValueError("I/O operation on closed stdout proxy")
 
     def _queue_marker(self, marker: str) -> None:
         # One lock hold: no other writer's text can land between the flush of
@@ -108,33 +239,208 @@ class _AppBoundStdoutProxy(StdoutProxy):
         text: str,
     ) -> None:
         for segment in _split_markers(text):
-            if segment == _DEFERRED_START:
-                self._deferred_depth += 1
-            elif segment == _DEFERRED_END:
-                self._deferred_depth -= 1
-                if not self._deferred_depth:
-                    pending = "".join(self._deferred_output)
-                    self._deferred_output.clear()
-                    self._write_and_flush(loop, pending)
+            match = _MARKER.fullmatch(segment)
+            if match is not None and match.group(2) is not None:
+                self._replay_deferred_output(loop, int(match.group(2)))
             elif segment == _TRANSIENT_START:
                 self._transient = True
             elif segment == _TRANSIENT_END:
                 self._transient = False
-            elif self._deferred_depth:
-                self._deferred_output.append(segment)
-            elif self._transcript is None:
-                self._write_to_terminal(loop, segment)
-            elif (match := _MARKER.fullmatch(segment)) is not None:
+            elif match is not None:
                 self._flush_renderable(loop, self._renderables.pop(int(match.group(1))))
-            elif self._transient:
-                self._write_to_terminal(loop, segment)
-            elif loop is None:
-                # The full-screen app is off screen (startup, a picker): the
-                # text lands in scrollback now and joins the transcript too.
-                self._write_to_terminal(None, segment)
-                self._transcript.append_text(segment, on_normal_screen=True)
             else:
-                self._transcript.append_text(segment)
+                self._emit_text(loop, segment)
+
+    def _replay_deferred_output(self, loop: asyncio.AbstractEventLoop | None, key: int) -> None:
+        captured = self._deferred_files.pop(key)
+        replay_loop = loop or self._terminal_replay_loop
+        if replay_loop is not None and replay_loop.is_running() and self._transcript is None:
+            self._schedule_terminal_replay(replay_loop, captured)
+            return
+        try:
+            transcript = ReplayTranscript()
+            for starts_block, text in captured:
+                if starts_block:
+                    if final := transcript.finish():
+                        self._emit_text(loop, "", final)
+                    if self._transcript is not None:
+                        self._transcript.close_pending_line()
+                    if loop is None or self._transient:
+                        self._write_to_terminal(loop, "\r")
+                    transcript = ReplayTranscript()
+                self._emit_text(loop, text, transcript.feed(text))
+            if final := transcript.finish():
+                self._emit_text(loop, "", final)
+        except Exception as exc:
+            self._flush_error = exc
+        finally:
+            try:
+                captured.close()
+            except OSError as exc:
+                self._flush_error = exc
+
+    def _schedule_terminal_replay(
+        self, loop: asyncio.AbstractEventLoop, captured: DeferredOutput, *, ordinary: bool = False
+    ) -> None:
+        with self._lock:
+            if not ordinary:
+                self._terminal_text_capture = None
+            self._terminal_replay_loop = loop
+            # Count before scheduling: later text must also join the FIFO while
+            # its first enqueue callback has not had a chance to run yet.
+            self._terminal_replay_count += 1
+
+        def enqueue() -> None:
+            self._terminal_replays.captures.append(captured)
+            if self._terminal_replay_task is None:
+                self._start_terminal_replay(loop)
+
+        try:
+            loop.call_soon_threadsafe(enqueue)
+        except Exception as exc:
+            self._flush_error = exc
+            try:
+                self._terminal_capture_closed(captured)
+            except OSError as close_error:
+                self._flush_error = close_error
+
+    def _terminal_capture_closed(self, captured: DeferredOutput) -> None:
+        with self._lock:
+            if self._terminal_text_capture is captured:
+                self._terminal_text_capture = None
+            try:
+                captured.close()
+            finally:
+                self._terminal_replay_count -= 1
+
+    def _queue_text_behind_terminal_replay(self, text: str) -> bool:
+        with self._lock:
+            if not self._terminal_replay_count:
+                return False
+            loop = self._terminal_replay_loop
+            assert loop is not None
+            captured = self._terminal_text_capture
+            created = captured is None
+            try:
+                if captured is None:
+                    captured = DeferredOutput()
+                captured.write(text)
+            except Exception as exc:
+                self._flush_error = exc
+                self._terminal_text_capture = None
+                if created and captured is not None:
+                    try:
+                        captured.close()
+                    except OSError as close_error:
+                        self._flush_error = close_error
+            else:
+                if created:
+                    self._terminal_text_capture = captured
+                    self._schedule_terminal_replay(loop, captured, ordinary=True)
+            return True
+
+    def _next_terminal_output(self) -> str | None:
+        with self._lock:
+            return self._terminal_replays.next_output()
+
+    def _write_pending_terminal_record(self) -> None:
+        pending = self._terminal_replays.pending
+        if pending is not None:
+            self._write_to_terminal(None, pending)
+            self._terminal_replays.pending = None
+
+    def _close_terminal_replays(self) -> None:
+        try:
+            with self._lock:
+                self._terminal_replays.close()
+        except OSError as exc:
+            self._flush_error = exc
+            raise
+
+    def _drain_terminal_replays(self) -> None:
+        try:
+            while self._next_terminal_output() is not None:
+                self._write_pending_terminal_record()
+        except Exception as exc:
+            self._flush_error = exc
+            raise
+        finally:
+            self._close_terminal_replays()
+
+    def _start_terminal_replay(self, loop: asyncio.AbstractEventLoop) -> None:
+        if (
+            self._target_app.context is None
+            or not self._target_app.is_running
+            or self._target_app.is_done
+        ):
+            self._drain_terminal_replays()
+            return
+        started = False
+
+        async def replay() -> None:
+            nonlocal started
+            started = True
+            try:
+                # One worker owns every capture, including shutdown fallback.
+                # Read another bounded record only after acknowledging this one.
+                async with self._redraw_lock:
+                    while self._next_terminal_output() is not None:
+                        if self._target_app.context is None or not self._target_app.is_running:
+                            self._write_pending_terminal_record()
+                            await asyncio.sleep(0)
+                        else:
+                            with synchronized_output(self._output):
+                                await run_in_terminal(
+                                    self._write_pending_terminal_record, in_executor=False
+                                )
+            except asyncio.CancelledError:
+                self._drain_terminal_replays()
+                raise
+            except Exception as exc:
+                self._flush_error = exc
+                raise
+            finally:
+                self._close_terminal_replays()
+
+        def finished(task: asyncio.Task[None]) -> None:
+            if self._terminal_replay_task is not task:
+                return
+            try:
+                # An unstarted task never enters its finally; captures can also
+                # arrive between cancellation cleanup and this done callback.
+                if not started or task.cancelled():
+                    self._drain_terminal_replays()
+            except Exception as exc:
+                self._flush_error = exc
+                loop.call_exception_handler(
+                    {"message": "Deferred terminal replay failed", "exception": exc, "task": task}
+                )
+            finally:
+                self._terminal_replay_task = None
+            if self._terminal_replays.captures:
+                self._start_terminal_replay(loop)
+
+        context = self._target_app.context
+        assert context is not None
+        task = context.copy().run(self._target_app.create_background_task, replay())
+        self._terminal_replay_task = task
+        task.add_done_callback(finished)
+
+    def _emit_text(
+        self, loop: asyncio.AbstractEventLoop | None, text: str, transcript_text: str | None = None
+    ) -> None:
+        recorded = text if transcript_text is None else transcript_text
+        if self._transcript is None and self._queue_text_behind_terminal_replay(text):
+            return
+        if self._transcript is None or self._transient:
+            self._write_to_terminal(loop, text)
+        elif loop is None:
+            # The full-screen app is off screen (startup, a picker): the
+            # text lands in scrollback now and joins the transcript too.
+            self._write_to_terminal(None, text)
+            self._transcript.append_text(recorded, on_normal_screen=True)
+        else:
+            self._transcript.append_text(recorded)
 
     def _flush_renderable(
         self, loop: asyncio.AbstractEventLoop | None, renderable: RenderableType

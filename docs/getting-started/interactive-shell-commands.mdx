@@ -16,6 +16,12 @@ space and open its subcommand tray. Enter runs a final command selection. Esc
 closes the tray without clearing your draft or stopping running work. On narrow
 terminals, the highlighted command's description appears below the list.
 
+While a full-screen command form is open, background output is held in a temporary
+file and replayed in order when the form closes. Deferred Rich content is captured
+at the terminal width at that moment, so its table columns do not re-layout later;
+ordinary transcript content still reflows on resize. Temporary files are removed
+after replay, including when a form is cancelled.
+
 <Info>
   Confirmation prompts come from **`/auto`** (tool-approval autonomy) and from
   elevated slash commands. Default `/auto` is **high** (alpha: no tool prompts).

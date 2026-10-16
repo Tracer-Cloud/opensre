@@ -158,7 +158,8 @@ class TranscriptStore:
     def __init__(self, *, max_entries: int = _MAX_ENTRIES) -> None:
         self._entries: deque[TranscriptEntry] = deque()
         self._max_entries = max(1, max_entries)
-        self._pending = ""
+        self._pending: list[str] = []
+        self._pending_text: str | None = ""
         self._pending_on_normal_screen = False
         self._seq = 0
         self._epoch = 0
@@ -186,16 +187,29 @@ class TranscriptStore:
                 if clear_at is not None:
                     self._changed()
                 return
-            combined = self._pending + text
-            complete, newline, rest = combined.rpartition("\n")
+            complete, newline, rest = text.rpartition("\n")
             if newline:
-                lines = [_resolve_carriage_returns(line) for line in complete.split("\n")]
                 # A line started off-screen is only in scrollback if all of it is.
                 written = on_normal_screen and (self._pending_on_normal_screen or not self._pending)
+                complete = self._pending_value() + complete
+                lines = [_resolve_carriage_returns(line) for line in complete.split("\n")]
                 self._append_entry(ansi_renderable("\n".join(lines)), on_normal_screen=written)
-            self._pending = rest
-            self._pending_on_normal_screen = on_normal_screen
+                self._pending.clear()
+                self._pending_text = ""
+            if rest:
+                self._pending_on_normal_screen = on_normal_screen and (
+                    self._pending_on_normal_screen or not self._pending
+                )
+                self._pending.append(rest)
+                self._pending_text = None
             self._changed()
+
+    def close_pending_line(self) -> None:
+        """Finish a partial text line before replaying a separate output block."""
+        with self._lock:
+            if self._pending:
+                self._close_pending_line()
+                self._changed()
 
     def clear(self) -> None:
         """Forget every entry (``/clear``, ``/new``)."""
@@ -235,7 +249,7 @@ class TranscriptStore:
         with self._lock:
             return (
                 list(self._entries),
-                _resolve_carriage_returns(self._pending),
+                _resolve_carriage_returns(self._pending_value()),
                 self._epoch,
                 self._seq,
             )
@@ -252,11 +266,17 @@ class TranscriptStore:
 
     def _close_pending_line(self) -> None:
         if self._pending:
-            line = _resolve_carriage_returns(self._pending)
-            self._pending = ""
+            line = _resolve_carriage_returns(self._pending_value())
+            self._pending.clear()
+            self._pending_text = ""
             self._append_entry(
                 ansi_renderable(line), on_normal_screen=self._pending_on_normal_screen
             )
+
+    def _pending_value(self) -> str:
+        if self._pending_text is None:
+            self._pending_text = "".join(self._pending)
+        return self._pending_text
 
     def _append_entry(self, renderable: RenderableType, *, on_normal_screen: bool) -> None:
         self._seq += 1
@@ -272,7 +292,8 @@ class TranscriptStore:
 
     def _clear_locked(self) -> None:
         self._entries.clear()
-        self._pending = ""
+        self._pending.clear()
+        self._pending_text = ""
         self._epoch += 1
 
     def _changed(self) -> None:

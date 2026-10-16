@@ -1448,6 +1448,9 @@ if TYPE_CHECKING:
         CAPABLE_TERMINAL_TYPE as CAPABLE_TERMINAL_TYPE,
     )
     from config.constants.terminal_host import (
+        DEFERRED_OUTPUT_CHUNK_CHARS as DEFERRED_OUTPUT_CHUNK_CHARS,
+    )
+    from config.constants.terminal_host import (
         DUMB_TERMINAL_TYPES as DUMB_TERMINAL_TYPES,
     )
     from config.constants.terminal_host import (
