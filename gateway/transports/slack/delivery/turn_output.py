@@ -13,7 +13,6 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 
-from core.agent_harness.turns.display_text import strip_plan_snapshots
 from core.tool import ToolExecutionHooks
 from gateway.transports.slack.client import (
     SLACK_MAX_MARKDOWN_BLOCK_CHARS,
@@ -28,6 +27,7 @@ from gateway.transports.slack.delivery.integration_links import (
     setup_actions_block,
 )
 from infrastructure.text.markdown import tighten_markdown_emphasis
+from infrastructure.text.plan_snapshots import strip_plan_snapshots
 from infrastructure.text.truncation import truncate
 from infrastructure.turn_host.status_messages import (
     EMPTY_RESPONSE_MESSAGE,

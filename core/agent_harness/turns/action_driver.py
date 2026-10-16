@@ -72,7 +72,6 @@ from core.agent_harness.turns.display_text import (
     looks_like_json,
     preferred_tool_response_text,
     split_output_truncation_markers,
-    strip_plan_snapshots,
 )
 from core.agent_harness.turns.goal_review import (
     build_goal_reviewer,
@@ -117,6 +116,7 @@ from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
 from infrastructure.observability.trace.spans import component_span
 from infrastructure.text import is_data_blob
+from infrastructure.text.plan_snapshots import strip_plan_snapshots
 
 log = logging.getLogger(__name__)
 
