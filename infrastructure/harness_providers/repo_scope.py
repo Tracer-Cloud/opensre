@@ -32,9 +32,13 @@ class VcsRepoScopeProvider(Protocol):
         env: Mapping[str, str] | None,
         cwd: str | Path | None,
         cached: tuple[str, ...] | None,
+        resolved: Mapping[str, Any] | None = None,
     ) -> tuple[str, ...] | None:
-        """Resolve this vendor's repo scope from message/history/env/git/cache."""
-        raise NotImplementedError
+        """Resolve this vendor's repo scope from message/history/env/git/cache.
+
+        ``resolved`` is the turn's integrations, so a provider can match a short
+        repository name against what the connection can reach.
+        """
 
     def apply(self, resolved: dict[str, Any], scope: tuple[str, ...]) -> dict[str, Any]:
         """Return a copy of *resolved* enriched with this vendor's scope."""
@@ -98,6 +102,7 @@ def enrich_resolved_with_repo_scopes(
             env=env,
             cwd=cwd,
             cached=cached_scopes.get(provider.vendor),
+            resolved=resolved,
         )
         if not scope:
             continue

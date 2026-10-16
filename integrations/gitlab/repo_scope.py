@@ -211,7 +211,9 @@ class _GitlabVcsRepoScopeProvider:
         env: Mapping[str, str] | None,
         cwd: str | Path | None,
         cached: tuple[str, ...] | None,
+        resolved: Mapping[str, Any] | None = None,
     ) -> tuple[str, ...] | None:
+        _ = resolved
         cached_scope = GitlabRepoScope(*cached) if cached else None
         scope = infer_gitlab_repo_scope(
             message=message,

@@ -16,7 +16,9 @@ from core.domain.repositories import (
     load_repository_preferences,
     preferred_repository_for_name,
 )
+from integrations.github.accessible_repos import accessible_repositories, repository_named_in
 from integrations.github.identity import workspace_public_repository_source
+from integrations.github.rest_token import resolved_github_rest_token
 
 _GITHUB_HOST_RE = re.compile(
     r"(?:https?://)?(?:www\.)?github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s#?]+)",
@@ -31,6 +33,14 @@ _BARE_REPO_RE = re.compile(
 )
 
 _PUBLIC_WORKSPACE_SCOPE_MARKER = "public_workspace"
+# Template text such as "provide `owner/opensre`" is a question, not a repository:
+# reading it back from the history sent the next turn to a repository that is not there.
+_PLACEHOLDER_OWNERS = frozenset({"owner", "<owner>", "your-org", "your-username", "username"})
+_PLACEHOLDER_REPOS = frozenset({"repo", "<repo>", "repo-name", "your-repo"})
+
+
+def _is_placeholder(owner: str, repo: str) -> bool:
+    return owner.lower() in _PLACEHOLDER_OWNERS or repo.lower() in _PLACEHOLDER_REPOS
 
 
 def split_repo_full_name(value: str) -> tuple[str, str]:
@@ -52,7 +62,7 @@ def find_github_repository_references(text: str) -> tuple[tuple[str, str], ...]:
         for match in pattern.finditer(text):
             owner = match.group("owner").strip()
             repo = match.group("repo").strip().removesuffix(".git")
-            if owner and repo:
+            if owner and repo and not _is_placeholder(owner, repo):
                 matches.append((match.start(), (owner, repo)))
     references: list[tuple[str, str]] = []
     for _position, scope in sorted(matches):
@@ -188,6 +198,7 @@ class _GithubVcsRepoScopeProvider:
         env: Mapping[str, str] | None,
         cwd: str | Path | None,
         cached: tuple[str, ...] | None,
+        resolved: Mapping[str, Any] | None = None,
     ) -> tuple[str, ...] | None:
         from_message = parse_github_repository_reference(message)
         if from_message:
@@ -198,6 +209,13 @@ class _GithubVcsRepoScopeProvider:
         named = preferred_repository_for_name(message, preferences)
         if named:
             return split_repo_full_name(named)
+        # With no preference saved, "the opensre repo" is the one reachable
+        # original of that name: the connection knows it, so never ask.
+        reachable = repository_named_in(
+            message, accessible_repositories(resolved_github_rest_token(resolved or {}))
+        )
+        if reachable:
+            return split_repo_full_name(reachable)
         if conversation_messages:
             for _role, content in reversed(conversation_messages):
                 from_history = parse_github_repository_reference(content)

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from integrations.github.accessible_repos import AccessibleRepository, repository_named_in
 from integrations.github.mcp import GitHubMCPConfig
 from integrations.github.repo_scope import (
     GITHUB_VCS_REPO_SCOPE_PROVIDER,
@@ -249,3 +250,53 @@ def test_short_repository_name_resolves_to_the_primary_not_a_fork() -> None:
     )
 
     assert scope == ("Tracer-Cloud", "opensre")
+
+
+_REACHABLE = (
+    AccessibleRepository("Tracer-Cloud/opensre", fork=False),
+    AccessibleRepository("Tracer-Cloud/opensre-webapp", fork=False),
+    AccessibleRepository("vrk7/opensre", fork=True),
+)
+
+
+def test_short_name_resolves_to_the_reachable_original_without_a_preference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Slack asked "which repository?" for "the opensre repo" the connection could reach."""
+    monkeypatch.setattr(
+        "integrations.github.repo_scope.accessible_repositories", lambda _token: _REACHABLE
+    )
+
+    scope = GITHUB_VCS_REPO_SCOPE_PROVIDER.infer(
+        message="fix all the github security issues in the opensre repo",
+        conversation_messages=[],
+        env={},
+        cwd="/not/a/repository",
+        cached=None,
+    )
+
+    assert scope == ("Tracer-Cloud", "opensre")
+
+
+def test_a_name_shared_by_two_originals_is_not_guessed() -> None:
+    reachable = (*_REACHABLE, AccessibleRepository("other-org/opensre", fork=False))
+
+    assert repository_named_in("fix the opensre repo", reachable) is None
+
+
+def test_a_placeholder_in_the_assistant_question_is_not_a_repository() -> None:
+    """The reply "provide `owner/opensre`" sent the next turn to a 404 repository."""
+    history = [
+        ("user", "fix all the github security issues in the opensre repo"),
+        ("assistant", "Which GitHub repository do you mean? Please provide `owner/opensre`."),
+    ]
+
+    scope = GITHUB_VCS_REPO_SCOPE_PROVIDER.infer(
+        message="fix it",
+        conversation_messages=history,
+        env={},
+        cwd="/not/a/repository",
+        cached=None,
+    )
+
+    assert scope is None
