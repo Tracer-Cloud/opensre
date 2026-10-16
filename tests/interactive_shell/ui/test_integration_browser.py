@@ -255,6 +255,10 @@ def test_click_changes_details_without_verifying() -> None:
 def test_escape_cancels_inflight_verification(width: int) -> None:
     completed = False
     stage = 0
+    previous = ConnectionCheck(
+        "fixture", "passed", "Previously reachable", datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    checks = {"github": previous}
 
     async def verify(_service: str) -> dict[str, str]:
         nonlocal completed
@@ -275,10 +279,17 @@ def test_escape_cancels_inflight_verification(width: int) -> None:
             send("\x1b")
 
     assert (
-        run_browser([browser.IntegrationEntry("github", True)], drive, verify=verify, width=width)
+        run_browser(
+            [browser.IntegrationEntry("github", True)],
+            drive,
+            verify=verify,
+            width=width,
+            checks=checks,
+        )
         is None
     )
     assert stage == 2 and completed
+    assert checks["github"] is previous
 
 
 def test_checked_row_stays_visible_until_the_search_changes() -> None:
@@ -410,6 +421,57 @@ def test_reopened_list_shows_last_check_without_probing_and_enter_refreshes(widt
             verify=verify,
             checks=checks,
             width=width,
+        )
+        is None
+    )
+
+
+def test_failed_refresh_replaces_cached_success_and_survives_reopening() -> None:
+    previous = datetime(2026, 1, 1, tzinfo=UTC)
+    checks = {"github": ConnectionCheck("fixture", "passed", "Previously reachable", previous)}
+    calls = 0
+    stage = 0
+
+    async def verify(_service: str) -> dict[str, str]:
+        nonlocal calls
+        calls += 1
+        raise TimeoutError("private credential in upstream exception")
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        assert "private credential" not in frame
+        if stage == 0:
+            assert "passed" in frame and "Previously reachable" in frame
+            stage = 1
+            send("\r")
+        elif stage == 1 and "Connectivity check failed" in frame:
+            assert "failed" in frame and "passed" not in frame
+            assert "Previously reachable" not in frame and "Last checked:" in frame
+            stage = 2
+            send("\x1b")
+
+    assert (
+        run_browser([browser.IntegrationEntry("github", True)], drive, verify=verify, checks=checks)
+        is None
+    )
+    assert stage == 2 and calls == 1
+    assert checks["github"].status == "failed"
+    assert "private credential" not in repr(checks)
+    assert checks["github"].checked_at > previous
+
+    def reopen(frame: str, send: Callable[[str], None]) -> None:
+        assert "failed" in frame and "Connectivity check failed" in frame
+        assert "passed" not in frame and "Previously reachable" not in frame
+        assert "Last checked:" in frame and calls == 1
+        send("\x1b")
+
+    assert (
+        run_browser(
+            [browser.IntegrationEntry("github", True)],
+            reopen,
+            mcp=True,
+            verify=verify,
+            checks=checks,
         )
         is None
     )

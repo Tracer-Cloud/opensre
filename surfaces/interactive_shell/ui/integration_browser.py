@@ -16,7 +16,6 @@ from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.input_form import (
     InputChoice,
     InputField,
-    InputFormError,
     RecordAction,
     build_input_form,
 )
@@ -123,11 +122,13 @@ def build_integration_browser(
         service = choice.value
         try:
             result = await verify(service)
-        except Exception as exc:
-            raise InputFormError(
-                "Connectivity check failed. Retry or reconfigure this connection."
-            ) from exc
-        row = result or {"status": "missing", "detail": "Connection no longer configured."}
+        except Exception:
+            row = {
+                "status": "failed",
+                "detail": "Connectivity check failed. Retry or reconfigure this connection.",
+            }
+        else:
+            row = result or {"status": "missing", "detail": "Connection no longer configured."}
         history[service] = ConnectionCheck(
             source=row.get("source", "—"),
             status=row.get("status", "missing"),
