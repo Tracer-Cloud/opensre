@@ -42,6 +42,19 @@ async def test_failed_connectivity_is_a_valid_structured_result(
 
 
 @pytest.mark.asyncio
+async def test_verification_propagates_worker_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def execute(**_kwargs: object) -> None:
+        raise RuntimeError("Verification worker failed")
+
+    monkeypatch.setattr(verification, "execute_process_command", execute)
+
+    with pytest.raises(RuntimeError, match="Verification worker failed"):
+        await verification.verify_connection("github")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("cancel", [False, True])
 @pytest.mark.parametrize("root_exits", [False, True])
 async def test_stalled_verification_tree_is_stopped(

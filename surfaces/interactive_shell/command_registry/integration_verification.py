@@ -57,4 +57,4 @@ async def verify_connection(service: str) -> dict[str, str]:
         return cast(dict[str, str], row)
     finally:
         cancel.set()
-        await worker
+        await asyncio.gather(worker)
