@@ -211,9 +211,10 @@ def _workspace_line(runtime: Mapping[str, Any]) -> str | None:
             "can retain"
         )
     return (
-        "no workspace git/GitHub repo was detected for this process — ask which "
-        "repository the user means rather than assuming Tracer-Cloud/opensre or "
-        "any other default"
+        "no workspace git/GitHub repo was detected for this process — use the "
+        "organization's primary repository from REPOSITORY PREFERENCES when one "
+        "matches; otherwise ask which repository the user means rather than "
+        "assuming Tracer-Cloud/opensre or any other default"
     )
 
 

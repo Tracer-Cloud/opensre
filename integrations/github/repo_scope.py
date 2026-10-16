@@ -12,6 +12,10 @@ from typing import Any
 from pydantic import BaseModel
 
 from config.constants.runtime_metadata import WORKSPACE_REPO_ENV_KEYS
+from core.domain.repositories import (
+    load_repository_preferences,
+    preferred_repository_for_name,
+)
 from integrations.github.identity import workspace_public_repository_source
 
 _GITHUB_HOST_RE = re.compile(
@@ -73,9 +77,13 @@ def _parse_git_remote_url(url: str) -> tuple[str, str] | None:
 
 
 def detect_git_remote_repo_scope(cwd: str | Path | None = None) -> tuple[str, str] | None:
-    """Best-effort ``owner/repo`` from the checkout's origin or upstream remote."""
+    """Best-effort ``owner/repo`` from the checkout's upstream or origin remote.
+
+    In a fork checkout ``origin`` is the fork and ``upstream`` the repository
+    it came from, so ``upstream`` wins: work targets the original.
+    """
     work_dir = Path(cwd or os.getcwd())
-    for remote in ("origin", "upstream"):
+    for remote in ("upstream", "origin"):
         try:
             result = subprocess.run(
                 ["git", "remote", "get-url", remote],
@@ -184,6 +192,12 @@ class _GithubVcsRepoScopeProvider:
         from_message = parse_github_repository_reference(message)
         if from_message:
             return from_message
+        # "fix the opensre repo" names the organization's own repository, never
+        # one of its forks: a short name resolves to the matching primary.
+        preferences = load_repository_preferences()
+        named = preferred_repository_for_name(message, preferences)
+        if named:
+            return split_repo_full_name(named)
         if conversation_messages:
             for _role, content in reversed(conversation_messages):
                 from_history = parse_github_repository_reference(content)
@@ -192,7 +206,9 @@ class _GithubVcsRepoScopeProvider:
         if cached:
             return cached
         workspace_scope = _infer_workspace_repo_scope(env=env, cwd=cwd)
-        if workspace_scope is None:
+        if workspace_scope is None and preferences.primary:
+            workspace_scope = split_repo_full_name(preferences.primary[0])
+        if not workspace_scope:
             return None
         return (*workspace_scope, _PUBLIC_WORKSPACE_SCOPE_MARKER)
 

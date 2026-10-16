@@ -37,10 +37,13 @@ def test_read_git_origin_identity_from_config_body() -> None:
     assert read_git_origin_identity("[core]\n\trepositoryformatversion = 0\n") == ""
 
 
-def test_read_git_origin_identity_falls_back_to_upstream() -> None:
+def test_read_git_origin_identity_prefers_upstream_over_a_fork_origin() -> None:
     from config.runtime_metadata.probes import read_git_origin_identity
 
-    config = '[remote "upstream"]\n\turl = https://github.com/Tracer-Cloud/opensre.git\n'
+    config = (
+        '[remote "origin"]\n\turl = git@github.com:someone/opensre.git\n'
+        '[remote "upstream"]\n\turl = https://github.com/Tracer-Cloud/opensre.git\n'
+    )
 
     assert read_git_origin_identity(config) == "Tracer-Cloud/opensre"
 

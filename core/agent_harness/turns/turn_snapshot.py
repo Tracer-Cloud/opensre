@@ -14,6 +14,7 @@ from core.agent_harness.prompts.kernel.surfaces import profile_for
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.session_goal.progress import format_session_goal_brief
 from core.agent_harness.task_plan.ownership import session_answer_continues_plan
+from core.domain.repositories import RepositoryPreferences, load_repository_preferences
 from core.state import TurnEvidence, history_window_messages
 from core.state.transcript_window import compact_messages_to_window
 from infrastructure.setup_state import cached_setup_state
@@ -241,6 +242,9 @@ class TurnSnapshot:
     known_vcs_repositories: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Repository identities retained in this session, grouped by VCS vendor."""
 
+    repository_preferences: RepositoryPreferences = field(default_factory=RepositoryPreferences)
+    """The organization's primary and excluded repositories, kept across sessions."""
+
     @classmethod
     def from_session(
         cls,
@@ -309,6 +313,7 @@ class TurnSnapshot:
                 for vendor, scopes in (getattr(session, "known_vcs_repo_scopes", {}) or {}).items()
                 if isinstance(scopes, dict)
             },
+            repository_preferences=load_repository_preferences(),
         )
 
     def render_system_prompt(self) -> str:

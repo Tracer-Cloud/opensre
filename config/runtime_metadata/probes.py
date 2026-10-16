@@ -237,9 +237,13 @@ def _normalize_repo_identity(raw: str) -> str:
 
 
 def read_git_origin_identity(config_text: str) -> str:
-    """Parse a ``.git/config`` body for the origin, then upstream, repository."""
+    """Parse a ``.git/config`` body for the upstream, then origin, repository.
+
+    In a fork checkout ``upstream`` is the original repository and ``origin``
+    the fork, so the original is "ours".
+    """
     lines = config_text.splitlines()
-    for remote in ("origin", "upstream"):
+    for remote in ("upstream", "origin"):
         in_remote = False
         for line in lines:
             stripped = line.strip()

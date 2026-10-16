@@ -92,6 +92,9 @@ def test_action_system_prompt_envelope_matches_legacy_rendering(
         PromptBlockId.ACTION_RUNTIME_FACTS,
         PromptBlockId.ACTION_SKILLS,
         PromptBlockId.CONNECTED_INTEGRATIONS,
+        # GitHub is connected, so the organization's repository preferences
+        # and the fork rule ride every turn even before a repository is named.
+        PromptBlockId.REPOSITORY_CONTEXT,
         PromptBlockId.ACTION_GOAL_KERNEL_CLOSER,
         PromptBlockId.ACTION_LIVE_RUNTIME_FACTS,
         PromptBlockId.TURN_INTERACTION,
@@ -219,6 +222,7 @@ def test_every_block_declares_which_tier_it_belongs_to(
         PromptBlockId.ACTION_RUNTIME_FACTS: PromptTier.STABLE,
         PromptBlockId.ACTION_SKILLS: PromptTier.STABLE,
         PromptBlockId.CONNECTED_INTEGRATIONS: PromptTier.CONTEXT,
+        PromptBlockId.REPOSITORY_CONTEXT: PromptTier.CONTEXT,
         PromptBlockId.ACTION_GOAL_KERNEL_CLOSER: PromptTier.EPHEMERAL,
         PromptBlockId.ACTION_LIVE_RUNTIME_FACTS: PromptTier.EPHEMERAL,
         PromptBlockId.TURN_INTERACTION: PromptTier.EPHEMERAL,

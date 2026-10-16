@@ -40,6 +40,7 @@ from infrastructure.harness_providers import action_prompt_vendor_fragments
 
 if TYPE_CHECKING:
     from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+    from core.domain.repositories import RepositoryPreferences
 
 logger = logging.getLogger(__name__)
 
@@ -350,28 +351,59 @@ def connected_integrations_block(turn_snapshot: TurnSnapshot) -> str:
     return f"CONNECTED INTEGRATIONS (this install, right now): {listing}\n{gate_note}\n"
 
 
+_VCS_INTEGRATIONS = frozenset({"github", "gitlab", "bitbucket"})
+
+
 def repository_context_block(turn_snapshot: TurnSnapshot) -> str:
-    """Render one active repo plus every repo retained in session memory."""
+    """Render the session's repositories and the organization's standing choices."""
     active = turn_snapshot.active_vcs_repositories
     known = turn_snapshot.known_vcs_repositories
+    preferences = turn_snapshot.repository_preferences
     vendors = sorted(set(active) | set(known))
-    if not vendors:
+    vcs_connected = bool(_VCS_INTEGRATIONS & set(turn_snapshot.configured_integrations))
+    if not vendors and preferences.empty and not vcs_connected:
         return ""
 
-    lines: list[str] = []
-    for vendor in vendors:
-        active_repo = active.get(vendor, "none")
-        remembered = known.get(vendor, ())
-        remembered_text = ", ".join(remembered) if remembered else "none"
-        lines.append(f"- {vendor}: active={active_repo}; remembered={remembered_text}")
-    repository_lines = "\n".join(lines)
+    sections: list[str] = []
+    if vendors:
+        lines: list[str] = []
+        for vendor in vendors:
+            active_repo = active.get(vendor, "none")
+            remembered = known.get(vendor, ())
+            remembered_text = ", ".join(remembered) if remembered else "none"
+            lines.append(f"- {vendor}: active={active_repo}; remembered={remembered_text}")
+        repository_lines = "\n".join(lines)
+        sections.append(
+            "REPOSITORY CONTEXT (this session; one active target per vendor, many "
+            "remembered repositories):\n"
+            f"{repository_lines}\n"
+            "Use the active target for an unqualified repository request. A user-named "
+            "repository becomes active without deleting the others. Do not describe the "
+            "active repository as the only repository OpenSRE remembers.\n"
+        )
+    sections.append(_repository_preferences_section(preferences))
+    return "\n".join(sections) + "\n"
+
+
+def _repository_preferences_section(preferences: RepositoryPreferences) -> str:
+    primary = ", ".join(preferences.primary) or "none saved"
+    excluded = ", ".join(preferences.excluded) or "none saved"
+    notes = "".join(
+        f"- note on {repository}: {note}\n" for repository, note in preferences.notes.items()
+    )
     return (
-        "REPOSITORY CONTEXT (this session; one active target per vendor, many "
-        "remembered repositories):\n"
-        f"{repository_lines}\n"
-        "Use the active target for an unqualified repository request. A user-named "
-        "repository becomes active without deleting the others. Do not describe the "
-        "active repository as the only repository OpenSRE remembers.\n\n"
+        "REPOSITORY PREFERENCES (whole organization, kept across sessions):\n"
+        f"- primary: {primary}\n"
+        f"- never change: {excluded}\n"
+        f"{notes}"
+        'A repository named only by its short name ("the opensre repo") is the '
+        "primary repository with that name. With no primary for it, pick the "
+        "original over its forks and mirrors (a fork's parent wins), say which you "
+        "picked, and do not ask the user to choose between a repository and its "
+        "forks; ask only when unrelated repositories that are not forks share the "
+        "name. Never create branches, commits, pushes, pull requests or issues in a "
+        "never-change repository. When the user says which repository to work on or "
+        "to leave alone, save it with repository_preferences in the same turn.\n"
     )
 
 

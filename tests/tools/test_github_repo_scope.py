@@ -113,7 +113,7 @@ def test_detect_git_remote_repo_scope_parses_ssh_remote() -> None:
         assert detect_git_remote_repo_scope() == ("org", "repo")
 
 
-def test_detect_git_remote_repo_scope_falls_back_to_upstream() -> None:
+def test_detect_git_remote_repo_scope_falls_back_to_origin() -> None:
     with patch("integrations.github.repo_scope.subprocess.run") as run:
         run.side_effect = [
             MagicMock(returncode=2, stdout=""),
@@ -125,7 +125,7 @@ def test_detect_git_remote_repo_scope_falls_back_to_upstream() -> None:
 
         assert detect_git_remote_repo_scope() == ("Tracer-Cloud", "opensre")
 
-    assert [call.args[0][-1] for call in run.call_args_list] == ["origin", "upstream"]
+    assert [call.args[0][-1] for call in run.call_args_list] == ["upstream", "origin"]
 
 
 def test_detect_git_remote_repo_scope_rejects_non_github_remote() -> None:
@@ -232,3 +232,20 @@ def test_workspace_scope_keeps_configured_github_authenticated() -> None:
         "owner": "Tracer-Cloud",
         "repo": "opensre",
     }
+
+
+def test_short_repository_name_resolves_to_the_primary_not_a_fork() -> None:
+    """'fix the opensre repo' must target the organization's repo, not ask which fork."""
+    from core.domain.repositories import set_primary_repository
+
+    set_primary_repository("Tracer-Cloud/opensre")
+
+    scope = GITHUB_VCS_REPO_SCOPE_PROVIDER.infer(
+        message="fix the failing issues in the opensre repo",
+        conversation_messages=[("assistant", "Forks: KindaJayant/opensre, vrk7/opensre")],
+        env={},
+        cwd="/not/a/repository",
+        cached=("KindaJayant", "opensre"),
+    )
+
+    assert scope == ("Tracer-Cloud", "opensre")

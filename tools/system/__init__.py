@@ -17,6 +17,7 @@ TOOL_MODULES = (
     "fleet_monitoring",
     "local_repo_insights.tool",
     "python_execution_tool",
+    "repository_preferences.tool",
     "runbook_guidance_tool.tool",
     "scheduled_loops.tool",
     "sre_guidance_tool",
