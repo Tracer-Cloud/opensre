@@ -53,7 +53,11 @@ _INPUT_SCHEMA: dict[str, Any] = {
         },
         "workspace": {
             "type": "string",
-            "description": "Explicit matching checkout. Shipped repairs use an isolated clone when omitted; local-only fixes use CODING_WORKSPACE or cwd.",
+            "description": (
+                "Explicit matching checkout. When omitted, a local-only fix uses CODING_WORKSPACE "
+                "or cwd if it is a checkout of the repository; otherwise the repository is "
+                "cloned and the fix is always shipped as a pull request."
+            ),
         },
         "model": {
             "type": "string",

@@ -777,6 +777,7 @@ def test_gather_auto_prefer_builtin_raises_without_running_fix() -> None:
 
 
 @patch("integrations.github.tools.security_fix.runner.run_fix")
+@patch("integrations.github.tools.security_fix.runner._matching_checkout", return_value=True)
 @patch(
     "integrations.github.tools.security_fix.runner.repair_workspace",
     side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
@@ -790,6 +791,7 @@ def test_run_security_fix_confirms_before_coding(
     _gather: MagicMock,
     _cli: MagicMock,
     _workspace: MagicMock,
+    _checkout: MagicMock,
     mock_run_fix: MagicMock,
 ) -> None:
     prompts: list[str] = []
@@ -1020,3 +1022,44 @@ def test_skill_guidance_attaches_to_security_fix_tool() -> None:
     assert "Workflow guidance:" in tool.description
     assert '<tool_guidance name="operating-github-security-fixer"' in tool.skill_guidance
     assert "Secret-scanning alerts are refused" in tool.skill_guidance
+
+
+@patch(
+    "integrations.github.tools.security_fix.runner.run_ship",
+    return_value=ShipResult(
+        branch_name="opensre/github-security-fix-dependabot-12-abc",
+        pr=PullRequest(url="https://github.com/acme/app/pull/9", number=9),
+    ),
+)
+@patch("integrations.github.tools.security_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.security_fix.runner.run_fix")
+@patch("integrations.github.tools.security_fix.runner.ensure_ship_ready")
+@patch(
+    "integrations.github.tools.security_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/tmp/run-clone"),
+)
+@patch("integrations.github.tools.security_fix.runner.coding_workspace", return_value="/workspace")
+@patch(
+    "integrations.github.tools.security_fix.runner.gather_security_alert_context",
+    return_value=_CTX,
+)
+def test_run_security_fix_without_a_checkout_clones_and_ships(
+    _gather: MagicMock,
+    _coding_workspace: MagicMock,
+    mock_workspace: MagicMock,
+    _ship_ready: MagicMock,
+    mock_run_fix: MagicMock,
+    _pre: MagicMock,
+    mock_ship: MagicMock,
+) -> None:
+    """Slack on Fargate failed with "/workspace is not a git repository"."""
+    mock_run_fix.return_value = CodingResult(
+        success=True, summary="Updated Django.", changed_files=["requirements.txt"], diff="diff"
+    )
+
+    result = run_security_fix(owner="acme", repo="app", github_token="tok")
+
+    assert mock_workspace.call_args.kwargs["workspace"] is None
+    assert mock_run_fix.call_args.args[1] == "/tmp/run-clone"
+    mock_ship.assert_called_once()
+    assert result["pr_url"] == "https://github.com/acme/app/pull/9"

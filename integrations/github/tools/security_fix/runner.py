@@ -16,7 +16,7 @@ from integrations.coding_agent import (
 )
 from integrations.git import GitCommandError, changed_paths, ensure_git_repo, file_fingerprints
 from integrations.github.client import resolve_github_token
-from integrations.github.repair_workspace import repair_workspace
+from integrations.github.repair_workspace import ensure_repair_repository, repair_workspace
 from integrations.github.tools.security_fix.context import (
     SecurityAlertContext,
     gather_security_alert_context,
@@ -61,6 +61,33 @@ def pre_coding_changes(workspace: str) -> dict[str, str]:
         return file_fingerprints(workspace, changed_paths(workspace))
     except GitCommandError:
         return {}
+
+
+def _matching_checkout(workspace: str, owner: str, repo: str) -> bool:
+    """True when ``workspace`` is a git checkout whose remotes name ``owner/repo``."""
+    try:
+        ensure_repair_repository(workspace, owner, repo)
+    except GitCommandError:
+        return False
+    return True
+
+
+def _repair_checkout(
+    workspace: str | None,
+    default_workspace: str,
+    ctx: SecurityAlertContext,
+    *,
+    open_pr: bool,
+    named_target: bool,
+) -> str | None:
+    """The checkout to repair in, or ``None`` for a run-owned clone of the repository."""
+    if workspace:
+        return workspace
+    if open_pr and named_target:
+        return None
+    if _matching_checkout(default_workspace, ctx.owner, ctx.repo):
+        return default_workspace
+    return None
 
 
 def run_fix(ctx: SecurityAlertContext, workspace: str, model: str | None) -> CodingResult:
@@ -244,12 +271,22 @@ def run_security_fix(
                 prefer_builtin_local_fix=not coding_available,
                 quality_only=quality_only,
             )
+            checkout = _repair_checkout(
+                workspace,
+                ws,
+                ctx,
+                open_pr=open_pr,
+                named_target=bool((owner and repo) or alert_url),
+            )
+            # Without a checkout of the repository here (a hosted gateway), the fix
+            # is made in a run-owned clone deleted afterwards: only shipping keeps it.
+            open_pr = open_pr or checkout is None
             ws = str(
                 workspaces.enter_context(
                     repair_workspace(
                         ctx.owner,
                         ctx.repo,
-                        workspace=workspace if open_pr and ((owner and repo) or alert_url) else ws,
+                        workspace=checkout,
                         token=resolve_github_token(github_token),
                         target=f"security:{ctx.alert_type}:{ctx.number}",
                     )
