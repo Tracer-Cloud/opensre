@@ -11,6 +11,10 @@ from __future__ import annotations
 
 import re
 
+from config.constants.masking import (
+    OPENSRE_MASK_ENABLED_ENV,
+    OPENSRE_MASK_EXTRA_REGEX_ENV,
+)
 from infrastructure.safety.masking.policy import MaskingPolicy
 from infrastructure.safety.masking.rules import MaskingRules
 
@@ -72,8 +76,8 @@ def test_restored_context_does_not_reuse_indices_for_sanitized_labels(
     # policy from the environment.
     import json as _json
 
-    monkeypatch.setenv("OPENSRE_MASK_ENABLED", "1")
-    monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", _json.dumps({"jira-key": r"AAA-\d+"}))
+    monkeypatch.setenv(OPENSRE_MASK_ENABLED_ENV, "1")
+    monkeypatch.setenv(OPENSRE_MASK_EXTRA_REGEX_ENV, _json.dumps({"jira-key": r"AAA-\d+"}))
     first = MaskingRules(policy=MaskingPolicy.from_env())
     masked_one = first.mask("see AAA-111")
     restored = MaskingRules.from_state({"masking_map": first.to_state()})

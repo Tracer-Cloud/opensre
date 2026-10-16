@@ -795,6 +795,15 @@ if TYPE_CHECKING:
     from config.constants.mariadb import (
         MARIADB_USERNAME_ENV as MARIADB_USERNAME_ENV,
     )
+    from config.constants.masking import (
+        OPENSRE_MASK_ENABLED_ENV as OPENSRE_MASK_ENABLED_ENV,
+    )
+    from config.constants.masking import (
+        OPENSRE_MASK_EXTRA_REGEX_ENV as OPENSRE_MASK_EXTRA_REGEX_ENV,
+    )
+    from config.constants.masking import (
+        OPENSRE_MASK_KINDS_ENV as OPENSRE_MASK_KINDS_ENV,
+    )
     from config.constants.mcp import (
         MCP_NO_COLOR_ENV as MCP_NO_COLOR_ENV,
     )
