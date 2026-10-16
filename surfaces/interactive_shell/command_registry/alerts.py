@@ -28,6 +28,13 @@ def _cmd_alerts(_session: Session, console: Console, _args: list[str]) -> bool:
     table.add_row("status", f"[{HIGHLIGHT}]listening[/]")
     table.add_row("queue depth", str(inbox.qsize))
     table.add_row("dropped", str(inbox.dropped))
+    # Failed alerts waiting out their retry delay live outside the main queue,
+    # so ``queue depth`` reads zero for them — surface them or /alerts looks
+    # empty while an alert is still pending a retry.
+    if inbox.pending_retries:
+        table.add_row("pending retries", f"[{WARNING}]{inbox.pending_retries}[/]")
+    else:
+        table.add_row("pending retries", "0")
 
     for alert in inbox.peek_last(5):
         table.add_row(f"[{DIM}]recent[/]", f"{alert.alert_name or 'untitled'} — {alert.text[:80]}")

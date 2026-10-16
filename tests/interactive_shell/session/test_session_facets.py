@@ -20,7 +20,12 @@ _FACET_FIELDS = ("alerts", "terminal")
 
 
 def _session() -> Session:
-    return Session(store=InMemorySessionStore())
+    store = InMemorySessionStore()
+    session = Session(store=store)
+    # record_incoming_alert treats an unopened session as a persistence
+    # failure (the store signals '' / no record id), so open it first.
+    store.open_session(session)
+    return session
 
 
 def test_session_is_a_session_core_with_two_facets() -> None:

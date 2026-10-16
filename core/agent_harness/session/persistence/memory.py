@@ -33,8 +33,8 @@ class InMemorySessionStore:
             }
         ]
 
-    def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> None:
-        self._append(
+    def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> str:
+        return self._append(
             session.session_id,
             "custom_message",
             {"custom_type": "turn_stub", "kind": kind, "text": text, "display": False},

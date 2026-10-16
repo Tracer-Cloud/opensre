@@ -113,7 +113,12 @@ class BackgroundTaskPool:
             color_system="truecolor",
             legacy_windows=False,
         )
-        drain_and_render_incoming(self.session, alert_console, self.inbox)
+        try:
+            drain_and_render_incoming(self.session, alert_console, self.inbox)
+        except Exception as exc:
+            # An unprotected failure here would kill the watcher task and
+            # silently stop alert rendering for the rest of the session.
+            log.warning("Error draining incoming alerts at watcher start: %s", exc)
         while not self.state.exit_requested:
             try:
                 await asyncio.to_thread(self.inbox.pending_event.wait, timeout=1)
