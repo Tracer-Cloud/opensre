@@ -1094,6 +1094,12 @@ def _compose_response(
     closing_chunks = _closing_tool_chunks(
         generic_chunks, include_outcome=not outcome_already_delivered
     )
+    if final_text_chunk and terminal is None:
+        # Chat surfaces (Slack, Telegram, Discord) have no terminal: no tool
+        # transcript and no Ctrl+O to expand a preview. The model's closing is
+        # the answer there, so raw tool previews (gh errors, truncated reads)
+        # are not appended to it. Only a tool's outcome report stays.
+        closing_chunks = [chunk for chunk in closing_chunks if is_outcome_report(chunk)]
     # A queued repair snapshot and the later succeeded snapshot are one report.
     # The report stays ahead of the cap: a long result before it must not hide
     # the outcome, whether or not an earlier snapshot was dropped.
