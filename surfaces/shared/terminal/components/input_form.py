@@ -126,8 +126,9 @@ def build_input_form[Result](
     browse_only: bool = False,
     max_width: int = 96,
     record_actions: Sequence[RecordAction[Result]] = (),
+    load_records: Callable[[Callable[[], None]], Awaitable[None]] | None = None,
 ) -> Application[Result | None]:
-    """Validate drafts; browse-only views only run explicitly configured record actions."""
+    """Validate drafts; optional record loading runs in an application-owned task."""
     current = dict(values)
     field_map = {item.name: item for item in fields(dict(current))}
     row = 0
@@ -586,6 +587,22 @@ def build_input_form[Result](
             and (action.enabled is None or action.enabled(selected_record()))
         )
 
+    def refresh_records() -> None:
+        nonlocal field_map, choice_catalog, record_views, choice_index
+        if app.is_done:
+            return
+        selected = selected_record()
+        field_map = {item.name: item for item in fields(dict(current))}
+        choice_catalog = search_catalog()
+        record_views = record_catalog()
+        candidates = [candidate.value for candidate in choices()]
+        choice_index = (
+            candidates.index(selected.value)
+            if selected is not None and selected.value in candidates
+            else 0
+        )
+        app.invalidate()
+
     def bind_action(action: RecordAction[Result]) -> None:
         @keys.add(action.key, filter=Condition(lambda: not busy and available_action(action)))
         def act(event: KeyPressEvent) -> None:
@@ -597,14 +614,7 @@ def build_input_form[Result](
             error = ""
 
             async def perform() -> None:
-                nonlocal \
-                    busy, \
-                    error, \
-                    field_map, \
-                    choice_catalog, \
-                    record_views, \
-                    choice_index, \
-                    pinned_record
+                nonlocal busy, error, pinned_record
                 try:
                     result = await action.handler(choice)
                     if event.app.is_done:
@@ -612,18 +622,9 @@ def build_input_form[Result](
                     if result is not None:
                         event.app.exit(result=result)
                         return
-                    selected = selected_record()
                     if search_revision == action_search_revision:
                         pinned_record = choice.value if choice is not None else None
-                    field_map = {item.name: item for item in fields(dict(current))}
-                    choice_catalog = search_catalog()
-                    record_views = record_catalog()
-                    candidates = [candidate.value for candidate in choices()]
-                    choice_index = (
-                        candidates.index(selected.value)
-                        if selected is not None and selected.value in candidates
-                        else 0
-                    )
+                    refresh_records()
                 except InputFormError as exc:
                     error = strip_terminal_controls(str(exc))
                 finally:
@@ -930,4 +931,13 @@ def build_input_form[Result](
         row = next(
             index for index, item in enumerate(review_fields()) if item.name == initial_review_field
         )
+    if load_records is not None:
+
+        async def load() -> None:
+            await load_records(refresh_records)
+
+        def start_loading() -> None:
+            app.create_background_task(load())
+
+        app.pre_run_callables.append(start_loading)
     return app

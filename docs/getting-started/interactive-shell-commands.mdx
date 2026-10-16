@@ -203,10 +203,11 @@ These invocations open a picker or submenu:
 
 `/integrations list` and `/mcp list` use the same searchable list as `/loops list`.
 Type to filter; click a row or use ↑↓/Tab to see its details below the list.
-New rows show **Configured**, which does not mean the connection is healthy.
+New connections show **Checking…** while connectivity checks run in the background;
+results appear without pressing Enter. Search and navigation stay available while checks run.
 The list remembers this session’s last check result with a **Last checked** timestamp,
-including when you reopen it or switch between the two lists. Browsing does not
-check connectivity; **Enter** always runs a fresh check and updates the result in place. Use **F2** for setup, **F3** to
+including when you reopen it or switch between the two lists. **Enter** runs a fresh
+check and updates the result in place. Use **F2** for setup, **F3** to
 remove/disconnect (with confirmation), **F4** to add/connect, and **Esc** to close.
 Checks time out after 30 seconds; Esc cancels an in-progress check.
 These action keys leave ordinary typing available for search. Connections without
@@ -614,7 +615,7 @@ You can ask “Can you configure Telegram/PostHog for me?” to start the same g
 
 `/integrations list` opens a searchable configured-integration browser in a TTY. Click a row or use **↑↓/Tab** to see its details; **Enter** runs a fresh connectivity check when supported. Use **F2** for setup, **F3** to remove with confirmation, **F4** to add, and **Esc** to close. Verification updates the list in place; setup and removal return to the conversation.
 
-Browsing does not run health checks: **Configured** means configuration exists, not that the connection is healthy. Last-known results and their **Last checked** timestamps are remembered for this REPL session only. Connections without a verifier do not offer Enter-to-verify; setup and removal remain available. Use `/integrations verify` to run health checks.
+Connections without a result are checked automatically in the background, up to three at a time. Last-known results and their **Last checked** timestamps are remembered for this REPL session only; reopening reuses them until you press Enter to recheck. Connections without a verifier show **Configured**, not a successful health check; setup and removal remain available. Use `/integrations verify` to check all connections again.
 
 </Accordion>
 
@@ -622,7 +623,7 @@ Browsing does not run health checks: **Configured** means configuration exists, 
 
 MCP-capable integrations only (subset of the full integration catalog).
 
-`/mcp list` opens the searchable server browser without running health checks. It shows **Configured** immediately, or this session’s last check result with its timestamp. Click a row or use **↑↓/Tab** to browse, **Enter** to check again, **F2** to reconfigure, **F3** to disconnect with confirmation, **F4** to connect, and **Esc** to close. Explicit subcommands remain available below.
+`/mcp list` opens the same searchable browser and automatically checks connections without a result in the background. It shows **Checking…** until results arrive, or this session’s last check result with its timestamp. Click a row or use **↑↓/Tab** to browse, **Enter** to check again, **F2** to reconfigure, **F3** to disconnect with confirmation, **F4** to connect, and **Esc** to close. Explicit subcommands remain available below.
 
 ```text
 /mcp list

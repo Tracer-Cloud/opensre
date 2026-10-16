@@ -1,4 +1,4 @@
-"""Connection lists share the searchable form without probing on selection."""
+"""Connection lists load status in the background without blocking navigation."""
 
 from __future__ import annotations
 
@@ -15,6 +15,15 @@ from prompt_toolkit.output import DummyOutput
 
 from surfaces.interactive_shell.session.connection_checks import ConnectionCheck
 from surfaces.interactive_shell.ui import integration_browser as browser
+
+
+def checked_connections(*services: str) -> dict[str, ConnectionCheck]:
+    return {
+        service: ConnectionCheck(
+            "fixture", "passed", "Previously reachable", datetime(2026, 1, 1, tzinfo=UTC)
+        )
+        for service in services
+    }
 
 
 def run_browser(
@@ -76,7 +85,7 @@ def test_search_and_inline_verification_keep_the_browser_open(mcp: bool) -> None
         if stage == 0:
             assert "Search › Filter items" in frame
             assert "Not checked" not in frame
-            assert "Configured" in frame and "connectivity not checked" in frame and not calls
+            assert "passed" in frame and "Previously reachable" in frame and not calls
             assert "2 of 2 items" in frame
             stage = 1
             send("grafana")
@@ -96,6 +105,7 @@ def test_search_and_inline_verification_keep_the_browser_open(mcp: bool) -> None
         drive,
         verify=verify,
         mcp=mcp,
+        checks=checked_connections("github", "grafana"),
     )
     assert result is None and stage == 3
 
@@ -161,7 +171,7 @@ def test_unsupported_verification_is_not_offered_or_executed() -> None:
 
     def drive(frame: str, send: Callable[[str], None]) -> None:
         assert "No connectivity check available" in frame
-        assert "Enter verify" not in frame
+        assert "Enter recheck" not in frame
         send("\r\x1bOQ")
 
     assert run_browser([browser.IntegrationEntry("airflow", False)], drive, verify=no_probe) == (
@@ -302,12 +312,12 @@ def test_checked_row_stays_visible_until_the_search_changes() -> None:
         nonlocal stage
         if stage == 0:
             stage = 1
-            send("configured")
-        elif stage == 1 and "Search › configured" in frame:
+            send("passed")
+        elif stage == 1 and "Search › passed" in frame:
             stage = 2
             send("\r")
         elif stage == 2 and "Reachable" in frame:
-            assert "Search › configured" in frame
+            assert "Search › passed" in frame
             assert "github" in frame
             stage = 3
             send("\x15impossible")
@@ -321,6 +331,7 @@ def test_checked_row_stays_visible_until_the_search_changes() -> None:
             [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)],
             drive,
             verify=verify,
+            checks=checked_connections("github", "grafana"),
         )
         is None
     )
@@ -358,6 +369,7 @@ def test_late_result_does_not_reappear_in_a_new_search() -> None:
             [browser.IntegrationEntry("github", True), browser.IntegrationEntry("grafana", True)],
             drive,
             verify=verify,
+            checks=checked_connections("github", "grafana"),
         )
         is None
     )
@@ -475,3 +487,97 @@ def test_failed_refresh_replaces_cached_success_and_survives_reopening() -> None
         )
         is None
     )
+
+
+@pytest.mark.parametrize("mcp", [False, True])
+def test_fresh_list_checks_in_background_without_enter(mcp: bool) -> None:
+    release = asyncio.Event()
+    calls: list[str] = []
+    checks: dict[str, ConnectionCheck] = {}
+    stage = 0
+
+    async def verify(service: str) -> dict[str, str]:
+        calls.append(service)
+        await release.wait()
+        return {"service": service, "source": "fixture", "status": "passed", "detail": "Reachable"}
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        if stage == 0:
+            assert "Checking…" in frame
+            stage = 1
+            send("github\r\r")
+        elif stage == 1 and "Search › github" in frame:
+            stage = 2
+            release.set()
+        elif stage == 2 and "Reachable" in frame:
+            assert "passed" in frame and "fixture" in frame and "Last checked:" in frame
+            assert calls == ["github"]
+            stage = 3
+            send("\x1b")
+
+    assert (
+        run_browser(
+            [browser.IntegrationEntry("github", True)], drive, mcp=mcp, verify=verify, checks=checks
+        )
+        is None
+    )
+    assert stage == 3 and checks["github"].status == "passed"
+
+
+@pytest.mark.parametrize("close_early", [False, True])
+def test_background_checks_are_bounded_and_cancelled_on_exit(close_early: bool) -> None:
+    release = asyncio.Event()
+    started: list[str] = []
+    stopped: list[str] = []
+    active = 0
+    peak = 0
+    stage = 0
+    checks = checked_connections("github")
+    previous = checks["github"]
+
+    async def verify(service: str) -> dict[str, str]:
+        nonlocal active, peak
+        started.append(service)
+        active += 1
+        peak = max(peak, active)
+        try:
+            await release.wait()
+            if service == "service-0":
+                raise TimeoutError("private credential in upstream exception")
+            return {"service": service, "status": "passed", "detail": "Reachable"}
+        finally:
+            active -= 1
+            stopped.append(service)
+
+    def drive(frame: str, send: Callable[[str], None]) -> None:
+        nonlocal stage
+        assert "private credential" not in frame
+        if stage == 0:
+            assert "Checking…" in frame
+            stage = 1
+            send("service")
+        elif stage == 1 and "Search › service" in frame:
+            assert len(started) == 3
+            stage = 2
+            if close_early:
+                send("\x1b")
+            else:
+                release.set()
+        elif stage == 2 and not close_early and "Checking…" not in frame:
+            assert "failed" in frame and "passed" in frame
+            stage = 3
+            send("\x1b")
+
+    entries = [browser.IntegrationEntry(f"service-{index}", True) for index in range(6)]
+    entries.extend(
+        [browser.IntegrationEntry("github", True), browser.IntegrationEntry("airflow", False)]
+    )
+    assert run_browser(entries, drive, verify=verify, checks=checks) is None
+    assert sorted(stopped) == sorted(started) and peak == 3 and active == 0
+    assert checks["github"] is previous and "airflow" not in checks
+    if close_early:
+        assert stage == 2 and len(started) == 3 and len(checks) == 1
+    else:
+        assert stage == 3 and len(started) == 6 and len(checks) == 7
+        assert checks["service-0"].status == "failed"

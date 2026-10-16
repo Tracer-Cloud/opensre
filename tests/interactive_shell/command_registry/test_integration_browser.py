@@ -23,7 +23,7 @@ from surfaces.interactive_shell.ui.integration_browser import IntegrationEntry
         ("/mcp list", ["github"]),
     ],
 )
-def test_list_subcommand_browses_configured_items_without_verifying(
+def test_list_subcommand_opens_browser_before_any_blocking_verification(
     monkeypatch: pytest.MonkeyPatch, command: str, expected: list[str]
 ) -> None:
     seen: list[list[str]] = []
@@ -36,7 +36,7 @@ def test_list_subcommand_browses_configured_items_without_verifying(
         seen.append([entry.service for entry in entries])
 
     def no_probe(*_args: object) -> None:
-        pytest.fail("Browsing must not probe services or open an action submenu")
+        pytest.fail("Dispatch must not block on verification or open an action submenu")
 
     monkeypatch.setattr(commands, "browse_integrations", browse, raising=False)
     monkeypatch.setattr(commands, "repl_tty_interactive", lambda: True)
