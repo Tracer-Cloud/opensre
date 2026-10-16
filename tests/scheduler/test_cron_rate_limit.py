@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from config.constants.ci_repair import CI_REPAIR_CRON, CI_REPAIR_REPORT_BUILDER
 from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM, LOOP_REPORT_PARAM
 from infrastructure.scheduling.scheduler.loops import create_manual_loop
-from infrastructure.scheduling.scheduler.runner import _register_jobs
+from infrastructure.scheduling.scheduler.runner import _register_jobs, compute_next_run
 from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
 from infrastructure.scheduling.scheduler.storage.task_store import add_task, get_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
@@ -24,7 +25,9 @@ from tests.scheduler._bundle import real_runners
         ("0,15,30,45 * * * *", "0 * * * *"),
         ("4,19,34,49 * * * *", "4 * * * *"),
         ("12,27,42,57 * * * *", "12 * * * *"),
-        ("*/15 * * * *", "15 * * * *"),
+        ("*/15 * * * *", "0 * * * *"),
+        ("10-40/5 * * * *", "10 * * * *"),
+        ("45,*/15 * * * *", "0 * * * *"),
         ("* * * * *", "0 * * * *"),
         ("*/30 * * * * *", "0 * * * *"),
         ("0,30 9 * * 1", "0 9 * * 1"),
@@ -48,7 +51,7 @@ def test_create_manual_loop_stores_at_most_one_run_per_hour(tmp_path: Path) -> N
     created = create_manual_loop(
         name="Code scanning",
         prompt="Repair code scanning alerts",
-        cron="8,23,38,53 * * * *",
+        cron="*/15 * * * *",
         channels=["interactive_shell"],
         store_path=store_path,
     )
@@ -60,8 +63,13 @@ def test_create_manual_loop_stores_at_most_one_run_per_hour(tmp_path: Path) -> N
         store_path=store_path,
     )
 
-    assert created.task.cron == "8 * * * *"
+    assert created.task.cron == "0 * * * *"
     assert daily.task.cron == "0 8 * * *"
+    stored = get_task(created.task.id, store_path)
+    assert stored is not None and stored.cron == "0 * * * *"
+    assert compute_next_run(stored, datetime(2026, 10, 5, 12, 1, tzinfo=UTC)) == (
+        "2026-10-05T13:00:00+00:00"
+    )
 
 
 def test_ci_repair_poller_keeps_its_seconds_cadence(tmp_path: Path) -> None:
@@ -94,7 +102,7 @@ def test_register_persists_the_hourly_cap_and_leaves_ci_repair(
             id="code-scanning",
             name="OpenSRE · Code scanning",
             kind=TaskKind.MANUAL_LOOP,
-            cron="8,23,38,53 * * * *",
+            cron="*/15 * * * *",
             timezone="UTC",
             provider=Provider.INTERACTIVE_SHELL,
             params={LOOP_PROMPT_PARAM: "Repair code scanning"},
@@ -116,5 +124,5 @@ def test_register_persists_the_hourly_cap_and_leaves_ci_repair(
     assert _register_jobs(_Scheduler(), real_runners()) == 2
     stored_loop = get_task("code-scanning")
     stored_repair = get_task("repair")
-    assert stored_loop is not None and stored_loop.cron == "8 * * * *"
+    assert stored_loop is not None and stored_loop.cron == "0 * * * *"
     assert stored_repair is not None and stored_repair.cron == CI_REPAIR_CRON

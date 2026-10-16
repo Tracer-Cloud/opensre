@@ -150,10 +150,10 @@ def _fires_more_than_hourly(cron: str, timezone: str | None) -> bool:
     return False
 
 
-def _earliest_field_value(field: str, maximum: int) -> str:
-    numbers = [int(match) for match in re.findall(r"\d+", field)]
-    allowed = [number for number in numbers if number <= maximum]
-    return str(min(allowed)) if allowed else "0"
+def _earliest_field_value(field: str) -> str:
+    """Return the earliest value in a validated minute or hour field."""
+    starts = (item.split("/", 1)[0].split("-", 1)[0] for item in field.split(","))
+    return str(min(0 if start == "*" else int(start) for start in starts))
 
 
 def cap_cron_at_most_hourly(cron: str, timezone: str | None = None) -> str:
@@ -171,10 +171,10 @@ def cap_cron_at_most_hourly(cron: str, timezone: str | None = None) -> str:
     parts = normalized.split()
     if len(parts) == CRON_FIELD_COUNT_WITH_SECONDS:
         parts = parts[1:]
-    parts[0] = _earliest_field_value(parts[0], 59)
+    parts[0] = _earliest_field_value(parts[0])
     capped = " ".join(parts)
     if _fires_more_than_hourly(capped, timezone):
-        parts[1] = _earliest_field_value(parts[1], 23)
+        parts[1] = _earliest_field_value(parts[1])
         capped = " ".join(parts)
     return capped
 
