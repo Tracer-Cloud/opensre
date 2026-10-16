@@ -1,5 +1,6 @@
 # Unified Dockerfile for OpenSRE.
-# The image is the toolchain (git, GitHub CLI, Node, Codex) plus a supervisor.
+# The image is the toolchain (git, GitHub CLI, Node, Codex, and the shell tools
+# agents reach for) plus a supervisor.
 # It does not bake an OpenSRE checkout. On start the supervisor installs the
 # current main-channel binary. ``opensre update`` in that container restarts
 # the process onto a newer build. Rebuild the image when the toolchain changes.
@@ -26,6 +27,9 @@ FROM python:3.12-slim
 
 WORKDIR /workspace
 
+# Coding agents and tool calls shell out to these as on a developer machine
+# (``jq`` on gh output, ``rg`` over a clone, ``ssh`` remotes); a missing one fails
+# the turn on the hosted gateway only.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
@@ -33,7 +37,14 @@ RUN apt-get update \
         ca-certificates \
         curl \
         git \
+        jq \
+        less \
+        openssh-client \
+        procps \
+        ripgrep \
+        unzip \
         xz-utils \
+        zip \
     && rm -rf /var/lib/apt/lists/*
 
 # What the CI repair loop shells out to: the GitHub CLI for pull-request reads
@@ -62,7 +73,7 @@ RUN set -eux; \
     tar -xJf "${node_tar}" -C /usr/local --strip-components=1 --no-same-owner; \
     npm install -g "@openai/codex@${CODEX_VERSION}"; \
     rm -rf /tmp/* /root/.npm; \
-    git --version; gh --version; node --version; codex --version
+    git --version; gh --version; node --version; codex --version; jq --version; rg --version; ssh -V
 
 COPY infrastructure/deployment/container/entrypoint.py /usr/local/bin/opensre-container-entrypoint.py
 
