@@ -411,6 +411,27 @@ def test_blocked_steps_await_the_user_until_a_question_is_queued() -> None:
     assert blocked_steps_await_the_user(session) is False
 
 
+def test_a_blocked_step_ends_the_turn_where_no_menu_can_be_queued() -> None:
+    """Slack and scheduled ticks spun on ask_user_choice until the iteration cap.
+
+    There ``ask_user_choice`` answers "menu unavailable" and never queues a
+    choice, so a gate waiting for one rejected every stop: 1,335 calls in a week.
+    """
+    from types import SimpleNamespace
+
+    from core.agent_harness.task_plan.conclusion import blocked_steps_await_the_user
+    from core.agent_harness.task_plan.evidence import record_blocked_this_turn, reset_plan_evidence
+
+    # Arrange: a step blocked this turn, and no question could be queued.
+    session = SimpleNamespace(pending_user_choice=None)
+    reset_plan_evidence(session)
+    record_blocked_this_turn(session, ("Resolve conflicts",))
+
+    # Act / Assert: the reply naming the blocker ends the turn.
+    assert blocked_steps_await_the_user(session, menu_available=False) is False
+    assert blocked_steps_await_the_user(session, menu_available=True) is True
+
+
 def test_goal_reviewer_rejects_a_turn_that_stopped_after_a_failed_curl() -> None:
     """A nonzero shell/curl is an observation, not completion of the user's ask."""
     from core.agent_harness.turns.work_outcome import ExecutedToolOutcome

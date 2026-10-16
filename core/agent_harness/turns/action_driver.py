@@ -866,7 +866,9 @@ def _build_action_agent(
                 lambda text: _deliverable_shown(session, text, value_insights),
             ),
             blocked_needs_user=lambda: blocked_steps_await_the_user(
-                session, user_answered=bool(parse_ask_user_answers(message))
+                session,
+                user_answered=bool(parse_ask_user_answers(message)),
+                menu_available=snapshot.interactive_choice_available,
             ),
             skill_load_only=lambda: demo_pick_stalled_on_skill_load(
                 session,

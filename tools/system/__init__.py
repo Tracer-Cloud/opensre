@@ -19,6 +19,7 @@ TOOL_MODULES = (
     "python_execution_tool",
     "repository_preferences.tool",
     "runbook_guidance_tool.tool",
+    "scheduled_loops.manage",
     "scheduled_loops.tool",
     "sre_guidance_tool",
     "structured_file.tool",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from core.domain.work_items import WorkItem, WorkItemChannelTarget, dedupe_channel_targets
 from core.tool import AgentToolContext
 from infrastructure.scheduling.scheduler.types import Provider
+from tools.system.scheduled_loops.destination import conversation_destination
 from tools.system.work_items.validation import validate_provider
 
 
@@ -18,10 +19,7 @@ def gateway_delivery_context(context: AgentToolContext | None) -> tuple[str, str
         action_ctx = action_context_from_agent_context(context)
     except RuntimeError:
         return "", ""
-    resolved = getattr(action_ctx.session, "resolved_integrations_cache", None) or {}
-    provider = str(resolved.get("_gateway_platform") or "").strip().lower()
-    chat_id = str(resolved.get("_gateway_chat_id") or "").strip()
-    return provider, chat_id
+    return conversation_destination(action_ctx.session)
 
 
 def delivery_targets(

@@ -17,6 +17,7 @@ from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from tools.system.scheduled_loops.destination import conversation_destination
 
 # Match surfaces.cli.commands.cron: Sentry kinds use `opensre sentry`, not cron add.
 _KIND_VALUES = frozenset(
@@ -109,6 +110,12 @@ def execute_propose_scheduled_delivery_tool(
     timezone = str(args.get("timezone", "UTC")).strip() or "UTC"
     provider = str(args.get("provider", "")).strip().lower()
     chat_id = str(args.get("chat_id", "")).strip()
+    # A schedule asked for in a chat delivers back to that chat unless told otherwise.
+    origin_provider, origin_chat_id = conversation_destination(ctx.session)
+    if not provider:
+        provider = origin_provider or Provider.INTERACTIVE_SHELL.value
+    if not chat_id and provider == origin_provider:
+        chat_id = origin_chat_id
     prompt = str(args.get("prompt", "") or "").strip()
     briefing_text = str(args.get("briefing_text", "") or "").strip()
     skill_name = normalize_skill_name(str(args.get("skill_name", "") or ""))
@@ -158,7 +165,8 @@ def execute_propose_scheduled_delivery_tool(
         }
 
     # Refuse the failure mode where "give me a morning report" becomes ONLY a
-    # Want-me-to closer: no weather, no headlines, nothing delivered.
+    # Want-me-to closer: no weather, no headlines, nothing delivered. A prompt
+    # loop ("check my repos every morning") needs no briefing behind it.
     briefing_label = ""
     if kind == TaskKind.RECURRING_SKILL.value:
         if not skill_name or not is_recurring_skill(skill_name):
@@ -171,8 +179,6 @@ def execute_propose_scheduled_delivery_tool(
             }
         if skill_name == "delivering-morning-briefings":
             briefing_label = "delivering-morning-briefings"
-    elif kind == TaskKind.MANUAL_LOOP.value:
-        briefing_label = "manual_loop"
     if briefing_label:
         blocked = _briefing_precondition_error(
             label=briefing_label,
@@ -265,7 +271,7 @@ def run_propose_scheduled_delivery(
     *,
     kind: str,
     cron: str,
-    provider: str,
+    provider: str = "",
     timezone: str = "UTC",
     chat_id: str = "",
     prompt: str = "",
@@ -304,13 +310,13 @@ propose_scheduled_delivery_tool = RegisteredTool(
     description=(
         "Record a schedule offer the user has NOT yet accepted, and return the "
         "canonical Want me to: closer plus response_text (briefing + closer). "
-        "PRECONDITION for recurring_skill delivering-morning-briefings and for manual_loop: "
+        "PRECONDITION for recurring_skill delivering-morning-briefings: "
         "weather/news shell_run fetches must already have succeeded in this "
-        "session, prompt must describe the recurring instruction, and "
-        "briefing_text must be the composed briefing. This tool "
-        "schedules nothing and produces no weather — calling it alone leaves "
-        "the user with an empty offer. Do NOT call /cron add until the user "
-        "confirms; their yes becomes the slash command."
+        "session and briefing_text must be the composed briefing. A manual_loop "
+        "needs only its prompt. Without provider, the schedule delivers to the "
+        "chat this turn came from. When the user already asked outright for a "
+        "recurring prompt, use schedule_prompt_loop instead. Do NOT call /cron "
+        "add until the user confirms; their yes becomes the slash command."
     ),
     use_cases=[
         (
@@ -344,13 +350,16 @@ propose_scheduled_delivery_tool = RegisteredTool(
                 description="IANA timezone (default UTC), e.g. 'Europe/Amsterdam'."
             ),
             "provider": string_property(
-                description="Delivery provider: slack, telegram, discord, or rocketchat.",
-                min_length=1,
+                description=(
+                    "Delivery provider: slack, telegram, discord, or rocketchat. "
+                    "Omit to deliver to the chat this turn came from."
+                ),
             ),
             "chat_id": string_property(
                 description=(
-                    "Target chat/channel. Optional for slack (webhook-bound). "
-                    "Required for telegram/discord/rocketchat."
+                    "Target chat/channel. Defaults to this conversation's chat when "
+                    "provider is omitted or matches it. Required for "
+                    "telegram/discord/rocketchat elsewhere."
                 ),
             ),
             "prompt": string_property(
@@ -361,8 +370,8 @@ propose_scheduled_delivery_tool = RegisteredTool(
             ),
             "briefing_text": string_property(
                 description=(
-                    "Required for recurring_skill delivering-morning-briefings and for "
-                    "manual_loop: the composed weather + headlines briefing "
+                    "Required for recurring_skill delivering-morning-briefings: "
+                    "the composed weather + headlines briefing "
                     "already produced for the user. Returned in response_text "
                     "ahead of the Want me to: closer so the user never sees an "
                     "offer without the report."
@@ -393,7 +402,7 @@ propose_scheduled_delivery_tool = RegisteredTool(
                 ),
             ),
         },
-        required=("kind", "cron", "provider"),
+        required=("kind", "cron"),
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),

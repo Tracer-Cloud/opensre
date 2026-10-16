@@ -34,17 +34,21 @@ def task_plan_blocks_conclusion(
     return any(getattr(item, "status", None) not in {"completed", "blocked"} for item in steps)
 
 
-def blocked_steps_await_the_user(session: Any, *, user_answered: bool = False) -> bool:
+def blocked_steps_await_the_user(
+    session: Any, *, user_answered: bool = False, menu_available: bool = True
+) -> bool:
     """True when a step was newly blocked this turn and the user has not been asked about it.
 
     A blocked step is resolved with the user, not skipped: the turn ends
     through a question (``ask_user_choice`` queued), never on the block alone.
     On a turn that carries the user's answer they have just been consulted,
-    so a step that stays blocked by their choice ends the turn.
+    so a step that stays blocked by their choice ends the turn. Where no menu
+    can be queued (a chat reply, a scheduled run) ``ask_user_choice`` never
+    sets a pending choice, so the turn ends on its reply naming the blocker.
     """
     from core.agent_harness.task_plan.evidence import blocked_this_turn
 
-    if user_answered or not blocked_this_turn(session):
+    if not menu_available or user_answered or not blocked_this_turn(session):
         return False
     return getattr(session, "pending_user_choice", None) is None
 

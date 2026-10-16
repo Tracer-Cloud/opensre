@@ -227,18 +227,6 @@ def test_propose_tool_sets_session_pending_offer() -> None:
 
 def test_propose_manual_loop_offer_preserves_prompt_through_confirmation() -> None:
     session = InMemorySessionState()
-    session.record(
-        "shell",
-        "curl -s 'wttr.in/Amsterdam?format=3'",
-        ok=True,
-        response_text="Amsterdam: ☀️ +20°C",
-    )
-    session.record(
-        "shell",
-        "curl -s 'https://feeds.bbci.co.uk/news/rss.xml' | head",
-        ok=True,
-        response_text="Some headline",
-    )
     ctx = ActionToolScope(session=session, console=object())
     prompt = "Check open incidents and summarize production risk."
 
@@ -249,9 +237,6 @@ def test_propose_manual_loop_offer_preserves_prompt_through_confirmation() -> No
             "timezone": "UTC",
             "provider": "interactive_shell",
             "prompt": prompt,
-            "briefing_text": (
-                "Good morning! Weather — Amsterdam: ☀️ +20°C\nTop headlines:\n- Some headline"
-            ),
         },
         ctx,
     )
@@ -608,11 +593,11 @@ def test_a_stale_fetch_from_an_earlier_turn_does_not_unlock_the_offer() -> None:
     # Act
     result = execute_propose_scheduled_delivery_tool(
         {
-            "kind": "manual_loop",
+            "kind": "recurring_skill",
+            "skill_name": "delivering-morning-briefings",
             "cron": "0 8 * * 1-5",
             "provider": "slack",
             "chat_id": "C0123ABCD",
-            "prompt": "Check open incidents.",
             "briefing_text": "Good morning! Weather — Amsterdam: +20C\nTop headlines:\n- one",
         },
         ctx,
