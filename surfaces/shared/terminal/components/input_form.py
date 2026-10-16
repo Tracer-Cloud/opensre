@@ -578,7 +578,7 @@ def build_input_form[Result](
     def save(_event: KeyPressEvent) -> None:
         create()
 
-    def available_action(action: RecordAction[Result]) -> bool:
+    def available_action[ActionResult](action: RecordAction[ActionResult]) -> bool:
         size = app.output.get_size()
         return (
             record_mode()
@@ -603,7 +603,7 @@ def build_input_form[Result](
         )
         app.invalidate()
 
-    def bind_action(action: RecordAction[Result]) -> None:
+    def bind_action[ActionResult](action: RecordAction[ActionResult]) -> None:
         @keys.add(action.key, filter=Condition(lambda: not busy and available_action(action)))
         def act(event: KeyPressEvent) -> None:
             nonlocal busy, error, progress_label

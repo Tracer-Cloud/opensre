@@ -15,6 +15,7 @@ from surfaces.shared.terminal.components.input_form import (
     InputChoice,
     InputField,
     InputFormError,
+    RecordAction,
     build_input_form,
 )
 
@@ -76,6 +77,33 @@ def test_incomplete_draft_cannot_reach_submit_validation() -> None:
         )
         result = app.run(pre_run=lambda: pipe.send_text("\r\x13Retained title\r\x13\x03"))
     assert result == "Retained title"
+
+
+def test_record_action_returns_its_result_from_generic_form() -> None:
+    choice = InputChoice("alpha", "Alpha")
+    expected = {"selected": "alpha"}
+
+    async def select(selected: InputChoice | None) -> dict[str, str]:
+        assert selected == choice
+        return expected
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        app = build_input_form(
+            {"target": "alpha"},
+            title="Pick a target",
+            heading="Targets",
+            submit_label="Select",
+            fields=lambda _values: [
+                InputField("target", "Target", choices=(choice,), record_choices=True)
+            ],
+            validate=lambda _values: None,
+            initial_field="target",
+            browse_only=True,
+            record_actions=(RecordAction("c-r", "Ctrl-R select", select),),
+        )
+        result = app.run(pre_run=lambda: pipe.send_text("\x12"))
+
+    assert result is expected
 
 
 @pytest.mark.parametrize("columns,rows", [(40, 12), (90, 30), (160, 30)])
