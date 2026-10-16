@@ -644,3 +644,6 @@ def test_codex_backend_names_the_hosted_provider_when_on_the_hosted_route(
     assert "model_provider=opensre" in argv
     assert 'model_providers.opensre.base_url="https://app.example/api/llm/v1"' in argv
     assert 'model_providers.opensre.wire_api="responses"' in argv
+    # The hosted route rejects any non-function tool, so Codex's defaults are off.
+    assert 'web_search="disabled"' in argv
+    assert "features.multi_agent=false" in argv

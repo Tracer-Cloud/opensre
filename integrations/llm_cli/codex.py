@@ -94,8 +94,19 @@ def _has_openai_api_key() -> bool:
 _HOSTED_PROVIDER = "opensre"
 
 
+#: The hosted route accepts only ``function`` tools and rejects the whole request
+#: otherwise. By default Codex also sends a hosted ``web_search`` tool and the
+#: ``multi_agent_v1`` ``namespace`` tool, so both are switched off on that route.
+_HOSTED_FUNCTION_TOOLS_ONLY = (
+    "-c",
+    'web_search="disabled"',
+    "-c",
+    "features.multi_agent=false",
+)
+
+
 def hosted_provider_overrides(base_url: str) -> list[str]:
-    """``-c`` overrides that point Codex at the hosted route as its model provider."""
+    """``-c`` overrides that point Codex at the hosted route with only function tools."""
     return [
         "-c",
         f"model_provider={_HOSTED_PROVIDER}",
@@ -107,6 +118,7 @@ def hosted_provider_overrides(base_url: str) -> list[str]:
         f'model_providers.{_HOSTED_PROVIDER}.env_key="{OPENAI_API_KEY_ENV}"',
         "-c",
         f'model_providers.{_HOSTED_PROVIDER}.wire_api="responses"',
+        *_HOSTED_FUNCTION_TOOLS_ONLY,
     ]
 
 
