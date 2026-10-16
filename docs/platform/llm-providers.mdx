@@ -584,10 +584,10 @@ It does **not** read plaintext `$COPILOT_HOME/config.json` (keychain-backed
 installs may omit that file; parsing arbitrary JSON risks false positives). If
 nothing matches, detection reports `logged_in=None` and the runner checks again
 at invoke time. If `COPILOT_MODEL` is unset, OpenSRE omits `--model`.
-Invocations run as `copilot -p PROMPT --no-color --no-ask-user --silent` so they
-never wait for user input. **BYOK / `COPILOT_OFFLINE`:** GitHub auth may not be
-required; a `None` probe can still be fine if Copilot is set up for offline or
-external providers only.
+OpenSRE passes the expanded prompt through stdin, keeping the command line short
+enough for Windows. It also prevents Copilot from waiting for user input. **BYOK
+/ `COPILOT_OFFLINE`:** GitHub auth may not be required; a `None` probe can still
+be fine if Copilot is set up for offline or external providers only.
 
 </Accordion>
 
