@@ -18,6 +18,20 @@ def _powershell() -> str | None:
     return shutil.which("pwsh") or shutil.which("powershell")
 
 
+def test_install_ps1_is_ascii_only() -> None:
+    # Windows PowerShell 5.1 reads a BOM-less script in the legacy ANSI code page,
+    # where the bytes of characters like U+2500 or U+2014 decode to a curly quote
+    # that ends the string early and breaks parsing of the whole installer.
+    offenders = [
+        (number, char)
+        for number, line in enumerate(INSTALL_PS1.read_bytes().decode("utf-8").splitlines(), 1)
+        for char in line
+        if ord(char) > 127
+    ]
+
+    assert offenders == []
+
+
 def test_install_ps1_defines_branded_progress_helpers() -> None:
     source = INSTALL_PS1.read_text()
 
