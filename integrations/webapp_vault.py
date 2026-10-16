@@ -228,13 +228,14 @@ def fetch_webapp_org_integrations() -> list[dict[str, Any]] | None:
 
 
 def records_from_vault_payload(
-    payload: object, *, organization_id: str
+    payload: object, *, organization_id: str, viewer_user_id: str | None = None
 ) -> list[dict[str, Any]] | None:
     """Parse a vault JSON body into integration records.
 
     ``None`` means the body is not a successful vault response. Connections
     owned by anyone other than ``organization_id`` (a member's personal grant)
-    are dropped: this store is shared by every member the silo serves.
+    are dropped: this store is shared by every member the silo serves. A
+    one-turn view for the member ``viewer_user_id`` keeps that member's own.
     """
     if not isinstance(payload, dict) or not payload.get("success"):
         return None
@@ -254,7 +255,7 @@ def records_from_vault_payload(
         if owner_tags is None:
             continue
         tags = _instance_tags(item, credentials, owner_tags=owner_tags)
-        if not connection_visible(tags, user_id=None, organization_id=organization_id):
+        if not connection_visible(tags, user_id=viewer_user_id, organization_id=organization_id):
             continue
         normalized_credentials = {
             str(key): str(value) for key, value in credentials.items() if value is not None

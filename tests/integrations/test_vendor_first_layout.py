@@ -25,6 +25,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         # creds from the signed-in account's webapp route), not a vendor — the
         # laptop peer of secrets_vault.py / webapp_vault.py.
         "account_integrations.py",
+        # The hosted peer of account_integrations.py: the acting Slack
+        # member's view of the webapp vault for one gateway turn.
+        "member_integrations.py",
         # Cross-vendor alert-source routing/alias catalog data (spans every
         # vendor's alert-source key), not one vendor's own integration.
         "alert_source_catalog.py",
