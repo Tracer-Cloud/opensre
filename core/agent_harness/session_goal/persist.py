@@ -143,7 +143,7 @@ def _restore_last_progress_turns_used(payload: dict[str, Any], turns_used: int) 
 
 
 def session_goal_state_snapshot(session: Any) -> dict[str, Any]:
-    """Flush payload for session goal + L0 CTA dedupe / pending setup offer."""
+    """Flush payload for session goal + L0 CTA dedupe / pending setup and schedule offers."""
     goal = getattr(session, "session_goal", None)
     offered = getattr(session, "offered_upgrade_ctas", None)
     offered_keys = (
@@ -162,7 +162,55 @@ def session_goal_state_snapshot(session: Any) -> dict[str, Any]:
         "session_goal": (session_goal_to_payload(goal) if isinstance(goal, SessionGoal) else None),
         "offered_upgrade_ctas": offered_keys,
         "pending_integration_setup_offer": pending_payload,
+        "pending_schedule_offer": _pending_schedule_offer_payload(
+            getattr(session, "pending_schedule_offer", None)
+        ),
     }
+
+
+def _pending_schedule_offer_payload(offer: Any) -> dict[str, Any] | None:
+    """JSON-ready schedule offer, or ``None`` when no offer awaits a yes.
+
+    Gateway turns resolve a fresh session object each message, so an offer
+    that lives only in memory is gone by the time the user answers ``yes``.
+    """
+    from core.agent_harness.session.pending_offer import PendingScheduleOffer
+
+    if not isinstance(offer, PendingScheduleOffer):
+        return None
+    return {
+        "kind": offer.kind,
+        "cron": offer.cron,
+        "timezone": offer.timezone,
+        "provider": offer.provider,
+        "chat_id": offer.chat_id,
+        "prompt": offer.prompt,
+        "skill_name": offer.skill_name,
+        "skill_inputs": dict(offer.skill_inputs),
+    }
+
+
+def _pending_schedule_offer_from_payload(raw: Any) -> Any:
+    """Rebuild a persisted schedule offer; ``None`` for a missing or malformed one."""
+    if not isinstance(raw, dict):
+        return None
+    required = ("kind", "cron", "timezone", "provider")
+    optional = ("chat_id", "prompt", "skill_name")
+    if not all(isinstance(raw.get(key), str) and raw[key].strip() for key in required):
+        return None
+    inputs_raw = raw.get("skill_inputs")
+    skill_inputs = (
+        {str(k): str(v) for k, v in inputs_raw.items() if isinstance(v, str)}
+        if isinstance(inputs_raw, dict)
+        else {}
+    )
+    from core.agent_harness.session.pending_offer import PendingScheduleOffer
+
+    return PendingScheduleOffer(
+        **{key: raw[key] for key in required},
+        **{key: raw[key] for key in optional if isinstance(raw.get(key), str)},
+        skill_inputs=skill_inputs,
+    )
 
 
 def session_goal_state_is_empty(snapshot: dict[str, Any]) -> bool:
@@ -264,6 +312,10 @@ def apply_session_goal_state(session: Any, payload: Any) -> None:
             session.pending_integration_setup_offer = PendingIntegrationSetupOffer(
                 service_id=service_id
             )
+    if hasattr(session, "pending_schedule_offer"):
+        session.pending_schedule_offer = _pending_schedule_offer_from_payload(
+            payload.get("pending_schedule_offer")
+        )
 
 
 __all__ = [

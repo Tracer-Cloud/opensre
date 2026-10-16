@@ -76,6 +76,40 @@ def test_parses_direct_message() -> None:
     assert inbound.text == "what integrations do I have?"
 
 
+def _dm_payload(*, ts: str, thread_ts: str = "") -> dict[str, Any]:
+    event: dict[str, Any] = {
+        "type": "message",
+        "channel_type": "im",
+        "user": "U111",
+        "channel": "D444",
+        "ts": ts,
+        "text": "hello",
+    }
+    if thread_ts:
+        event["thread_ts"] = thread_ts
+    return {"team_id": "T333", "event": event}
+
+
+def test_every_message_in_a_dm_shares_one_conversation_key() -> None:
+    first = parse_events_api_payload(_dm_payload(ts="100.1"))
+    second = parse_events_api_payload(_dm_payload(ts="200.1"))
+    threaded = parse_events_api_payload(_dm_payload(ts="300.1", thread_ts="100.1"))
+
+    assert first is not None and second is not None and threaded is not None
+    assert first.conversation_key == second.conversation_key == threaded.conversation_key
+    assert first.conversation_key == "T333:D444:dm"
+    # Replies still thread under the triggering message (Slack streaming needs it).
+    assert (first.thread_ts, second.thread_ts, threaded.thread_ts) == ("100.1", "200.1", "100.1")
+
+
+def test_channel_mentions_keep_one_conversation_per_thread() -> None:
+    first = parse_events_api_payload(_mention_payload(ts="100.1"))
+    second = parse_events_api_payload(_mention_payload(ts="200.1"))
+
+    assert first is not None and second is not None
+    assert first.conversation_key != second.conversation_key
+
+
 def test_rejects_bot_echo_and_message_subtypes() -> None:
     assert parse_events_api_payload(_mention_payload(bot_id="B555")) is None
     assert parse_events_api_payload(_mention_payload(subtype="message_changed")) is None

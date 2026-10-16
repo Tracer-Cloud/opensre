@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 
 from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
-from core.agent_harness.session.pending_offer import PendingIntegrationSetupOffer
+from core.agent_harness.session.pending_offer import (
+    PendingIntegrationSetupOffer,
+    PendingScheduleOffer,
+)
 from core.agent_harness.session_goal.goal import (
     SessionGoal,
     SessionGoalStatus,
@@ -89,6 +92,29 @@ def test_session_goal_state_snapshot_includes_cta_and_pending() -> None:
     assert other.offered_upgrade_ctas == {"cta:posthog_mcp"}
     assert isinstance(other.pending_integration_setup_offer, PendingIntegrationSetupOffer)
     assert other.pending_integration_setup_offer.service_id == "posthog_mcp"
+
+
+def test_pending_schedule_offer_survives_snapshot_and_restore() -> None:
+    """Gateway turns resolve a fresh session per message; the offer must persist."""
+    offer = PendingScheduleOffer(
+        kind="recurring_skill",
+        cron="0 9 * * 1-5",
+        timezone="UTC",
+        provider="slack",
+        chat_id="D1",
+        skill_name="delivering-morning-briefings",
+        skill_inputs={"city": "Berlin"},
+    )
+    session = SessionCore(store=InMemorySessionStore())
+    session.pending_schedule_offer = offer
+
+    other = SessionCore(store=InMemorySessionStore())
+    apply_session_goal_state(other, session_goal_state_snapshot(session))
+    assert other.pending_schedule_offer == offer
+
+    session.pending_schedule_offer = None
+    apply_session_goal_state(other, session_goal_state_snapshot(session))
+    assert other.pending_schedule_offer is None
 
 
 def test_flush_persists_session_goal_state_and_restore_context_applies_it() -> None:
