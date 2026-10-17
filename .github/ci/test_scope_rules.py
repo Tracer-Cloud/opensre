@@ -510,6 +510,13 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
+        "integrations/opensre_analytics/",
+        (
+            "tests/integrations/opensre_analytics/",
+            "tests/tools/test_telemetry.py",
+        ),
+    ),
+    PathRule(
         "integrations/x_mcp/",
         (
             "tests/integrations/test_x_mcp.py",

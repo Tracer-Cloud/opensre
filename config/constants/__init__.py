@@ -906,6 +906,15 @@ if TYPE_CHECKING:
     from config.constants.opensearch import (
         OPENSEARCH_USERNAME_ENV as OPENSEARCH_USERNAME_ENV,
     )
+    from config.constants.opensre_analytics import (
+        OPENSRE_ANALYTICS_API_TOKEN_ENV as OPENSRE_ANALYTICS_API_TOKEN_ENV,
+    )
+    from config.constants.opensre_analytics import (
+        OPENSRE_ANALYTICS_GROWTH_REPORT_BUILDER as OPENSRE_ANALYTICS_GROWTH_REPORT_BUILDER,
+    )
+    from config.constants.opensre_analytics import (
+        OPENSRE_ANALYTICS_URL_ENV as OPENSRE_ANALYTICS_URL_ENV,
+    )
     from config.constants.operations_log import (
         DEFAULT_OPENSRE_OPERATIONS_LOG_MAX_BYTES as DEFAULT_OPENSRE_OPERATIONS_LOG_MAX_BYTES,
     )

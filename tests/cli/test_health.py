@@ -52,7 +52,9 @@ def test_health_command_uses_real_datadog_verification_path(monkeypatch) -> None
     assert "Summary:" in result.output
     assert "datadog" in result.output
     assert "MISSING" in result.output
-    assert "Missing API key or application key." in result.output
+    # The table wraps the detail to its column width, which shifts whenever a
+    # longer service name is added; compare with whitespace collapsed.
+    assert "Missing API key or application key." in " ".join(result.output.split())
 
 
 def test_health_command_exits_zero_when_all_integrations_missing() -> None:

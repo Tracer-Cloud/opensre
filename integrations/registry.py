@@ -460,6 +460,14 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         setup_order=54,
         verify_order=100,
     ),
+    IntegrationSpec(
+        service="opensre_analytics",
+        aliases=("opensre analytics", "opensre-analytics", "product analytics"),
+        has_verifier=True,
+        direct_effective=True,
+        setup_order=56,
+        verify_order=101,
+    ),
 )
 
 #: Specs contributed by out-of-tree packages through

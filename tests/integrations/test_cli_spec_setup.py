@@ -47,6 +47,7 @@ import integrations.mongodb_atlas.setup as mongodb_atlas_setup
 import integrations.mysql.setup as mysql_setup
 import integrations.new_relic.setup as new_relic_setup
 import integrations.opensearch.setup as opensearch_setup
+import integrations.opensre_analytics.setup as opensre_analytics_setup
 import integrations.pagerduty.setup as pagerduty_setup
 import integrations.postgresql.setup as postgresql_setup
 import integrations.posthog.setup as posthog_setup
@@ -176,6 +177,10 @@ _ANSWERS: dict[str, dict[str, str]] = {
         "url": "https://x-mcp.checkout.internal/mcp",
         "auth_token": "x-mcp-tunnel-token",
     },
+    "opensre_analytics": {
+        "url": "https://analytics.checkout.internal/api/viktor/mcp",
+        "auth_token": "analytics-api-token",
+    },
     "betterstack": {
         "query_endpoint": "https://eu-nbg-2-connect.betterstackdata.com",
         "username": "bs-user",
@@ -301,6 +306,12 @@ _CASES = [
     pytest.param(posthog_mcp_setup, "POSTHOG_MCP_SETUP", cli._setup_posthog_mcp, id="posthog_mcp"),
     pytest.param(sentry_mcp_setup, "SENTRY_MCP_SETUP", cli._setup_sentry_mcp, id="sentry_mcp"),
     pytest.param(x_mcp_setup, "X_MCP_SETUP", cli._setup_x_mcp, id="x_mcp"),
+    pytest.param(
+        opensre_analytics_setup,
+        "OPENSRE_ANALYTICS_SETUP",
+        cli._setup_opensre_analytics,
+        id="opensre_analytics",
+    ),
     pytest.param(betterstack_setup, "BETTERSTACK_SETUP", cli._setup_betterstack, id="betterstack"),
     pytest.param(servicenow_setup, "SERVICENOW_SETUP", cli._setup_servicenow, id="servicenow"),
     pytest.param(postgresql_setup, "POSTGRESQL_SETUP", cli._setup_postgresql, id="postgresql"),

@@ -521,7 +521,9 @@ def test_health_smoke_uses_real_datadog_store_config(cli_sandbox: CliSandbox) ->
     assert result.exit_code == 0
     assert "OpenSRE Health" in result.stdout
     assert "datadog" in result.stdout
-    assert "Missing API key or application key." in result.stdout
+    # The table wraps the detail to its column width, which shifts whenever a
+    # longer service name is added; compare with whitespace collapsed.
+    assert "Missing API key or application key." in " ".join(result.stdout.split())
 
 
 def test_update_check_smoke_uses_local_stub(cli_sandbox: CliSandbox, release_api_url: str) -> None:
@@ -621,7 +623,9 @@ def test_integrations_verify_datadog_smoke(cli_sandbox: CliSandbox) -> None:
 
     assert result.exit_code == 1
     assert "datadog" in result.stdout
-    assert "Missing API key or application key." in result.stdout
+    # The table wraps the detail to its column width, which shifts whenever a
+    # longer service name is added; compare with whitespace collapsed.
+    assert "Missing API key or application key." in " ".join(result.stdout.split())
 
 
 @pytest.fixture()

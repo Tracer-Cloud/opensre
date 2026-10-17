@@ -1,0 +1,89 @@
+---
+title: "OpenSRE Analytics"
+description: "Ask about OpenSRE product growth and post a daily growth report to Slack"
+---
+
+## Overview
+
+OpenSRE reads the OpenSRE Analytics dashboard (`https://app.opensre-analytics.com`): signups, prompts, active accounts, sessions, installations, activation, and tool and skill usage. Ask about them in chat, or schedule a morning growth report that posts to a Slack channel every day.
+
+Access is read-only. Individual customers' conversations, answers, and logs stay on the dashboard: OpenSRE does not read them, so customer-written text never reaches the agent or Slack.
+
+The figures are only shown to your team: OpenSRE answers and posts them only in internal Slack conversations and the local CLI. A Slack channel shared with another organization (Slack Connect), Telegram and other chats are refused, and a scheduled report posts nothing if its channel is later shared.
+
+## Prerequisites
+
+- The analytics app's API token: the value of `ANALYTICS_API_TOKEN` in the analytics app's deployment. Until that variable is set, the analytics app refuses every connection.
+
+## Setup
+
+### Option 1: OpenSRE dashboard
+
+Open **Integrations**, choose **OpenSRE Analytics**, and paste the API token. Leave **Analytics URL** blank to use the hosted app.
+
+### Option 2: Interactive CLI
+
+```bash
+opensre integrations setup opensre_analytics
+opensre integrations verify opensre_analytics
+```
+
+### Option 3: Environment variables
+
+```bash
+OPENSRE_ANALYTICS_API_TOKEN=your_analytics_api_token
+OPENSRE_ANALYTICS_URL=                 # optional
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_ANALYTICS_API_TOKEN` | — | **Required.** The analytics app's `ANALYTICS_API_TOKEN` |
+| `OPENSRE_ANALYTICS_URL` | `https://app.opensre-analytics.com/api/viktor/mcp` | Another deployment of the analytics app. A site URL such as `https://analytics.example.com` works too. Must be `https://`; `http://` is accepted only for `localhost` |
+
+## Ask about growth
+
+- "How many users did we gain yesterday?"
+- "How many prompts did users send on 2026-10-14?"
+- "Which accounts signed up this week?"
+- "Where do installations drop off in the activation funnel this month?"
+
+Days are UTC days, as on the dashboard.
+
+## Daily growth report in Slack
+
+In Slack, ask the bot, for example:
+
+> Post the growth report in #product-chat every morning at 9am Asia/Kolkata
+
+Each morning the report covers the previous UTC day:
+
+- New accounts, active accounts and total accounts
+- Prompts, sessions and tool calls
+- Hosted LLM calls and daily active users
+- New installations, installations that linked an account, and activations
+- The accounts that sent the most prompts
+
+Each figure is compared with the day before, and signups, installations and LLM usage also with their 7-day average. OpenSRE team accounts are left out of the account figures.
+
+- Leave out the channel and the report posts to the conversation you asked in.
+- The bot joins a public channel by itself. For a private channel, `/invite` the bot first.
+- Ask again with a new time for the same channel to move the report instead of adding a second one.
+- To stop it, ask the bot to stop or delete the growth report.
+- When the analytics app cannot read a source, the report says which part is unavailable instead of showing zero.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `opensre_analytics_daily_growth` | The daily growth report for one UTC day |
+| `schedule_analytics_growth_report` | Posts the daily growth report every morning |
+| `list_opensre_analytics_tools` | Lists the dashboard reports the agent can read |
+| `query_opensre_analytics` | Reads one dashboard report |
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Verification says the API token was rejected | Copy the current `ANALYTICS_API_TOKEN` from the analytics app and reconnect |
+| Verification says the API is not enabled | Set `ANALYTICS_API_TOKEN` on the analytics app's deployment and redeploy it |
+| The morning report never appears in a private channel | `/invite` the bot to the channel |

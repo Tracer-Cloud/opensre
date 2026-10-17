@@ -352,6 +352,27 @@ def resolve_channel_id(target: SlackBotTarget, channel_ref: str) -> tuple[str | 
     return None, f"No channel named #{want} is visible to the bot — /invite it or use a C… ID."
 
 
+def conversation_externally_shared(
+    target: SlackBotTarget, channel_id: str
+) -> tuple[bool | None, str]:
+    """Whether a conversation is shared with another organization (Slack Connect).
+
+    Returns ``(None, reason)`` when Slack cannot answer, so callers guarding
+    private data can fail closed. A pending external invite counts as shared.
+    """
+    payload, req_err = _request_json(
+        "GET", "conversations.info", target.bot_token, params={"channel": channel_id}
+    )
+    if payload is None:
+        return None, req_err
+    if not payload.get("ok"):
+        return None, _api_error_hint(str(payload.get("error") or "unknown_error"), context="list")
+    channel = payload.get("channel")
+    if not isinstance(channel, dict):
+        return None, "Slack conversations.info returned no conversation."
+    return bool(channel.get("is_ext_shared") or channel.get("is_pending_ext_shared")), ""
+
+
 def _normalize_message(raw: dict[str, Any]) -> dict[str, str]:
     text = str(raw.get("text") or "")
     if len(text) > _MAX_TEXT_CHARS_PER_MESSAGE:

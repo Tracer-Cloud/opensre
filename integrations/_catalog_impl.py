@@ -158,6 +158,10 @@ from config.constants.opensearch import (
     OPENSEARCH_URL_ENV,
     OPENSEARCH_USERNAME_ENV,
 )
+from config.constants.opensre_analytics import (
+    OPENSRE_ANALYTICS_API_TOKEN_ENV,
+    OPENSRE_ANALYTICS_URL_ENV,
+)
 from config.constants.pagerduty import PAGERDUTY_API_KEY_ENV, PAGERDUTY_BASE_URL_ENV
 from config.constants.postgresql import (
     POSTGRESQL_DATABASE_ENV,
@@ -324,6 +328,8 @@ from integrations.new_relic import classify as _classify_new_relic
 from integrations.new_relic.config import NewRelicIntegrationConfig
 from integrations.openobserve import classify as _classify_openobserve
 from integrations.opensearch import classify as _classify_opensearch
+from integrations.opensre_analytics import build_opensre_analytics_config
+from integrations.opensre_analytics import classify as _classify_opensre_analytics
 from integrations.opsgenie import classify as _classify_opsgenie
 from integrations.pagerduty import classify as _classify_pagerduty
 from integrations.pipedream import classify as _classify_pipedream
@@ -527,6 +533,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "posthog_mcp": _classify_posthog_mcp,
     "sentry_mcp": _classify_sentry_mcp,
     "x_mcp": _classify_x_mcp,
+    "opensre_analytics": _classify_opensre_analytics,
     "mysql": _classify_mysql,
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
@@ -1528,6 +1535,27 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
         except Exception as exc:
             _report_env_loader_failure(exc, integration="x_mcp")
+
+    opensre_analytics_token = resolve_env_credential(OPENSRE_ANALYTICS_API_TOKEN_ENV)
+    if opensre_analytics_token:
+        try:
+            opensre_analytics_config = build_opensre_analytics_config(
+                {
+                    "url": os.getenv(OPENSRE_ANALYTICS_URL_ENV, "").strip(),
+                    "auth_token": opensre_analytics_token,
+                }
+            )
+            integrations.append(
+                _active_env_record(
+                    "opensre_analytics",
+                    {
+                        **opensre_analytics_config.model_dump(exclude={"integration_id"}),
+                        "connection_verified": True,
+                    },
+                )
+            )
+        except Exception as exc:
+            _report_env_loader_failure(exc, integration="opensre_analytics")
 
     mariadb_host = os.getenv(MARIADB_HOST_ENV, "").strip()
     mariadb_database = os.getenv(MARIADB_DATABASE_ENV, "").strip()

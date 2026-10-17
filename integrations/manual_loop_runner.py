@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable, Mapping
 
 from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
+from config.constants.opensre_analytics import OPENSRE_ANALYTICS_GROWTH_REPORT_BUILDER
 from config.constants.scheduler import STATELESS_LOOP_IDLE_REPLY
 from core.agent_harness import AgentSession, SessionCore
 from core.tool import ToolExecutionHooks
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 REPORT_BUILDERS: dict[str, str] = {
     "github_ci_reliability": "integrations.github.tools.ci_analytics.loop:build_report",
     CI_REPAIR_REPORT_BUILDER: "integrations.github.tools.ci_repair_loop.supervisor:build_report",
+    OPENSRE_ANALYTICS_GROWTH_REPORT_BUILDER: "integrations.opensre_analytics.report:build_report",
 }
 
 #: Stored params that bind a loop to one repair target (``cron add --pr`` / ``--branch``).

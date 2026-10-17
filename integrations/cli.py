@@ -419,6 +419,12 @@ def _setup_x_mcp() -> None:
     _run_spec_setup(X_MCP_SETUP)
 
 
+def _setup_opensre_analytics() -> None:
+    from integrations.opensre_analytics.setup import OPENSRE_ANALYTICS_SETUP
+
+    _run_spec_setup(OPENSRE_ANALYTICS_SETUP)
+
+
 def _setup_postgresql() -> None:
     from integrations.postgresql.setup import POSTGRESQL_SETUP
 
@@ -534,6 +540,7 @@ _HANDLERS: dict[str, Any] = {
     "posthog_mcp": _setup_posthog_mcp,
     "sentry_mcp": _setup_sentry_mcp,
     "x_mcp": _setup_x_mcp,
+    "opensre_analytics": _setup_opensre_analytics,
     "postgresql": _setup_postgresql,
     "mysql": _setup_mysql,
     "redis": _setup_redis,

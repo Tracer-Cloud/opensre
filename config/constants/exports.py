@@ -396,6 +396,10 @@ EXPORTS: dict[str, str] = {
     "NEW_RELIC_TIMESERIES_MAX_BUCKETS": "new_relic",
     "NEW_RELIC_NRQL_LIMIT_MAX": "new_relic",
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS": "new_relic",
+    # opensre_analytics
+    "OPENSRE_ANALYTICS_API_TOKEN_ENV": "opensre_analytics",
+    "OPENSRE_ANALYTICS_GROWTH_REPORT_BUILDER": "opensre_analytics",
+    "OPENSRE_ANALYTICS_URL_ENV": "opensre_analytics",
     # opensearch
     "OPENSEARCH_API_KEY_ENV": "opensearch",
     "OPENSEARCH_INTEGRATION_SETUP_CLI": "opensearch",

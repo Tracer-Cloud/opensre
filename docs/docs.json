@@ -121,6 +121,7 @@
               "integrations/monitoring/honeycomb",
               "integrations/monitoring/new_relic",
               "integrations/monitoring/openobserve",
+              "integrations/monitoring/opensre-analytics",
               "integrations/monitoring/posthog",
               "integrations/monitoring/posthog-mcp",
               "integrations/monitoring/signoz",

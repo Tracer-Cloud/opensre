@@ -51,6 +51,7 @@ from integrations.mongodb_atlas.setup import MONGODB_ATLAS_SETUP
 from integrations.mysql.setup import MYSQL_SETUP
 from integrations.new_relic.setup import NEW_RELIC_SETUP
 from integrations.opensearch.setup import OPENSEARCH_SETUP
+from integrations.opensre_analytics.setup import OPENSRE_ANALYTICS_SETUP
 from integrations.pagerduty.setup import PAGERDUTY_SETUP
 from integrations.postgresql.setup import POSTGRESQL_SETUP
 from integrations.posthog.setup import POSTHOG_SETUP
@@ -184,6 +185,10 @@ _SUBMITTED: dict[str, dict[str, str]] = {
     "x_mcp": {
         "url": "https://x-mcp.checkout.internal/mcp",
         "auth_token": "x-mcp-tunnel-token",
+    },
+    "opensre_analytics": {
+        "url": "https://analytics.checkout.internal/api/viktor/mcp",
+        "auth_token": "analytics-api-token",
     },
     "betterstack": {
         "query_endpoint": "https://eu-nbg-2-connect.betterstackdata.com",
@@ -340,6 +345,7 @@ _SPECS = [
     POSTHOG_MCP_SETUP,
     SENTRY_MCP_SETUP,
     X_MCP_SETUP,
+    OPENSRE_ANALYTICS_SETUP,
     BETTERSTACK_SETUP,
     SERVICENOW_SETUP,
     POSTGRESQL_SETUP,

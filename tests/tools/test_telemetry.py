@@ -876,6 +876,29 @@ def _x_mcp_call_tool_case() -> ToolFailureCase:
     )
 
 
+def _opensre_analytics_case(tool_name: str, mcp_function: str) -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.opensre_analytics.tools.opensre_analytics_query_tool import tool as mod
+
+        mp.setattr(mod, mcp_function, MagicMock(side_effect=RuntimeError("mcp")))
+
+    def invoke() -> dict[str, Any]:
+        from integrations.opensre_analytics.tools.opensre_analytics_query_tool import tool as mod
+
+        connection = {"analytics_token": "analytics-token"}
+        if tool_name == "query_opensre_analytics":
+            return mod.query_opensre_analytics(tool_name="users", **connection)
+        return mod.list_opensre_analytics_tools(**connection)
+
+    return ToolFailureCase(
+        tool_name,
+        patch,
+        invoke,
+        tool_name,
+        "opensre_analytics",
+    )
+
+
 def _pipedream_source() -> dict[str, Any]:
     return {
         "access_mode": "webapp_proxy",
@@ -1026,6 +1049,8 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _sentry_mcp_call_tool_case(),
     _x_mcp_list_case(),
     _x_mcp_call_tool_case(),
+    _opensre_analytics_case("list_opensre_analytics_tools", "list_tools"),
+    _opensre_analytics_case("query_opensre_analytics", "call_tool"),
     _pipedream_list_case(),
     _pipedream_call_tool_case(),
     _runbook_guidance_case(),
@@ -1243,6 +1268,9 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         # X MCP — both swallow sites in x_mcp_tool/__init__.py.
         "list_x_tools",
         "call_x_tool",
+        # OpenSRE Analytics — both swallow sites in opensre_analytics_query_tool/tool.py.
+        "list_opensre_analytics_tools",
+        "query_opensre_analytics",
         "load_runbook_guidance",
     }
 )
@@ -1282,6 +1310,13 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         # schedule_ci_reliability_loop writes the local task store; only a bad
         # time is caught, anything else reaches the global wrapper.
         "schedule_ci_reliability_loop",
+        # opensre_analytics_daily_growth: collect_growth turns each failed
+        # analytics read into an unavailable section and logs it; anything else
+        # reaches the global wrapper.
+        "opensre_analytics_daily_growth",
+        # schedule_analytics_growth_report writes the local task store; only a
+        # bad time, timezone or channel is caught.
+        "schedule_analytics_growth_report",
         # architecture_* catch only WorkspaceError / ReportPersistenceError for
         # known failure states; unexpected errors escape to the #1476 wrapper.
         "architecture_cleanup_repo",
