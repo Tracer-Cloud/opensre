@@ -39,6 +39,73 @@ _CRONTAB_LAST_WEEKDAY = 7
 _CRONTAB_WEEKDAY_ITEM = re.compile(
     r"(?:(?P<every>\*)|(?P<first>\d+)(?:-(?P<last>\d+))?)(?:/(?P<step>\d+))?"
 )
+# Named weekday range with an optional step, e.g. ``mon-fri/2`` or ``sat-sun``.
+_NAMED_WEEKDAY_RANGE = re.compile(
+    r"(?P<first>[a-z]{3})(?:-(?P<last>[a-z]{3}))?(?:/(?P<step>\d+))?$"
+)
+
+#: APScheduler/crontab month names (1-indexed: jan=1 … dec=12).
+_MONTH_NAMES = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+# Named month range with an optional step, e.g. ``jan-dec/3`` or ``apr-jun``.
+_NAMED_MONTH_RANGE = re.compile(r"(?P<first>[a-z]{3})(?:-(?P<last>[a-z]{3}))?(?:/(?P<step>\d+))?$")
+
+
+def _named_weekday_to_numeric(item: str) -> str | None:
+    """Convert a named weekday item to its crontab-numeric equivalent, or return None.
+
+    ``mon-fri/2`` → ``1-5/2``, ``sun-sat/3`` → ``0-6/3``, ``mon`` → ``1``.
+    Sunday is 0 at the start of a range and 7 at the end so ``mon-sun/2``
+    becomes ``1-7/2``.
+    Returns None when the name is unrecognised (passes through to APScheduler).
+    """
+    match = _NAMED_WEEKDAY_RANGE.fullmatch(item)
+    if match is None:
+        return None
+    first_name = match["first"]
+    last_name = match["last"]
+    step_str = match["step"]
+    try:
+        first_idx = _WEEKDAY_NAMES.index(first_name)
+    except ValueError:
+        return None
+    first_crontab = first_idx + 1  # mon=1, sun=7
+    if last_name is None:
+        numeric = str(first_crontab % 8)  # sun → 0 when standalone
+        return f"{numeric}/{step_str}" if step_str else numeric
+    try:
+        last_idx = _WEEKDAY_NAMES.index(last_name)
+    except ValueError:
+        return None
+    last_crontab = last_idx + 1  # mon=1, sun=7
+    numeric_range = f"{first_crontab % 8}-{last_crontab}"
+    return f"{numeric_range}/{step_str}" if step_str else numeric_range
+
+
+def _named_month_to_numeric(item: str) -> str | None:
+    """Convert a named month item to its numeric equivalent, or return None.
+
+    ``jan-dec/3`` → ``1-12/3``, ``apr-jun`` → ``4-6``, ``jan`` → ``1``.
+    Returns None when the name is unrecognised.
+    """
+    match = _NAMED_MONTH_RANGE.fullmatch(item)
+    if match is None:
+        return None
+    first_name = match["first"]
+    last_name = match["last"]
+    step_str = match["step"]
+    try:
+        first_num = _MONTH_NAMES.index(first_name) + 1
+    except ValueError:
+        return None
+    if last_name is None:
+        numeric = str(first_num)
+        return f"{numeric}/{step_str}" if step_str else numeric
+    try:
+        last_num = _MONTH_NAMES.index(last_name) + 1
+    except ValueError:
+        return None
+    numeric_range = f"{first_num}-{last_num}"
+    return f"{numeric_range}/{step_str}" if step_str else numeric_range
 
 
 def day_of_week_names(field: str) -> str:
@@ -46,19 +113,41 @@ def day_of_week_names(field: str) -> str:
 
     Numeric items (``0``, ``1-5``, ``1-5/2``, ``*/2``) are read the crontab way
     and become names; a step is expanded into a list, because APScheduler
-    ignores a step written after a name range. Names and a bare ``*`` mean the
-    same to both and pass through. Raises ``ValueError`` for a number above 7,
-    a backwards range, or a zero step.
+    ignores a step written after a name range. Named ranges with a step
+    (``mon-fri/2``) are first translated to their numeric equivalents so the
+    same expansion applies. Names and a bare ``*`` mean the same to both and
+    pass through. Raises ``ValueError`` for a number above 7, a backwards
+    range, or a zero step.
     """
     passthrough: list[str] = []
     days: set[int] = set()
     for item in field.lower().split(","):
+        numeric = _named_weekday_to_numeric(item)
+        if numeric is not None:
+            item = numeric
         match = _CRONTAB_WEEKDAY_ITEM.fullmatch(item)
         if match is None or item == "*":
             passthrough.append(item)
         else:
             days.update(_crontab_weekdays(item, match))
     return ",".join([*_weekday_ranges(days), *passthrough])
+
+
+def month_field(field: str) -> str:
+    """Spell a crontab ``month`` field so APScheduler 3.x honours steps in named ranges.
+
+    APScheduler ignores a step written after a name range (``jan-dec/3`` runs
+    every month). Translate named range items to their numeric equivalents so
+    the step is applied correctly. Items without a step pass through unchanged.
+    """
+    out: list[str] = []
+    for item in field.lower().split(","):
+        numeric = _named_month_to_numeric(item)
+        if numeric is not None and "/" in item:
+            out.append(numeric)
+        else:
+            out.append(item)
+    return ",".join(out)
 
 
 def _crontab_weekdays(item: str, match: re.Match[str]) -> set[int]:
@@ -118,7 +207,7 @@ def build_cron_trigger(cron: str, timezone: str | None) -> Any:
             minute=minute,
             hour=hour,
             day=day,
-            month=month,
+            month=month_field(month),
             day_of_week=day_of_week_names(day_of_week),
             timezone=timezone,
         )
@@ -186,5 +275,6 @@ __all__ = [
     "CRON_FORMAT_HELP",
     "build_cron_trigger",
     "cap_cron_at_most_hourly",
+    "month_field",
     "day_of_week_names",
 ]

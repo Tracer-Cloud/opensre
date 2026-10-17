@@ -34,6 +34,9 @@ def _fire_days(cron: str) -> set[str]:
         # A step after a name range is ignored by APScheduler, so steps become lists.
         ("1-5/2", {"Mon", "Wed", "Fri"}),
         ("mon-fri", {"Mon", "Tue", "Wed", "Thu", "Fri"}),
+        # Named ranges with a step must fire on the same days as their numeric equivalents.
+        ("mon-fri/2", {"Mon", "Wed", "Fri"}),
+        ("sat-sun", {"Sat", "Sun"}),
     ],
 )
 def test_a_weekday_field_fires_on_its_crontab_days(day_of_week: str, fires_on: set[str]) -> None:
@@ -43,6 +46,26 @@ def test_a_weekday_field_fires_on_its_crontab_days(day_of_week: str, fires_on: s
 def test_a_weekday_number_above_7_is_rejected_before_it_is_stored() -> None:
     with pytest.raises(ValueError, match="0-7"):
         build_cron_trigger("0 10 * * 8", "UTC")
+
+
+def _fire_months(cron: str, count: int = 6) -> list[int]:
+    """Month numbers for the next ``count`` fires starting from 2026-01-01."""
+    trigger = build_cron_trigger(cron, "UTC")
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    months: list[int] = []
+    prev, cur = None, start
+    for _ in range(count):
+        nxt = trigger.get_next_fire_time(prev, cur)
+        if nxt is None:
+            break
+        months.append(nxt.month)
+        prev, cur = nxt, nxt
+    return months
+
+
+def test_named_month_range_with_step_fires_quarterly() -> None:
+    """``jan-dec/3`` must fire quarterly, like ``1-12/3``."""
+    assert _fire_months("0 9 1 jan-dec/3 *") == _fire_months("0 9 1 1-12/3 *")
 
 
 def test_the_stored_next_run_skips_the_weekend() -> None:
