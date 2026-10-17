@@ -21,29 +21,34 @@ def print_delivery_schedule_list(console: Console, path: tuple[str, ...]) -> Non
         console.print(Text(spec.empty_message, style=DIM))
         return
 
+    show_chat = any(task.chat_id.strip() for task in tasks)
+    show_detail = any(task.params.get(spec.detail_key, "").strip() for task in tasks)
     rows: list[RecordRow] = []
     for task in tasks:
-        details = [Text(f"{task.provider.value} · TZ: {task.timezone}", style=DIM)]
-        if task.chat_id:
-            details.append(Text(f"Chat: {task.chat_id}", style=DIM))
         detail = task.params.get(spec.detail_key, "")
-        if detail:
-            details.append(Text(f"{spec.detail_label}: {detail}", style=DIM))
+        cells = [
+            Text(task.name or task.id, style="bold"),
+            Text(task.provider.value),
+        ]
+        if show_chat:
+            cells.append(Text(task.chat_id))
+        if show_detail:
+            cells.append(Text(detail))
+        cells.extend(
+            (
+                Text(
+                    "Active" if task.enabled else "Paused",
+                    style=HIGHLIGHT if task.enabled else DIM,
+                ),
+                Text(task.cron),
+                Text(task.timezone),
+                Text(format_repl_timestamp(task.last_run, style="utc") if task.last_run else "—"),
+            )
+        )
 
         rows.append(
             RecordRow(
-                (
-                    Text(task.name or task.id, style="bold"),
-                    Text(
-                        "Active" if task.enabled else "Paused",
-                        style=HIGHLIGHT if task.enabled else DIM,
-                    ),
-                    Text(task.cron),
-                    Text(
-                        format_repl_timestamp(task.last_run, style="utc") if task.last_run else "—"
-                    ),
-                ),
-                tuple(details),
+                tuple(cells),
                 metadata=(Text(f"ID: {task.id}", style=DIM),),
             )
         )
@@ -56,8 +61,12 @@ def print_delivery_schedule_list(console: Console, path: tuple[str, ...]) -> Non
             spec.title,
             (
                 RecordColumn("Task"),
+                RecordColumn("Provider"),
+                *((RecordColumn("Chat"),) if show_chat else ()),
+                *((RecordColumn(spec.detail_label),) if show_detail else ()),
                 RecordColumn("State"),
                 RecordColumn("Schedule"),
+                RecordColumn("TZ"),
                 RecordColumn("Last run"),
             ),
             tuple(rows),

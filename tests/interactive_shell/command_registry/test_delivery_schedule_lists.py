@@ -41,6 +41,22 @@ def _tasks() -> list[ScheduledTask]:
     return tasks
 
 
+def _compact_task(
+    *, chat_id: str = "channel-123", params: dict[str, str] | None = None
+) -> ScheduledTask:
+    return ScheduledTask(
+        id="schedule-1-0-1234567890abcdef",
+        name="Morning digest",
+        kind=TaskKind.SENTRY_MORNING_DIGEST,
+        cron="0 8 * * *",
+        timezone="Asia/Kolkata",
+        provider=Provider.SLACK,
+        chat_id=chat_id,
+        params=params if params is not None else {"project_slug": "payments"},
+        last_run="2026-10-09T14:00:00+05:30",
+    )
+
+
 def _cli_command(path: tuple[str, ...]):
     if path[0] == "posthog":
         return posthog_report.posthog_command
@@ -205,3 +221,37 @@ def test_delivery_schedule_record_replays_after_resize(monkeypatch: pytest.Monke
         replay = io.StringIO()
         Console(file=replay, width=width, highlight=False).print(renderables[0])
         _assert_schedule_output(replay.getvalue(), path, width)
+
+
+def test_wide_schedule_lists_keep_context_in_summary_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _compact_task()
+    monkeypatch.setattr(delivery_schedules, "list_tasks", lambda: [task])
+    output = io.StringIO()
+
+    delivery_schedules.print_delivery_schedule_list(
+        Console(file=output, width=200, highlight=False),
+        ("sentry", "digest", "schedule", "list"),
+    )
+
+    text = output.getvalue()
+    assert all(label in text for label in ("Provider", "Chat", "Project", "State", "TZ"))
+    assert "Provider:" not in text and "Chat:" not in text and "Project:" not in text
+
+
+def test_empty_optional_schedule_columns_are_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _compact_task(chat_id="", params={})
+    monkeypatch.setattr(delivery_schedules, "list_tasks", lambda: [task])
+    output = io.StringIO()
+
+    delivery_schedules.print_delivery_schedule_list(
+        Console(file=output, width=200, highlight=False),
+        ("sentry", "digest", "schedule", "list"),
+    )
+
+    text = output.getvalue()
+    assert "Chat" not in text
+    assert "Project" not in text
