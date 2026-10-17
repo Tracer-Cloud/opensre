@@ -14,7 +14,6 @@ from rich.table import Table
 from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
 from infrastructure.scheduling.scheduler.delivery import SUPPORTED_DELIVERY_PROVIDERS
 from infrastructure.scheduling.scheduler.sources import CLI_SENTRY_MORNING_DIGEST
-from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import add_task_and_echo, validate_cron_and_timezone
 
 _console = Console()
@@ -183,37 +182,9 @@ def sentry_uptime_watch_add(
 @sentry_uptime_watch_command.command(name="list")
 def sentry_uptime_watch_list() -> None:
     """List scheduled Sentry uptime watch tasks."""
-    from infrastructure.scheduling.scheduler.storage import list_tasks
-    from infrastructure.scheduling.scheduler.types import TaskKind
+    from surfaces.shared.terminal.tables.delivery_schedules import print_delivery_schedule_list
 
-    tasks = [task for task in list_tasks() if task.kind == TaskKind.SENTRY_UPTIME_WATCH]
-    if not tasks:
-        _console.print("[dim]No Sentry uptime watch schedules configured.[/dim]")
-        return
-
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", style="cyan")
-    table.add_column("Cron")
-    table.add_column("TZ")
-    table.add_column("Provider")
-    table.add_column("Chat")
-    table.add_column("Project")
-    table.add_column("Enabled")
-    table.add_column("Last run")
-
-    for task in tasks:
-        project = task.params.get("project_slug", "—")
-        table.add_row(
-            task.display_id(),
-            task.cron,
-            task.timezone,
-            task.provider.value,
-            task.chat_id,
-            project or "—",
-            GLYPH_SUCCESS if task.enabled else GLYPH_ERROR,
-            task.last_run or "—",
-        )
-    _console.print(table)
+    print_delivery_schedule_list(_console, ("sentry", "uptime", "watch", "list"))
 
 
 @sentry_uptime_watch_command.command(name="remove")
@@ -371,38 +342,9 @@ def sentry_digest_schedule_add(
 @sentry_digest_schedule_command.command(name="list")
 def sentry_digest_schedule_list() -> None:
     """List scheduled Sentry morning digest tasks."""
-    from infrastructure.scheduling.scheduler.storage import list_tasks
-    from infrastructure.scheduling.scheduler.types import TaskKind
+    from surfaces.shared.terminal.tables.delivery_schedules import print_delivery_schedule_list
 
-    tasks = [task for task in list_tasks() if task.kind == TaskKind.SENTRY_MORNING_DIGEST]
-    if not tasks:
-        _console.print("[dim]No Sentry morning digest schedules configured.[/dim]")
-        return
-
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", style="cyan")
-    table.add_column("Cron")
-    table.add_column("TZ")
-    table.add_column("Provider")
-    table.add_column("Chat")
-    table.add_column("Project")
-    table.add_column("Enabled")
-    table.add_column("Last run")
-
-    for task in tasks:
-        project = task.params.get("project_slug", "—")
-        table.add_row(
-            task.display_id(),
-            task.cron,
-            task.timezone,
-            task.provider.value,
-            task.chat_id,
-            project or "—",
-            GLYPH_SUCCESS if task.enabled else GLYPH_ERROR,
-            task.last_run or "—",
-        )
-
-    _console.print(table)
+    print_delivery_schedule_list(_console, ("sentry", "digest", "schedule", "list"))
 
 
 @sentry_digest_schedule_command.command(name="remove")

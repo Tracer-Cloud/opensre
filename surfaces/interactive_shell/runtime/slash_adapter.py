@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from rich.console import Console
 
 from config.command_inputs import needs_command_input
+from config.constants.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry.slash_catalog import (
     slash_invoke_input_schema,
@@ -143,10 +144,23 @@ class ReplSlashPorts:
         # Suspend the prompt for rendering instead of ending that turn with a
         # queued command that loses the remaining work (e.g. remove by task ID).
         try:
-            is_cron_list = shlex.split(command)[:2] == ["/cron", "list"]
+            parts = shlex.split(command)
         except ValueError:
-            is_cron_list = False
-        if is_tty is not False and self.tty_interactive() and is_cron_list:
+            parts = []
+        is_cron_list = parts[:2] == ["/cron", "list"]
+        is_delivery_schedule_list = (
+            bool(parts)
+            and (
+                parts[0].removeprefix("/"),
+                *parts[1:],
+            )
+            in DELIVERY_SCHEDULE_LISTS
+        )
+        if (
+            is_tty is not False
+            and self.tty_interactive()
+            and (is_cron_list or is_delivery_schedule_list)
+        ):
             return with_exclusive_output(session, dispatch)
         return dispatch()
 
