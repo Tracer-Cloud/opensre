@@ -39,20 +39,69 @@ _CRONTAB_LAST_WEEKDAY = 7
 _CRONTAB_WEEKDAY_ITEM = re.compile(
     r"(?:(?P<every>\*)|(?P<first>\d+)(?:-(?P<last>\d+))?)(?:/(?P<step>\d+))?"
 )
+#: Crontab day numbers by name; Sunday is 0 at the start of a range and 7 at its end.
+_CRONTAB_WEEKDAY_NUMBERS = {
+    name: number for number, name in enumerate(("sun", "mon", "tue", "wed", "thu", "fri", "sat"))
+}
+_CRONTAB_WEEKDAY_LAST_NUMBERS = {**_CRONTAB_WEEKDAY_NUMBERS, "sun": _CRONTAB_LAST_WEEKDAY}
+_MONTH_NUMBERS = {
+    name: number
+    for number, name in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        start=1,
+    )
+}
+_NAMED_STEP_ITEM = re.compile(r"(?P<first>[a-z]+)(?:-(?P<last>[a-z]+))?/(?P<step>\d+)")
+
+
+def _named_steps_in_numbers(
+    field: str, first_numbers: dict[str, int], last_numbers: dict[str, int]
+) -> str:
+    """Spell each named item that carries a step (``mon-fri/2``) in numbers.
+
+    APScheduler 3.x silently drops a step written after a name, so the item
+    would fire on every day or month of the range. Items without a step, and
+    names not in the tables, pass through unchanged. Raises ``ValueError`` for
+    a zero step.
+    """
+    items: list[str] = []
+    for item in field.split(","):
+        match = _NAMED_STEP_ITEM.fullmatch(item.lower())
+        if match is None or match["first"] not in first_numbers:
+            items.append(item)
+            continue
+        if int(match["step"]) < 1:
+            raise ValueError(f"step must be at least 1: {item!r}")
+        first = first_numbers[match["first"]]
+        if match["last"] == match["first"]:
+            # ``sun-sun/1`` is that one day (not Sunday 0 through Sunday 7),
+            # whatever the step.
+            items.append(str(first))
+        elif match["last"] is None:
+            items.append(f"{first}/{match['step']}")
+        elif match["last"] in last_numbers:
+            items.append(f"{first}-{last_numbers[match['last']]}/{match['step']}")
+        else:
+            items.append(item)
+    return ",".join(items)
 
 
 def day_of_week_names(field: str) -> str:
     """Spell a crontab ``day_of_week`` field in the day names APScheduler 3.x reads.
 
-    Numeric items (``0``, ``1-5``, ``1-5/2``, ``*/2``) are read the crontab way
-    and become names; a step is expanded into a list, because APScheduler
-    ignores a step written after a name range. Names and a bare ``*`` mean the
-    same to both and pass through. Raises ``ValueError`` for a number above 7,
-    a backwards range, or a zero step.
+    Numeric items (``0``, ``1-5``, ``1-5/2``, ``*/2``) and named items with a
+    step (``mon-fri/2``) are read the crontab way and become names; a step is
+    expanded into a list, because APScheduler ignores a step written after a
+    name range. Names without a step and a bare ``*`` mean the same to both and
+    pass through. Raises ``ValueError`` for a number above 7, a backwards range,
+    or a zero step.
     """
     passthrough: list[str] = []
     days: set[int] = set()
-    for item in field.lower().split(","):
+    field = _named_steps_in_numbers(
+        field.lower(), _CRONTAB_WEEKDAY_NUMBERS, _CRONTAB_WEEKDAY_LAST_NUMBERS
+    )
+    for item in field.split(","):
         match = _CRONTAB_WEEKDAY_ITEM.fullmatch(item)
         if match is None or item == "*":
             passthrough.append(item)
@@ -118,7 +167,7 @@ def build_cron_trigger(cron: str, timezone: str | None) -> Any:
             minute=minute,
             hour=hour,
             day=day,
-            month=month,
+            month=_named_steps_in_numbers(month, _MONTH_NUMBERS, _MONTH_NUMBERS),
             day_of_week=day_of_week_names(day_of_week),
             timezone=timezone,
         )

@@ -34,15 +34,46 @@ def _fire_days(cron: str) -> set[str]:
         # A step after a name range is ignored by APScheduler, so steps become lists.
         ("1-5/2", {"Mon", "Wed", "Fri"}),
         ("mon-fri", {"Mon", "Tue", "Wed", "Thu", "Fri"}),
+        ("mon-fri/2", {"Mon", "Wed", "Fri"}),
+        ("sun-sat/3", {"Sun", "Wed", "Sat"}),
+        ("sun-sun/1", {"Sun"}),
     ],
 )
 def test_a_weekday_field_fires_on_its_crontab_days(day_of_week: str, fires_on: set[str]) -> None:
     assert _fire_days(f"0 10 * * {day_of_week}") == fires_on
 
 
+@pytest.mark.parametrize(
+    ("month", "fires_in"),
+    [
+        ("jan-dec/3", {"Jan", "Apr", "Jul", "Oct"}),
+        ("jan-jan/1", {"Jan"}),
+        ("apr-jun", {"Apr", "May", "Jun"}),
+    ],
+)
+def test_a_month_field_with_names_fires_in_its_crontab_months(
+    month: str, fires_in: set[str]
+) -> None:
+    trigger = build_cron_trigger(f"0 10 1 {month} *", "UTC")
+    months: set[str] = set()
+    fire = trigger.get_next_fire_time(None, _SUNDAY_NOON)
+    while fire is not None and fire < _SUNDAY_NOON + timedelta(days=366):
+        months.add(f"{fire:%b}")
+        fire = trigger.get_next_fire_time(fire, fire)
+    assert months == fires_in
+
+
 def test_a_weekday_number_above_7_is_rejected_before_it_is_stored() -> None:
     with pytest.raises(ValueError, match="0-7"):
         build_cron_trigger("0 10 * * 8", "UTC")
+
+
+@pytest.mark.parametrize(
+    "cron", ["0 10 * * mon-fri/0", "0 10 * * sun-sun/0", "0 10 1 jan-dec/0 *", "0 10 1 jan-jan/0 *"]
+)
+def test_a_zero_step_after_names_is_rejected_before_it_is_stored(cron: str) -> None:
+    with pytest.raises(ValueError):
+        build_cron_trigger(cron, "UTC")
 
 
 def test_the_stored_next_run_skips_the_weekend() -> None:
