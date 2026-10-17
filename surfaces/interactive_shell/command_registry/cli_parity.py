@@ -15,6 +15,7 @@ import surfaces.interactive_shell.command_registry.cron_cmds as cron_cmds
 from config.cli_command_choices import CLI_COMMAND_CHOICES
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
 from config.constants.cli_handoff import CLI_HANDOFF_FLAG
+from config.constants.delivery_schedule_lists import DELIVERY_SCHEDULE_LISTS
 from config.interactive_override import interactive_override_env
 from config.scope_handoff import hand_off_scope
 from core.agent_harness.spi.session_state import session_terminal, set_turn_outcome_hint
@@ -513,11 +514,27 @@ def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _cmd_sentry(session: Session, console: Console, args: list[str]) -> bool:
+    if _print_native_delivery_schedule_list(session, console, ("sentry", *args)):
+        return True
     return run_cli_command(console, ["sentry", *args], session=session)
 
 
 def _cmd_posthog(session: Session, console: Console, args: list[str]) -> bool:
+    if _print_native_delivery_schedule_list(session, console, ("posthog", *args)):
+        return True
     return run_cli_command(console, ["posthog", *args], capture_output=True, session=session)
+
+
+def _print_native_delivery_schedule_list(
+    session: Session, console: Console, path: tuple[str, ...]
+) -> bool:
+    """Keep responsive schedule lists as Rich renderables in the REPL."""
+    if session_terminal(session) is None or path not in DELIVERY_SCHEDULE_LISTS:
+        return False
+    from surfaces.shared.terminal.tables.delivery_schedules import print_delivery_schedule_list
+
+    print_delivery_schedule_list(console, path)
+    return True
 
 
 def _cmd_debug(session: Session, console: Console, args: list[str]) -> bool:
