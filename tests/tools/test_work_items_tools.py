@@ -197,6 +197,31 @@ def test_reminder_scheduling_resolves_naive_datetime_in_requested_timezone(
     assert task.params["run_at"] == "2027-09-12T09:00:00+05:30"
 
 
+def test_rescheduling_same_reminder_keeps_it_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+    item = make_work_item(title="Check clusters", remind_at="2027-08-24T10:00:00Z")
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C999")]
+    schedule_item_reminder(item, targets=targets, timezone="UTC")
+
+    renamed = dataclasses.replace(item, title="Check clusters v2")
+    scheduled = schedule_item_reminder(renamed, targets=targets, timezone="UTC")
+
+    assert scheduled is not None
+    assert scheduled.enabled is True
+    tasks = list_tasks()
+    assert len(tasks) == 1
+    assert tasks[0].enabled is True
+
+
 def test_completing_a_work_item_disables_its_reminder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

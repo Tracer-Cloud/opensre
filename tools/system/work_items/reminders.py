@@ -53,8 +53,6 @@ def schedule_item_reminder(
     valid_targets = [target for target in targets if validate_provider(target.provider) is not None]
     if not valid_targets:
         return None
-    # Replace any prior reminder for this work item before scheduling a new one.
-    disable_existing_item_reminders(item.id)
     primary = valid_targets[0]
     parsed_provider = Provider(primary.provider)
     task = ScheduledTask(
@@ -73,7 +71,33 @@ def schedule_item_reminder(
             ),
         },
     )
-    return add_scheduled_task(task)
+    # Disable prior reminders only when the schedule is actually changing.
+    # When the same remind_at/target combination is confirmed again (e.g. a title
+    # rename), add_task would return the already-disabled row unchanged, leaving
+    # the reminder permanently disabled. Skip the disable so add_task finds an
+    # enabled row and returns it directly.
+    existing_enabled = next(
+        (
+            t
+            for t in list_tasks()
+            if t.kind is TaskKind.WORK_ITEM_REMINDER
+            and t.enabled
+            and t.params.get("work_item_id", "").strip() == item.id
+        ),
+        None,
+    )
+    same_schedule = (
+        existing_enabled is not None
+        and existing_enabled.params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM) == remind_at.isoformat()
+    )
+    if not same_schedule:
+        disable_existing_item_reminders(item.id)
+    stored = add_scheduled_task(task)
+    if stored is not None and not stored.enabled:
+        re_enabled = stored.model_copy(update={"enabled": True})
+        update_task(re_enabled)
+        return re_enabled
+    return stored
 
 
 _disable_existing_item_reminders = disable_existing_item_reminders
