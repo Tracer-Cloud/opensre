@@ -31,6 +31,7 @@ class TargetChoice:
     compact_details: tuple[str, ...] = ()
     minimal_details: tuple[str, ...] = ()
     cells: tuple[Text, ...] = ()
+    metadata: tuple[Text, ...] = ()
 
 
 def build_target_picker(
@@ -47,7 +48,11 @@ def build_target_picker(
     """Collect a stable target with the shared form's selection and submission flow."""
     by_id = {choice.value: choice for choice in choices}
     records = tuple(
-        RecordRow((Text(choice.title, style="bold"), *choice.cells)) for choice in choices
+        RecordRow(
+            (Text(choice.title, style="bold"), *choice.cells),
+            metadata=choice.metadata,
+        )
+        for choice in choices
     )
     options = tuple(
         InputChoice(

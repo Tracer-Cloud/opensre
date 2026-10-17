@@ -1178,17 +1178,18 @@ By default, new loops send to every configured default handle OpenSRE can reach:
 /sentry digest run
 /sentry digest schedule list
 /sentry digest schedule add --cron "0 8 * * *" --provider telegram --chat-id &lt;id&gt;
-/sentry digest schedule run &lt;id&gt;
-/sentry digest schedule remove &lt;id&gt;
+/sentry digest schedule run [id]
+/sentry digest schedule remove [id]
 /sentry uptime check
 /sentry uptime watch list
 /sentry uptime watch add --cron "*/5 * * * *" --provider telegram --chat-id &lt;id&gt;
-/sentry uptime watch run &lt;id&gt;
-/sentry uptime watch remove &lt;id&gt;
+/sentry uptime watch run [id]
+/sentry uptime watch remove [id]
 ```
 
 Automated Sentry morning digest delivery (#10) and uptime watch notifications (#4032).
 Requires Sentry plus Telegram or Slack configured for the chosen provider. See [Sentry](/integrations/incidents/sentry).
+In an interactive terminal, omit the ID from `run` or `remove` to choose a schedule from a searchable list. Selecting a schedule to run requires confirmation; removing a schedule keeps its logs. Outside the interactive terminal, provide the ID.
 
 </Accordion>
 
@@ -1243,11 +1244,12 @@ Run or schedule automated PostHog per-metric summary reports. Requires the PostH
 /posthog report run
 /posthog report schedule list
 /posthog report schedule add
-/posthog report schedule run <id>
-/posthog report schedule remove <id>
+/posthog report schedule run [id]
+/posthog report schedule remove [id]
 ```
 
 A scheduled report only fires while a scheduler is running, so pair it with `/gateway start` or `opensre cron start`. Same as `opensre posthog`.
+In an interactive terminal, omit the ID from `run` or `remove` to choose a schedule from a searchable list. Outside the interactive terminal, provide the ID.
 
 </Accordion>
 

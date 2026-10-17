@@ -10,7 +10,7 @@ class CommandInput:
     """Describe one subcommand whose incomplete input can be collected."""
 
     command: str
-    subcommands: tuple[str, ...]
+    subcommands: tuple[str, ...] = ()
     value_options: frozenset[str] = frozenset()
     flag_options: frozenset[str] = frozenset()
     greedy_value_options: frozenset[str] = frozenset()
@@ -19,15 +19,26 @@ class CommandInput:
     alternative_options: tuple[frozenset[str], ...] = ()
     max_positionals: int = 0
     missing_target: bool = False
+    subcommand_path: tuple[str, ...] = ()
 
     def matches(self, command: str, args: list[str]) -> bool:
         """Return whether this input applies to a valid but incomplete invocation."""
-        if command.lower() != self.command or not args or args[0].lower() not in self.subcommands:
+        if command.lower() != self.command or not args:
             return False
         nonempty: set[str] = set()
         positionals = 0
         supplied_target = False
-        index = 1
+        if self.subcommand_path:
+            path_length = len(self.subcommand_path)
+            if tuple(arg.lower() for arg in args[:path_length]) != tuple(
+                part.lower() for part in self.subcommand_path
+            ):
+                return False
+            index = path_length
+        else:
+            if args[0].lower() not in self.subcommands:
+                return False
+            index = 1
         while index < len(args):
             option = args[index]
             if not option.startswith("--") and positionals < self.max_positionals:
@@ -137,6 +148,42 @@ WORK_DONE_INPUT = CommandInput(
 CRON_TARGET_INPUT = CommandInput(
     "/cron", ("logs", "run", "remove"), max_positionals=1, missing_target=True
 )
+SENTRY_DIGEST_SCHEDULE_RUN_INPUT = CommandInput(
+    "/sentry",
+    max_positionals=1,
+    missing_target=True,
+    subcommand_path=("digest", "schedule", "run"),
+)
+SENTRY_DIGEST_SCHEDULE_REMOVE_INPUT = CommandInput(
+    "/sentry",
+    max_positionals=1,
+    missing_target=True,
+    subcommand_path=("digest", "schedule", "remove"),
+)
+SENTRY_UPTIME_WATCH_RUN_INPUT = CommandInput(
+    "/sentry",
+    max_positionals=1,
+    missing_target=True,
+    subcommand_path=("uptime", "watch", "run"),
+)
+SENTRY_UPTIME_WATCH_REMOVE_INPUT = CommandInput(
+    "/sentry",
+    max_positionals=1,
+    missing_target=True,
+    subcommand_path=("uptime", "watch", "remove"),
+)
+POSTHOG_REPORT_SCHEDULE_RUN_INPUT = CommandInput(
+    "/posthog",
+    max_positionals=1,
+    missing_target=True,
+    subcommand_path=("report", "schedule", "run"),
+)
+POSTHOG_REPORT_SCHEDULE_REMOVE_INPUT = CommandInput(
+    "/posthog",
+    max_positionals=1,
+    missing_target=True,
+    subcommand_path=("report", "schedule", "remove"),
+)
 GOAL_EDIT_INPUT = CommandInput("/goal", ("edit",))
 WORK_EDIT_INPUT = CommandInput("/work", ("edit",), max_positionals=1)
 LOOPS_EDIT_INPUT = CommandInput("/loops", ("edit",), max_positionals=1)
@@ -169,6 +216,12 @@ COMMAND_INPUTS = (
     LOOPS_TARGET_INPUT,
     WORK_DONE_INPUT,
     CRON_TARGET_INPUT,
+    SENTRY_DIGEST_SCHEDULE_RUN_INPUT,
+    SENTRY_DIGEST_SCHEDULE_REMOVE_INPUT,
+    SENTRY_UPTIME_WATCH_RUN_INPUT,
+    SENTRY_UPTIME_WATCH_REMOVE_INPUT,
+    POSTHOG_REPORT_SCHEDULE_RUN_INPUT,
+    POSTHOG_REPORT_SCHEDULE_REMOVE_INPUT,
     GOAL_EDIT_INPUT,
     WORK_EDIT_INPUT,
     LOOPS_EDIT_INPUT,

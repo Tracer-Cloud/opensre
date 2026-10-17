@@ -12,6 +12,8 @@ from rich.console import Console
 from rich.markup import escape
 
 import surfaces.interactive_shell.command_registry.cron_cmds as cron_cmds
+import surfaces.interactive_shell.command_registry.posthog_cmds as posthog_cmds
+import surfaces.interactive_shell.command_registry.sentry_cmds as sentry_cmds
 from config.cli_command_choices import CLI_COMMAND_CHOICES
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
 from config.constants.cli_handoff import CLI_HANDOFF_FLAG
@@ -513,11 +515,11 @@ def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _cmd_sentry(session: Session, console: Console, args: list[str]) -> bool:
-    return run_cli_command(console, ["sentry", *args], session=session)
+    return sentry_cmds.cmd_sentry(session, console, args, run_cli=run_cli_command)
 
 
 def _cmd_posthog(session: Session, console: Console, args: list[str]) -> bool:
-    return run_cli_command(console, ["posthog", *args], capture_output=True, session=session)
+    return posthog_cmds.cmd_posthog(session, console, args, run_cli=run_cli_command)
 
 
 def _cmd_debug(session: Session, console: Console, args: list[str]) -> bool:
@@ -685,13 +687,17 @@ COMMANDS: list[SlashCommand] = [
             "/sentry digest run",
             "/sentry digest schedule list",
             "/sentry digest schedule add",
-            "/sentry digest schedule run <id>",
-            "/sentry digest schedule remove <id>",
+            "/sentry digest schedule run [id]",
+            "/sentry digest schedule remove [id]",
             "/sentry uptime check",
             "/sentry uptime watch list",
             "/sentry uptime watch add",
-            "/sentry uptime watch run <id>",
-            "/sentry uptime watch remove <id>",
+            "/sentry uptime watch run [id]",
+            "/sentry uptime watch remove [id]",
+        ),
+        notes=(
+            "In the interactive terminal, omit a scheduled-task ID to choose it from a searchable list.",
+            "The regular CLI and non-interactive calls still require an explicit ID.",
         ),
     ),
     SlashCommand(
@@ -703,8 +709,12 @@ COMMANDS: list[SlashCommand] = [
             "/posthog report run",
             "/posthog report schedule list",
             "/posthog report schedule add",
-            "/posthog report schedule run <id>",
-            "/posthog report schedule remove <id>",
+            "/posthog report schedule run [id]",
+            "/posthog report schedule remove [id]",
+        ),
+        notes=(
+            "In the interactive terminal, omit a scheduled-task ID to choose it from a searchable list.",
+            "The regular CLI and non-interactive calls still require an explicit ID.",
         ),
     ),
     SlashCommand(
