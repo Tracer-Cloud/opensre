@@ -48,6 +48,7 @@ from tools.system.fleet_monitoring.discovery import registered_and_discovered_ag
 from tools.system.fleet_monitoring.registry import AgentRegistry
 
 _AGENTS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("list", "show all registered and discovered agents (same as bare /fleet)"),
     ("budget", "view or edit per-agent hourly budgets"),
     ("bus", "live-tail the cross-agent context bus"),
     ("claim", "claim a branch for an agent"),
@@ -412,6 +413,8 @@ def _cmd_agents(session: Session, console: Console, args: list[str]) -> bool:
         return _cmd_agents_list(console)
 
     sub = args[0].lower().strip()
+    if sub in ("list", "ls"):
+        return _cmd_agents_list(console)
     if sub == "budget":
         return _cmd_agents_budget(session, console, args[1:])
     if sub == "bus":
@@ -439,7 +442,7 @@ def _cmd_agents(session: Session, console: Console, args: list[str]) -> bool:
 
     console.print(
         f"[{ERROR}]unknown subcommand:[/] {escape(sub)}  "
-        "(try [bold]/fleet[/bold], [bold]/fleet budget[/bold], "
+        "(try [bold]/fleet[/bold], [bold]/fleet list[/bold], [bold]/fleet budget[/bold], "
         "[bold]/fleet bus[/bold], [bold]/fleet claim[/bold], "
         "[bold]/fleet conflicts[/bold], [bold]/fleet kill[/bold], "
         "[bold]/fleet release[/bold], [bold]/fleet trace[/bold], "
@@ -456,6 +459,7 @@ COMMANDS: list[SlashCommand] = [
         _cmd_agents,
         usage=(
             "/fleet",
+            "/fleet list",
             "/fleet budget",
             "/fleet bus",
             "/fleet claim",

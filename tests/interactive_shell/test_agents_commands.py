@@ -78,6 +78,11 @@ class TestAgentsRegistration:
     def test_agents_command_is_registered(self) -> None:
         assert "/fleet" in SLASH_COMMANDS
 
+    def test_agents_first_arg_completions_include_list(self) -> None:
+        cmd = SLASH_COMMANDS["/fleet"]
+        keywords = [pair[0] for pair in cmd.first_arg_completions]
+        assert "list" in keywords
+
     def test_agents_first_arg_completions_include_conflicts(self) -> None:
         cmd = SLASH_COMMANDS["/fleet"]
         keywords = [pair[0] for pair in cmd.first_arg_completions]
@@ -177,6 +182,32 @@ class TestAgentsDispatch:
         out = buf.getvalue().lower()
         assert "bus" in out
         assert "trace" in out
+
+    def test_list_subcommand_renders_agents_table(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = _isolate_registry(monkeypatch, tmp_path / "agents.jsonl")
+        registry.register(AgentRecord(name="claude-code", pid=1234, command="claude"))
+
+        session = Session()
+        console, buf = _capture()
+        assert dispatch_slash("/fleet list", session, console) is True
+        out = buf.getvalue()
+        assert "claude-code" in out
+        assert "1234" in out
+
+    def test_ls_subcommand_renders_agents_table(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = _isolate_registry(monkeypatch, tmp_path / "agents.jsonl")
+        registry.register(AgentRecord(name="cursor-tab", pid=5678, command="cursor"))
+
+        session = Session()
+        console, buf = _capture()
+        assert dispatch_slash("/fleet ls", session, console) is True
+        out = buf.getvalue()
+        assert "cursor-tab" in out
+        assert "5678" in out
 
     def test_dollar_hr_cell_does_not_read_budget_from_agents_yaml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
