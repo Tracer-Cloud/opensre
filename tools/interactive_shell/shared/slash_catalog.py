@@ -293,7 +293,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     "/mcp": _mcp(
         "Manage connected MCP servers. Subcommands: list, connect, disconnect.",
         "User asks to list, connect, or disconnect MCP servers",
-        anti_examples=("User asks about remote deployments or remote agents (use /remote)",),
+        anti_examples=("User asks about remote deployments or remote agents (assistant_handoff)",),
     ),
     "/memory": _mcp(
         "List and manage the agent's long-term memory. "
@@ -344,12 +344,13 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to quit the REPL",
     ),
     "/remote": _mcp(
-        "Connect to, list, and operate remote deployed OpenSRE agents. "
-        "Subcommands: health, ops, pull, trigger.",
-        "User explicitly asks to connect to a remote/hosted/EC2/Nitro OpenSRE instance",
-        "User asks how many remote deployments are configured or wants to inspect a remote agent",
-        "User asks about remote deployment status, health, or operations",
-        anti_examples=("Vague connect to X without remote/hosted context (clarify the target)",),
+        "Remote-agent operations are unavailable in this build. "
+        "Running /remote records a failure and preserves the interactive shell.",
+        "User explicitly types /remote",
+        anti_examples=(
+            "User asks about remote deployments or deployed agents (assistant_handoff)",
+            "User asks to sync sessions or memory (use /remote-sync)",
+        ),
     ),
     "/rename": _mcp(
         "Rename the current session with /rename <name>; "
@@ -614,9 +615,9 @@ def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -
         "only the slash-command clause of a request. For compound requests, "
         "still emit a separate tool call for every other actionable clause in "
         "order; for example "
-        "`run /remote and then send a summary to Slack` requires "
-        'slash_invoke(command="/remote", args=[]) followed by the '
-        "Slack send-message tool call."
+        '`run /sessions and then investigate "hello world"` requires '
+        'slash_invoke(command="/sessions", args=[]) followed by '
+        'investigation_start(alert_text="hello world").'
     )
     # Keep planner payload intentionally tiny for live LLM runs with strict
     # prompt budgets. The full rich catalog remains available via

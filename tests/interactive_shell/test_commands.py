@@ -2465,9 +2465,9 @@ class TestRunCliCommand:
 
         monkeypatch.setattr(m.subprocess, "run", _fake_run)
         session = SessionCore(store=InMemorySessionStore())
-        session.record("slash", "/remote health", ok=True)
+        session.record("slash", "/config show", ok=True)
         console, _buf = _capture()
-        assert m.run_cli_command(console, ["remote", "health"], session=session) is False
+        assert m.run_cli_command(console, ["config", "show"], session=session) is False
         assert session.history[-1]["ok"] is False
 
     @pytest.mark.parametrize("headless", [False, True])
@@ -2677,7 +2677,6 @@ class TestCliDelegatedCommands:
         [
             ("/config show", ["config", "show"]),
             ("/runbooks list", ["runbooks", "list"]),
-            ("/remote health", ["remote", "health"]),
             ("/guardrails audit", ["guardrails", "audit"]),
             ("/update", ["update"]),
             ("/uninstall", ["uninstall"]),
@@ -2697,6 +2696,26 @@ class TestCliDelegatedCommands:
         monkeypatch.setattr(m, "run_cli_command", _fake_run_cli_command)
         dispatch_slash(command, Session(), Console())
         assert captured == [expected_args]
+
+    def test_remote_retired_prints_guidance_and_keeps_shell_alive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``/remote`` must not invoke a subprocess — it prints a retirement
+        message, records a failure, and returns True so the shell stays alive."""
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        def _fail_if_called(*args: object, **kwargs: object) -> object:
+            raise AssertionError("/remote must not spawn a subprocess")
+
+        monkeypatch.setattr(m.subprocess, "run", _fail_if_called)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        session = Session()
+        result = dispatch_slash("/remote", session, console)
+        output = buf.getvalue()
+        assert result is True
+        assert "retired" in output.lower() or "unavailable" in output.lower()
+        assert "remote-sync" in output.lower()
 
     def test_slash_onboard_delegates_to_run_cli_command(self, monkeypatch: object) -> None:
         """``/onboard`` must delegate to ``run_cli_command`` so the wizard runs
