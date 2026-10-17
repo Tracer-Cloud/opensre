@@ -19,10 +19,16 @@ def _task_title(task: ScheduledTask) -> str:
 
 
 def _task_details(task: ScheduledTask) -> tuple[str, ...]:
-    details = [
+    return (
         f"Destination: {task.provider.value}:{task.chat_id or 'default'}",
         f"Schedule: {task.cron} · TZ {task.timezone}",
-    ]
+        *_provider_details(task),
+    )
+
+
+def _provider_details(task: ScheduledTask) -> tuple[str, ...]:
+    """Return provider-specific fields that distinguish compact picker rows."""
+    details: list[str] = []
     for key, label in (
         ("project_slug", "Project"),
         ("stats_period", "Period"),
@@ -73,6 +79,7 @@ def build_scheduled_task_picker(
                 f"{task.provider.value}:{task.chat_id or 'default'} · "
                 f"{task.cron} · TZ {task.timezone}"
             ),
+            compact_details=_provider_details(task),
             cells=(
                 Text(
                     f"{task.provider.value}:{task.chat_id or 'default'}",

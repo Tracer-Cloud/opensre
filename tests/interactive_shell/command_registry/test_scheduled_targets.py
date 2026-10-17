@@ -131,6 +131,7 @@ def test_scheduled_picker_keeps_full_id_in_metadata(monkeypatch: pytest.MonkeyPa
     assert choice.value == task.id
     assert choice.metadata[0].plain == f"Full task ID: {task.id}"
     assert task.timezone in " ".join(choice.details)
+    assert "Project: payments" in choice.compact_details
     assert [column.header for column in captured["columns"]] == [
         "Task",
         "Destination",
