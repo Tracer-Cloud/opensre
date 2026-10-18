@@ -40,6 +40,10 @@ INTEGRATION_OWNER_ID_TAG = "owner_id"
 INTEGRATION_IS_DEFAULT_TAG = "is_default"
 #: How long one fetched remote-integration snapshot stays fresh in-process.
 OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS = 60.0
+#: How long a hosted gateway reuses the webapp's live integration view (the
+#: workspace set and each member's own). Short, so a connection added or
+#: removed in the app reaches the next turn without a gateway restart.
+OPENSRE_WEBAPP_VAULT_TTL_SECONDS = 10.0
 #: Short fetch timeout so an offline laptop never stalls a turn on this call.
 OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS = 5.0
 OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS = 15.0

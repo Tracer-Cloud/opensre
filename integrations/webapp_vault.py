@@ -18,8 +18,13 @@ edits back up.
 from __future__ import annotations
 
 import functools
+import hashlib
+import json
 import logging
 import os
+import threading
+import time
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any
 
@@ -32,6 +37,7 @@ from config.constants.account import (
     INTEGRATION_OWNER_ID_TAG,
     INTEGRATION_OWNER_KIND_TAG,
     INTEGRATION_RETRIEVAL_ORIGIN_FIELD,
+    OPENSRE_WEBAPP_VAULT_TTL_SECONDS,
 )
 from config.constants.billing import (
     CREDITS_HTTP_TIMEOUT_SECONDS,
@@ -321,3 +327,72 @@ def _owner_tags(item: dict[str, Any]) -> dict[str, object] | None:
         INTEGRATION_OWNER_KIND_TAG: kind,
         INTEGRATION_OWNER_ID_TAG: owner_id,
     }
+
+
+# ---------------------------------------------------------------------------
+# Live snapshot for turn resolution
+# ---------------------------------------------------------------------------
+#
+# fetch_webapp_org_integrations() reads the webapp on every call. Turn
+# resolution reads it through load_webapp_org_integrations() instead: one
+# snapshot per OPENSRE_WEBAPP_VAULT_TTL_SECONDS, and a generation that moves
+# only when the fetched set changes, so a session drops its resolved
+# integrations on the next turn after a connection is added or removed in the
+# app, with no gateway restart.
+
+
+@dataclass
+class _Snapshot:
+    records: list[dict[str, Any]] | None = None
+    fingerprint: str = ""
+    generation: int = 0
+    fetched_at: float = 0.0
+    populated: bool = False
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+
+_snapshot = _Snapshot()
+
+
+def load_webapp_org_integrations() -> list[dict[str, Any]] | None:
+    """The workspace's vault records, refreshed at most once per TTL.
+
+    ``None`` keeps :func:`fetch_webapp_org_integrations`'s meaning. A failed
+    refresh keeps the last good set, so an outage never empties a running
+    gateway.
+    """
+    now = time.monotonic()
+    with _snapshot.lock:
+        if _snapshot.populated and now - _snapshot.fetched_at < OPENSRE_WEBAPP_VAULT_TTL_SECONDS:
+            return _copy_records(_snapshot.records)
+    fetched = fetch_webapp_org_integrations()
+    with _snapshot.lock:
+        _snapshot.fetched_at = now
+        if fetched is None and _snapshot.populated:
+            return _copy_records(_snapshot.records)
+        _snapshot.populated = True
+        fingerprint = hashlib.sha256(
+            json.dumps(fetched, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        if fingerprint != _snapshot.fingerprint:
+            _snapshot.records = fetched
+            _snapshot.fingerprint = fingerprint
+            _snapshot.generation += 1
+        return _copy_records(_snapshot.records)
+
+
+def webapp_vault_generation() -> int:
+    """Changes when the webapp's workspace set changes; refreshes a stale snapshot."""
+    load_webapp_org_integrations()
+    with _snapshot.lock:
+        return _snapshot.generation
+
+
+def reset_webapp_vault_cache() -> None:
+    """Forget the snapshot (deterministic reset hook for tests)."""
+    global _snapshot
+    _snapshot = _Snapshot()
+
+
+def _copy_records(records: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    return None if records is None else [dict(record) for record in records]

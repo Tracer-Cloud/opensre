@@ -189,6 +189,9 @@ def _reset_account_integrations_cache() -> Iterator[None]:
         module = sys.modules.get("integrations.account_integrations")
         if module is not None:
             module.reset_account_integrations_cache()
+        vault = sys.modules.get("integrations.webapp_vault")
+        if vault is not None:
+            vault.reset_webapp_vault_cache()
 
     reset()
     try:

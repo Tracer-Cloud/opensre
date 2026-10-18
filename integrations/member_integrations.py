@@ -32,7 +32,7 @@ import httpx
 from config.account import resolve_account_token
 from config.constants.account import (
     OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS,
-    OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS,
+    OPENSRE_WEBAPP_VAULT_TTL_SECONDS,
 )
 from config.constants.billing import WEBAPP_URL_ENV
 from config.constants.github import GITHUB_PROVENANCE_PARAM
@@ -70,7 +70,7 @@ def load_member_records() -> list[dict[str, Any]] | None:
     now = time.monotonic()
     with _lock:
         cached = _cache.get(key)
-        if cached and now - cached[0] < OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS:
+        if cached and now - cached[0] < OPENSRE_WEBAPP_VAULT_TTL_SECONDS:
             return _copy(cached[1])
     fetched = _fetch(base_url=base_url, org=org, actor=actor, token=token)
     with _lock:

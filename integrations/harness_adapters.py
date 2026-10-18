@@ -23,7 +23,7 @@ def _fetch_webapp_vault() -> list[dict[str, Any]] | None:
     import integrations.member_integrations as member_integrations
     import integrations.webapp_vault as webapp_vault
 
-    records = webapp_vault.fetch_webapp_org_integrations()
+    records = webapp_vault.load_webapp_org_integrations()
     if records is None:
         return None
     from integrations.pipedream import merge_member_apps
@@ -56,11 +56,16 @@ def _fetch_account_integrations() -> list[dict[str, Any]]:
 def _account_integrations_generation() -> int:
     import integrations.account_integrations as account_integrations
     import integrations.member_integrations as member_integrations
+    import integrations.webapp_vault as webapp_vault
 
     generation = account_integrations.account_integrations_generation()
+    if webapp_vault.webapp_vault_configured():
+        # A connection added or removed in the app changes the workspace set,
+        # so every session re-resolves on its next turn: no restart needed.
+        generation = hash((generation, webapp_vault.webapp_vault_generation()))
     member = member_integrations.member_view_stamp()
     # Members of one Slack thread share a session; its resolved cache must not
-    # carry one member's GitHub grant into another member's turn.
+    # carry one member's grants into another member's turn.
     return generation if not member else hash((generation, member))
 
 
@@ -303,7 +308,6 @@ def _register_preferred_evidence_sources() -> None:
 
 
 def _register_cli_llm_adapters() -> None:
-
     from core.llm.types import CliLLMClient, ModelType
     from infrastructure.harness_providers import CliLlmAdapters
     from integrations.llm_cli.registry import get_cli_provider_registration

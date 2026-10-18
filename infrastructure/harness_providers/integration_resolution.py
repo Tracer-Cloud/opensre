@@ -337,7 +337,7 @@ def _resolve_integrations_request(
 def _resolve_from_webapp_vault_or_local() -> IntegrationResolutionResult:
     """Silo path: pull org vault from opensre-webapp, else account/local sources.
 
-    Other integrations retain vault → store → env precedence. The integrations
+    The live vault wins over the store and env per service. The integrations
     adapter preserves live app GitHub grants before classifying them.
     On a signed-in laptop (no fleet vault) the account's organization
     integrations fill the remote role instead, and there they win over the
@@ -358,10 +358,14 @@ def _resolve_from_webapp_vault_or_local() -> IntegrationResolutionResult:
 
     store_integrations = adapters.load_integrations()
     env_integrations = adapters.load_env_integrations()
+    # Later groups win per service, as on the other remote paths. The store on
+    # a silo is the boot-time copy of the org secret, so the live webapp view
+    # must override it: otherwise a connection changed in the app stays stale
+    # until the gateway restarts.
     integrations = adapters.merge_integrations_by_service(
-        remote,
-        store_integrations,
         env_integrations,
+        store_integrations,
+        remote,
     )
     resolved = adapters.classify_integrations(integrations)
     services = [service for service in resolved if not service.startswith("_")]
