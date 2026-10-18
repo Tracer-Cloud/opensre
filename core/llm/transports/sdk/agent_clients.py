@@ -23,6 +23,8 @@ from core.llm.shared.openai_chat_completions import (
     _RETRY_INITIAL_BACKOFF_SEC,
     _RETRY_MAX_ATTEMPTS,
     AGENT_CLIENT_TIMEOUT_SEC,
+    OPENAI_SDK_MAX_RETRIES,
+    is_exception_named,
 )
 from core.llm.shared.openai_chat_completions import (
     build_assistant_message as build_openai_compat_assistant_message,
@@ -633,6 +635,7 @@ class OpenAIAgentClient:
                 api_key=api_key,
                 base_url=self._base_url,
                 timeout=AGENT_CLIENT_TIMEOUT_SEC,
+                max_retries=OPENAI_SDK_MAX_RETRIES,
             )
 
     @property
@@ -801,6 +804,9 @@ class OpenAIAgentClient:
             except PermissionDeniedError as err:
                 raise RuntimeError(f"{self._provider_label} request forbidden: {err}") from err
             except Exception as err:
+                if is_exception_named(err, "APITimeoutError"):
+                    # Not retried: the request already ran upstream and was billed.
+                    raise RuntimeError(f"{self._provider_label} request timed out: {err}") from err
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
                 if attempt == _RETRY_MAX_ATTEMPTS - 1:

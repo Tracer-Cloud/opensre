@@ -40,6 +40,7 @@ from core.llm.shared.openai_chat_completions import (
     _RETRY_INITIAL_BACKOFF_SEC,
     _RETRY_MAX_ATTEMPTS,
     LLM_CLIENT_TIMEOUT_SEC,
+    OPENAI_SDK_MAX_RETRIES,
     normalize_messages_openai,
 )
 from core.llm.shared.structured_output import (
@@ -734,6 +735,7 @@ class OpenAILLMClient:
             api_key=api_key,
             base_url=self._base_url,
             timeout=LLM_CLIENT_TIMEOUT_SEC,
+            max_retries=OPENAI_SDK_MAX_RETRIES,
             default_headers=self._default_headers,
         )
 
@@ -886,12 +888,10 @@ class OpenAILLMClient:
             except GuardrailBlockedError:
                 raise
             except OpenAITimeoutError as err:
-                if attempt == max_attempts - 1:
-                    raise RuntimeError(
-                        _format_openai_connection_error(err, self._provider_label)
-                    ) from err
-                time.sleep(backoff_seconds)
-                backoff_seconds *= 2
+                # Not retried: the request already ran upstream and was billed.
+                raise RuntimeError(
+                    _format_openai_connection_error(err, self._provider_label)
+                ) from err
             except OpenAIConnectionError as err:
                 raise RuntimeError(
                     _format_openai_connection_error(err, self._provider_label)
@@ -997,12 +997,10 @@ class OpenAILLMClient:
             except OpenAITimeoutError as err:
                 if emitted:
                     raise
-                if attempt == max_attempts - 1:
-                    raise RuntimeError(
-                        _format_openai_connection_error(err, self._provider_label)
-                    ) from err
-                time.sleep(backoff_seconds)
-                backoff_seconds *= 2
+                # Not retried: the request already ran upstream and was billed.
+                raise RuntimeError(
+                    _format_openai_connection_error(err, self._provider_label)
+                ) from err
             except OpenAIConnectionError as err:
                 if emitted:
                     raise

@@ -11,7 +11,6 @@ import core.llm.transports.sdk.llm_clients as sdk_llm
 from core.llm import factory
 from core.llm.factory import reset_llm_clients
 from core.llm.shared import usage as usage_mod
-from core.llm.shared.openai_chat_completions import _RETRY_MAX_ATTEMPTS
 from core.llm.shared.structured_output import extract_json_payload
 
 
@@ -51,6 +50,7 @@ class _FakeOpenAI:
         api_key: str,
         base_url: str | None = None,
         timeout: float,
+        max_retries: int = 2,
         default_headers: dict[str, str] | None = None,
     ) -> None:
         _FakeOpenAI.last_api_key = api_key
@@ -59,6 +59,7 @@ class _FakeOpenAI:
         _FakeOpenAI.init_api_keys.append(api_key)
         self.base_url = base_url
         self.timeout = timeout
+        self.max_retries = max_retries
         self.default_headers = default_headers
         self.chat = _FakeOpenAIChat()
 
@@ -785,8 +786,10 @@ def _make_capturing_openai(
             api_key: str,
             base_url: str | None = None,
             timeout: float,
+            max_retries: int = 2,
             default_headers: dict[str, str] | None = None,
         ) -> None:
+            _ = max_retries
             self.api_key = api_key
             self.base_url = base_url
             self.timeout = timeout
@@ -1775,7 +1778,7 @@ def test_openai_invoke_stream_rate_limit_insufficient_quota_after_emit_is_wrappe
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OpenAILLMClient – APITimeoutError retry handling
+# OpenAILLMClient – a timeout is never retried
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -1786,63 +1789,25 @@ class _FakeTimeoutError(OpenAITimeoutError):
         super().__init__(request=None)  # type: ignore[arg-type]
 
 
-def test_openai_invoke_timeout_retries_and_succeeds(monkeypatch) -> None:
-    """APITimeoutError on the first attempt must be retried; success on the second."""
+def test_a_timed_out_request_is_sent_once_and_never_retried(monkeypatch) -> None:
+    """A slow compaction summary was re-sent 9 times, each one billed upstream.
+
+    A timed-out request already ran on the provider, so a retry pays again for
+    the same answer. Neither our loop nor the SDK (``max_retries``) may repeat it.
+    """
     attempts: list[int] = []
     sleeps: list[float] = []
-
-    class _Choice:
-        def __init__(self, content: str) -> None:
-            self.message = type("_Msg", (), {"content": content})()
-
-    class _Response:
-        def __init__(self, content: str) -> None:
-            self.choices = [_Choice(content)]
+    built: list[dict] = []
 
     class _Completions:
         def create(self, **_kwargs):
             attempts.append(1)
-            if len(attempts) == 1:
-                raise _FakeTimeoutError()
-            return _Response("ok")
-
-    class _Chat:
-        def __init__(self) -> None:
-            self.completions = _Completions()
-
-    class _OpenAI:
-        def __init__(self, **_kwargs) -> None:
-            self.chat = _Chat()
-
-    monkeypatch.setattr(
-        "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
-    )
-    monkeypatch.setattr(sdk_llm, "OpenAI", _OpenAI)
-    monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
-
-    client = sdk_llm.OpenAILLMClient(model="gpt-4", api_key_env="OPENAI_API_KEY")
-    result = client.invoke("hi")
-
-    assert result.content == "ok"
-    assert len(attempts) == 2
-    assert len(sleeps) == 1
-
-
-def test_openai_invoke_timeout_raises_timeout_message_after_exhaustion(monkeypatch) -> None:
-    """After all retries on APITimeoutError, raise a RuntimeError with a timeout message."""
-    sleeps: list[float] = []
-
-    class _Completions:
-        def create(self, **_kwargs):
             raise _FakeTimeoutError()
 
-    class _Chat:
-        def __init__(self) -> None:
-            self.completions = _Completions()
-
     class _OpenAI:
-        def __init__(self, **_kwargs) -> None:
-            self.chat = _Chat()
+        def __init__(self, **kwargs) -> None:
+            built.append(kwargs)
+            self.chat = type("_Chat", (), {"completions": _Completions()})()
 
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
@@ -1853,61 +1818,14 @@ def test_openai_invoke_timeout_raises_timeout_message_after_exhaustion(monkeypat
     client = sdk_llm.OpenAILLMClient(model="gpt-4", api_key_env="OPENAI_API_KEY")
     with pytest.raises(RuntimeError) as exc_info:
         client.invoke("hi")
+    with pytest.raises(RuntimeError):
+        list(client.invoke_stream("hi"))
 
     msg = str(exc_info.value).lower()
     assert "timed out" in msg or "timeout" in msg
-    assert "network connection" not in msg
-    assert len(sleeps) == _RETRY_MAX_ATTEMPTS - 1
-
-
-def test_openai_invoke_stream_timeout_retries_before_emit(monkeypatch) -> None:
-    """APITimeoutError before any chunk is emitted should be retried."""
-    attempts: list[int] = []
-    sleeps: list[float] = []
-
-    class _Delta:
-        def __init__(self, content: str) -> None:
-            self.content = content
-
-    class _Choice:
-        def __init__(self, content: str) -> None:
-            self.delta = _Delta(content)
-
-    class _Chunk:
-        def __init__(self, content: str) -> None:
-            self.choices = [_Choice(content)]
-
-    class _Completions:
-        def create(self, **_kwargs):
-            attempts.append(1)
-            if len(attempts) == 1:
-                raise _FakeTimeoutError()
-
-            def _stream():
-                yield _Chunk("hello")
-
-            return _stream()
-
-    class _Chat:
-        def __init__(self) -> None:
-            self.completions = _Completions()
-
-    class _OpenAI:
-        def __init__(self, **_kwargs) -> None:
-            self.chat = _Chat()
-
-    monkeypatch.setattr(
-        "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
-    )
-    monkeypatch.setattr(sdk_llm, "OpenAI", _OpenAI)
-    monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
-
-    client = sdk_llm.OpenAILLMClient(model="gpt-4", api_key_env="OPENAI_API_KEY")
-    chunks = list(client.invoke_stream("hi"))
-
-    assert chunks == ["hello"]
-    assert len(attempts) == 2
-    assert len(sleeps) == 1
+    assert attempts == [1, 1]
+    assert sleeps == []
+    assert {kwargs["max_retries"] for kwargs in built} == {0}
 
 
 def test_openai_invoke_stream_timeout_does_not_retry_after_emit(monkeypatch) -> None:

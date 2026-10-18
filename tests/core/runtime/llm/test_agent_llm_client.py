@@ -451,8 +451,10 @@ def test_openai_agent_client_rebuilds_when_the_account_token_rotates(
     keys: list[str] = []
 
     class TrackingOpenAI:
-        def __init__(self, *, api_key: str, base_url: str | None, timeout: float) -> None:
-            _ = base_url, timeout
+        def __init__(
+            self, *, api_key: str, base_url: str | None, timeout: float, max_retries: int
+        ) -> None:
+            _ = base_url, timeout, max_retries
             keys.append(api_key)
             self.chat = types.SimpleNamespace(
                 completions=types.SimpleNamespace(
