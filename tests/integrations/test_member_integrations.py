@@ -77,3 +77,70 @@ def test_a_member_without_a_personal_connection_keeps_the_workspace_default() ->
     """One member's personal grant never reaches another member's turn."""
     assert _token_for("U_VAIBHAV") == "tok-vaibhav-own"
     assert _token_for("U_SOMEONE_ELSE") == "tok-workspace-paul"
+
+
+def test_member_gmail_joins_the_workspace_apps_for_their_turn_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member's own Gmail is usable in their turn, marked personal, and nobody else's."""
+    workspace = {
+        "id": "pipedream:org_1",
+        "service": "pipedream",
+        "status": "active",
+        "name": "default",
+        "owner": {"kind": "organization", "id": "org_1"},
+        "credentials": {
+            "provider": "pipedream",
+            "access_mode": "webapp_proxy",
+            "apps": '[{"service":"notion","app_slug":"notion","account_id":"apn_ws"}]',
+        },
+    }
+    personal = {
+        "id": "pipedream:org_1:user_vaibhav",
+        "service": "pipedream",
+        "status": "active",
+        "name": "personal:user_vaibhav",
+        "owner": {"kind": "user", "id": "user_vaibhav"},
+        "credentials": {
+            "provider": "pipedream",
+            "access_mode": "webapp_proxy",
+            "scope": "personal",
+            "apps": (
+                '[{"service":"gmail","app_slug":"gmail","account_id":"apn_mail",'
+                '"account_name":"vaibhav@tracer.cloud"}]'
+            ),
+        },
+    }
+
+    def fake_get(_url: str, *, params: dict[str, str], **_kwargs: Any) -> _FakeResponse:
+        if params.get("actor") == "U_VAIBHAV":
+            return _FakeResponse(
+                {"success": True, "data": [workspace, personal], "viewerUserId": "user_vaibhav"}
+            )
+        if "actor" in params:
+            return _FakeResponse({"success": True, "data": [workspace], "viewerUserId": None})
+        return _FakeResponse({"success": True, "data": [workspace]})
+
+    monkeypatch.setattr("httpx.get", fake_get)
+
+    def apps_for(slack_user: str) -> list[dict[str, str]]:
+        member.reset_member_integrations_cache()
+        scope = StorageScope(principal=Principal.org("org_1"), actor=Actor(id=slack_user))
+        with bound_storage_scope(scope):
+            records = _fetch_webapp_vault()
+        assert records is not None
+        return classify_integrations(records)["pipedream"]["apps"]
+
+    assert apps_for("U_VAIBHAV") == [
+        {"service": "notion", "app_slug": "notion", "account_id": "apn_ws"},
+        {
+            "service": "gmail",
+            "app_slug": "gmail",
+            "account_id": "apn_mail",
+            "scope": "personal",
+            "account_name": "vaibhav@tracer.cloud",
+        },
+    ]
+    assert apps_for("U_SOMEONE_ELSE") == [
+        {"service": "notion", "app_slug": "notion", "account_id": "apn_ws"}
+    ]

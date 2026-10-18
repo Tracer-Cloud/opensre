@@ -1,4 +1,4 @@
-"""The acting member's GitHub connections for one hosted gateway turn.
+"""The acting member's personal connections for one hosted gateway turn.
 
 A hosted gateway's integration store holds the workspace's connections only.
 In the app a member's personal GitHub default outranks the workspace default;
@@ -6,7 +6,9 @@ In the app a member's personal GitHub default outranks the workspace default;
 same rule, but only if the turn can see the member's personal grant. This
 module asks the webapp for the view of the member taking the turn
 (``GET /api/agent/integrations?actor=<slack user id>``) and returns its GitHub
-records for that turn alone. Nothing is written to the shared store, so one
+and Pipedream records for that turn alone: their GitHub default, and the
+mail, drive and document accounts (Gmail, Google Drive, Outlook, ...) they
+connected for themself. Nothing is written to the shared store, so one
 member's grant never reaches another member's turn.
 
 It needs the gateway's own org-scoped token: the webapp refuses ``actor`` with
@@ -42,9 +44,10 @@ logger = logging.getLogger(__name__)
 
 _INTEGRATIONS_PATH = "/api/agent/integrations"
 _VIEWER_FIELD = "viewerUserId"
-#: Services taken from the member's view. GitHub is the one with personal
-#: connections and a per-owner default; the rest stay workspace-wide.
-_MEMBER_SERVICES = frozenset({"github"})
+#: Services taken from the member's view: GitHub (personal connections and a
+#: per-owner default) and Pipedream (the member's own Gmail, Drive, documents).
+#: The rest stay workspace-wide.
+_MEMBER_SERVICES = frozenset({"github", "pipedream"})
 
 _lock = threading.Lock()
 #: (organization, actor) -> (fetched_at, records or None for "no member view")
@@ -52,8 +55,8 @@ _cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]] | None]] = {}
 _UNREACHABLE = object()
 
 
-def load_member_github_records() -> list[dict[str, Any]] | None:
-    """The acting member's GitHub records, or ``None`` when there is no member view.
+def load_member_records() -> list[dict[str, Any]] | None:
+    """The acting member's GitHub and Pipedream records, or ``None`` without a member view.
 
     ``None`` outside a hosted organization turn, without the gateway token,
     when the webapp does not know the member, or when it cannot be reached and
@@ -83,7 +86,7 @@ def load_member_github_records() -> list[dict[str, Any]] | None:
 
 
 def member_view_stamp() -> int:
-    """Changes when the acting member or their GitHub view changes.
+    """Changes when the acting member or their personal view changes.
 
     Part of a session's integration-sources stamp, so a cache resolved for one
     member of a shared Slack thread is never reused for another.
@@ -91,7 +94,7 @@ def member_view_stamp() -> int:
     target = _target()
     if target is None:
         return 0
-    records = load_member_github_records()
+    records = load_member_records()
     canonical = json.dumps([target[2], records], sort_keys=True, default=str)
     return int.from_bytes(hashlib.sha256(canonical.encode("utf-8")).digest()[:8], "big")
 
@@ -121,7 +124,7 @@ def _target() -> tuple[str, str, str, str] | None:
 
 
 def _fetch(*, base_url: str, org: str, actor: str, token: str) -> object:
-    """The member's GitHub records, ``None`` without a member view, or ``_UNREACHABLE``."""
+    """The member's records, ``None`` without a member view, or ``_UNREACHABLE``."""
     from integrations.webapp_vault import records_from_vault_payload
 
     try:
@@ -158,7 +161,7 @@ def _fetch(*, base_url: str, org: str, actor: str, token: str) -> object:
 
 
 __all__ = [
-    "load_member_github_records",
+    "load_member_records",
     "member_view_stamp",
     "reset_member_integrations_cache",
 ]

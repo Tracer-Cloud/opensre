@@ -26,12 +26,17 @@ def _fetch_webapp_vault() -> list[dict[str, Any]] | None:
     records = webapp_vault.fetch_webapp_org_integrations()
     if records is None:
         return None
+    from integrations.pipedream import merge_member_apps
+
+    member = member_integrations.load_member_records()
+    if member is None:
+        return records
     # The member taking this turn sees the workspace's GitHub connections plus
     # their own, so their personal default outranks the workspace's.
-    member_github = member_integrations.load_member_github_records()
-    if member_github is None:
-        return records
-    return [record for record in records if record.get("service") != "github"] + member_github
+    member_github = [record for record in member if record.get("service") == "github"]
+    records = [record for record in records if record.get("service") != "github"] + member_github
+    # Their own Gmail, Drive and document accounts join the workspace's apps.
+    return merge_member_apps(records, member)
 
 
 def _fleet_vault_configured() -> bool:

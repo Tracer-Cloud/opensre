@@ -26,7 +26,7 @@ def _available(sources: dict[str, dict[str, Any]]) -> bool:
 
 
 def _connected_app_names(source: dict[str, Any]) -> str:
-    return ", ".join(f"{app.service} ({app.account_id})" for app in _apps_from_source(source))
+    return ", ".join(app.label() for app in _apps_from_source(source))
 
 
 def _extract(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -82,11 +82,12 @@ def _result_text(result: dict[str, object]) -> str:
     name="list_pipedream_tools",
     source="pipedream",
     description=(
-        "List tools for a workspace app connected through Pipedream. App ids "
-        "in CONNECTED INTEGRATIONS that have no native tool (such as linear) "
-        "are used through this one: pass that id as app. Pass account_id when "
-        "an app has multiple connected accounts. Use name_filter to narrow a "
-        "large catalog."
+        "List tools for an app connected through Pipedream: the workspace's "
+        "apps and the requester's own accounts (such as their gmail, "
+        "google_drive or google_sheets). App ids in CONNECTED INTEGRATIONS "
+        "that have no native tool (such as linear) are used through this one: "
+        "pass that id as app. Pass account_id when an app has multiple "
+        "connected accounts. Use name_filter to narrow a large catalog."
     ),
     use_cases=[
         "Discovering which Pipedream tools a connected app exposes",
@@ -140,6 +141,7 @@ def list_pipedream_tools(
         tools = list_proxy_tools(
             service=connected.service,
             account_id=connected.account_id,
+            personal=connected.personal,
         )
     except Exception as err:
         report_run_error(
@@ -168,6 +170,8 @@ def list_pipedream_tools(
             "available": True,
         }
     )
+    if connected.account_name:
+        listing["account_name"] = connected.account_name
     return listing
 
 
@@ -175,12 +179,15 @@ def list_pipedream_tools(
     name="call_pipedream_tool",
     source="pipedream",
     description=(
-        "Call a tool on a workspace app connected through Pipedream, including "
-        "apps named in CONNECTED INTEGRATIONS such as linear. Use "
-        "list_pipedream_tools first. Pass account_id when an app has multiple "
-        "connected accounts."
+        "Call a tool on an app connected through Pipedream, including apps "
+        "named in CONNECTED INTEGRATIONS such as linear and the requester's "
+        "own accounts such as gmail. Use list_pipedream_tools first. Pass "
+        "account_id when an app has multiple connected accounts."
     ),
-    use_cases=["Reading or updating a Pipedream-connected app"],
+    use_cases=[
+        "Reading or updating a Pipedream-connected app",
+        "Searching and reading the requester's own Gmail messages",
+    ],
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     input_schema={
         "type": "object",
@@ -236,6 +243,7 @@ def call_pipedream_tool(
             account_id=connected.account_id,
             tool_name=name,
             arguments=parsed,
+            personal=connected.personal,
         )
     except Exception as err:
         report_run_error(

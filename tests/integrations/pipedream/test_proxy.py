@@ -79,3 +79,35 @@ def test_signed_in_proxy_sends_account_token_without_project_credentials(
     assert request["headers"] == {"Authorization": "Bearer account-token"}
     assert "auth_token" not in request["json"]
     assert "project_id" not in request["json"]
+
+
+def test_personal_account_names_the_acting_member_with_the_gateway_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The webapp serves a member's Gmail only to their turn, and refuses actor with the fleet secret."""
+    from config.principal import Actor, Principal, StorageScope
+    from config.scope_context import bound_storage_scope
+
+    request: dict[str, Any] = {}
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example.test/")
+    monkeypatch.setattr(proxy, "webapp_shared_secret", lambda: "fleet-secret")
+    monkeypatch.setattr(proxy, "webapp_vault_configured", lambda: True)
+    monkeypatch.setattr(proxy, "organization_id", lambda: "org_silo")
+    monkeypatch.setattr(proxy, "resolve_account_token", lambda: "org-gateway-token")
+
+    def post(url: str, **kwargs: Any) -> httpx.Response:
+        request.update(url=url, **kwargs)
+        return _response({"success": True, "data": []})
+
+    monkeypatch.setattr(proxy.httpx, "post", post)
+
+    with pytest.raises(proxy.PipedreamProxyError):
+        proxy.list_proxy_tools(service="gmail", account_id="apn_mail", personal=True)
+
+    scope = StorageScope(principal=Principal.org("org_silo"), actor=Actor(id="U_VAIBHAV"))
+    with bound_storage_scope(scope):
+        proxy.list_proxy_tools(service="gmail", account_id="apn_mail", personal=True)
+
+    assert request["headers"] == {"Authorization": "Bearer org-gateway-token"}
+    assert request["json"]["actor"] == "U_VAIBHAV"
+    assert request["json"]["organizationId"] == "org_silo"
