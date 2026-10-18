@@ -95,6 +95,7 @@ class GatewayController:
         self._scheduler_reload_thread: threading.Thread | None = None
         self._credential_refresh_thread: threading.Thread | None = None
         self._webapp_loop_sync_thread: threading.Thread | None = None
+        self._webapp_loop_sync: Any = None
         self._credential_hydrator: GatewayCredentialHydrator | None = None
         self.components: dict[str, str] = {}
         self._slash_ports_factory = slash_ports_factory
@@ -316,6 +317,7 @@ class GatewayController:
         sync = webapp_loop_sync()
         if sync is None or self._webapp_loop_sync_thread is not None:
             return
+        self._webapp_loop_sync = sync
 
         def _watch() -> None:
             while not self._stopped.is_set():
@@ -372,6 +374,7 @@ class GatewayController:
             self.scheduler, self._scheduler_runners
         )
         self.scheduler = scheduler
+        self._report_loops_to_webapp(logger)
         if scheduler is None:
             self.components["scheduler"] = "idle (no scheduled tasks)"
             logger.info("Scheduler idle after reload (no enabled tasks)")
@@ -379,6 +382,20 @@ class GatewayController:
             self.components["scheduler"] = f"running {task_count} scheduled task(s)"
             logger.info("Scheduler reloaded with %d task(s)", task_count)
         self._publish_status(logger)
+
+    def _report_loops_to_webapp(self, logger: logging.Logger) -> None:
+        """Tell the web app's Tasks page about a loop change right away.
+
+        The task store changed (a loop created, edited or stopped here), so the
+        report is sent now instead of on the next slow poll. Unchanged lists
+        cost nothing: the sync compares before it calls the web app.
+        """
+        if self._webapp_loop_sync is None:
+            return
+        try:
+            self._webapp_loop_sync.report()
+        except Exception as exc:  # noqa: BLE001 - a failed report must not stop the reload
+            logger.warning("[gateway] web app task report failed (%s)", type(exc).__name__)
 
     def _publish_status(self, logger: logging.Logger) -> None:
         GATEWAY_PID_FILE.parent.mkdir(parents=True, exist_ok=True)

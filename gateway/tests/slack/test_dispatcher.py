@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from slack_sdk.errors import SlackApiError
 
 from config.constants.billing import ORGANIZATION_ID_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from config.constants.gateway import TURN_ERROR_MESSAGE
@@ -16,6 +17,7 @@ from config.principal import Principal, StorageScope
 from gateway.core.billing import turn_metering
 from gateway.core.billing.credits_client import CreditsOutcome
 from gateway.tests.billing.turn_metering_harness import metered_callback
+from gateway.transports.slack.client import SlackWebApiClient
 from gateway.transports.slack.processing.dispatcher import SlackTurnDispatcher
 from gateway.transports.slack.processing.events import SlackInboundMessage
 from gateway.transports.slack.processing.principal import slack_scope
@@ -701,3 +703,51 @@ def test_turn_is_refused_when_the_owning_principal_cannot_be_resolved(
     # Assert: the handler never ran and nothing was posted back to the channel.
     assert turns == []
     assert messaging.posts == []
+
+
+class _TokenCannotSeeChannel:
+    """A Slack Web client whose token belongs to a different app than the events."""
+
+    def __init__(self) -> None:
+        self.posts: list[dict[str, Any]] = []
+
+    def reactions_add(self, **_kwargs: Any) -> None:
+        raise SlackApiError(
+            message="channel_not_found", response={"ok": False, "error": "channel_not_found"}
+        )
+
+    def reactions_remove(self, **_kwargs: Any) -> None:
+        raise SlackApiError(
+            message="channel_not_found", response={"ok": False, "error": "channel_not_found"}
+        )
+
+    def chat_postMessage(self, **kwargs: Any) -> dict[str, Any]:
+        self.posts.append(kwargs)
+        raise SlackApiError(
+            message="channel_not_found", response={"ok": False, "error": "channel_not_found"}
+        )
+
+
+def test_a_turn_whose_reply_cannot_be_delivered_never_runs() -> None:
+    """DMs to the workspace's other OpenSRE app ran full turns whose replies all failed.
+
+    A 633-second turn billed the organization and posted nothing.
+    """
+    # Arrange
+    web = _TokenCannotSeeChannel()
+    resolver = _FakeSessionResolver()
+    turns: list[str] = []
+
+    # Act
+    SlackTurnDispatcher(
+        settings=_settings(["U1"]),
+        messaging=SlackWebApiClient(web),  # type: ignore[arg-type]
+        session_resolver=resolver,  # type: ignore[arg-type]
+        handler=lambda text, *_args: turns.append(text),
+        logger=logging.getLogger("test"),
+    ).dispatch(_inbound(channel_id="D0915KH"))
+
+    # Assert: no session load, no agent turn, nothing posted.
+    assert turns == []
+    assert resolver.calls == []
+    assert web.posts == []

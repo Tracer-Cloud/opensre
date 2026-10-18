@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from http import HTTPStatus
@@ -64,7 +65,7 @@ _REQUESTS_PATH = f"{_LOOPS_PATH}/requests"
 _TIMEOUT_SECONDS = 10.0
 _MAX_REPORTED_LOOPS = 500
 #: An unchanged loop list is sent again after this long (the contract's heartbeat).
-_HEARTBEAT_SECONDS = 5 * 60
+_HEARTBEAT_SECONDS = 30 * 60
 #: Actor for a request that names no member.
 _WEBAPP_ACTOR = "webapp"
 _UNEXPECTED_FAILURE = "The agent could not apply this change; try again in a minute."
@@ -94,6 +95,8 @@ class WebappLoopSync:
         self._ledger = ledger or RequestLedger()
         self._reported_digest = ""
         self._reported_at: float | None = None
+        # The poll thread and a scheduler reload may report at the same time.
+        self._lock = threading.Lock()
 
     def sync(self) -> bool:
         """Apply every pending request, then report the list; True when a loop changed.
@@ -102,6 +105,10 @@ class WebappLoopSync:
         and never applied again. One that cannot be decided safely (the ledger
         or the task store is unreadable) stays pending for the next pass.
         """
+        with self._lock:
+            return self._sync_locked()
+
+    def _sync_locked(self) -> bool:
         changed = False
         for request in self._pending_requests():
             request_id = str(request.get("id") or "")
@@ -122,11 +129,19 @@ class WebappLoopSync:
             self._acknowledge(request_id, outcome)
         if changed:
             request_scheduler_reload()
-        self.report(force=changed)
+        self._report_locked(force=changed)
         return changed
 
     def report(self, *, force: bool = False) -> None:
-        """Send the loop list when it changed, when forced, or when the heartbeat is due."""
+        """Send the loop list when it changed, when forced, or when the heartbeat is due.
+
+        Reading the local store is free; the web app is called only when the
+        list differs from the last report or the heartbeat is due.
+        """
+        with self._lock:
+            self._report_locked(force=force)
+
+    def _report_locked(self, *, force: bool) -> None:
         loops = self._loop_rows()
         if loops is None:
             # A partly unreadable store is not an empty one; never shrink the mirror on it.

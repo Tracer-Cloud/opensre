@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -25,6 +26,7 @@ from gateway.core.middleware.inbound_decision import apply_inbound_decision
 from gateway.core.middleware.terminal_outcome import TerminalOutcomeArbiter
 from gateway.core.storage import SessionResolver
 from gateway.transports.slack.client import (
+    SlackChannelNotFound,
     SlackMessagingClient,
     clear_turn_working,
     mark_turn_done,
@@ -108,11 +110,21 @@ class SlackTurnDispatcher:
                 # Acknowledge before the conversation lock and the session load:
                 # a reply in a busy thread, or a session read from the shared
                 # volume, would otherwise leave the user with no sign of life.
-                mark_turn_working(
-                    self._messaging,
-                    channel=inbound.channel_id,
-                    timestamp=inbound.ts,
-                )
+                try:
+                    mark_turn_working(
+                        self._messaging,
+                        channel=inbound.channel_id,
+                        timestamp=inbound.ts,
+                    )
+                except SlackChannelNotFound:
+                    # No reply could reach this conversation, so running the
+                    # turn would only spend the organization's credits.
+                    self._logger.error(
+                        "[slack-gateway] turn skipped: the bot token cannot see channel=%s; "
+                        "check that the installed Slack app matches this workspace's token",
+                        inbound.channel_id,
+                    )
+                    return
                 acknowledged = True
                 self._run_turn(inbound, scope)
         except Exception:
@@ -163,9 +175,10 @@ class SlackTurnDispatcher:
         )
         if decision is GateDecision.RATE_LIMITED:
             # Heard, but over the unprompted budget: acknowledge, don't reply.
-            self._messaging.add_reaction(
-                channel=inbound.channel_id, timestamp=inbound.ts, emoji="eyes"
-            )
+            with contextlib.suppress(SlackChannelNotFound):
+                self._messaging.add_reaction(
+                    channel=inbound.channel_id, timestamp=inbound.ts, emoji="eyes"
+                )
             self._logger.info(
                 "[slack-gateway] unprompted reply rate-limited channel=%s thread_ts=%s",
                 inbound.channel_id,

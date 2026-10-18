@@ -22,9 +22,11 @@ SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS = 2.0
 CREDENTIAL_REFRESH_INTERVAL_SECONDS = 60.0
 #: The refresh watcher only sleeps between checks; cap its join on shutdown.
 CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS = 2.0
-#: How often a hosted gateway pulls Tasks-page changes from the web app and
-#: reports its scheduled loops back (the contract asks for 30-60 seconds).
-WEBAPP_LOOP_SYNC_INTERVAL_SECONDS = 45.0
+#: How often a hosted gateway asks the web app for Tasks-page changes. Every
+#: tenant's gateway polls, so this is the fleet's idle request rate: five
+#: minutes keeps an idle fleet near zero calls. Loop changes made on the
+#: gateway itself are reported at once, without waiting for a poll.
+WEBAPP_LOOP_SYNC_INTERVAL_SECONDS = 300.0
 #: The loop-sync watcher sleeps between passes; cap its join on shutdown.
 WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS = 2.0
 DEFAULT_MAX_CONVERSATION_LOCKS = 1024
