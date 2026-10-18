@@ -113,6 +113,13 @@ def test_repl_sound_constants_are_re_exported() -> None:
     assert "SOUND_MIN_TURN_SECONDS" in constants.__all__
 
 
+def test_webapp_vault_ttl_is_public() -> None:
+    from config.constants import account
+
+    assert account.OPENSRE_WEBAPP_VAULT_TTL_SECONDS == 10.0
+    assert "OPENSRE_WEBAPP_VAULT_TTL_SECONDS" in account.__all__
+
+
 def test_remote_sync_endpoint_url_env_is_re_exported() -> None:
     """Verify REMOTE_SYNC_ENDPOINT_URL_ENV is re-exported from config.constants."""
     # Arrange / Act
