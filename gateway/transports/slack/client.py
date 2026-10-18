@@ -298,6 +298,11 @@ def mark_turn_working(client: SlackMessagingClient, *, channel: str, timestamp: 
     client.add_reaction(channel=channel, timestamp=timestamp, emoji=_WORKING_REACTION)
 
 
+def clear_turn_working(client: SlackMessagingClient, *, channel: str, timestamp: str) -> None:
+    """Drop the eyes reaction from a message that will not get a turn."""
+    client.remove_reaction(channel=channel, timestamp=timestamp, emoji=_WORKING_REACTION)
+
+
 def mark_turn_done(client: SlackMessagingClient, *, channel: str, timestamp: str) -> None:
     """Swap eyes → checkmark when the turn finishes."""
     client.remove_reaction(channel=channel, timestamp=timestamp, emoji=_WORKING_REACTION)

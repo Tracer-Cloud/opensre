@@ -26,6 +26,7 @@ from gateway.core.middleware.terminal_outcome import TerminalOutcomeArbiter
 from gateway.core.storage import SessionResolver
 from gateway.transports.slack.client import (
     SlackMessagingClient,
+    clear_turn_working,
     mark_turn_done,
     mark_turn_failed,
     mark_turn_working,
@@ -99,13 +100,29 @@ class SlackTurnDispatcher:
                 exc_info=True,
             )
             return
+        acknowledged = False
         try:
             with bound_storage_scope(scope):
                 if not self._admit(inbound, scope):
                     return
+                # Acknowledge before the conversation lock and the session load:
+                # a reply in a busy thread, or a session read from the shared
+                # volume, would otherwise leave the user with no sign of life.
+                mark_turn_working(
+                    self._messaging,
+                    channel=inbound.channel_id,
+                    timestamp=inbound.ts,
+                )
+                acknowledged = True
                 self._run_turn(inbound, scope)
         except Exception:
             self._logger.error("[slack-gateway] turn failed", exc_info=True)
+            if acknowledged:
+                mark_turn_failed(
+                    self._messaging,
+                    channel=inbound.channel_id,
+                    timestamp=inbound.ts,
+                )
 
     def _admit(self, inbound: SlackInboundMessage, scope: StorageScope) -> bool:
         """Layered gate: decide whether this inbound message runs a turn at all.
@@ -211,6 +228,11 @@ class SlackTurnDispatcher:
             )
             session = self._apply_inbound_decision(inbound, decision, scope)
             if session is None:
+                clear_turn_working(
+                    self._messaging,
+                    channel=inbound.channel_id,
+                    timestamp=inbound.ts,
+                )
                 return
 
             # Never log message bodies — audit hashes live in messaging_security.
@@ -238,11 +260,6 @@ class SlackTurnDispatcher:
                 "slack" in resolved,
             )
             turn_started = time.monotonic()
-            mark_turn_working(
-                self._messaging,
-                channel=inbound.channel_id,
-                timestamp=inbound.ts,
-            )
             # No approval prompts in Slack for now. Button waits stalled the
             # turn until the timeout and posted extra replies in the thread.
             output = SlackTurnOutput(
