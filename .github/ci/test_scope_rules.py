@@ -361,7 +361,11 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
-        "integrations/github/tools/security_fix/", ("tests/tools/test_github_security_fix.py",)
+        "integrations/github/tools/security_fix/",
+        (
+            "tests/tools/test_github_security_fix.py",
+            "tests/tools/test_github_security_fix_push.py",
+        ),
     ),
     PathRule(
         "integrations/github/tools/",

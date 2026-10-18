@@ -14,6 +14,10 @@ PROTECTED_BRANCH = "protected_branch"
 BRANCH_FAILED = "branch_failed"
 COMMIT_FAILED = "commit_failed"
 PUSH_FAILED = "push_failed"
+# The remote refused a base-branch push by rule (branch protection, required pull request).
+PUSH_RULE_REJECTED = "push_rule_rejected"
+# The remote base branch moved past the commit being pushed onto it.
+PUSH_STALE = "push_stale"
 MERGE_FAILED = "merge_failed"
 # Too many memory-heavy operations (clones, coding agents) were already running.
 HEAVY_WORK_BUSY = "heavy_work_busy"

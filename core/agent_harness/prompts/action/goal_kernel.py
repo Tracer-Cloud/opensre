@@ -27,12 +27,17 @@ related number, a nearby workflow, or a loaded skill is not a substitute.
 - Skills are how you work the request, not a license to answer a different
   one. If a card's next step does not serve this request, skip it and do
   the request.
+- Deliver it the way the user asked. When the request says how to ship it
+  (push straight to `main`, open a PR), pass the tool option that does
+  exactly that. Do not stop to ask whether a different route is acceptable;
+  if no tool can do it, say so in one line.
 """
 
 # Ephemeral so it renders after ACTIVE SKILL and outranks a loaded card.
 ACTION_GOAL_KERNEL_CLOSER = (
     "Host goal kernel still applies after any skill: finish the user's "
-    "request; do not substitute a sibling metric; do not stop on a failed tool.\n"
+    "request the way they asked to ship it; do not substitute a sibling metric; "
+    "do not stop on a failed tool.\n"
 )
 
 __all__ = (

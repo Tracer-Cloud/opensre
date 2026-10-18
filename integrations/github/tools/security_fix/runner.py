@@ -31,10 +31,22 @@ from integrations.github.tools.security_fix.errors import (
     GitHubSecurityFixError,
 )
 from integrations.github.tools.security_fix.local_fix import try_builtin_local_fix
-from integrations.github.tools.security_fix.ship import ShipResult, ship_security_fix
+from integrations.github.tools.security_fix.ship import (
+    ShipResult,
+    push_security_fix,
+    ship_security_fix,
+)
 
 SOURCE: Final = "github"
 _YES = {"y", "yes"}
+_SHIP_AS_PR_PROMPT = (
+    "Commit the changed files to a new opensre/github-security-fix-* branch, "
+    "push it, and open a GitHub pull request? [y/N] "
+)
+_SHIP_TO_DEFAULT_PROMPT = (
+    "Commit the changed files and push them straight to the default branch, "
+    "with no pull request? [y/N] "
+)
 
 
 def ensure_cli_ready() -> None:
@@ -79,8 +91,15 @@ def _repair_checkout(
     *,
     open_pr: bool,
     named_target: bool,
+    push_to_default_branch: bool = False,
 ) -> str | None:
-    """The checkout to repair in, or ``None`` for a run-owned clone of the repository."""
+    """The checkout to repair in, or ``None`` for a run-owned clone of the repository.
+
+    A direct push to the default branch always uses a fresh clone, so no local
+    commit or work-in-progress can reach that branch with the fix.
+    """
+    if push_to_default_branch:
+        return None
     if workspace:
         return workspace
     if open_pr and named_target:
@@ -120,8 +139,10 @@ def run_ship(
     *,
     baseline: Mapping[str, str] | None = None,
     github_token: str | None = None,
+    push_to_default_branch: bool = False,
 ) -> ShipResult:
-    return ship_security_fix(
+    ship = push_security_fix if push_to_default_branch else ship_security_fix
+    return ship(
         workspace,
         ctx=ctx,
         result=result,
@@ -160,6 +181,7 @@ def _base_output(ctx: SecurityAlertContext | None = None) -> dict[str, Any]:
         "diff_truncated": False,
         "error": None,
         "branch_name": None,
+        "commit_sha": None,
         "pr_url": None,
         "pr_number": None,
     }
@@ -183,13 +205,23 @@ def to_output(ctx: SecurityAlertContext, result: CodingResult) -> dict[str, Any]
 
 
 def with_ship_output(output: dict[str, Any], ship: ShipResult) -> dict[str, Any]:
+    fixed = (
+        f"Fixed {output.get('alert_type')} finding #{output.get('alert_number')} "
+        f"in {output.get('owner')}/{output.get('repo')}"
+    )
+    shipped = {**output, "branch_name": ship.branch_name}
+    if ship.pr is None:
+        return {
+            **shipped,
+            "commit_sha": ship.commit_sha,
+            "response_text": f"{fixed} and pushed {ship.commit_sha[:9]} to {ship.branch_name}.",
+        }
+    opened = (
+        f"{fixed}; {ship.pr_reason}, so opened PR" if ship.pr_reason else f"{fixed} and opened PR"
+    )
     return {
-        **output,
-        "response_text": (
-            f"Fixed {output.get('alert_type')} finding #{output.get('alert_number')} "
-            f"in {output.get('owner')}/{output.get('repo')} and opened PR: {ship.pr.url}"
-        ),
-        "branch_name": ship.branch_name,
+        **shipped,
+        "response_text": f"{opened}: {ship.pr.url}",
         "pr_url": ship.pr.url,
         "pr_number": ship.pr.number,
     }
@@ -254,6 +286,7 @@ def run_security_fix(
     quality_only: bool = False,
     github_token: str | None = None,
     confirm_fn: Callable[[str], str] | None = None,
+    push_to_default_branch: bool = False,
 ) -> dict[str, Any]:
     with ExitStack() as workspaces:
         ws = workspace or coding_workspace()
@@ -277,10 +310,11 @@ def run_security_fix(
                 ctx,
                 open_pr=open_pr,
                 named_target=bool((owner and repo) or alert_url),
+                push_to_default_branch=push_to_default_branch,
             )
             # Without a checkout of the repository here (a hosted gateway), the fix
             # is made in a run-owned clone deleted afterwards: only shipping keeps it.
-            open_pr = open_pr or checkout is None
+            ship = open_pr or push_to_default_branch or checkout is None
             ws = str(
                 workspaces.enter_context(
                     repair_workspace(
@@ -292,7 +326,7 @@ def run_security_fix(
                     )
                 )
             )
-            if open_pr:
+            if ship:
                 ensure_ship_ready(ws, github_token=github_token)
             require_confirmation(
                 confirm_fn,
@@ -304,24 +338,28 @@ def run_security_fix(
         except (GitHubSecurityFixError, GitCommandError) as exc:
             return error_output(exc.kind, exc.message, ctx)
 
-        baseline = pre_coding_changes(ws) if open_pr else {}
+        baseline = pre_coding_changes(ws) if ship else {}
         result = run_fix(ctx, ws, model)
         output = to_output(ctx, result)
-        if not (open_pr and result.success):
+        if not (ship and result.success):
             return output
 
         try:
             require_confirmation(
                 confirm_fn,
-                (
-                    "Commit the changed files to a new opensre/github-security-fix-* branch, "
-                    "push it, and open a GitHub pull request? [y/N] "
-                ),
+                _SHIP_TO_DEFAULT_PROMPT if push_to_default_branch else _SHIP_AS_PR_PROMPT,
             )
-            ship = run_ship(ctx, result, ws, baseline=baseline, github_token=github_token)
+            shipped = run_ship(
+                ctx,
+                result,
+                ws,
+                baseline=baseline,
+                github_token=github_token,
+                push_to_default_branch=push_to_default_branch,
+            )
         except GitHubSecurityFixError as exc:
             return ship_error_output(output, exc)
-        return with_ship_output(output, ship)
+        return with_ship_output(output, shipped)
 
 
 __all__ = [

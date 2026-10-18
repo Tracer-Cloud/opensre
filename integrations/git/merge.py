@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from integrations.git.errors import COMMIT_FAILED, MERGE_FAILED, GitCommandError
 from integrations.git.local import (
     _add_paths,
+    _content_commit_env,
     _opensre_author_env,
     _remote_https_base,
     _run_git,
@@ -261,6 +262,15 @@ def is_ancestor(workspace: str, ancestor: str, descendant: str) -> bool:
     return result.returncode == 0
 
 
+def rebase_onto(workspace: str, upstream: str) -> bool:
+    """Replay HEAD's own commits on top of *upstream*; False, with HEAD restored, on conflict."""
+    result = _run_git(workspace, "rebase", upstream, env=_content_commit_env(workspace))
+    if result.returncode == 0:
+        return True
+    _run_git(workspace, "rebase", "--abort")
+    return False
+
+
 def commit_parents(workspace: str, sha: str) -> list[str]:
     """Parent shas of *sha* in order (two for a merge commit)."""
     result = _run_git(workspace, "rev-list", "--parents", "-n", "1", sha)
@@ -308,6 +318,7 @@ __all__ = [
     "merge_in_progress",
     "merge_ref",
     "paths_with_conflict_markers",
+    "rebase_onto",
     "stage_paths",
     "take_side",
     "unmerged_paths",

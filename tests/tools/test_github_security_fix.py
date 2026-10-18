@@ -962,7 +962,7 @@ def test_ship_security_fix_uses_resolved_token_for_git_and_pr(
 
     ship = ship_security_fix("/ws", ctx=_CTX, result=coding_result)
 
-    assert ship.pr.url == "https://github.com/acme/app/pull/9"
+    assert ship.pr == PullRequest(url="https://github.com/acme/app/pull/9", number=9)
     assert ship.branch_name == "opensre/github-security-fix-dependabot-12-abc123"
     mock_default_branch.assert_called_once_with("/ws", token="env-token")
     mock_push_branch.assert_called_once_with(
@@ -1063,3 +1063,51 @@ def test_run_security_fix_without_a_checkout_clones_and_ships(
     assert mock_run_fix.call_args.args[1] == "/tmp/run-clone"
     mock_ship.assert_called_once()
     assert result["pr_url"] == "https://github.com/acme/app/pull/9"
+
+
+@patch(
+    "integrations.github.tools.security_fix.runner.run_ship",
+    return_value=ShipResult(branch_name="main", commit_sha="abc123def4567890"),
+)
+@patch("integrations.github.tools.security_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.security_fix.runner.run_fix")
+@patch("integrations.github.tools.security_fix.runner.ensure_ship_ready")
+@patch(
+    "integrations.github.tools.security_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/tmp/run-clone"),
+)
+@patch("integrations.github.tools.security_fix.runner._matching_checkout", return_value=True)
+@patch(
+    "integrations.github.tools.security_fix.runner.gather_security_alert_context",
+    return_value=_CTX,
+)
+def test_push_to_default_branch_never_pushes_from_a_local_checkout(
+    _gather: MagicMock,
+    _checkout: MagicMock,
+    mock_workspace: MagicMock,
+    _ship_ready: MagicMock,
+    mock_run_fix: MagicMock,
+    _pre: MagicMock,
+    mock_ship: MagicMock,
+) -> None:
+    """A checkout's unpushed commits or WIP must never reach main with the fix."""
+    mock_run_fix.return_value = CodingResult(
+        success=True, summary="Updated Django.", changed_files=["requirements.txt"], diff="diff"
+    )
+
+    result = run_security_fix(
+        owner="acme",
+        repo="app",
+        workspace="/my/checkout",
+        github_token="tok",
+        push_to_default_branch=True,
+    )
+
+    assert mock_workspace.call_args.kwargs["workspace"] is None
+    assert mock_run_fix.call_args.args[1] == "/tmp/run-clone"
+    assert mock_ship.call_args.kwargs["push_to_default_branch"] is True
+    assert result["commit_sha"] == "abc123def4567890"
+    assert result["pr_url"] is None
+    assert result["response_text"] == (
+        "Fixed dependabot finding #12 in acme/app and pushed abc123def to main."
+    )

@@ -1,11 +1,11 @@
 ---
 title: "Fix GitHub security and quality findings"
-description: "Use OpenSRE to remediate Dependabot, code-scanning, and Code Quality findings, then open a pull request."
+description: "Use OpenSRE to remediate Dependabot, code-scanning, and Code Quality findings, then open a pull request or push straight to the default branch."
 ---
 
 ## Overview
 
-OpenSRE can turn one GitHub security or quality finding into a local fix and, when approved, a pull request. It supports Dependabot alerts, code-scanning/CodeQL alerts, and GitHub Code Quality standard findings.
+OpenSRE can turn one GitHub security or quality finding into a local fix and, when approved, a pull request or a commit pushed straight to the default branch. It supports Dependabot alerts, code-scanning/CodeQL alerts, and GitHub Code Quality standard findings.
 
 <Warning>
 This is mutating. OpenSRE asks before editing files, then asks again before committing, pushing, and opening a PR.
@@ -42,6 +42,7 @@ export CODING_MODEL=...          # optional model override for that agent
 | Read code-scanning alerts | Code scanning alerts read |
 | Read Code Quality findings | `repo` on classic PATs, `public_repo` for public-only use, or Code quality read on fine-grained tokens |
 | Push a branch and open a PR | Contents write and pull requests write, or equivalent `repo` access |
+| Push straight to the default branch | Contents write, plus a bypass for any branch rule that requires pull requests (see Troubleshooting) |
 
 ## Tools
 
@@ -69,6 +70,7 @@ fix Dependabot alert 12 in this repo
 fix the code scanning errors on https://github.com/acme/app/security/code-scanning and raise a PR
 fix https://github.com/acme/app/security/code-scanning/7 and open a PR
 fix Code Quality finding 42 in Tracer-Cloud/opensre and raise a PR
+fix the code scanning issues in Tracer-Cloud/opensre and push straight to main
 ```
 
 OpenSRE asks before editing files, then asks again before committing, pushing, and opening the PR.
@@ -80,6 +82,7 @@ OpenSRE asks before editing files, then asks again before committing, pushing, a
 3. OpenSRE first tries a built-in local fixer when one safely applies.
 4. If no built-in fixer applies, OpenSRE runs the auto-detected (or pinned) coding agent CLI to implement the fix in the local checkout.
 5. If PR shipping is requested and approved, OpenSRE commits only the files the fix run changed, pushes an `opensre/github-security-fix-*` branch, and opens a PR into the default branch.
+6. If you ask to push straight to the default branch, OpenSRE makes the fix in a fresh clone of that branch, commits it there, and pushes it without force. If someone else pushed in the meantime, it rebases the fix once and pushes again; if the fix conflicts with their change, nothing is pushed.
 
 Secret-scanning alerts are not auto-fixed. Revoke or rotate the secret first, then plan repository cleanup separately.
 
@@ -103,10 +106,12 @@ There is no dedicated `integrations verify` target. Confirm readiness by:
 | **Dual confirmation prompts** | Edit confirm, then commit/push/PR confirm when `open_pr` is requested |
 | **Wrong repository** | Ensure checkout `origin` matches the finding repo, or name the repo in the prompt |
 | **No coding agent found** | Install/login Pi, Claude Code, Codex, or Cursor, or pin `CODING_AGENT` |
+| **Asked to push to `main` but got a PR** | A branch rule on `main` requires pull requests, so OpenSRE opened one instead. To allow direct pushes, add the OpenSRE GitHub app as a bypass actor on that rule (repository Settings → Rules), or merge the PR |
 | **A loop reports nothing to fix while findings stay open** | Each remaining finding already has an open OpenSRE fix PR: merge or close those PRs, or dismiss findings you will not fix |
 
 ## Security
 
 - Dual confirmation when shipping: edit first, then commit/push/PR.
 - PR branches use the `opensre/github-security-fix-*` prefix.
+- OpenSRE pushes to the default branch only when you ask it to, from a fresh clone so your local commits and uncommitted work never ride along, and never with force.
 - Store tokens in `.env` or your secret manager — not in source control.

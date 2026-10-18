@@ -56,7 +56,8 @@ _INPUT_SCHEMA: dict[str, Any] = {
             "description": (
                 "Explicit matching checkout. When omitted, a local-only fix uses CODING_WORKSPACE "
                 "or cwd if it is a checkout of the repository; otherwise the repository is "
-                "cloned and the fix is always shipped as a pull request."
+                "cloned and the fix is always shipped. Ignored with push_to_default_branch, "
+                "which always works in a fresh clone."
             ),
         },
         "model": {
@@ -66,6 +67,15 @@ _INPUT_SCHEMA: dict[str, Any] = {
         "open_pr": {
             "type": "boolean",
             "description": "True when the user asks to raise/open a pull request or ship the fix.",
+        },
+        "push_to_default_branch": {
+            "type": "boolean",
+            "description": (
+                "True only when the user explicitly asks to push or commit the fix straight "
+                "to the default branch (e.g. 'push straight to main') instead of opening a PR. "
+                "The fix is made in a fresh clone and never force-pushed; if a branch rule "
+                "requires a pull request, the tool opens one and says why."
+            ),
         },
         "quality_only": {
             "type": "boolean",
@@ -118,6 +128,8 @@ def _confirm_fn(context: Any) -> Any:
         "in the current repository with built-in local fixers and an auto-detected "
         "coding agent (Pi, Claude Code, Codex, or Cursor CLI). With open_pr=true, commit the "
         "fix to a fresh opensre/github-security-fix-* branch, push it, and open a PR. "
+        "With push_to_default_branch=true, commit the fix straight onto the default "
+        "branch and push it there instead. "
         "It refuses secret-scanning alerts because safe remediation requires "
         "credential rotation."
     ),
@@ -126,6 +138,7 @@ def _confirm_fn(context: Any) -> Any:
         "Fix a GitHub code-scanning alert or code-scanning page backlog in the local checkout",
         "Fix a GitHub Code Quality finding from the Security and quality page",
         "Fix GitHub security and quality issues and raise a PR",
+        "Fix GitHub code-scanning issues and push the fix straight to main",
         "Auto-select one open supported security or quality finding from a repo and propose a PR",
     ],
     anti_examples=[
@@ -152,6 +165,7 @@ def fix_github_security_alert(
     model: str | None = None,
     open_pr: bool = False,
     quality_only: bool = False,
+    push_to_default_branch: bool = False,
     github_token: str | None = None,
     context: Any = None,
     **_kwargs: Any,
@@ -169,6 +183,7 @@ def fix_github_security_alert(
         quality_only=quality_only,
         github_token=github_token,
         confirm_fn=_confirm_fn(context),
+        push_to_default_branch=push_to_default_branch,
     )
 
     return attach_repair_outcome(

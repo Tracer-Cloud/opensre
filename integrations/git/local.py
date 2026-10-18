@@ -4,8 +4,8 @@ Every call shells out to the ``git`` binary in the target *workspace* with an
 explicit argument list (never ``shell=True``) and a bounded timeout, and raises a
 neutral :class:`GitCommandError` on failure. The push path is deliberately narrow:
 it refuses to create or push a *protected* branch (``main``/``master``/the repo
-default) and never uses ``--force`` — the structural half of a "never push to the
-base branch" guarantee.
+default) and never uses ``--force``. ``push_base_branch`` is the one exception,
+kept separate so a direct push to the base branch is always an explicit call.
 
 Vendor-neutral: callers pass a token for HTTPS auth, but nothing here is
 GitHub-specific.
@@ -36,6 +36,8 @@ from integrations.git.errors import (
     NOT_A_GIT_REPO,
     PROTECTED_BRANCH,
     PUSH_FAILED,
+    PUSH_RULE_REJECTED,
+    PUSH_STALE,
     GitCommandError,
 )
 
@@ -600,21 +602,14 @@ def push_branch(
     remote: str = "origin",
     base_default: str = "",
     token: str | None = None,
-    allow_protected: bool = False,
 ) -> None:
     """Push *branch* to *remote* with upstream tracking. Never force, never base branch.
 
     When *token* is given and *remote* is an HTTPS URL, the push authenticates with
     that token (via an ephemeral, host-scoped HTTP header) instead of the machine's
     cached git credentials. Explicit token authentication rejects other transports.
-
-    ``allow_protected`` skips the protected-branch guard. Reserve it for
-    approval-gated flows where the user explicitly requested a direct push to
-    that branch (e.g. a branch-targeted CI fix on ``main``); never pass it for
-    ordinary feature-branch shipping.
     """
-    if not allow_protected:
-        assert_not_protected(branch, protected_extra=base_default)
+    assert_not_protected(branch, protected_extra=base_default)
     base = _remote_https_base(workspace, remote, push=True)
     env = _token_auth_env(token, base) if token else None
     result = _run_git(workspace, "push", "--set-upstream", remote, branch, env=env)
@@ -622,3 +617,45 @@ def push_branch(
         raise GitCommandError(
             PUSH_FAILED, push_failure_message(f"{remote}/{branch}", result.stderr, base)
         )
+
+
+#: Refusals that come from a branch rule on the remote rather than from the credential.
+_PUSH_RULE_MARKERS = (
+    "protected branch",
+    "gh006",
+    "gh013",
+    "rule violation",
+    "through a pull request",
+    "through pull requests",
+)
+_PUSH_STALE_MARKERS = ("fetch first", "non-fast-forward")
+
+
+def push_base_branch(
+    workspace: str, branch: str, *, remote: str = "origin", token: str | None = None
+) -> None:
+    """Push the checked-out base *branch* to the same branch on *remote*. Never force.
+
+    The only push allowed to land on a protected branch: reserve it for a user's
+    explicit request to skip the pull request. Raises ``PUSH_RULE_REJECTED`` when a
+    remote branch rule refuses the push and ``PUSH_STALE`` when the remote branch
+    moved past the local one.
+    """
+    name = branch.strip()
+    if not name or current_branch(workspace) != name:
+        raise GitCommandError(
+            BRANCH_FAILED, f"Refusing to push '{name or '(empty)'}': it is not checked out."
+        )
+    base = _remote_https_base(workspace, remote, push=True)
+    env = _token_auth_env(token, base) if token else None
+    ref = f"refs/heads/{name}"
+    result = _run_git(workspace, "push", remote, f"{ref}:{ref}", env=env)
+    if result.returncode == 0:
+        return
+    detail = result.stderr.lower()
+    kind = PUSH_FAILED
+    if any(marker in detail for marker in _PUSH_RULE_MARKERS):
+        kind = PUSH_RULE_REJECTED
+    elif any(marker in detail for marker in _PUSH_STALE_MARKERS):
+        kind = PUSH_STALE
+    raise GitCommandError(kind, push_failure_message(f"{remote}/{name}", result.stderr, base))

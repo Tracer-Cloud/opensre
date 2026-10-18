@@ -1279,7 +1279,6 @@ def test_push_ci_fix_branch_mode_pushes_repair_branch_without_protected_opt_in()
         )
 
     assert result.branch_name == "opensre/ci-fix-main-ea14998-12345678"
-    assert push.call_args.kwargs["allow_protected"] is False
     assert push.call_args.kwargs["base_default"] == ""
     assert commit.call_args.args[2].splitlines()[0].startswith("fix: repair CI for main - ")
 

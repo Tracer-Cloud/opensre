@@ -143,7 +143,6 @@ def push_ci_fix(
             ctx.head_branch,
             base_default="" if ctx.is_branch_target else ctx.base_branch,
             token=token or None,
-            allow_protected=False,
         )
     except GitCommandError as exc:
         raise GitHubCiFixError(exc.kind, exc.message, branch_name=ctx.head_branch) from exc

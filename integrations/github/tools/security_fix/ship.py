@@ -1,4 +1,4 @@
-"""Ship a GitHub security fix as branch, commit, push, and pull request."""
+"""Ship a GitHub security fix as a pull request, or straight onto the default branch."""
 
 from __future__ import annotations
 
@@ -8,6 +8,10 @@ from dataclasses import dataclass
 
 from integrations.coding_agent import CodingResult
 from integrations.git import (
+    BRANCH_FAILED,
+    MERGE_FAILED,
+    PUSH_RULE_REJECTED,
+    PUSH_STALE,
     GitCommandError,
     changed_paths,
     checkout_branch,
@@ -16,8 +20,12 @@ from integrations.git import (
     current_branch,
     default_branch,
     ensure_git_repo,
+    fetch_remote_branch,
     file_fingerprints,
+    head_sha,
+    push_base_branch,
     push_branch,
+    rebase_onto,
     short_head,
 )
 from integrations.github.client import resolve_github_token
@@ -47,10 +55,14 @@ _SUBJECT_SKIP_LABELS = frozenset(
 
 @dataclass(frozen=True)
 class ShipResult:
-    """Outcome of shipping a GitHub security fix."""
+    """Outcome of shipping a GitHub security fix: a PR, or a commit pushed to the base branch."""
 
     branch_name: str
-    pr: PullRequest
+    pr: PullRequest | None = None
+    #: Commit pushed straight to ``branch_name`` when no PR was opened.
+    commit_sha: str = ""
+    #: Why a requested direct push shipped as a PR instead; empty otherwise.
+    pr_reason: str = ""
 
 
 def build_branch_name(workspace: str, ctx: SecurityAlertContext) -> str:
@@ -105,59 +117,60 @@ def _pr_body(ctx: SecurityAlertContext, result: CodingResult, changed: Sequence[
     return "\n".join(lines)
 
 
-def ship_security_fix(
+def _changed_by_fix(workspace: str, baseline: Mapping[str, str] | None) -> list[str]:
+    """Paths the fix run changed, leaving out work-in-progress that was dirty before it."""
+    pre_existing = dict(baseline or {})
+    current = changed_paths(workspace)
+    current_fingerprints = file_fingerprints(workspace, current)
+    changed = [
+        path
+        for path in current
+        if path not in pre_existing or current_fingerprints.get(path, "") != pre_existing[path]
+    ]
+    if not changed:
+        reason = (
+            "the fix run made no changes to the repository"
+            if not current
+            else "the fix run left no new changes"
+        )
+        raise GitHubSecurityFixError(ERR_NO_CHANGES, f"Nothing to commit - {reason}.")
+    return changed
+
+
+def _base_branch(workspace: str, token: str) -> str:
+    base = default_branch(workspace, token=token or None)
+    if not base:
+        raise GitHubSecurityFixError(
+            ERR_PR_FAILED, "Could not determine the repository's default branch."
+        )
+    return base
+
+
+def _commit_fix(
+    workspace: str, ctx: SecurityAlertContext, result: CodingResult, changed: Sequence[str]
+) -> None:
+    commit_paths(
+        workspace,
+        changed,
+        _commit_message(ctx, result.summary),
+        analytics_workflow="github_security_fix",
+    )
+
+
+def _push_and_open_pr(
     workspace: str,
     *,
+    branch: str,
+    base: str,
     ctx: SecurityAlertContext,
     result: CodingResult,
-    github_token: str | None = None,
-    baseline: Mapping[str, str] | None = None,
-) -> ShipResult:
-    """Commit the security fix to a fresh branch, push it, and open a PR."""
-    token = resolve_github_token(github_token)
+    changed: Sequence[str],
+    token: str,
+) -> PullRequest:
+    """Push the committed fix *branch* and open its PR into *base*."""
     try:
-        ensure_git_repo(workspace)
-        pre_existing = dict(baseline or {})
-        current = changed_paths(workspace)
-        current_fingerprints = file_fingerprints(workspace, current)
-        changed = [
-            path
-            for path in current
-            if path not in pre_existing or current_fingerprints.get(path, "") != pre_existing[path]
-        ]
-        if not changed:
-            reason = (
-                "the fix run made no changes to the repository"
-                if not current
-                else "the fix run left no new changes"
-            )
-            raise GitHubSecurityFixError(
-                ERR_NO_CHANGES,
-                f"Nothing to commit - {reason}; nothing to open a PR for.",
-            )
-
-        base = default_branch(workspace, token=token or None)
-        if not base:
-            raise GitHubSecurityFixError(
-                ERR_PR_FAILED,
-                "Could not determine the base branch to open the PR against.",
-            )
-        branch = build_branch_name(workspace, ctx)
-        if current_branch(workspace) != branch:
-            checkout_branch(workspace, base)
-            create_branch(workspace, branch, base_default=base)
-    except GitCommandError as exc:
-        raise GitHubSecurityFixError(exc.kind, exc.message) from exc
-
-    try:
-        commit_paths(
-            workspace,
-            changed,
-            _commit_message(ctx, result.summary),
-            analytics_workflow="github_security_fix",
-        )
         push_branch(workspace, branch, base_default=base, token=token or None)
-        pr = open_pull_request(
+        return open_pull_request(
             workspace,
             head_branch=branch,
             base_branch=base,
@@ -170,7 +183,112 @@ def ship_security_fix(
     except GitHubPullRequestError as exc:
         kind = ERR_GITHUB_TOKEN if exc.kind == GH_PR_ERR_GITHUB_TOKEN else ERR_PR_FAILED
         raise GitHubSecurityFixError(kind, exc.message, branch_name=branch) from exc
+
+
+def ship_security_fix(
+    workspace: str,
+    *,
+    ctx: SecurityAlertContext,
+    result: CodingResult,
+    github_token: str | None = None,
+    baseline: Mapping[str, str] | None = None,
+) -> ShipResult:
+    """Commit the security fix to a fresh branch, push it, and open a PR."""
+    token = resolve_github_token(github_token)
+    try:
+        ensure_git_repo(workspace)
+        changed = _changed_by_fix(workspace, baseline)
+        base = _base_branch(workspace, token)
+        branch = build_branch_name(workspace, ctx)
+        if current_branch(workspace) != branch:
+            checkout_branch(workspace, base)
+            create_branch(workspace, branch, base_default=base)
+    except GitCommandError as exc:
+        raise GitHubSecurityFixError(exc.kind, exc.message) from exc
+
+    try:
+        _commit_fix(workspace, ctx, result, changed)
+    except GitCommandError as exc:
+        raise GitHubSecurityFixError(exc.kind, exc.message, branch_name=branch) from exc
+    pr = _push_and_open_pr(
+        workspace, branch=branch, base=base, ctx=ctx, result=result, changed=changed, token=token
+    )
     return ShipResult(branch_name=branch, pr=pr)
 
 
-__all__ = ["ShipResult", "build_branch_name", "ship_security_fix"]
+def _pushed(workspace: str, base: str, token: str) -> bool:
+    """Push the checked-out *base*; False when a remote branch rule refuses it."""
+    try:
+        push_base_branch(workspace, base, token=token or None)
+    except GitCommandError as exc:
+        if exc.kind == PUSH_RULE_REJECTED:
+            return False
+        raise
+    return True
+
+
+def _push_to_base(workspace: str, base: str, token: str) -> bool:
+    """Push the fix commit onto *base*, rebasing once if it moved; False when a rule refuses it."""
+    try:
+        return _pushed(workspace, base, token)
+    except GitCommandError as exc:
+        if exc.kind != PUSH_STALE:
+            raise
+    fetch_remote_branch(workspace, base, token=token or None)
+    if not rebase_onto(workspace, f"origin/{base}"):
+        raise GitCommandError(
+            MERGE_FAILED,
+            f"'{base}' moved while the fix ran and the fix conflicts with the new commits; "
+            "nothing was pushed.",
+        )
+    return _pushed(workspace, base, token)
+
+
+def push_security_fix(
+    workspace: str,
+    *,
+    ctx: SecurityAlertContext,
+    result: CodingResult,
+    github_token: str | None = None,
+    baseline: Mapping[str, str] | None = None,
+) -> ShipResult:
+    """Commit the fix on the checked-out default branch and push it there. Never force.
+
+    The workspace must be a fresh clone of the default branch so no other local
+    commit rides along. A remote branch rule that only accepts pull requests turns
+    the commit into a PR instead, and ``pr_reason`` says why.
+    """
+    token = resolve_github_token(github_token)
+    try:
+        ensure_git_repo(workspace)
+        changed = _changed_by_fix(workspace, baseline)
+        base = _base_branch(workspace, token)
+        checked_out = current_branch(workspace)
+        if checked_out != base:
+            raise GitHubSecurityFixError(
+                BRANCH_FAILED,
+                f"The fix checkout is on '{checked_out or 'a detached HEAD'}', not the "
+                f"default branch '{base}'; nothing was pushed.",
+            )
+        _commit_fix(workspace, ctx, result, changed)
+        if _push_to_base(workspace, base, token):
+            return ShipResult(branch_name=base, commit_sha=head_sha(workspace))
+        branch = build_branch_name(workspace, ctx)
+        create_branch(workspace, branch, base_default=base)
+    except GitCommandError as exc:
+        raise GitHubSecurityFixError(exc.kind, exc.message) from exc
+
+    pr = _push_and_open_pr(
+        workspace, branch=branch, base=base, ctx=ctx, result=result, changed=changed, token=token
+    )
+    return ShipResult(
+        branch_name=branch,
+        pr=pr,
+        pr_reason=(
+            f"GitHub refused the direct push to {base} because a branch rule "
+            "requires a pull request"
+        ),
+    )
+
+
+__all__ = ["ShipResult", "build_branch_name", "push_security_fix", "ship_security_fix"]

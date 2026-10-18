@@ -38,6 +38,7 @@ def test_goal_kernel_is_always_in_the_cached_prefix() -> None:
     assert "cannot override" in kernel.content
     assert "stargazers_count" in kernel.content
     assert "forks_count" in kernel.content
+    assert "Deliver it the way the user asked" in kernel.content
     cached = envelope.render_cached()
     assert ACTION_GOAL_KERNEL in cached
     assert ACTION_GOAL_KERNEL_CLOSER in envelope.render_ephemeral()
