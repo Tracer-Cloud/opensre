@@ -38,6 +38,53 @@ def test_bullets_become_slack_dots() -> None:
 
 def test_links_become_slack_link_syntax() -> None:
     assert convert("see [docs](https://x.com/y)") == "see <https://x.com/y|docs>"
+    assert convert("[docs](http://x.com/y)") == "<http://x.com/y|docs>"
+
+
+def test_link_destinations_preserve_balanced_parentheses() -> None:
+    source = "[runbook](https://example.com/runbooks/Database_(primary))"
+    assert convert(source) == "<https://example.com/runbooks/Database_(primary)|runbook>"
+    nested = "[nested](https://example.com/a(b(c(d)e)f)g)"
+    assert convert(nested) == "<https://example.com/a(b(c(d)e)f)g|nested>"
+
+
+def test_parenthesized_links_do_not_consume_adjacent_links_or_punctuation() -> None:
+    source = "([one](https://x.com/a(b)))[two](http://x.com/c(d))."
+    assert convert(source) == "(<https://x.com/a(b)|one>)<http://x.com/c(d)|two>."
+
+
+def test_link_like_destination_text_stays_in_the_outer_url() -> None:
+    source = "[outer](https://example.com/[inner](https://target.test))"
+    assert convert(source) == "<https://example.com/[inner](https://target.test)|outer>"
+
+
+def test_link_destination_with_many_open_brackets() -> None:
+    url = "https://example.com/" + "[" * 16384
+    assert convert(f"[outer]({url})") == f"<{url}|outer>"
+
+
+def test_unclosed_link_destinations_stay_literal() -> None:
+    for source in (
+        "[bad](https://x.com/a(b)",
+        "[bad](https://x.com/a(b(c))",
+        "[bad](https://x.com/a(b) trailing)",
+        "[bad](https://x.com/a(b)\ntrailing)",
+    ):
+        assert convert(source) == source
+
+
+def test_unclosed_link_does_not_swallow_a_following_link() -> None:
+    source = "[bad](https://x.com/a(b)[good](https://x.com/c)"
+    assert convert(source) == "[bad](https://x.com/a(b)<https://x.com/c|good>"
+
+
+def test_parenthesized_links_in_code_stay_literal() -> None:
+    link = "[runbook](https://example.com/Database_(primary))"
+    source = f"`{link}`\n```markdown\n{link}\n```\n{link}"
+    expected = (
+        f"`{link}`\n```markdown\n{link}\n```\n<https://example.com/Database_(primary)|runbook>"
+    )
+    assert convert(source) == expected
 
 
 def test_code_spans_are_preserved_verbatim() -> None:

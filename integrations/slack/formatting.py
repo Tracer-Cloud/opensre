@@ -17,7 +17,7 @@ _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 # (``__init__.py``) — Slack would otherwise bold ``init`` and drop the underscores.
 _ASTERISK_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _UNDERSCORE_BOLD_RE = re.compile(r"(?<![\w.])__(?!_)(.+?)__(?![\w.])")
-_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://)")
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 _BULLET_RE = re.compile(r"^(\s*)[-*]\s+")
 
@@ -60,6 +60,37 @@ def _slack_bold(inner: str) -> str:
     return f"*{text}*" if text else ""
 
 
+def _convert_links(text: str) -> str:
+    """Convert HTTP(S) links with balanced destination parentheses."""
+    parts: list[str] = []
+    cursor = search_from = 0
+    while match := _LINK_RE.search(text, search_from):
+        end = match.end()
+        depth = 0
+        while end < len(text):
+            char = text[end]
+            if char.isspace():
+                break
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+            end += 1
+        if end < len(text) and text[end] == ")" and depth == 0 and end > match.end():
+            parts.append(text[cursor : match.start()])
+            url = text[match.start(2) : end]
+            parts.append(f"<{url}|{match.group(1)}>")
+            cursor = end + 1
+            search_from = cursor
+        else:
+            # Only recover a following link once this destination has failed.
+            search_from = match.end()
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
 def markdown_to_slack_mrkdwn(text: str) -> str:
     """Return ``text`` with common Markdown rewritten as Slack mrkdwn."""
     if not text:
@@ -70,7 +101,7 @@ def markdown_to_slack_mrkdwn(text: str) -> str:
     protected, stash = _protect(tighten_markdown_emphasis(text))
 
     # Links: [label](url) -> <url|label>
-    protected = _LINK_RE.sub(lambda m: f"<{m.group(2)}|{m.group(1)}>", protected)
+    protected = _convert_links(protected)
     # Headings and bullets before bold, so ``*bold*`` is never parsed as a list.
     protected = "\n".join(_convert_line(line) for line in protected.split("\n"))
     protected = _ASTERISK_BOLD_RE.sub(lambda m: _slack_bold(m.group(1)), protected)
