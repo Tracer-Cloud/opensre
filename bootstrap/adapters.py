@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from infrastructure.scheduling.scheduler.delivery_bundle import ScheduledDeliveryAdapters
     from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+    from integrations.webapp_scheduled_loops import WebappLoopSync
 
 
 def install_harness_adapters() -> None:
@@ -89,6 +90,17 @@ def install_scheduled_delivery_adapters() -> None:
     scheduled_delivery_adapters().install()
 
 
+def webapp_loop_sync() -> WebappLoopSync | None:
+    """The hosted gateway's Tasks-page sync, or ``None`` off a hosted organization.
+
+    Built here so the gateway, which hosts the scheduler, never imports
+    ``integrations`` itself.
+    """
+    from integrations.webapp_scheduled_loops import webapp_loop_sync_from_environment
+
+    return webapp_loop_sync_from_environment()
+
+
 def install_cli_auth_checker() -> None:
     """Bind the integrations-backed CLI auth checker config reports status through.
 
@@ -110,5 +122,6 @@ __all__ = [
     "scheduler_runners",
     "scheduled_delivery_adapters",
     "install_scheduled_delivery_adapters",
+    "webapp_loop_sync",
     "install_cli_auth_checker",
 ]

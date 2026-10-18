@@ -43,6 +43,8 @@ LOOP_TEMPLATE_PARAM = "loop_template"
 """Name of the shipped loop template whose current text each tick runs."""
 
 LOOP_TIME_PARAM = "loop_time"
+LOOP_WEBAPP_REQUEST_ID_PARAM = "webapp_request_id"
+"""The webapp Tasks-page request a loop was created from; its idempotency key."""
 
 __all__ = [
     "LOOP_CHANNELS_PARAM",
@@ -69,4 +71,5 @@ __all__ = [
     "LOOP_TELEGRAM_CHAT_ID_PARAM",
     "LOOP_TEMPLATE_PARAM",
     "LOOP_TIME_PARAM",
+    "LOOP_WEBAPP_REQUEST_ID_PARAM",
 ]

@@ -28,6 +28,8 @@ from config.constants.gateway import (
     CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_STOP_BUDGET_SHARE,
+    WEBAPP_LOOP_SYNC_INTERVAL_SECONDS,
+    WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS,
 )
 from core.agent_harness.ports import SlashPortsFactory
 from gateway import startup as gateway_startup
@@ -92,6 +94,7 @@ class GatewayController:
         self._scheduler_runners: Any = None
         self._scheduler_reload_thread: threading.Thread | None = None
         self._credential_refresh_thread: threading.Thread | None = None
+        self._webapp_loop_sync_thread: threading.Thread | None = None
         self._credential_hydrator: GatewayCredentialHydrator | None = None
         self.components: dict[str, str] = {}
         self._slash_ports_factory = slash_ports_factory
@@ -189,6 +192,7 @@ class GatewayController:
             self.scheduler = scheduler
             self.components["scheduler"] = f"running {task_count} scheduled task(s)"
         self._start_scheduler_reload_watcher(logger)
+        self._start_webapp_loop_sync(logger)
 
     def stop(self, *, timeout: float | None = None) -> bool:
         """Shut down all components and return whether the chat workers stopped.
@@ -210,6 +214,13 @@ class GatewayController:
             )
             budget.consume(started)
             self._scheduler_reload_thread = None
+        if self._webapp_loop_sync_thread is not None:
+            started = budget.mark()
+            self._webapp_loop_sync_thread.join(
+                timeout=budget.take(WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS)
+            )
+            budget.consume(started)
+            self._webapp_loop_sync_thread = None
         if self._credential_refresh_thread is not None:
             started = budget.mark()
             self._credential_refresh_thread.join(
@@ -293,6 +304,32 @@ class GatewayController:
             daemon=True,
         )
         self._scheduler_reload_thread.start()
+
+    def _start_webapp_loop_sync(self, logger: logging.Logger) -> None:
+        """Apply Tasks-page changes from the web app and report this gateway's loops.
+
+        Only a hosted organization's gateway has the web app to sync with; the
+        loops it changes are picked up by the reload watcher like any other.
+        """
+        from bootstrap.adapters import webapp_loop_sync
+
+        sync = webapp_loop_sync()
+        if sync is None or self._webapp_loop_sync_thread is not None:
+            return
+
+        def _watch() -> None:
+            while not self._stopped.is_set():
+                try:
+                    sync.sync()
+                except Exception as exc:  # noqa: BLE001 - keep syncing after one bad pass
+                    logger.warning("[gateway] web app task sync failed (%s)", type(exc).__name__)
+                self._stopped.wait(WEBAPP_LOOP_SYNC_INTERVAL_SECONDS)
+
+        self.components["webapp_tasks"] = "syncing with the web app"
+        self._webapp_loop_sync_thread = threading.Thread(
+            target=_watch, name="opensre-webapp-loop-sync", daemon=True
+        )
+        self._webapp_loop_sync_thread.start()
 
     def _start_credential_refresh_watcher(self, logger: logging.Logger) -> None:
         """Pick up a credential saved in the web app without a restart.
