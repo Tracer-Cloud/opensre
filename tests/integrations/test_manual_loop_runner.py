@@ -678,3 +678,32 @@ def test_a_stateless_tick_neither_sees_nor_writes_long_term_memory(
     # behind tool_search. A stateless tick drops them before the catalog.
     offered = "memory_remember" in llm.tool_schema_names or "tool_search" in llm.tool_schema_names
     assert offered is not stateless
+
+
+def test_a_scheduled_report_delivers_the_reply_without_raw_tool_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live morning report posted a gh usage dump and "GitHub API call succeeded" lines.
+
+    Those come from the turn's history text; the reply shown to a chat never has them.
+    """
+    debris = "GitHub action failed to run: the `--slurp` option is not supported\nUsage: gh api"
+    shown_reply = "Main CI shows 0 failures.\n\nNOTE FOR NEXT RUN: baseline 57 runs"
+
+    class _Result:
+        answered = True
+        cancelled = False
+        action_result = type("Action", (), {"hit_iteration_cap": False})()
+        primary_response_text = f"{shown_reply}\n{debris}"
+
+    def fake_turn(_message: str, *, output: Any, **_kwargs: object) -> _Result:
+        output.stream(label="OpenSRE", chunks=iter([shown_reply]))
+        return _Result()
+
+    monkeypatch.setattr(manual_loop_runner.AgentSession, "run_headless_turn", fake_turn)
+
+    report = manual_loop_runner.run_manual_prompt_loop(
+        {"loop_prompt": "Morning report", "name": "x"}
+    )
+
+    assert report == "Main CI shows 0 failures."

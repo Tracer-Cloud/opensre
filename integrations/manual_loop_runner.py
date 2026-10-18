@@ -6,7 +6,7 @@ import importlib
 import json
 import logging
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 
 from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
 from config.constants.scheduler import STATELESS_LOOP_IDLE_REPLY
@@ -215,6 +215,45 @@ def _bound_to_one_target(payload: AgentPayload) -> bool:
     return any(str(payload.get(key) or "").strip() for key in _TARGET_PARAMS)
 
 
+class ShownReply:
+    """An output sink that keeps only what a chat would show as the turn's reply.
+
+    The turn's response text also keeps every raw tool output for the session
+    history (gh usage dumps, "API call succeeded" lines). A scheduled report
+    delivers the model's answer and outcome reports, as a chat reply does.
+    """
+
+    def __init__(self) -> None:
+        self._parts: list[str] = []
+
+    def print(self, message: str = "") -> None:
+        _ = message
+
+    def render_response_header(self, label: str) -> None:
+        _ = label
+
+    def render_error(self, message: str) -> None:
+        _ = message
+
+    def stream(
+        self,
+        *,
+        label: str,
+        chunks: Iterable[str],
+        suppress_if_starts_with: str | None = None,
+        defer_want_me_to_closer: bool = False,
+    ) -> str:
+        _ = (label, suppress_if_starts_with, defer_want_me_to_closer)
+        text = "".join(str(chunk) for chunk in chunks)
+        if text.strip():
+            self._parts.append(text.strip())
+        return text
+
+    def text_or(self, fallback: str) -> str:
+        """The shown reply, or ``fallback`` when the turn streamed nothing."""
+        return "\n\n".join(self._parts) or fallback.strip()
+
+
 def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
     """Run the deterministic report builder or one model turn in the stored mode.
 
@@ -238,15 +277,17 @@ def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
         if agent_mode
         else None
     )
+    shown = ShownReply()
     result = AgentSession.run_headless_turn(
         message,
+        output=shown,
         prepare_session=prepare,
         logger=logger,
         is_tty=False,
         tool_hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
         cancel_requested=cancel_requested_for_payload(payload),
     )
-    report = result.primary_response_text
+    report = shown.text_or(result.primary_response_text)
     if not result.answered or not report:
         raise RuntimeError("Manual loop failed: the reasoning client did not produce a report.")
     if stateless:
@@ -261,6 +302,7 @@ __all__ = [
     "CARRY_NOTE_MARKER",
     "REPORT_BUILDERS",
     "build_manual_loop_prompt",
+    "ShownReply",
     "loop_is_stateless",
     "report_builder",
     "run_manual_prompt_loop",
