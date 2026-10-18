@@ -235,12 +235,14 @@ def configured_integration_services() -> list[str]:
     except Exception:
         remote_records = []
     # A silo hydrates GitHub and Slack from its secret, then asks the webapp
-    # which Pipedream apps (Linear, and so on) the workspace connected. Those
-    # app ids have to be in this list or the model reports them as disconnected.
+    # which Pipedream apps (Linear, and so on) the workspace connected, and
+    # which (Gmail, Outlook, Drive, ...) the member taking this turn connected
+    # for themself. Those app ids have to be in this list or the model reports
+    # them as disconnected. Same cached records the tools resolve from.
     try:
-        from integrations.webapp_vault import fetch_webapp_org_integrations
+        from integrations.webapp_vault import turn_vault_records
 
-        vault_records = fetch_webapp_org_integrations() or []
+        vault_records = turn_vault_records() or []
     except Exception:
         vault_records = []
     return _configured_service_names(

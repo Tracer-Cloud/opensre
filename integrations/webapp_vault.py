@@ -423,6 +423,33 @@ def withdrawn_webapp_records(records: list[dict[str, Any]]) -> list[dict[str, An
     ]
 
 
+def turn_vault_records() -> list[dict[str, Any]] | None:
+    """The app records this turn may use: the workspace set plus the acting member's own.
+
+    The member taking a hosted turn sees the workspace's GitHub connections
+    plus their own (their personal default outranks the workspace's), and
+    their own Gmail, Outlook, Drive and document accounts join the workspace's
+    Pipedream apps. Tools and the connected-integrations prompt line both read
+    this, so they never disagree. ``None`` means the vault is unavailable.
+    """
+    records = load_webapp_org_integrations()
+    if records is None:
+        return None
+    from integrations.member_integrations import load_member_records
+    from integrations.pipedream import merge_member_apps
+
+    member = load_member_records()
+    if member is not None:
+        member_github = [record for record in member if record.get("service") == "github"]
+        records = [
+            record for record in records if record.get("service") != "github"
+        ] + member_github
+        records = merge_member_apps(records, member)
+    # Last, so no merge above adopts a placeholder: a service disconnected in
+    # the app hides the store's boot-time copy on the next turn.
+    return records + withdrawn_webapp_records(records)
+
+
 def webapp_vault_generation() -> int:
     """Changes when the webapp's workspace set changes; refreshes a stale snapshot."""
     load_webapp_org_integrations()

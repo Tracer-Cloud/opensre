@@ -149,15 +149,39 @@ def _fetch(*, base_url: str, org: str, actor: str, token: str) -> object:
     if not isinstance(viewer, str) or not viewer:
         # The webapp does not know this member: the workspace store already
         # holds everything they may use.
+        logger.info("[member-integrations] actor=%s is not a known member; workspace view", actor)
         return None
     records = records_from_vault_payload(payload, organization_id=org, viewer_user_id=viewer)
     if records is None:
         return None
-    return [
+    member = [
         record
         for record in records
         if str(record.get("service") or "").strip().lower() in _MEMBER_SERVICES
     ]
+    logger.info(
+        "[member-integrations] actor=%s viewer=%s personal apps=%s",
+        actor,
+        viewer,
+        _personal_app_summary(member) or "none",
+    )
+    return member
+
+
+def _personal_app_summary(records: list[dict[str, Any]]) -> str:
+    """``gmail×4, google_docs×1``: the member's own Pipedream apps, for the log only."""
+    from integrations.pipedream.connect import PERSONAL_SCOPE, parse_apps
+
+    counts: dict[str, int] = {}
+    for record in records:
+        credentials = record.get("credentials")
+        if record.get("service") != "pipedream" or not isinstance(credentials, dict):
+            continue
+        if str(credentials.get("scope") or "").strip() != PERSONAL_SCOPE:
+            continue
+        for app in parse_apps(credentials.get("apps")):
+            counts[app.service] = counts.get(app.service, 0) + 1
+    return ", ".join(f"{service}×{count}" for service, count in sorted(counts.items()))
 
 
 __all__ = [

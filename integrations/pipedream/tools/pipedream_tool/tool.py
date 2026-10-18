@@ -84,7 +84,9 @@ def _result_text(result: dict[str, object]) -> str:
     description=(
         "List tools for an app connected through Pipedream: the workspace's "
         "apps and the requester's own accounts (such as their gmail, "
-        "google_drive or google_sheets). App ids in CONNECTED INTEGRATIONS "
+        "google_drive or google_sheets). 'Email', 'inbox' or 'mail' means the "
+        "requester's gmail or microsoft_outlook accounts; check each connected "
+        "one. App ids in CONNECTED INTEGRATIONS "
         "that have no native tool (such as linear) are used through this one: "
         "pass that id as app. Pass account_id when an app has multiple "
         "connected accounts. Use name_filter to narrow a large catalog."
@@ -186,7 +188,7 @@ def list_pipedream_tools(
     ),
     use_cases=[
         "Reading or updating a Pipedream-connected app",
-        "Searching and reading the requester's own Gmail messages",
+        "Searching and reading the requester's own Gmail or Outlook messages",
     ],
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     input_schema={

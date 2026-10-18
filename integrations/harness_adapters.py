@@ -19,28 +19,10 @@ def _setupable_services() -> tuple[str, ...]:
 
 
 def _fetch_webapp_vault() -> list[dict[str, Any]] | None:
-    """Webapp org integrations; the vault client imports on first use."""
-    import integrations.member_integrations as member_integrations
+    """Webapp integrations for this turn; the vault client imports on first use."""
     import integrations.webapp_vault as webapp_vault
 
-    records = webapp_vault.load_webapp_org_integrations()
-    if records is None:
-        return None
-    from integrations.pipedream import merge_member_apps
-
-    member = member_integrations.load_member_records()
-    if member is not None:
-        # The member taking this turn sees the workspace's GitHub connections
-        # plus their own, so their personal default outranks the workspace's.
-        member_github = [record for record in member if record.get("service") == "github"]
-        records = [
-            record for record in records if record.get("service") != "github"
-        ] + member_github
-        # Their own Gmail, Drive and document accounts join the workspace's apps.
-        records = merge_member_apps(records, member)
-    # Last, so no merge above adopts a placeholder: a service disconnected in
-    # the app hides the store's boot-time copy on the next turn.
-    return records + webapp_vault.withdrawn_webapp_records(records)
+    return webapp_vault.turn_vault_records()
 
 
 def _fleet_vault_configured() -> bool:
