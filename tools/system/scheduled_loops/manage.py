@@ -15,6 +15,7 @@ from core.domain.types.tools import ToolSurface
 from core.tool import AgentToolContext, SideEffectLevel
 from core.tool_framework import tool
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_REPORT, LOOP_MODES
+from infrastructure.scheduling.scheduler.loop_edit import edit_loop, loop_changes
 from infrastructure.scheduling.scheduler.loops import (
     SUPPORTED_MANUAL_LOOP_CHANNELS,
     create_manual_loop,
@@ -23,13 +24,12 @@ from infrastructure.scheduling.scheduler.loops import (
     set_loop_enabled,
 )
 from infrastructure.scheduling.scheduler.reload_signal import request_scheduler_reload
-from infrastructure.scheduling.scheduler.storage import get_task
-from infrastructure.scheduling.scheduler.task_visibility import visible_to_current_scope
 from infrastructure.scheduling.scheduler.types import Provider
 from tools.system.scheduled_loops.destination import conversation_destination
 
 SCHEDULE_TOOL_NAME = "schedule_prompt_loop"
 STOP_TOOL_NAME = "stop_scheduled_loop"
+EDIT_TOOL_NAME = "edit_scheduled_loop"
 _SOURCE = "system"
 _SUPPORTED_CHANNELS = frozenset(provider.value for provider in SUPPORTED_MANUAL_LOOP_CHANNELS)
 _STOP_ACTIONS = ("pause", "resume", "delete")
@@ -205,11 +205,10 @@ def schedule_prompt_loop(
 def stop_scheduled_loop(loop: str, action: str = "pause") -> dict[str, Any]:
     if action not in _STOP_ACTIONS:
         return {"ok": False, "error": f"action must be one of {', '.join(_STOP_ACTIONS)}"}
+    # Resolution is scoped: another organization's loop reads as not found.
     summary, error = resolve_loop_summary(loop)
-    tasks = [get_task(task_id) for task_id in summary.task_ids] if summary is not None else []
-    # Another organization's loop is reported exactly like a missing one.
-    if summary is None or not all(t is not None and visible_to_current_scope(t) for t in tasks):
-        return {"ok": False, "error": error or f"loop {loop.strip()!r} not found"}
+    if summary is None:
+        return {"ok": False, "error": error}
     if action == "delete":
         mutation, error = delete_loop(summary.id)
     else:
@@ -226,9 +225,99 @@ def stop_scheduled_loop(loop: str, action: str = "pause") -> dict[str, Any]:
     }
 
 
+@tool(
+    name=EDIT_TOOL_NAME,
+    source=_SOURCE,
+    display_name="Change a scheduled loop",
+    description=(
+        "Change one scheduled loop by its id or exact name: its time or cron, timezone, "
+        "the instruction each run follows, its name, or its mode. Only the fields given "
+        "change; the loop keeps its id, history and destination. Use it for 'move my "
+        "morning report to 8:30', 'run it on weekdays only', 'also include open "
+        "incidents in the report', 'use Europe/Warsaw time'."
+    ),
+    use_cases=[
+        "Move the morning report to 8:30 my time",
+        "Make the repo check run on weekdays only",
+        "Add open Sentry issues to the daily summary",
+    ],
+    anti_examples=[
+        "Pause or delete a loop (use stop_scheduled_loop)",
+        "Schedule a new recurring prompt (use schedule_prompt_loop)",
+    ],
+    surfaces=(ToolSurface.ACTION,),
+    side_effect_level=SideEffectLevel.MUTATING,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "loop": {"type": "string", "minLength": 1, "description": "Loop id or exact name."},
+            "time": {
+                "type": "string",
+                "description": "New daily run time such as '08:30' or '8am'. Use this or cron.",
+            },
+            "weekdays": {
+                "type": "boolean",
+                "default": False,
+                "description": "With time: run Monday to Friday only.",
+            },
+            "cron": {"type": "string", "description": "New five-field cron. Use this or time."},
+            "timezone": {"type": "string", "description": "New IANA timezone."},
+            "prompt": {"type": "string", "description": "New standalone instruction per run."},
+            "name": {"type": "string", "description": "New short name."},
+            "mode": {"type": "string", "enum": list(LOOP_MODES)},
+        },
+        "required": ["loop"],
+        "additionalProperties": False,
+    },
+)
+def edit_scheduled_loop(
+    loop: str,
+    time: str = "",
+    weekdays: bool = False,
+    cron: str = "",
+    timezone: str = "",
+    prompt: str = "",
+    name: str = "",
+    mode: str = "",
+) -> dict[str, Any]:
+    summary, error = resolve_loop_summary(loop)
+    if summary is None:
+        return {"ok": False, "error": error}
+    try:
+        changes = loop_changes(
+            time=time,
+            weekdays=weekdays,
+            cron=cron,
+            timezone=timezone,
+            prompt=prompt,
+            name=name,
+            mode=mode,
+        )
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    mutation, error = edit_loop(summary.task_ids, changes, loop_id=summary.id)
+    if mutation is None:
+        return {"ok": False, "error": error}
+    request_scheduler_reload()
+    updated = mutation.summary
+    return {
+        "ok": True,
+        "loop_id": updated.id,
+        "cron": updated.cron,
+        "timezone": updated.timezone,
+        "next_run": updated.next_run,
+        "response_text": (
+            f"Updated “{updated.name}” ({updated.cron} {updated.timezone}); "
+            f"next run {updated.next_run}."
+        ),
+    }
+
+
 __all__ = [
+    "EDIT_TOOL_NAME",
     "SCHEDULE_TOOL_NAME",
     "STOP_TOOL_NAME",
+    "edit_scheduled_loop",
     "schedule_prompt_loop",
     "stop_scheduled_loop",
 ]

@@ -37,6 +37,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_REPORT,
     LOOP_WEBAPP_REQUEST_ID_PARAM,
 )
+from infrastructure.scheduling.scheduler.loop_edit import edit_loop, loop_changes
 from infrastructure.scheduling.scheduler.loops import (
     LoopSummary,
     create_manual_loop,
@@ -61,6 +62,9 @@ _HEARTBEAT_SECONDS = 5 * 60
 #: Actor for a request that names no member.
 _WEBAPP_ACTOR = "webapp"
 _UNEXPECTED_FAILURE = "The agent could not apply this change; try again in a minute."
+_MISSING_LOOP = "That task no longer exists."
+#: Fields an ``update`` request may change (the rest of the loop is kept).
+_UPDATE_FIELDS = ("name", "prompt", "cron", "timezone", "mode")
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +151,8 @@ class WebappLoopSync:
                     return self._create(str(request["id"]), request.get("payload"))
                 if action in ("pause", "resume", "delete"):
                     return self._change(action, str(request.get("loop_id") or ""))
+                if action == "update":
+                    return self._update(str(request.get("loop_id") or ""), request.get("payload"))
                 return _Outcome(False, error=f"Unknown change {action!r}.")
         except ValueError as exc:
             # Our own validation text (bad cron, channel not connected): safe and useful.
@@ -175,16 +181,35 @@ class WebappLoopSync:
         return _Outcome(True, loop_id=created.task.id)
 
     def _change(self, action: str, loop_id: str) -> _Outcome:
-        summary, error = resolve_loop_summary(loop_id) if loop_id else (None, "")
-        if summary is None or not _visible(summary):
+        # Scoped to this organization: another's loop resolves as missing.
+        summary, _error = resolve_loop_summary(loop_id) if loop_id else (None, "")
+        if summary is None:
             # Already deleted (a retried request) counts as done for a delete.
-            if action == "delete" and summary is None:
+            if action == "delete":
                 return _Outcome(True, loop_id=loop_id)
-            return _Outcome(False, error=error or "That task no longer exists.")
+            return _Outcome(False, error=_MISSING_LOOP)
         if action == "delete":
             mutation, error = delete_loop(summary.id)
         else:
             mutation, error = set_loop_enabled(summary.id, enabled=action == "resume")
+        if mutation is None:
+            return _Outcome(False, error=error)
+        return _Outcome(True, loop_id=summary.id)
+
+    def _update(self, loop_id: str, raw_payload: Any) -> _Outcome:
+        summary, _error = resolve_loop_summary(loop_id) if loop_id else (None, "")
+        if summary is None:
+            return _Outcome(False, error=_MISSING_LOOP)
+        payload = raw_payload if isinstance(raw_payload, Mapping) else {}
+        field = {key: str(payload.get(key) or "") for key in _UPDATE_FIELDS}
+        changes = loop_changes(
+            name=field["name"],
+            prompt=field["prompt"],
+            cron=field["cron"],
+            timezone=field["timezone"],
+            mode=field["mode"],
+        )
+        mutation, error = edit_loop(summary.task_ids, changes, loop_id=summary.id)
         if mutation is None:
             return _Outcome(False, error=error)
         return _Outcome(True, loop_id=summary.id)
@@ -255,12 +280,6 @@ def _loop_created_from(request_id: str) -> str | None:
         if task.params.get(LOOP_WEBAPP_REQUEST_ID_PARAM) == request_id:
             return task.id
     return None
-
-
-def _visible(summary: LoopSummary) -> bool:
-    by_id = {task.id: task for task in get_task_store_snapshot().tasks}
-    tasks = [by_id.get(task_id) for task_id in summary.task_ids]
-    return bool(tasks) and all(t is not None and visible_to_current_scope(t) for t in tasks)
 
 
 def _loop_row(loop: LoopSummary, tasks: Sequence[ScheduledTask]) -> dict[str, Any]:

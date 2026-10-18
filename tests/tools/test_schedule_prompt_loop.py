@@ -125,3 +125,49 @@ def test_a_prompt_loop_offer_needs_no_briefing_and_targets_the_chat() -> None:
     offer = session.pending_schedule_offer
     assert offer is not None
     assert (offer.provider, offer.chat_id) == ("slack", "C42")
+
+
+def test_a_loop_edited_from_slack_keeps_its_id_and_moves_its_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: a morning report scheduled from Slack at 9:00 UTC.
+    monkeypatch.setattr(loops, "resolve_slack_credentials", _slack_bot_token)
+    monkeypatch.setattr(manage, "_session", lambda _context: _chat_session("slack", "C42"))
+    created = manage.schedule_prompt_loop(prompt="Morning report.", time="09:00", name="Morning")
+    assert created["ok"] is True, created
+
+    # Act: the member moves it to 8:30 on weekdays, in their own timezone.
+    edited = manage.edit_scheduled_loop(
+        "Morning", time="8:30", weekdays=True, timezone="Europe/Warsaw"
+    )
+
+    # Assert: same loop, new schedule, still delivering to the same channel.
+    assert edited["ok"] is True, edited
+    task = get_task(created["loop_id"])
+    assert task is not None
+    assert (task.cron, task.timezone) == ("30 8 * * mon-fri", "Europe/Warsaw")
+    assert configured_target_keys(task) == ((Provider.SLACK, "C42"),)
+
+
+def test_an_ambiguous_name_never_lists_another_organizations_loops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: both organizations have a loop named "Morning report".
+    monkeypatch.setattr(manage, "_session", lambda _context: SimpleNamespace())
+    ids = {}
+    for org in ("org_A", "org_B"):
+        scope = StorageScope(principal=Principal.org(org), actor=Actor(id="u"))
+        with bound_storage_scope(scope):
+            ids[org] = manage.schedule_prompt_loop(
+                prompt=f"{org} report.", time="09:00", name="Morning report"
+            )["loop_id"]
+
+    # Act: org A edits it by name.
+    with bound_storage_scope(StorageScope(principal=Principal.org("org_A"), actor=Actor(id="u"))):
+        edited = manage.edit_scheduled_loop("Morning report", time="07:00")
+
+    # Assert: org A's loop alone matched; org B's is untouched and never named.
+    assert edited["ok"] is True, edited
+    assert edited["loop_id"] == ids["org_A"]
+    other = get_task(ids["org_B"])
+    assert other is not None and other.cron == "0 9 * * *"

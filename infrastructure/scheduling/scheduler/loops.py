@@ -59,6 +59,7 @@ from infrastructure.scheduling.scheduler.storage import (
     patch_task_definitions,
     remove_task,
 )
+from infrastructure.scheduling.scheduler.task_visibility import visible_to_current_scope
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
 _ONBOARDING_LOOP_SOURCE = "onboarding"
@@ -458,9 +459,14 @@ def list_loop_summaries(
     now: datetime | None = None,
     read_only: bool = False,
 ) -> list[LoopSummary]:
-    """Return configured loops from the store, sorted with active loops first."""
+    """Return the loops the current scope may see, sorted with active loops first.
+
+    The store is process-wide: a turn bound to an organization sees only that
+    organization's loops, so a name or id never resolves to, or lists, another's.
+    """
     tasks = list_tasks(store_path, read_only=True) if read_only else list_tasks(store_path)
-    return summarize_loops(tasks, include_disabled=include_disabled, now=now)
+    visible = [task for task in tasks if visible_to_current_scope(task)]
+    return summarize_loops(visible, include_disabled=include_disabled, now=now)
 
 
 def resolve_loop_summary(

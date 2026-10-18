@@ -140,3 +140,34 @@ def test_an_unreadable_store_never_empties_the_apps_task_list(
 
     # Assert: nothing is sent, so the mirror keeps its last good list.
     assert webapp.reports == []
+
+
+def test_a_time_changed_in_the_app_reschedules_the_same_loop() -> None:
+    # Arrange: a task created in the app, then edited there.
+    webapp = _Webapp(pending=[_create_request()])
+    sync = _sync(webapp)
+    sync.sync()
+    [created] = list_tasks()
+    webapp.pending = [
+        {
+            "id": "6c1d2e3f-0000-4000-8000-000000000002",
+            "action": "update",
+            "loop_id": created.id,
+            "payload": {"cron": "30 7 * * 1-5", "timezone": "America/New_York"},
+            "requested_by": "user_2abc",
+        }
+    ]
+
+    # Act
+    sync.sync()
+
+    # Assert: one loop, rescheduled, and the app hears the new time.
+    [task] = list_tasks()
+    assert task.id == created.id
+    assert (task.cron, task.timezone) == ("30 7 * * 1-5", "America/New_York")
+    assert webapp.acks[-1][1] == {
+        "organizationId": _ORG,
+        "status": "applied",
+        "loopId": created.id,
+    }
+    assert webapp.reports[-1][0]["cron"] == "30 7 * * 1-5"

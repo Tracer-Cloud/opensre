@@ -22,7 +22,12 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_TEMPLATE_PARAM,
     LOOP_TIME_PARAM,
 )
-from infrastructure.scheduling.scheduler.loops import LoopMutation, loop_time_label, summarize_loops
+from infrastructure.scheduling.scheduler.loops import (
+    LoopMutation,
+    cron_for_time,
+    loop_time_label,
+    summarize_loops,
+)
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_loop_operation
 from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import patch_task_definitions
@@ -59,6 +64,40 @@ def validate_loop_changes(changes: Mapping[str, str]) -> dict[str, str]:
             raise ValueError("lookback must be at least 1 hour")
         result["window_hours"] = str(window)
     return result
+
+
+def loop_changes(
+    *,
+    time: str = "",
+    weekdays: bool = False,
+    cron: str = "",
+    timezone: str = "",
+    prompt: str = "",
+    name: str = "",
+    mode: str = "",
+) -> dict[str, str]:
+    """The edit patch for the fields given; a ``time`` becomes a daily (or weekday) cron.
+
+    Raises ``ValueError`` when nothing would change or ``time`` and ``cron`` are both set.
+    """
+    if time.strip() and cron.strip():
+        raise ValueError("give either a time or a cron, not both")
+    changes = {
+        key: value.strip()
+        for key, value in (
+            ("cron", " ".join(cron.split())),
+            ("timezone", timezone),
+            ("prompt", prompt),
+            ("name", name),
+            ("mode", mode),
+        )
+        if value.strip()
+    }
+    if time.strip():
+        changes["cron"] = cron_for_time(time, weekdays=weekdays)
+    if not changes:
+        raise ValueError("say what to change: time, cron, timezone, prompt, name or mode")
+    return validate_loop_changes(changes)
 
 
 def _definition_patch(
@@ -141,4 +180,4 @@ def edit_loop(
     return mutation, ""
 
 
-__all__ = ["edit_loop", "loop_prompt_editable", "validate_loop_changes"]
+__all__ = ["edit_loop", "loop_changes", "loop_prompt_editable", "validate_loop_changes"]
