@@ -111,6 +111,10 @@ class WebappLoopSync:
         self._runs_lock = threading.Lock()
         #: Loops with a ``run`` request in flight here, from acceptance to its end.
         self._running: set[str] = set()
+        #: Threads running accepted ``run`` requests, so shutdown can wait for them.
+        self._run_threads: set[threading.Thread] = set()
+        #: Set once shutdown drains runs; later ``run`` requests stay pending.
+        self._closing = False
 
     def sync(self) -> bool:
         """Apply every pending request, then report the list; True when a loop changed.
@@ -137,13 +141,17 @@ class WebappLoopSync:
                     outcome, start = self._accept_run(request)
                 else:
                     outcome = self._apply(request)
-                    if outcome is None:
-                        continue
-                    changed = changed or outcome.applied
+                    changed = changed or bool(outcome and outcome.applied)
+                if outcome is None:
+                    continue
                 try:
                     self._ledger.record(self._organization, request_id, outcome)
                 except LedgerUnavailable:
                     logger.warning("[webapp-loops] could not record request %s", request_id)
+                    if start is not None:
+                        # Unrecorded, a redelivery could run it again: leave it pending.
+                        self._release_run(outcome.loop_id or "")
+                        continue
                 if start is not None:
                     start()
             self._acknowledge(request_id, outcome)
@@ -232,8 +240,12 @@ class WebappLoopSync:
 
     def _accept_run(
         self, request: Mapping[str, Any]
-    ) -> tuple[RecordedOutcome, Callable[[], None] | None]:
-        """Reserve the loop for one run; the callable starts it once the outcome is recorded."""
+    ) -> tuple[RecordedOutcome | None, Callable[[], None] | None]:
+        """Reserve the loop for one run; the callable starts it once the outcome is recorded.
+
+        ``(None, None)`` leaves the request pending: this gateway is shutting
+        down, and the next one picks it up.
+        """
         loop_id = str(request.get("loop_id") or "")
         actor = str(request.get("requested_by") or "").strip() or _WEBAPP_ACTOR
         runners = self._runners
@@ -245,6 +257,8 @@ class WebappLoopSync:
             if summary is None:
                 return RecordedOutcome(False, error=_MISSING_LOOP), None
             with self._runs_lock:
+                if self._closing:
+                    return None, None
                 # A scheduled tick of this loop in flight counts as a run in progress.
                 if summary.id in self._running or has_live_claim(task_ids=summary.task_ids):
                     return RecordedOutcome(False, error=_RUN_IN_PROGRESS), None
@@ -266,10 +280,14 @@ class WebappLoopSync:
             name=f"opensre-webapp-loop-run-{loop_id}",
             daemon=True,
         )
+        with self._runs_lock:
+            self._run_threads.add(thread)
         try:
             thread.start()
         except RuntimeError:
             logger.exception("[webapp-loops] could not start a run of loop %s", loop_id)
+            with self._runs_lock:
+                self._run_threads.discard(thread)
             self._release_run(loop_id)
 
     def _run_loop(self, loop_id: str, task_ids: tuple[str, ...], runners: SchedulerRunners) -> None:
@@ -286,10 +304,22 @@ class WebappLoopSync:
                 self.report()
             except Exception:
                 logger.exception("[webapp-loops] report after the run of loop %s failed", loop_id)
+            with self._runs_lock:
+                self._run_threads.discard(threading.current_thread())
 
     def _release_run(self, loop_id: str) -> None:
         with self._runs_lock:
             self._running.discard(loop_id)
+
+    def drain_runs(self, timeout: float, *, clock: Callable[[], float] = time.monotonic) -> bool:
+        """Accept no more runs and wait up to ``timeout`` for those running; True when all ended."""
+        with self._runs_lock:
+            self._closing = True
+            threads = list(self._run_threads)
+        deadline = clock() + max(0.0, timeout)
+        for thread in threads:
+            thread.join(timeout=max(0.0, deadline - clock()))
+        return not any(thread.is_alive() for thread in threads)
 
     def _create(self, request_id: str, raw_payload: Any) -> RecordedOutcome | None:
         # Covers a crash between creating the loop and recording the request.
