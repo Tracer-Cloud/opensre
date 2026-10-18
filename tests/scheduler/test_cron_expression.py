@@ -34,6 +34,8 @@ def _fire_days(cron: str) -> set[str]:
         # A step after a name range is ignored by APScheduler, so steps become lists.
         ("1-5/2", {"Mon", "Wed", "Fri"}),
         ("mon-fri", {"Mon", "Tue", "Wed", "Thu", "Fri"}),
+        ("mon-fri/2", {"Mon", "Wed", "Fri"}),
+        ("fri-sun/2", {"Fri", "Sun"}),
     ],
 )
 def test_a_weekday_field_fires_on_its_crontab_days(day_of_week: str, fires_on: set[str]) -> None:
@@ -61,3 +63,19 @@ def test_the_stored_next_run_skips_the_weekend() -> None:
 
     # Assert: Monday, not Saturday
     assert next_run == "2026-10-12T08:00:00+00:00"
+
+
+def test_a_named_month_step_is_not_silently_dropped() -> None:
+    """``jan-dec/3`` used to compile as every month; it must fire quarterly."""
+    from infrastructure.scheduling.scheduler.cron_expression import month_names
+
+    assert month_names("jan-dec/3") == "jan,apr,jul,oct"
+    assert month_names("JAN-DEC/3") == "jan,apr,jul,oct"
+    assert month_names("1-12/3") == "1-12/3"
+
+
+def test_a_named_range_step_of_zero_is_rejected() -> None:
+    from infrastructure.scheduling.scheduler.cron_expression import month_names
+
+    with pytest.raises(ValueError, match="at least 1"):
+        month_names("jan-dec/0")

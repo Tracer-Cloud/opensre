@@ -39,6 +39,19 @@ _CRONTAB_LAST_WEEKDAY = 7
 _CRONTAB_WEEKDAY_ITEM = re.compile(
     r"(?:(?P<every>\*)|(?P<first>\d+)(?:-(?P<last>\d+))?)(?:/(?P<step>\d+))?"
 )
+#: Three-letter month and weekday names, lowercase. APScheduler 3.x reads both,
+#: but its name-range expression stops at the name and silently drops a trailing
+#: step: ``mon-fri/2`` fires every weekday, ``jan-dec/3`` fires every month.
+_MONTH_NAMES = (
+    "jan", "feb", "mar", "apr", "may", "jun",
+    "jul", "aug", "sep", "oct", "nov", "dec",
+)
+#: Crontab weekday names, indexed from 0. Both 0 and the name ``sun`` are Sunday.
+_WEEKDAY_ORDER = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
+_NAMED_RANGE_WITH_STEP = re.compile(
+    r"(?P<first>[a-z]{3})(?:-(?P<last>[a-z]{3}))?/(?P<step>\d+)",
+    re.IGNORECASE,
+)
 
 
 def day_of_week_names(field: str) -> str:
@@ -46,19 +59,106 @@ def day_of_week_names(field: str) -> str:
 
     Numeric items (``0``, ``1-5``, ``1-5/2``, ``*/2``) are read the crontab way
     and become names; a step is expanded into a list, because APScheduler
-    ignores a step written after a name range. Names and a bare ``*`` mean the
-    same to both and pass through. Raises ``ValueError`` for a number above 7,
-    a backwards range, or a zero step.
+    ignores a step written after a name range. A named step (``mon-fri/2``)
+    is the same list: the names become crontab numbers, then that numeric
+    rule selects them. Names without a step and a bare ``*`` mean the same
+    to both and pass through. Raises ``ValueError`` for a number above 7,
+    an unknown name, a backwards range, or a zero step.
     """
     passthrough: list[str] = []
     days: set[int] = set()
     for item in field.lower().split(","):
+        named = _NAMED_RANGE_WITH_STEP.fullmatch(item)
         match = _CRONTAB_WEEKDAY_ITEM.fullmatch(item)
-        if match is None or item == "*":
+        if named:
+            days.update(_named_weekdays(item, named))
+        elif match is None or item == "*":
             passthrough.append(item)
         else:
             days.update(_crontab_weekdays(item, match))
     return ",".join([*_weekday_ranges(days), *passthrough])
+
+
+def month_names(field: str) -> str:
+    """Spell a crontab ``month`` field so a step after a name range survives.
+
+    ``1-12/3`` already works, so numeric items pass through. A named step
+    (``jan-dec/3``, ``feb-nov/3``) becomes that same numeric range and is
+    expanded with the month rule, because APScheduler 3.x matches the names
+    and discards the step instead of rejecting the field. A bare name or
+    name range (``jan``, ``jan-mar``) means the same to both and passes
+    through. Raises ``ValueError`` for an unknown name, a backwards range,
+    or a zero step.
+    """
+    items: list[str] = []
+    for item in field.lower().split(","):
+        match = _NAMED_RANGE_WITH_STEP.fullmatch(item)
+        if match is None:
+            items.append(item)
+            continue
+        items.append(",".join(_named_steps(("", *_MONTH_NAMES), item, match)))
+    return ",".join(items)
+
+
+def _named_weekdays(item: str, match: re.Match[str]) -> set[int]:
+    """APScheduler weekday indexes for one ``mon-fri/2`` style item.
+
+    The names become crontab numbers, Sunday first, and :func:`_crontab_weekdays`
+    selects them, so ``mon-fri/2`` is ``1-5/2``. Sunday is also crontab 7, so a
+    range that ends on Sunday (``fri-sun``) is written ``N-7`` with the same
+    step; index 0 would make it look backwards. ``fri/2`` runs to the end of
+    the week, like ``5/2``. A range that runs backwards (``fri-mon``) is
+    rejected, the same way a numeric range is.
+    """
+    if match["last"] == "sun" and match["first"] != "sun":
+        first = _WEEKDAY_ORDER.index(match["first"])
+        end = _CRONTAB_LAST_WEEKDAY
+        written = _CRONTAB_WEEKDAY_ITEM.fullmatch(f"{first}-{end}/{int(match['step'])}")
+        return _crontab_weekdays(item, written)
+    return _crontab_weekdays(item, _named_as_crontab(item, match, _WEEKDAY_ORDER))
+
+
+def _named_steps(names: tuple[str, ...], item: str, match: re.Match[str]) -> list[str]:
+    """Names selected by one ``name/step`` or ``name-name/step`` item.
+
+    ``names`` is numbered from its start, so a leading ``""`` makes months
+    1-based, the way ``1-12/3`` is numbered. The numeric range rule then
+    picks every step-th name. A backwards range or a zero step is rejected.
+    """
+    numeric = _named_as_crontab(item, match, names)
+    first = int(numeric["first"])
+    last = int(numeric["last"]) if numeric["last"] is not None else len(names) - 1
+    return [names[index] for index in range(first, last + 1, int(numeric["step"]))]
+
+
+def _named_as_crontab(item: str, match: re.Match[str], names: tuple[str, ...]) -> re.Match[str]:
+    """The numeric crontab item a positive-order ``name/step`` or ``name-name/step`` is.
+
+    Names are numbered from the start of ``names``: months from 1, weekdays
+    from 0 with Sunday first. ``name/step`` has no end, like ``N/step``.
+    A range that runs backwards is left to the caller; this only writes the
+    positive numeric form the existing rule already expands.
+    """
+    step = int(match["step"])
+    try:
+        first = names.index(match["first"])
+    except ValueError:
+        raise ValueError(f"unknown name in {item!r}") from None
+    last = None
+    if match["last"] is not None:
+        try:
+            last = names.index(match["last"])
+        except ValueError:
+            raise ValueError(f"unknown name in {item!r}") from None
+        if first > last:
+            raise ValueError(f"range runs backwards: {item!r}")
+    if step < 1:
+        raise ValueError(f"step must be at least 1: {item!r}")
+    written = f"{first}-{last}/{step}" if last is not None else f"{first}/{step}"
+    numeric = _CRONTAB_WEEKDAY_ITEM.fullmatch(written)
+    if numeric is None:  # pragma: no cover - written from a matched name step
+        raise ValueError(f"invalid name step: {item!r}")
+    return numeric
 
 
 def _crontab_weekdays(item: str, match: re.Match[str]) -> set[int]:
@@ -118,7 +218,7 @@ def build_cron_trigger(cron: str, timezone: str | None) -> Any:
             minute=minute,
             hour=hour,
             day=day,
-            month=month,
+            month=month_names(month),
             day_of_week=day_of_week_names(day_of_week),
             timezone=timezone,
         )
@@ -187,4 +287,5 @@ __all__ = [
     "build_cron_trigger",
     "cap_cron_at_most_hourly",
     "day_of_week_names",
+    "month_names",
 ]
