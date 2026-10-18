@@ -314,7 +314,7 @@ class GatewayController:
         """
         from bootstrap.adapters import webapp_loop_sync
 
-        sync = webapp_loop_sync()
+        sync = webapp_loop_sync(self._scheduler_runners)
         if sync is None or self._webapp_loop_sync_thread is not None:
             return
         self._webapp_loop_sync = sync

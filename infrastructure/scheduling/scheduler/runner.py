@@ -8,6 +8,7 @@ from listener timing or wall-clock time inside the callback.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import signal
@@ -43,6 +44,7 @@ from infrastructure.scheduling.scheduler.reload_signal import (
     watch_and_reconcile,
 )
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.schedule_cancel import running_despite_pause
 from infrastructure.scheduling.scheduler.schedule_change import obsolete_schedule_tick
 from infrastructure.scheduling.scheduler.storage import (
     complete_run,
@@ -694,6 +696,7 @@ def run_task_now(
     runners: SchedulerRunners,
     *,
     only_failed: bool = False,
+    run_paused: bool = False,
     on_result: Callable[[TaskRun], None] | None = None,
 ) -> bool:
     """Execute a task immediately (ad-hoc one-shot for debugging).
@@ -711,6 +714,10 @@ def run_task_now(
     one direction that causes harm the operator did not ask for (a duplicate
     report at a destination that already received it), and a caller that does
     want every destination has one -- an ordinary run without ``only_failed``.
+
+    ``run_paused=True`` runs a disabled task too, and a pause during the run
+    does not cancel it; the task stays disabled. Without it a disabled task is
+    skipped, as a scheduled tick would be.
     """
     task = get_task(task_id)
     if task is None:
@@ -742,14 +749,15 @@ def run_task_now(
             return False
 
     fire_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    result = execute_task(
-        task,
-        fire_time,
-        runners,
-        target_filter=target_filter,
-        replay_report=replay_report,
-        on_result=on_result,
-    )
+    with running_despite_pause(task.id) if run_paused else contextlib.nullcontext():
+        result = execute_task(
+            task,
+            fire_time,
+            runners,
+            target_filter=target_filter,
+            replay_report=replay_report,
+            on_result=on_result,
+        )
     if result:
         _record_task_success_after_full_delivery(task.id, fire_time)
     return result

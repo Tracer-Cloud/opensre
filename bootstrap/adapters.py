@@ -90,15 +90,15 @@ def install_scheduled_delivery_adapters() -> None:
     scheduled_delivery_adapters().install()
 
 
-def webapp_loop_sync() -> WebappLoopSync | None:
+def webapp_loop_sync(runners: SchedulerRunners | None = None) -> WebappLoopSync | None:
     """The hosted gateway's Tasks-page sync, or ``None`` off a hosted organization.
 
     Built here so the gateway, which hosts the scheduler, never imports
-    ``integrations`` itself.
+    ``integrations`` itself. ``runners`` are the scheduler's, for ``run`` requests.
     """
     from integrations.webapp_scheduled_loops import webapp_loop_sync_from_environment
 
-    return webapp_loop_sync_from_environment()
+    return webapp_loop_sync_from_environment(runners)
 
 
 def install_cli_auth_checker() -> None:

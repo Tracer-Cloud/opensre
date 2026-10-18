@@ -12,7 +12,8 @@ Delivery is at least once, so a request id is an idempotency key: each
 outcome is recorded (:mod:`.request_ledger`) before it is acknowledged, and a
 redelivered request is acknowledged again without being applied again. A
 created loop also carries its request id, which covers a crash between the
-create and the record. Nothing here raises to the caller's thread.
+create and the record. A ``run`` is recorded before its run starts, so a crash
+can lose a run but never repeat one. Nothing here raises to the caller's thread.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from http import HTTPStatus
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -49,7 +50,8 @@ from infrastructure.scheduling.scheduler.loops import (
     summarize_loops,
 )
 from infrastructure.scheduling.scheduler.reload_signal import request_scheduler_reload
-from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
+from infrastructure.scheduling.scheduler.runner import run_task_now
+from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot, has_live_claim
 from infrastructure.scheduling.scheduler.task_visibility import visible_to_current_scope
 from infrastructure.scheduling.scheduler.types import ScheduledTask
 from integrations.webapp_scheduled_loops.request_ledger import (
@@ -57,6 +59,9 @@ from integrations.webapp_scheduled_loops.request_ledger import (
     RecordedOutcome,
     RequestLedger,
 )
+
+if TYPE_CHECKING:
+    from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +75,9 @@ _HEARTBEAT_SECONDS = 30 * 60
 _WEBAPP_ACTOR = "webapp"
 _UNEXPECTED_FAILURE = "The agent could not apply this change; try again in a minute."
 _MISSING_LOOP = "That task no longer exists."
+_RUN_IN_PROGRESS = "This task is already running; try again when it finishes."
+_RUN_UNAVAILABLE = "This agent cannot run tasks on demand."
+_RUN_ACTION = "run"
 #: Fields an ``update`` request may change (the rest of the loop is kept).
 _UPDATE_FIELDS = ("name", "prompt", "cron", "timezone", "mode")
 
@@ -86,6 +94,7 @@ class WebappLoopSync:
         http: Any = httpx,
         clock: Callable[[], float] = time.monotonic,
         ledger: RequestLedger | None = None,
+        runners: SchedulerRunners | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._organization = organization
@@ -97,6 +106,11 @@ class WebappLoopSync:
         self._reported_at: float | None = None
         # The poll thread and a scheduler reload may report at the same time.
         self._lock = threading.Lock()
+        #: Runs scheduled ticks dispatch through; ``None`` refuses ``run`` requests.
+        self._runners = runners
+        self._runs_lock = threading.Lock()
+        #: Loops with a ``run`` request in flight here, from acceptance to its end.
+        self._running: set[str] = set()
 
     def sync(self) -> bool:
         """Apply every pending request, then report the list; True when a loop changed.
@@ -118,14 +132,20 @@ class WebappLoopSync:
                 logger.warning("[webapp-loops] request ledger unavailable; retrying later")
                 break
             if outcome is None:
-                outcome = self._apply(request)
-                if outcome is None:
-                    continue
-                changed = changed or outcome.applied
+                start: Callable[[], None] | None = None
+                if request.get("action") == _RUN_ACTION:
+                    outcome, start = self._accept_run(request)
+                else:
+                    outcome = self._apply(request)
+                    if outcome is None:
+                        continue
+                    changed = changed or outcome.applied
                 try:
                     self._ledger.record(self._organization, request_id, outcome)
                 except LedgerUnavailable:
                     logger.warning("[webapp-loops] could not record request %s", request_id)
+                if start is not None:
+                    start()
             self._acknowledge(request_id, outcome)
         if changed:
             request_scheduler_reload()
@@ -209,6 +229,67 @@ class WebappLoopSync:
         except Exception:
             logger.exception("[webapp-loops] applying request %s failed", request.get("id"))
             return RecordedOutcome(False, error=_UNEXPECTED_FAILURE)
+
+    def _accept_run(
+        self, request: Mapping[str, Any]
+    ) -> tuple[RecordedOutcome, Callable[[], None] | None]:
+        """Reserve the loop for one run; the callable starts it once the outcome is recorded."""
+        loop_id = str(request.get("loop_id") or "")
+        actor = str(request.get("requested_by") or "").strip() or _WEBAPP_ACTOR
+        runners = self._runners
+        if runners is None:
+            return RecordedOutcome(False, error=_RUN_UNAVAILABLE), None
+        try:
+            with self._scope(actor):
+                summary, _error = resolve_loop_summary(loop_id) if loop_id else (None, "")
+            if summary is None:
+                return RecordedOutcome(False, error=_MISSING_LOOP), None
+            with self._runs_lock:
+                # A scheduled tick of this loop in flight counts as a run in progress.
+                if summary.id in self._running or has_live_claim(task_ids=summary.task_ids):
+                    return RecordedOutcome(False, error=_RUN_IN_PROGRESS), None
+                self._running.add(summary.id)
+        except Exception:
+            logger.exception("[webapp-loops] accepting run request %s failed", request.get("id"))
+            return RecordedOutcome(False, error=_UNEXPECTED_FAILURE), None
+        accepted, task_ids = summary.id, summary.task_ids
+        return RecordedOutcome(True, loop_id=accepted), lambda: self._start_run(
+            accepted, task_ids, runners
+        )
+
+    def _start_run(
+        self, loop_id: str, task_ids: tuple[str, ...], runners: SchedulerRunners
+    ) -> None:
+        thread = threading.Thread(
+            target=self._run_loop,
+            args=(loop_id, task_ids, runners),
+            name=f"opensre-webapp-loop-run-{loop_id}",
+            daemon=True,
+        )
+        try:
+            thread.start()
+        except RuntimeError:
+            logger.exception("[webapp-loops] could not start a run of loop %s", loop_id)
+            self._release_run(loop_id)
+
+    def _run_loop(self, loop_id: str, task_ids: tuple[str, ...], runners: SchedulerRunners) -> None:
+        """Fire every task of the loop once, like a scheduled tick, then report the list."""
+        try:
+            for task_id in task_ids:
+                if not run_task_now(task_id, runners, run_paused=True):
+                    logger.warning("[webapp-loops] run of loop %s task %s failed", loop_id, task_id)
+        except Exception:
+            logger.exception("[webapp-loops] run of loop %s failed", loop_id)
+        finally:
+            self._release_run(loop_id)
+            try:
+                self.report()
+            except Exception:
+                logger.exception("[webapp-loops] report after the run of loop %s failed", loop_id)
+
+    def _release_run(self, loop_id: str) -> None:
+        with self._runs_lock:
+            self._running.discard(loop_id)
 
     def _create(self, request_id: str, raw_payload: Any) -> RecordedOutcome | None:
         # Covers a crash between creating the loop and recording the request.
@@ -325,17 +406,21 @@ class WebappLoopSync:
         return response
 
 
-def webapp_loop_sync_from_environment() -> WebappLoopSync | None:
+def webapp_loop_sync_from_environment(
+    runners: SchedulerRunners | None = None,
+) -> WebappLoopSync | None:
     """The sync for this hosted gateway, or ``None`` off a hosted organization.
 
     Needs the organization id, an https webapp URL, and the gateway token.
+    ``runners`` are the scheduler's own, so a ``run`` request fires the loop as
+    a tick would (and takes the same capacity gate).
     """
     org = organization_id()
     base_url = (os.getenv(WEBAPP_URL_ENV) or "").strip()
     token = resolve_account_token()
     if not org or not token or not base_url.lower().startswith("https://"):
         return None
-    return WebappLoopSync(base_url=base_url, organization=org, token=token)
+    return WebappLoopSync(base_url=base_url, organization=org, token=token, runners=runners)
 
 
 def _error_text(response: Any) -> str:

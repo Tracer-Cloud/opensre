@@ -367,21 +367,25 @@ def get_recoverable_runs(
         return [RecoverableRun(task_id=str(row[0]), fire_time=str(row[1])) for row in rows]
 
 
-def has_live_claim(db_path: Path | None = None) -> bool:
-    """Whether any scheduled execution currently holds an unexpired lease.
+def has_live_claim(db_path: Path | None = None, *, task_ids: Collection[str] | None = None) -> bool:
+    """Whether any scheduled execution (of ``task_ids``, when given) holds an unexpired lease.
 
     Live owners renew their lease while they run, so a ``True`` means some
     process is executing a scheduled task now; a claimant that died stops
     counting once its lease lapses. A missing database is never created here.
     """
+    if task_ids is not None and not task_ids:
+        return False
     path = db_path if db_path is not None else database.default_run_database_path()
     if not path.exists():
         return False
+    query = "SELECT 1 FROM task_runs WHERE status = ? AND lease_expires_at >= ?"
+    params: tuple[str, ...] = (TaskStatus.RUNNING.value, datetime.now(UTC).isoformat())
+    if task_ids is not None:
+        query += " AND task_id IN (SELECT value FROM json_each(?))"
+        params += (json.dumps(list(task_ids)),)
     with database.connection(path) as conn:
-        row = conn.execute(
-            "SELECT 1 FROM task_runs WHERE status = ? AND lease_expires_at >= ? LIMIT 1",
-            (TaskStatus.RUNNING.value, datetime.now(UTC).isoformat()),
-        ).fetchone()
+        row = conn.execute(f"{query} LIMIT 1", params).fetchone()
     return row is not None
 
 
