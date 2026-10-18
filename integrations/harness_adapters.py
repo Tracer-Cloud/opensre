@@ -20,9 +20,9 @@ def _setupable_services() -> tuple[str, ...]:
 
 def _fetch_webapp_vault() -> list[dict[str, Any]] | None:
     """Webapp integrations for this turn; the vault client imports on first use."""
-    import integrations.webapp_vault as webapp_vault
+    import integrations.member_integrations as member_integrations
 
-    return webapp_vault.turn_vault_records()
+    return member_integrations.turn_vault_records()
 
 
 def _fleet_vault_configured() -> bool:

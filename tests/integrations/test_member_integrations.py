@@ -11,7 +11,7 @@ import integrations.webapp_vault as vault
 from config.constants.billing import ORGANIZATION_ID_ENV, WEBAPP_URL_ENV
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
-from integrations.catalog import classify_integrations
+from integrations.catalog import classify_integrations, configured_integration_services
 from integrations.harness_adapters import _fetch_webapp_vault
 
 
@@ -144,3 +144,15 @@ def test_member_gmail_joins_the_workspace_apps_for_their_turn_only(
     assert apps_for("U_SOMEONE_ELSE") == [
         {"service": "notion", "app_slug": "notion", "account_id": "apn_ws"}
     ]
+
+    # The CONNECTED INTEGRATIONS line reads the same records, so the model is
+    # told the member's own Gmail is connected (it once said "isn't connected").
+    def connected_for(slack_user: str) -> list[str]:
+        member.reset_member_integrations_cache()
+        scope = StorageScope(principal=Principal.org("org_1"), actor=Actor(id=slack_user))
+        with bound_storage_scope(scope):
+            return configured_integration_services()
+
+    assert {"gmail", "notion"} <= set(connected_for("U_VAIBHAV"))
+    assert "gmail" not in connected_for("U_SOMEONE_ELSE")
+    assert "notion" in connected_for("U_SOMEONE_ELSE")

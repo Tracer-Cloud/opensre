@@ -240,7 +240,7 @@ def configured_integration_services() -> list[str]:
     # for themself. Those app ids have to be in this list or the model reports
     # them as disconnected. Same cached records the tools resolve from.
     try:
-        from integrations.webapp_vault import turn_vault_records
+        from integrations.member_integrations import turn_vault_records
 
         vault_records = turn_vault_records() or []
     except Exception:
