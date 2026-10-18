@@ -1,0 +1,124 @@
+"""The outcome of every web app loop request this gateway applied, kept on disk.
+
+The web app redelivers a request until it is acknowledged. A redelivery must
+re-send the first outcome, never apply the change again: re-applying a pause
+after a member resumed the loop in Slack, or an old edit after a newer one,
+undoes their later change, and a re-run create brings back a loop that was
+deleted since. The ledger lives beside the scheduler store, on the same
+durable volume, and forgets entries after the web app has long stopped
+redelivering them.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import logging
+import os
+import tempfile
+import time
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+from filelock import FileLock
+
+from config.constants import OPENSRE_HOME_DIR
+
+logger = logging.getLogger(__name__)
+
+_FILENAME = "webapp_loop_requests.json"
+#: Far past the web app's redelivery: it settles a request on its first ack.
+_RETENTION_SECONDS = 30 * 24 * 60 * 60
+_LOCK_TIMEOUT_SECONDS = 10.0
+
+
+class LedgerUnavailable(RuntimeError):
+    """The ledger could not be read or written; the request must wait."""
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedOutcome:
+    """What applying one request did, as first acknowledged."""
+
+    applied: bool
+    loop_id: str = ""
+    error: str = ""
+
+
+class RequestLedger:
+    """Request id -> outcome, per organization, guarded by a file lock."""
+
+    def __init__(self, path: Path | None = None, *, clock: Callable[[], float] = time.time) -> None:
+        self._path = path or OPENSRE_HOME_DIR / _FILENAME
+        self._clock = clock
+
+    def get(self, organization: str, request_id: str) -> RecordedOutcome | None:
+        """The recorded outcome, or ``None`` for a request never applied here."""
+        with self._locked():
+            entry = self._read().get(_key(organization, request_id))
+        if not isinstance(entry, dict):
+            return None
+        return RecordedOutcome(
+            applied=bool(entry.get("applied")),
+            loop_id=str(entry.get("loop_id") or ""),
+            error=str(entry.get("error") or ""),
+        )
+
+    def record(self, organization: str, request_id: str, outcome: RecordedOutcome) -> None:
+        """Store ``outcome`` and drop entries past retention."""
+        now = self._clock()
+        with self._locked():
+            entries = {
+                key: entry
+                for key, entry in self._read().items()
+                if isinstance(entry, dict)
+                and now - float(entry.get("recorded_at") or 0) < _RETENTION_SECONDS
+            }
+            entries[_key(organization, request_id)] = {**asdict(outcome), "recorded_at": now}
+            self._write(entries)
+
+    @contextlib.contextmanager
+    def _locked(self) -> Iterator[None]:
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with FileLock(str(self._path) + ".lock", timeout=_LOCK_TIMEOUT_SECONDS):
+                yield
+        except (OSError, TimeoutError) as exc:
+            raise LedgerUnavailable(type(exc).__name__) from exc
+
+    def _read(self) -> dict[str, object]:
+        try:
+            text = self._path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return {}
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Only a write interrupted outside the atomic rename leaves this;
+            # keep it for inspection and start over rather than block every request.
+            aside = self._path.with_name(f"{self._path.name}.corrupt-{int(self._clock())}")
+            os.replace(self._path, aside)
+            logger.error("[webapp-loops] request ledger was unreadable; moved to %s", aside)
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _write(self, entries: Mapping[str, object]) -> None:
+        fd, tmp = tempfile.mkstemp(dir=self._path.parent, prefix=f".{self._path.name}.")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(entries, handle, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self._path)
+        except Exception:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+
+
+def _key(organization: str, request_id: str) -> str:
+    return f"{organization}:{request_id.lower()}"
+
+
+__all__ = ["LedgerUnavailable", "RecordedOutcome", "RequestLedger"]

@@ -18,7 +18,8 @@ from typing import Any
 import pytest
 
 import infrastructure.scheduling.scheduler as scheduler_pkg
-import integrations.webapp_scheduled_loops as sync_module
+import integrations.webapp_scheduled_loops.request_ledger as request_ledger
+import integrations.webapp_scheduled_loops.sync as sync_module
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from infrastructure.scheduling.scheduler.loops import create_manual_loop
@@ -37,6 +38,7 @@ def _scheduler_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         module = importlib.import_module(info.name)
         if hasattr(module, "OPENSRE_HOME_DIR"):
             monkeypatch.setattr(module, "OPENSRE_HOME_DIR", home)
+    monkeypatch.setattr(request_ledger, "OPENSRE_HOME_DIR", home)
 
 
 @dataclass
@@ -55,6 +57,7 @@ class _Webapp:
     pending: list[dict[str, Any]] = field(default_factory=list)
     acks: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     reports: list[list[dict[str, Any]]] = field(default_factory=list)
+    totals: list[int] = field(default_factory=list)
 
     def request(self, method: str, url: str, **kwargs: Any) -> _Response:
         assert kwargs["headers"]["Authorization"] == "Bearer gateway-token"
@@ -64,6 +67,7 @@ class _Webapp:
             self.acks.append((url.rsplit("/", 1)[1], kwargs["json"]))
             return _Response(HTTPStatus.OK)
         self.reports.append(kwargs["json"]["loops"])
+        self.totals.append(kwargs["json"]["total"])
         return _Response(HTTPStatus.OK)
 
 
@@ -171,3 +175,64 @@ def test_a_time_changed_in_the_app_reschedules_the_same_loop() -> None:
         "loopId": created.id,
     }
     assert webapp.reports[-1][0]["cron"] == "30 7 * * 1-5"
+
+
+def test_a_redelivered_pause_never_undoes_a_later_resume() -> None:
+    # Arrange: the app paused one of the organization's loops; the ack was lost.
+    scope = StorageScope(principal=Principal.org(_ORG), actor=Actor(id="u"))
+    with bound_storage_scope(scope):
+        created = create_manual_loop(name="Daily", prompt="Daily report.", cron="0 9 * * *")
+    pause = {
+        "id": "6c1d2e3f-0000-4000-8000-000000000003",
+        "action": "pause",
+        "loop_id": created.task.id,
+        "requested_by": "user_2abc",
+    }
+    webapp = _Webapp(pending=[pause])
+    sync = _sync(webapp)
+    sync.sync()
+    # A member then resumes it from Slack.
+    with bound_storage_scope(scope):
+        sync_module.set_loop_enabled(created.task.id, enabled=True)
+
+    # Act: the app redelivers the unacknowledged pause.
+    sync.sync()
+
+    # Assert: re-acknowledged with its first outcome, and the loop stays resumed.
+    stored = get_task(created.task.id)
+    assert stored is not None and stored.enabled
+    assert [ack["status"] for _, ack in webapp.acks] == ["applied", "applied"]
+
+
+def test_a_create_waits_while_the_store_cannot_be_read_completely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: an unreadable row might be the loop this request already created.
+    def partial() -> TaskStoreSnapshot:
+        return TaskStoreSnapshot(tasks=(), complete=False, missing=False)
+
+    monkeypatch.setattr(sync_module, "get_task_store_snapshot", partial)
+    webapp = _Webapp(pending=[_create_request()])
+
+    # Act
+    _sync(webapp).sync()
+
+    # Assert: nothing created and nothing acknowledged, so the app redelivers it later.
+    assert list_tasks() == []
+    assert webapp.acks == []
+
+
+def test_a_list_over_the_report_cap_says_it_is_partial(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: more loops than one report may carry.
+    monkeypatch.setattr(sync_module, "_MAX_REPORTED_LOOPS", 1)
+    for name in ("First", "Second"):
+        with bound_storage_scope(StorageScope(principal=Principal.org(_ORG), actor=Actor(id="u"))):
+            create_manual_loop(name=name, prompt=f"{name} report.", cron="0 9 * * *")
+    webapp = _Webapp()
+
+    # Act
+    _sync(webapp).report(force=True)
+
+    # Assert: the cap is applied and the full count travels with it.
+    assert len(webapp.reports[0]) == 1
+    assert webapp.totals == [2]
