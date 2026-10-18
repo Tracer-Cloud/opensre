@@ -278,9 +278,12 @@ class WebappLoopSync:
                 return None
             tasks = [task for task in snapshot.tasks if visible_to_current_scope(task)]
         by_id = {task.id: task for task in tasks}
+        # A one-shot work-item reminder runs at a time, not on a cron; the
+        # Tasks page lists recurring schedules only.
         return [
             _loop_row(loop, [by_id[task_id] for task_id in loop.task_ids if task_id in by_id])
             for loop in summarize_loops(tasks)
+            if loop.cron.strip()
         ]
 
     def _call(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -296,7 +299,14 @@ class WebappLoopSync:
             logger.warning("[webapp-loops] %s %s failed (%s)", method, path, type(exc).__name__)
             return None
         if response.status_code not in (HTTPStatus.OK, HTTPStatus.NOT_FOUND):
-            logger.warning("[webapp-loops] %s %s -> %s", method, path, response.status_code)
+            # The web app's own short error text, so a rejected report says why.
+            logger.warning(
+                "[webapp-loops] %s %s -> %s %s",
+                method,
+                path,
+                response.status_code,
+                _error_text(response),
+            )
         return response
 
 
@@ -311,6 +321,15 @@ def webapp_loop_sync_from_environment() -> WebappLoopSync | None:
     if not org or not token or not base_url.lower().startswith("https://"):
         return None
     return WebappLoopSync(base_url=base_url, organization=org, token=token)
+
+
+def _error_text(response: Any) -> str:
+    """The ``error`` field of a web app error response, capped; "" when absent."""
+    try:
+        error = response.json().get("error")
+    except (ValueError, AttributeError):
+        return ""
+    return str(error)[:200] if error else ""
 
 
 def _strings(value: Any) -> list[str]:

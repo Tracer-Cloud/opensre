@@ -23,7 +23,13 @@ import integrations.webapp_scheduled_loops.sync as sync_module
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from infrastructure.scheduling.scheduler.loops import create_manual_loop
-from infrastructure.scheduling.scheduler.storage import TaskStoreSnapshot, get_task, list_tasks
+from infrastructure.scheduling.scheduler.storage import (
+    TaskStoreSnapshot,
+    add_task,
+    get_task,
+    list_tasks,
+)
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations.webapp_scheduled_loops import WebappLoopSync
 
 _ORG = "org_A"
@@ -236,3 +242,27 @@ def test_a_list_over_the_report_cap_says_it_is_partial(monkeypatch: pytest.Monke
     # Assert: the cap is applied and the full count travels with it.
     assert len(webapp.reports[0]) == 1
     assert webapp.totals == [2]
+
+
+def test_a_one_shot_reminder_never_reaches_the_tasks_page() -> None:
+    """The Tracer store's old reminder has no cron; the web app refused every report for it."""
+    # Arrange: a recurring loop and a one-shot work-item reminder in the same store.
+    scope = StorageScope(principal=Principal.org(_ORG), actor=Actor(id="u"))
+    with bound_storage_scope(scope):
+        loop = create_manual_loop(name="Daily", prompt="Daily report.", cron="0 9 * * *")
+        add_task(
+            ScheduledTask(
+                kind=TaskKind.WORK_ITEM_REMINDER,
+                cron="",
+                provider=Provider.SLACK,
+                enabled=False,
+                params={"run_at": "2026-10-06T22:18:01+00:00", "work_item_id": "b82ef1fa42a8"},
+            )
+        )
+    webapp = _Webapp()
+
+    # Act
+    _sync(webapp).report(force=True)
+
+    # Assert: only the recurring loop is reported, and every row has a cron.
+    assert [row["id"] for row in webapp.reports[0]] == [loop.task.id]
