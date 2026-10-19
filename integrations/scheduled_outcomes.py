@@ -34,7 +34,8 @@ class ScheduledOutcomes:
     A free-form task loop (its own task text, no repository target or skill) has
     no tools that report outcomes, so its delivered reply is its result: a push or
     GitHub write is done work, anything else a no-op, and a note-only reply is a
-    quiet no-op unless a tool failed without reporting an outcome.
+    quiet no-op unless a tool failed without reporting an outcome (a nonzero
+    shell exit included).
     """
 
     def __init__(
@@ -54,10 +55,11 @@ class ScheduledOutcomes:
         """Record producer-owned structured evidence without interpreting report prose."""
         payload: Any = result.details
         if not isinstance(payload, dict) or "work_outcome" not in payload:
-            if result.is_error or (self._stateless and call_failed(result)):
+            judged_by_tools = self._stateless or self._free_form
+            if result.is_error or (judged_by_tools and call_failed(result)):
                 with self._lock:
                     self._unverified_failure = True
-            elif (self._stateless or self._free_form) and is_remote_write(request, result):
+            elif judged_by_tools and is_remote_write(request, result):
                 action = describe_tool_action(request, result) or request.tool_call.name
                 with self._lock:
                     self._remote_writes.append(action)

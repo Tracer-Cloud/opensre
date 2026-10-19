@@ -342,6 +342,10 @@ def _gh_fails(args: list[str], **_kwargs: Any) -> dict[str, Any]:
     raise RuntimeError("gh: HTTP 502")
 
 
+def _gh_exits_nonzero(args: list[str], **_kwargs: Any) -> dict[str, Any]:
+    return {"ok": False, "exit_code": 1, "stderr": "HTTP 403"}
+
+
 @pytest.mark.parametrize(
     "repository, reply, gh_args, gh_run, status, error_kind, delivered",
     [
@@ -355,6 +359,16 @@ def _gh_fails(args: list[str], **_kwargs: Any) -> dict[str, Any]:
             "NOTE FOR NEXT RUN: nothing new",
             ["api", "repos/o/r"],
             _gh_fails,
+            "incomplete",
+            "report_missing",
+            "",
+        ),
+        # A read that exited nonzero is a failure too, not an empty result.
+        (
+            {},
+            "NOTE FOR NEXT RUN: nothing new",
+            ["api", "repos/o/r/dependabot/alerts"],
+            _gh_exits_nonzero,
             "incomplete",
             "report_missing",
             "",
