@@ -234,7 +234,6 @@ def test_a_redelivered_pause_never_undoes_a_later_resume() -> None:
 def test_a_create_recorded_before_the_ledger_was_shared_is_not_created_again() -> None:
     # The shared ledger names the produced id ``ref``; a ledger already on a
     # gateway's volume calls it ``loop_id`` and must still answer redeliveries.
-    import json
     import time
 
     from config.constants import paths
