@@ -295,3 +295,22 @@ def test_a_large_organization_still_fits_one_report() -> None:
     member = report["members"][0]
     assert member["total"] == 50 and member["audit"]["total"] == 50
     assert member["memories"] and member["memories"][0]["truncated"] is True
+
+
+def test_the_report_fits_even_when_counts_alone_are_too_big() -> None:
+    # Review finding: the shrinking steps could all fail and the oversized
+    # report was sent anyway, so every update for the org was rejected.
+    import json
+
+    from core.domain.memory import MemberStore
+    from integrations.webapp_knowledge.snapshot import build_snapshot
+
+    stores = [
+        MemberStore(actor=f"U{i:04d}", directory=Path("/unused"), records=(), usage={})
+        for i in range(300)
+    ]
+
+    report = build_snapshot(_ORG, stores=stores, max_bytes=4_000)
+
+    assert len(json.dumps(report, separators=(",", ":")).encode()) <= 4_000
+    assert report["audit"]["members"] == 300

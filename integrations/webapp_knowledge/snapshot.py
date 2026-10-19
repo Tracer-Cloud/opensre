@@ -26,14 +26,16 @@ MAX_MEMBERS = 500
 #: The report is one request body, and the web app runs where a request body is
 #: capped at 4.5 MB; stay well under it.
 MAX_REPORT_BYTES = 3_000_000
-#: (body characters, memories per member) tried in order until the report fits.
-_FIT_STEPS: tuple[tuple[int, int], ...] = (
-    (MAX_CONTENT_CHARS, MAX_MEMORIES_PER_MEMBER),
-    (1_500, MAX_MEMORIES_PER_MEMBER),
-    (400, MAX_MEMORIES_PER_MEMBER),
-    (0, MAX_MEMORIES_PER_MEMBER),
-    (0, 100),
-    (0, 25),
+#: (body characters, memories per member, audit with memory names) tried in
+#: order until the report fits; the last sends counts only.
+_FIT_STEPS: tuple[tuple[int, int, bool], ...] = (
+    (MAX_CONTENT_CHARS, MAX_MEMORIES_PER_MEMBER, True),
+    (1_500, MAX_MEMORIES_PER_MEMBER, True),
+    (400, MAX_MEMORIES_PER_MEMBER, True),
+    (0, MAX_MEMORIES_PER_MEMBER, True),
+    (0, 100, False),
+    (0, 25, False),
+    (0, 0, False),
 )
 
 
@@ -64,15 +66,21 @@ def member_row(
     *,
     content_chars: int = MAX_CONTENT_CHARS,
     memories: int = MAX_MEMORIES_PER_MEMBER,
+    full_audit: bool = True,
 ) -> dict[str, Any]:
-    """One member's memories (the most recent ``memories``) and audit."""
+    """One member's memories (the most recent ``memories``) and audit.
+
+    Without ``full_audit`` the audit carries counts only, no memory names.
+    """
     return {
         "actor": store.actor,
         "memories": [
             entry_row(record, content_chars=content_chars) for record in store.records[:memories]
         ],
         "total": len(store.records),
-        "audit": audit.to_dict(),
+        "audit": audit.to_dict()
+        if full_audit
+        else {**audit.summary(), "duplicate_group_slugs": [], "issues": []},
     }
 
 
@@ -117,7 +125,7 @@ def build_snapshot(
         members.append((store, audit_memories(store.records, usage=store.usage, now=now)))
     workspace = list_workspace_entries()[:MAX_WORKSPACE_ENTRIES]
     report: dict[str, Any] = {}
-    for content_chars, per_member in _FIT_STEPS:
+    for content_chars, per_member, full_audit in _FIT_STEPS:
         report = {
             "organizationId": organization,
             "generatedAt": (now or datetime.now(UTC)).isoformat(timespec="seconds"),
@@ -126,7 +134,13 @@ def build_snapshot(
                 for record in workspace
             ],
             "members": [
-                member_row(store, audit, content_chars=content_chars, memories=per_member)
+                member_row(
+                    store,
+                    audit,
+                    content_chars=content_chars,
+                    memories=per_member,
+                    full_audit=full_audit,
+                )
                 for store, audit in members
             ],
             "audit": rollup([audit for _store, audit in members]),
@@ -134,6 +148,10 @@ def build_snapshot(
         }
         if _report_bytes(report) <= max_bytes:
             return report
+    # Counts alone still too big: send as many members and entries as fit, so
+    # the report is always accepted (the rollup still counts everyone).
+    while (report["members"] or report["workspace"]) and _report_bytes(report) > max_bytes:
+        (report["members"] or report["workspace"]).pop()
     return report
 
 

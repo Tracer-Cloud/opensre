@@ -72,6 +72,10 @@ MAX_MAPPED_CHANNELS = 80
 _NOTE_CHARS = 160
 _CELL_CHARS = 80
 _OVERVIEW_CHARS = 900
+_CHANNEL_MAP_INTRO = (
+    "Public channels, busiest first. The agent can read a channel only after "
+    "someone invites it (/invite @OpenSRE)."
+)
 #: Room an entry body may use: the store's limit, less a margin for the "… and N more" line.
 ENTRY_BODY_BUDGET = MAX_BODY_CHARS - 100
 _OMITTED_LINE_RESERVE = 80
@@ -369,8 +373,7 @@ def render_channel_map(view: SlackWorkspaceView, *, notes: dict[str, str]) -> tu
     head = [
         f"# Slack: {view.name}",
         "",
-        "Public channels, busiest first. The agent can read a channel only after "
-        "someone invites it (/invite @OpenSRE).",
+        _CHANNEL_MAP_INTRO,
         "",
         "| Channel | Members | Agent in channel | What it is for |",
         "| --- | --- | --- | --- |",

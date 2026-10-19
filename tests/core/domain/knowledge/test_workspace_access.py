@@ -61,3 +61,20 @@ def test_a_member_removed_by_the_next_scan_loses_access() -> None:
 
     with bound_usage_context(surface=UsageSurface.SLACK), _turn_as("U_MEMBER"):
         assert not knowledge_available_here()
+
+
+def test_a_guest_cannot_read_workspace_knowledge_through_the_slash_command() -> None:
+    # Review finding: gateways expose /knowledge, which checked only that the
+    # feature was on, so a guest could print the organization profile.
+    from io import StringIO
+
+    from rich.console import Console
+
+    from surfaces.interactive_shell.command_registry.knowledge_cmds import COMMANDS
+
+    [command] = COMMANDS
+    for actor, visible in (("U_GUEST", False), ("U_MEMBER", True)):
+        out = StringIO()
+        with bound_usage_context(surface=UsageSurface.SLACK), _turn_as(actor):
+            command.handler(None, Console(file=out, width=200), ["show", "organization"])
+        assert ("Acme sells payment terminals." in out.getvalue()) is visible

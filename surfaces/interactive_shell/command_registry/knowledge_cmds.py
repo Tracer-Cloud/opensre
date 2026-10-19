@@ -8,6 +8,7 @@ from rich.markup import escape
 from config.constants import OPENSRE_KNOWLEDGE_DISABLED_ENV
 from config.constants.organization import organization_id
 from core.domain.knowledge import (
+    caller_may_read_workspace,
     knowledge_dir,
     knowledge_enabled,
     list_workspace_entries,
@@ -110,6 +111,11 @@ def _cmd_knowledge(session: Session, console: Console, args: list[str]) -> bool:
         console.print(f"[{DIM}]workspace knowledge is off ({OPENSRE_KNOWLEDGE_DISABLED_ENV}=1).[/]")
         return True
     sub = args[0].lower() if args else "list"
+    # Gateways reach this command too: the same membership rule as the prompt
+    # and memory_recall, so a guest never reads or scans workspace knowledge.
+    if sub != "audit" and not caller_may_read_workspace():
+        console.print(f"[{DIM}]workspace knowledge is for members of this organization.[/]")
+        return True
     if sub == "list":
         return _show_list(console)
     if sub == "show":
@@ -121,6 +127,11 @@ def _cmd_knowledge(session: Session, console: Console, args: list[str]) -> bool:
     console.print(f"[{ERROR}]usage:[/] /knowledge [list|show <name>|audit|scan [service]]")
     return True
 
+
+_SHARED_NOTE = (
+    "Workspace knowledge is shared by everyone in the organization and "
+    "written by scans of connected integrations; /memory is your own."
+)
 
 _KNOWLEDGE_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("list", "list workspace knowledge"),
@@ -140,11 +151,7 @@ COMMANDS: list[SlashCommand] = [
             "/knowledge audit",
             "/knowledge scan [service]",
         ),
-        notes=(
-            "Workspace knowledge is shared by everyone in the organization and "
-            "written by scans of connected integrations; /memory is your own.",
-            f"Disable it with {OPENSRE_KNOWLEDGE_DISABLED_ENV}=1.",
-        ),
+        notes=(_SHARED_NOTE, f"Disable it with {OPENSRE_KNOWLEDGE_DISABLED_ENV}=1."),
         first_arg_completions=_KNOWLEDGE_FIRST_ARGS,
     ),
 ]
