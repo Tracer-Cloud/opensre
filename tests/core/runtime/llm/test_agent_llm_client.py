@@ -721,7 +721,7 @@ def test_openai_agent_client_enables_parallel_tool_calls_for_openai(
     assert captured["parallel_tool_calls"] is True
 
 
-@pytest.mark.parametrize("model", ["gpt-5.6", "gpt-6.1-sol"])
+@pytest.mark.parametrize("model", ["gpt-5.6", "gpt-6", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol"])
 def test_openai_reasoning_agent_uses_responses_api_and_replays_reasoning(
     monkeypatch: pytest.MonkeyPatch,
     model: str,
@@ -971,7 +971,11 @@ def test_openai_agent_client_omits_parallel_tool_calls_for_compat_provider(
 def test_openai_o_series_uses_max_completion_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """o-series and gpt-5/gpt-6 series models must receive max_completion_tokens."""
+    """Models on Chat Completions must receive max_completion_tokens, not max_tokens.
+
+    Bare ``gpt-6`` names are not listed here: they take the Responses API, which
+    is covered by ``test_openai_reasoning_agent_uses_responses_api_and_replays_reasoning``.
+    """
     _install_fake_openai(monkeypatch)
 
     captured: dict = {}
@@ -998,9 +1002,8 @@ def test_openai_o_series_uses_max_completion_tokens(
         "gpt-5",
         "gpt-5o",
         "gpt-5o-mini",
-        "gpt-6",
-        "gpt-6-luna",
-        "gpt-6-sol",
+        # Vendor-prefixed routes do not match the Responses prefix check, so they
+        # stay on Chat Completions and must still carry max_completion_tokens.
         "openai/gpt-6-luna",
     ):
         captured.clear()

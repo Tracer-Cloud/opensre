@@ -96,6 +96,8 @@ class GatewayController:
         self._scheduler_reload_thread: threading.Thread | None = None
         self._credential_refresh_thread: threading.Thread | None = None
         self._webapp_loop_sync_thread: threading.Thread | None = None
+        #: Set to sync with the web app now rather than at the next poll.
+        self._webapp_loop_sync_wake = threading.Event()
         self._webapp_loop_sync: Any = None
         self._knowledge_scans: Any = None
         self._knowledge_threads: list[threading.Thread] = []
@@ -165,7 +167,10 @@ class GatewayController:
     ) -> None:
         """Start web + every chat transport together (via :mod:`gateway.startup`)."""
         self.surfaces = gateway_startup.start_gateway(
-            logger=logger, handler=handler, prompt_runner=prompt_runner
+            logger=logger,
+            handler=handler,
+            prompt_runner=prompt_runner,
+            loop_sync_wake=self.request_webapp_loop_sync,
         )
         self.components.update(self.surfaces.statuses)
 
@@ -211,6 +216,7 @@ class GatewayController:
         budget = ShutdownBudget(seconds)
         set_ready(False)
         self._stopped.set()
+        self._webapp_loop_sync_wake.set()
         stopped = True
         if self._scheduler_reload_thread is not None:
             started = budget.mark()
@@ -336,19 +342,34 @@ class GatewayController:
             return
         self._webapp_loop_sync = sync
 
+        wake = self._webapp_loop_sync_wake
+
         def _watch() -> None:
             while not self._stopped.is_set():
+                # Cleared before the pass, so a nudge that lands mid-pass runs another.
+                wake.clear()
+                # stop() sets both events; if it landed just before the clear,
+                # its wake is gone, so check again rather than sleep the interval.
+                if self._stopped.is_set():
+                    break
                 try:
                     sync.sync()
                 except Exception as exc:  # noqa: BLE001 - keep syncing after one bad pass
                     logger.warning("[gateway] web app task sync failed (%s)", type(exc).__name__)
-                self._stopped.wait(WEBAPP_LOOP_SYNC_INTERVAL_SECONDS)
+                wake.wait(WEBAPP_LOOP_SYNC_INTERVAL_SECONDS)
 
         self.components["webapp_tasks"] = "syncing with the web app"
         self._webapp_loop_sync_thread = threading.Thread(
             target=_watch, name="opensre-webapp-loop-sync", daemon=True
         )
         self._webapp_loop_sync_thread.start()
+
+    def request_webapp_loop_sync(self) -> bool:
+        """Sync with the web app now (its change nudge); False when this gateway has no sync."""
+        if self._webapp_loop_sync_thread is None:
+            return False
+        self._webapp_loop_sync_wake.set()
+        return True
 
     def _start_knowledge(self) -> None:
         """Keep workspace knowledge current and mirror it to the web app's Knowledge page.

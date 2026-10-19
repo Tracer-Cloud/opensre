@@ -442,3 +442,127 @@ def test_shutdown_waits_for_a_run_now_and_leaves_later_ones_pending(
     # asked for during shutdown is neither run nor acked (the next gateway takes it).
     assert (cut_short, finished) == (False, True)
     assert webapp.acks == []
+
+
+def _update(loop_id: str, request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": request_id,
+        "action": "update",
+        "loop_id": loop_id,
+        "payload": {"name": "Failed branches", "prompt": "List failed branches.", **payload},
+        "requested_by": "user_2abc",
+    }
+
+
+def test_the_app_can_change_where_a_loop_delivers() -> None:
+    # Arrange: a loop created in the app.
+    webapp = _Webapp(pending=[_create_request()])
+    sync = _sync(webapp)
+    sync.sync()
+    [created] = list_tasks()
+
+    # Act: add email, then take it away again.
+    webapp.pending = [
+        _update(
+            created.id,
+            "6c1d2e3f-0000-4000-8000-0000000000e1",
+            {
+                "channels": ["interactive_shell", "email"],
+                "email_to": "ana@example.com, ben@example.com",
+                "email_account": "gmail:apn_1",
+            },
+        )
+    ]
+    sync.sync()
+    [with_email] = list_tasks()
+    webapp.pending = [
+        _update(
+            created.id, "6c1d2e3f-0000-4000-8000-0000000000e2", {"channels": ["interactive_shell"]}
+        )
+    ]
+    sync.sync()
+    [without_email] = list_tasks()
+
+    # Assert: same loop throughout; email destination set, then cleared.
+    assert with_email.id == without_email.id == created.id
+    assert with_email.params["loop_channels"] == "interactive_shell,email"
+    assert with_email.params["loop_email_to"] == "ana@example.com,ben@example.com"
+    assert with_email.params["loop_email_account"] == "gmail:apn_1"
+    assert without_email.params["loop_channels"] == "interactive_shell"
+    assert "loop_email_to" not in without_email.params
+    assert [ack["status"] for _, ack in webapp.acks[-2:]] == ["applied", "applied"]
+
+
+def test_a_delivery_edit_with_a_bad_address_is_refused_and_changes_nothing() -> None:
+    # Arrange
+    webapp = _Webapp(pending=[_create_request()])
+    sync = _sync(webapp)
+    sync.sync()
+    [created] = list_tasks()
+    webapp.pending = [
+        _update(
+            created.id,
+            "6c1d2e3f-0000-4000-8000-0000000000e3",
+            {"channels": ["email"], "email_to": "not-an-address", "email_account": "smtp:r1"},
+        )
+    ]
+
+    # Act
+    sync.sync()
+
+    # Assert
+    [task] = list_tasks()
+    assert webapp.acks[-1][1]["status"] == "failed"
+    assert "not an email address" in webapp.acks[-1][1]["error"]
+    assert task.params["loop_channels"] == created.params["loop_channels"]
+
+
+def test_an_edit_may_change_only_where_a_loop_delivers() -> None:
+    # Arrange: an update with delivery and nothing else.
+    webapp = _Webapp(pending=[_create_request()])
+    sync = _sync(webapp)
+    sync.sync()
+    [created] = list_tasks()
+    webapp.pending = [
+        {
+            "id": "6c1d2e3f-0000-4000-8000-0000000000e4",
+            "action": "update",
+            "loop_id": created.id,
+            "payload": {
+                "channels": ["email"],
+                "email_to": "ana@example.com",
+                "email_account": "smtp:r1",
+            },
+            "requested_by": "user_2abc",
+        }
+    ]
+
+    # Act
+    sync.sync()
+
+    # Assert: applied, with name and instructions untouched.
+    [task] = list_tasks()
+    assert webapp.acks[-1][1]["status"] == "applied"
+    assert task.params["loop_channels"] == "email"
+    assert (task.name, task.params["loop_prompt"]) == (
+        created.name,
+        created.params["loop_prompt"],
+    )
+
+
+def test_an_empty_channel_list_is_refused_not_ignored() -> None:
+    # Arrange
+    webapp = _Webapp(pending=[_create_request()])
+    sync = _sync(webapp)
+    sync.sync()
+    [created] = list_tasks()
+    webapp.pending = [_update(created.id, "6c1d2e3f-0000-4000-8000-0000000000e5", {"channels": []})]
+
+    # Act
+    sync.sync()
+
+    # Assert
+    [task] = list_tasks()
+    assert webapp.acks[-1][1]["status"] == "failed"
+    assert "at least one place" in webapp.acks[-1][1]["error"]
+    assert task.params["loop_channels"] == created.params["loop_channels"]

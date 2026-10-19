@@ -12,28 +12,44 @@ from infrastructure.scheduling.scheduler.cron_expression import (
     cap_cron_at_most_hourly,
 )
 from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CHANNELS_PARAM,
     LOOP_DESCRIPTION_PARAM,
+    LOOP_EMAIL_ACCOUNT_PARAM,
+    LOOP_EMAIL_TO_PARAM,
     LOOP_GROUP_ID_PARAM,
     LOOP_MODE_PARAM,
     LOOP_MODES,
     LOOP_PROMPT_PARAM,
     LOOP_REPORT_PARAM,
     LOOP_SKILL_PARAM,
+    LOOP_SLACK_CHAT_ID_PARAM,
+    LOOP_TELEGRAM_CHAT_ID_PARAM,
     LOOP_TEMPLATE_PARAM,
     LOOP_TIME_PARAM,
 )
 from infrastructure.scheduling.scheduler.loops import (
     LoopMutation,
     cron_for_time,
+    email_recipients,
     loop_time_label,
+    normalize_loop_channels,
     summarize_loops,
 )
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_loop_operation
 from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import patch_task_definitions
-from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
-_FIELDS = frozenset({"name", "prompt", "cron", "timezone", "window_hours", "mode"})
+#: Where a loop delivers: the channel list and each channel's destination.
+#: A destination left out of an edit keeps its current value.
+DELIVERY_FIELDS = ("channels", "slack_chat_id", "telegram_chat_id", "email_to", "email_account")
+_FIELDS = frozenset(
+    {"name", "prompt", "cron", "timezone", "window_hours", "mode", *DELIVERY_FIELDS}
+)
+_DESTINATION_PARAMS = {
+    "slack_chat_id": (Provider.SLACK, LOOP_SLACK_CHAT_ID_PARAM),
+    "telegram_chat_id": (Provider.TELEGRAM, LOOP_TELEGRAM_CHAT_ID_PARAM),
+}
 
 
 def loop_prompt_editable(task: ScheduledTask) -> bool:
@@ -50,7 +66,7 @@ def validate_loop_changes(changes: Mapping[str, str]) -> dict[str, str]:
     if unknown:
         raise ValueError(f"unsupported loop edit fields: {', '.join(sorted(unknown))}")
     result = {key: value.strip() for key, value in changes.items()}
-    for key in ("name", "prompt", "cron", "timezone"):
+    for key in ("name", "prompt", "cron", "timezone", "channels"):
         if key in result and not result[key]:
             raise ValueError(f"{key.replace('_', ' ')} is required")
     if "mode" in result and result["mode"] not in LOOP_MODES:
@@ -124,6 +140,8 @@ def _definition_patch(
         params[LOOP_PROMPT_PARAM] = changes["prompt"]
     if "mode" in changes:
         params[LOOP_MODE_PARAM] = changes["mode"]
+    if "channels" in changes:
+        _apply_delivery(task, params, changes)
     if "cron" in changes or "timezone" in changes:
         timezone = changes.get("timezone", task.timezone)
         cron = changes.get("cron", task.cron)
@@ -145,6 +163,42 @@ def _definition_patch(
     if params != task.params:
         patch["params"] = params
     return patch
+
+
+def _apply_delivery(
+    task: ScheduledTask, params: dict[str, str], changes: Mapping[str, str]
+) -> None:
+    """Point the loop at the channels in ``changes``, validated as a new loop's would be."""
+    if task.kind is not TaskKind.MANUAL_LOOP:
+        raise ValueError("only manual loops can change where they deliver")
+
+    def current(field: str, param: str) -> str:
+        return changes[field] if field in changes else params.get(param, "")
+
+    slack = current("slack_chat_id", LOOP_SLACK_CHAT_ID_PARAM)
+    telegram = current("telegram_chat_id", LOOP_TELEGRAM_CHAT_ID_PARAM)
+    email_to = current("email_to", LOOP_EMAIL_TO_PARAM)
+    email_account = current("email_account", LOOP_EMAIL_ACCOUNT_PARAM)
+    providers = normalize_loop_channels(
+        changes["channels"].split(","),
+        telegram_chat_id=telegram,
+        slack_chat_id=slack,
+        email_to=email_to,
+        email_account=email_account,
+    )
+    params[LOOP_CHANNELS_PARAM] = ",".join(provider.value for provider in providers)
+    for field, (provider, param) in _DESTINATION_PARAMS.items():
+        value = (slack if field == "slack_chat_id" else telegram).strip()
+        if provider in providers and value:
+            params[param] = value
+        else:
+            params.pop(param, None)
+    if Provider.EMAIL in providers:
+        params[LOOP_EMAIL_TO_PARAM] = ",".join(email_recipients(email_to))
+        params[LOOP_EMAIL_ACCOUNT_PARAM] = email_account.strip()
+    else:
+        params.pop(LOOP_EMAIL_TO_PARAM, None)
+        params.pop(LOOP_EMAIL_ACCOUNT_PARAM, None)
 
 
 def edit_loop(
@@ -180,4 +234,10 @@ def edit_loop(
     return mutation, ""
 
 
-__all__ = ["edit_loop", "loop_changes", "loop_prompt_editable", "validate_loop_changes"]
+__all__ = [
+    "DELIVERY_FIELDS",
+    "edit_loop",
+    "loop_changes",
+    "loop_prompt_editable",
+    "validate_loop_changes",
+]

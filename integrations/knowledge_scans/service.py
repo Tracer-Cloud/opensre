@@ -211,6 +211,10 @@ class KnowledgeScanService:
             # Clear before the pass: a poke that lands while it runs stays set
             # and starts the next pass at once instead of being lost.
             self._wake.clear()
+            # A stop pokes after setting ``stopped``; if that poke landed just
+            # before the clear it is gone, so look again rather than sleep.
+            if stopped.is_set():
+                break
             try:
                 self.run_due()
             except Exception as exc:  # noqa: BLE001 - keep the loop alive after one bad pass

@@ -11,6 +11,7 @@ module, and only this module imports ``gateway.transports.startup``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from config.constants.gateway import (
@@ -78,13 +79,19 @@ def start_gateway(
     logger: logging.Logger,
     handler: TurnCallback,
     prompt_runner: PromptTurnRunner | None = None,
+    loop_sync_wake: Callable[[], bool] | None = None,
 ) -> StartedGateway:
     """Start web and every chat transport together.
 
     Missing chat credentials skip that transport (``not configured``); readiness
     or runtime failures record ``failed``. The rest still start. Remote prompts
-    are accepted only when ``prompt_runner`` is given.
+    are accepted only when ``prompt_runner`` is given. ``loop_sync_wake`` answers
+    the web app's loop-change nudge (``POST /v1/loops/sync``).
     """
+    if loop_sync_wake is not None:
+        from gateway.web.webapp import app
+
+        app.state.loop_sync_wake = loop_sync_wake
     prompt_worker = None
     statuses: dict[str, str] = {}
     if prompt_runner is not None:

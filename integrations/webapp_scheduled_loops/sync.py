@@ -37,7 +37,12 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_REPORT,
     LOOP_WEBAPP_REQUEST_ID_PARAM,
 )
-from infrastructure.scheduling.scheduler.loop_edit import edit_loop, loop_changes
+from infrastructure.scheduling.scheduler.loop_edit import (
+    DELIVERY_FIELDS,
+    edit_loop,
+    loop_changes,
+    validate_loop_changes,
+)
 from infrastructure.scheduling.scheduler.loops import (
     LoopSummary,
     create_manual_loop,
@@ -376,13 +381,30 @@ class WebappLoopSync:
             return RecordedOutcome(False, error=_MISSING_LOOP)
         payload = raw_payload if isinstance(raw_payload, Mapping) else {}
         field = {key: str(payload.get(key) or "") for key in _UPDATE_FIELDS}
-        changes = loop_changes(
-            name=field["name"],
-            prompt=field["prompt"],
-            cron=field["cron"],
-            timezone=field["timezone"],
-            mode=field["mode"],
-        )
+        changes: dict[str, str] = {}
+        if any(value.strip() for value in field.values()):
+            changes = loop_changes(
+                name=field["name"],
+                prompt=field["prompt"],
+                cron=field["cron"],
+                timezone=field["timezone"],
+                mode=field["mode"],
+            )
+        if "channels" in payload:
+            # Delivery is edited only when the app sends it; destinations it
+            # leaves out keep their current value. An empty list is refused,
+            # never read as "no change".
+            channels = _strings(payload["channels"])
+            if not channels:
+                raise ValueError("Choose at least one place to deliver to.")
+            delivery = {
+                key: ",".join(channels) if key == "channels" else str(payload[key])
+                for key in DELIVERY_FIELDS
+                if payload.get(key) is not None
+            }
+            changes = {**changes, **validate_loop_changes(delivery)}
+        if not changes:
+            raise ValueError("say what to change: time, cron, timezone, prompt, name or mode")
         mutation, error = edit_loop(summary.task_ids, changes, loop_id=summary.id)
         if mutation is None:
             return RecordedOutcome(False, error=error)

@@ -40,8 +40,9 @@ def test_start_surfaces_delegates_to_the_startup_module(
     )
     captured: dict[str, object] = {}
 
-    def _boot(*, logger, handler, prompt_runner=None):
+    def _boot(*, logger, handler, prompt_runner=None, loop_sync_wake=None):
         captured["prompt_runner"] = prompt_runner
+        captured["loop_sync_wake"] = loop_sync_wake
         captured["logger"] = logger
         captured["handler"] = handler
         return expected
@@ -54,6 +55,7 @@ def test_start_surfaces_delegates_to_the_startup_module(
     manager.start_surfaces(logger=logger, handler=handler)
 
     assert manager.surfaces is expected
+    assert captured["loop_sync_wake"] == manager.request_webapp_loop_sync
     assert captured["logger"] is logger
     assert captured["handler"] is handler
     assert manager.components[TransportName.TELEGRAM] == "polling for messages"
