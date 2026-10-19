@@ -348,3 +348,64 @@ def test_past_the_member_cap_everyone_is_counted_and_the_active_are_mirrored() -
 
     assert report["audit"]["members"] == 4 and report["audit"]["memories"] == 4
     assert [member["actor"] for member in report["members"]] == ["U_D", "U_C"]
+
+
+def _big_store(actor: str, *, memories: int = 50) -> Any:
+    from core.domain.memory import MemberStore
+    from core.domain.memory.models import MemoryRecord
+
+    records = tuple(
+        MemoryRecord(
+            slug=f"fact-{i}",
+            memory_type=MemoryType.INFRASTRUCTURE,
+            description=f"Fact {i}",
+            created_at="2026-10-01T00:00:00+00:00",
+            updated_at=f"2026-10-01T00:00:{i % 60:02d}+00:00",
+            body="line of notes\n" * 290,
+        )
+        for i in range(memories)
+    )
+    return MemberStore(actor=actor, directory=Path("/unused"), records=records, usage={})
+
+
+def test_a_large_organization_costs_about_one_report_of_memory() -> None:
+    # Review finding: every listed store was held and the whole report built
+    # before its size was checked, so a big organization cost the gateway
+    # hundreds of megabytes on every pass.
+    import tracemalloc
+
+    from integrations.webapp_knowledge.snapshot import build_snapshot
+
+    def stores() -> Any:  # 300 members, ~200 KB of memories each: ~60 MB in all
+        for i in range(300):
+            yield _big_store(f"U{i:04d}")
+
+    tracemalloc.start()
+    try:
+        report = build_snapshot(_ORG, stores=stores(), max_bytes=500_000)
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert peak < 15_000_000
+    assert report["audit"]["members"] == 300 and len(report["members"]) == 300
+
+
+@pytest.mark.parametrize("max_bytes", [3_000, 40_000, 400_000, 4_000_000])
+def test_the_report_is_built_to_its_exact_budget(max_bytes: int) -> None:
+    import json
+
+    from integrations.webapp_knowledge.snapshot import build_snapshot
+
+    save_workspace_entry(
+        slug="organization",
+        memory_type=MemoryType.ORGANIZATION,
+        description="Acme",
+        body="Acme sells payment terminals.\n" * 100,
+    )
+    stores = [_big_store(f"U{i:02d}", memories=i % 7 + 1) for i in range(40)]
+
+    report = build_snapshot(_ORG, stores=stores, max_bytes=max_bytes)
+
+    assert len(json.dumps(report, separators=(",", ":")).encode()) <= max_bytes
+    assert report["audit"]["members"] == 40
