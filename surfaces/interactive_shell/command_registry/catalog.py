@@ -23,6 +23,9 @@ from surfaces.interactive_shell.command_registry.help import COMMANDS as HELP_CO
 from surfaces.interactive_shell.command_registry.integrations import (
     COMMANDS as INTEGRATIONS_COMMANDS,
 )
+from surfaces.interactive_shell.command_registry.knowledge_cmds import (
+    COMMANDS as KNOWLEDGE_COMMANDS,
+)
 from surfaces.interactive_shell.command_registry.loops_cmds import COMMANDS as LOOPS_COMMANDS
 from surfaces.interactive_shell.command_registry.memory_cmds import (
     COMMANDS as MEMORY_COMMANDS,
@@ -64,6 +67,7 @@ _MERGED_SEQUENCE = tuple(
         GATEWAY_COMMANDS,
         PRIVACY_COMMANDS,
         MEMORY_COMMANDS,
+        KNOWLEDGE_COMMANDS,
         WORK_COMMANDS,
         REMOTE_SYNC_COMMANDS,
         AGENTS_COMMANDS,

@@ -265,6 +265,17 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
             "User asks to log in to an LLM provider (use /login)",
         ),
     ),
+    "/knowledge": _mcp(
+        "Show the organization's workspace knowledge (profile, scanned integrations), "
+        "check memory health, or scan connected integrations. "
+        "Subcommands: show <name>, audit, scan [service].",
+        "User explicitly asks to list or show workspace knowledge via /knowledge",
+        "User asks to audit memory quality or rescan Slack into workspace knowledge",
+        anti_examples=(
+            "User asks what the agent knows about the organization (use memory_recall)",
+            "User asks to list or forget their own memories (use /memory)",
+        ),
+    ),
     "/loops": _mcp(
         "List, create, stop, start, delete, run once, and debug recurring prompt loops, "
         "including latest findings, execution status, and next fire time. "

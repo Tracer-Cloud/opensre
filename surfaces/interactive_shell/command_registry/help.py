@@ -54,6 +54,9 @@ def _raw_help_sections() -> list[HelpSection]:
         COMMANDS as GATEWAY_CMDS,
     )
     from surfaces.interactive_shell.command_registry.integrations import COMMANDS as INT_CMDS
+    from surfaces.interactive_shell.command_registry.knowledge_cmds import (
+        COMMANDS as KNOWLEDGE_CMDS,
+    )
     from surfaces.interactive_shell.command_registry.loops_cmds import COMMANDS as LOOPS_CMDS
     from surfaces.interactive_shell.command_registry.memory_cmds import (
         COMMANDS as MEMORY_CMDS,
@@ -89,7 +92,7 @@ def _raw_help_sections() -> list[HelpSection]:
             + list(DIAGNOSTICS_CMDS),
         ),
         ("Integrations, Models & Tools", list(INT_CMDS) + list(MODEL_CMDS) + list(TOOLS_CMDS)),
-        ("Privacy", list(PRIVACY_CMDS) + list(MEMORY_CMDS)),
+        ("Privacy", list(PRIVACY_CMDS) + list(MEMORY_CMDS) + list(KNOWLEDGE_CMDS)),
         ("Remote sync", list(REMOTE_SYNC_CMDS)),
         (
             "Tasks",
