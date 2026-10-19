@@ -6,6 +6,7 @@ import asyncio
 import itertools
 import re
 import sys
+from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TextIO, cast
@@ -26,6 +27,9 @@ _DEFERRED_START = "\x00opensre-deferred-start\x00"
 _DEFERRED_END = "\x00opensre-deferred-end\x00"
 _RENDERABLE_MARKER = "\x00opensre-renderable-{}\x00"
 _MARKER = re.compile(r"\x00opensre-(?:(?:transient|deferred)-(?:start|end)|renderable-(\d+))\x00")
+# Held output is replayed in batches of about this many characters, so closing
+# a form never copies everything it held into one string.
+_REPLAY_CHUNK_CHARS = 64 * 1024
 
 
 class _AppBoundStdoutProxy(StdoutProxy):
@@ -48,7 +52,7 @@ class _AppBoundStdoutProxy(StdoutProxy):
         # Read and written only by the flush thread.
         self._transient = False
         self._deferred_depth = 0
-        self._deferred_output: list[str] = []
+        self._deferred_output: deque[str] = deque()
         self._renderables: dict[int, RenderableType] = {}
         self._renderable_ids = itertools.count()
         # Repaint sooner than the inline default: a full-screen redraw is cheap.
@@ -113,9 +117,7 @@ class _AppBoundStdoutProxy(StdoutProxy):
             elif segment == _DEFERRED_END:
                 self._deferred_depth -= 1
                 if not self._deferred_depth:
-                    pending = "".join(self._deferred_output)
-                    self._deferred_output.clear()
-                    self._write_and_flush(loop, pending)
+                    self._replay_deferred(loop)
             elif segment == _TRANSIENT_START:
                 self._transient = True
             elif segment == _TRANSIENT_END:
@@ -135,6 +137,22 @@ class _AppBoundStdoutProxy(StdoutProxy):
                 self._transcript.append_text(segment, on_normal_screen=True)
             else:
                 self._transcript.append_text(segment)
+
+    def _replay_deferred(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Replay held output in order, freeing each segment as it is written."""
+        pending = self._deferred_output
+        while pending:
+            # Held segments are either marker-free text or one renderable marker.
+            if pending[0].startswith("\x00"):
+                self._write_and_flush(loop, pending.popleft())
+                continue
+            chunk: list[str] = []
+            size = 0
+            while pending and size < _REPLAY_CHUNK_CHARS and not pending[0].startswith("\x00"):
+                segment = pending.popleft()
+                chunk.append(segment)
+                size += len(segment)
+            self._write_and_flush(loop, "".join(chunk))
 
     def _flush_renderable(
         self, loop: asyncio.AbstractEventLoop | None, renderable: RenderableType
