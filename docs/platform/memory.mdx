@@ -178,6 +178,11 @@ channels the agent was invited to, excluding channels shared with another
 organization. It never reads private channels, group DMs or DMs. Credentials
 in sampled messages are redacted before the summary model sees them.
 
+Only full members of the workspace see it in their conversations: Slack
+guests and people from another organization in a shared channel never do. A
+scan that cannot read the member or channel list keeps the previous knowledge
+and tries again within the hour.
+
 Run a scan yourself with `opensre knowledge scan`; on a hosted gateway the
 Knowledge page in the OpenSRE app shows both tiers, and each member sees only
 their own memories there.

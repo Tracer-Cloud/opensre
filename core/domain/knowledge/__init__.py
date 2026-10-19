@@ -8,6 +8,11 @@ background scans and read by every member's turns.
 
 from __future__ import annotations
 
+from core.domain.knowledge.access import (
+    caller_may_read_workspace,
+    record_workspace_readers,
+    workspace_readers,
+)
 from core.domain.knowledge.render import (
     render_relevant_workspace_entries,
     render_workspace_block,
@@ -29,6 +34,7 @@ from core.domain.knowledge.store import (
     list_workspace_entries,
     load_workspace_entry,
     save_workspace_entry,
+    workspace_entry_exists,
     workspace_store,
 )
 
@@ -37,6 +43,7 @@ __all__ = [
     "WORKSPACE_TYPES",
     "ScanOutcome",
     "Summarize",
+    "caller_may_read_workspace",
     "delete_workspace_entry",
     "entry_age_seconds",
     "integration_slug",
@@ -45,10 +52,13 @@ __all__ = [
     "knowledge_enabled",
     "list_workspace_entries",
     "load_workspace_entry",
+    "record_workspace_readers",
     "render_relevant_workspace_entries",
     "render_workspace_block",
     "render_workspace_view",
     "save_workspace_entry",
     "scan_messages_enabled",
+    "workspace_entry_exists",
+    "workspace_readers",
     "workspace_store",
 ]

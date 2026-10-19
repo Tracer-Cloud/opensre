@@ -202,3 +202,38 @@ def test_a_recently_used_fact_is_not_stale_even_when_old() -> None:
 
     assert audit.findings == ()
     assert audit.score == 100
+
+
+def test_facts_that_differ_only_in_an_identifier_or_a_negation_are_never_folded() -> None:
+    # Review finding: search tokenization dropped "1"/"2", so two clusters in
+    # two regions read as one fact and their bodies were folded together.
+    save_memory(
+        slug="prod-cluster-east",
+        memory_type="infrastructure",
+        description="Production EKS cluster eks-prod-1 runs in us-east-1.",
+        body="eks-prod-1 / us-east-1",
+    )
+    save_memory(
+        slug="pr-flow",
+        memory_type="preference",
+        description="User wants every fix to go through a pull request.",
+        body="PR flow",
+    )
+
+    cluster = save_memory_merging_duplicates(
+        slug="prod-cluster-east-2",
+        memory_type="infrastructure",
+        description="Production EKS cluster eks-prod-2 runs in us-east-2.",
+        body="eks-prod-2 / us-east-2",
+    )
+    negated = save_memory_merging_duplicates(
+        slug="no-pr-flow",
+        memory_type="preference",
+        description="User never wants a fix to go through a pull request.",
+        body="push to main",
+    )
+
+    assert cluster is not None and cluster[1] == "created"
+    assert negated is not None and negated[1] == "created"
+    first = load_memory("prod-cluster-east")
+    assert first is not None and "eks-prod-2" not in first.body

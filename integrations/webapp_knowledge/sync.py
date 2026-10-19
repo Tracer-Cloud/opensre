@@ -36,8 +36,19 @@ from config.constants.billing import WEBAPP_URL_ENV
 from config.constants.organization import organization_id
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
-from core.domain.knowledge import delete_workspace_entry, knowledge_enabled
-from core.domain.memory import delete_memory, member_memory_dir, memory_root, slugify
+from core.domain.knowledge import (
+    delete_workspace_entry,
+    knowledge_enabled,
+    workspace_entry_exists,
+)
+from core.domain.memory import (
+    delete_memory,
+    is_valid_slug,
+    member_memory_dir,
+    memory_path,
+    memory_root,
+    slugify,
+)
 from integrations.webapp_knowledge.snapshot import build_snapshot
 from integrations.webapp_scheduled_loops.request_ledger import (
     LedgerUnavailable,
@@ -85,27 +96,52 @@ class WebappKnowledgeSync:
         self._ledger = ledger or RequestLedger(paths.OPENSRE_HOME_DIR / _LEDGER_FILENAME)
         self._reported_digest = ""
         self._reported_at: float | None = None
+        #: Outcomes applied here that the ledger could not take yet, by request id.
+        self._unrecorded: dict[str, RecordedOutcome] = {}
 
     def sync(self) -> bool:
-        """Apply every pending request, then report; ``True`` when something changed."""
+        """Apply every pending request, then report; ``True`` when something changed.
+
+        A request is acknowledged only once its outcome is in the ledger: an
+        acknowledged request whose outcome was lost could be applied again on
+        redelivery and delete a memory saved since. An outcome the ledger
+        cannot take yet is held in memory and offered to the ledger again on
+        the next delivery instead of being re-applied. A change that could not
+        be applied for a passing reason (the store was locked) stays pending.
+        """
         changed = False
         for request in self._pending_requests():
             request_id = str(request.get("id") or "")
-            try:
-                outcome = self._ledger.get(self._organization, request_id)
-            except LedgerUnavailable:
-                logger.warning("[webapp-knowledge] request ledger unavailable; retrying later")
-                break
+            outcome = self._unrecorded.get(request_id)
+            recorded = False
+            if outcome is None:
+                try:
+                    outcome = self._ledger.get(self._organization, request_id)
+                except LedgerUnavailable:
+                    logger.warning("[webapp-knowledge] request ledger unavailable; retrying later")
+                    break
+                recorded = outcome is not None
             if outcome is None:
                 outcome = self._apply(request)
+                if outcome is None:
+                    continue
                 changed = changed or outcome.applied
-                try:
-                    self._ledger.record(self._organization, request_id, outcome)
-                except LedgerUnavailable:
-                    logger.warning("[webapp-knowledge] could not record request %s", request_id)
+            if not recorded and not self._record(request_id, outcome):
+                continue
             self._acknowledge(request_id, outcome)
         self.report(force=changed)
         return changed
+
+    def _record(self, request_id: str, outcome: RecordedOutcome) -> bool:
+        """Save ``outcome`` in the ledger; ``False`` (and held in memory) when it cannot be."""
+        try:
+            self._ledger.record(self._organization, request_id, outcome)
+        except LedgerUnavailable:
+            logger.warning("[webapp-knowledge] could not record request %s; holding it", request_id)
+            self._unrecorded[request_id] = outcome
+            return False
+        self._unrecorded.pop(request_id, None)
+        return True
 
     def report(self, *, force: bool = False) -> None:
         """Send the mirror when it changed, when forced, or when the heartbeat is due."""
@@ -148,7 +184,8 @@ class WebappKnowledgeSync:
             return []
         return [item for item in data if isinstance(item, Mapping) and item.get("id")]
 
-    def _apply(self, request: Mapping[str, Any]) -> RecordedOutcome:
+    def _apply(self, request: Mapping[str, Any]) -> RecordedOutcome | None:
+        """The request's outcome, or ``None`` to leave it pending for a later pass."""
         action = str(request.get("action") or "")
         payload = request.get("payload")
         fields = payload if isinstance(payload, Mapping) else {}
@@ -202,26 +239,36 @@ class WebappKnowledgeSync:
         return response
 
 
-def _forget_memory(actor: str, name: str) -> RecordedOutcome:
-    """Delete one of ``actor``'s memories; an already-missing one counts as forgotten."""
+def _forget_memory(actor: str, name: str) -> RecordedOutcome | None:
+    """Delete one of ``actor``'s memories; ``None`` when it is still there (a locked store).
+
+    A memory already gone counts as forgotten.
+    """
     slug = slugify(name)
-    if not actor or not slug:
+    if not actor or not is_valid_slug(slug):
         return RecordedOutcome(False, error="Name the memory to forget.")
     directory = member_memory_dir(actor)
     if directory is None:
         return RecordedOutcome(True)
     with memory_root(directory):
-        delete_memory(slug)
-    return RecordedOutcome(True)
+        if delete_memory(slug) or not memory_path(slug).exists():
+            return RecordedOutcome(True)
+    logger.warning("[webapp-knowledge] could not delete a memory yet; retrying later")
+    return None
 
 
-def _delete_entry(name: str) -> RecordedOutcome:
-    """Delete one workspace entry; an already-missing one counts as deleted."""
+def _delete_entry(name: str) -> RecordedOutcome | None:
+    """Delete one workspace entry; ``None`` when it is still there (a locked store).
+
+    An entry already gone counts as deleted.
+    """
     slug = slugify(name)
-    if not slug:
+    if not is_valid_slug(slug):
         return RecordedOutcome(False, error="Name the entry to delete.")
-    delete_workspace_entry(slug)
-    return RecordedOutcome(True)
+    if delete_workspace_entry(slug) or not workspace_entry_exists(slug):
+        return RecordedOutcome(True)
+    logger.warning("[webapp-knowledge] could not delete a workspace entry yet; retrying later")
+    return None
 
 
 def webapp_knowledge_sync_from_environment(

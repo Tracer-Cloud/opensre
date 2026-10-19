@@ -222,3 +222,87 @@ def test_a_rescan_request_scans_a_fresh_integration_and_unknown_ones_are_refused
 
     assert calls == ["slack", "slack"]
     assert service.status_rows()[0]["service"] == "slack"
+
+
+def test_a_member_list_that_fails_keeps_the_last_good_knowledge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review finding: a rate-limited users.list was read as "no members" and
+    # overwrote the profile, then marked it fresh for a week.
+    _install_workspace(monkeypatch, [])
+    assert scan_module.scan_slack_workspace(target=_TARGET).ok
+    before = load_workspace_entry(ORGANIZATION_SLUG)
+    monkeypatch.setattr(scan_module, "fetch_team_members", lambda _t: (None, "ratelimited", False))
+
+    outcome = scan_module.scan_slack_workspace(target=_TARGET)
+
+    assert not outcome.ok and outcome.error == "ratelimited"
+    assert load_workspace_entry(ORGANIZATION_SLUG) == before
+
+
+def test_a_secret_in_a_channel_topic_reaches_neither_the_model_nor_the_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review finding: topics and purposes went to the model unredacted, even
+    # with message reading off.
+    _install_workspace(monkeypatch, [])
+    monkeypatch.setenv(OPENSRE_KNOWLEDGE_SCAN_MESSAGES_ENV, "0")
+    secret = "AKIAIOSFODNN7EXAMPLE"
+    channels = [
+        {
+            "id": "C1",
+            "name": "payments-oncall",
+            "num_members": 12,
+            "topic": f"deploy key {secret}",
+            "purpose": "pages",
+        }
+    ]
+    monkeypatch.setattr(scan_module, "list_public_channels", lambda _t: (channels, "", False))
+    prompts: list[str] = []
+
+    def summarize(prompt: str) -> str:
+        prompts.append(prompt)
+        return "{}"
+
+    assert scan_module.scan_slack_workspace(summarize=summarize, target=_TARGET).ok
+
+    channel_map = load_workspace_entry("integration-slack")
+    assert channel_map is not None
+    assert secret not in prompts[0]
+    assert secret not in channel_map.body
+
+
+def test_a_large_workspace_fits_the_entry_and_counts_what_it_left_out() -> None:
+    # Review finding: 80 long rows overflowed the store's body limit and the
+    # store cut the map mid-row, losing the count of omitted channels.
+    from core.domain.memory import MAX_BODY_CHARS
+
+    view = scan_module.SlackWorkspaceView(
+        name="Acme",
+        url="",
+        people=tuple(
+            scan_module.SlackPerson(name=f"Person {i:03d} " + "x" * 60, title="y" * 70)
+            for i in range(300)
+        ),
+        channels=tuple(
+            scan_module.SlackChannel(
+                id=f"C{i:04d}",
+                name=f"channel-{i:03d}-" + "n" * 50,
+                topic="",
+                purpose="p" * 160,
+                members=500 - i,
+                bot_is_member=True,
+                ext_shared=False,
+            )
+            for i in range(200)
+        ),
+    )
+
+    _description, channel_map = scan_module.render_channel_map(view, notes={})
+    _description, organization = scan_module.render_organization(view, overview="", notes={})
+
+    assert len(channel_map) <= MAX_BODY_CHARS
+    assert len(organization) <= MAX_BODY_CHARS
+    assert channel_map.rstrip().endswith("more channels.")
+    assert "## Key channels" in organization  # the team table never pushes channels out
+    assert "more (the full list" in organization

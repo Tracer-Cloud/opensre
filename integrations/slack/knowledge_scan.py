@@ -40,10 +40,11 @@ from core.domain.knowledge import (
     ScanOutcome,
     Summarize,
     integration_slug,
+    record_workspace_readers,
     save_workspace_entry,
     scan_messages_enabled,
 )
-from core.domain.memory import MemoryType, redact_memory_unsafe_text
+from core.domain.memory import MAX_BODY_CHARS, MemoryType, redact_memory_unsafe_text
 from integrations.slack.web_client import (
     SlackBotTarget,
     fetch_channel_messages,
@@ -66,7 +67,11 @@ MAX_TEAM_ROWS = 80
 MAX_KEY_CHANNELS = 12
 MAX_MAPPED_CHANNELS = 80
 _NOTE_CHARS = 160
+_CELL_CHARS = 80
 _OVERVIEW_CHARS = 900
+#: Room an entry body may use: the store's limit, less a margin for the "… and N more" line.
+ENTRY_BODY_BUDGET = MAX_BODY_CHARS - 100
+_OMITTED_LINE_RESERVE = 80
 _HUMAN_USER_RE = re.compile(r"^[UW][A-Z0-9]+$")
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
@@ -120,21 +125,29 @@ class SlackWorkspaceView:
     channels: tuple[SlackChannel, ...]
     people_truncated: bool = False
     channels_truncated: bool = False
+    #: Slack ids of the full members: the only Slack users who may read workspace knowledge.
+    member_ids: tuple[str, ...] = ()
+
+
+def _clean(text: object, limit: int) -> str:
+    """Slack-authored text as stored and shown to the model: one line, capped, secrets redacted."""
+    return _clip(redact_memory_unsafe_text(" ".join(str(text or "").split())), limit)
+
+
+def _full_members(raw_members: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [m for m in raw_members if not m.get("is_bot") and not m.get("is_guest")]
 
 
 def _people(raw_members: Sequence[dict[str, Any]]) -> tuple[SlackPerson, ...]:
     people = [
         SlackPerson(
-            name=str(
-                member.get("real_name")
-                or member.get("display_name")
-                or member.get("username")
-                or ""
+            name=_clean(
+                member.get("real_name") or member.get("display_name") or member.get("username"),
+                _CELL_CHARS,
             ),
-            title=str(member.get("title") or ""),
+            title=_clean(member.get("title"), _CELL_CHARS),
         )
-        for member in raw_members
-        if not member.get("is_bot") and not member.get("is_guest")
+        for member in _full_members(raw_members)
     ]
     return tuple(sorted((p for p in people if p.name), key=lambda p: p.name.lower()))
 
@@ -143,9 +156,9 @@ def _channels(raw_channels: Sequence[dict[str, Any]]) -> tuple[SlackChannel, ...
     channels = [
         SlackChannel(
             id=str(raw.get("id") or ""),
-            name=str(raw.get("name") or ""),
-            topic=" ".join(str(raw.get("topic") or "").split()),
-            purpose=" ".join(str(raw.get("purpose") or "").split()),
+            name=_clean(raw.get("name"), _CELL_CHARS),
+            topic=_clean(raw.get("topic"), _NOTE_CHARS),
+            purpose=_clean(raw.get("purpose"), _NOTE_CHARS),
             members=int(raw.get("num_members") or 0),
             bot_is_member=bool(raw.get("is_member")),
             ext_shared=bool(raw.get("is_ext_shared")),
@@ -157,28 +170,33 @@ def _channels(raw_channels: Sequence[dict[str, Any]]) -> tuple[SlackChannel, ...
 
 
 def read_workspace(target: SlackBotTarget) -> tuple[SlackWorkspaceView | None, str]:
-    """Workspace metadata, or ``(None, error)`` when not even the identity is readable.
+    """Workspace metadata, or ``(None, error)`` when any part of it cannot be read.
 
-    Missing ``users:read`` or ``channels:read`` leaves that part empty rather
-    than failing the scan.
+    A member or channel list that fails (rate limit, timeout, missing scope)
+    fails the whole read: an empty list would overwrite the knowledge from
+    the last good scan and mark it fresh for a week.
     """
     identity, error = fetch_workspace_identity(target)
     if identity is None:
         return None, error
     members, members_error, members_truncated = fetch_team_members(target)
     if members is None:
-        logger.info("[knowledge] slack members unavailable: %s", members_error)
+        return None, members_error or "Slack would not list the workspace's members."
     channels, channels_error, channels_truncated = list_public_channels(target)
     if channels is None:
-        logger.info("[knowledge] slack channels unavailable: %s", channels_error)
+        return None, channels_error or "Slack would not list the workspace's channels."
+    if members_truncated:
+        logger.warning("[knowledge] slack member list truncated; later members are left out")
     return (
         SlackWorkspaceView(
-            name=identity.get("name") or identity.get("domain") or "Slack workspace",
+            name=_clean(identity.get("name") or identity.get("domain"), _CELL_CHARS)
+            or "Slack workspace",
             url=identity.get("url", ""),
-            people=_people(members or []),
-            channels=_channels(channels or []),
+            people=_people(members),
+            channels=_channels(channels),
             people_truncated=members_truncated,
             channels_truncated=channels_truncated,
+            member_ids=tuple(sorted(str(m["id"]) for m in _full_members(members) if m.get("id"))),
         ),
         "",
     )
@@ -242,10 +260,14 @@ def summarize_workspace(
     sample_lines = "\n".join(
         f"#{name}:\n" + "\n".join(f"- {text}" for text in texts) for name, texts in samples.items()
     )
-    prompt = _OVERVIEW_PROMPT.format(
-        workspace=f"{view.name} ({view.url or 'no url'}), {len(view.people)} members",
-        channels=channel_lines or "(none visible)",
-        samples=sample_lines or "(none read)",
+    # Fields are redacted as they are read; redact the assembled prompt too, so
+    # nothing Slack-authored reaches the model unredacted whatever its source.
+    prompt = redact_memory_unsafe_text(
+        _OVERVIEW_PROMPT.format(
+            workspace=f"{view.name} ({view.url or 'no url'}), {len(view.people)} members",
+            channels=channel_lines or "(none visible)",
+            samples=sample_lines or "(none read)",
+        )
     )
     try:
         payload = _json_object(summarize(prompt))
@@ -272,36 +294,72 @@ def _channel_note(channel: SlackChannel, notes: dict[str, str]) -> str:
     return notes.get(channel.name) or channel.purpose or channel.topic or ""
 
 
+def _length(lines: Sequence[str]) -> int:
+    return sum(len(line) + 1 for line in lines)
+
+
+def _rows_within(rows: Sequence[str], budget: int) -> tuple[list[str], int]:
+    """The leading rows that fit in ``budget`` characters, and how many were left out."""
+    kept: list[str] = []
+    used = 0
+    for row in rows:
+        if used + len(row) + 1 > budget:
+            break
+        kept.append(row)
+        used += len(row) + 1
+    return kept, len(rows) - len(kept)
+
+
+def _cell(text: str) -> str:
+    return text.replace("|", "/") or "-"
+
+
 def render_organization(
     view: SlackWorkspaceView, *, overview: str, notes: dict[str, str]
 ) -> tuple[str, str]:
-    """``(description, body)`` of the ``organization`` entry."""
-    lines = [f"# {view.name}", ""]
+    """``(description, body)`` of the ``organization`` entry, within the store's body limit.
+
+    The team table gets whatever room the profile and key channels leave; the
+    members it cannot fit are counted, never cut mid-row.
+    """
+    head = [f"# {view.name}", ""]
     if view.url:
-        lines.append(f"Slack workspace: {view.url}")
-    lines.append(f"{len(view.people)} members, {len(view.channels)} public channels.")
+        head.append(f"Slack workspace: {view.url}")
+    head.append(f"{len(view.people)} members, {len(view.channels)} public channels.")
     if overview:
-        lines += ["", "## What the organization does", overview]
-    if view.people:
-        lines += ["", f"## Team ({len(view.people)} members)", "| Name | Title |", "| --- | --- |"]
-        lines += [f"| {p.name} | {p.title or '-'} |" for p in view.people[:MAX_TEAM_ROWS]]
-        hidden = len(view.people) - MAX_TEAM_ROWS
-        if hidden > 0 or view.people_truncated:
-            lines.append(f"… and {max(hidden, 0)} more (the full list: slack_list_team_members)")
+        head += ["", "## What the organization does", overview]
+    channel_lines: list[str] = []
     if view.channels:
-        lines += ["", "## Key channels"]
+        channel_lines = ["", "## Key channels"]
         for channel in view.channels[:MAX_KEY_CHANNELS]:
             note = _channel_note(channel, notes)
-            lines.append(
+            channel_lines.append(
                 f"- #{channel.name} ({channel.members} members)" + (f" — {note}" if note else "")
             )
+    team: list[str] = []
+    if view.people:
+        team_head = [
+            "",
+            f"## Team ({len(view.people)} members)",
+            "| Name | Title |",
+            "| --- | --- |",
+        ]
+        room = ENTRY_BODY_BUDGET - _length(head) - _length(channel_lines) - _length(team_head)
+        rows, hidden = _rows_within(
+            [f"| {_cell(p.name)} | {_cell(p.title)} |" for p in view.people[:MAX_TEAM_ROWS]],
+            room - _OMITTED_LINE_RESERVE,
+        )
+        hidden += max(len(view.people) - MAX_TEAM_ROWS, 0)
+        team = [*team_head, *rows]
+        if hidden or view.people_truncated:
+            team.append(f"… and {hidden} more (the full list: slack_list_team_members)")
     description = f"{view.name}: who the team is and what the organization does (Slack scan)"
-    return description, "\n".join(lines)
+    return description, "\n".join([*head, *team, *channel_lines])
 
 
 def render_channel_map(view: SlackWorkspaceView, *, notes: dict[str, str]) -> tuple[str, str]:
-    """``(description, body)`` of the ``integration-slack`` entry."""
-    lines = [
+    """``(description, body)`` of the ``integration-slack`` entry, within the store's body limit."""
+    head = [
         f"# Slack: {view.name}",
         "",
         "Public channels, busiest first. The agent can read a channel only after "
@@ -310,16 +368,17 @@ def render_channel_map(view: SlackWorkspaceView, *, notes: dict[str, str]) -> tu
         "| Channel | Members | Agent in channel | What it is for |",
         "| --- | --- | --- | --- |",
     ]
-    for channel in view.channels[:MAX_MAPPED_CHANNELS]:
-        note = _clip(_channel_note(channel, notes), _NOTE_CHARS).replace("|", "/") or "-"
-        shared = " (shared with another org)" if channel.ext_shared else ""
-        lines.append(
-            f"| #{channel.name}{shared} | {channel.members} | "
-            f"{'yes' if channel.bot_is_member else 'no'} | {note} |"
-        )
-    hidden = len(view.channels) - MAX_MAPPED_CHANNELS
-    if hidden > 0 or view.channels_truncated:
-        lines.append(f"\n… and {max(hidden, 0)} more channels.")
+    rows = [
+        f"| #{channel.name}{' (shared with another org)' if channel.ext_shared else ''} | "
+        f"{channel.members} | {'yes' if channel.bot_is_member else 'no'} | "
+        f"{_cell(_clip(_channel_note(channel, notes), _NOTE_CHARS))} |"
+        for channel in view.channels[:MAX_MAPPED_CHANNELS]
+    ]
+    kept, hidden = _rows_within(rows, ENTRY_BODY_BUDGET - _length(head) - _OMITTED_LINE_RESERVE)
+    hidden += max(len(view.channels) - MAX_MAPPED_CHANNELS, 0)
+    lines = [*head, *kept]
+    if hidden or view.channels_truncated:
+        lines.append(f"\n… and {hidden} more channels.")
     description = (
         f"Slack workspace {view.name}: {len(view.channels)} public channels and what each is for"
     )
@@ -340,6 +399,9 @@ def scan_slack_workspace(
     view, error = read_workspace(target)
     if view is None:
         return ScanOutcome(SERVICE, ok=False, error=error or "Slack could not be read.")
+    if not record_workspace_readers(SERVICE, view.member_ids):
+        # Entries nobody may read are worse than the last good ones: stop here.
+        return ScanOutcome(SERVICE, ok=False, error="Workspace knowledge could not be written.")
     samples = sample_messages(target, view.channels) if scan_messages_enabled() else {}
     overview, notes = summarize_workspace(view, samples, summarize) if summarize else ("", {})
     stamp = (now or datetime.now(UTC)).date().isoformat()

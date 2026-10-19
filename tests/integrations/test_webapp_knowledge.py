@@ -190,3 +190,77 @@ def test_an_older_web_app_without_the_routes_is_harmless(tmp_path: Path) -> None
     assert changed is False
     assert webapp.acks == [] and webapp.reports == []
     assert _memories("U_ADA") == ["concise-reports"]
+
+
+def _forget_request(request_id: str, actor: str = "U_ADA") -> dict[str, Any]:
+    return {
+        "id": request_id,
+        "action": "forget_memory",
+        "actor": actor,
+        "payload": {"name": "concise-reports"},
+    }
+
+
+def test_a_forget_the_store_refused_stays_pending_instead_of_reading_as_done(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review finding: a delete that failed (lock timeout, disk error) was
+    # acknowledged as applied, so the page said "forgotten" while it stayed.
+    import integrations.webapp_knowledge.sync as sync_module
+
+    _remember("U_ADA", "concise-reports", "Ada wants concise reports")
+    webapp = _Webapp(pending=[_forget_request("33333333-0000-4000-8000-000000000001")])
+    sync = _sync(webapp, tmp_path)
+    monkeypatch.setattr(sync_module, "delete_memory", lambda _slug: False)
+
+    sync.sync()
+
+    assert webapp.acks == []
+    assert _memories("U_ADA") == ["concise-reports"]
+
+    monkeypatch.undo()
+    monkeypatch.delenv(OPENSRE_MEMORY_DIR_ENV, raising=False)
+    monkeypatch.delenv(OPENSRE_MEMORY_DISABLED_ENV, raising=False)
+    sync.sync()
+
+    assert [ack["status"] for _id, ack in webapp.acks] == ["applied"]
+    assert _memories("U_ADA") == []
+
+
+def test_an_outcome_the_ledger_cannot_take_is_held_not_acknowledged_or_reapplied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review finding: the outcome was acknowledged even when the ledger write
+    # failed; if the ack was lost too, the redelivery deleted again.
+    from integrations.webapp_scheduled_loops.request_ledger import LedgerUnavailable
+
+    _remember("U_ADA", "concise-reports", "Ada wants concise reports")
+    webapp = _Webapp(pending=[_forget_request("44444444-0000-4000-8000-000000000001")])
+    ledger = RequestLedger(tmp_path / "ledger.json")
+    sync = WebappKnowledgeSync(
+        base_url="https://app.example",
+        organization=_ORG,
+        token="gateway-token",
+        http=webapp,
+        clock=lambda: 0.0,
+        ledger=ledger,
+    )
+    real_record = RequestLedger.record
+
+    def failing_record(self: RequestLedger, *args: Any) -> None:
+        raise LedgerUnavailable("disk full")
+
+    monkeypatch.setattr(RequestLedger, "record", failing_record)
+    sync.sync()
+    assert webapp.acks == []
+
+    # Ada saves the fact again; the redelivered forget must not delete it.
+    _remember("U_ADA", "concise-reports", "Ada said it again")
+    sync.sync()
+    assert webapp.acks == []
+    assert _memories("U_ADA") == ["concise-reports"]
+
+    monkeypatch.setattr(RequestLedger, "record", real_record)
+    sync.sync()
+    assert [ack["status"] for _id, ack in webapp.acks] == ["applied"]
+    assert _memories("U_ADA") == ["concise-reports"]

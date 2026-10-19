@@ -108,6 +108,11 @@ def delete_workspace_entry(slug: str) -> bool:
         return delete_memory(slug)
 
 
+def workspace_entry_exists(slug: str) -> bool:
+    """Whether a workspace entry's file is on disk (live or not)."""
+    return (knowledge_dir() / f"{slug}.md").is_file()
+
+
 def entry_age_seconds(record: MemoryRecord, *, now: datetime | None = None) -> float | None:
     """Seconds since ``record`` was last written; ``None`` when its stamp is unreadable."""
     try:
@@ -129,5 +134,6 @@ __all__ = [
     "list_workspace_entries",
     "load_workspace_entry",
     "save_workspace_entry",
+    "workspace_entry_exists",
     "workspace_store",
 ]

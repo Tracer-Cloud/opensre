@@ -14,14 +14,27 @@ The same measure backs three callers with different stakes:
 
 Repository memories are never matched here: two different repositories read
 alike ("primary repo for …") and are merged by ``owner/repo`` instead.
+
+Word overlap alone would fold different facts that read alike, so three
+guards come first and a pair that trips any of them never matches:
+
+- **identifiers** — every token carrying a digit (``eks-prod-1``,
+  ``us-east-2``, ``gpt-5.4``, ``INC-42``) must be the same on both sides;
+- **repositories** — named ``owner/repo`` identifiers must agree when both
+  name one;
+- **negation** — "never", "not", "don't" and the like must be on both sides
+  or neither ("prefers PRs" is not "never use PRs").
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from core.domain.memory.models import WORKSPACE_ONLY_MEMORY_TYPES, MemoryRecord, MemoryType
 from core.domain.memory.relevance import tokenize
+from core.domain.memory.repository_ids import repository_ids
 
 #: Extraction and upkeep fold a memory into another at or above this.
 DUPLICATE_SIMILARITY = 0.6
@@ -55,24 +68,50 @@ _NEVER_MATCHED: frozenset[MemoryType] = frozenset({MemoryType.REPOSITORY}) | (
 )
 
 
-def subject_tokens(slug: str, description: str) -> frozenset[str]:
-    """Content words of a memory's header, filler removed."""
-    return frozenset(
-        token
-        for token in tokenize(f"{slug.replace('-', ' ')} {description}")
-        if token not in _FILLER
+#: Compound tokens (``eks-prod-1``, ``gpt-5.4-mini``) kept whole so their digits stay attached.
+_COMPOUND_RE = re.compile(r"[a-z0-9]+(?:[-_.:][a-z0-9]+)*")
+_NEGATION_RE = re.compile(r"\b(?:not|never|no|none|don'?t|doesn'?t|avoid|without|stop)\b")
+
+
+@dataclass(frozen=True)
+class Subject:
+    """What a memory's header is about, as compared for duplicates."""
+
+    words: frozenset[str]
+    identifiers: frozenset[str]
+    repositories: frozenset[str]
+    negated: bool
+
+
+def subject_of(slug: str, description: str) -> Subject:
+    """The subject of a memory header: content words plus the guards' facts."""
+    header = f"{slug} {description}".lower()
+    readable = f"{slug.replace('-', ' ')} {description}"
+    return Subject(
+        words=frozenset(token for token in tokenize(readable) if token not in _FILLER),
+        identifiers=frozenset(
+            token
+            for token in (*_COMPOUND_RE.findall(description.lower()), *slug.split("-"))
+            if any(char.isdigit() for char in token)
+        ),
+        repositories=frozenset(f"{owner}/{name}" for owner, name in repository_ids(header)),
+        negated=bool(_NEGATION_RE.search(header.replace("-", " "))),
     )
 
 
-def _record_subject(record: MemoryRecord) -> frozenset[str]:
-    return subject_tokens(record.slug, record.description)
+def _record_subject(record: MemoryRecord) -> Subject:
+    return subject_of(record.slug, record.description)
 
 
-def similarity(first: frozenset[str], second: frozenset[str]) -> float:
-    """Jaccard overlap of two subject-word sets; ``0.0`` when either is too small."""
-    if len(first) < _MIN_SUBJECT_TOKENS or len(second) < _MIN_SUBJECT_TOKENS:
+def similarity(first: Subject, second: Subject) -> float:
+    """Jaccard overlap of two subjects' words; ``0.0`` when a guard trips or either is too small."""
+    if first.negated != second.negated or first.identifiers != second.identifiers:
         return 0.0
-    return len(first & second) / len(first | second)
+    if first.repositories and second.repositories and first.repositories != second.repositories:
+        return 0.0
+    if len(first.words) < _MIN_SUBJECT_TOKENS or len(second.words) < _MIN_SUBJECT_TOKENS:
+        return 0.0
+    return len(first.words & second.words) / len(first.words | second.words)
 
 
 def matchable(memory_type: MemoryType) -> bool:
@@ -94,7 +133,7 @@ def closest_duplicate(
     """
     if not matchable(memory_type):
         return None
-    wanted = subject_tokens(slug, description)
+    wanted = subject_of(slug, description)
     best: tuple[float, str, MemoryRecord] | None = None
     for record in candidates:
         if record.memory_type is not memory_type or record.slug == slug:
@@ -148,7 +187,8 @@ __all__ = [
     "POSSIBLE_DUPLICATE_SIMILARITY",
     "closest_duplicate",
     "duplicate_clusters",
+    "Subject",
     "matchable",
     "similarity",
-    "subject_tokens",
+    "subject_of",
 ]
