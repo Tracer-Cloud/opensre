@@ -70,6 +70,9 @@ View complete retained reports without contacting ClickHouse or Telegram:
 uv run opensre triage reports --state examples/telemetry-payment/watch.db
 ```
 
+Inside the REPL, use `/triage reports --state <file>`. The continuous watch
+runs in a separate terminal, not inside the REPL.
+
 Telegram delivery retries the saved report, not the completed model analysis.
 Delivery is at-least-once: a crash after Telegram accepts a message but before
 OpenSRE saves its acknowledgment can produce a duplicate. Notifications carry

@@ -19,7 +19,7 @@ from core.telemetry.investigation import investigate, sanitize
 from core.telemetry.models import WatchRule
 from core.telemetry.storage.store import WatchStore
 from core.telemetry.watch import WatchRunner
-from integrations.clickhouse.telemetry import ClickHouseEvidenceConfig, ClickHouseEvidenceReader
+from integrations.clickhouse import ClickHouseEvidenceConfig, ClickHouseEvidenceReader
 
 
 class WatchConfig(StrictConfigModel):
@@ -76,7 +76,7 @@ def watch(config_path: Path, state: Path, once: bool, telegram: bool, chat_id: s
         raise click.ClickException(f"Set required {TELEMETRY_CLICKHOUSE_PASSWORD_ENV} and retry.")
     credentials = None
     if telegram:
-        from integrations.telegram.credentials import load_credentials_from_env
+        from integrations.telegram import load_credentials_from_env
 
         try:
             credentials = load_credentials_from_env(chat_id_override=chat_id)
@@ -99,7 +99,7 @@ def watch(config_path: Path, state: Path, once: bool, telegram: bool, chat_id: s
         click.echo(f"\nEvent {event_id}\n{safe_body}")
         if credentials is None:
             return True
-        from integrations.telegram.delivery import post_telegram_message
+        from integrations.telegram import post_telegram_message
 
         ok, _, _ = post_telegram_message(
             credentials.chat_id, safe_body, credentials.bot_token, link_previews=False

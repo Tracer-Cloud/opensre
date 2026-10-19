@@ -526,11 +526,30 @@ def _cmd_posthog(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["posthog", *args], capture_output=True, session=session)
 
 
+def _cmd_triage(session: Session, console: Console, args: list[str]) -> bool:
+    if args and args[0] == "watch":
+        console.print(
+            "Run the foreground watch in a separate terminal: opensre triage watch --help. "
+            "Use /triage reports --state <file> here to read retained reports."
+        )
+        session.mark_latest(ok=True, kind="slash")
+        return True
+    return run_cli_command(console, ["triage", *args], capture_output=True, session=session)
+
+
 def _cmd_debug(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["debug", *args], session=session)
 
 
 COMMANDS: list[SlashCommand] = [
+    SlashCommand(
+        "/triage",
+        "Read retained OTel incident reports.",
+        _cmd_triage,
+        usage=("/triage reports --state <file>",),
+        first_arg_completions=(("reports", "Read retained incident reports"),),
+        mutating=False,
+    ),
     SlashCommand(
         "/account",
         "Sign in to OpenSRE and inspect the local account.",

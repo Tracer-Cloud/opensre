@@ -458,6 +458,12 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to change the REPL color theme or palette",
         anti_examples=("User asks about light/dark mode in a web UI",),
     ),
+    "/triage": _mcp(
+        "Read complete retained OTel incident reports with reports --state <file>. "
+        "The foreground telemetry watch must run separately, not inside the REPL.",
+        "User explicitly asks to display retained telemetry triage reports",
+        anti_examples=("User asks to start a continuous watch or investigate live telemetry",),
+    ),
     "/trust": _mcp(
         "Enable or disable trust mode (skip execution confirmation prompts). on | off.",
         "User asks to enable or disable trust mode or auto-approve",
