@@ -1,0 +1,135 @@
+---
+title: "OTel payment auto-triage pilot"
+description: "Run a headless, self-hosted payment failure investigation with Telegram lifecycle reports."
+---
+
+This opt-in pilot runs the official OpenTelemetry Demo payment service, one
+ClickStack Collector, and ClickHouse. OpenSRE reads bounded evidence and reports
+a new incident and its recovery. It does not run remediation or require a dashboard.
+Existing vendor integrations are unchanged.
+
+## Start the demo
+
+Use a source checkout with Docker Compose and a configured OpenSRE API model.
+A tool-enabled model CLI is not supported for this bounded investigation.
+For Telegram, first run `uv run opensre integrations setup telegram` and choose
+a default destination the bot can access. Omit `--telegram` for terminal-only reports.
+
+From the repository root:
+
+```bash
+uv run python examples/telemetry-payment/setup.py init
+docker compose -f examples/telemetry-payment/compose.yaml up -d
+```
+
+`init` creates random demo credentials in an owner-readable `.env` and starts
+with the fault disabled. It refuses to overwrite an existing credential file.
+Keep the checkout in a directory shared with Docker Desktop. Port `18123`
+must be free. Only ClickHouse HTTP is published, bound to `127.0.0.1`;
+OTLP, payment, and flagd stay inside the Compose network.
+
+Load the demo reader credential in a Bash-compatible terminal, then start the watch:
+
+```bash
+set -a
+source examples/telemetry-payment/.env
+set +a
+uv run opensre triage watch \
+  --config examples/telemetry-payment/watch.yaml \
+  --state examples/telemetry-payment/watch.db \
+  --telegram
+```
+
+The foreground watch polls every 30 seconds. `--once` processes one completed
+window and exits. `--chat-id` optionally overrides the configured Telegram destination.
+Stop with Ctrl-C; retained reports and pending deliveries survive restart.
+Run the same command with the same state file to resume. Changing source, rule,
+bot identity, or destination requires a new state file.
+
+## Reproduce failure and recovery
+
+In another terminal:
+
+```bash
+uv run python examples/telemetry-payment/setup.py fail
+# Wait for an OPENED report (normally one or two completed metric windows).
+uv run python examples/telemetry-payment/setup.py recover
+# Wait for two consecutive healthy windows and a RECOVERED report.
+```
+
+If a Docker Desktop bind mount does not propagate the flag change, run
+`docker compose -f examples/telemetry-payment/compose.yaml restart flagd`.
+
+The traffic generator sends synthetic requests to the unmodified upstream
+payment service. The official `paymentFailure` flag rejects these requests;
+`emitRawPii` stays disabled. No real payment provider is contacted.
+
+View complete retained reports without contacting ClickHouse or Telegram:
+
+```bash
+uv run opensre triage reports --state examples/telemetry-payment/watch.db
+```
+
+Telegram delivery retries the saved report, not the completed model analysis.
+Delivery is at-least-once: a crash after Telegram accepts a message but before
+OpenSRE saves its acknowledgment can produce a duplicate. Notifications carry
+an incident ID. Keep the local state file private; it contains investigation reports.
+
+## What the rule measures
+
+The demo's application counter counts successful payments only. The Collector
+therefore derives a delta request counter from **unsampled SERVER spans**.
+`watch.yaml` explicitly maps that metric and its status/kind dimensions. Do not
+use this rule on sampled traces or substitute a cumulative counter: the reader
+rejects non-delta data. An application-native all-requests/error counter is a
+better production source when available, but requires an appropriate mapping.
+
+A window needs at least five requests. An error ratio of 20% or more opens one
+incident. Two consecutive eligible windows below 20% recover it. Missing,
+invalid, stale, or unavailable telemetry is **unknown**, not recovery. Gaps
+break the recovery streak; the pilot does not backfill windows missed while stopped.
+The 15-second ingestion allowance is not a completeness guarantee for late data.
+
+A new incident gets up to ten traces and ten logs from the same service,
+environment, and time window. A single model synthesis has a 90-second wall
+clock deadline; quiet checks and recovery do not invoke a model. If evidence
+or the model is unavailable, the retained report explicitly says the cause is
+unknown. This is bounded synthesis, not a general-purpose tool-calling agent.
+
+## Connect your own application
+
+Use standard OpenTelemetry instrumentation and OTLP. Supply `service.name`
+and `deployment.environment.name`. Your SDK or existing Collector can send to
+a secured Collector configured to write the same tables. This demo's private,
+unauthenticated OTLP listeners must not be exposed publicly.
+
+The included Collector configuration is a complete, pinned ClickStack
+Map-schema configuration, not a HyperDX SDK requirement. OpenSRE is not an
+OTLP receiver: ClickHouse supplies the queryable history. Another backend
+needs an implementation of the evidence-reader contract; OTLP alone does not
+standardize historical queries. The current adapter supports the included
+Map-schema tables, not arbitrary ClickHouse or ClickStack JSON schemas.
+
+For another ClickHouse source, copy `watch.yaml`, set its connection and rule,
+and provide `OPENSRE_TELEMETRY_CLICKHOUSE_PASSWORD` through the environment or
+OpenSRE's credential store. Use a dedicated `readonly=2` account with SELECT
+only on `otel_metrics_sum`, `otel_traces`, and `otel_logs`; never use collector
+or administrator credentials. Use TLS for remote connections.
+
+Known credentials, card-like numbers, and emails are redacted before model
+synthesis. This is not comprehensive DLP: remove sensitive content at collection
+time before using real telemetry with a model or Telegram. Resource/attribute
+maps are not exported into the report. Treat this as a single-owner reference
+pilot, not a hosted multi-tenant ingestion service.
+
+## Stop and remove demo data
+
+```bash
+docker compose -f examples/telemetry-payment/compose.yaml down
+# Optional, destructive: remove this demo's telemetry volume too.
+docker compose -f examples/telemetry-payment/compose.yaml down -v
+```
+
+Telemetry has a 24-hour TTL; expiry is asynchronous. Local reports persist
+until you remove the chosen SQLite state file and its sidecars. Preserve that
+state if you intend to resume the same watch.

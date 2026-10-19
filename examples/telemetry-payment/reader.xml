@@ -1,0 +1,33 @@
+<clickhouse>
+  <users>
+    <opensre_reader>
+      <password from_env="OPENSRE_TELEMETRY_CLICKHOUSE_PASSWORD"/>
+      <networks><ip>::/0</ip></networks>
+      <profile>opensre_reader</profile>
+      <quota>default</quota>
+      <grants>
+        <query>GRANT SELECT ON default.otel_metrics_sum</query>
+        <query>GRANT SELECT ON default.otel_traces</query>
+        <query>GRANT SELECT ON default.otel_logs</query>
+      </grants>
+    </opensre_reader>
+  </users>
+  <profiles>
+    <opensre_reader>
+      <readonly>2</readonly>
+      <max_execution_time>5</max_execution_time>
+      <max_rows_to_read>500000</max_rows_to_read>
+      <max_bytes_to_read>50000000</max_bytes_to_read>
+      <!-- Allow the existing ClickHouse driver metadata handshake; telemetry queries set 20. -->
+      <max_result_rows>2048</max_result_rows>
+      <result_overflow_mode>throw</result_overflow_mode>
+      <constraints>
+        <readonly><const>2</const></readonly>
+        <max_execution_time><max>5</max></max_execution_time>
+        <max_rows_to_read><max>500000</max></max_rows_to_read>
+        <max_bytes_to_read><max>50000000</max></max_bytes_to_read>
+        <max_result_rows><max>2048</max></max_result_rows>
+      </constraints>
+    </opensre_reader>
+  </profiles>
+</clickhouse>

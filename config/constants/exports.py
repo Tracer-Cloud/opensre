@@ -7,6 +7,10 @@ from config.package_exports import bind_package_exports
 # Re-exported name -> leaf module. Importing this package must not load
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
+    "TELEMETRY_CLICKHOUSE_PASSWORD_ENV": "telemetry",
+    "TELEMETRY_MODEL_TIMEOUT_SECONDS": "telemetry",
+    "TELEMETRY_REPORT_MAX_CHARS": "telemetry",
+    "TELEMETRY_EVIDENCE_MAX_CHARS": "telemetry",
     "CLI_HANDOFF_FLAG": "cli_handoff",
     "ANALYTICS_CICD_ENV": "analytics",
     "CONNECT_INTEGRATIONS_HEADING": "skill_prerequisites",

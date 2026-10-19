@@ -35,7 +35,8 @@
           "index",
           "getting-started/showcase",
           "getting-started/features",
-          "guides/faq"
+          "guides/faq",
+          "guides/otel-payment-triage"
         ]
       },
       {

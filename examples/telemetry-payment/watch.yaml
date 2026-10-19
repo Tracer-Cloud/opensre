@@ -1,0 +1,21 @@
+source:
+  backend: clickhouse
+  host: 127.0.0.1
+  port: 18123
+  database: default
+  username: opensre_reader
+watch:
+  service: payment
+  environment: demo
+  # Explicitly map the collector's unsampled, delta SERVER-span counter.
+  metric:
+    name: traces.span.metrics.calls
+    status_attribute: status.code
+    error_value: STATUS_CODE_ERROR
+    kind_attribute: span.kind
+    server_value: SPAN_KIND_SERVER
+  window_seconds: 30
+  ingestion_delay_seconds: 15
+  minimum_requests: 5
+  error_ratio: 0.2
+  healthy_windows: 2

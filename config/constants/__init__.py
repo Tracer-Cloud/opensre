@@ -1420,6 +1420,18 @@ if TYPE_CHECKING:
     from config.constants.telegram import (
         TELEGRAM_DEFAULT_CHAT_ID_ENV as TELEGRAM_DEFAULT_CHAT_ID_ENV,
     )
+    from config.constants.telemetry import (
+        TELEMETRY_CLICKHOUSE_PASSWORD_ENV as TELEMETRY_CLICKHOUSE_PASSWORD_ENV,
+    )
+    from config.constants.telemetry import (
+        TELEMETRY_EVIDENCE_MAX_CHARS as TELEMETRY_EVIDENCE_MAX_CHARS,
+    )
+    from config.constants.telemetry import (
+        TELEMETRY_MODEL_TIMEOUT_SECONDS as TELEMETRY_MODEL_TIMEOUT_SECONDS,
+    )
+    from config.constants.telemetry import (
+        TELEMETRY_REPORT_MAX_CHARS as TELEMETRY_REPORT_MAX_CHARS,
+    )
     from config.constants.tempo import (
         TEMPO_API_KEY_ENV as TEMPO_API_KEY_ENV,
     )
