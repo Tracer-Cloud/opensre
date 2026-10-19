@@ -22,15 +22,18 @@ SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS = 2.0
 CREDENTIAL_REFRESH_INTERVAL_SECONDS = 60.0
 #: The refresh watcher only sleeps between checks; cap its join on shutdown.
 CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS = 2.0
-#: How often a hosted gateway asks the web app for Tasks-page changes. Every
-#: tenant's gateway polls, so this is the fleet's idle request rate: five
-#: minutes keeps an idle fleet near zero calls. Loop changes made on the
-#: gateway itself are reported at once, without waiting for a poll.
+#: How often a hosted gateway asks the web app for Tasks-page changes when
+#: nothing woke it. Every tenant's gateway polls, so this is the fleet's idle
+#: request rate: five minutes keeps an idle fleet near zero calls. A change
+#: saved in the app wakes the sync at once through ``LOOP_SYNC_ROUTE_PATH``,
+#: and loop changes made on the gateway itself are reported at once.
 WEBAPP_LOOP_SYNC_INTERVAL_SECONDS = 300.0
 #: How often a hosted gateway compares its loops and their runs with the last
 #: report, so a run starting or ending reaches the web app within this long.
 #: The comparison is local; the web app is called only when something changed.
 WEBAPP_LOOP_REPORT_INTERVAL_SECONDS = 30.0
+#: The control plane calls this when a member changes a loop in the app.
+LOOP_SYNC_ROUTE_PATH = "/v1/loops/sync"
 #: The loop-sync watcher sleeps between passes; cap its join on shutdown.
 WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS = 2.0
 DEFAULT_MAX_CONVERSATION_LOCKS = 1024
@@ -117,6 +120,7 @@ __all__ = [
     "SCHEDULER_STOP_BUDGET_SHARE",
     "WEBAPP_LOOP_REPORT_INTERVAL_SECONDS",
     "WEBAPP_LOOP_SYNC_INTERVAL_SECONDS",
+    "LOOP_SYNC_ROUTE_PATH",
     "WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS",
     "NO_ACTIVE_TURN_MESSAGE",
     "PROMPT_CONTEXT_MAX_ITEMS",
