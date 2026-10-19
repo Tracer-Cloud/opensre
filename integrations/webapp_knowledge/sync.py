@@ -110,7 +110,14 @@ class WebappKnowledgeSync:
         be applied for a passing reason (the store was locked) stays pending.
         """
         changed = False
-        for request in self._pending_requests():
+        pending = self._pending_requests()
+        if pending is not None:
+            # A request the app no longer delivers is settled there: drop what we held for it.
+            delivered = {str(request.get("id") or "") for request in pending}
+            self._unrecorded = {
+                rid: outcome for rid, outcome in self._unrecorded.items() if rid in delivered
+            }
+        for request in pending or []:
             request_id = str(request.get("id") or "")
             outcome = self._unrecorded.get(request_id)
             recorded = False
@@ -172,16 +179,17 @@ class WebappKnowledgeSync:
         with bound_storage_scope(scope):
             yield
 
-    def _pending_requests(self) -> list[Mapping[str, Any]]:
+    def _pending_requests(self) -> list[Mapping[str, Any]] | None:
+        """The app's pending requests, or ``None`` when it could not be asked."""
         response = self._call("GET", _REQUESTS_PATH, params={"organizationId": self._organization})
         if response is None or response.status_code != HTTPStatus.OK:
-            return []
+            return None
         try:
             data = response.json().get("data")
         except (ValueError, AttributeError):
-            return []
+            return None
         if not isinstance(data, list):
-            return []
+            return None
         return [item for item in data if isinstance(item, Mapping) and item.get("id")]
 
     def _apply(self, request: Mapping[str, Any]) -> RecordedOutcome | None:

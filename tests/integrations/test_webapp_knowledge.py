@@ -264,3 +264,34 @@ def test_an_outcome_the_ledger_cannot_take_is_held_not_acknowledged_or_reapplied
     sync.sync()
     assert [ack["status"] for _id, ack in webapp.acks] == ["applied"]
     assert _memories("U_ADA") == ["concise-reports"]
+
+
+def test_a_large_organization_still_fits_one_report() -> None:
+    # Review finding: nothing capped the report, and the web app's request
+    # body limit would reject every report from a large organization.
+    from core.domain.memory import MemberStore
+    from core.domain.memory.models import MemoryRecord
+    from integrations.webapp_knowledge.snapshot import build_snapshot
+
+    def store(actor: str) -> MemberStore:
+        records = tuple(
+            MemoryRecord(
+                slug=f"fact-{i}",
+                memory_type=MemoryType.INFRASTRUCTURE,
+                description=f"Fact {i}",
+                created_at="2026-10-01T00:00:00+00:00",
+                updated_at="2026-10-01T00:00:00+00:00",
+                body="x" * 4_000,
+            )
+            for i in range(50)
+        )
+        return MemberStore(actor=actor, directory=Path("/unused"), records=records, usage={})
+
+    report = build_snapshot(_ORG, stores=[store(f"U{i}") for i in range(20)], max_bytes=200_000)
+
+    import json
+
+    assert len(json.dumps(report, separators=(",", ":")).encode()) <= 200_000
+    member = report["members"][0]
+    assert member["total"] == 50 and member["audit"]["total"] == 50
+    assert member["memories"] and member["memories"][0]["truncated"] is True

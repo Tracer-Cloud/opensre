@@ -59,6 +59,9 @@ logger = logging.getLogger(__name__)
 SERVICE = "slack"
 
 #: Channels sampled for the LLM overview, busiest first.
+#: users.list pages a scan reads (200 members each): every member must be seen,
+#: because only listed members may read workspace knowledge.
+MAX_MEMBER_PAGES = 50
 MAX_SAMPLED_CHANNELS = 8
 MESSAGES_PER_CHANNEL = 25
 _SAMPLE_TEXT_CHARS = 300
@@ -179,14 +182,18 @@ def read_workspace(target: SlackBotTarget) -> tuple[SlackWorkspaceView | None, s
     identity, error = fetch_workspace_identity(target)
     if identity is None:
         return None, error
-    members, members_error, members_truncated = fetch_team_members(target)
+    members, members_error, members_truncated = fetch_team_members(
+        target, max_pages=MAX_MEMBER_PAGES
+    )
     if members is None:
         return None, members_error or "Slack would not list the workspace's members."
     channels, channels_error, channels_truncated = list_public_channels(target)
     if channels is None:
         return None, channels_error or "Slack would not list the workspace's channels."
     if members_truncated:
-        logger.warning("[knowledge] slack member list truncated; later members are left out")
+        logger.warning(
+            "[knowledge] slack member list truncated; earlier readers are kept for the rest"
+        )
     return (
         SlackWorkspaceView(
             name=_clean(identity.get("name") or identity.get("domain"), _CELL_CHARS)
@@ -399,7 +406,9 @@ def scan_slack_workspace(
     view, error = read_workspace(target)
     if view is None:
         return ScanOutcome(SERVICE, ok=False, error=error or "Slack could not be read.")
-    if not record_workspace_readers(SERVICE, view.member_ids):
+    # A truncated list adds to the recorded readers instead of replacing them,
+    # so members past the last page keep the access an earlier scan gave them.
+    if not record_workspace_readers(SERVICE, view.member_ids, merge=view.people_truncated):
         # Entries nobody may read are worse than the last good ones: stop here.
         return ScanOutcome(SERVICE, ok=False, error="Workspace knowledge could not be written.")
     samples = sample_messages(target, view.channels) if scan_messages_enabled() else {}
@@ -432,11 +441,12 @@ def scan_slack_workspace(
             continue
         if saved is not None:
             written.append(slug)
+    complete = len(written) == len(entries)
     return ScanOutcome(
         SERVICE,
-        ok=bool(written),
+        ok=complete,
         written=tuple(written),
-        error="" if written else "Workspace knowledge could not be written.",
+        error="" if complete else "Some workspace knowledge could not be written.",
         details={
             "people": len(view.people),
             "channels": len(view.channels),

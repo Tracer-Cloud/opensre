@@ -435,12 +435,14 @@ def _fetch_thread_replies(
 
 def fetch_team_members(
     target: SlackBotTarget,
+    *,
+    max_pages: int = _MAX_MEMBER_PAGES,
 ) -> tuple[list[dict[str, Any]] | None, str, bool]:
     """Fetch workspace members. Returns ``(members, error, truncated)``."""
     members: list[dict[str, Any]] = []
     cursor = ""
     truncated = False
-    for page in range(_MAX_MEMBER_PAGES):
+    for page in range(max_pages):
         params: dict[str, Any] = {"limit": _PAGE_LIMIT}
         if cursor:
             params["cursor"] = cursor
@@ -475,7 +477,7 @@ def fetch_team_members(
         cursor = str(((payload.get("response_metadata") or {}).get("next_cursor")) or "")
         if not cursor:
             break
-        if page == _MAX_MEMBER_PAGES - 1 and cursor:
+        if page == max_pages - 1 and cursor:
             truncated = True
 
     return members, "", truncated

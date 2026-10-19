@@ -43,13 +43,23 @@ def _readers_path(directory: Path) -> Path:
     return directory / READERS_FILENAME
 
 
-def record_workspace_readers(service: str, member_ids: Iterable[str]) -> bool:
-    """Replace the full members ``service``'s last scan saw; ``False`` when it cannot be saved."""
+def record_workspace_readers(
+    service: str, member_ids: Iterable[str], *, merge: bool = False
+) -> bool:
+    """Record the full members ``service``'s scan saw; ``False`` when it cannot be saved.
+
+    The list replaces the previous one, or with ``merge`` (a partial list)
+    adds to it.
+    """
     try:
         with workspace_store() as directory, memory_lock():
             path = _readers_path(directory)
             readers = read_json_object(path)
-            readers[service] = sorted({str(member) for member in member_ids if member})
+            seen = {str(member) for member in member_ids if member}
+            previous = readers.get(service)
+            if merge and isinstance(previous, list):
+                seen |= {str(member) for member in previous}
+            readers[service] = sorted(seen)
             write_json_atomically(path, readers)
     except (Timeout, OSError):
         return False

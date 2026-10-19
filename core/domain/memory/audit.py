@@ -50,7 +50,7 @@ _TRANSIENT_RE = re.compile(
     r"|asked (?:for|to|about)"
     r")\b"
 )
-_LOCAL_PATH_RE = re.compile(r"(?:^|[\s`'\"(])(?:/Users/|/home/|[A-Za-z]:\\\\Users\\\\)")
+_LOCAL_PATH_RE = re.compile(r"(?:^|[\s`'\"(])(?:/Users/|/home/|[A-Za-z]:\\Users\\)")
 
 
 @dataclass(frozen=True)

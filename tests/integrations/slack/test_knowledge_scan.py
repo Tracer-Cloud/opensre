@@ -23,9 +23,8 @@ from core.domain.knowledge import (
     load_workspace_entry,
 )
 from integrations.knowledge_scans import KnowledgeScanService, Scanner
-from integrations.slack.web_client import SlackBotTarget
 
-_TARGET = SlackBotTarget(bot_token="xoxb-test")
+_TARGET = web_client.SlackBotTarget(bot_token="xoxb-test")
 
 
 @pytest.fixture(autouse=True)
@@ -44,7 +43,7 @@ def _install_workspace(monkeypatch: pytest.MonkeyPatch, history_calls: list[str]
         {"id": "U2", "real_name": "Guest Contractor", "title": "", "is_guest": True},
         {"id": "B1", "real_name": "Deploy Bot", "is_bot": True},
     ]
-    monkeypatch.setattr(scan_module, "fetch_team_members", lambda _t: (members, "", False))
+    monkeypatch.setattr(scan_module, "fetch_team_members", lambda _t, **_kw: (members, "", False))
     channels = [
         {"id": "C1", "name": "payments-oncall", "num_members": 12, "is_member": True},
         {
@@ -59,7 +58,7 @@ def _install_workspace(monkeypatch: pytest.MonkeyPatch, history_calls: list[str]
     monkeypatch.setattr(scan_module, "list_public_channels", lambda _t: (channels, "", False))
 
     def history(
-        _t: SlackBotTarget, *, channel_id: str, limit: int
+        _t: web_client.SlackBotTarget, *, channel_id: str, limit: int
     ) -> tuple[list[dict[str, str]], str]:
         history_calls.append(channel_id)
         return (
@@ -232,7 +231,9 @@ def test_a_member_list_that_fails_keeps_the_last_good_knowledge(
     _install_workspace(monkeypatch, [])
     assert scan_module.scan_slack_workspace(target=_TARGET).ok
     before = load_workspace_entry(ORGANIZATION_SLUG)
-    monkeypatch.setattr(scan_module, "fetch_team_members", lambda _t: (None, "ratelimited", False))
+    monkeypatch.setattr(
+        scan_module, "fetch_team_members", lambda _t, **_kw: (None, "ratelimited", False)
+    )
 
     outcome = scan_module.scan_slack_workspace(target=_TARGET)
 
@@ -306,3 +307,32 @@ def test_a_large_workspace_fits_the_entry_and_counts_what_it_left_out() -> None:
     assert channel_map.rstrip().endswith("more channels.")
     assert "## Key channels" in organization  # the team table never pushes channels out
     assert "more (the full list" in organization
+
+
+def test_a_scan_that_keeps_failing_backs_off_instead_of_retrying_hourly() -> None:
+    calls: list[str] = []
+    clock = {"now": 0.0}
+    service = KnowledgeScanService(
+        scanners=(_scanner([], calls, ok=False),),
+        summarizer_factory=lambda: None,
+        clock=lambda: clock["now"],
+        retry_after_seconds=3_600,
+        max_age_seconds=7 * 24 * 3_600,
+    )
+
+    for _hour in range(8):
+        service.run_due()
+        clock["now"] += 3_601
+
+    # Attempts at 0h, 1h, then after 2h and 4h waits: not one every hour.
+    assert len(calls) == 4
+
+
+def test_a_truncated_member_list_keeps_earlier_readers() -> None:
+    from core.domain.knowledge import record_workspace_readers, workspace_readers
+
+    assert record_workspace_readers("slack", ["U1", "U2"])
+    assert record_workspace_readers("slack", ["U3"], merge=True)
+    assert workspace_readers() == {"U1", "U2", "U3"}
+    assert record_workspace_readers("slack", ["U3"])
+    assert workspace_readers() == {"U3"}

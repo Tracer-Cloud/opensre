@@ -151,33 +151,36 @@ def closest_duplicate(
 def duplicate_clusters(
     records: Sequence[MemoryRecord], *, threshold: float = DUPLICATE_SIMILARITY
 ) -> list[list[MemoryRecord]]:
-    """Groups of two or more same-type memories linked by pairwise similarity.
+    """Groups of two or more same-type memories, each similar to the group's head.
 
-    Each group is ordered most recently updated first, so its head is the
-    memory to keep. Groups are ordered by their head's slug for stable output.
+    The most recently updated memory heads a group, and only memories similar
+    to that head join it, never memories reached through a chain (A like B,
+    B like C does not put C with A). Each group is ordered most recently
+    updated first, so its head is the memory to keep; groups are ordered by
+    their head's slug for stable output.
     """
-    eligible = [record for record in records if matchable(record.memory_type)]
-    subjects = [_record_subject(record) for record in eligible]
-    parent = list(range(len(eligible)))
-
-    def find(index: int) -> int:
-        while parent[index] != index:
-            parent[index] = parent[parent[index]]
-            index = parent[index]
-        return index
-
-    for left in range(len(eligible)):
-        for right in range(left + 1, len(eligible)):
-            if eligible[left].memory_type is not eligible[right].memory_type:
-                continue
-            if similarity(subjects[left], subjects[right]) >= threshold:
-                parent[find(right)] = find(left)
-    groups: dict[int, list[MemoryRecord]] = {}
-    for index, record in enumerate(eligible):
-        groups.setdefault(find(index), []).append(record)
-    clusters = [group for group in groups.values() if len(group) > 1]
-    for group in clusters:
-        group.sort(key=lambda record: (record.updated_at, record.slug), reverse=True)
+    eligible = sorted(
+        (record for record in records if matchable(record.memory_type)),
+        key=lambda record: (record.updated_at, record.slug),
+        reverse=True,
+    )
+    subjects = {record.slug: _record_subject(record) for record in eligible}
+    grouped: set[str] = set()
+    clusters: list[list[MemoryRecord]] = []
+    for head in eligible:
+        if head.slug in grouped:
+            continue
+        group = [head] + [
+            other
+            for other in eligible
+            if other.slug != head.slug
+            and other.slug not in grouped
+            and other.memory_type is head.memory_type
+            and similarity(subjects[head.slug], subjects[other.slug]) >= threshold
+        ]
+        if len(group) > 1:
+            grouped.update(record.slug for record in group)
+            clusters.append(group)
     clusters.sort(key=lambda group: group[0].slug)
     return clusters
 

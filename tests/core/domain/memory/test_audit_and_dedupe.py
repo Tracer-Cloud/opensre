@@ -237,3 +237,26 @@ def test_facts_that_differ_only_in_an_identifier_or_a_negation_are_never_folded(
     assert negated is not None and negated[1] == "created"
     first = load_memory("prod-cluster-east")
     assert first is not None and "eks-prod-2" not in first.body
+
+
+def test_a_chain_of_resemblances_never_joins_unlike_memories() -> None:
+    # Review finding: clusters were built transitively, so A~B and B~C put C
+    # with A even when the two say different things.
+    from core.domain.memory.similarity import duplicate_clusters, similarity, subject_of
+
+    a = _record("a", "User prefers short replies in Slack threads", updated="2026-10-03")
+    b = _record("b", "User prefers short replies in Slack channels", updated="2026-10-02")
+    c = _record("c", "User prefers Slack channels for incident updates", updated="2026-10-01")
+    assert similarity(subject_of(a.slug, a.description), subject_of(c.slug, c.description)) < 0.6
+
+    clusters = duplicate_clusters([a, b, c], threshold=0.4)
+
+    assert all(not {"a", "c"} <= {record.slug for record in group} for group in clusters)
+
+
+def test_a_windows_path_is_reported_as_machine_specific() -> None:
+    record = _record("repo-root", "Where the repo lives", body=r"Checked out at C:\Users\ada\repo")
+
+    rules = {finding.rule for finding in audit_memories([record], now=_NOW).findings}
+
+    assert "machine_specific" in rules

@@ -3,8 +3,9 @@
 A scan is due when the integration is connected and its entry is missing (it
 was just connected, or someone deleted the entry), older than
 :data:`KNOWLEDGE_SCAN_MAX_AGE_SECONDS`, or a rescan was requested. A failed
-scan is not retried before :data:`KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS`, so an
-integration that cannot be read costs one attempt an hour, not one per pass.
+scan waits :data:`KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS` before its retry, and
+that wait doubles with each failure in a row up to the refresh age, so an
+integration that keeps failing costs a few attempts a day, not one an hour.
 
 The gateway runs :meth:`KnowledgeScanService.run_forever` on a background
 thread and pokes it when the integration store changes; the CLI calls
@@ -67,6 +68,8 @@ class KnowledgeScanService:
         self._wake = threading.Event()
         self._forced: set[str] = set()
         self._last_attempt: dict[str, float] = {}
+        #: Failed scans in a row, per service; a success resets it.
+        self._failures: dict[str, int] = {}
         self._outcomes: dict[str, ScanOutcome] = {}
 
     @property
@@ -121,13 +124,20 @@ class KnowledgeScanService:
             if scanner.service in self._forced:
                 return True
             last_attempt = self._last_attempt.get(scanner.service)
-        if last_attempt is not None and now - last_attempt < self._retry_after:
+            failures = self._failures.get(scanner.service, 0)
+        if last_attempt is not None and now - last_attempt < self._retry_wait(failures):
             return False
         entry = load_workspace_entry(integration_slug(scanner.service))
         if entry is None:
             return True
         age = entry_age_seconds(entry)
         return age is None or age >= self._max_age
+
+    def _retry_wait(self, failures: int) -> float:
+        """Seconds before the next attempt: doubling per failure in a row, up to the refresh age."""
+        if failures <= 1:
+            return self._retry_after
+        return float(min(self._retry_after * 2 ** (failures - 1), self._max_age))
 
     def due(self) -> list[str]:
         """Services whose scan is due now (connected ones only)."""
@@ -168,6 +178,9 @@ class KnowledgeScanService:
             logger.info("[knowledge] %s scan wrote %s", scanner.service, ", ".join(outcome.written))
         with self._lock:
             self._outcomes[scanner.service] = outcome
+            self._failures[scanner.service] = (
+                0 if outcome.ok else self._failures.get(scanner.service, 0) + 1
+            )
         return outcome
 
     def run_forever(
@@ -178,12 +191,14 @@ class KnowledgeScanService:
     ) -> None:
         """Run due scans until ``stopped``; a :meth:`poke` starts the next pass early."""
         while not stopped.is_set():
+            # Clear before the pass: a poke that lands while it runs stays set
+            # and starts the next pass at once instead of being lost.
+            self._wake.clear()
             try:
                 self.run_due()
             except Exception as exc:  # noqa: BLE001 - keep the loop alive after one bad pass
                 logger.warning("[knowledge] scan pass failed (%s)", type(exc).__name__)
             self._wake.wait(interval_seconds)
-            self._wake.clear()
 
 
 def _available(scanner: Scanner) -> bool:
