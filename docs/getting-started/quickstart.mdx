@@ -39,6 +39,55 @@ Choose **Sign in or create account** in the welcome screen.
 
 The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. Signing in activates the OpenSRE-hosted model, so you need no LLM key. Back in the terminal, OpenSRE confirms the session with the web app and opens the shell. If the sign-in screen comes back instead, see [troubleshooting](#troubleshooting).
 
+On SSH, tmux, or a container, follow [Sign in on a remote machine](#sign-in-on-a-remote-machine).
+
+## Sign in on a remote machine
+
+Use this when OpenSRE is running over SSH, in tmux, or in a container. The welcome screen's **Sign in or create account** choice runs `opensre account login` and opens a browser on that machine. On a remote session that browser can be a terminal browser, and the sign-in page then redirects to `http://127.0.0.1:<port>/callback` there. A browser on your laptop reaches that address only through a port forward, or you can deliver the redirect with `curl` on the remote machine.
+
+| Command | What it does |
+| --- | --- |
+| `opensre account login --no-browser` | Print the sign-in URL and wait for the callback, without opening a browser |
+| `opensre account login --no-browser --force` | Replace an existing session without asking |
+| `opensre account login --no-browser --timeout 1800` | Wait up to 30 minutes for the callback (the default is 300 seconds) |
+| `opensre account status` | Show whether this machine is signed in |
+
+On the remote machine, leave this running until it reports that you are signed in:
+
+```bash
+opensre account login --no-browser
+```
+
+The command prints a sign-in URL and waits. `callback_port` in that URL is the port OpenSRE is listening on at `127.0.0.1`. `opensre --json account login` waits for the same callback and leaves the URL out of its output, so use the command above when you need the link. If OpenSRE says a session is already active, confirm the replacement, or run the command again with `--force`.
+
+Finish the callback in either of these ways. The login command has to stay running while you do it, so use a second SSH session or another tmux pane.
+
+**Forward the port from your laptop.** Forward the `callback_port` value from the printed URL:
+
+```bash
+ssh -L <port>:127.0.0.1:<port> user@remote-host
+```
+
+Open the printed URL in a browser on your laptop and sign in. The redirect to `127.0.0.1:<port>` reaches the waiting command through the tunnel.
+
+**Curl the redirect on the remote machine.** Open the printed URL in a browser on your laptop and sign in. Copy the full `http://127.0.0.1:<port>/callback?...` address the browser tries to open, then run it on the remote machine:
+
+```bash
+curl '<redirect-url>'
+```
+
+Keep the quotes so the shell leaves `&` in the query string alone. The login command finishes when that request arrives.
+
+In a container, run `curl` in the same environment as the waiting command. The listener is that environment's `127.0.0.1`, so a port forward has to reach that address too.
+
+Then confirm the session:
+
+```bash
+opensre account status
+```
+
+If you see `Timed out waiting for OpenSRE sign-in to finish.`, run the command again with a larger `--timeout`. The maximum is 1800 seconds.
+
 ## Step 3: Pick what to do
 
 The first shell prompt asks what you want to do:
@@ -133,3 +182,4 @@ opensre uninstall --yes
 - **`make` is missing**: See the [development setup guide](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md) if you are working from source.
 - **The demo menu did not appear**: Menus need an interactive terminal. Run `opensre` in a terminal window rather than through a pipe or a CI job, then type `/demo`.
 - **The sign-in screen comes back after you signed in**: Run `opensre account status`; it names what is wrong with the session (expired, revoked, or the web app unreachable).
+- **Sign-in over SSH, tmux, or a container opens a terminal browser, or the browser stops on a localhost callback**: Run `opensre account login --no-browser`, then finish with an `ssh -L` port forward or by curling the redirect URL on the remote machine. See [Sign in on a remote machine](#sign-in-on-a-remote-machine).
