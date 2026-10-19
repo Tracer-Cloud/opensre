@@ -30,6 +30,7 @@ from core.agent_harness.session.pending_choice import (
 )
 from core.agent_harness.task_plan import PlanStep, PlanStepStatus, TaskPlan
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
+from surfaces.interactive_shell.runtime.input.actions import SubmitTurn
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.ask_user import CUSTOM_OPTION
 from surfaces.interactive_shell.ui.input_prompt.rendering import resolve_prompt_placeholder
@@ -256,7 +257,7 @@ def test_cancelled_menu_leaves_prompt_free(monkeypatch: pytest.MonkeyPatch) -> N
     assert session.pending_user_choice is None
     assert session.terminal.pending_prompt_default is None
     assert session.terminal.pending_prompt_autosubmit is False
-    assert "cancelled" in buf.getvalue().lower()
+    assert choice_prompt._CLOSED in buf.getvalue()
 
 
 @pytest.mark.parametrize("plan_only", [False, True])
@@ -584,7 +585,7 @@ def test_stray_terminal_input_never_cancels_the_menu(monkeypatch: pytest.MonkeyP
         assert _handler(session, console) is True
 
     # Assert
-    assert choice_prompt._CANCELLED not in buf.getvalue()
+    assert choice_prompt._CLOSED not in buf.getvalue()
     assert dismissed == []
     assert session.terminal.pending_prompt_default == format_ask_user_answers(
         _CHOICE.items(), ("Commit the changes",)
@@ -614,10 +615,63 @@ def test_dismissal_analytics_name_the_key_that_closed_the_menu(
 
         assert _handler(session, console) is True
 
-    assert choice_prompt._CANCELLED in buf.getvalue()
+    assert choice_prompt._CLOSED in buf.getvalue()
     assert [(event["reason"], event["dismiss_key"]) for event in dismissed] == [
         ("cancelled", dismiss_key)
     ]
+
+
+def test_a_closed_menu_reopens_in_the_skill_that_asked_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: Esc closes a skill's question, then the user types /choose to get it back.
+    # It used to be gone ("No selection menu is pending.") along with the skill.
+    session = Session()
+    session.pending_user_choice = _CHOICE
+    session.active_skill = "scheduling-github-ci-repairs"
+    console, buf = _console()
+    _record_dismissals(monkeypatch)
+
+    with pty_stdin(monkeypatch) as keyboard:
+        keyboard.queue(b"\x1b", b"b")
+        assert _handler(session, console) is True
+        skill_after_close = session.active_skill
+
+        # Act
+        assert _handler(session, console) is True
+
+    # Assert
+    assert choice_prompt._CLOSED in buf.getvalue()
+    assert skill_after_close is None
+    assert session.active_skill == "scheduling-github-ci-repairs"
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        _CHOICE.items(), ("Commit the changes",)
+    )
+    assert session.terminal.awaiting_handoff_answer is True
+    # Answered, so a later /choose has nothing to reopen.
+    assert session.terminal.closed_choice is None
+
+
+@pytest.mark.asyncio
+async def test_a_typed_reply_drops_the_closed_menu_but_a_slash_command_keeps_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The closed menu offers /choose or a typed reply; replying ends it."""
+    from surfaces.interactive_shell.controller import InteractiveShellController
+
+    session = Session()
+    session.pending_user_choice = _CHOICE
+    console, _buf = _console()
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: None)
+    assert _handler(session, console) is True
+    controller = InteractiveShellController(session, console=console)
+
+    await controller._handle_input_action(SubmitTurn(text="/status"))
+    kept = session.terminal.closed_choice
+    await controller._handle_input_action(SubmitTurn(text="commit them"))
+
+    assert kept is not None
+    assert kept.pending is _CHOICE
+    assert session.terminal.closed_choice is None
 
 
 def test_menu_draw_releases_launch_work_held_for_the_first_wait(

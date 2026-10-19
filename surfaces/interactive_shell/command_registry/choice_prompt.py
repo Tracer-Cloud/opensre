@@ -7,6 +7,10 @@ literal slash turn with exclusive stdin — the only place a raw-stdin arrow-key
 picker is safe (see ``_EXCLUSIVE_STDIN_COMMANDS`` in
 ``runtime/input_policy.py``). The selected option label is auto-submitted
 as the next user message so the agent receives the decision verbatim.
+
+A menu closed with Esc or Ctrl-C is kept on ``session.terminal.closed_choice``
+so a typed ``/choose`` reopens it, in the skill that asked it, until the user
+types a request instead.
 """
 
 from __future__ import annotations
@@ -63,6 +67,7 @@ from surfaces.interactive_shell.runtime.startup.analysis_prefetch import (
 from surfaces.interactive_shell.runtime.startup.onboarding_telemetry import (
     capture_onboarding_choice,
 )
+from surfaces.interactive_shell.session.terminal_session import ClosedChoice
 from surfaces.interactive_shell.ui.ask_user import CUSTOM_OPTION, repl_ask_user
 from surfaces.interactive_shell.ui.handoff_questions import render_choice_selections
 from surfaces.interactive_shell.ui.prompt_visibility import clear_live_prompt_paint
@@ -80,6 +85,7 @@ from tools.interactive_shell.actions.skill_prerequisite_gate import (
 )
 
 _CANCELLED = "Selection cancelled — type a reply instead."
+_CLOSED = "Selection closed — /choose reopens it, or type a reply instead."
 _CHOOSE_COMMAND = "/choose"
 # Onboarding leaf label -> the demo skill it starts.
 _DEMO_BY_LEAF = MappingProxyType({label: name for name, label in ONBOARDING_LEAF_CHOICES})
@@ -150,6 +156,33 @@ def _leave_menu(session: Session, console: Console, note: str) -> None:
         session.skills_already_prompted.discard(session.active_skill)
         discard_task_plan(session)
     session.active_skill = None
+
+
+def _close_unanswered(
+    session: Session,
+    console: Console,
+    pending: PendingUserChoice,
+    *,
+    skill_name: str | None,
+    dismiss_keys: list[str],
+) -> None:
+    """Leave a dismissed menu and its skill, keeping the menu for ``/choose`` to reopen."""
+    _capture_prompt_dismissed(pending, skill_name=skill_name, dismiss_keys=dismiss_keys)
+    session.terminal.closed_choice = ClosedChoice(pending=pending, skill=skill_name)
+    _leave_menu(session, console, _CLOSED)
+
+
+def _take_choice(session: Session) -> PendingUserChoice | None:
+    """Take the queued menu, else the one last closed without an answer."""
+    pending = session.pending_user_choice
+    closed = session.terminal.closed_choice
+    session.pending_user_choice = None
+    session.terminal.closed_choice = None
+    if pending is not None or closed is None:
+        return pending
+    # Back in the skill that asked, so the answer resumes its flow.
+    session.active_skill = closed.skill
+    return closed.pending
 
 
 def _run_command(session: Session, console: Console, command: str) -> None:
@@ -233,8 +266,7 @@ def _demo_needing_setup(session: Session, leaf: str | None) -> str | None:
 
 def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     del args
-    pending = session.pending_user_choice
-    session.pending_user_choice = None
+    pending = _take_choice(session)
     if pending is None:
         console.print(f"[{ui_theme.DIM}]No selection menu is pending.[/]")
         return True
@@ -273,8 +305,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     if pending.is_batch():
         picked = repl_ask_user(items, on_answer=remember_answer, on_dismiss=dismiss_keys.append)
         if picked is None:
-            _capture_prompt_dismissed(pending, skill_name=skill_name, dismiss_keys=dismiss_keys)
-            _leave_menu(session, console, _CANCELLED)
+            _close_unanswered(
+                session, console, pending, skill_name=skill_name, dismiss_keys=dismiss_keys
+            )
             return True
         capture_ask_user_prompt_answered(
             interaction_id=pending.interaction_id,
@@ -361,8 +394,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         )
     capture_onboarding_choice(session.active_skill, picked_one, custom=custom_answer)
     if picked_one is None:
-        _capture_prompt_dismissed(pending, skill_name=skill_name, dismiss_keys=dismiss_keys)
-        _leave_menu(session, console, _CANCELLED)
+        _close_unanswered(
+            session, console, pending, skill_name=skill_name, dismiss_keys=dismiss_keys
+        )
         return True
     command = pending.commands.get(picked_one) or (picked_one if picked_one.startswith("/") else "")
     if picked_one == SKIP_DEMO_OPTION and is_onboarding:
@@ -441,7 +475,7 @@ def _demo_create_option() -> str:
 COMMANDS: list[SlashCommand] = [
     SlashCommand(
         "/choose",
-        "Open the pending interactive selection menu queued by the agent.",
+        "Open the pending selection menu queued by the agent, or reopen one you closed.",
         _cmd_choose,
         usage=("/choose",),
         # Renders the queued read-only picker; never mutates anything.

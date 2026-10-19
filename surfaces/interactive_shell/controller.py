@@ -458,6 +458,9 @@ class InteractiveShellController:
                     self.session.terminal.pending_choice_response = None
                     # The user moved on, so a turn parked behind setup is not replayed.
                     clear_setup_resume(self.session)
+                    if not text.startswith("/"):
+                        # A typed request replies instead; /choose no longer reopens the menu.
+                        self.session.terminal.closed_choice = None
                     # Clear a finished plan left pinned after the previous turn so
                     # it does not linger over this one. An unfinished plan stays:
                     # the operator may continue it or type ``go`` while idle.

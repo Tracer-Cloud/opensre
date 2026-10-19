@@ -23,7 +23,7 @@ from surfaces.interactive_shell.session.terminal_metrics import TerminalMetrics
 if TYPE_CHECKING:
     from prompt_toolkit.history import History
 
-    from core.agent_harness.spi.session_state import SetupResume
+    from core.agent_harness.spi.session_state import PendingUserChoice, SetupResume
     from surfaces.interactive_shell.session.connection_checks import (
         ConnectionCheck,
         ConnectionCheckKey,
@@ -56,6 +56,15 @@ class ActionLogEntry:
     kind: str
     concise: str
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class ClosedChoice:
+    """A ``/choose`` menu the user closed without answering, kept so ``/choose`` reopens it."""
+
+    pending: PendingUserChoice
+    skill: str | None
+    """The skill that asked it; reopening restores it so the answer resumes that flow."""
 
 
 def _autosubmit_label(text: str) -> str:
@@ -178,6 +187,11 @@ class TerminalSession:
 
     Written through ``core.agent_harness.spi.session_state`` (``arm_setup_resume``);
     dropped by a typed turn, a closed menu, a new demo, and ``/new``."""
+
+    closed_choice: ClosedChoice | None = None
+    """The menu last closed with Esc or Ctrl-C; a typed ``/choose`` reopens it.
+
+    Dropped by an answered or reopened menu, a typed request, and ``/new``."""
 
     pending_choice_response: str | None = None
     goal_paint_signature: GoalPaintSignature | None = None
