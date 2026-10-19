@@ -631,19 +631,21 @@ def get_group_runs(
 def get_recent_runs(
     task_ids: Collection[str], *, per_task: int, db_path: Path | None = None
 ) -> list[TaskRun]:
-    """Return up to ``per_task`` newest attempts of each task in one snapshot, newest first."""
+    """Return up to ``per_task`` newest attempts of each task, newest first."""
     if not task_ids or per_task <= 0:
         return []
+    runs: list[TaskRun] = []
+    # One bounded walk of ``task_runs_recent`` per task, however long its history.
     with database.connection(db_path) as conn:
-        rows = conn.execute(
-            f"SELECT {_RUN_COLUMNS} FROM ("
-            f"SELECT {_RUN_COLUMNS}, ROW_NUMBER() OVER ("
-            "PARTITION BY task_id ORDER BY started_at DESC, id DESC) AS position "
-            "FROM task_runs WHERE task_id IN (SELECT value FROM json_each(?))"
-            ") WHERE position <= ? ORDER BY started_at DESC, id DESC",
-            (json.dumps(list(task_ids)), per_task),
-        ).fetchall()
-        return [_row_to_task_run(row) for row in rows]
+        for task_id in task_ids:
+            rows = conn.execute(
+                f"SELECT {_RUN_COLUMNS} FROM task_runs WHERE task_id = ? "
+                "ORDER BY started_at DESC, id DESC LIMIT ?",
+                (task_id, per_task),
+            ).fetchall()
+            runs.extend(_row_to_task_run(row) for row in rows)
+    runs.sort(key=lambda run: (run.started_at, run.run_id or 0), reverse=True)
+    return runs
 
 
 def get_group_run(
