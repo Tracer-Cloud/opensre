@@ -192,3 +192,17 @@ def test_every_loop_tick_carries_the_reply_format(mode: str) -> None:
     assert "REPLY FORMAT" in prompt
     assert "delivered to Telegram" in prompt
     assert prompt.index("REPLY FORMAT") < prompt.index("Summarize main CI")
+
+
+def test_a_bold_statement_with_nothing_under_it_is_kept_as_content() -> None:
+    # Arrange: a closing bold sentence, and a real heading left empty.
+    report = "## CI\n- **Main CI:** green\n\n**Deploys all health-checked.**\n\n## Empty"
+
+    # Act
+    layout = parse_report(report)
+    _fallback, blocks = report_blocks(report, loop_name=_LOOP)
+
+    # Assert
+    assert [section.heading for section in layout.sections] == ["CI"]
+    assert layout.sections[0].lines[-1].text == "**Deploys all health-checked.**"
+    assert "*Deploys all health-checked.*" in _texts(blocks)

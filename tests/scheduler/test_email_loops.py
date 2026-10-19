@@ -98,7 +98,7 @@ def test_an_smtp_loop_sends_html_from_the_owners_own_account(
     monkeypatch.setattr("integrations.member_integrations.load_member_records", load_member_records)
     monkeypatch.setattr(
         "integrations.scheduled_email.delivery.send_smtp_email",
-        lambda **kwargs: sent.append(kwargs) or (True, ""),
+        lambda **kwargs: sent.append(kwargs) or (True, "", []),
     )
 
     # Act
@@ -163,3 +163,51 @@ def test_an_email_loop_without_an_owner_is_refused() -> None:
 
     assert ok is False
     assert "no owner" in error
+
+
+def test_a_gmail_send_the_tool_rejected_is_a_failed_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the proxy call succeeds but the Gmail tool reports an error.
+    monkeypatch.setattr(
+        "integrations.pipedream.proxy.call_proxy_tool",
+        lambda **_kwargs: {"isError": True, "content": [{"type": "text", "text": "Invalid To"}]},
+    )
+
+    # Act
+    ok, error, _ = EmailScheduledDelivery().deliver(_email_task("gmail:apn_123"), _REPORT)
+
+    # Assert
+    assert ok is False
+    assert "Invalid To" in error
+
+
+def test_a_retry_after_a_partly_refused_send_goes_only_to_the_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the server refuses ben on the first attempt, then accepts him.
+    monkeypatch.setattr(
+        "integrations.member_integrations.load_member_records",
+        lambda: [{"service": "smtp", "name": "rec_1", "credentials": {"from_address": "a@x.io"}}],
+    )
+    attempts: list[list[str]] = []
+
+    def send(**kwargs: Any) -> tuple[bool, str, list[str]]:
+        attempts.append(list(kwargs["recipients"]))
+        if len(attempts) == 1:
+            return False, "The SMTP server refused ben@example.com", ["ben@example.com"]
+        return True, "", []
+
+    monkeypatch.setattr("integrations.scheduled_email.delivery.send_smtp_email", send)
+    delivery = EmailScheduledDelivery()
+    task = _email_task("smtp:rec_1")
+
+    # Act: the executor retries the failed destination with the same report.
+    first = delivery.deliver(task, _REPORT)
+    second = delivery.deliver(task, _REPORT)
+    third = delivery.deliver(task, _REPORT)
+
+    # Assert: ana is never sent twice; once ben has it, a retry sends nothing.
+    assert first[0] is False and "ben@example.com" in first[1]
+    assert attempts == [["ana@example.com", "ben@example.com"], ["ben@example.com"]]
+    assert second[0] is True and third[0] is True

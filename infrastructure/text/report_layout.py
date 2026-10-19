@@ -44,6 +44,8 @@ class ReportSection:
 
     heading: str
     lines: tuple[ReportLine, ...] = ()
+    #: The heading was a bold-only line (``**GitHub**``), not a ``##`` heading.
+    from_bold: bool = False
 
     def is_empty(self) -> bool:
         return not any(line.text.strip() for line in self.lines)
@@ -73,11 +75,12 @@ def parse_report(markdown: str) -> ReportLayout:
     title = ""
     sections: list[ReportSection] = []
     heading = ""
+    from_bold = False
     lines: list[ReportLine] = []
     in_fence = False
 
     def close() -> None:
-        sections.append(ReportSection(heading, tuple(_trim(lines))))
+        sections.append(ReportSection(heading, tuple(_trim(lines)), from_bold))
 
     for raw in (markdown or "").replace("\r\n", "\n").split("\n"):
         if _FENCE.match(raw):
@@ -90,12 +93,12 @@ def parse_report(markdown: str) -> ReportLayout:
             continue
         found = _heading(raw)
         if found is not None:
-            level, text = found
+            level, text, bold = found
             if level == 1 and not title and not sections and not _has_text(lines):
                 title = text
                 continue
             close()
-            heading, lines = text, []
+            heading, from_bold, lines = text, bold, []
             continue
         bullet = _BULLET.match(raw)
         if bullet:
@@ -106,9 +109,32 @@ def parse_report(markdown: str) -> ReportLayout:
     close()
 
     note = _pop_note(sections)
+    sections = _keep_bold_statements(sections)
     lead = sections[0] if sections and not sections[0].heading else ReportSection("")
     rest = tuple(section for section in sections if section.heading and not section.is_empty())
     return ReportLayout(title=title, lead=lead, sections=rest, note=note)
+
+
+def _keep_bold_statements(sections: list[ReportSection]) -> list[ReportSection]:
+    """A bold-only line with nothing under it is a statement, not a heading.
+
+    ``**Deploys all health-checked.**`` closing a report would otherwise be read
+    as a heading with an empty body and dropped. A real ``##`` heading without
+    a body is still dropped. The statement joins the section before it (or the
+    lead) as a bold line.
+    """
+    kept: list[ReportSection] = []
+    for section in sections:
+        if section.heading and section.is_empty() and section.from_bold:
+            line = ReportLine(f"**{section.heading}**")
+            if kept:
+                previous = kept[-1]
+                kept[-1] = ReportSection(previous.heading, (*previous.lines, line))
+            else:
+                kept.append(ReportSection("", (line,)))
+            continue
+        kept.append(section)
+    return kept
 
 
 def _pop_note(sections: list[ReportSection]) -> str:
@@ -123,17 +149,17 @@ def _pop_note(sections: list[ReportSection]) -> str:
     return match.group("text").strip()
 
 
-def _heading(line: str) -> tuple[int, str] | None:
-    """``(level, text)`` for a heading line, else ``None``."""
+def _heading(line: str) -> tuple[int, str, bool] | None:
+    """``(level, text, from_bold)`` for a heading line, else ``None``."""
     atx = _ATX_HEADING.match(line)
     if atx:
         text = _strip_emphasis(atx.group("title"))
-        return (len(atx.group(1)), text) if text else None
+        return (len(atx.group(1)), text, False) if text else None
     bold = _BOLD_ONLY_LINE.match(line)
     if bold:
         text = bold.group("title").strip().rstrip(":").strip()
         if text and len(text) <= _MAX_HEADING_CHARS:
-            return 2, text
+            return 2, text, True
     return None
 
 

@@ -100,14 +100,19 @@ def send_smtp_email(
     html: str,
     smtp_ctx: dict[str, Any],
     recipients: list[str],
-) -> tuple[bool, str]:
-    """Send one multipart (plain text + HTML) email via SMTP to ``recipients``."""
+) -> tuple[bool, str, list[str]]:
+    """Send one multipart (plain text + HTML) email via SMTP to ``recipients``.
+
+    Returns ``(ok, error, refused)``. A server that accepts some recipients
+    and refuses others still delivers to the accepted ones: ``ok`` is False
+    and ``refused`` lists the rest, so a retry can go to those alone.
+    """
     to = [address.strip() for address in recipients if address.strip()]
     from_address = str(smtp_ctx.get("from_address") or "").strip()
     if not to:
-        return False, "Missing recipient email address"
+        return False, "Missing recipient email address", []
     if not from_address:
-        return False, "Missing from_address"
+        return False, "Missing from_address", []
 
     message = EmailMessage()
     message["Subject"] = subject
@@ -120,15 +125,22 @@ def send_smtp_email(
         client = _connect_client(smtp_ctx)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[smtp] connection failed: %s", exc)
-        return False, f"Could not connect to the SMTP server ({type(exc).__name__})"
+        return False, f"Could not connect to the SMTP server ({type(exc).__name__})", to
     try:
-        client.send_message(message)
+        refused_map = client.send_message(message)
+    except smtplib.SMTPRecipientsRefused:
+        logger.warning("[smtp] every recipient was refused")
+        return False, "The SMTP server refused every recipient", to
     except Exception as exc:  # noqa: BLE001
         logger.warning("[smtp] send failed: %s", exc)
-        return False, f"The SMTP server refused the message ({type(exc).__name__})"
+        return False, f"The SMTP server refused the message ({type(exc).__name__})", to
     finally:
         try:
             client.quit()
         except Exception:  # noqa: BLE001
             client.close()
-    return True, ""
+    refused = [address for address in to if address in (refused_map or {})]
+    if refused:
+        logger.warning("[smtp] %d of %d recipients refused", len(refused), len(to))
+        return False, f"The SMTP server refused {', '.join(refused)}", refused
+    return True, "", []
