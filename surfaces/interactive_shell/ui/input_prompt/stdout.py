@@ -143,12 +143,17 @@ class _AppBoundStdoutProxy(StdoutProxy):
         pending = self._deferred_output
         while pending:
             # Held segments are either marker-free text or one renderable marker.
-            if pending[0].startswith("\x00"):
+            # Markers and oversized segments are written as held, never copied.
+            if pending[0].startswith("\x00") or len(pending[0]) >= _REPLAY_CHUNK_CHARS:
                 self._write_and_flush(loop, pending.popleft())
                 continue
             chunk: list[str] = []
             size = 0
-            while pending and size < _REPLAY_CHUNK_CHARS and not pending[0].startswith("\x00"):
+            while (
+                pending
+                and not pending[0].startswith("\x00")
+                and size + len(pending[0]) <= _REPLAY_CHUNK_CHARS
+            ):
                 segment = pending.popleft()
                 chunk.append(segment)
                 size += len(segment)

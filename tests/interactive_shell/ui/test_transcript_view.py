@@ -273,11 +273,13 @@ def test_release_of_high_volume_deferred_output_keeps_order_in_bounded_writes(
     terminal = io.StringIO()
     proxy = _proxy(store, terminal, _FakeApp(None))
     lines = [f"background line {i:05d} {'x' * 500}\n" for i in range(4096)]  # ~2 MiB
-    write_sizes: list[int] = []
+    # One flush batch larger than a replay chunk, right after a short one.
+    large_batch = "".join(lines[2049:2560])
+    writes: list[str] = []
     append_text = store.append_text
 
     def record_append(text: str, *, on_normal_screen: bool = False) -> None:
-        write_sizes.append(len(text))
+        writes.append(text)
         append_text(text, on_normal_screen=on_normal_screen)
 
     monkeypatch.setattr(store, "append_text", record_append)
@@ -287,16 +289,20 @@ def test_release_of_high_volume_deferred_output_keeps_order_in_bounded_writes(
     for line in lines[:2048]:
         proxy._write_and_flush(None, line)
     proxy._write_and_flush(None, _RENDERABLE_MARKER.format(0))
-    for line in lines[2048:]:
+    proxy._write_and_flush(None, lines[2048])
+    proxy._write_and_flush(None, large_batch)
+    for line in lines[2560:]:
         proxy._write_and_flush(None, line)
-    assert write_sizes == []
+    assert writes == []
     assert terminal.getvalue() == ""
 
     proxy._write_and_flush(None, _DEFERRED_END)
     proxy.close()
 
     assert not proxy._deferred_output
-    assert max(write_sizes) <= _REPLAY_CHUNK_CHARS + len(lines[0])
+    # Only the oversized batch exceeds a chunk, and it is written as held, uncopied.
+    assert [text for text in writes if len(text) > _REPLAY_CHUNK_CHARS] == [large_batch]
+    assert next(text for text in writes if len(text) > _REPLAY_CHUNK_CHARS) is large_batch
     output = terminal.getvalue()
     assert output.count("background line") == len(lines)
     assert (
