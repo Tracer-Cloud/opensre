@@ -19,6 +19,7 @@ import os
 import signal
 import threading
 from collections.abc import Callable
+from time import monotonic
 from typing import Any
 
 from rich.console import Console
@@ -29,6 +30,7 @@ from config.constants.gateway import (
     KNOWLEDGE_THREAD_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_STOP_BUDGET_SHARE,
+    WEBAPP_LOOP_REPORT_INTERVAL_SECONDS,
     WEBAPP_LOOP_SYNC_INTERVAL_SECONDS,
     WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS,
 )
@@ -345,18 +347,25 @@ class GatewayController:
         wake = self._webapp_loop_sync_wake
 
         def _watch() -> None:
+            next_poll = monotonic()
             while not self._stopped.is_set():
-                # Cleared before the pass, so a nudge that lands mid-pass runs another.
-                wake.clear()
+                poll_requested = wake.is_set() or monotonic() >= next_poll
+                if poll_requested:
+                    # Cleared before the pass, so a nudge that lands mid-pass runs another.
+                    wake.clear()
                 # stop() sets both events; if it landed just before the clear,
                 # its wake is gone, so check again rather than sleep the interval.
                 if self._stopped.is_set():
                     break
                 try:
-                    sync.sync()
+                    if poll_requested:
+                        next_poll = monotonic() + WEBAPP_LOOP_SYNC_INTERVAL_SECONDS
+                        sync.sync()
+                    else:
+                        sync.report()
                 except Exception as exc:  # noqa: BLE001 - keep syncing after one bad pass
                     logger.warning("[gateway] web app task sync failed (%s)", type(exc).__name__)
-                wake.wait(WEBAPP_LOOP_SYNC_INTERVAL_SECONDS)
+                wake.wait(WEBAPP_LOOP_REPORT_INTERVAL_SECONDS)
 
         self.components["webapp_tasks"] = "syncing with the web app"
         self._webapp_loop_sync_thread = threading.Thread(

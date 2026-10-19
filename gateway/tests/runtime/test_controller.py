@@ -169,3 +169,47 @@ def test_stop_subtracts_reload_join_from_the_surface_budget(
     surfaces.stop.assert_called_once_with(timeout=6.0)
     assert manager.surfaces is None
     assert manager._scheduler_reload_thread is None
+
+
+def test_webapp_sync_keeps_report_and_poll_cadences_when_nudged_mid_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _Clock()
+    manager = GatewayController()
+    wake = manager._webapp_loop_sync_wake
+    polls: list[float] = []
+    reports: list[float] = []
+
+    def _poll() -> None:
+        polls.append(clock.now)
+        if len(polls) == 1:
+            manager.request_webapp_loop_sync()
+
+    def _report() -> None:
+        reports.append(clock.now)
+        if len(reports) == 1:
+            manager.request_webapp_loop_sync()
+
+    def _wait(timeout: float) -> bool:
+        assert timeout == 30.0
+        if wake.is_set():
+            return True
+        clock.now += timeout
+        if clock.now >= 360.0:
+            manager._stopped.set()
+        return False
+
+    sync = MagicMock()
+    sync.sync.side_effect = _poll
+    sync.report.side_effect = _report
+    thread_factory = MagicMock()
+    monkeypatch.setattr("bootstrap.adapters.webapp_loop_sync", lambda _runners=None: sync)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.monotonic", clock)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.threading.Thread", thread_factory)
+    monkeypatch.setattr(wake, "wait", _wait)
+
+    manager._start_webapp_loop_sync(logging.getLogger("test"))
+    thread_factory.call_args.kwargs["target"]()
+
+    assert polls == [0.0, 0.0, 30.0, 330.0]
+    assert reports == [float(seconds) for seconds in range(30, 330, 30)]

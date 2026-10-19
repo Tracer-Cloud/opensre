@@ -69,7 +69,12 @@ def _bounded(value: str, max_bytes: int) -> tuple[str, bool]:
     return cut, cut != text
 
 
-def _trigger(fire_time: str) -> str:
+def bounded_text(value: str, max_bytes: int) -> str:
+    """``value`` with credentials redacted, capped at ``max_bytes`` UTF-8 bytes."""
+    return _bounded(value, max_bytes)[0]
+
+
+def run_trigger(fire_time: str) -> str:
     """Scheduled fires use second precision; a manual run's key carries microseconds."""
     return "manual" if "." in fire_time else "schedule"
 
@@ -181,7 +186,7 @@ def build_run_record(
         "loop_id": task.params.get(LOOP_GROUP_ID_PARAM, "").strip() or task.id,
         "fire_time": claim.fire_time,
         "attempt": claim.attempt,
-        "trigger": _trigger(claim.fire_time),
+        "trigger": run_trigger(claim.fire_time),
         "status": (run.status if run is not None else TaskStatus.RUNNING).value,
         "started_at": run.started_at if run is not None else "",
         "finished_at": (run.finished_at or "") if run is not None else "",
@@ -259,4 +264,10 @@ def _report_run_record(record: dict[str, Any]) -> None:
         )
 
 
-__all__ = ["build_run_record", "record_run_finished", "record_run_started"]
+__all__ = [
+    "bounded_text",
+    "build_run_record",
+    "record_run_finished",
+    "record_run_started",
+    "run_trigger",
+]

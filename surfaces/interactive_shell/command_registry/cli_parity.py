@@ -461,14 +461,20 @@ def _validate_logout_args(args: list[str]) -> str | None:
     )
 
 
+def _cmd_remote(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    console.print(
+        "[bold]/remote has been retired.[/bold] Remote-agent operations are unavailable "
+        "in this build.\n"
+        "/remote-sync mirrors sessions and memory to an object store; "
+        "it does not control deployed agents. Use [bold]/help[/bold] for supported commands."
+    )
+    session.mark_latest(ok=False, kind="slash")
+    return True
+
+
 def _cmd_logout(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
     """Sign out of the OpenSRE account. Same close-the-shell path as ``/account logout``."""
     return _cmd_account(session, console, ["logout"])
-
-
-def _cmd_remote(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
-    # Remote-sync configuration prompts on the real TTY (click.prompt).
-    return run_cli_command(console, ["remote", *args], capture_output=False, session=session)
 
 
 def _cmd_guardrails(session: Session, console: Console, args: list[str]) -> bool:
@@ -586,14 +592,9 @@ COMMANDS: list[SlashCommand] = [
     ),
     SlashCommand(
         "/remote",
-        "Connect to and trigger a remote deployed agent.",
+        "Remote-agent operations are unavailable in this build.",
         _cmd_remote,
-        usage=(
-            "/remote health",
-            "/remote ops",
-            "/remote pull",
-            "/remote trigger",
-        ),
+        usage=("/remote",),
     ),
     SlashCommand(
         "/guardrails",
