@@ -721,7 +721,9 @@ def test_openai_agent_client_enables_parallel_tool_calls_for_openai(
     assert captured["parallel_tool_calls"] is True
 
 
-@pytest.mark.parametrize("model", ["gpt-5.6", "gpt-6.1-sol"])
+@pytest.mark.parametrize(
+    "model", ["gpt-5.6", "gpt-6", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol"]
+)
 def test_openai_reasoning_agent_uses_responses_api_and_replays_reasoning(
     monkeypatch: pytest.MonkeyPatch,
     model: str,

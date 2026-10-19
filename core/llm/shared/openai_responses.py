@@ -17,8 +17,14 @@ _RESPONSE_OUTPUT_KEY = "_openai_response_output"
 
 
 def uses_responses_api(model: str, api_key_env: str) -> bool:
-    """Return whether this official OpenAI model requires the Responses API."""
-    return api_key_env == "OPENAI_API_KEY" and model.lower().startswith(("gpt-5.6", "gpt-6.1"))
+    """Return whether this official OpenAI model requires the Responses API.
+
+    ``gpt-6`` covers the whole family, including ``gpt-6.1``: every gpt-6 model
+    applies reasoning by default, and Chat Completions rejects that together
+    with function tools, so the Responses API is the only endpoint that serves
+    a tool-using turn.
+    """
+    return api_key_env == "OPENAI_API_KEY" and model.lower().startswith(("gpt-5.6", "gpt-6"))
 
 
 @lru_cache(maxsize=32)
