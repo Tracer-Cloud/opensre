@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 
 from config.constants.ci_fixes import CI_FIX_LEDGER_PATH_ENV
+from config.constants.knowledge import KNOWLEDGE_DIRNAME, OPENSRE_KNOWLEDGE_DIR_ENV
 from config.constants.memory import OPENSRE_MEMORY_DIR_ENV
 from config.constants.organization import organization_id
 from config.constants.tenancy import INTEGRATIONS_STORE_PATH_ENV
@@ -235,6 +236,19 @@ def get_memory_dir() -> Path:
     return session_home() / "memory"
 
 
+def get_knowledge_dir() -> Path:
+    """Workspace knowledge shared by every member of the organization.
+
+    Resolved from :func:`deployment_home`, not :func:`session_home`: it belongs
+    to the organization, and the background scans that write it run with no
+    member scope bound.
+    """
+    override = os.getenv(OPENSRE_KNOWLEDGE_DIR_ENV, "").strip()
+    if override:
+        return Path(override).expanduser()
+    return deployment_home() / KNOWLEDGE_DIRNAME
+
+
 def get_work_items_dir() -> Path:
     override = os.getenv(OPENSRE_WORK_ITEMS_DIR_ENV, "").strip()
     if override:
@@ -265,6 +279,7 @@ __all__ = [
     "deployment_home",
     "ci_fix_ledger_path",
     "ensure_opensre_tmp_dir",
+    "get_knowledge_dir",
     "get_memory_dir",
     "get_sessions_dir",
     "get_store_path",

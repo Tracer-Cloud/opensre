@@ -3,12 +3,14 @@
 Two steps:
 
 1. **Deterministic**, under the memory lock: archive fenced demo/sample
-   memories and memories neither updated nor used for 120 days (``user`` and
-   ``preference`` memories never age out), and merge repository memories
-   about the same ``owner/repo`` — the most recently updated one is kept, the
-   others' notes are appended to it under ``## Merged from`` headings, and
-   each other memory whose notes all fit is archived (one that does not fit
-   stays live).
+   memories and memories neither updated nor used for 120 days (``user``,
+   ``preference`` and workspace-scan memories never age out), and merge
+   duplicates — repository memories about the same ``owner/repo``, and other
+   memories of one type whose headers say the same thing
+   (:mod:`core.domain.memory.similarity`). The most recently updated one is
+   kept, the others' notes are appended to it under ``## Merged from``
+   headings, and each other memory whose notes all fit is archived (one that
+   does not fit stays live).
 2. **Summary**, optional: an injected summarizer (an LLM on the harness side)
    turns the live memories and the session summaries recorded since the last
    forget into ``memory_summary.md``. The lock is not held while it runs, so
@@ -24,7 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -39,14 +41,15 @@ from core.domain.memory.consolidation_state import (
 )
 from core.domain.memory.fence import is_fenced_record
 from core.domain.memory.files import memory_dir, memory_lock
+from core.domain.memory.merge import merged_body
 from core.domain.memory.models import (
-    MAX_BODY_CHARS,
-    PERSONAL_MEMORY_TYPES,
+    NON_EXPIRING_MEMORY_TYPES,
     MemoryRecord,
     MemoryType,
 )
 from core.domain.memory.repository_ids import repository_ids
 from core.domain.memory.safety import find_memory_safety_issues, redact_memory_unsafe_text
+from core.domain.memory.similarity import DUPLICATE_SIMILARITY, duplicate_clusters
 from core.domain.memory.store import (
     build_record,
     list_memories,
@@ -70,7 +73,6 @@ RECENT_SESSION_SUMMARIES = 10
 
 _NOT_REPOSITORIES = frozenset({"and/or", "client/server", "input/output", "read/write"})
 _SUBJECT_BODY_LINES = 3
-_SECTION_GAP = "\n\n"
 
 
 @dataclass(frozen=True)
@@ -105,7 +107,7 @@ def _parse_stamp(value: str) -> datetime | None:
 
 
 def _is_stale(record: MemoryRecord, usage: MemoryUsage, now: datetime) -> bool:
-    if record.memory_type in PERSONAL_MEMORY_TYPES:
+    if record.memory_type in NON_EXPIRING_MEMORY_TYPES:
         return False
     stamps = [
         stamp
@@ -134,69 +136,32 @@ def repository_subject(record: MemoryRecord) -> str | None:
     return None
 
 
-def _without_blank_runs(lines: list[str]) -> list[str]:
-    """``lines`` without leading or trailing blank lines and with blank runs collapsed."""
-    tidy: list[str] = []
-    for line in lines:
-        if not line.strip() and (not tidy or not tidy[-1].strip()):
-            continue
-        tidy.append(line)
-    while tidy and not tidy[-1].strip():
-        tidy.pop()
-    return tidy
+def _duplicate_groups(records: list[MemoryRecord]) -> list[list[MemoryRecord]]:
+    """Repository memories per ``owner/repo``, then same-type near-duplicates.
 
-
-def merged_body(
-    kept: MemoryRecord, duplicates: Sequence[MemoryRecord]
-) -> tuple[str, tuple[MemoryRecord, ...]]:
-    """``kept``'s body with duplicates' notes appended, and the duplicates that were merged.
-
-    Each merged duplicate gets a ``## Merged from`` heading naming it and the
-    day it was last updated; a line already present anywhere above (ignoring
-    surrounding whitespace) is not repeated. Nothing is ever cut: a duplicate
-    whose new lines would push the body past :data:`MAX_BODY_CHARS` is left
-    out, so its caller can keep that memory live instead of archiving notes
-    that are not in the kept body.
+    Each group is ordered most recently updated first; its head is kept.
     """
-    body = kept.body.strip()
-    seen = {line.strip() for line in body.splitlines() if line.strip()}
-    merged: list[MemoryRecord] = []
-    for duplicate in duplicates:
-        fresh: list[str] = []
-        added: set[str] = set()
-        for line in duplicate.body.strip().splitlines():
-            key = line.strip()
-            if key in seen or key in added:
-                continue
-            if key:
-                added.add(key)
-            fresh.append(line.rstrip())
-        heading = f"## Merged from {duplicate.slug} ({duplicate.updated_at[:10]})"
-        candidate = _SECTION_GAP.join((body, "\n".join((heading, *_without_blank_runs(fresh)))))
-        if len(candidate) > MAX_BODY_CHARS:
-            continue
-        body = candidate
-        seen |= added
-        merged.append(duplicate)
-    return body, tuple(merged)
+    by_subject: dict[str, list[MemoryRecord]] = {}
+    for record in records:
+        subject = repository_subject(record)
+        if subject is not None:
+            by_subject.setdefault(subject, []).append(record)
+    groups = [group for group in by_subject.values() if len(group) > 1]
+    for group in groups:
+        group.sort(key=lambda record: (record.updated_at, record.slug), reverse=True)
+    # Repository memories are matched by subject above, never by header words.
+    groups.extend(duplicate_clusters(records, threshold=DUPLICATE_SIMILARITY))
+    return groups
 
 
 def _merge_duplicates_unlocked(records: list[MemoryRecord], now: datetime) -> list[tuple[str, str]]:
-    """Keep the newest memory per repository subject, fold the others into it, archive them.
+    """Keep the newest memory of each duplicate group, fold the others into it, archive them.
 
     Only a duplicate whose notes all made it into the kept memory is archived;
     one that did not fit stays live.
     """
-    groups: dict[str, list[MemoryRecord]] = {}
-    for record in records:
-        subject = repository_subject(record)
-        if subject is not None:
-            groups.setdefault(subject, []).append(record)
     merged: list[tuple[str, str]] = []
-    for group in groups.values():
-        if len(group) < 2:
-            continue
-        group.sort(key=lambda record: (record.updated_at, record.slug), reverse=True)
+    for group in _duplicate_groups(records):
         kept, duplicates = group[0], group[1:]
         body, folded = merged_body(kept, duplicates)
         if not folded:
@@ -315,8 +280,8 @@ def consolidate_memories(
 ) -> ConsolidationResult:
     """Tidy the current memory directory unless it was tidied in the last six hours.
 
-    Archives fenced and stale memories, merges duplicate repository memories,
-    then (with ``summarize``) refreshes ``memory_summary.md``. Never raises; a
+    Archives fenced and stale memories, merges duplicates, then (with
+    ``summarize``) refreshes ``memory_summary.md``. Never raises; a
     held lock or an I/O error returns ``ran=False``.
     """
     moment = now or datetime.now(UTC)
@@ -350,6 +315,5 @@ __all__ = [
     "ConsolidationResult",
     "Summarizer",
     "consolidate_memories",
-    "merged_body",
     "repository_subject",
 ]

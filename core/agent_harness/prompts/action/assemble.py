@@ -197,7 +197,18 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
         )
     )
     # Volatile before ephemeral so render_cached + render_ephemeral reassemble
-    # into render() and the cache breakpoint can sit after memory.
+    # into render() and the cache breakpoint can sit after memory. Workspace
+    # knowledge first: a scan rewrites it far less often than a member's own
+    # memory changes, so a personal write never re-caches it.
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.WORKSPACE_KNOWLEDGE,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.VOLATILE,
+            content=_workspace_knowledge(turn_snapshot),
+            provenance="core.domain.knowledge",
+        )
+    )
     memory_block = _long_term_memory(turn_snapshot)
     blocks.extend(
         _optional_block(
@@ -276,6 +287,15 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             tier=PromptTier.EPHEMERAL,
             content=relevant_memories_block(turn_snapshot),
             provenance="core.domain.memory",
+        )
+    )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.RELEVANT_WORKSPACE_KNOWLEDGE,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=relevant_workspace_knowledge_block(turn_snapshot),
+            provenance="core.domain.knowledge",
         )
     )
     # With structured history the earlier turns precede the user message as
@@ -478,6 +498,57 @@ def long_term_memory_block() -> str:
     )
 
 
+def workspace_knowledge_block() -> str:
+    """The organization profile and workspace entry index for the cached prompt half."""
+    from core.domain.knowledge import knowledge_available_here, render_workspace_block
+
+    if not knowledge_available_here():
+        return ""
+    rendered = render_workspace_block()
+    if not rendered:
+        return ""
+    return (
+        "WORKSPACE KNOWLEDGE (shared by everyone in this organization and kept "
+        "current by background scans of its connected integrations, not by this "
+        "user; use it to know who people are, what the company does and where "
+        "things live. The full text of entries that match this request appears "
+        "under RELEVANT WORKSPACE KNOWLEDGE; read any other with memory_recall. "
+        "It may be out of date, so check anything that could have changed before "
+        "acting on it):\n"
+        f"{rendered}\n\n"
+    )
+
+
+def _workspace_knowledge(turn_snapshot: TurnSnapshot) -> str:
+    """The workspace block, unless the host runs this turn without long-term memory."""
+    return workspace_knowledge_block() if turn_snapshot.long_term_memory_enabled else ""
+
+
+def relevant_workspace_knowledge_block(turn_snapshot: TurnSnapshot) -> str:
+    """Full text of the workspace entries that match this turn's request."""
+    from core.domain.knowledge import (
+        knowledge_available_here,
+        render_relevant_workspace_entries,
+    )
+
+    if not turn_snapshot.long_term_memory_enabled or not knowledge_available_here():
+        return ""
+    rendered = render_relevant_workspace_entries(
+        turn_snapshot.text,
+        context=(
+            *turn_snapshot.active_vcs_repositories.values(),
+            *turn_snapshot.configured_integrations,
+        ),
+    )
+    if not rendered:
+        return ""
+    return (
+        "RELEVANT WORKSPACE KNOWLEDGE (organization-wide entries that match this "
+        "request, most relevant first; they may be out of date):\n"
+        f"{rendered}\n\n"
+    )
+
+
 def _long_term_memory(turn_snapshot: TurnSnapshot) -> str:
     """The memory index, unless the host runs this turn without long-term memory."""
     return long_term_memory_block() if turn_snapshot.long_term_memory_enabled else ""
@@ -562,6 +633,8 @@ __all__ = [
     "connected_integrations_block",
     "interrupted_turn_recovery_block",
     "long_term_memory_block",
+    "relevant_workspace_knowledge_block",
+    "workspace_knowledge_block",
     "prior_action_facts_block",
     "recent_conversation_block",
     "relevant_memories_block",

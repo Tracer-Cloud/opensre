@@ -67,7 +67,7 @@ from core.domain.memory import (
     is_valid_slug,
     live_memories,
     redact_memory_unsafe_text,
-    save_memory,
+    save_memory_merging_duplicates,
     slugify,
 )
 from infrastructure.analytics.repl_context import get_prompt_turn_id
@@ -495,7 +495,7 @@ def _save_extracted(items: Sequence[dict[str, Any]], read: EvidenceCorpus) -> in
             )
             continue
         try:
-            stored = save_memory(
+            stored = save_memory_merging_duplicates(
                 slug=slug,
                 memory_type=memory_type,
                 description=description,
@@ -506,7 +506,7 @@ def _save_extracted(items: Sequence[dict[str, Any]], read: EvidenceCorpus) -> in
             )
         except ValueError:
             continue
-        if stored is not None:
+        if stored is not None and stored[1] != "unchanged":
             saved += 1
     return saved
 

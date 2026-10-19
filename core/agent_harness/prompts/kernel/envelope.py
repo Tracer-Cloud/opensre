@@ -30,11 +30,13 @@ class PromptBlockId(StrEnum):
     CURRENT_TASK_PLAN = "current-task-plan"
     TURN_INTERACTION = "turn-interaction"
     RELEVANT_MEMORIES = "relevant-memories"
+    RELEVANT_WORKSPACE_KNOWLEDGE = "relevant-workspace-knowledge"
 
     # Shared across envelopes.
     CONNECTED_INTEGRATIONS = "connected-integrations"
     REPOSITORY_CONTEXT = "repository-context"
     LONG_TERM_MEMORY = "long-term-memory"
+    WORKSPACE_KNOWLEDGE = "workspace-knowledge"
     RECENT_CONVERSATION = "recent-conversation"
     PRIOR_ACTION_FACTS = "prior-action-facts"
     INTERRUPTED_TURN_RECOVERY = "interrupted-turn-recovery"

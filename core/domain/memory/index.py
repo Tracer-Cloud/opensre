@@ -51,18 +51,26 @@ def write_index(directory: Path, records: list[MemoryRecord]) -> Path:
     return path
 
 
+#: Index order by type; types not listed sort after these.
+_TYPE_RANK: dict[MemoryType, int] = {
+    MemoryType.ORGANIZATION: 0,
+    MemoryType.USER: 1,
+    MemoryType.PREFERENCE: 2,
+    MemoryType.INTEGRATION: 3,
+}
+
+
 def _type_rank(memory_type: MemoryType) -> int:
-    if memory_type is MemoryType.USER:
-        return 0
-    if memory_type is MemoryType.PREFERENCE:
-        return 1
-    return 2
+    return _TYPE_RANK.get(memory_type, len(_TYPE_RANK))
 
 
 def index_order(
     records: Sequence[MemoryRecord], usage: Mapping[str, MemoryUsage]
 ) -> list[MemoryRecord]:
-    """Most useful first: ``user``, then ``preference``, then the rest.
+    """Most useful first: ``organization``, ``user``, ``preference``, ``integration``, the rest.
+
+    A personal store holds only the person's types and a workspace store only
+    the organization's, so each sees its own lead types first.
 
     Within a group, the memory touched most recently — updated or put in front
     of the model — comes first, then the more often used, then by name.

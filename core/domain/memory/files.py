@@ -22,6 +22,8 @@ from __future__ import annotations
 import contextlib
 import json
 import tempfile
+from collections.abc import Iterator
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +60,30 @@ _LOCK_FILENAME = ".memory.lock"
 LOCK_TIMEOUT_SECONDS = 10.0
 
 
+_ROOT_OVERRIDE: ContextVar[Path | None] = ContextVar("opensre_memory_root", default=None)
+
+
+@contextlib.contextmanager
+def memory_root(directory: Path) -> Iterator[Path]:
+    """Point every memory operation in the block at ``directory``.
+
+    The store engine (parsing, safety, ranking, usage, locks, caches) serves
+    more than one store: a member's personal memory and the organization's
+    workspace knowledge. Caches are keyed by directory, so two roots never
+    share a parsed view. Keep the block tight: anything inside it that means
+    the member's own memory would read the bound store instead.
+    """
+    token = _ROOT_OVERRIDE.set(directory)
+    try:
+        yield directory
+    finally:
+        _ROOT_OVERRIDE.reset(token)
+
+
 def memory_dir() -> Path:
+    override = _ROOT_OVERRIDE.get()
+    if override is not None:
+        return override
     from config.constants import get_memory_dir
 
     return get_memory_dir()
@@ -69,7 +94,7 @@ def memory_path(slug: str) -> Path:
 
 
 def ensure_memory_dir() -> Path:
-    """Create ``~/.opensre/memory`` (or ``OPENSRE_MEMORY_DIR``) if missing."""
+    """Create the bound store root (default ``~/.opensre/memory``) if missing."""
     directory = memory_dir()
     directory.mkdir(parents=True, exist_ok=True, mode=MEMORY_DIR_MODE)
     with contextlib.suppress(OSError):
@@ -151,6 +176,7 @@ __all__ = [
     "memory_dir",
     "memory_lock",
     "memory_path",
+    "memory_root",
     "read_json_object",
     "write_json_atomically",
     "write_text_atomically",

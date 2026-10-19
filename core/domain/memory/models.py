@@ -14,6 +14,10 @@ class MemoryType(StrEnum):
     REPOSITORY = "repository"
     PREFERENCE = "preference"
     INVESTIGATION_LEARNING = "investigation_learning"
+    #: Workspace knowledge only: the company profile and team directory.
+    ORGANIZATION = "organization"
+    #: Workspace knowledge only: what one connected integration looks like.
+    INTEGRATION = "integration"
 
 
 class MemorySource(StrEnum):
@@ -24,12 +28,25 @@ class MemorySource(StrEnum):
     ASSISTANT = "assistant"
 
 
-MEMORY_TYPES: tuple[str, ...] = tuple(t.value for t in MemoryType)
+#: Types written by integration scans into workspace knowledge, never by a turn.
+WORKSPACE_ONLY_MEMORY_TYPES: frozenset[MemoryType] = frozenset(
+    {MemoryType.ORGANIZATION, MemoryType.INTEGRATION}
+)
+#: Types the agent may write (``memory_remember``, extraction).
+MEMORY_TYPES: tuple[str, ...] = tuple(
+    t.value for t in MemoryType if t not in WORKSPACE_ONLY_MEMORY_TYPES
+)
+#: Every type a memory file on disk may carry.
+STORED_MEMORY_TYPES: tuple[str, ...] = tuple(t.value for t in MemoryType)
 MEMORY_SOURCES: tuple[str, ...] = tuple(s.value for s in MemorySource)
 
 #: Types that describe the person rather than their systems; listed first and
 #: never archived for age or fenced as demo output.
 PERSONAL_MEMORY_TYPES: frozenset[MemoryType] = frozenset({MemoryType.USER, MemoryType.PREFERENCE})
+#: Never archived for age: personal facts, and workspace pages a scan refreshes.
+NON_EXPIRING_MEMORY_TYPES: frozenset[MemoryType] = (
+    PERSONAL_MEMORY_TYPES | WORKSPACE_ONLY_MEMORY_TYPES
+)
 
 MAX_DESCRIPTION_CHARS = 200
 MAX_BODY_CHARS = 10_000
@@ -72,8 +89,11 @@ __all__ = [
     "MAX_SLUG_CHARS",
     "MEMORY_SOURCES",
     "MEMORY_TYPES",
+    "NON_EXPIRING_MEMORY_TYPES",
     "PERSONAL_MEMORY_TYPES",
+    "STORED_MEMORY_TYPES",
     "TRUNCATION_MARKER",
+    "WORKSPACE_ONLY_MEMORY_TYPES",
     "MemoryRecord",
     "MemorySource",
     "MemoryType",

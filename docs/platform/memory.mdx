@@ -11,6 +11,9 @@ description: "The agent remembers who you are and how your infrastructure works 
 | `/memory show <name>` | Print one memory in full |
 | `/memory forget <name>` | Delete one memory |
 | `/memory path` | Print the folder where memories are stored |
+| `opensre knowledge` | List your memories and the organization's workspace knowledge |
+| `opensre knowledge scan` | Scan connected integrations into workspace knowledge now (`--force` to refresh fresh ones) |
+| `opensre knowledge audit` | Check memory quality: duplicates, one-off status notes, missing evidence, stale entries |
 
 ---
 
@@ -113,11 +116,15 @@ store in the background:
 
 - **Archives** demo, sample, and synthetic memories, and memories neither
   updated nor used for 120 days. Your profile and preferences never expire.
-- **Merges duplicates** — two repository memories about the same `owner/repo`
-  become one: the most recently updated is kept, the other's notes are added
-  to it under a "Merged from" heading (lines it already has are not repeated),
-  and the other's file is archived. When the notes would not fit in one
-  memory, both memories stay as they are.
+- **Merges duplicates** — two repository memories about the same `owner/repo`,
+  or two memories of one type that say the same thing ("prefers short
+  replies" saved under two names), become one: the most recently updated is
+  kept, the other's notes are added to it under a "Merged from" heading
+  (lines it already has are not repeated), and the other's file is archived.
+  When the notes would not fit in one memory, both memories stay as they are.
+
+The background review also folds a fact it already knows into the existing
+memory instead of saving it again under a new name.
 - **Writes `memory_summary.md`** — a short summary of who you are, your
   preferences, your repositories, and recurring failures and fixes, shown to
   the agent above the index. It is skipped when no LLM is configured.
@@ -152,6 +159,34 @@ layout.
 The index, the matching memories, and the summary are sent to your configured
 LLM provider with each turn. You can open, edit, or delete the files directly
 at any time; the index rebuilds on the next write.
+
+## Workspace knowledge
+
+Besides your own memory, the agent keeps knowledge about your organization
+that every member's conversations share:
+
+- **Organization** — the company, what it does, the team (names and titles),
+  and the busiest channels.
+- **One entry per connected integration** — for Slack, every public channel
+  and what it is for.
+
+It is written by a background scan when an integration is connected and
+refreshed weekly; you never write it by talking to the agent. The Slack scan
+reads only what any full member can: public channels, the member directory
+(never guests, bots, emails or phone numbers), and recent messages from public
+channels the agent was invited to, excluding channels shared with another
+organization. It never reads private channels, group DMs or DMs. Credentials
+in sampled messages are redacted before the summary model sees them.
+
+Run a scan yourself with `opensre knowledge scan`; on a hosted gateway the
+Knowledge page in the OpenSRE app shows both tiers, and each member sees only
+their own memories there.
+
+| Environment variable | Effect |
+| --- | --- |
+| `OPENSRE_KNOWLEDGE_DISABLED=1` | Turn workspace knowledge off (scans, prompt, Knowledge page sync) |
+| `OPENSRE_KNOWLEDGE_SCAN_MESSAGES=0` | Scan workspace metadata only; never read a channel message |
+| `OPENSRE_KNOWLEDGE_DIR` | Override the workspace knowledge directory |
 
 ## Turning memory off
 

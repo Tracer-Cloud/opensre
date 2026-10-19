@@ -362,6 +362,13 @@ EXPORTS: dict[str, str] = {
     "TOOL_OUTPUT_HISTORY_DENOMINATOR": "tool_output",
     "TOOL_OUTPUT_HISTORY_NUMERATOR": "tool_output",
     "TOOL_OUTPUT_PERSIST_MAX_BYTES": "tool_output",
+    # knowledge
+    "KNOWLEDGE_DIRNAME": "knowledge",
+    "KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS": "knowledge",
+    "KNOWLEDGE_SCAN_MAX_AGE_SECONDS": "knowledge",
+    "OPENSRE_KNOWLEDGE_DIR_ENV": "knowledge",
+    "OPENSRE_KNOWLEDGE_DISABLED_ENV": "knowledge",
+    "OPENSRE_KNOWLEDGE_SCAN_MESSAGES_ENV": "knowledge",
     # memory
     "MEMORY_TOOL_NAMES": "memory",
     "OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV": "memory",
@@ -423,6 +430,7 @@ EXPORTS: dict[str, str] = {
     "UnsafePathSegmentError": "paths",
     "ci_fix_ledger_path": "paths",
     "ensure_opensre_tmp_dir": "paths",
+    "get_knowledge_dir": "paths",
     "get_memory_dir": "paths",
     "get_sessions_dir": "paths",
     "get_store_path": "paths",

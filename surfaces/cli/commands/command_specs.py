@@ -131,6 +131,11 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         "surfaces.cli.commands.gateway:gateway_command",
     ),
     CommandSpec(
+        "knowledge",
+        "See what the agent knows: your memory and workspace knowledge.",
+        "surfaces.cli.commands.knowledge:knowledge_command",
+    ),
+    CommandSpec(
         "remote-sync",
         "Mirror sessions and memory to your own object store.",
         "surfaces.cli.commands.remote_sync:remote_sync_command",

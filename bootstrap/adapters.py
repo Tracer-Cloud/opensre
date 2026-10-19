@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from infrastructure.scheduling.scheduler.delivery_bundle import ScheduledDeliveryAdapters
     from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+    from integrations.knowledge_scans import KnowledgeScanService
+    from integrations.webapp_knowledge import WebappKnowledgeSync
     from integrations.webapp_scheduled_loops import WebappLoopSync
 
 
@@ -103,6 +105,29 @@ def webapp_loop_sync(runners: SchedulerRunners | None = None) -> WebappLoopSync 
     return webapp_loop_sync_from_environment(runners)
 
 
+def knowledge_scan_service() -> KnowledgeScanService | None:
+    """The background scans that keep workspace knowledge current, or ``None`` when it is off.
+
+    Built here so the gateway never imports ``integrations`` itself.
+    """
+    from integrations.knowledge_scans import knowledge_scan_service_from_environment
+
+    return knowledge_scan_service_from_environment()
+
+
+def webapp_knowledge_sync(scans: KnowledgeScanService | None = None) -> WebappKnowledgeSync | None:
+    """The hosted gateway's Knowledge-page sync, or ``None`` off a hosted organization.
+
+    ``scans`` serves the app's rescan requests and the scan status it shows.
+    """
+    from integrations.webapp_knowledge import webapp_knowledge_sync_from_environment
+
+    return webapp_knowledge_sync_from_environment(
+        request_rescan=scans.request_rescan if scans is not None else None,
+        scan_status=scans.status_rows if scans is not None else None,
+    )
+
+
 def install_cli_auth_checker() -> None:
     """Bind the integrations-backed CLI auth checker config reports status through.
 
@@ -125,5 +150,7 @@ __all__ = [
     "scheduled_delivery_adapters",
     "install_scheduled_delivery_adapters",
     "webapp_loop_sync",
+    "knowledge_scan_service",
+    "webapp_knowledge_sync",
     "install_cli_auth_checker",
 ]

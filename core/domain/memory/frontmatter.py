@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from core.domain.memory.models import (
     MEMORY_SOURCES,
-    MEMORY_TYPES,
+    STORED_MEMORY_TYPES,
     MemoryRecord,
     MemorySource,
     MemoryType,
@@ -63,7 +63,7 @@ def parse_memory_file(text: str) -> MemoryRecord | None:
         return None
     slug = fields["name"]
     memory_type = fields["type"]
-    if not is_valid_slug(slug) or memory_type not in MEMORY_TYPES:
+    if not is_valid_slug(slug) or memory_type not in STORED_MEMORY_TYPES:
         return None
 
     body = "\n".join(lines[close_idx + 1 :]).strip("\n")

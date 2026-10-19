@@ -466,6 +466,9 @@ def fetch_team_members(
                     "display_name": str(profile.get("display_name") or ""),
                     "title": str(profile.get("title") or ""),
                     "is_bot": bool(raw.get("is_bot")),
+                    # Single- and multi-channel guests see only the channels they
+                    # were invited to; workspace-wide views must leave them out.
+                    "is_guest": bool(raw.get("is_restricted") or raw.get("is_ultra_restricted")),
                 }
             )
 
@@ -476,6 +479,86 @@ def fetch_team_members(
             truncated = True
 
     return members, "", truncated
+
+
+def fetch_workspace_identity(target: SlackBotTarget) -> tuple[dict[str, str] | None, str]:
+    """The workspace's ``id``, ``name``, ``domain`` and ``url``.
+
+    ``team.info`` needs ``team:read``; without it the bot's own ``auth.test``
+    still names the workspace and its URL.
+    """
+    payload, req_err = _request_json("GET", "team.info", target.bot_token)
+    if payload is not None and payload.get("ok"):
+        team = payload.get("team") or {}
+        domain = str(team.get("domain") or "")
+        return {
+            "id": str(team.get("id") or ""),
+            "name": str(team.get("name") or ""),
+            "domain": domain,
+            "url": f"https://{domain}.slack.com/" if domain else "",
+        }, ""
+    payload, req_err = _request_json("GET", "auth.test", target.bot_token)
+    if payload is None:
+        return None, req_err
+    if not payload.get("ok"):
+        return None, _api_error_hint(str(payload.get("error") or "unknown_error"), context="auth")
+    url = str(payload.get("url") or "")
+    domain = url.removeprefix("https://").split(".slack.com", 1)[0] if url else ""
+    return {
+        "id": str(payload.get("team_id") or ""),
+        "name": str(payload.get("team") or ""),
+        "domain": domain,
+        "url": url,
+    }, ""
+
+
+def list_public_channels(
+    target: SlackBotTarget,
+) -> tuple[list[dict[str, Any]] | None, str, bool]:
+    """Unarchived public channels with topic, purpose and size. Returns ``(channels, error, truncated)``.
+
+    Private channels, group DMs and DMs are never requested.
+    """
+    channels: list[dict[str, Any]] = []
+    cursor = ""
+    truncated = False
+    for page in range(_MAX_CHANNEL_LIST_PAGES):
+        params: dict[str, Any] = {
+            "limit": _PAGE_LIMIT,
+            "types": "public_channel",
+            "exclude_archived": True,
+        }
+        if cursor:
+            params["cursor"] = cursor
+        payload, req_err = _request_json(
+            "GET", "conversations.list", target.bot_token, params=params
+        )
+        if payload is None:
+            return None, req_err, False
+        if not payload.get("ok"):
+            error = str(payload.get("error") or "unknown_error")
+            return None, _api_error_hint(error, context="list"), False
+        for raw in payload.get("channels") or []:
+            if not isinstance(raw, dict) or raw.get("is_private") or raw.get("is_archived"):
+                continue
+            channels.append(
+                {
+                    "id": str(raw.get("id") or ""),
+                    "name": str(raw.get("name") or ""),
+                    "topic": str((raw.get("topic") or {}).get("value") or ""),
+                    "purpose": str((raw.get("purpose") or {}).get("value") or ""),
+                    "num_members": int(raw.get("num_members") or 0),
+                    "is_member": bool(raw.get("is_member")),
+                    # Slack Connect: shared with another organization.
+                    "is_ext_shared": bool(raw.get("is_ext_shared")),
+                }
+            )
+        cursor = str(((payload.get("response_metadata") or {}).get("next_cursor")) or "")
+        if not cursor:
+            break
+        if page == _MAX_CHANNEL_LIST_PAGES - 1:
+            truncated = True
+    return channels, "", truncated
 
 
 def post_channel_message(

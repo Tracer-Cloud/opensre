@@ -732,6 +732,24 @@ if TYPE_CHECKING:
     from config.constants.kafka import (
         KAFKA_SECURITY_PROTOCOL_ENV as KAFKA_SECURITY_PROTOCOL_ENV,
     )
+    from config.constants.knowledge import (
+        KNOWLEDGE_DIRNAME as KNOWLEDGE_DIRNAME,
+    )
+    from config.constants.knowledge import (
+        KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS as KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS,
+    )
+    from config.constants.knowledge import (
+        KNOWLEDGE_SCAN_MAX_AGE_SECONDS as KNOWLEDGE_SCAN_MAX_AGE_SECONDS,
+    )
+    from config.constants.knowledge import (
+        OPENSRE_KNOWLEDGE_DIR_ENV as OPENSRE_KNOWLEDGE_DIR_ENV,
+    )
+    from config.constants.knowledge import (
+        OPENSRE_KNOWLEDGE_DISABLED_ENV as OPENSRE_KNOWLEDGE_DISABLED_ENV,
+    )
+    from config.constants.knowledge import (
+        OPENSRE_KNOWLEDGE_SCAN_MESSAGES_ENV as OPENSRE_KNOWLEDGE_SCAN_MESSAGES_ENV,
+    )
     from config.constants.kubernetes import (
         KUBECONFIG_CONTENT_ENV as KUBECONFIG_CONTENT_ENV,
     )
@@ -954,6 +972,9 @@ if TYPE_CHECKING:
     from config.constants.paths import ci_fix_ledger_path as ci_fix_ledger_path
     from config.constants.paths import (
         ensure_opensre_tmp_dir as ensure_opensre_tmp_dir,
+    )
+    from config.constants.paths import (
+        get_knowledge_dir as get_knowledge_dir,
     )
     from config.constants.paths import (
         get_memory_dir as get_memory_dir,

@@ -10,6 +10,7 @@ import pytest
 
 import config.constants.paths as paths
 from config.constants import (
+    OPENSRE_KNOWLEDGE_DIR_ENV,
     OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     OPENSRE_MEMORY_DIR_ENV,
 )
@@ -136,7 +137,8 @@ def _isolate_opensre_home_files(request, monkeypatch, tmp_path) -> None:
     ``monkeypatch`` or by passing an explicit ``path=`` argument.
 
     Memory storage is also redirected for every test so deterministic prompt
-    snapshots never read the developer's real ``~/.opensre/memory`` directory.
+    snapshots never read the developer's real ``~/.opensre/memory`` directory
+    (or the workspace ``knowledge`` directory beside it).
     Background memory extraction is disabled by default because most tests use
     tiny fake LLM clients and assert the exact prompt/stream call shape; the
     memory-specific tests remove this env var in their own fixture.
@@ -148,6 +150,7 @@ def _isolate_opensre_home_files(request, monkeypatch, tmp_path) -> None:
     env var.
     """
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
+    monkeypatch.setenv(OPENSRE_KNOWLEDGE_DIR_ENV, str(tmp_path / "knowledge"))
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     if request.node.get_closest_marker("live_llm") is not None:
         return

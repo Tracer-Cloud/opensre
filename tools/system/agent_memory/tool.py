@@ -36,6 +36,12 @@ from tools.system.agent_memory.validation import (
     normalize_recall_limit,
     validate_remember_args,
 )
+from tools.system.agent_memory.workspace import (
+    recall_workspace_entry,
+    search_workspace,
+    with_workspace,
+    workspace_index,
+)
 
 _REMEMBER_DESCRIPTION = (
     "Save durable knowledge to local long-term memory in the turn it comes up — do "
@@ -194,9 +200,11 @@ def _counted_as_used(result: dict[str, Any]) -> dict[str, Any]:
     display_name="Recall",
     source="knowledge",
     description=(
-        "Read long-term memories: pass 'name' for one full entry, 'query' to rank "
-        "memories by relevance to any of its words (names, descriptions and bodies), "
-        "or no arguments to list the index."
+        "Read long-term memories and workspace knowledge: pass 'name' for one full "
+        "entry, 'query' to rank entries by relevance to any of its words (names, "
+        "descriptions and bodies), or no arguments to list both indexes. Results "
+        "under 'memories' are this user's own; results under 'workspace' are shared "
+        "organization knowledge (the organization profile, connected integrations)."
     ),
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
@@ -223,26 +231,36 @@ def _counted_as_used(result: dict[str, Any]) -> dict[str, Any]:
 def memory_recall(
     name: str | None = None, query: str | None = None, limit: int = 5
 ) -> dict[str, Any]:
-    """Read one memory, search memories, or list the index; demo output is never shown."""
+    """Read one memory, search memories, or list the index; demo output is never shown.
+
+    Personal memories come back under ``memories``; workspace knowledge, when
+    this turn may read it, under ``workspace`` — two lists, so the model never
+    mistakes an organization fact for something this user said.
+    """
     total = len(live_memories())
     if name:
         slug = normalize_name(name)
         record = load_live_memory(slug) if slug else None
-        if record is None:
-            return {"error": "not_found", "name": name, "total_stored": total}
-        return _counted_as_used(recall_result([record], total_stored=total))
+        if record is not None:
+            return _counted_as_used(recall_result([record], total_stored=total))
+        workspace_entry = recall_workspace_entry(slug) if slug else None
+        if workspace_entry is not None:
+            return {"memories": [], "total_stored": total, "workspace": [workspace_entry]}
+        return {"error": "not_found", "name": name, "total_stored": total}
     if query:
         if not isinstance(query, str):
             return {"error": "invalid_query", "detail": "query must be a string"}
-        scored = search_memories_scored(query, limit=normalize_recall_limit(limit))
-        return _counted_as_used(
+        bounded = normalize_recall_limit(limit)
+        scored = search_memories_scored(query, limit=bounded)
+        result = _counted_as_used(
             recall_result(
                 [record for record, _score in scored],
                 total_stored=total,
                 scores={record.slug: score for record, score in scored},
             )
         )
-    return index_result(live_memories())
+        return with_workspace(result, search_workspace(query, limit=bounded))
+    return with_workspace(index_result(live_memories()), workspace_index())
 
 
 __all__ = ["memory_forget", "memory_recall", "memory_remember"]

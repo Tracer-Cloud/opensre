@@ -29,6 +29,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "guardrails",
         "health",
         "integrations",
+        "knowledge",
         "messaging",
         "onboard",
         "posthog",

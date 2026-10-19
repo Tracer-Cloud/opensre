@@ -1,0 +1,204 @@
+"""Near-duplicates, the bug class that filled real stores, and the audit that measures it.
+
+A real 33-memory store held one fact ("interested in GitHub star metrics")
+in five files: extraction only updated a memory when the model reused its
+exact name, and upkeep merged only repository memories. These pin the fold
+at write time, the merge in upkeep, and what the audit reports.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+from core.domain.memory import (
+    MemoryType,
+    audit_memories,
+    consolidate_memories,
+    list_memories,
+    load_memory,
+    save_memory,
+    save_memory_merging_duplicates,
+)
+from core.domain.memory.models import MemoryRecord
+from core.domain.memory.usage import MemoryUsage
+
+_NOW = datetime(2026, 10, 19, tzinfo=UTC)
+
+
+def _record(
+    slug: str,
+    description: str,
+    *,
+    memory_type: MemoryType = MemoryType.PREFERENCE,
+    body: str = "note",
+    updated: str = "2026-10-01T00:00:00+00:00",
+    verified: bool | None = None,
+) -> MemoryRecord:
+    return MemoryRecord(
+        slug=slug,
+        memory_type=memory_type,
+        description=description,
+        created_at=updated,
+        updated_at=updated,
+        body=body,
+        verified=verified,
+    )
+
+
+def test_a_paraphrased_fact_is_folded_into_the_memory_it_repeats() -> None:
+    save_memory(
+        slug="github-star-metrics-interest",
+        memory_type="preference",
+        description="User is interested in GitHub repository star metrics for Tracer-Cloud/opensre.",
+        body="Wants star counts for Tracer-Cloud/opensre.",
+    )
+
+    stored = save_memory_merging_duplicates(
+        slug="likes-github-repo-star-metrics",
+        memory_type="preference",
+        description="User wants GitHub repo star metrics for Tracer-Cloud/opensre.",
+        body="Wants star counts for Tracer-Cloud/opensre.\nAlso wants weekly deltas.",
+        source="user",
+        evidence="show me the stars",
+        verified=True,
+    )
+
+    assert stored is not None
+    record, outcome = stored
+    assert outcome == "merged"
+    assert [r.slug for r in list_memories()] == ["github-star-metrics-interest"]
+    # Old notes kept, the new line appended once, the better provenance adopted.
+    assert record.body.count("Wants star counts") == 1
+    assert "weekly deltas" in record.body
+    assert record.verified is True
+
+
+def test_a_repeat_that_adds_nothing_writes_nothing() -> None:
+    save_memory(
+        slug="prefers-concise-reports",
+        memory_type="preference",
+        description="User prefers concise incident reports with bullet points.",
+        body="Keep reports short.",
+    )
+    before = load_memory("prefers-concise-reports")
+
+    stored = save_memory_merging_duplicates(
+        slug="concise-incident-report-preference",
+        memory_type="preference",
+        description="User prefers concise incident reports, bullet points.",
+        body="Keep reports short.",
+    )
+
+    assert stored is not None and stored[1] == "unchanged"
+    assert load_memory("prefers-concise-reports") == before
+
+
+def test_different_facts_and_different_repositories_are_never_folded() -> None:
+    save_memory(
+        slug="repository-acme-payments",
+        memory_type="repository",
+        description="Primary repo for acme/payments CI work.",
+        body="# acme/payments",
+    )
+    save_memory(
+        slug="prod-cluster",
+        memory_type="infrastructure",
+        description="Production EKS cluster is eks-prod-1 in us-east-1.",
+        body="eks-prod-1",
+    )
+
+    repo = save_memory_merging_duplicates(
+        slug="repository-acme-ledger",
+        memory_type="repository",
+        description="Primary repo for acme/ledger CI work.",
+        body="# acme/ledger",
+    )
+    infra = save_memory_merging_duplicates(
+        slug="staging-cluster",
+        memory_type="infrastructure",
+        description="Staging EKS cluster is eks-stg-2 in eu-west-1.",
+        body="eks-stg-2",
+    )
+
+    assert repo is not None and repo[1] == "created"
+    assert infra is not None and infra[1] == "created"
+    assert len(list_memories()) == 4
+
+
+def test_upkeep_merges_same_type_duplicates_and_archives_the_rest() -> None:
+    save_memory(
+        slug="plain-english-overview-preference",
+        memory_type="preference",
+        description="User wants plain-English overviews of tools before technical detail.",
+        body="Plain English first.",
+    )
+    save_memory(
+        slug="wants-plain-english-tool-overviews",
+        memory_type="preference",
+        description="User wants plain-English tool overviews before technical detail.",
+        body="Lead with a plain-English summary.",
+    )
+
+    result = consolidate_memories(now=_NOW)
+
+    assert result.ran
+    [kept] = list_memories()
+    assert len(result.merged) == 1 and result.merged[0][1] == kept.slug
+    assert "Plain English first." in kept.body
+    assert "Lead with a plain-English summary." in kept.body
+
+
+def test_audit_reports_the_defects_seen_in_real_stores_without_any_body() -> None:
+    records = [
+        _record("star-metrics-interest", "User is interested in GitHub repo star metrics."),
+        _record("likes-repo-star-metrics", "User likes GitHub repo star metrics."),
+        _record(
+            "openai-provider-configured",
+            "User completed OpenSRE onboarding and set the provider to OpenAI.",
+            body="SECRET-ISH BODY TEXT",
+        ),
+        _record(
+            "prod-cluster",
+            "Production cluster is eks-prod-1.",
+            memory_type=MemoryType.INFRASTRUCTURE,
+            updated="2026-01-01T00:00:00+00:00",
+        ),
+        _record("user-name", "User's name is Ada.", memory_type=MemoryType.USER, verified=True),
+    ]
+
+    audit = audit_memories(
+        records,
+        usage={"prod-cluster": MemoryUsage(use_count=1, last_used_at="2026-02-01T00:00:00+00:00")},
+        now=_NOW,
+    )
+
+    rules = {(finding.rule, finding.slug) for finding in audit.findings}
+    # One of the pair is kept; only the other is reported.
+    assert sum(rule == "duplicate" for rule, _slug in rules) == 1
+    assert ("transient", "openai-provider-configured") in rules
+    assert ("unverified", "prod-cluster") in rules
+    assert ("stale", "prod-cluster") in rules
+    # Personal facts never go stale and a stated name is not a defect.
+    assert not any(slug == "user-name" for _rule, slug in rules)
+    assert audit.score < 100
+    # What leaves the gateway for admins carries names and counts, never a body.
+    assert "SECRET-ISH" not in str(audit.to_dict())
+
+
+def test_a_recently_used_fact_is_not_stale_even_when_old() -> None:
+    old = _record(
+        "prod-cluster",
+        "Production cluster is eks-prod-1.",
+        memory_type=MemoryType.INFRASTRUCTURE,
+        updated=(_NOW - timedelta(days=400)).isoformat(),
+        verified=True,
+    )
+
+    audit = audit_memories(
+        [old],
+        usage={"prod-cluster": MemoryUsage(use_count=3, last_used_at=_NOW.isoformat())},
+        now=_NOW,
+    )
+
+    assert audit.findings == ()
+    assert audit.score == 100

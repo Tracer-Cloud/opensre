@@ -123,7 +123,12 @@ class TestParsing:
         assert [r.slug for r in list_memories()] == ["user-profile"]
 
     def test_cap_of_five_memories(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        items = [_item(f"mem-{i}") for i in range(extraction.MAX_MEMORIES_PER_SESSION + 3)]
+        # Distinct subjects: the same fact under several names is folded into one.
+        codenames = ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel")
+        items = [
+            _item(f"mem-{i}", description=f"Codename {codenames[i]}")
+            for i in range(extraction.MAX_MEMORIES_PER_SESSION + 3)
+        ]
         _patch_llm(monkeypatch, _response(*items))
         extraction.extract_memories_from_session(_FakeSession())
         assert len(list_memories()) == extraction.MAX_MEMORIES_PER_SESSION

@@ -23,6 +23,7 @@ from pathlib import Path
 from filelock import Timeout
 
 from core.domain.memory.consolidation_state import record_forget_unlocked
+from core.domain.memory.fence import is_fenced_record
 from core.domain.memory.files import (
     INDEX_FILENAME,
     RESERVED_FILENAMES,
@@ -34,6 +35,7 @@ from core.domain.memory.files import (
 )
 from core.domain.memory.frontmatter import parse_memory_file, serialize_memory
 from core.domain.memory.index import write_index
+from core.domain.memory.merge import folded_body
 from core.domain.memory.models import (
     MAX_BODY_CHARS,
     MAX_DESCRIPTION_CHARS,
@@ -44,6 +46,7 @@ from core.domain.memory.models import (
     MemoryType,
 )
 from core.domain.memory.safety import find_memory_safety_issues
+from core.domain.memory.similarity import closest_duplicate
 from core.domain.memory.slugs import is_valid_slug
 from core.domain.memory.summaries import remove_memory_summary_unlocked
 
@@ -175,6 +178,103 @@ def save_memory(
             write_record_unlocked(record)
             rebuild_index_best_effort()
             return record, existing is None
+    except Timeout:
+        print(f"[memory] timed out acquiring lock to save memory {slug!r}", file=sys.stderr)
+        return None
+    except OSError as exc:
+        print(f"[memory] failed to save memory {slug!r}: {exc}", file=sys.stderr)
+        return None
+
+
+def _stronger_provenance(
+    kept: MemoryRecord, update: MemoryRecord
+) -> tuple[MemorySource | None, str, bool | None]:
+    """The update's provenance when it is better supported than the kept memory's."""
+    if update.verified and not kept.verified:
+        return update.source, update.evidence, update.verified
+    if kept.source is None and update.source is not None:
+        return update.source, update.evidence, update.verified
+    return kept.source, kept.evidence, kept.verified
+
+
+def save_memory_merging_duplicates(
+    *,
+    slug: str,
+    memory_type: MemoryType | str,
+    description: str,
+    body: str,
+    source: MemorySource | str | None = None,
+    evidence: str = "",
+    verified: bool | None = None,
+) -> tuple[MemoryRecord, str] | None:
+    """:func:`save_memory` that folds a near-duplicate into the memory it repeats.
+
+    For writers that pick a fresh name for a fact already stored (background
+    extraction). A new name whose header says what a live memory of the same
+    type says (:func:`~core.domain.memory.similarity.closest_duplicate`) is
+    written into that memory: its name, description and creation time are
+    kept and the update's new lines are appended. Returns ``(record, outcome)``
+    with outcome ``created``, ``updated``, ``merged`` or ``unchanged`` (the
+    update added nothing), or ``None`` on I/O failure. Raises ``ValueError``
+    like :func:`save_memory`.
+    """
+    candidate = build_record(
+        slug=slug,
+        memory_type=memory_type,
+        description=description,
+        body=body,
+        created_at="",
+        updated_at="",
+        source=source,
+        evidence=evidence,
+        verified=verified,
+    )
+    try:
+        with memory_lock():
+            now = _now_iso()
+            existing = load_memory(slug)
+            duplicate = (
+                None
+                if existing is not None
+                else closest_duplicate(
+                    slug,
+                    candidate.memory_type,
+                    candidate.description,
+                    [record for record in list_memories() if not is_fenced_record(record)],
+                )
+            )
+            folded = folded_body(duplicate.body, candidate.body) if duplicate else None
+            if duplicate is None or folded is None:
+                record = replace(
+                    candidate,
+                    created_at=existing.created_at if existing else now,
+                    updated_at=now,
+                )
+                outcome = "updated" if existing is not None else "created"
+            else:
+                provenance = _stronger_provenance(duplicate, candidate)
+                unchanged = folded == duplicate.body.strip() and provenance == (
+                    duplicate.source,
+                    duplicate.evidence,
+                    duplicate.verified,
+                )
+                if unchanged:
+                    return duplicate, "unchanged"
+                record = build_record(
+                    slug=duplicate.slug,
+                    memory_type=duplicate.memory_type,
+                    description=duplicate.description,
+                    body=folded,
+                    created_at=duplicate.created_at,
+                    updated_at=now,
+                    source=provenance[0],
+                    evidence=provenance[1],
+                    verified=provenance[2],
+                )
+                outcome = "merged"
+            write_record_unlocked(record)
+            rebuild_index_best_effort()
+            return record, outcome
     except Timeout:
         print(f"[memory] timed out acquiring lock to save memory {slug!r}", file=sys.stderr)
         return None
@@ -316,5 +416,6 @@ __all__ = [
     "rebuild_index",
     "rebuild_index_best_effort",
     "save_memory",
+    "save_memory_merging_duplicates",
     "write_record_unlocked",
 ]
