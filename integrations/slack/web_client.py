@@ -437,8 +437,13 @@ def fetch_team_members(
     target: SlackBotTarget,
     *,
     max_pages: int = _MAX_MEMBER_PAGES,
+    include_deleted: bool = False,
 ) -> tuple[list[dict[str, Any]] | None, str, bool]:
-    """Fetch workspace members. Returns ``(members, error, truncated)``."""
+    """Fetch workspace members. Returns ``(members, error, truncated)``.
+
+    Deactivated accounts are left out unless ``include_deleted``, which lists
+    them with ``deleted`` set.
+    """
     members: list[dict[str, Any]] = []
     cursor = ""
     truncated = False
@@ -454,7 +459,7 @@ def fetch_team_members(
             return None, _api_error_hint(error, context="users"), False
 
         for raw in payload.get("members") or []:
-            if not isinstance(raw, dict) or raw.get("deleted"):
+            if not isinstance(raw, dict) or (raw.get("deleted") and not include_deleted):
                 continue
             profile = raw.get("profile") or {}
             username = str(raw.get("name") or "")
@@ -471,6 +476,7 @@ def fetch_team_members(
                     # Single- and multi-channel guests see only the channels they
                     # were invited to; workspace-wide views must leave them out.
                     "is_guest": bool(raw.get("is_restricted") or raw.get("is_ultra_restricted")),
+                    **({"deleted": True} if raw.get("deleted") else {}),
                 }
             )
 

@@ -329,14 +329,80 @@ def test_a_scan_that_keeps_failing_backs_off_instead_of_retrying_hourly() -> Non
     assert len(calls) == 4
 
 
-def test_a_truncated_member_list_keeps_earlier_readers() -> None:
+def test_a_truncated_member_list_keeps_unreached_readers_but_not_a_demoted_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review finding: a truncated refresh unioned every earlier reader back in,
+    # so a member since made a guest, or deactivated, kept reading.
     from core.domain.knowledge import record_workspace_readers, workspace_readers
 
-    assert record_workspace_readers("slack", ["U1", "U2"])
-    assert record_workspace_readers("slack", ["U3"], merge=True)
-    assert workspace_readers() == {"U1", "U2", "U3"}
-    assert record_workspace_readers("slack", ["U3"])
-    assert workspace_readers() == {"U3"}
+    assert record_workspace_readers("slack", ["U_PAST_LAST_PAGE", "U_NOW_GUEST", "U_GONE", "U1"])
+    page: list[dict[str, Any]] = [
+        {"id": "U1"},
+        {"id": "U_NOW_GUEST", "is_guest": True},
+        {"id": "U_GONE", "deleted": True},
+        {"id": "U_NEW"},
+    ]
+    asked: list[dict[str, Any]] = []
+
+    def fetch(_target: Any, **kwargs: Any) -> tuple[list[dict[str, Any]], str, bool]:
+        asked.append(kwargs)
+        return page, "", True
+
+    monkeypatch.setattr(scan_module, "fetch_team_members", fetch)
+
+    assert scan_module.refresh_slack_readers(_TARGET)
+
+    assert workspace_readers() == {"U_PAST_LAST_PAGE", "U1", "U_NEW"}
+    assert asked[0]["include_deleted"]  # a deactivated member must be seen to be dropped
+
+
+@pytest.mark.parametrize("reply", ["RAISE", "Sorry, I cannot help with that."])
+def test_a_model_failure_keeps_the_last_overview_instead_of_erasing_it(
+    monkeypatch: pytest.MonkeyPatch, reply: str
+) -> None:
+    # Review finding: a failed summary read as an empty one, so the next scan
+    # rewrote the profile without its overview and reported success.
+    _install_workspace(monkeypatch, [])
+    good = '{"overview": "Acme runs a payments platform.", "channels": {}}'
+    assert scan_module.scan_slack_workspace(summarize=lambda _p: good, target=_TARGET).ok
+
+    def failing(_prompt: str) -> str:
+        if reply == "RAISE":
+            raise RuntimeError("provider down")
+        return reply
+
+    outcome = scan_module.scan_slack_workspace(summarize=failing, target=_TARGET)
+
+    assert not outcome.ok and outcome.written == ()
+    organization = load_workspace_entry(ORGANIZATION_SLUG)
+    assert organization is not None and "Acme runs a payments platform." in organization.body
+
+
+def test_a_failed_scan_is_retried_even_when_its_entries_look_fresh() -> None:
+    # A failure that kept the last good entries leaves nothing missing or stale.
+    calls: list[str] = []
+    oks = iter([False, True])
+    scanner = _scanner([], [])
+
+    def scan(summarize: Any) -> ScanOutcome:
+        calls.append("slack")
+        written = scanner.scan(summarize)
+        return ScanOutcome("slack", ok=next(oks), written=written.written)
+
+    clock = {"now": time.time()}
+    service = KnowledgeScanService(
+        scanners=(Scanner("slack", available=lambda: True, scan=scan, writes=scanner.writes),),
+        summarizer_factory=lambda: None,
+        clock=lambda: clock["now"],
+        retry_after_seconds=60,
+    )
+
+    for _pass in range(3):
+        service.run_due()
+        clock["now"] += 61
+
+    assert calls == ["slack", "slack"]  # failed → retried; succeeded → left until stale
 
 
 def test_deleting_any_entry_a_scan_writes_makes_it_due_again() -> None:

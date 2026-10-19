@@ -44,12 +44,14 @@ def _readers_path(directory: Path) -> Path:
 
 
 def record_workspace_readers(
-    service: str, member_ids: Iterable[str], *, merge: bool = False
+    service: str, member_ids: Iterable[str], *, listed: Iterable[str] | None = None
 ) -> bool:
     """Record the full members ``service``'s scan saw; ``False`` when it cannot be saved.
 
-    The list replaces the previous one, or with ``merge`` (a partial list)
-    adds to it.
+    ``member_ids`` replaces the previous list. For a partial read, ``listed``
+    is every id it returned, eligible or not: earlier readers it never
+    reached are kept, and anyone it did list is judged by this read alone, so
+    a member it shows as a guest or deactivated loses access.
     """
     try:
         with writable_workspace_store() as directory, memory_lock():
@@ -57,8 +59,9 @@ def record_workspace_readers(
             readers = read_json_object(path)
             seen = {str(member) for member in member_ids if member}
             previous = readers.get(service)
-            if merge and isinstance(previous, list):
-                seen |= {str(member) for member in previous}
+            if listed is not None and isinstance(previous, list):
+                judged = {str(member) for member in listed}
+                seen |= {str(member) for member in previous} - judged
             readers[service] = sorted(seen)
             write_json_atomically(path, readers)
     except (Timeout, OSError):

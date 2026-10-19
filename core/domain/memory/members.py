@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from config.constants import OPENSRE_MEMORY_DIR_ENV
@@ -25,6 +26,7 @@ from config.constants.paths import (
 )
 from core.domain.memory.fence import is_fenced_record
 from core.domain.memory.models import MemoryRecord
+from core.domain.memory.stamps import last_activity
 from core.domain.memory.store import read_memories
 from core.domain.memory.usage import MemoryUsage, load_usage
 
@@ -40,6 +42,14 @@ class MemberStore:
     directory: Path
     records: tuple[MemoryRecord, ...]
     usage: dict[str, MemoryUsage]
+
+    def last_active(self) -> datetime | None:
+        """When a memory here was last written or used; ``None`` for an empty store."""
+        stamps = (
+            last_activity(record, self.usage.get(record.slug, MemoryUsage()))
+            for record in self.records
+        )
+        return max((stamp for stamp in stamps if stamp is not None), default=None)
 
 
 def _member_dir(actor: str) -> Path | None:

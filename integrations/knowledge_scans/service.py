@@ -2,10 +2,11 @@
 
 A scan is due when the integration is connected and any entry it writes is
 missing (it was just connected, or someone deleted an entry), older than
-:data:`KNOWLEDGE_SCAN_MAX_AGE_SECONDS`, or a rescan was requested. A failed
-scan waits :data:`KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS` before its retry, and
-that wait doubles with each failure in a row up to the refresh age, so an
-integration that keeps failing costs a few attempts a day, not one an hour.
+:data:`KNOWLEDGE_SCAN_MAX_AGE_SECONDS`, or a rescan was requested; and again
+after it failed, however fresh its entries look. A failed scan waits
+:data:`KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS` before its retry, and that wait
+doubles with each failure in a row up to the refresh age, so an integration
+that keeps failing costs a few attempts a day, not one an hour.
 Separately, who may read workspace knowledge is refreshed every
 :data:`KNOWLEDGE_READERS_REFRESH_SECONDS` with one cheap member-list call.
 
@@ -143,7 +144,9 @@ class KnowledgeScanService:
             failures = self._failures.get(scanner.service, 0)
         if last_attempt is not None and now - last_attempt < self._retry_wait(failures):
             return False
-        return self._entries_due(scanner, now)
+        # A failure can leave every entry in place (the last good knowledge
+        # kept), so it is retried on its own account.
+        return failures > 0 or self._entries_due(scanner, now)
 
     def run_due(self) -> list[ScanOutcome]:
         """Refresh readers when due, then run every due scan once; never raises."""

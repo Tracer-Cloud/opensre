@@ -320,3 +320,31 @@ def test_the_report_fits_even_when_counts_alone_are_too_big() -> None:
 
     assert len(json.dumps(report, separators=(",", ":")).encode()) <= 4_000
     assert report["audit"]["members"] == 300
+
+
+def test_past_the_member_cap_everyone_is_counted_and_the_active_are_mirrored() -> None:
+    # Review finding: the report stopped at the first 500 stores in actor
+    # order, so later members never synced and the rollup left them out.
+    from core.domain.memory import MemberStore
+    from core.domain.memory.models import MemoryRecord
+    from integrations.webapp_knowledge.snapshot import build_snapshot
+
+    def store(actor: str, day: int) -> MemberStore:
+        stamp = f"2026-10-{day:02d}T00:00:00+00:00"
+        record = MemoryRecord(
+            slug="a-fact",
+            memory_type=MemoryType.INFRASTRUCTURE,
+            description="A fact",
+            created_at=stamp,
+            updated_at=stamp,
+            body="x",
+        )
+        return MemberStore(actor=actor, directory=Path("/unused"), records=(record,), usage={})
+
+    # Actor order puts the most recently active member last.
+    stores = [store("U_A", 1), store("U_B", 2), store("U_C", 3), store("U_D", 4)]
+
+    report = build_snapshot(_ORG, stores=stores, max_members=2)
+
+    assert report["audit"]["members"] == 4 and report["audit"]["memories"] == 4
+    assert [member["actor"] for member in report["members"]] == ["U_D", "U_C"]

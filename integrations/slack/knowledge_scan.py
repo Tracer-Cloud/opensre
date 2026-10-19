@@ -42,6 +42,7 @@ from core.domain.knowledge import (
     record_workspace_readers,
     save_workspace_entry,
     scan_messages_enabled,
+    workspace_entry_exists,
 )
 from core.domain.memory import MAX_BODY_CHARS, MemoryType, redact_memory_unsafe_text
 from core.llm.shared.structured_output import extract_json_payload
@@ -81,6 +82,7 @@ _CHANNEL_MAP_INTRO = (
 ENTRY_BODY_BUDGET = MAX_BODY_CHARS - 100
 _OMITTED_LINE_RESERVE = 80
 _HUMAN_USER_RE = re.compile(r"^[UW][A-Z0-9]+$")
+_SUMMARY_FAILED = "The summary model did not answer; the last workspace overview is kept."
 
 _OVERVIEW_PROMPT = """\
 You are writing the organization profile an SRE assistant reads before every
@@ -134,6 +136,8 @@ class SlackWorkspaceView:
     channels_truncated: bool = False
     #: Slack ids of the full members: the only Slack users who may read workspace knowledge.
     member_ids: tuple[str, ...] = ()
+    #: Every Slack id the member read returned, eligible or not.
+    listed_ids: tuple[str, ...] = ()
 
 
 def _clean(text: object, limit: int) -> str:
@@ -142,7 +146,24 @@ def _clean(text: object, limit: int) -> str:
 
 
 def _full_members(raw_members: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [m for m in raw_members if not m.get("is_bot") and not m.get("is_guest")]
+    return [
+        m for m in raw_members if not (m.get("is_bot") or m.get("is_guest") or m.get("deleted"))
+    ]
+
+
+def _member_ids(raw_members: Sequence[dict[str, Any]]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """``(full member ids, every id listed)`` from one member-list read."""
+    full = tuple(sorted(str(m["id"]) for m in _full_members(raw_members) if m.get("id")))
+    listed = tuple(sorted(str(m["id"]) for m in raw_members if m.get("id")))
+    return full, listed
+
+
+def _record_readers(
+    member_ids: Sequence[str], listed_ids: Sequence[str], *, truncated: bool
+) -> bool:
+    # A truncated read keeps earlier readers past its last page, but judges
+    # everyone it listed anew: a member since made a guest loses access.
+    return record_workspace_readers(SERVICE, member_ids, listed=listed_ids if truncated else None)
 
 
 def _people(raw_members: Sequence[dict[str, Any]]) -> tuple[SlackPerson, ...]:
@@ -187,7 +208,7 @@ def read_workspace(target: SlackBotTarget) -> tuple[SlackWorkspaceView | None, s
     if identity is None:
         return None, error
     members, members_error, members_truncated = fetch_team_members(
-        target, max_pages=MAX_MEMBER_PAGES
+        target, max_pages=MAX_MEMBER_PAGES, include_deleted=True
     )
     if members is None:
         return None, members_error or "Slack would not list the workspace's members."
@@ -198,6 +219,7 @@ def read_workspace(target: SlackBotTarget) -> tuple[SlackWorkspaceView | None, s
         logger.warning(
             "[knowledge] slack member list truncated; earlier readers are kept for the rest"
         )
+    member_ids, listed_ids = _member_ids(members)
     return (
         SlackWorkspaceView(
             name=_clean(identity.get("name") or identity.get("domain"), _CELL_CHARS)
@@ -207,7 +229,8 @@ def read_workspace(target: SlackBotTarget) -> tuple[SlackWorkspaceView | None, s
             channels=_channels(channels),
             people_truncated=members_truncated,
             channels_truncated=channels_truncated,
-            member_ids=tuple(sorted(str(m["id"]) for m in _full_members(members) if m.get("id"))),
+            member_ids=member_ids,
+            listed_ids=listed_ids,
         ),
         "",
     )
@@ -240,18 +263,23 @@ def sample_messages(
     return samples
 
 
-def _json_object(reply: str) -> dict[str, Any]:
+def _json_object(reply: str) -> dict[str, Any] | None:
     try:
         loaded = extract_json_payload(reply)
     except ValueError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
+        return None
+    return loaded if isinstance(loaded, dict) else None
 
 
 def summarize_workspace(
     view: SlackWorkspaceView, samples: dict[str, list[str]], summarize: Summarize
-) -> tuple[str, dict[str, str]]:
-    """An overview and per-channel notes from the model; ``("", {})`` on any failure."""
+) -> tuple[str, dict[str, str]] | None:
+    """An overview and per-channel notes from the model; ``None`` when the model failed.
+
+    A failure (the provider raised, or the reply held no JSON object) is not
+    an empty summary, which the model may legitimately give: the caller keeps
+    the last good one rather than erase it.
+    """
     channel_lines = "\n".join(
         f"#{c.name} ({c.members} members) topic: {c.topic or '-'} purpose: {c.purpose or '-'}"
         for c in view.channels[:MAX_MAPPED_CHANNELS]
@@ -269,10 +297,14 @@ def summarize_workspace(
         )
     )
     try:
-        payload = _json_object(summarize(prompt))
-    except Exception:  # noqa: BLE001 - the overview is optional; a provider failure skips it
-        logger.debug("[knowledge] slack overview failed", exc_info=True)
-        return "", {}
+        reply = summarize(prompt)
+    except Exception as exc:  # noqa: BLE001 - a provider failure keeps the last summary
+        logger.warning("[knowledge] slack overview failed (%s)", type(exc).__name__)
+        return None
+    payload = _json_object(reply)
+    if payload is None:
+        logger.warning("[knowledge] slack overview reply held no JSON object")
+        return None
     overview = payload.get("overview")
     raw_notes = payload.get("channels")
     known = {c.name for c in view.channels}
@@ -392,11 +424,13 @@ def refresh_slack_readers(target: SlackBotTarget | None = None) -> bool:
         target, _error = resolve_bot_token()
         if target is None:
             return False
-    members, _error, truncated = fetch_team_members(target, max_pages=MAX_MEMBER_PAGES)
+    members, _error, truncated = fetch_team_members(
+        target, max_pages=MAX_MEMBER_PAGES, include_deleted=True
+    )
     if members is None:
         return False
-    member_ids = sorted(str(m["id"]) for m in _full_members(members) if m.get("id"))
-    return record_workspace_readers(SERVICE, member_ids, merge=truncated)
+    member_ids, listed_ids = _member_ids(members)
+    return _record_readers(member_ids, listed_ids, truncated=truncated)
 
 
 def scan_slack_workspace(
@@ -412,13 +446,18 @@ def scan_slack_workspace(
     view, error = read_workspace(target)
     if view is None:
         return ScanOutcome(SERVICE, ok=False, error=error or "Slack could not be read.")
-    # A truncated list adds to the recorded readers instead of replacing them,
-    # so members past the last page keep the access an earlier scan gave them.
-    if not record_workspace_readers(SERVICE, view.member_ids, merge=view.people_truncated):
+    if not _record_readers(view.member_ids, view.listed_ids, truncated=view.people_truncated):
         # Entries nobody may read are worse than the last good ones: stop here.
         return ScanOutcome(SERVICE, ok=False, error="Workspace knowledge could not be written.")
     samples = sample_messages(target, view.channels) if scan_messages_enabled() else {}
-    overview, notes = summarize_workspace(view, samples, summarize) if summarize else ("", {})
+    summary = summarize_workspace(view, samples, summarize) if summarize else ("", {})
+    if summary is None and workspace_entry_exists(ORGANIZATION_SLUG):
+        # The profile the last scan wrote carries its overview: keep it whole
+        # and retry, rather than replace it with one that has none.
+        return ScanOutcome(SERVICE, ok=False, error=_SUMMARY_FAILED)
+    # With no profile yet, the team and channel tables are worth writing
+    # without an overview; the failed outcome retries for the overview.
+    overview, notes = summary or ("", {})
     stamp = datetime.now(UTC).date().isoformat()
     read = "team.info, users.list, conversations.list"
     if samples:
@@ -448,11 +487,15 @@ def scan_slack_workspace(
         if saved is not None:
             written.append(slug)
     complete = len(written) == len(entries)
+    if not complete:
+        error = "Some workspace knowledge could not be written."
+    else:
+        error = "" if summary is not None else _SUMMARY_FAILED
     return ScanOutcome(
         SERVICE,
-        ok=complete,
+        ok=not error,
         written=tuple(written),
-        error="" if complete else "Some workspace knowledge could not be written.",
+        error=error,
         details={
             "people": len(view.people),
             "channels": len(view.channels),

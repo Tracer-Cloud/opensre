@@ -9,6 +9,7 @@ the web app shows them only to that member and shows admins counts alone
 
 from __future__ import annotations
 
+import heapq
 import json
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
@@ -23,7 +24,10 @@ from core.domain.memory.audit import MemoryAudit, health_score
 MAX_CONTENT_CHARS = 4_000
 MAX_WORKSPACE_ENTRIES = 200
 MAX_MEMORIES_PER_MEMBER = 300
-MAX_MEMBERS = 500
+#: Members mirrored per report, the most recently active first; the web app
+#: accepts as many (opensre-webapp ``src/lib/knowledge/report.ts``). The
+#: rollup counts every member whatever this leaves out.
+MAX_MEMBERS = 10_000
 #: The report is one request body, and the web app runs where a request body is
 #: capped at 4.5 MB; stay well under it.
 MAX_REPORT_BYTES = 3_000_000
@@ -79,30 +83,57 @@ def _size(value: Any) -> int:
     return len(json.dumps(value, separators=(",", ":")).encode())
 
 
+_NEVER = datetime.min.replace(tzinfo=UTC)
+
+
+def _audited_members(
+    stores: Iterable[MemberStore], limit: int
+) -> tuple[list[MemoryAudit], list[tuple[MemberStore, MemoryAudit]]]:
+    """Every store's audit, and the ``limit`` most recently active stores, most active first.
+
+    Streams: only the kept stores' memories stay in memory, never the whole
+    organization's.
+    """
+    audits: list[MemoryAudit] = []
+    # Min-heap on (last active, actor): its top is the member the next more
+    # active one replaces. Actors are unique, so the store is never compared.
+    kept: list[tuple[float, str, MemberStore, MemoryAudit]] = []
+    for store in stores:
+        audit = audit_memories(store.records, usage=store.usage)
+        audits.append(audit)
+        entry = ((store.last_active() or _NEVER).timestamp(), store.actor, store, audit)
+        if len(kept) < limit:
+            heapq.heappush(kept, entry)
+        elif kept and entry[:2] > kept[0][:2]:
+            heapq.heapreplace(kept, entry)
+    ranked = sorted(kept, key=lambda entry: (-entry[0], entry[1]))
+    return audits, [(store, audit) for _active, _actor, store, audit in ranked]
+
+
 def build_snapshot(
     organization: str,
     *,
     scans: Iterable[Mapping[str, Any]] = (),
     stores: Iterable[MemberStore] | None = None,
     max_bytes: int = MAX_REPORT_BYTES,
+    max_members: int = MAX_MEMBERS,
 ) -> dict[str, Any]:
     """The full report body, within ``max_bytes``; ``generatedAt`` changes on its own.
 
+    Members are listed most recently active first, at most ``max_members``.
     When everything does not fit, bodies are cut shorter, then fewer of each
     member's most recent memories are sent and audits carry counts only, and
-    as a last resort members and entries are dropped, until it does
-    (``truncated`` and ``total`` say what was left out; the rollup always
-    counts everyone).
+    as a last resort the least active members and then entries are dropped,
+    until it does (``truncated`` and ``total`` say what was left out; the
+    rollup always counts everyone).
     """
-    members: list[tuple[MemberStore, dict[str, Any], dict[str, Any]]] = []
-    audits: list[MemoryAudit] = []
-    for store in stores if stores is not None else iter_member_stores():
-        if len(members) >= MAX_MEMBERS:
-            break
-        audit = audit_memories(store.records, usage=store.usage)
-        audits.append(audit)
-        counts_only = {**audit.summary(), "duplicate_group_slugs": [], "issues": []}
-        members.append((store, audit.to_dict(), counts_only))
+    audits, active = _audited_members(
+        stores if stores is not None else iter_member_stores(), max_members
+    )
+    members = [
+        (store, audit.to_dict(), {**audit.summary(), "duplicate_group_slugs": [], "issues": []})
+        for store, audit in active
+    ]
     workspace = list_workspace_entries()[:MAX_WORKSPACE_ENTRIES]
     base = {
         "organizationId": organization,
