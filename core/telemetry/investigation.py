@@ -16,7 +16,7 @@ from config.constants.telemetry import (
 )
 from core.llm.types import LLMRoute
 from core.telemetry.models import Evidence, Measurement, Scope
-from infrastructure.safety.secret_redaction import redact_text
+from infrastructure.safety.secret_redaction import redact_text, redact_values
 
 logger = logging.getLogger(__name__)
 
@@ -77,28 +77,17 @@ def _worker(connection: Connection, payload: str, expected_provider: str) -> Non
         connection.close()
 
 
-def _redacted_values(value: object) -> object:
-    if isinstance(value, str):
-        return sanitize(value)
-    if isinstance(value, dict):
-        return {sanitize(str(key)): _redacted_values(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_redacted_values(item) for item in value]
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
-    return sanitize(str(value))
-
-
 def evidence_payload(scope: Scope, sample: Measurement, evidence: Evidence) -> str:
     """Redact structured string values before JSON can escape credential delimiters."""
     return json.dumps(
-        _redacted_values(
+        redact_values(
             {
                 "scope": asdict(scope),
                 "request_counter": asdict(sample),
                 "evidence": evidence,
                 "limitations": "Delta SERVER-span metrics; traces/logs capped at ten each.",
-            }
+            },
+            redactor=sanitize,
         )
     )
 

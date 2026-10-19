@@ -90,3 +90,18 @@ def _slow_worker(_connection, _payload, _provider) -> None:
     import time
 
     time.sleep(60)
+
+
+def test_nested_redaction_preserves_normalization_and_does_not_mutate_input() -> None:
+    import json
+
+    source = {
+        "logs": [{"message": ("alice@example.com", {"password=hidden": [None, True, 2, 1.5]})}]
+    }
+    payload = investigation.evidence_payload(
+        Scope("payment", "demo", 150, 180), Measurement(20, 20, 180), source
+    )
+    assert json.loads(payload)["evidence"] == {
+        "logs": [{"message": ["[REDACTED:email]", {"[REDACTED:password]": [None, True, 2, 1.5]}]}]
+    }
+    assert source["logs"][0]["message"][0] == "alice@example.com"
