@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+import math
+import time
+from collections.abc import Callable, Iterator
 
 from filelock import FileLock
 
@@ -75,3 +77,25 @@ class WatchRunner:
             if not sent:
                 break
             self.store.acknowledge(event["id"])
+
+
+def poll(
+    runner: WatchRunner,
+    *,
+    once: bool,
+    now: Callable[[], float] = time.time,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Iterator[Health]:
+    """Poll on fixed deadlines; skip overrun windows rather than accumulating drift."""
+    deadline = monotonic()
+    interval = runner.rule.window_seconds
+    while True:
+        yield runner.step(now())
+        if once:
+            return
+        deadline += interval
+        current = monotonic()
+        if deadline < current:
+            deadline += math.ceil((current - deadline) / interval) * interval
+        sleep(max(0, deadline - current))

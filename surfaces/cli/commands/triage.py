@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
 from pathlib import Path
 
 import click
@@ -18,7 +17,7 @@ from config.strict_config import StrictConfigModel
 from core.telemetry.investigation import investigate, sanitize
 from core.telemetry.models import WatchRule
 from core.telemetry.storage.store import WatchStore
-from core.telemetry.watch import WatchRunner
+from core.telemetry.watch import WatchRunner, poll
 from integrations.clickhouse import ClickHouseEvidenceConfig, ClickHouseEvidenceReader
 
 
@@ -115,12 +114,8 @@ def watch(config_path: Path, state: Path, once: bool, telegram: bool, chat_id: s
         click.echo(
             f"Watching {config.watch.service} ({config.watch.environment}); reports: {state}"
         )
-        while True:
-            health = runner.step(time.time())
+        for health in poll(runner, once=once):
             click.echo(f"Telemetry: {health}")
-            if once:
-                break
-            time.sleep(config.watch.window_seconds)
     except KeyboardInterrupt:
         click.echo("Watch stopped; reports and pending delivery are retained.")
     except Timeout as exc:

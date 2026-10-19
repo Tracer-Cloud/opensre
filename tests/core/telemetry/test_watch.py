@@ -134,3 +134,34 @@ def test_concurrent_startup_preserves_completed_report_and_measurement(tmp_path:
     store.save_report(pending[0], scope, "must not replace")
     assert len(WatchStore(path, "same").events()) == 1
     assert store.events()[0]["body"].endswith("retained")
+
+
+def test_polling_deadlines_allow_ten_healthy_windows_despite_query_latency(tmp_path: Path) -> None:
+    from core.telemetry.watch import poll
+
+    rule = WatchRule(service="payment", environment="demo", healthy_windows=10)
+    store = WatchStore(tmp_path / "watch.db", "same")
+    scope = rule.scope(180)
+    store.observe(scope, "bad", rule, Measurement(20, 20, scope.end))
+    pending = store.pending()
+    assert pending is not None
+    store.save_report(pending[0], scope, "report")
+    reader = Reader()
+    reader.errors = 0
+    clock = [210.0]
+    original = reader.measure
+
+    def slow_measure(scope: Scope, mapping: MetricMapping) -> Measurement:
+        clock[0] += 4
+        return original(scope, mapping)
+
+    reader.measure = slow_measure
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    runner = WatchRunner(rule, reader, store, lambda *_: "unused", lambda *_: True)
+    ticks = poll(runner, once=False, now=lambda: clock[0], monotonic=lambda: clock[0], sleep=sleep)
+    for _ in range(10):
+        assert next(ticks) == "healthy"
+    assert [event["kind"] for event in store.events()] == ["opened", "recovered"]

@@ -24,16 +24,16 @@ class Model:
 
 
 def test_synthesis_has_no_tools_and_rejects_cli_backends(monkeypatch: pytest.MonkeyPatch) -> None:
-    from core.llm import factory
+    from core.llm import client_builders, factory
     from core.llm.types import LLMRoute
 
-    route = LLMRoute(None, "test", None, False)
+    route = LLMRoute(None, "anthropic", None, False)
     monkeypatch.setattr(factory, "resolve_llm_route", lambda: route)
-    monkeypatch.setattr(factory, "get_llm", lambda _role: Model())
-    assert investigation._model_report("evidence") == "Observed: failure"
-    route = LLMRoute(None, "test", object(), False)
+    monkeypatch.setattr(client_builders, "build_agent_client", lambda _route: Model())
+    assert investigation._model_report("evidence", "anthropic") == "Observed: failure"
+    route = LLMRoute(None, "anthropic", object(), False)
     with pytest.raises(ValueError, match="CLI"):
-        investigation._model_report("evidence")
+        investigation._model_report("evidence", "anthropic")
 
 
 def test_telemetry_sanitized_before_model_and_retention() -> None:
@@ -46,10 +46,47 @@ def test_telemetry_sanitized_before_model_and_retention() -> None:
 
 
 def test_model_deadline_returns_partial_and_reaps_child(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A zero deadline exercises the real spawn/terminate path without making a provider request.
-    monkeypatch.setattr(investigation, "TELEMETRY_MODEL_TIMEOUT_SECONDS", 0)
+    from core.llm.types import LLMRoute
+
+    monkeypatch.setattr(
+        investigation,
+        "_checked_route",
+        lambda _expected=None: LLMRoute(None, "anthropic", None, False),
+    )
+    monkeypatch.setattr(investigation, "_worker", _slow_worker)
+    monkeypatch.setattr(investigation, "TELEMETRY_MODEL_TIMEOUT_SECONDS", 0.01)
     report = investigation.investigate(
         Scope("payment", "demo", 150, 180), Measurement(20, 20, 180), {"logs": [], "traces": []}
     )
     assert "20/20 failed requests" in report
     assert "Cause unknown" in report
+
+
+def test_multiline_credentials_are_redacted_before_json_serialization() -> None:
+    import json
+
+    secret = "a" * 40
+    payload = investigation.evidence_payload(
+        Scope("payment", "demo", 150, 180),
+        Measurement(20, 20, 180),
+        {"logs": [{"message": "aws_secret_access_key=\n" + secret}], "traces": []},
+    )
+    assert secret not in payload
+    assert "[REDACTED:aws_secret]" in json.loads(payload)["evidence"]["logs"][0]["message"]
+
+
+def test_cli_provider_without_registered_adapter_is_rejected_before_spawn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.llm import factory
+    from core.llm.types import LLMRoute
+
+    monkeypatch.setattr(factory, "resolve_llm_route", lambda: LLMRoute(None, "codex", None, False))
+    with pytest.raises(ValueError, match="CLI"):
+        investigation.investigate(Scope("payment", "demo", 150, 180), Measurement(20, 20, 180), {})
+
+
+def _slow_worker(_connection, _payload, _provider) -> None:
+    import time
+
+    time.sleep(60)

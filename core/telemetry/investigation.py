@@ -14,6 +14,7 @@ from config.constants.telemetry import (
     TELEMETRY_MODEL_TIMEOUT_SECONDS,
     TELEMETRY_REPORT_MAX_CHARS,
 )
+from core.llm.types import LLMRoute
 from core.telemetry.models import Evidence, Measurement, Scope
 from infrastructure.safety.secret_redaction import redact_text
 
@@ -28,14 +29,28 @@ def sanitize(text: str) -> str:
     return "".join(char for char in text if char in "\n\t" or char.isprintable())
 
 
-def _model_report(payload: str) -> str:
-    from core.llm.factory import LLMRole, get_llm, resolve_llm_route
+def _checked_route(expected_provider: str | None = None) -> LLMRoute:
+    from config.llm_auth.provider_catalog import CredentialKind, provider_spec
+    from core.llm.factory import resolve_llm_route
 
-    if resolve_llm_route().cli_provider_registration is not None:
+    route = resolve_llm_route()
+    spec = provider_spec(route.provider)
+    if route.cli_provider_registration is not None or (
+        spec and spec.credential_kind == CredentialKind.CLI
+    ):
+        raise ValueError("Telemetry synthesis requires an API model, not a tool-enabled CLI.")
+    if spec is None or (expected_provider is not None and route.provider != expected_provider):
         raise ValueError(
-            "Telemetry synthesis requires a hosted/local API model, not a tool-enabled CLI."
+            "Telemetry model route changed or is unsupported; retry with an explicit API provider."
         )
-    response = get_llm(LLMRole.AGENT).invoke(
+    return route
+
+
+def _model_report(payload: str, expected_provider: str) -> str:
+    from core.llm.client_builders import build_agent_client
+
+    route = _checked_route(expected_provider)
+    response = build_agent_client(route).invoke(
         [{"role": "user", "content": payload}],
         system=(
             "You are OpenSRE investigating one detected telemetry incident. "
@@ -51,9 +66,9 @@ def _model_report(payload: str) -> str:
     return response.content
 
 
-def _worker(connection: Connection, payload: str) -> None:
+def _worker(connection: Connection, payload: str, expected_provider: str) -> None:
     try:
-        report = _model_report(payload)
+        report = _model_report(payload, expected_provider)
         connection.send(sanitize(report)[:TELEMETRY_REPORT_MAX_CHARS])
     except Exception:
         logger.exception("Telemetry model synthesis failed")
@@ -62,24 +77,41 @@ def _worker(connection: Connection, payload: str) -> None:
         connection.close()
 
 
-def investigate(scope: Scope, sample: Measurement, evidence: Evidence) -> str:
-    """Return a bounded model report or an honest partial report without retrying a model loop."""
-    payload = sanitize(
-        json.dumps(
+def _redacted_values(value: object) -> object:
+    if isinstance(value, str):
+        return sanitize(value)
+    if isinstance(value, dict):
+        return {sanitize(str(key)): _redacted_values(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redacted_values(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return sanitize(str(value))
+
+
+def evidence_payload(scope: Scope, sample: Measurement, evidence: Evidence) -> str:
+    """Redact structured string values before JSON can escape credential delimiters."""
+    return json.dumps(
+        _redacted_values(
             {
                 "scope": asdict(scope),
                 "request_counter": asdict(sample),
                 "evidence": evidence,
                 "limitations": "Delta SERVER-span metrics; traces/logs capped at ten each.",
-            },
-            default=str,
+            }
         )
     )
+
+
+def investigate(scope: Scope, sample: Measurement, evidence: Evidence) -> str:
+    """Return a bounded model report or an honest partial report without retrying a model loop."""
+    provider = _checked_route().provider
+    payload = evidence_payload(scope, sample, evidence)
     if len(payload) > TELEMETRY_EVIDENCE_MAX_CHARS:
         raise ValueError("Evidence exceeds the model input budget.")
     context = multiprocessing.get_context("spawn")
     receive, send = context.Pipe(duplex=False)
-    process = context.Process(target=_worker, args=(send, payload), daemon=True)
+    process = context.Process(target=_worker, args=(send, payload, provider), daemon=True)
     report = ""
     try:
         process.start()
