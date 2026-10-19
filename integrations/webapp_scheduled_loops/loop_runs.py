@@ -10,16 +10,27 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from config.constants.scheduler import (
+    REPORT_MISSING_ERROR_KIND,
+    TURN_INTERRUPTED_ERROR_KIND,
+    WORK_UNVERIFIED_ERROR_KIND,
+)
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.run_history import bounded_text, run_trigger
 from infrastructure.scheduling.scheduler.storage import get_recent_runs
-from infrastructure.scheduling.scheduler.types import TaskRun
+from infrastructure.scheduling.scheduler.types import TaskRun, TaskStatus
 
 #: The webapp reads at most this many runs per loop from one report.
 MAX_REPORTED_RUNS = 10
 #: The contract's caps; bytes bound characters, so these also meet them.
 _ERROR_MAX_BYTES = 600
 _SUMMARY_MAX_BYTES = 1_000
+#: The reason a loop's page shows for a failed run whose work, not its delivery, fell short.
+_WORK_FAILURE_REASONS = {
+    REPORT_MISSING_ERROR_KIND: "The agent finished without a report to deliver.",
+    TURN_INTERRUPTED_ERROR_KIND: "The run stopped before the agent finished.",
+    WORK_UNVERIFIED_ERROR_KIND: "No tool confirmed the work the agent's reply describes.",
+}
 
 
 def loop_runs(loops: Sequence[LoopSummary]) -> dict[str, list[dict[str, Any]]]:
@@ -46,7 +57,7 @@ def _run_row(run: TaskRun) -> dict[str, Any]:
         "trigger": run_trigger(run.fire_time),
         "status": run.status.value,
         "started_at": run.started_at,
-        "error": bounded_text(run.error, _ERROR_MAX_BYTES),
+        "error": bounded_text(run.error or _work_failure_reason(run), _ERROR_MAX_BYTES),
         "summary": bounded_text(run.report_summary, _SUMMARY_MAX_BYTES),
         "attempt": run.attempt,
     }
@@ -55,6 +66,13 @@ def _run_row(run: TaskRun) -> dict[str, Any]:
     if run.finished_at:
         row["finished_at"] = run.finished_at
     return row
+
+
+def _work_failure_reason(run: TaskRun) -> str:
+    """Why a failed run that stored no error of its own fell short, or "" when unknown."""
+    if run.status is not TaskStatus.FAILED:
+        return ""
+    return _WORK_FAILURE_REASONS.get(run.work_error_kind, "")
 
 
 __all__ = ["MAX_REPORTED_RUNS", "loop_runs"]

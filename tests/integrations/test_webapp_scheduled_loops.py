@@ -32,6 +32,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
 )
 from infrastructure.scheduling.scheduler.loops import create_manual_loop
+from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.storage import (
     TaskStoreSnapshot,
@@ -599,12 +600,13 @@ def _record_run(
     error: str = "",
     summary: str = "",
     targets: tuple[DeliveryOutcome, ...] = (),
+    work_outcome: WorkOutcome | None = None,
 ) -> int:
     """Insert one attempt as the scheduler stores it; returns its run id."""
     with scheduler_database.transaction() as conn:
         cursor = conn.execute(
             "INSERT INTO task_runs (task_id, fire_time, started_at, finished_at, status, "
-            "error, report_summary, targets) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "error, report_summary, targets, work_outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 task_id,
                 fire_time or started_at,
@@ -614,6 +616,7 @@ def _record_run(
                 error,
                 summary,
                 json.dumps([target.model_dump(mode="json") for target in targets]),
+                (work_outcome or WorkOutcome()).model_dump_json(),
             ),
         )
         return int(cursor.lastrowid or 0)
@@ -716,6 +719,26 @@ def test_run_text_is_redacted_and_capped() -> None:
     assert token not in run["error"] and "[REDACTED:github_pat]" in run["error"]
     assert len(run["error"]) <= 600 and run["error"].endswith("…")
     assert len(run["summary"].encode()) <= 1_000 and run["summary"].endswith("…")
+
+
+def test_a_failed_run_without_an_error_names_why_its_work_fell_short() -> None:
+    # Arrange: a tick whose agent finished without a report, which stores no error text.
+    with _org_scope():
+        loop = create_manual_loop(name="Audit", prompt="Audit report.", cron="0 9 * * *")
+    _record_run(
+        loop.task.id,
+        "2026-10-18T09:00:00Z",
+        status=TaskStatus.FAILED,
+        work_outcome=WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="report_missing"),
+    )
+    webapp = _Webapp()
+
+    # Act
+    _sync(webapp).report(force=True)
+
+    # Assert: the loop's page says why instead of showing a bare failure.
+    [run] = webapp.reports[0][0]["runs"]
+    assert run["error"] == "The agent finished without a report to deliver."
 
 
 def test_a_run_ending_is_reported_and_an_unchanged_one_is_not() -> None:

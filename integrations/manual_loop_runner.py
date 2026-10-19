@@ -44,6 +44,8 @@ REPORT_BUILDERS: dict[str, str] = {
 
 #: Stored params that bind a loop to one repair target (``cron add --pr`` / ``--branch``).
 _TARGET_PARAMS = ("pr_number", "branch")
+#: Stored params that name the repository an agent loop works on, and any one target in it.
+_REPOSITORY_PARAMS = ("owner", "repo", *_TARGET_PARAMS)
 
 #: A loop's reply may end with this line to leave a note for the loop's next run.
 CARRY_NOTE_MARKER = "NOTE FOR NEXT RUN:"
@@ -86,6 +88,8 @@ a file first: read it with tools and report only what this tick did and
 verified.
 A tick that finds nothing eligible to act on delivers nothing: reply with only
 the note line described below, or one short sentence when there is no note.
+The one exception is a task that asks for a summary or report: deliver it on
+every tick, including one with nothing to act on.
 Do not send, post, notify, or message any channel from inside this turn; the
 scheduler will deliver your reply to the configured channels after this
 runner returns.
@@ -136,11 +140,7 @@ def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") 
     stateless = loop_is_stateless(payload)
     history = f"\n\n{previous_runs}" if previous_runs and not stateless else ""
     if str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT:
-        scope = {
-            key: payload[key]
-            for key in ("owner", "repo", "pr_number", "branch")
-            if payload.get(key)
-        }
+        scope = {key: payload[key] for key in _REPOSITORY_PARAMS if payload.get(key)}
         binding = f"\nStored repository target: {json.dumps(scope)}\n" if scope else ""
         recipe = _skill_recipe(payload)
         instructions = _STATELESS_AGENT_LOOP_INSTRUCTIONS if stateless else _AGENT_LOOP_INSTRUCTIONS
@@ -229,6 +229,19 @@ def _bound_to_one_target(payload: AgentPayload) -> bool:
     return any(str(payload.get(key) or "").strip() for key in _TARGET_PARAMS)
 
 
+def _free_form_task(payload: AgentPayload) -> bool:
+    """Whether an agent loop runs only its own task text: no repository target, skill or reset.
+
+    Such a tick has no tools that report work outcomes, so its reply is its result.
+    """
+    return (
+        str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
+        and not loop_is_stateless(payload)
+        and not str(payload.get(LOOP_SKILL_PARAM) or "").strip()
+        and not any(str(payload.get(key) or "").strip() for key in _REPOSITORY_PARAMS)
+    )
+
+
 class ShownReply:
     """An output sink that keeps only what a chat would show as the turn's reply.
 
@@ -283,7 +296,11 @@ def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
     stateless = loop_is_stateless(payload)
     history = "" if stateless else previous_runs_block(str(payload.get("task_id") or ""))
     message = build_manual_loop_prompt(payload, previous_runs=history)
-    outcomes = ScheduledOutcomes(bound_target=_bound_to_one_target(payload), stateless=stateless)
+    outcomes = ScheduledOutcomes(
+        bound_target=_bound_to_one_target(payload),
+        stateless=stateless,
+        free_form=_free_form_task(payload),
+    )
     prepare = (
         _prepare_stateless_agent_session
         if stateless

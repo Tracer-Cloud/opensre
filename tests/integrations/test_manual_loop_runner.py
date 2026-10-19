@@ -127,6 +127,8 @@ def test_agent_mode_forbids_pasted_files_and_makes_quiet_ticks_deliver_nothing()
     assert "Never paste a policy, state, ledger, queue, or any" in message
     assert "even when the task tells you to read such" in message
     assert "nothing eligible to act on delivers nothing" in message
+    # A task asking for a summary still gets one when there was nothing to act on.
+    assert "a task that asks for a summary or report: deliver it on" in message
 
 
 def test_an_agent_loop_bound_to_a_skill_runs_that_card_as_its_task() -> None:
@@ -332,6 +334,84 @@ def test_only_a_loop_bound_to_one_target_pauses_on_an_unrepairable_target(
     assert report.outcome.status == ("blocked" if paused else "noop")
 
 
+def _gh_ok(args: list[str], **_kwargs: Any) -> dict[str, Any]:
+    return {"ok": True, "stdout": "https://github.com/o/r/pull/7"}
+
+
+def _gh_fails(args: list[str], **_kwargs: Any) -> dict[str, Any]:
+    raise RuntimeError("gh: HTTP 502")
+
+
+@pytest.mark.parametrize(
+    "repository, reply, gh_args, gh_run, status, error_kind, delivered",
+    [
+        # The web app's security audit found nothing to patch and posted its summary.
+        ({}, "Patched: none. Still open: braces (high, no fix).", None, None, "noop", "", None),
+        # A note-only reply is a quiet tick, not a missing report...
+        ({}, "NOTE FOR NEXT RUN: nothing new", None, None, "noop", "", ""),
+        # ...unless a tool failed where nobody would see it.
+        (
+            {},
+            "NOTE FOR NEXT RUN: nothing new",
+            ["api", "repos/o/r"],
+            _gh_fails,
+            "incomplete",
+            "report_missing",
+            "",
+        ),
+        ({}, "Opened PR #7.", ["pr", "create", "--fill"], _gh_ok, "succeeded", "", None),
+        # A repository sweep still needs a tool to vouch for what its reply claims.
+        (
+            {"owner": "o", "repo": "r"},
+            "Patched: none.",
+            None,
+            None,
+            "incomplete",
+            "work_unverified",
+            None,
+        ),
+    ],
+)
+def test_a_free_form_agent_loop_is_judged_by_its_reply_and_its_writes(
+    monkeypatch: pytest.MonkeyPatch,
+    repository: dict[str, str],
+    reply: str,
+    gh_args: list[str] | None,
+    gh_run: Any,
+    status: str,
+    error_kind: str,
+    delivered: str | None,
+) -> None:
+    def fake_turn(_message: str, *, tool_hooks: ToolExecutionHooks, **_kwargs: object) -> object:
+        if gh_args is not None:
+            tool = RegisteredTool(
+                name="github_cli",
+                description="gh",
+                input_schema={"type": "object", "properties": {}},
+                source="github",
+                run=gh_run,
+                side_effect_level=SideEffectLevel.MUTATING,
+            )
+            call = ToolCall(id="gh", name="github_cli", input={"args": gh_args})
+            execute_tool_calls([call], [tool], {}, hooks=tool_hooks)
+        return _TurnResult(reply)
+
+    monkeypatch.setattr(manual_loop_runner.AgentSession, "run_headless_turn", fake_turn)
+
+    report = manual_loop_runner.run_manual_prompt_loop(
+        {
+            "loop_prompt": "Audit dependencies and post a summary.",
+            "name": "Security audit",
+            LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+            **repository,
+        }
+    )
+
+    assert report.outcome.status == status
+    assert report.outcome.error_kind == error_kind
+    assert report == (reply if delivered is None else delivered)
+
+
 def test_only_a_loop_with_a_report_builder_runs_without_a_model_turn() -> None:
     from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
     from infrastructure.scheduling.scheduler.loop_constants import LOOP_REPORT_PARAM
@@ -467,7 +547,13 @@ def test_a_loop_tick_sees_what_its_previous_run_did_and_the_note_it_left(
         cron="29 * * * *",
         provider=Provider.SLACK,
         chat_id="C123",
-        params={"loop_prompt": "Comment on PRs that need a human.", LOOP_MODE_PARAM: "agent"},
+        # A repository sweep, so its PR comment alone does not confirm the work.
+        params={
+            "loop_prompt": "Comment on PRs that need a human.",
+            LOOP_MODE_PARAM: "agent",
+            "owner": "o",
+            "repo": "r",
+        },
     )
     runners = SchedulerRunners(agent=manual_loop_runner.run_manual_prompt_loop)
     try:

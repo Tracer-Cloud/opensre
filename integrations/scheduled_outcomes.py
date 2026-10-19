@@ -5,7 +5,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from config.constants.scheduler import STATELESS_LOOP_IDLE_REPLY, WORK_UNVERIFIED_ERROR_KIND
+from config.constants.scheduler import (
+    REPORT_MISSING_ERROR_KIND,
+    STATELESS_LOOP_IDLE_REPLY,
+    TURN_INTERRUPTED_ERROR_KIND,
+    WORK_UNVERIFIED_ERROR_KIND,
+)
 from core.agent_harness import TurnResult
 from core.tool import ToolExecutionRequest, ToolExecutionResult
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
@@ -26,16 +31,23 @@ class ScheduledOutcomes:
     or GitHub write is done work, and the exact idle reply is a no-op unless a
     tool failed without reporting an outcome; there a nonzero shell exit counts
     as a failure too.
+    A free-form task loop (its own task text, no repository target or skill) has
+    no tools that report outcomes, so its delivered reply is its result: a push or
+    GitHub write is done work, anything else a no-op, and a note-only reply is a
+    quiet no-op unless a tool failed without reporting an outcome.
     """
 
-    def __init__(self, *, bound_target: bool = True, stateless: bool = False) -> None:
+    def __init__(
+        self, *, bound_target: bool = True, stateless: bool = False, free_form: bool = False
+    ) -> None:
         self._outcomes: dict[str, WorkOutcome] = {}
         self._lock = Lock()
         self._bound_target = bound_target
         #: A tool ran and failed without a work outcome, so nothing vouches for it.
         self._unverified_failure = False
         self._stateless = stateless
-        #: The pushes and GitHub writes a stateless tick's tools made, as action lines.
+        self._free_form = free_form
+        #: The pushes and GitHub writes a stateless or free-form tick's tools made.
         self._remote_writes: list[str] = []
 
     def observe(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
@@ -45,7 +57,7 @@ class ScheduledOutcomes:
             if result.is_error or (self._stateless and call_failed(result)):
                 with self._lock:
                     self._unverified_failure = True
-            elif self._stateless and is_remote_write(request, result):
+            elif (self._stateless or self._free_form) and is_remote_write(request, result):
                 action = describe_tool_action(request, result) or request.tool_call.name
                 with self._lock:
                     self._remote_writes.append(action)
@@ -61,6 +73,9 @@ class ScheduledOutcomes:
     def report(self, turn: TurnResult, *, agent_mode: bool, text: str | None = None) -> TaskReport:
         """Require work evidence for agent tasks and a complete response for report tasks.
 
+        A free-form agent task needs only a complete response; its writes mark it
+        as having done work.
+
         ``text`` is the reply to deliver when the runner kept part of the turn's
         reply back; it defaults to the whole reply.
         """
@@ -75,6 +90,9 @@ class ScheduledOutcomes:
         idle = idle_reply and not remote_writes and not unverified_failure
         if idle_reply and not remote_writes:
             text = ""
+        # A free-form tick with nothing to act on replies with only its note.
+        if self._free_form and not text:
+            idle = not remote_writes and not unverified_failure
         # A sweep picks its targets each tick, so a fork or closed PR it reached
         # is one ineligible target, not a reason to stop repairing the rest.
         sweep = not self._bound_target
@@ -98,9 +116,13 @@ class ScheduledOutcomes:
         if terminal_block is not None:
             outcome = terminal_block
         elif turn.cancelled or turn.action_result.hit_iteration_cap:
-            outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="turn_interrupted")
+            outcome = WorkOutcome(
+                status=WorkStatus.INCOMPLETE, error_kind=TURN_INTERRUPTED_ERROR_KIND
+            )
         elif not text and not (verified_noop or idle):
-            outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="report_missing")
+            outcome = WorkOutcome(
+                status=WorkStatus.INCOMPLETE, error_kind=REPORT_MISSING_ERROR_KIND
+            )
         elif not agent_mode:
             outcome = WorkOutcome(status=WorkStatus.SUCCEEDED)
         else:
@@ -125,7 +147,8 @@ class ScheduledOutcomes:
                 outcome = WorkOutcome(
                     status=WorkStatus.SUCCEEDED, evidence={"actions": list(remote_writes)}
                 )
-            elif idle:
+            elif idle or self._free_form:
+                # A free-form task's delivered reply is its result; its tools changed nothing.
                 outcome = WorkOutcome(status=WorkStatus.NOOP)
             else:
                 outcome = WorkOutcome(
