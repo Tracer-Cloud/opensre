@@ -49,7 +49,8 @@ from core.domain.memory.models import (
 )
 from core.domain.memory.repository_ids import repository_ids
 from core.domain.memory.safety import find_memory_safety_issues, redact_memory_unsafe_text
-from core.domain.memory.similarity import DUPLICATE_SIMILARITY, duplicate_clusters
+from core.domain.memory.similarity import duplicate_clusters
+from core.domain.memory.stamps import last_activity
 from core.domain.memory.store import (
     build_record,
     list_memories,
@@ -98,23 +99,11 @@ class ConsolidationResult:
     summary_written: bool = False
 
 
-def _parse_stamp(value: str) -> datetime | None:
-    try:
-        stamp = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
-
-
 def _is_stale(record: MemoryRecord, usage: MemoryUsage, now: datetime) -> bool:
     if record.memory_type in NON_EXPIRING_MEMORY_TYPES:
         return False
-    stamps = [
-        stamp
-        for stamp in (_parse_stamp(record.updated_at), _parse_stamp(usage.last_used_at))
-        if stamp is not None
-    ]
-    return bool(stamps) and now - max(stamps) > STALE_AFTER
+    last = last_activity(record, usage)
+    return last is not None and now - last > STALE_AFTER
 
 
 def repository_subject(record: MemoryRecord) -> str | None:
@@ -150,7 +139,7 @@ def _duplicate_groups(records: list[MemoryRecord]) -> list[list[MemoryRecord]]:
     for group in groups:
         group.sort(key=lambda record: (record.updated_at, record.slug), reverse=True)
     # Repository memories are matched by subject above, never by header words.
-    groups.extend(duplicate_clusters(records, threshold=DUPLICATE_SIMILARITY))
+    groups.extend(duplicate_clusters(records))
     return groups
 
 

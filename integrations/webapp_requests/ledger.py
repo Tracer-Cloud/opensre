@@ -1,12 +1,12 @@
-"""The outcome of every web app loop request this gateway applied, kept on disk.
+"""The outcome of every web app request this gateway applied, kept on disk.
 
-The web app redelivers a request until it is acknowledged. A redelivery must
+The web app redelivers a request until it is acknowledged (the Tasks page's
+loop changes, the Knowledge page's forgets and rescans). A redelivery must
 re-send the first outcome, never apply the change again: re-applying a pause
-after a member resumed the loop in Slack, or an old edit after a newer one,
-undoes their later change, and a re-run create brings back a loop that was
-deleted since. The ledger lives beside the scheduler store, on the same
-durable volume, and forgets entries after the web app has long stopped
-redelivering them.
+after a member resumed the loop in Slack, or a forget after the member said
+the fact again, undoes their later change. Each feature keeps its own ledger
+file on the durable volume; entries are forgotten after the web app has long
+stopped redelivering them.
 """
 
 from __future__ import annotations
@@ -23,11 +23,8 @@ from pathlib import Path
 
 from filelock import FileLock
 
-from config.constants import OPENSRE_HOME_DIR
-
 logger = logging.getLogger(__name__)
 
-_FILENAME = "webapp_loop_requests.json"
 #: Far past the web app's redelivery: it settles a request on its first ack.
 _RETENTION_SECONDS = 30 * 24 * 60 * 60
 _LOCK_TIMEOUT_SECONDS = 10.0
@@ -39,18 +36,28 @@ class LedgerUnavailable(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class RecordedOutcome:
-    """What applying one request did, as first acknowledged."""
+    """What applying one request did, as first acknowledged.
+
+    ``ref`` names what the request produced (a loop id), when anything.
+    """
 
     applied: bool
-    loop_id: str = ""
+    ref: str = ""
     error: str = ""
 
 
 class RequestLedger:
     """Request id -> outcome, per organization, guarded by a file lock."""
 
-    def __init__(self, path: Path | None = None, *, clock: Callable[[], float] = time.time) -> None:
-        self._path = path or OPENSRE_HOME_DIR / _FILENAME
+    def __init__(
+        self,
+        path: Path,
+        *,
+        log_tag: str = "webapp-requests",
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self._path = path
+        self._log_tag = log_tag
         self._clock = clock
 
     def get(self, organization: str, request_id: str) -> RecordedOutcome | None:
@@ -61,7 +68,8 @@ class RequestLedger:
             return None
         return RecordedOutcome(
             applied=bool(entry.get("applied")),
-            loop_id=str(entry.get("loop_id") or ""),
+            # Ledgers written before the ledger was shared call it loop_id.
+            ref=str(entry.get("ref") or entry.get("loop_id") or ""),
             error=str(entry.get("error") or ""),
         )
 
@@ -99,7 +107,7 @@ class RequestLedger:
             # keep it for inspection and start over rather than block every request.
             aside = self._path.with_name(f"{self._path.name}.corrupt-{int(self._clock())}")
             os.replace(self._path, aside)
-            logger.error("[webapp-loops] request ledger was unreadable; moved to %s", aside)
+            logger.error("[%s] request ledger was unreadable; moved to %s", self._log_tag, aside)
             return {}
         return data if isinstance(data, dict) else {}
 

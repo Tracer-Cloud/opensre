@@ -108,11 +108,18 @@ def webapp_loop_sync(runners: SchedulerRunners | None = None) -> WebappLoopSync 
 def knowledge_scan_service() -> KnowledgeScanService | None:
     """The background scans that keep workspace knowledge current, or ``None`` when it is off.
 
-    Built here so the gateway never imports ``integrations`` itself.
+    Installed as this process's scan service, so ``/knowledge scan`` in a
+    gateway turn pokes it instead of scanning inside the turn. Built here so
+    the gateway never imports ``integrations`` itself.
     """
-    from integrations.knowledge_scans import knowledge_scan_service_from_environment
+    from integrations.knowledge_scans import (
+        install_scan_service,
+        knowledge_scan_service_from_environment,
+    )
 
-    return knowledge_scan_service_from_environment()
+    service = knowledge_scan_service_from_environment()
+    install_scan_service(service)
+    return service
 
 
 def webapp_knowledge_sync(scans: KnowledgeScanService | None = None) -> WebappKnowledgeSync | None:

@@ -9,16 +9,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from core.domain.knowledge import ScanOutcome, Summarize
+from core.domain.knowledge import ORGANIZATION_SLUG, ScanOutcome, Summarize, integration_slug
 
 
 @dataclass(frozen=True)
 class Scanner:
-    """One integration's scan: whether it can run here, and the scan itself."""
+    """One integration's scan: whether it can run here, what it writes, and the scan itself."""
 
     service: str
     available: Callable[[], bool]
     scan: Callable[[Summarize | None], ScanOutcome]
+    #: Every workspace entry the scan writes; one missing or old makes it due.
+    writes: tuple[str, ...]
+    #: Refreshes who may read workspace knowledge, more often than a full scan
+    #: (a member list costs one API call, a scan reads channels and calls a model).
+    refresh_readers: Callable[[], bool] | None = None
 
 
 def _slack_available() -> bool:
@@ -33,8 +38,23 @@ def _slack_scan(summarize: Summarize | None) -> ScanOutcome:
     return scan_slack_workspace(summarize=summarize)
 
 
-SCANNERS: tuple[Scanner, ...] = (Scanner("slack", _slack_available, _slack_scan),)
+def _slack_readers() -> bool:
+    from integrations.slack.knowledge_scan import refresh_slack_readers
 
-SCANNERS_BY_SERVICE: dict[str, Scanner] = {scanner.service: scanner for scanner in SCANNERS}
+    return refresh_slack_readers()
 
-__all__ = ["SCANNERS", "SCANNERS_BY_SERVICE", "Scanner"]
+
+SCANNERS: tuple[Scanner, ...] = (
+    Scanner(
+        "slack",
+        available=_slack_available,
+        scan=_slack_scan,
+        writes=(ORGANIZATION_SLUG, integration_slug("slack")),
+        refresh_readers=_slack_readers,
+    ),
+)
+
+#: Every service a scan exists for.
+SCANNABLE_SERVICES: tuple[str, ...] = tuple(scanner.service for scanner in SCANNERS)
+
+__all__ = ["SCANNABLE_SERVICES", "SCANNERS", "Scanner"]

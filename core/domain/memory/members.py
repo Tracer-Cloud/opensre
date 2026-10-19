@@ -1,35 +1,40 @@
 """Every member's memory store in this organization, for audits and the web app mirror.
 
-On a hosted gateway each member has ``<org root>/users/<actor id>/memory/``.
-Reading one binds the memory engine to it (:func:`memory_root`), so the
-caller sees exactly what that member's turns see. Nothing here is reachable
-from a turn: a member's turn only ever resolves its own directory.
+On a hosted gateway each member has ``<org root>/users/<actor id>/memory/``
+(:func:`config.constants.paths.member_memory_path`, the layout their own turns
+use). Stores are read uncached (:func:`read_memories`): a pass over every
+member would otherwise push the stores members' turns are using out of the
+engine's small cache. Nothing here is reachable from a turn: a member's turn
+only ever resolves its own directory.
 """
 
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 from config.constants import OPENSRE_MEMORY_DIR_ENV
-from config.constants.paths import USERS_DIR_NAME, deployment_home, get_memory_dir
-from core.domain.memory.files import memory_root
+from config.constants.paths import (
+    USERS_DIR_NAME,
+    UnsafePathSegmentError,
+    deployment_home,
+    get_memory_dir,
+    member_memory_path,
+)
+from core.domain.memory.fence import is_fenced_record
 from core.domain.memory.models import MemoryRecord
-from core.domain.memory.recall import live_memories
+from core.domain.memory.store import read_memories
 from core.domain.memory.usage import MemoryUsage, load_usage
 
 #: The actor named for a store that is not under ``users/`` (a laptop's own).
 LOCAL_ACTOR = "local"
-_MEMORY_DIRNAME = "memory"
-_SAFE_ACTOR = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 @dataclass(frozen=True)
 class MemberStore:
-    """One member's live memories and usage, read with the store bound."""
+    """One member's live memories and usage."""
 
     actor: str
     directory: Path
@@ -37,9 +42,20 @@ class MemberStore:
     usage: dict[str, MemoryUsage]
 
 
-def member_memory_dir(actor: str) -> Path | None:
-    """``actor``'s memory directory in this organization, or ``None`` when it has none."""
-    return member_memory_dirs().get(actor)
+def _member_dir(actor: str) -> Path | None:
+    try:
+        directory = member_memory_path(actor)
+    except UnsafePathSegmentError:
+        return None
+    return directory if directory.is_dir() else None
+
+
+def _organization_layout() -> bool:
+    """Whether stores live per member here (not a laptop or an ``OPENSRE_MEMORY_DIR`` store)."""
+    return (
+        not os.getenv(OPENSRE_MEMORY_DIR_ENV, "").strip()
+        and (deployment_home() / USERS_DIR_NAME).is_dir()
+    )
 
 
 def member_memory_dirs() -> dict[str, Path]:
@@ -48,24 +64,29 @@ def member_memory_dirs() -> dict[str, Path]:
     Outside an organization (a laptop, or ``OPENSRE_MEMORY_DIR`` set) the one
     local store is returned as :data:`LOCAL_ACTOR` when it exists.
     """
-    users = deployment_home() / USERS_DIR_NAME
-    found: dict[str, Path] = {}
-    if users.is_dir() and not os.getenv(OPENSRE_MEMORY_DIR_ENV, "").strip():
-        for child in sorted(users.iterdir()):
-            if child.is_dir() and _SAFE_ACTOR.match(child.name):
-                directory = child / _MEMORY_DIRNAME
-                if directory.is_dir():
-                    found[child.name] = directory
-    if found:
-        return found
+    if _organization_layout():
+        users = deployment_home() / USERS_DIR_NAME
+        found = {
+            child.name: directory
+            for child in sorted(users.iterdir())
+            if child.is_dir() and (directory := _member_dir(child.name)) is not None
+        }
+        if found:
+            return found
     local = get_memory_dir()
     return {LOCAL_ACTOR: local} if local.is_dir() else {}
 
 
+def member_memory_dir(actor: str) -> Path | None:
+    """``actor``'s memory directory in this organization, or ``None`` when it has none."""
+    if _organization_layout() and actor != LOCAL_ACTOR:
+        return _member_dir(actor)
+    return member_memory_dirs().get(actor)
+
+
 def read_member_store(actor: str, directory: Path) -> MemberStore:
-    """The live memories and usage of one member's store."""
-    with memory_root(directory):
-        records = tuple(live_memories())
+    """The live (unfenced) memories and usage of one member's store."""
+    records = tuple(record for record in read_memories(directory) if not is_fenced_record(record))
     return MemberStore(
         actor=actor, directory=directory, records=records, usage=load_usage(directory)
     )

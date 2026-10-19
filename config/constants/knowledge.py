@@ -20,9 +20,13 @@ KNOWLEDGE_DIRNAME = "knowledge"
 KNOWLEDGE_SCAN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 #: How often the gateway checks whether a scan is due.
 KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS = 60 * 60
+#: How often the list of members who may read workspace knowledge is refreshed,
+#: so a new member gets access the same day, not at the next weekly scan.
+KNOWLEDGE_READERS_REFRESH_SECONDS = 6 * 60 * 60
 
 __all__ = [
     "KNOWLEDGE_DIRNAME",
+    "KNOWLEDGE_READERS_REFRESH_SECONDS",
     "KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS",
     "KNOWLEDGE_SCAN_MAX_AGE_SECONDS",
     "OPENSRE_KNOWLEDGE_DIR_ENV",

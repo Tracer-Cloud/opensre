@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -136,6 +137,57 @@ def write_record_unlocked(record: MemoryRecord) -> None:
     write_text_atomically(memory_path(record.slug), serialize_memory(record))
 
 
+def _candidate(
+    *,
+    slug: str,
+    memory_type: MemoryType | str,
+    description: str,
+    body: str,
+    source: MemorySource | str | None,
+    evidence: str,
+    verified: bool | None,
+) -> MemoryRecord:
+    """The record to write, validated, with its stamps left for the write to set."""
+    return build_record(
+        slug=slug,
+        memory_type=memory_type,
+        description=description,
+        body=body,
+        created_at="",
+        updated_at="",
+        source=source,
+        evidence=evidence,
+        verified=verified,
+    )
+
+
+def _locked_save[T](slug: str, write: Callable[[], T]) -> T | None:
+    """Run ``write`` under the memory lock; ``None`` (reported) on a lock timeout or I/O error."""
+    try:
+        with memory_lock():
+            return write()
+    except Timeout:
+        print(f"[memory] timed out acquiring lock to save memory {slug!r}", file=sys.stderr)
+        return None
+    except OSError as exc:
+        print(f"[memory] failed to save memory {slug!r}: {exc}", file=sys.stderr)
+        return None
+
+
+def _place_unlocked(candidate: MemoryRecord) -> tuple[MemoryRecord, bool]:
+    """Write ``candidate`` under its own name; ``(record, created)``. The caller holds the lock."""
+    existing = load_memory(candidate.slug)
+    now = _now_iso()
+    record = replace(
+        candidate,
+        created_at=existing.created_at if existing else now,
+        updated_at=now,
+    )
+    write_record_unlocked(record)
+    rebuild_index_best_effort()
+    return record, existing is None
+
+
 def save_memory(
     *,
     slug: str,
@@ -155,46 +207,70 @@ def save_memory(
     each other's content. Raises ``ValueError`` for an invalid slug or unsafe
     content.
     """
-    candidate = build_record(
+    candidate = _candidate(
         slug=slug,
         memory_type=memory_type,
         description=description,
         body=body,
-        created_at="",
-        updated_at="",
         source=source,
         evidence=evidence,
         verified=verified,
     )
-    try:
-        with memory_lock():
-            existing = load_memory(slug)
-            now = _now_iso()
-            record = replace(
-                candidate,
-                created_at=existing.created_at if existing else now,
-                updated_at=now,
-            )
-            write_record_unlocked(record)
-            rebuild_index_best_effort()
-            return record, existing is None
-    except Timeout:
-        print(f"[memory] timed out acquiring lock to save memory {slug!r}", file=sys.stderr)
-        return None
-    except OSError as exc:
-        print(f"[memory] failed to save memory {slug!r}: {exc}", file=sys.stderr)
-        return None
+    return _locked_save(slug, lambda: _place_unlocked(candidate))
 
 
 def _stronger_provenance(
     kept: MemoryRecord, update: MemoryRecord
-) -> tuple[MemorySource | None, str, bool | None]:
-    """The update's provenance when it is better supported than the kept memory's."""
-    if update.verified and not kept.verified:
+) -> tuple[MemorySource | None, str, bool | None] | None:
+    """The update's provenance when it is better supported than the kept memory's, else ``None``."""
+    if (update.verified and not kept.verified) or (kept.source is None and update.source):
         return update.source, update.evidence, update.verified
-    if kept.source is None and update.source is not None:
-        return update.source, update.evidence, update.verified
-    return kept.source, kept.evidence, kept.verified
+    return None
+
+
+def _merge_target(candidate: MemoryRecord) -> tuple[MemoryRecord, str] | None:
+    """The live memory ``candidate`` repeats and the combined body, or ``None``."""
+    duplicate = closest_duplicate(
+        candidate.slug,
+        candidate.memory_type,
+        candidate.description,
+        [record for record in list_memories() if not is_fenced_record(record)],
+    )
+    if duplicate is None:
+        return None
+    folded = folded_body(duplicate.body, candidate.body)
+    return (duplicate, folded) if folded is not None else None
+
+
+def _fold_unlocked(candidate: MemoryRecord) -> tuple[MemoryRecord, str]:
+    """Write ``candidate``, folding it into the memory it repeats; the caller holds the lock."""
+    target = _merge_target(candidate) if load_memory(candidate.slug) is None else None
+    if target is None:
+        record, created = _place_unlocked(candidate)
+        return record, "created" if created else "updated"
+    duplicate, folded = target
+    provenance = _stronger_provenance(duplicate, candidate)
+    if folded == duplicate.body.strip() and provenance is None:
+        return duplicate, "unchanged"
+    source, evidence, verified = provenance or (
+        duplicate.source,
+        duplicate.evidence,
+        duplicate.verified,
+    )
+    record = build_record(
+        slug=duplicate.slug,
+        memory_type=duplicate.memory_type,
+        description=duplicate.description,
+        body=folded,
+        created_at=duplicate.created_at,
+        updated_at=_now_iso(),
+        source=source,
+        evidence=evidence,
+        verified=verified,
+    )
+    write_record_unlocked(record)
+    rebuild_index_best_effort()
+    return record, "merged"
 
 
 def save_memory_merging_duplicates(
@@ -218,69 +294,16 @@ def save_memory_merging_duplicates(
     update added nothing), or ``None`` on I/O failure. Raises ``ValueError``
     like :func:`save_memory`.
     """
-    candidate = build_record(
+    candidate = _candidate(
         slug=slug,
         memory_type=memory_type,
         description=description,
         body=body,
-        created_at="",
-        updated_at="",
         source=source,
         evidence=evidence,
         verified=verified,
     )
-    try:
-        with memory_lock():
-            now = _now_iso()
-            existing = load_memory(slug)
-            duplicate = (
-                None
-                if existing is not None
-                else closest_duplicate(
-                    slug,
-                    candidate.memory_type,
-                    candidate.description,
-                    [record for record in list_memories() if not is_fenced_record(record)],
-                )
-            )
-            folded = folded_body(duplicate.body, candidate.body) if duplicate else None
-            if duplicate is None or folded is None:
-                record = replace(
-                    candidate,
-                    created_at=existing.created_at if existing else now,
-                    updated_at=now,
-                )
-                outcome = "updated" if existing is not None else "created"
-            else:
-                provenance = _stronger_provenance(duplicate, candidate)
-                unchanged = folded == duplicate.body.strip() and provenance == (
-                    duplicate.source,
-                    duplicate.evidence,
-                    duplicate.verified,
-                )
-                if unchanged:
-                    return duplicate, "unchanged"
-                record = build_record(
-                    slug=duplicate.slug,
-                    memory_type=duplicate.memory_type,
-                    description=duplicate.description,
-                    body=folded,
-                    created_at=duplicate.created_at,
-                    updated_at=now,
-                    source=provenance[0],
-                    evidence=provenance[1],
-                    verified=provenance[2],
-                )
-                outcome = "merged"
-            write_record_unlocked(record)
-            rebuild_index_best_effort()
-            return record, outcome
-    except Timeout:
-        print(f"[memory] timed out acquiring lock to save memory {slug!r}", file=sys.stderr)
-        return None
-    except OSError as exc:
-        print(f"[memory] failed to save memory {slug!r}: {exc}", file=sys.stderr)
-        return None
+    return _locked_save(slug, lambda: _fold_unlocked(candidate))
 
 
 def load_memory(slug: str) -> MemoryRecord | None:
@@ -338,6 +361,16 @@ def parsed_memories(
             records.append(record)
     records.sort(key=lambda r: r.updated_at, reverse=True)
     return tuple(records)
+
+
+def read_memories(directory: Path) -> tuple[MemoryRecord, ...]:
+    """Every parseable memory under ``directory``, most recently updated first, uncached.
+
+    For whole-organization passes (the audit, the web app mirror): read
+    through :func:`parsed_memories` they would evict the stores members'
+    turns are using from its small cache, one member after another.
+    """
+    return parsed_memories.__wrapped__(str(directory), ())
 
 
 def list_memories() -> list[MemoryRecord]:
@@ -414,6 +447,7 @@ __all__ = [
     "memory_path",
     "parsed_memories",
     "rebuild_index",
+    "read_memories",
     "rebuild_index_best_effort",
     "save_memory",
     "save_memory_merging_duplicates",

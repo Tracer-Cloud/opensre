@@ -31,6 +31,7 @@ from core.domain.memory.models import (
     MemoryType,
 )
 from core.domain.memory.similarity import POSSIBLE_DUPLICATE_SIMILARITY, duplicate_clusters
+from core.domain.memory.stamps import last_activity
 from core.domain.memory.usage import MemoryUsage
 
 #: A memory neither updated nor used for this long is reported as stale.
@@ -51,6 +52,11 @@ _TRANSIENT_RE = re.compile(
     r")\b"
 )
 _LOCAL_PATH_RE = re.compile(r"(?:^|[\s`'\"(])(?:/Users/|/home/|[A-Za-z]:\\Users\\)")
+
+
+def health_score(total: int, flagged: int) -> int:
+    """Share of ``total`` memories with no finding, 0–100; 100 when there are none."""
+    return 100 if not total else round(100 * (total - flagged) / total)
 
 
 @dataclass(frozen=True)
@@ -82,9 +88,7 @@ class MemoryAudit:
     @property
     def score(self) -> int:
         """Share of memories with no finding, 0–100; 100 for an empty store."""
-        if not self.total:
-            return 100
-        return round(100 * (self.total - len(self.flagged)) / self.total)
+        return health_score(self.total, len(self.flagged))
 
     def summary(self) -> dict[str, Any]:
         """Counts only: safe to show anyone who may see that the store exists."""
@@ -111,23 +115,6 @@ class MemoryAudit:
         }
 
 
-def _parse_stamp(value: str) -> datetime | None:
-    try:
-        stamp = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
-
-
-def _last_activity(record: MemoryRecord, usage: MemoryUsage) -> datetime | None:
-    stamps = [
-        stamp
-        for stamp in (_parse_stamp(record.updated_at), _parse_stamp(usage.last_used_at))
-        if stamp is not None
-    ]
-    return max(stamps) if stamps else None
-
-
 def _record_findings(record: MemoryRecord, usage: MemoryUsage, now: datetime) -> list[AuditFinding]:
     findings: list[AuditFinding] = []
     header = f"{record.slug.replace('-', ' ')} {record.description}".lower()
@@ -143,7 +130,7 @@ def _record_findings(record: MemoryRecord, usage: MemoryUsage, now: datetime) ->
     if record.memory_type in _FACT_TYPES and not record.verified:
         reason = "no provenance" if record.source is None else f"source {record.source}, unverified"
         findings.append(AuditFinding("unverified", record.slug, reason))
-    last = _last_activity(record, usage)
+    last = last_activity(record, usage)
     if (
         record.memory_type not in NON_EXPIRING_MEMORY_TYPES
         and last is not None
@@ -188,9 +175,8 @@ def audit_memories(
 
 
 __all__ = [
-    "OVERSIZE_BODY_CHARS",
-    "STALE_FINDING_AFTER",
     "AuditFinding",
+    "health_score",
     "MemoryAudit",
     "audit_memories",
 ]

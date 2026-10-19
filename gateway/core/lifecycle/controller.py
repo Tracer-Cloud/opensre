@@ -29,7 +29,6 @@ from config.constants.gateway import (
     KNOWLEDGE_THREAD_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_STOP_BUDGET_SHARE,
-    WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS,
     WEBAPP_LOOP_SYNC_INTERVAL_SECONDS,
     WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS,
 )
@@ -198,7 +197,7 @@ class GatewayController:
             self.components["scheduler"] = f"running {task_count} scheduled task(s)"
         self._start_scheduler_reload_watcher(logger)
         self._start_webapp_loop_sync(logger)
-        self._start_knowledge(logger)
+        self._start_knowledge()
 
     def stop(self, *, timeout: float | None = None) -> bool:
         """Shut down all components and return whether the chat workers stopped.
@@ -351,7 +350,7 @@ class GatewayController:
         )
         self._webapp_loop_sync_thread.start()
 
-    def _start_knowledge(self, logger: logging.Logger) -> None:
+    def _start_knowledge(self) -> None:
         """Keep workspace knowledge current and mirror it to the web app's Knowledge page.
 
         Scans run whenever workspace knowledge is on; the mirror only on a
@@ -375,21 +374,13 @@ class GatewayController:
             )
         sync = webapp_knowledge_sync(scans)
         if sync is not None:
-
-            def _sync_forever() -> None:
-                while not self._stopped.is_set():
-                    try:
-                        sync.sync()
-                    except Exception as exc:  # noqa: BLE001 - keep syncing after one bad pass
-                        logger.warning(
-                            "[gateway] web app knowledge sync failed (%s)", type(exc).__name__
-                        )
-                    self._stopped.wait(WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS)
-
             self.components["webapp_knowledge"] = "syncing with the web app"
             self._knowledge_threads.append(
                 threading.Thread(
-                    target=_sync_forever, name="opensre-webapp-knowledge-sync", daemon=True
+                    target=sync.run_forever,
+                    args=(self._stopped,),
+                    name="opensre-webapp-knowledge-sync",
+                    daemon=True,
                 )
             )
         for thread in self._knowledge_threads:

@@ -31,6 +31,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 
 from core.domain.memory.models import WORKSPACE_ONLY_MEMORY_TYPES, MemoryRecord, MemoryType
 from core.domain.memory.relevance import tokenize
@@ -83,6 +84,7 @@ class Subject:
     negated: bool
 
 
+@lru_cache(maxsize=4096)
 def subject_of(slug: str, description: str) -> Subject:
     """The subject of a memory header: content words plus the guards' facts."""
     header = f"{slug} {description}".lower()
@@ -124,10 +126,8 @@ def closest_duplicate(
     memory_type: MemoryType,
     description: str,
     candidates: Sequence[MemoryRecord],
-    *,
-    threshold: float = DUPLICATE_SIMILARITY,
 ) -> MemoryRecord | None:
-    """The live memory of the same type most like this header, if any reaches ``threshold``.
+    """The live memory of the same type most like this header, if any is a duplicate.
 
     A candidate with the same slug is the memory itself, not a duplicate of it.
     """
@@ -139,12 +139,11 @@ def closest_duplicate(
         if record.memory_type is not memory_type or record.slug == slug:
             continue
         score = similarity(wanted, _record_subject(record))
-        if score < threshold:
+        if score < DUPLICATE_SIMILARITY:
             continue
         # Ties go to the most recently updated memory.
-        key = (score, record.updated_at, record)
-        if best is None or key[:2] > best[:2]:
-            best = key
+        if best is None or (score, record.updated_at) > best[:2]:
+            best = (score, record.updated_at, record)
     return best[2] if best is not None else None
 
 
@@ -159,28 +158,34 @@ def duplicate_clusters(
     updated first, so its head is the memory to keep; groups are ordered by
     their head's slug for stable output.
     """
-    eligible = sorted(
+    # Only memories that agree on type and on every guard can score above zero,
+    # so compare within those buckets instead of across the whole store.
+    buckets: dict[tuple[MemoryType, bool, frozenset[str]], list[MemoryRecord]] = {}
+    for record in sorted(
         (record for record in records if matchable(record.memory_type)),
         key=lambda record: (record.updated_at, record.slug),
         reverse=True,
-    )
-    subjects = {record.slug: _record_subject(record) for record in eligible}
-    grouped: set[str] = set()
+    ):
+        subject = _record_subject(record)
+        buckets.setdefault((record.memory_type, subject.negated, subject.identifiers), []).append(
+            record
+        )
     clusters: list[list[MemoryRecord]] = []
-    for head in eligible:
-        if head.slug in grouped:
-            continue
-        group = [head] + [
-            other
-            for other in eligible
-            if other.slug != head.slug
-            and other.slug not in grouped
-            and other.memory_type is head.memory_type
-            and similarity(subjects[head.slug], subjects[other.slug]) >= threshold
-        ]
-        if len(group) > 1:
-            grouped.update(record.slug for record in group)
-            clusters.append(group)
+    for bucket in buckets.values():
+        grouped: set[str] = set()
+        for index, head in enumerate(bucket):
+            if head.slug in grouped:
+                continue
+            head_subject = _record_subject(head)
+            group = [head] + [
+                other
+                for other in bucket[index + 1 :]
+                if other.slug not in grouped
+                and similarity(head_subject, _record_subject(other)) >= threshold
+            ]
+            if len(group) > 1:
+                grouped.update(record.slug for record in group)
+                clusters.append(group)
     clusters.sort(key=lambda group: group[0].slug)
     return clusters
 
@@ -190,8 +195,6 @@ __all__ = [
     "POSSIBLE_DUPLICATE_SIMILARITY",
     "closest_duplicate",
     "duplicate_clusters",
-    "Subject",
-    "matchable",
     "similarity",
     "subject_of",
 ]

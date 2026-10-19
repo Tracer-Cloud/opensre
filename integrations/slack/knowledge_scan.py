@@ -27,7 +27,6 @@ with the scan as evidence. A failed scan keeps the previous entries.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from collections.abc import Sequence
@@ -45,6 +44,8 @@ from core.domain.knowledge import (
     scan_messages_enabled,
 )
 from core.domain.memory import MAX_BODY_CHARS, MemoryType, redact_memory_unsafe_text
+from core.llm.shared.structured_output import extract_json_payload
+from infrastructure.text.truncation import clip_line
 from integrations.slack.web_client import (
     SlackBotTarget,
     fetch_channel_messages,
@@ -80,7 +81,6 @@ _CHANNEL_MAP_INTRO = (
 ENTRY_BODY_BUDGET = MAX_BODY_CHARS - 100
 _OMITTED_LINE_RESERVE = 80
 _HUMAN_USER_RE = re.compile(r"^[UW][A-Z0-9]+$")
-_FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 _OVERVIEW_PROMPT = """\
 You are writing the organization profile an SRE assistant reads before every
@@ -138,7 +138,7 @@ class SlackWorkspaceView:
 
 def _clean(text: object, limit: int) -> str:
     """Slack-authored text as stored and shown to the model: one line, capped, secrets redacted."""
-    return _clip(redact_memory_unsafe_text(" ".join(str(text or "").split())), limit)
+    return clip_line(redact_memory_unsafe_text(str(text or "")), limit)
 
 
 def _full_members(raw_members: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -241,23 +241,11 @@ def sample_messages(
 
 
 def _json_object(reply: str) -> dict[str, Any]:
-    text = reply.strip()
-    fenced = _FENCED_JSON_RE.search(text)
-    if fenced:
-        text = fenced.group(1)
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end <= start:
-        return {}
     try:
-        loaded = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
+        loaded = extract_json_payload(reply)
+    except ValueError:
         return {}
     return loaded if isinstance(loaded, dict) else {}
-
-
-def _clip(text: str, limit: int) -> str:
-    text = " ".join(text.split())
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def summarize_workspace(
@@ -290,7 +278,7 @@ def summarize_workspace(
     known = {c.name for c in view.channels}
     notes = (
         {
-            str(name).lstrip("#"): _clip(redact_memory_unsafe_text(str(note)), _NOTE_CHARS)
+            str(name).lstrip("#"): clip_line(redact_memory_unsafe_text(str(note)), _NOTE_CHARS)
             for name, note in raw_notes.items()
             if str(name).lstrip("#") in known and str(note).strip()
         }
@@ -298,7 +286,7 @@ def summarize_workspace(
         else {}
     )
     text = redact_memory_unsafe_text(str(overview)) if isinstance(overview, str) else ""
-    return _clip(text, _OVERVIEW_CHARS), notes
+    return clip_line(text, _OVERVIEW_CHARS), notes
 
 
 def _channel_note(channel: SlackChannel, notes: dict[str, str]) -> str:
@@ -381,7 +369,7 @@ def render_channel_map(view: SlackWorkspaceView, *, notes: dict[str, str]) -> tu
     rows = [
         f"| #{channel.name}{' (shared with another org)' if channel.ext_shared else ''} | "
         f"{channel.members} | {'yes' if channel.bot_is_member else 'no'} | "
-        f"{_cell(_clip(_channel_note(channel, notes), _NOTE_CHARS))} |"
+        f"{_cell(clip_line(_channel_note(channel, notes), _NOTE_CHARS))} |"
         for channel in view.channels[:MAX_MAPPED_CHANNELS]
     ]
     kept, hidden = _rows_within(rows, ENTRY_BODY_BUDGET - _length(head) - _OMITTED_LINE_RESERVE)
@@ -395,11 +383,26 @@ def render_channel_map(view: SlackWorkspaceView, *, notes: dict[str, str]) -> tu
     return description, "\n".join(lines)
 
 
+def refresh_slack_readers(target: SlackBotTarget | None = None) -> bool:
+    """Re-record who may read workspace knowledge from one member-list read; ``False`` on failure.
+
+    The full scan records readers too; this keeps them current between scans.
+    """
+    if target is None:
+        target, _error = resolve_bot_token()
+        if target is None:
+            return False
+    members, _error, truncated = fetch_team_members(target, max_pages=MAX_MEMBER_PAGES)
+    if members is None:
+        return False
+    member_ids = sorted(str(m["id"]) for m in _full_members(members) if m.get("id"))
+    return record_workspace_readers(SERVICE, member_ids, merge=truncated)
+
+
 def scan_slack_workspace(
     *,
     summarize: Summarize | None = None,
     target: SlackBotTarget | None = None,
-    now: datetime | None = None,
 ) -> ScanOutcome:
     """Read the workspace and rewrite the ``organization`` and ``integration-slack`` entries."""
     if target is None:
@@ -416,7 +419,7 @@ def scan_slack_workspace(
         return ScanOutcome(SERVICE, ok=False, error="Workspace knowledge could not be written.")
     samples = sample_messages(target, view.channels) if scan_messages_enabled() else {}
     overview, notes = summarize_workspace(view, samples, summarize) if summarize else ("", {})
-    stamp = (now or datetime.now(UTC)).date().isoformat()
+    stamp = datetime.now(UTC).date().isoformat()
     read = "team.info, users.list, conversations.list"
     if samples:
         read += f", history of {len(samples)} public channels"
@@ -464,6 +467,7 @@ __all__ = [
     "SlackPerson",
     "SlackWorkspaceView",
     "read_workspace",
+    "refresh_slack_readers",
     "render_channel_map",
     "render_organization",
     "sample_messages",

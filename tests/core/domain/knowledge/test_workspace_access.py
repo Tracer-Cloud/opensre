@@ -7,6 +7,9 @@ organization profile built from public channels they cannot see.
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
+from typing import Any, cast
+
 import pytest
 
 from config.constants import OPENSRE_MEMORY_DISABLED_ENV, OPENSRE_MEMORY_GATEWAY_ENABLED_ENV
@@ -37,7 +40,7 @@ def _organization_knowledge(monkeypatch: pytest.MonkeyPatch) -> None:
     assert record_workspace_readers("slack", ["U_MEMBER"])
 
 
-def _turn_as(actor: str) -> object:
+def _turn_as(actor: str) -> AbstractContextManager[StorageScope]:
     return bound_storage_scope(StorageScope(principal=Principal.org("org_A"), actor=Actor(actor)))
 
 
@@ -76,5 +79,20 @@ def test_a_guest_cannot_read_workspace_knowledge_through_the_slash_command() -> 
     for actor, visible in (("U_GUEST", False), ("U_MEMBER", True)):
         out = StringIO()
         with bound_usage_context(surface=UsageSurface.SLACK), _turn_as(actor):
-            command.handler(None, Console(file=out, width=200), ["show", "organization"])
+            command.handler(cast(Any, None), Console(file=out, width=200), ["show", "organization"])
         assert ("Acme sells payment terminals." in out.getvalue()) is visible
+
+
+@pytest.mark.parametrize(("actor", "visible"), [("U_GUEST", False), ("U_MEMBER", True)])
+def test_a_cli_child_a_guest_turn_started_reads_as_that_guest(
+    monkeypatch: pytest.MonkeyPatch, actor: str, visible: bool
+) -> None:
+    # Review finding: `opensre knowledge show` run by a turn's shell saw no
+    # bound scope and read as the deployment, so a guest's turn printed it.
+    from config.constants.tenancy import TURN_ACTOR_ID_ENV, TURN_ORGANIZATION_ID_ENV
+    from core.domain.knowledge import readable_workspace_entry
+
+    monkeypatch.setenv(TURN_ORGANIZATION_ID_ENV, "org_A")
+    monkeypatch.setenv(TURN_ACTOR_ID_ENV, actor)
+
+    assert (readable_workspace_entry(ORGANIZATION_SLUG) is not None) is visible

@@ -18,22 +18,19 @@ Nothing here raises to the caller's thread.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import logging
-import os
+import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from http import HTTPStatus
 from typing import Any
 
 import httpx
 
 import config.constants.paths as paths
-from config.account import resolve_account_token
-from config.constants.billing import WEBAPP_URL_ENV
-from config.constants.organization import organization_id
+from config.constants.gateway import WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from core.domain.knowledge import (
@@ -50,10 +47,13 @@ from core.domain.memory import (
     slugify,
 )
 from integrations.webapp_knowledge.snapshot import build_snapshot
-from integrations.webapp_scheduled_loops.request_ledger import (
+from integrations.webapp_requests import (
     LedgerUnavailable,
     RecordedOutcome,
     RequestLedger,
+    WebappAgentClient,
+    WebappAgentTarget,
+    webapp_agent_target,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 _KNOWLEDGE_PATH = "/api/agent/knowledge"
 _REQUESTS_PATH = f"{_KNOWLEDGE_PATH}/requests"
 _LEDGER_FILENAME = "webapp_knowledge_requests.json"
-_TIMEOUT_SECONDS = 15.0
+_LOG_TAG = "webapp-knowledge"
 #: An unchanged mirror is sent again after this long.
 HEARTBEAT_SECONDS = 10 * 60
 _SYNC_ACTOR = "webapp-knowledge"
@@ -86,14 +86,20 @@ class WebappKnowledgeSync:
         clock: Callable[[], float] = time.monotonic,
         ledger: RequestLedger | None = None,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
         self._organization = organization
-        self._token = token
+        self._client = WebappAgentClient(
+            WebappAgentTarget(
+                base_url=base_url.rstrip("/"), organization=organization, token=token
+            ),
+            log_tag=_LOG_TAG,
+            http=http,
+        )
         self._request_rescan = request_rescan
         self._scan_status = scan_status
-        self._http = http
         self._clock = clock
-        self._ledger = ledger or RequestLedger(paths.OPENSRE_HOME_DIR / _LEDGER_FILENAME)
+        self._ledger = ledger or RequestLedger(
+            paths.OPENSRE_HOME_DIR / _LEDGER_FILENAME, log_tag=_LOG_TAG
+        )
         self._reported_digest = ""
         self._reported_at: float | None = None
         #: Outcomes applied here that the ledger could not take yet, by request id.
@@ -110,7 +116,7 @@ class WebappKnowledgeSync:
         be applied for a passing reason (the store was locked) stays pending.
         """
         changed = False
-        pending = self._pending_requests()
+        pending = self._client.pending_requests(_REQUESTS_PATH)
         if pending is not None:
             # A request the app no longer delivers is settled there: drop what we held for it.
             delivered = {str(request.get("id") or "") for request in pending}
@@ -154,13 +160,14 @@ class WebappKnowledgeSync:
         """Send the mirror when it changed, when forced, or when the heartbeat is due."""
         with self._scope():
             snapshot = build_snapshot(self._organization, scans=self._scans())
+        # The snapshot is built in a fixed order, so its JSON needs no sorting to compare.
         stable = {key: value for key, value in snapshot.items() if key != "generatedAt"}
-        digest = hashlib.sha256(json.dumps(stable, sort_keys=True).encode()).hexdigest()
+        digest = hashlib.sha256(json.dumps(stable).encode()).hexdigest()
         now = self._clock()
         heartbeat_due = self._reported_at is None or now - self._reported_at >= HEARTBEAT_SECONDS
         if not force and digest == self._reported_digest and not heartbeat_due:
             return
-        response = self._call("PUT", _KNOWLEDGE_PATH, json=snapshot)
+        response = self._client.call("PUT", _KNOWLEDGE_PATH, json=snapshot)
         if response is not None and response.status_code == HTTPStatus.OK:
             self._reported_digest, self._reported_at = digest, now
 
@@ -173,24 +180,10 @@ class WebappKnowledgeSync:
             logger.debug("[webapp-knowledge] scan status unavailable", exc_info=True)
             return []
 
-    @contextlib.contextmanager
-    def _scope(self) -> Iterator[None]:
-        scope = StorageScope(principal=Principal.org(self._organization), actor=Actor(_SYNC_ACTOR))
-        with bound_storage_scope(scope):
-            yield
-
-    def _pending_requests(self) -> list[Mapping[str, Any]] | None:
-        """The app's pending requests, or ``None`` when it could not be asked."""
-        response = self._call("GET", _REQUESTS_PATH, params={"organizationId": self._organization})
-        if response is None or response.status_code != HTTPStatus.OK:
-            return None
-        try:
-            data = response.json().get("data")
-        except (ValueError, AttributeError):
-            return None
-        if not isinstance(data, list):
-            return None
-        return [item for item in data if isinstance(item, Mapping) and item.get("id")]
+    def _scope(self) -> Any:
+        return bound_storage_scope(
+            StorageScope(principal=Principal.org(self._organization), actor=Actor(_SYNC_ACTOR))
+        )
 
     def _apply(self, request: Mapping[str, Any]) -> RecordedOutcome | None:
         """The request's outcome, or ``None`` to leave it pending for a later pass."""
@@ -222,29 +215,24 @@ class WebappKnowledgeSync:
         return RecordedOutcome(True)
 
     def _acknowledge(self, request_id: str, outcome: RecordedOutcome) -> None:
-        body: dict[str, Any] = {
-            "organizationId": self._organization,
-            "status": "applied" if outcome.applied else "failed",
-        }
+        body: dict[str, Any] = {"status": "applied" if outcome.applied else "failed"}
         if outcome.error:
             body["error"] = outcome.error
-        self._call("POST", f"{_REQUESTS_PATH}/{request_id}", json=body)
+        self._client.acknowledge(_REQUESTS_PATH, request_id, body)
 
-    def _call(self, method: str, path: str, **kwargs: Any) -> Any:
-        try:
-            response = self._http.request(
-                method,
-                f"{self._base_url}{path}",
-                headers={"Authorization": f"Bearer {self._token}"},
-                timeout=_TIMEOUT_SECONDS,
-                **kwargs,
-            )
-        except httpx.HTTPError as exc:
-            logger.warning("[webapp-knowledge] %s %s failed (%s)", method, path, type(exc).__name__)
-            return None
-        if response.status_code not in (HTTPStatus.OK, HTTPStatus.NOT_FOUND):
-            logger.warning("[webapp-knowledge] %s %s -> %s", method, path, response.status_code)
-        return response
+    def run_forever(
+        self,
+        stopped: threading.Event,
+        *,
+        interval_seconds: float = WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS,
+    ) -> None:
+        """Sync until ``stopped``, one pass every ``interval_seconds``."""
+        while not stopped.is_set():
+            try:
+                self.sync()
+            except Exception as exc:  # noqa: BLE001 - keep syncing after one bad pass
+                logger.warning("[%s] sync pass failed (%s)", _LOG_TAG, type(exc).__name__)
+            stopped.wait(interval_seconds)
 
 
 def _forget_memory(actor: str, name: str) -> RecordedOutcome | None:
@@ -287,15 +275,13 @@ def webapp_knowledge_sync_from_environment(
     """The sync for this hosted gateway, or ``None`` off a hosted organization."""
     if not knowledge_enabled():
         return None
-    org = organization_id()
-    base_url = (os.getenv(WEBAPP_URL_ENV) or "").strip()
-    token = resolve_account_token()
-    if not org or not token or not base_url.lower().startswith("https://"):
+    target = webapp_agent_target()
+    if target is None:
         return None
     return WebappKnowledgeSync(
-        base_url=base_url,
-        organization=org,
-        token=token,
+        base_url=target.base_url,
+        organization=target.organization,
+        token=target.token,
         request_rescan=request_rescan,
         scan_status=scan_status,
     )

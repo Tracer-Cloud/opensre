@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 import infrastructure.scheduling.scheduler as scheduler_pkg
-import integrations.webapp_scheduled_loops.request_ledger as request_ledger
+import integrations.webapp_requests.ledger as request_ledger
 import integrations.webapp_scheduled_loops.sync as sync_module
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
@@ -47,7 +47,6 @@ def _scheduler_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         module = importlib.import_module(info.name)
         if hasattr(module, "OPENSRE_HOME_DIR"):
             monkeypatch.setattr(module, "OPENSRE_HOME_DIR", home)
-    monkeypatch.setattr(request_ledger, "OPENSRE_HOME_DIR", home)
 
 
 @dataclass
@@ -215,6 +214,39 @@ def test_a_redelivered_pause_never_undoes_a_later_resume() -> None:
     stored = get_task(created.task.id)
     assert stored is not None and stored.enabled
     assert [ack["status"] for _, ack in webapp.acks] == ["applied", "applied"]
+
+
+def test_a_create_recorded_before_the_ledger_was_shared_is_not_created_again() -> None:
+    # The shared ledger names the produced id ``ref``; a ledger already on a
+    # gateway's volume calls it ``loop_id`` and must still answer redeliveries.
+    import json
+    import time
+
+    from config.constants import paths
+
+    ledger = paths.OPENSRE_HOME_DIR / "webapp_loop_requests.json"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                f"{_ORG}:{_REQUEST_ID}": {
+                    "applied": True,
+                    "loop_id": "loop_first",
+                    "error": "",
+                    "recorded_at": time.time(),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    webapp = _Webapp(pending=[_create_request()])
+
+    _sync(webapp).sync()
+
+    assert list_tasks() == []
+    assert webapp.acks == [
+        (_REQUEST_ID, {"organizationId": _ORG, "status": "applied", "loopId": "loop_first"})
+    ]
 
 
 def test_a_create_waits_while_the_store_cannot_be_read_completely(

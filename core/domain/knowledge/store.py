@@ -1,18 +1,21 @@
-"""Workspace knowledge: the organization-wide store beside each member's memory.
+"""Workspace knowledge on disk: the organization-wide store beside each member's memory.
 
 It is the memory engine pointed at another root (``<org root>/knowledge/``,
 see :func:`config.constants.get_knowledge_dir`): the same file format, safety
-checks, ranking, usage counts, locks and caches. Only the entry types differ.
-A workspace entry is never about one person, so ``user`` and ``preference``
-are refused here, and the scan-only ``organization`` and ``integration`` types
-are accepted only here.
+checks, ranking, locks and caches. Only the entry types differ. A workspace
+entry is never about one person, so ``user`` and ``preference`` are refused
+here, and the scan-only ``organization`` and ``integration`` types are
+accepted only here.
+
+These functions do not check who is asking: they serve the scans that write
+the store and the web app mirror. A turn reads it through
+:mod:`core.domain.knowledge.reading`, which admits only members.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 
 from config.constants import get_knowledge_dir
@@ -48,24 +51,30 @@ def knowledge_dir() -> Path:
 
 @contextmanager
 def workspace_store() -> Iterator[Path]:
-    """Bind the memory engine to the workspace store for the block, creating it if needed."""
+    """Bind the memory engine to the workspace store for the block; reads only.
+
+    Binding never creates anything: the engine reads a missing store as empty.
+    """
     with memory_root(knowledge_dir()) as directory:
+        yield directory
+
+
+@contextmanager
+def writable_workspace_store() -> Iterator[Path]:
+    """Bind the workspace store for a write, creating it (and its index) if needed."""
+    with workspace_store() as directory:
         ensure_memory_store()
         yield directory
 
 
 def list_workspace_entries() -> list[MemoryRecord]:
     """Live workspace entries, most recently updated first."""
-    if not knowledge_dir().is_dir():
-        return []
     with workspace_store():
         return live_memories()
 
 
 def load_workspace_entry(slug: str) -> MemoryRecord | None:
     """One live workspace entry by name, or ``None``."""
-    if not knowledge_dir().is_dir():
-        return None
     with workspace_store():
         return load_live_memory(slug)
 
@@ -87,7 +96,7 @@ def save_workspace_entry(
     """
     if memory_type not in WORKSPACE_TYPES:
         raise ValueError(f"{memory_type} is personal and never stored as workspace knowledge")
-    with workspace_store():
+    with writable_workspace_store():
         saved = save_memory(
             slug=slug,
             memory_type=memory_type,
@@ -102,9 +111,9 @@ def save_workspace_entry(
 
 def delete_workspace_entry(slug: str) -> bool:
     """Delete one workspace entry; ``True`` when a file was removed."""
-    if not knowledge_dir().is_dir():
+    if not workspace_entry_exists(slug):
         return False
-    with workspace_store():
+    with writable_workspace_store():
         return delete_memory(slug)
 
 
@@ -113,22 +122,10 @@ def workspace_entry_exists(slug: str) -> bool:
     return (knowledge_dir() / f"{slug}.md").is_file()
 
 
-def entry_age_seconds(record: MemoryRecord, *, now: datetime | None = None) -> float | None:
-    """Seconds since ``record`` was last written; ``None`` when its stamp is unreadable."""
-    try:
-        updated = datetime.fromisoformat(record.updated_at)
-    except ValueError:
-        return None
-    if updated.tzinfo is None:
-        updated = updated.replace(tzinfo=UTC)
-    return ((now or datetime.now(UTC)) - updated).total_seconds()
-
-
 __all__ = [
     "ORGANIZATION_SLUG",
     "WORKSPACE_TYPES",
     "delete_workspace_entry",
-    "entry_age_seconds",
     "integration_slug",
     "knowledge_dir",
     "list_workspace_entries",
@@ -136,4 +133,5 @@ __all__ = [
     "save_workspace_entry",
     "workspace_entry_exists",
     "workspace_store",
+    "writable_workspace_store",
 ]

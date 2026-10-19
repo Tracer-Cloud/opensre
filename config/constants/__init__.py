@@ -736,6 +736,9 @@ if TYPE_CHECKING:
         KNOWLEDGE_DIRNAME as KNOWLEDGE_DIRNAME,
     )
     from config.constants.knowledge import (
+        KNOWLEDGE_READERS_REFRESH_SECONDS as KNOWLEDGE_READERS_REFRESH_SECONDS,
+    )
+    from config.constants.knowledge import (
         KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS as KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS,
     )
     from config.constants.knowledge import (

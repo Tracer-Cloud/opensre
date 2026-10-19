@@ -52,6 +52,7 @@ CONTEXT_ROOT_ENV = "OPENSRE_CONTEXT_ROOT"
 
 ORGS_DIR_NAME = "orgs"
 USERS_DIR_NAME = "users"
+MEMORY_DIRNAME = "memory"
 
 # Ids reach the filesystem; reject segments that could escape their directory.
 _SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -233,7 +234,17 @@ def get_memory_dir() -> Path:
     override = os.getenv(OPENSRE_MEMORY_DIR_ENV, "").strip()
     if override:
         return Path(override).expanduser()
-    return session_home() / "memory"
+    return session_home() / MEMORY_DIRNAME
+
+
+def member_memory_path(actor_id: str) -> Path:
+    """Where one member's memory lives in this deployment's organization.
+
+    The same layout :func:`session_home` gives that member's own turns; raises
+    :class:`UnsafePathSegmentError` for an id that could escape it.
+    """
+    actor = _safe_segment(actor_id, label="actor id")
+    return deployment_home() / USERS_DIR_NAME / actor / MEMORY_DIRNAME
 
 
 def get_knowledge_dir() -> Path:
@@ -271,6 +282,7 @@ __all__ = [
     "OPENSRE_TMP_DIR",
     "ORGS_DIR_NAME",
     "USERS_DIR_NAME",
+    "MEMORY_DIRNAME",
     "PROJECT_ROOT",
     "REPO_ROOT",
     "SYNTHETIC_SCENARIOS_DIR",
@@ -281,6 +293,7 @@ __all__ = [
     "ensure_opensre_tmp_dir",
     "get_knowledge_dir",
     "get_memory_dir",
+    "member_memory_path",
     "get_sessions_dir",
     "get_store_path",
     "get_work_items_dir",

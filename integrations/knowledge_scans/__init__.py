@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-from integrations.knowledge_scans.registry import SCANNERS, SCANNERS_BY_SERVICE, Scanner
+from integrations.knowledge_scans.registry import SCANNABLE_SERVICES, Scanner
 from integrations.knowledge_scans.service import (
-    SCAN_ACTOR,
     KnowledgeScanService,
+    install_scan_service,
+    installed_scan_service,
     knowledge_scan_service_from_environment,
+    scan_on_request,
 )
-from integrations.knowledge_scans.summarizer import llm_summarizer
 
 __all__ = [
-    "SCANNERS",
-    "SCANNERS_BY_SERVICE",
-    "SCAN_ACTOR",
+    "SCANNABLE_SERVICES",
     "KnowledgeScanService",
     "Scanner",
+    "install_scan_service",
+    "installed_scan_service",
     "knowledge_scan_service_from_environment",
-    "llm_summarizer",
+    "scan_on_request",
 ]

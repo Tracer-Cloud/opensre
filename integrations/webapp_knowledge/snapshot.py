@@ -10,13 +10,14 @@ the web app shows them only to that member and shows admins counts alone
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from core.domain.knowledge import list_workspace_entries
 from core.domain.memory import MemberStore, MemoryRecord, audit_memories, iter_member_stores
-from core.domain.memory.audit import MemoryAudit
+from core.domain.memory.audit import MemoryAudit, health_score
 
 #: Bodies sent per entry; the page links to the full text it does not show.
 MAX_CONTENT_CHARS = 4_000
@@ -39,7 +40,7 @@ _FIT_STEPS: tuple[tuple[int, int, bool], ...] = (
 )
 
 
-def entry_row(record: MemoryRecord, *, content_chars: int = MAX_CONTENT_CHARS) -> dict[str, Any]:
+def _entry_row(record: MemoryRecord, *, content_chars: int) -> dict[str, Any]:
     """One memory or workspace entry as the web app stores it, its body cut to ``content_chars``."""
     content = record.body
     row: dict[str, Any] = {
@@ -60,48 +61,22 @@ def entry_row(record: MemoryRecord, *, content_chars: int = MAX_CONTENT_CHARS) -
     return row
 
 
-def member_row(
-    store: MemberStore,
-    audit: MemoryAudit,
-    *,
-    content_chars: int = MAX_CONTENT_CHARS,
-    memories: int = MAX_MEMORIES_PER_MEMBER,
-    full_audit: bool = True,
-) -> dict[str, Any]:
-    """One member's memories (the most recent ``memories``) and audit.
-
-    Without ``full_audit`` the audit carries counts only, no memory names.
-    """
-    return {
-        "actor": store.actor,
-        "memories": [
-            entry_row(record, content_chars=content_chars) for record in store.records[:memories]
-        ],
-        "total": len(store.records),
-        "audit": audit.to_dict()
-        if full_audit
-        else {**audit.summary(), "duplicate_group_slugs": [], "issues": []},
-    }
-
-
-def rollup(audits: Sequence[MemoryAudit]) -> dict[str, Any]:
+def _rollup(audits: Sequence[MemoryAudit]) -> dict[str, Any]:
     """Organization-wide counts across every member's audit."""
-    findings: dict[str, int] = {}
+    findings: Counter[str] = Counter()
     for audit in audits:
-        for rule, count in audit.summary()["findings"].items():
-            findings[rule] = findings.get(rule, 0) + count
+        findings.update(audit.summary()["findings"])
     total = sum(audit.total for audit in audits)
-    flagged = sum(len(audit.flagged) for audit in audits)
     return {
         "members": len(audits),
         "memories": total,
-        "score": 100 if not total else round(100 * (total - flagged) / total),
+        "score": health_score(total, sum(len(audit.flagged) for audit in audits)),
         "findings": dict(sorted(findings.items())),
     }
 
 
-def _report_bytes(report: Mapping[str, Any]) -> int:
-    return len(json.dumps(report, separators=(",", ":")).encode())
+def _size(value: Any) -> int:
+    return len(json.dumps(value, separators=(",", ":")).encode())
 
 
 def build_snapshot(
@@ -109,60 +84,61 @@ def build_snapshot(
     *,
     scans: Iterable[Mapping[str, Any]] = (),
     stores: Iterable[MemberStore] | None = None,
-    now: datetime | None = None,
     max_bytes: int = MAX_REPORT_BYTES,
 ) -> dict[str, Any]:
     """The full report body, within ``max_bytes``; ``generatedAt`` changes on its own.
 
-    When everything does not fit, bodies are cut shorter and then fewer of
-    each member's most recent memories are sent, until it does (``truncated``
-    and ``total`` say what was left out). Audits always cover every memory.
+    When everything does not fit, bodies are cut shorter, then fewer of each
+    member's most recent memories are sent and audits carry counts only, and
+    as a last resort members and entries are dropped, until it does
+    (``truncated`` and ``total`` say what was left out; the rollup always
+    counts everyone).
     """
-    members: list[tuple[MemberStore, MemoryAudit]] = []
+    members: list[tuple[MemberStore, dict[str, Any], dict[str, Any]]] = []
+    audits: list[MemoryAudit] = []
     for store in stores if stores is not None else iter_member_stores():
         if len(members) >= MAX_MEMBERS:
             break
-        members.append((store, audit_memories(store.records, usage=store.usage, now=now)))
+        audit = audit_memories(store.records, usage=store.usage)
+        audits.append(audit)
+        counts_only = {**audit.summary(), "duplicate_group_slugs": [], "issues": []}
+        members.append((store, audit.to_dict(), counts_only))
     workspace = list_workspace_entries()[:MAX_WORKSPACE_ENTRIES]
-    report: dict[str, Any] = {}
+    base = {
+        "organizationId": organization,
+        "generatedAt": datetime.now(UTC).isoformat(timespec="seconds"),
+        "audit": _rollup(audits),
+        "scans": list(scans),
+    }
+    report: dict[str, Any] = base
     for content_chars, per_member, full_audit in _FIT_STEPS:
         report = {
-            "organizationId": organization,
-            "generatedAt": (now or datetime.now(UTC)).isoformat(timespec="seconds"),
-            "workspace": [
-                entry_row(record, content_chars=min(content_chars, MAX_CONTENT_CHARS))
-                for record in workspace
-            ],
+            **base,
+            "workspace": [_entry_row(record, content_chars=content_chars) for record in workspace],
             "members": [
-                member_row(
-                    store,
-                    audit,
-                    content_chars=content_chars,
-                    memories=per_member,
-                    full_audit=full_audit,
-                )
-                for store, audit in members
+                {
+                    "actor": store.actor,
+                    "memories": [
+                        _entry_row(record, content_chars=content_chars)
+                        for record in store.records[:per_member]
+                    ],
+                    "total": len(store.records),
+                    "audit": full if full_audit else counts_only,
+                }
+                for store, full, counts_only in members
             ],
-            "audit": rollup([audit for _store, audit in members]),
-            "scans": list(scans),
         }
-        if _report_bytes(report) <= max_bytes:
+        size = _size(report)
+        if size <= max_bytes:
             return report
-    # Counts alone still too big: send as many members and entries as fit, so
-    # the report is always accepted (the rollup still counts everyone).
-    while (report["members"] or report["workspace"]) and _report_bytes(report) > max_bytes:
-        (report["members"] or report["workspace"]).pop()
+    # Counts alone are still too big: drop members, then entries, until it fits,
+    # so the report is always accepted.
+    for key in ("members", "workspace"):
+        rows: list[Any] = report[key]
+        while rows and size > max_bytes:
+            # Each element but the last is followed by a comma in compact JSON.
+            size -= _size(rows.pop()) + (1 if rows else 0)
     return report
 
 
-__all__ = [
-    "MAX_CONTENT_CHARS",
-    "MAX_MEMBERS",
-    "MAX_MEMORIES_PER_MEMBER",
-    "MAX_REPORT_BYTES",
-    "MAX_WORKSPACE_ENTRIES",
-    "build_snapshot",
-    "entry_row",
-    "member_row",
-    "rollup",
-]
+__all__ = ["MAX_REPORT_BYTES", "build_snapshot"]

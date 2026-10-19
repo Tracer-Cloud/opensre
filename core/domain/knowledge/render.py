@@ -17,23 +17,19 @@ from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 
-from core.domain.knowledge.store import ORGANIZATION_SLUG, knowledge_dir, workspace_store
-from core.domain.memory import (
-    MemoryRecord,
-    MemoryType,
-    record_memory_usage,
-    select_relevant_memories,
-)
+from core.domain.knowledge.settings import knowledge_available_here
+from core.domain.knowledge.store import ORGANIZATION_SLUG, workspace_store
+from core.domain.memory import MemoryRecord, MemoryType, select_relevant_memories
 from core.domain.memory.index import render_index_lines, render_relevant_entries
 from core.domain.memory.recall import live_memories
 from core.domain.memory.store import memory_dir_signature
 
 #: Budget for the organization entry inlined in the cached block.
-ORGANIZATION_INLINE_CHARS = 2_000
+_ORGANIZATION_INLINE_CHARS = 2_000
 #: Budget for the index lines of the other entries.
-WORKSPACE_INDEX_CHARS = 1_500
-DEFAULT_RELEVANT_WORKSPACE_ITEMS = 3
-DEFAULT_RELEVANT_WORKSPACE_CHARS = 3_000
+_WORKSPACE_INDEX_CHARS = 1_500
+_RELEVANT_ITEMS = 3
+_RELEVANT_CHARS = 3_000
 _ELLIPSIS = "\n…[truncated; memory_recall name=organization for the rest]"
 
 
@@ -53,9 +49,9 @@ def render_workspace_view(records: Sequence[MemoryRecord]) -> str:
     if organization is not None:
         parts.append(
             f"Organization (updated {organization.updated_at[:10]}):\n"
-            + _clip_body(organization.body, ORGANIZATION_INLINE_CHARS)
+            + _clip_body(organization.body, _ORGANIZATION_INLINE_CHARS)
         )
-    lines = render_index_lines(others, max_chars=WORKSPACE_INDEX_CHARS)
+    lines = render_index_lines(others, max_chars=_WORKSPACE_INDEX_CHARS)
     if lines:
         parts.append("Entries:\n" + lines)
     return "\n\n".join(parts)
@@ -68,23 +64,21 @@ def _cached_view(_directory_key: str, _signature: tuple[tuple[str, int, int], ..
 
 
 def render_workspace_block() -> str:
-    """The workspace view for the cached prompt half; ``""`` with no entries."""
-    directory = knowledge_dir()
-    if not directory.is_dir():
+    """The workspace view for the cached prompt half; ``""`` with no entries or no access."""
+    if not knowledge_available_here():
         return ""
     with workspace_store() as bound:
         return _cached_view(str(bound), memory_dir_signature(Path(bound)))
 
 
-def render_relevant_workspace_entries(
-    query_text: str,
-    *,
-    context: Sequence[str] = (),
-    max_items: int = DEFAULT_RELEVANT_WORKSPACE_ITEMS,
-    max_chars: int = DEFAULT_RELEVANT_WORKSPACE_CHARS,
-) -> str:
-    """Full text of the workspace entries that match this request; ``""`` when none do."""
-    if not knowledge_dir().is_dir():
+def render_relevant_workspace_entries(query_text: str, *, context: Sequence[str] = ()) -> str:
+    """Full text of the workspace entries that match this request; ``""`` when none do.
+
+    Workspace entries are not counted as used: nothing orders or ages them by
+    use, and counting would make every matching turn rewrite a file shared by
+    the whole organization.
+    """
+    if not knowledge_available_here():
         return ""
     with workspace_store():
         ranked = [
@@ -92,16 +86,13 @@ def render_relevant_workspace_entries(
             for record in select_relevant_memories(query_text, context=context)
             if record.slug != ORGANIZATION_SLUG
         ]
-        text, slugs = render_relevant_entries(ranked, max_items=max_items, max_chars=max_chars)
-        record_memory_usage(slugs)
+    text, _slugs = render_relevant_entries(
+        ranked, max_items=_RELEVANT_ITEMS, max_chars=_RELEVANT_CHARS
+    )
     return text
 
 
 __all__ = [
-    "DEFAULT_RELEVANT_WORKSPACE_CHARS",
-    "DEFAULT_RELEVANT_WORKSPACE_ITEMS",
-    "ORGANIZATION_INLINE_CHARS",
-    "WORKSPACE_INDEX_CHARS",
     "render_relevant_workspace_entries",
     "render_workspace_block",
     "render_workspace_view",

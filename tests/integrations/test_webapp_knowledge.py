@@ -22,7 +22,7 @@ from config.scope_context import bound_storage_scope
 from core.domain.knowledge import save_workspace_entry
 from core.domain.memory import MemoryType, list_memories, save_memory
 from integrations.webapp_knowledge import WebappKnowledgeSync
-from integrations.webapp_scheduled_loops.request_ledger import RequestLedger
+from integrations.webapp_requests import RequestLedger
 
 _ORG = "org_A"
 
@@ -211,16 +211,22 @@ def test_a_forget_the_store_refused_stays_pending_instead_of_reading_as_done(
     _remember("U_ADA", "concise-reports", "Ada wants concise reports")
     webapp = _Webapp(pending=[_forget_request("33333333-0000-4000-8000-000000000001")])
     sync = _sync(webapp, tmp_path)
-    monkeypatch.setattr(sync_module, "delete_memory", lambda _slug: False)
+    real_delete = sync_module.delete_memory
+    refusals = {"left": 1}
+
+    def refuse_once(slug: str) -> bool:
+        if refusals["left"]:
+            refusals["left"] -= 1
+            return False
+        return real_delete(slug)
+
+    monkeypatch.setattr(sync_module, "delete_memory", refuse_once)
 
     sync.sync()
 
     assert webapp.acks == []
     assert _memories("U_ADA") == ["concise-reports"]
 
-    monkeypatch.undo()
-    monkeypatch.delenv(OPENSRE_MEMORY_DIR_ENV, raising=False)
-    monkeypatch.delenv(OPENSRE_MEMORY_DISABLED_ENV, raising=False)
     sync.sync()
 
     assert [ack["status"] for _id, ack in webapp.acks] == ["applied"]
@@ -232,7 +238,7 @@ def test_an_outcome_the_ledger_cannot_take_is_held_not_acknowledged_or_reapplied
 ) -> None:
     # Review finding: the outcome was acknowledged even when the ledger write
     # failed; if the ack was lost too, the redelivery deleted again.
-    from integrations.webapp_scheduled_loops.request_ledger import LedgerUnavailable
+    from integrations.webapp_requests import LedgerUnavailable
 
     _remember("U_ADA", "concise-reports", "Ada wants concise reports")
     webapp = _Webapp(pending=[_forget_request("44444444-0000-4000-8000-000000000001")])

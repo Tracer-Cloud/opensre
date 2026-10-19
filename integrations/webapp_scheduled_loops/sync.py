@@ -9,7 +9,7 @@ and reports the whole loop list back. Every call uses the gateway's own
 org-scoped token; the webapp refuses the fleet secret on these routes.
 
 Delivery is at least once, so a request id is an idempotency key: each
-outcome is recorded (:mod:`.request_ledger`) before it is acknowledged, and a
+outcome is recorded (:mod:`integrations.webapp_requests.ledger`) before it is acknowledged, and a
 redelivered request is acknowledged again without being applied again. A
 created loop also carries its request id, which covers a crash between the
 create and the record. A ``run`` is recorded before its run starts, so a crash
@@ -21,7 +21,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -30,9 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from config.account import resolve_account_token
-from config.constants.billing import WEBAPP_URL_ENV
-from config.constants.organization import organization_id
+import config.constants.paths as paths
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from infrastructure.scheduling.scheduler.loop_constants import (
@@ -54,10 +51,13 @@ from infrastructure.scheduling.scheduler.runner import run_task_now
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot, has_live_claim
 from infrastructure.scheduling.scheduler.task_visibility import visible_to_current_scope
 from infrastructure.scheduling.scheduler.types import ScheduledTask
-from integrations.webapp_scheduled_loops.request_ledger import (
+from integrations.webapp_requests import (
     LedgerUnavailable,
     RecordedOutcome,
     RequestLedger,
+    WebappAgentClient,
+    WebappAgentTarget,
+    webapp_agent_target,
 )
 
 if TYPE_CHECKING:
@@ -68,6 +68,8 @@ logger = logging.getLogger(__name__)
 _LOOPS_PATH = "/api/agent/scheduled-loops"
 _REQUESTS_PATH = f"{_LOOPS_PATH}/requests"
 _TIMEOUT_SECONDS = 10.0
+_LOG_TAG = "webapp-loops"
+_LEDGER_FILENAME = "webapp_loop_requests.json"
 _MAX_REPORTED_LOOPS = 500
 #: An unchanged loop list is sent again after this long (the contract's heartbeat).
 _HEARTBEAT_SECONDS = 30 * 60
@@ -96,12 +98,19 @@ class WebappLoopSync:
         ledger: RequestLedger | None = None,
         runners: SchedulerRunners | None = None,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
         self._organization = organization
-        self._token = token
-        self._http = http
+        self._client = WebappAgentClient(
+            WebappAgentTarget(
+                base_url=base_url.rstrip("/"), organization=organization, token=token
+            ),
+            log_tag=_LOG_TAG,
+            http=http,
+            timeout_seconds=_TIMEOUT_SECONDS,
+        )
         self._clock = clock
-        self._ledger = ledger or RequestLedger()
+        self._ledger = ledger or RequestLedger(
+            paths.OPENSRE_HOME_DIR / _LEDGER_FILENAME, log_tag=_LOG_TAG
+        )
         self._reported_digest = ""
         self._reported_at: float | None = None
         # The poll thread and a scheduler reload may report at the same time.
@@ -150,7 +159,7 @@ class WebappLoopSync:
                     logger.warning("[webapp-loops] could not record request %s", request_id)
                     if start is not None:
                         # Unrecorded, a redelivery could run it again: leave it pending.
-                        self._release_run(outcome.loop_id or "")
+                        self._release_run(outcome.ref or "")
                         continue
                 if start is not None:
                     start()
@@ -189,7 +198,7 @@ class WebappLoopSync:
                 len(loops),
                 _MAX_REPORTED_LOOPS,
             )
-        response = self._call(
+        response = self._client.call(
             "PUT",
             _LOOPS_PATH,
             json={
@@ -207,16 +216,7 @@ class WebappLoopSync:
         )
 
     def _pending_requests(self) -> list[Mapping[str, Any]]:
-        response = self._call("GET", _REQUESTS_PATH, params={"organizationId": self._organization})
-        if response is None or response.status_code != HTTPStatus.OK:
-            return []
-        try:
-            data = response.json().get("data")
-        except (ValueError, AttributeError):
-            return []
-        if not isinstance(data, list):
-            return []
-        return [item for item in data if isinstance(item, Mapping) and item.get("id")]
+        return self._client.pending_requests(_REQUESTS_PATH) or []
 
     def _apply(self, request: Mapping[str, Any]) -> RecordedOutcome | None:
         """The request's outcome, or ``None`` to leave it pending for a later pass."""
@@ -267,7 +267,7 @@ class WebappLoopSync:
             logger.exception("[webapp-loops] accepting run request %s failed", request.get("id"))
             return RecordedOutcome(False, error=_UNEXPECTED_FAILURE), None
         accepted, task_ids = summary.id, summary.task_ids
-        return RecordedOutcome(True, loop_id=accepted), lambda: self._start_run(
+        return RecordedOutcome(True, ref=accepted), lambda: self._start_run(
             accepted, task_ids, runners
         )
 
@@ -336,7 +336,7 @@ class WebappLoopSync:
             None,
         )
         if existing is not None:
-            return RecordedOutcome(True, loop_id=existing)
+            return RecordedOutcome(True, ref=existing)
         payload = raw_payload if isinstance(raw_payload, Mapping) else {}
         channels = payload.get("channels")
         created = create_manual_loop(
@@ -352,7 +352,7 @@ class WebappLoopSync:
             mode=str(payload.get("mode") or LOOP_MODE_REPORT),
             extra_params={LOOP_WEBAPP_REQUEST_ID_PARAM: request_id},
         )
-        return RecordedOutcome(True, loop_id=created.task.id)
+        return RecordedOutcome(True, ref=created.task.id)
 
     def _change(self, action: str, loop_id: str) -> RecordedOutcome:
         # Scoped to this organization: another's loop resolves as missing.
@@ -360,7 +360,7 @@ class WebappLoopSync:
         if summary is None:
             # Already deleted (a retried request) counts as done for a delete.
             if action == "delete":
-                return RecordedOutcome(True, loop_id=loop_id)
+                return RecordedOutcome(True, ref=loop_id)
             return RecordedOutcome(False, error=_MISSING_LOOP)
         if action == "delete":
             mutation, error = delete_loop(summary.id)
@@ -368,7 +368,7 @@ class WebappLoopSync:
             mutation, error = set_loop_enabled(summary.id, enabled=action == "resume")
         if mutation is None:
             return RecordedOutcome(False, error=error)
-        return RecordedOutcome(True, loop_id=summary.id)
+        return RecordedOutcome(True, ref=summary.id)
 
     def _update(self, loop_id: str, raw_payload: Any) -> RecordedOutcome:
         summary, _error = resolve_loop_summary(loop_id) if loop_id else (None, "")
@@ -386,18 +386,15 @@ class WebappLoopSync:
         mutation, error = edit_loop(summary.task_ids, changes, loop_id=summary.id)
         if mutation is None:
             return RecordedOutcome(False, error=error)
-        return RecordedOutcome(True, loop_id=summary.id)
+        return RecordedOutcome(True, ref=summary.id)
 
     def _acknowledge(self, request_id: str, outcome: RecordedOutcome) -> None:
-        body: dict[str, Any] = {
-            "organizationId": self._organization,
-            "status": "applied" if outcome.applied else "failed",
-        }
-        if outcome.loop_id:
-            body["loopId"] = outcome.loop_id
+        body: dict[str, Any] = {"status": "applied" if outcome.applied else "failed"}
+        if outcome.ref:
+            body["loopId"] = outcome.ref
         if outcome.error:
             body["error"] = outcome.error
-        self._call("POST", f"{_REQUESTS_PATH}/{request_id}", json=body)
+        self._client.acknowledge(_REQUESTS_PATH, request_id, body)
 
     def _loop_rows(self) -> list[dict[str, Any]] | None:
         with self._scope():
@@ -414,29 +411,6 @@ class WebappLoopSync:
             if loop.cron.strip()
         ]
 
-    def _call(self, method: str, path: str, **kwargs: Any) -> Any:
-        try:
-            response = self._http.request(
-                method,
-                f"{self._base_url}{path}",
-                headers={"Authorization": f"Bearer {self._token}"},
-                timeout=_TIMEOUT_SECONDS,
-                **kwargs,
-            )
-        except httpx.HTTPError as exc:
-            logger.warning("[webapp-loops] %s %s failed (%s)", method, path, type(exc).__name__)
-            return None
-        if response.status_code not in (HTTPStatus.OK, HTTPStatus.NOT_FOUND):
-            # The web app's own short error text, so a rejected report says why.
-            logger.warning(
-                "[webapp-loops] %s %s -> %s %s",
-                method,
-                path,
-                response.status_code,
-                _error_text(response),
-            )
-        return response
-
 
 def webapp_loop_sync_from_environment(
     runners: SchedulerRunners | None = None,
@@ -447,21 +421,15 @@ def webapp_loop_sync_from_environment(
     ``runners`` are the scheduler's own, so a ``run`` request fires the loop as
     a tick would (and takes the same capacity gate).
     """
-    org = organization_id()
-    base_url = (os.getenv(WEBAPP_URL_ENV) or "").strip()
-    token = resolve_account_token()
-    if not org or not token or not base_url.lower().startswith("https://"):
+    target = webapp_agent_target()
+    if target is None:
         return None
-    return WebappLoopSync(base_url=base_url, organization=org, token=token, runners=runners)
-
-
-def _error_text(response: Any) -> str:
-    """The ``error`` field of a web app error response, capped; "" when absent."""
-    try:
-        error = response.json().get("error")
-    except (ValueError, AttributeError):
-        return ""
-    return str(error)[:200] if error else ""
+    return WebappLoopSync(
+        base_url=target.base_url,
+        organization=target.organization,
+        token=target.token,
+        runners=runners,
+    )
 
 
 def _strings(value: Any) -> list[str]:

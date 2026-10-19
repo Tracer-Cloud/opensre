@@ -1,4 +1,10 @@
-"""Slash ``/knowledge`` — workspace knowledge and memory health, like ``opensre knowledge``."""
+"""Slash ``/knowledge`` — workspace knowledge and memory health, like ``opensre knowledge``.
+
+Gateways reach this command too, so everything but the member's own audit
+goes through the same membership rule as the prompt and ``memory_recall``,
+and a scan request is handed to the gateway's running scan loop rather than
+run inside the chat turn (:func:`integrations.knowledge_scans.scan_on_request`).
+"""
 
 from __future__ import annotations
 
@@ -6,40 +12,29 @@ from rich.console import Console
 from rich.markup import escape
 
 from config.constants import OPENSRE_KNOWLEDGE_DISABLED_ENV
-from config.constants.organization import organization_id
 from core.domain.knowledge import (
-    caller_may_read_workspace,
+    knowledge_available_here,
     knowledge_dir,
     knowledge_enabled,
-    list_workspace_entries,
-    load_workspace_entry,
+    readable_workspace_entries,
+    readable_workspace_entry,
 )
-from core.domain.memory import audit_memories, live_memories, memory_dir, slugify
-from core.domain.memory.usage import load_usage
+from core.domain.memory import audit_memories, memory_dir, read_member_store, slugify
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import BOLD_BRAND, DIM, ERROR, HIGHLIGHT
-
-_DESCRIPTION_WIDTH = 72
-
-
-def _clip(text: str) -> str:
-    text = " ".join(text.split())
-    return text if len(text) <= _DESCRIPTION_WIDTH else text[: _DESCRIPTION_WIDTH - 1] + "…"
+from surfaces.shared.knowledge_text import audit_lines, entry_line, scan_lines
 
 
 def _show_list(console: Console) -> bool:
-    entries = list_workspace_entries()
+    entries = readable_workspace_entries()
     if not entries:
         console.print(
             f"[{DIM}]no workspace knowledge yet. Connect Slack, then run[/] "
             f"[{HIGHLIGHT}]/knowledge scan[/]"
         )
     for entry in entries:
-        console.print(
-            f"[{BOLD_BRAND}]{escape(entry.slug)}[/] [{DIM}]({entry.memory_type}, "
-            f"updated {entry.updated_at[:10]})[/] {escape(_clip(entry.description))}"
-        )
+        console.print(escape(entry_line(entry)))
     console.print(
         f"[{DIM}]{escape(str(knowledge_dir()))} · your own memory:[/] [{HIGHLIGHT}]/memory[/]"
     )
@@ -50,7 +45,7 @@ def _show_one(console: Console, args: list[str]) -> bool:
     if not args:
         console.print(f"[{ERROR}]usage:[/] /knowledge show <name>")
         return True
-    entry = load_workspace_entry(slugify(args[0]))
+    entry = readable_workspace_entry(slugify(args[0]))
     if entry is None:
         console.print(f"[{ERROR}]no workspace entry named[/] {escape(args[0])}")
         return True
@@ -63,46 +58,19 @@ def _show_one(console: Console, args: list[str]) -> bool:
 
 
 def _audit(console: Console) -> bool:
-    audit = audit_memories(live_memories(), usage=load_usage(memory_dir()))
-    findings = ", ".join(f"{rule} {count}" for rule, count in audit.summary()["findings"].items())
-    console.print(
-        f"[{BOLD_BRAND}]{audit.total} memories, health {audit.score}/100[/]"
-        + (f" [{DIM}]— {escape(findings)}[/]" if findings else "")
-    )
-    for group in audit.duplicate_groups:
-        console.print(f"  [{DIM}]duplicates:[/] {escape(' = '.join(group))}")
-    for finding in audit.findings:
-        if finding.rule != "duplicate":
-            console.print(
-                f"  [{DIM}]{finding.rule}:[/] {escape(finding.slug)} [{DIM}]{escape(finding.detail)}[/]"
-            )
+    store = read_member_store("you", memory_dir())
+    audit = audit_memories(store.records, usage=store.usage).to_dict()
+    for line in audit_lines("you", audit):
+        console.print(escape(line))
     return True
 
 
 def _scan(console: Console, args: list[str]) -> bool:
-    from integrations.knowledge_scans import KnowledgeScanService
+    from integrations.knowledge_scans import SCANNABLE_SERVICES, scan_on_request
 
-    service = KnowledgeScanService(organization=organization_id())
-    wanted = args or list(service.services)
-    unknown = [name for name in wanted if name not in service.services]
-    if unknown:
-        console.print(
-            f"[{ERROR}]cannot scan[/] {escape(', '.join(unknown))} "
-            f"[{DIM}](scannable: {', '.join(service.services)})[/]"
-        )
-        return True
-    for name in wanted:
-        service.request_rescan(name)
-    outcomes = service.run_due()
-    if not outcomes:
-        console.print(f"[{DIM}]nothing to scan: no scannable integration is connected.[/]")
-    for outcome in outcomes:
-        if outcome.ok:
-            console.print(
-                f"[{HIGHLIGHT}]{outcome.service}[/] wrote {escape(', '.join(outcome.written))}"
-            )
-        else:
-            console.print(f"[{ERROR}]{outcome.service}:[/] {escape(outcome.error)}")
+    outcomes, unknown = scan_on_request(args, force=False)
+    for line in scan_lines(outcomes, unknown, SCANNABLE_SERVICES):
+        console.print(escape(line))
     return True
 
 
@@ -111,21 +79,19 @@ def _cmd_knowledge(session: Session, console: Console, args: list[str]) -> bool:
         console.print(f"[{DIM}]workspace knowledge is off ({OPENSRE_KNOWLEDGE_DISABLED_ENV}=1).[/]")
         return True
     sub = args[0].lower() if args else "list"
-    # Gateways reach this command too: the same membership rule as the prompt
-    # and memory_recall, so a guest never reads or scans workspace knowledge.
-    if sub != "audit" and not caller_may_read_workspace():
-        console.print(f"[{DIM}]workspace knowledge is for members of this organization.[/]")
-        return True
-    if sub == "list":
-        return _show_list(console)
-    if sub == "show":
-        return _show_one(console, args[1:])
     if sub == "audit":
         return _audit(console)
+    if sub not in {"list", "show", "scan"}:
+        console.print(f"[{ERROR}]usage:[/] /knowledge [list|show <name>|audit|scan [service]]")
+        return True
+    if not knowledge_available_here():
+        console.print(f"[{DIM}]workspace knowledge is for members of this organization.[/]")
+        return True
+    if sub == "show":
+        return _show_one(console, args[1:])
     if sub == "scan":
         return _scan(console, args[1:])
-    console.print(f"[{ERROR}]usage:[/] /knowledge [list|show <name>|audit|scan [service]]")
-    return True
+    return _show_list(console)
 
 
 _SHARED_NOTE = (
@@ -137,7 +103,7 @@ _KNOWLEDGE_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("list", "list workspace knowledge"),
     ("show", "print one workspace entry in full (/knowledge show <name>)"),
     ("audit", "check your memory: duplicates, one-off notes, missing evidence"),
-    ("scan", "scan connected integrations now (/knowledge scan [service])"),
+    ("scan", "scan a connected integration now (/knowledge scan <service>)"),
 )
 
 COMMANDS: list[SlashCommand] = [

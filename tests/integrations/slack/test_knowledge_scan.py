@@ -9,6 +9,7 @@ connected integration at once without hammering one that fails.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import pytest
@@ -175,12 +176,12 @@ def _scanner(results: list[ScanOutcome], calls: list[str], *, ok: bool = True) -
         results.append(outcome)
         return outcome
 
-    return Scanner("slack", available=lambda: True, scan=scan)
+    return Scanner("slack", available=lambda: True, scan=scan, writes=("integration-slack",))
 
 
 def test_a_new_connection_is_scanned_once_and_a_failure_is_not_retried_every_pass() -> None:
     calls: list[str] = []
-    clock = {"now": 1_000.0}
+    clock = {"now": time.time()}
     service = KnowledgeScanService(
         scanners=(_scanner([], calls),),
         summarizer_factory=lambda: None,
@@ -336,3 +337,92 @@ def test_a_truncated_member_list_keeps_earlier_readers() -> None:
     assert workspace_readers() == {"U1", "U2", "U3"}
     assert record_workspace_readers("slack", ["U3"])
     assert workspace_readers() == {"U3"}
+
+
+def test_deleting_any_entry_a_scan_writes_makes_it_due_again() -> None:
+    # Review finding: only the integration entry was checked, so a deleted
+    # organization profile stayed missing until the week-old refresh.
+    from core.domain.knowledge import delete_workspace_entry, save_workspace_entry
+    from core.domain.memory import MemoryType
+
+    calls: list[str] = []
+
+    def scan(_summarize: Any) -> ScanOutcome:
+        calls.append("slack")
+        for slug, memory_type in (
+            (ORGANIZATION_SLUG, MemoryType.ORGANIZATION),
+            ("integration-slack", MemoryType.INTEGRATION),
+        ):
+            save_workspace_entry(slug=slug, memory_type=memory_type, description=slug, body="x")
+        return ScanOutcome("slack", ok=True, written=(ORGANIZATION_SLUG, "integration-slack"))
+
+    clock = {"now": time.time()}
+    service = KnowledgeScanService(
+        scanners=(
+            Scanner(
+                "slack",
+                available=lambda: True,
+                scan=scan,
+                writes=(ORGANIZATION_SLUG, "integration-slack"),
+            ),
+        ),
+        summarizer_factory=lambda: None,
+        clock=lambda: clock["now"],
+        retry_after_seconds=60,
+    )
+    service.run_due()
+    assert delete_workspace_entry(ORGANIZATION_SLUG)
+    clock["now"] += 61
+
+    service.run_due()
+
+    assert calls == ["slack", "slack"]
+    assert load_workspace_entry(ORGANIZATION_SLUG) is not None
+
+
+def test_a_scan_asked_for_in_the_gateway_runs_on_its_loop_not_in_the_turn() -> None:
+    # Review finding: `/knowledge scan` in a Slack turn ran a full scan inline,
+    # with no backoff, once per message that asked.
+    from integrations.knowledge_scans import install_scan_service, scan_on_request
+
+    calls: list[str] = []
+    service = KnowledgeScanService(scanners=(_scanner([], calls),), summarizer_factory=lambda: None)
+    install_scan_service(service)
+    try:
+        outcomes, unknown = scan_on_request(["slack", "pagerduty"], force=False)
+    finally:
+        install_scan_service(None)
+
+    assert (outcomes, unknown, calls) == (None, ["pagerduty"], [])
+    service.run_due()
+    assert calls == ["slack"]
+
+
+def test_readers_are_refreshed_every_few_hours_not_every_pass() -> None:
+    refreshes: list[float] = []
+    clock = {"now": time.time()}
+    scanner = _scanner([], [])
+
+    def refresh_readers() -> bool:
+        refreshes.append(clock["now"])
+        return True
+
+    service = KnowledgeScanService(
+        scanners=(
+            Scanner(
+                scanner.service,
+                available=scanner.available,
+                scan=scanner.scan,
+                writes=scanner.writes,
+                refresh_readers=refresh_readers,
+            ),
+        ),
+        summarizer_factory=lambda: None,
+        clock=lambda: clock["now"],
+    )
+
+    for _hour in range(7):
+        service.run_due()
+        clock["now"] += 3_600
+
+    assert len(refreshes) == 2  # at 0h and at 6h

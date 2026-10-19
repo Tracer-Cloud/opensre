@@ -500,10 +500,8 @@ def long_term_memory_block() -> str:
 
 def workspace_knowledge_block() -> str:
     """The organization profile and workspace entry index for the cached prompt half."""
-    from core.domain.knowledge import knowledge_available_here, render_workspace_block
+    from core.domain.knowledge import render_workspace_block
 
-    if not knowledge_available_here():
-        return ""
     rendered = render_workspace_block()
     if not rendered:
         return ""
@@ -526,12 +524,9 @@ def _workspace_knowledge(turn_snapshot: TurnSnapshot) -> str:
 
 def relevant_workspace_knowledge_block(turn_snapshot: TurnSnapshot) -> str:
     """Full text of the workspace entries that match this turn's request."""
-    from core.domain.knowledge import (
-        knowledge_available_here,
-        render_relevant_workspace_entries,
-    )
+    from core.domain.knowledge import render_relevant_workspace_entries
 
-    if not turn_snapshot.long_term_memory_enabled or not knowledge_available_here():
+    if not turn_snapshot.long_term_memory_enabled:
         return ""
     rendered = render_relevant_workspace_entries(
         turn_snapshot.text,

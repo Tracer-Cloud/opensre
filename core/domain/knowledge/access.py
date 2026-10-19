@@ -14,7 +14,8 @@ The rule, for a turn bound to an organization:
 - anyone else may not. Before any scan has run, no Slack user may.
 
 A turn bound to no organization (a laptop) is the operator's own and always
-may. The list is re-read when the file changes, so a member removed in Slack
+may; a CLI process started by an organization turn is judged as that turn's
+actor (:func:`config.scope_handoff.acting_scope`). The list is re-read when the file changes, so a member removed in Slack
 loses access at the next scan.
 """
 
@@ -28,9 +29,8 @@ from pathlib import Path
 from filelock import Timeout
 
 from config.constants.gateway import PROMPT_DEFAULT_ACTOR
-from config.principal import PrincipalKind
-from config.scope_context import current_scope
-from core.domain.knowledge.store import knowledge_dir, workspace_store
+from config.scope_handoff import acting_scope
+from core.domain.knowledge.store import knowledge_dir, writable_workspace_store
 from core.domain.memory.files import memory_lock, read_json_object, write_json_atomically
 
 READERS_FILENAME = ".readers.json"
@@ -52,7 +52,7 @@ def record_workspace_readers(
     adds to it.
     """
     try:
-        with workspace_store() as directory, memory_lock():
+        with writable_workspace_store() as directory, memory_lock():
             path = _readers_path(directory)
             readers = read_json_object(path)
             seen = {str(member) for member in member_ids if member}
@@ -88,9 +88,13 @@ def workspace_readers() -> frozenset[str]:
 
 
 def caller_may_read_workspace() -> bool:
-    """Whether the actor taking this turn may read the organization's workspace knowledge."""
-    scope = current_scope()
-    if scope is None or scope.principal.kind != PrincipalKind.ORG:
+    """Whether the actor taking this turn may read the organization's workspace knowledge.
+
+    Judged on the acting scope, so a CLI process a turn starts is held to the
+    turn's actor, not treated as the operator.
+    """
+    scope = acting_scope()
+    if scope is None:
         return True
     actor = scope.actor.id
     if _CLERK_USER.match(actor) or actor in _APP_ACTORS:
@@ -99,7 +103,6 @@ def caller_may_read_workspace() -> bool:
 
 
 __all__ = [
-    "READERS_FILENAME",
     "caller_may_read_workspace",
     "record_workspace_readers",
     "workspace_readers",

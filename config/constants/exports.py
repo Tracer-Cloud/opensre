@@ -364,6 +364,7 @@ EXPORTS: dict[str, str] = {
     "TOOL_OUTPUT_PERSIST_MAX_BYTES": "tool_output",
     # knowledge
     "KNOWLEDGE_DIRNAME": "knowledge",
+    "KNOWLEDGE_READERS_REFRESH_SECONDS": "knowledge",
     "KNOWLEDGE_SCAN_CHECK_INTERVAL_SECONDS": "knowledge",
     "KNOWLEDGE_SCAN_MAX_AGE_SECONDS": "knowledge",
     "OPENSRE_KNOWLEDGE_DIR_ENV": "knowledge",

@@ -9,16 +9,14 @@ from core.domain.knowledge import Summarize
 
 logger = logging.getLogger(__name__)
 
-#: The LLM tier scans use; the same cheap tier memory extraction uses.
-SCAN_LLM_ROLE = "classification"
-
 
 def llm_summarizer() -> Summarize | None:
     """A prompt → text callable on the cheap tier, or ``None`` when no LLM is configured."""
     try:
         from core.llm.factory import LLMRole, get_llm
 
-        llm: Any = get_llm(LLMRole(SCAN_LLM_ROLE))
+        # The same cheap tier memory extraction uses.
+        llm: Any = get_llm(LLMRole.CLASSIFICATION)
     except Exception:  # noqa: BLE001 - a scan without a model still writes its facts
         logger.debug("[knowledge] scan LLM unavailable", exc_info=True)
         return None
@@ -31,4 +29,4 @@ def llm_summarizer() -> Summarize | None:
     return summarize
 
 
-__all__ = ["SCAN_LLM_ROLE", "llm_summarizer"]
+__all__ = ["llm_summarizer"]
