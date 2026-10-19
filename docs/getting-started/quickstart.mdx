@@ -86,6 +86,12 @@ Then confirm the session:
 opensre account status
 ```
 
+After sign-in succeeds, exit any welcome screen still running in another pane. Run OpenSRE again on the remote machine to continue to Step 3:
+
+```bash
+opensre
+```
+
 If you see `Timed out waiting for OpenSRE sign-in to finish.`, run the command again with a larger `--timeout`. The maximum is 1800 seconds.
 
 ## Step 3: Pick what to do
