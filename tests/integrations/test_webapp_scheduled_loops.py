@@ -483,3 +483,54 @@ def test_a_delivery_edit_with_a_bad_address_is_refused_and_changes_nothing() -> 
     assert webapp.acks[-1][1]["status"] == "failed"
     assert "not an email address" in webapp.acks[-1][1]["error"]
     assert task.params["loop_channels"] == created.params["loop_channels"]
+
+
+def test_an_edit_may_change_only_where_a_loop_delivers() -> None:
+    # Arrange: an update with delivery and nothing else.
+    webapp = _Webapp(pending=[_create_request()])
+    sync = _sync(webapp)
+    sync.sync()
+    [created] = list_tasks()
+    webapp.pending = [
+        {
+            "id": "6c1d2e3f-0000-4000-8000-0000000000e4",
+            "action": "update",
+            "loop_id": created.id,
+            "payload": {
+                "channels": ["email"],
+                "email_to": "ana@example.com",
+                "email_account": "smtp:r1",
+            },
+            "requested_by": "user_2abc",
+        }
+    ]
+
+    # Act
+    sync.sync()
+
+    # Assert: applied, with name and instructions untouched.
+    [task] = list_tasks()
+    assert webapp.acks[-1][1]["status"] == "applied"
+    assert task.params["loop_channels"] == "email"
+    assert (task.name, task.params["loop_prompt"]) == (
+        created.name,
+        created.params["loop_prompt"],
+    )
+
+
+def test_an_empty_channel_list_is_refused_not_ignored() -> None:
+    # Arrange
+    webapp = _Webapp(pending=[_create_request()])
+    sync = _sync(webapp)
+    sync.sync()
+    [created] = list_tasks()
+    webapp.pending = [_update(created.id, "6c1d2e3f-0000-4000-8000-0000000000e5", {"channels": []})]
+
+    # Act
+    sync.sync()
+
+    # Assert
+    [task] = list_tasks()
+    assert webapp.acks[-1][1]["status"] == "failed"
+    assert "at least one place" in webapp.acks[-1][1]["error"]
+    assert task.params["loop_channels"] == created.params["loop_channels"]
