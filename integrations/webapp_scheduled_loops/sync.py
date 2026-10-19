@@ -5,8 +5,9 @@ changes a member asks for on the Tasks page and mirrors the loop list. This
 module is the gateway half of that contract (opensre-webapp
 ``docs/scheduled-loops.md``): it pulls the pending requests, applies each in the
 organization's scope with the requesting member as the actor, acknowledges it,
-and reports the whole loop list back. Every call uses the gateway's own
-org-scoped token; the webapp refuses the fleet secret on these routes.
+and reports the whole loop list back, each loop with its recent runs
+(:mod:`.loop_runs`). Every call uses the gateway's own org-scoped token; the
+webapp refuses the fleet secret on these routes.
 
 Delivery is at least once, so a request id is an idempotency key: each
 outcome is recorded (:mod:`.request_ledger`) before it is acknowledged, and a
@@ -59,6 +60,7 @@ from infrastructure.scheduling.scheduler.runner import run_task_now
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot, has_live_claim
 from infrastructure.scheduling.scheduler.task_visibility import visible_to_current_scope
 from infrastructure.scheduling.scheduler.types import ScheduledTask
+from integrations.webapp_scheduled_loops.loop_runs import loop_runs
 from integrations.webapp_scheduled_loops.request_ledger import (
     LedgerUnavailable,
     RecordedOutcome,
@@ -74,6 +76,10 @@ _LOOPS_PATH = "/api/agent/scheduled-loops"
 _REQUESTS_PATH = f"{_LOOPS_PATH}/requests"
 _TIMEOUT_SECONDS = 10.0
 _MAX_REPORTED_LOOPS = 500
+#: The web app's host refuses a body over 4 MB; this leaves room for escaping.
+_MAX_REPORT_BYTES = 3_000_000
+#: Runs kept per loop, newest first, while a report is too large to send whole.
+_RUNS_KEPT_WHEN_LARGE = (5, 2, 1, 0)
 #: An unchanged loop list is sent again after this long (the contract's heartbeat).
 _HEARTBEAT_SECONDS = 30 * 60
 #: Actor for a request that names no member.
@@ -199,7 +205,7 @@ class WebappLoopSync:
             _LOOPS_PATH,
             json={
                 "organizationId": self._organization,
-                "loops": loops[:_MAX_REPORTED_LOOPS],
+                "loops": _fit_report(loops[:_MAX_REPORTED_LOOPS]),
                 "total": len(loops),
             },
         )
@@ -430,11 +436,15 @@ class WebappLoopSync:
         by_id = {task.id: task for task in tasks}
         # A one-shot work-item reminder runs at a time, not on a cron; the
         # Tasks page lists recurring schedules only.
-        return [
-            _loop_row(loop, [by_id[task_id] for task_id in loop.task_ids if task_id in by_id])
-            for loop in summarize_loops(tasks)
-            if loop.cron.strip()
-        ]
+        loops = [loop for loop in summarize_loops(tasks) if loop.cron.strip()]
+        runs = _read_loop_runs(loops)
+        rows = []
+        for loop in loops:
+            row = _loop_row(loop, [by_id[task_id] for task_id in loop.task_ids if task_id in by_id])
+            if runs is not None:
+                row["runs"] = runs[loop.id]
+            rows.append(row)
+        return rows
 
     def _call(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
@@ -490,6 +500,32 @@ def _strings(value: Any) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, str):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _fit_report(loops: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The rows with fewer runs per loop, newest kept, until they fit one request body."""
+    rows = loops
+    for keep in _RUNS_KEPT_WHEN_LARGE:
+        if len(json.dumps(rows).encode()) <= _MAX_REPORT_BYTES:
+            return rows
+        rows = [{**row, "runs": row["runs"][:keep]} if "runs" in row else row for row in loops]
+        logger.warning("[webapp-loops] report too large; sending %d run(s) per loop", keep)
+    return rows
+
+
+def _read_loop_runs(loops: Sequence[LoopSummary]) -> dict[str, list[dict[str, Any]]] | None:
+    """Each loop's recent runs, or ``None`` to report the loops without them.
+
+    An unreadable run history must not hold back the loop list itself.
+    """
+    try:
+        return loop_runs(loops)
+    except Exception as exc:
+        logger.warning(
+            "[webapp-loops] run history unreadable (%s); reporting loops without runs",
+            type(exc).__name__,
+        )
+        return None
 
 
 def _loop_row(loop: LoopSummary, tasks: Sequence[ScheduledTask]) -> dict[str, Any]:

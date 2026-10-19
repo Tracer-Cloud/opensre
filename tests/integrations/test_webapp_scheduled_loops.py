@@ -9,7 +9,9 @@ shrunk by an unreadable store.
 from __future__ import annotations
 
 import importlib
+import json
 import pkgutil
+import sqlite3
 import threading
 from dataclasses import dataclass, field
 from http import HTTPStatus
@@ -19,10 +21,16 @@ from typing import Any
 import pytest
 
 import infrastructure.scheduling.scheduler as scheduler_pkg
+import infrastructure.scheduling.scheduler.storage.database as scheduler_database
+import integrations.webapp_scheduled_loops.loop_runs as loop_runs_module
 import integrations.webapp_scheduled_loops.request_ledger as request_ledger
 import integrations.webapp_scheduled_loops.sync as sync_module
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_GROUP_ID_PARAM,
+    LOOP_PROMPT_PARAM,
+)
 from infrastructure.scheduling.scheduler.loops import create_manual_loop
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.storage import (
@@ -32,7 +40,13 @@ from infrastructure.scheduling.scheduler.storage import (
     list_tasks,
     record_task_success,
 )
-from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from infrastructure.scheduling.scheduler.types import (
+    DeliveryOutcome,
+    Provider,
+    ScheduledTask,
+    TaskKind,
+    TaskStatus,
+)
 from integrations.webapp_scheduled_loops import WebappLoopSync
 
 _ORG = "org_A"
@@ -534,3 +548,207 @@ def test_an_empty_channel_list_is_refused_not_ignored() -> None:
     assert webapp.acks[-1][1]["status"] == "failed"
     assert "at least one place" in webapp.acks[-1][1]["error"]
     assert task.params["loop_channels"] == created.params["loop_channels"]
+
+
+# Runs: each loop's recent attempts feed the activity timeline on the loop's page.
+
+
+def _org_scope() -> Any:
+    return bound_storage_scope(StorageScope(principal=Principal.org(_ORG), actor=Actor(id="u")))
+
+
+def _record_run(
+    task_id: str,
+    started_at: str,
+    *,
+    fire_time: str = "",
+    status: TaskStatus = TaskStatus.SUCCESS,
+    finished: bool = True,
+    error: str = "",
+    summary: str = "",
+    targets: tuple[DeliveryOutcome, ...] = (),
+) -> int:
+    """Insert one attempt as the scheduler stores it; returns its run id."""
+    with scheduler_database.transaction() as conn:
+        cursor = conn.execute(
+            "INSERT INTO task_runs (task_id, fire_time, started_at, finished_at, status, "
+            "error, report_summary, targets) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                task_id,
+                fire_time or started_at,
+                started_at,
+                started_at.replace("00Z", "42Z") if finished else None,
+                status.value,
+                error,
+                summary,
+                json.dumps([target.model_dump(mode="json") for target in targets]),
+            ),
+        )
+        return int(cursor.lastrowid or 0)
+
+
+def _grouped_task(task_id: str, chat_id: str) -> ScheduledTask:
+    """One destination of a loop delivered to several places."""
+    return ScheduledTask(
+        id=task_id,
+        name="Grouped",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="0 9 * * *",
+        provider=Provider.SLACK,
+        chat_id=chat_id,
+        params={LOOP_GROUP_ID_PARAM: "group-a", LOOP_PROMPT_PARAM: "Grouped report."},
+    )
+
+
+def test_each_loop_reports_its_newest_ten_runs_across_its_tasks() -> None:
+    # Arrange: a loop of two tasks with 12 runs between them, and a loop that never ran.
+    with _org_scope():
+        add_task(_grouped_task("task-a", "C1"))
+        add_task(_grouped_task("task-b", "C2"))
+        idle = create_manual_loop(name="Idle", prompt="Idle report.", cron="0 8 * * *")
+    for hour in range(12):
+        _record_run("task-a" if hour % 2 else "task-b", f"2026-10-18T{hour:02d}:00:00Z")
+    webapp = _Webapp()
+
+    # Act
+    _sync(webapp).report(force=True)
+
+    # Assert: newest first, capped at 10, interleaved across the tasks; [] when never run.
+    rows = {row["id"]: row for row in webapp.reports[0]}
+    started = [run["started_at"] for run in rows["group-a"]["runs"]]
+    assert started == [f"2026-10-18T{hour:02d}:00:00Z" for hour in range(11, 1, -1)]
+    assert rows[idle.task.id]["runs"] == []
+
+
+def test_a_run_reports_its_trigger_and_only_the_outcome_it_has() -> None:
+    # Arrange: a scheduled tick delivered to one of two places; a Run now still running.
+    with _org_scope():
+        loop = create_manual_loop(name="Daily", prompt="Daily report.", cron="0 9 * * *")
+    task_id = loop.task.id
+    tick = _record_run(
+        task_id,
+        "2026-10-18T09:00:00Z",
+        fire_time="2026-10-18T09:00:00+00:00",
+        targets=(
+            DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=True),
+            DeliveryOutcome(provider=Provider.TELEGRAM, chat_id="T1", ok=False),
+        ),
+    )
+    manual = _record_run(
+        task_id,
+        "2026-10-18T10:00:00Z",
+        fire_time="2026-10-18T10:00:00.123456+00:00",
+        status=TaskStatus.RUNNING,
+        finished=False,
+    )
+    webapp = _Webapp()
+
+    # Act
+    _sync(webapp).report(force=True)
+
+    # Assert
+    running, ticked = webapp.reports[0][0]["runs"]
+    assert running == {
+        "id": f"{task_id}:{manual}",
+        "trigger": "manual",
+        "status": "running",
+        "started_at": "2026-10-18T10:00:00Z",
+        "error": "",
+        "summary": "",
+        "attempt": 1,
+    }
+    assert ticked["id"] == f"{task_id}:{tick}"
+    assert (ticked["trigger"], ticked["delivery"]) == ("schedule", "partial")
+    assert ticked["finished_at"] == "2026-10-18T09:00:42Z"
+
+
+def test_run_text_is_redacted_and_capped() -> None:
+    # Arrange: a failure that echoes a token, and an oversized summary.
+    with _org_scope():
+        loop = create_manual_loop(name="Daily", prompt="Daily report.", cron="0 9 * * *")
+    token = "ghp_" + "a" * 36
+    _record_run(
+        loop.task.id,
+        "2026-10-18T09:00:00Z",
+        status=TaskStatus.FAILED,
+        error=f"GitHub refused {token} " + "x" * 2_000,
+        summary="é" * 2_000,
+    )
+    webapp = _Webapp()
+
+    # Act
+    _sync(webapp).report(force=True)
+
+    # Assert: no credential leaves, and both fit the contract's caps.
+    [run] = webapp.reports[0][0]["runs"]
+    assert token not in run["error"] and "[REDACTED:github_pat]" in run["error"]
+    assert len(run["error"]) <= 600 and run["error"].endswith("…")
+    assert len(run["summary"].encode()) <= 1_000 and run["summary"].endswith("…")
+
+
+def test_a_run_ending_is_reported_and_an_unchanged_one_is_not() -> None:
+    # Arrange: reported while the run was in progress.
+    with _org_scope():
+        loop = create_manual_loop(name="Daily", prompt="Daily report.", cron="0 9 * * *")
+    run_id = _record_run(
+        loop.task.id, "2026-10-18T09:00:00Z", status=TaskStatus.RUNNING, finished=False
+    )
+    webapp = _Webapp()
+    sync = _sync(webapp)
+    sync.report()
+
+    # Act: the run ends, then nothing changes.
+    with scheduler_database.transaction() as conn:
+        conn.execute(
+            "UPDATE task_runs SET status = ?, finished_at = ? WHERE id = ?",
+            (TaskStatus.SUCCESS.value, "2026-10-18T09:01:00Z", run_id),
+        )
+    sync.report()
+    sync.report()
+
+    # Assert: the same run id is resent once with its new status.
+    assert [report[0]["runs"][0]["status"] for report in webapp.reports] == ["running", "success"]
+    assert webapp.reports[0][0]["runs"][0]["id"] == webapp.reports[1][0]["runs"][0]["id"]
+
+
+def test_an_unreadable_run_history_still_reports_the_loops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the run database cannot be read.
+    def unreadable(*_args: Any, **_kwargs: Any) -> list[Any]:
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(loop_runs_module, "get_recent_runs", unreadable)
+    with _org_scope():
+        loop = create_manual_loop(name="Daily", prompt="Daily report.", cron="0 9 * * *")
+    webapp = _Webapp()
+
+    # Act
+    _sync(webapp).report(force=True)
+
+    # Assert: the loop is listed, and ``runs`` is left out rather than sent empty.
+    [row] = webapp.reports[0]
+    assert row["id"] == loop.task.id
+    assert "runs" not in row
+
+
+def test_a_report_too_large_for_one_request_sends_fewer_newest_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: ten runs with long summaries, against a small body limit.
+    monkeypatch.setattr(sync_module, "_MAX_REPORT_BYTES", 3_000)
+    with _org_scope():
+        loop = create_manual_loop(name="Daily", prompt="Daily report.", cron="0 9 * * *")
+    for hour in range(10):
+        _record_run(loop.task.id, f"2026-10-18T{hour:02d}:00:00Z", summary="s" * 500)
+    webapp = _Webapp()
+
+    # Act
+    _sync(webapp).report(force=True)
+
+    # Assert: the loop still goes out, with its newest runs, inside the limit.
+    [row] = webapp.reports[0]
+    started = [run["started_at"] for run in row["runs"]]
+    assert 0 < len(started) < 10
+    assert started == [f"2026-10-18T{hour:02d}:00:00Z" for hour in range(9, 9 - len(started), -1)]
+    assert len(json.dumps(webapp.reports[0]).encode()) <= 3_000

@@ -27,6 +27,10 @@ CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS = 2.0
 #: minutes keeps an idle fleet near zero calls. Loop changes made on the
 #: gateway itself are reported at once, without waiting for a poll.
 WEBAPP_LOOP_SYNC_INTERVAL_SECONDS = 300.0
+#: How often a hosted gateway compares its loops and their runs with the last
+#: report, so a run starting or ending reaches the web app within this long.
+#: The comparison is local; the web app is called only when something changed.
+WEBAPP_LOOP_REPORT_INTERVAL_SECONDS = 30.0
 #: The loop-sync watcher sleeps between passes; cap its join on shutdown.
 WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS = 2.0
 DEFAULT_MAX_CONVERSATION_LOCKS = 1024
@@ -111,6 +115,7 @@ __all__ = [
     "ROTATE_SESSION",
     "SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS",
     "SCHEDULER_STOP_BUDGET_SHARE",
+    "WEBAPP_LOOP_REPORT_INTERVAL_SECONDS",
     "WEBAPP_LOOP_SYNC_INTERVAL_SECONDS",
     "WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS",
     "NO_ACTIVE_TURN_MESSAGE",

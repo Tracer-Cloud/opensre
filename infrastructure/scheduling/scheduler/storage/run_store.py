@@ -628,6 +628,24 @@ def get_group_runs(
         return [_row_to_task_run(row) for row in rows]
 
 
+def get_recent_runs(
+    task_ids: Collection[str], *, per_task: int, db_path: Path | None = None
+) -> list[TaskRun]:
+    """Return up to ``per_task`` newest attempts of each task in one snapshot, newest first."""
+    if not task_ids or per_task <= 0:
+        return []
+    with database.connection(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT {_RUN_COLUMNS} FROM ("
+            f"SELECT {_RUN_COLUMNS}, ROW_NUMBER() OVER ("
+            "PARTITION BY task_id ORDER BY started_at DESC, id DESC) AS position "
+            "FROM task_runs WHERE task_id IN (SELECT value FROM json_each(?))"
+            ") WHERE position <= ? ORDER BY started_at DESC, id DESC",
+            (json.dumps(list(task_ids)), per_task),
+        ).fetchall()
+        return [_row_to_task_run(row) for row in rows]
+
+
 def get_group_run(
     task_ids: Collection[str], run_id: int, *, db_path: Path | None = None
 ) -> TaskRun | None:

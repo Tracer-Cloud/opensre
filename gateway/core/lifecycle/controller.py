@@ -28,6 +28,7 @@ from config.constants.gateway import (
     CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_STOP_BUDGET_SHARE,
+    WEBAPP_LOOP_REPORT_INTERVAL_SECONDS,
     WEBAPP_LOOP_SYNC_INTERVAL_SECONDS,
     WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS,
 )
@@ -324,13 +325,23 @@ class GatewayController:
             return
         self._webapp_loop_sync = sync
 
+        # Between request polls, a local-only check reports runs that started or ended.
+        passes_per_poll = max(
+            1, round(WEBAPP_LOOP_SYNC_INTERVAL_SECONDS / WEBAPP_LOOP_REPORT_INTERVAL_SECONDS)
+        )
+
         def _watch() -> None:
+            passes = 0
             while not self._stopped.is_set():
                 try:
-                    sync.sync()
+                    if passes % passes_per_poll == 0:
+                        sync.sync()
+                    else:
+                        sync.report()
                 except Exception as exc:  # noqa: BLE001 - keep syncing after one bad pass
                     logger.warning("[gateway] web app task sync failed (%s)", type(exc).__name__)
-                self._stopped.wait(WEBAPP_LOOP_SYNC_INTERVAL_SECONDS)
+                passes += 1
+                self._stopped.wait(WEBAPP_LOOP_REPORT_INTERVAL_SECONDS)
 
         self.components["webapp_tasks"] = "syncing with the web app"
         self._webapp_loop_sync_thread = threading.Thread(
