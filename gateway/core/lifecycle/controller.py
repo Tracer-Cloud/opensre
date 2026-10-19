@@ -336,6 +336,10 @@ class GatewayController:
             while not self._stopped.is_set():
                 # Cleared before the pass, so a nudge that lands mid-pass runs another.
                 wake.clear()
+                # stop() sets both events; if it landed just before the clear,
+                # its wake is gone, so check again rather than sleep the interval.
+                if self._stopped.is_set():
+                    break
                 try:
                     sync.sync()
                 except Exception as exc:  # noqa: BLE001 - keep syncing after one bad pass

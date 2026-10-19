@@ -98,3 +98,37 @@ def test_without_a_web_app_sync_the_nudge_says_so(monkeypatch: pytest.MonkeyPatc
     # Assert
     assert answer.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert answer.json() == {"error": "loop_sync_unavailable"}
+
+
+class _StopDuringClear(threading.Event):
+    """A wake whose clear() lets ``stop()`` land first: the race the loop must survive."""
+
+    def __init__(self, gateway: GatewayController) -> None:
+        super().__init__()
+        self._gateway = gateway
+
+    def clear(self) -> None:
+        # stop() sets _stopped, then wakes the thread, just before the clear erases it.
+        self._gateway._stopped.set()
+        self.set()
+        super().clear()
+
+
+def test_a_stop_that_lands_just_before_the_clear_still_ends_the_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    sync = _CountingSync()
+    monkeypatch.setattr("bootstrap.adapters.webapp_loop_sync", lambda _runners=None: sync)
+    gateway = GatewayController()
+    gateway._webapp_loop_sync_wake = _StopDuringClear(gateway)
+
+    # Act
+    gateway._start_webapp_loop_sync(logging.getLogger("test"))
+    thread = gateway._webapp_loop_sync_thread
+    assert thread is not None
+    thread.join(timeout=5)
+
+    # Assert: the thread ended at once, without a pass or the five-minute sleep.
+    assert not thread.is_alive()
+    assert sync.passes == 0
