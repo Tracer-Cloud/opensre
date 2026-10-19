@@ -25,6 +25,8 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CHANNELS_PARAM,
     LOOP_CREATED_BY_PARAM,
     LOOP_DESCRIPTION_PARAM,
+    LOOP_EMAIL_ACCOUNT_PARAM,
+    LOOP_EMAIL_TO_PARAM,
     LOOP_GROUP_ID_PARAM,
     LOOP_MIGRATION_NOTICE_PARAM,
     LOOP_MODE_AGENT,
@@ -77,8 +79,13 @@ _TIME_RE = re.compile(
 SUPPORTED_MANUAL_LOOP_CHANNELS: tuple[Provider, ...] = (
     Provider.TELEGRAM,
     Provider.SLACK,
+    Provider.EMAIL,
     Provider.INTERACTIVE_SHELL,
 )
+#: An email loop's account: the owner's SMTP record or Gmail (Pipedream) account.
+_EMAIL_ACCOUNT_KINDS = ("smtp", "gmail")
+_EMAIL_ADDRESS = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
+_MAX_EMAIL_RECIPIENTS = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,6 +305,8 @@ def normalize_loop_channels(
     *,
     telegram_chat_id: str = "",
     slack_chat_id: str = "",
+    email_to: str = "",
+    email_account: str = "",
 ) -> tuple[Provider, ...]:
     """Normalize requested loop channels, defaulting to all reachable handles."""
     if not requested_channels:
@@ -315,6 +324,8 @@ def normalize_loop_channels(
             channel,
             telegram_chat_id=telegram_chat_id,
             slack_chat_id=slack_chat_id,
+            email_to=email_to,
+            email_account=email_account,
         )
     return channels
 
@@ -330,6 +341,8 @@ def create_manual_loop(
     channels: Sequence[str] | None = None,
     telegram_chat_id: str = "",
     slack_chat_id: str = "",
+    email_to: str = "",
+    email_account: str = "",
     window_hours: int = 24,
     store_path: Path | None = None,
     report: str = "",
@@ -367,6 +380,8 @@ def create_manual_loop(
         channels,
         telegram_chat_id=telegram_chat_id,
         slack_chat_id=slack_chat_id,
+        email_to=email_to,
+        email_account=email_account,
     )
     loop_id = uuid.uuid4().hex[:12]
     params = {
@@ -392,6 +407,9 @@ def create_manual_loop(
         params[LOOP_TELEGRAM_CHAT_ID_PARAM] = telegram_chat_id.strip()
     if slack_chat_id.strip():
         params[LOOP_SLACK_CHAT_ID_PARAM] = slack_chat_id.strip()
+    if Provider.EMAIL in channel_providers:
+        params[LOOP_EMAIL_TO_PARAM] = ",".join(email_recipients(email_to))
+        params[LOOP_EMAIL_ACCOUNT_PARAM] = email_account.strip()
 
     task = ScheduledTask(
         id=loop_id,
@@ -763,13 +781,42 @@ def _dedupe_providers(providers: Sequence[Provider]) -> tuple[Provider, ...]:
     return tuple(deduped)
 
 
+def email_recipients(raw: str) -> list[str]:
+    """The distinct addresses in a comma, semicolon or space separated list."""
+    seen: dict[str, str] = {}
+    for part in re.split(r"[,;\s]+", raw or ""):
+        address = part.strip()
+        if address and address.lower() not in seen:
+            seen[address.lower()] = address
+    return list(seen.values())
+
+
+def _validate_email_channel(email_to: str, email_account: str) -> None:
+    recipients = email_recipients(email_to)
+    if not recipients:
+        raise ValueError("email loop delivery needs at least one recipient address")
+    if len(recipients) > _MAX_EMAIL_RECIPIENTS:
+        raise ValueError(f"email loop delivery takes at most {_MAX_EMAIL_RECIPIENTS} recipients")
+    invalid = [address for address in recipients if not _EMAIL_ADDRESS.match(address)]
+    if invalid:
+        raise ValueError(f"not an email address: {invalid[0]}")
+    kind, _, account = email_account.strip().partition(":")
+    if kind not in _EMAIL_ACCOUNT_KINDS or not account.strip():
+        raise ValueError("email loop delivery needs the mailbox to send from (smtp:… or gmail:…)")
+
+
 def _validate_channel_ready(
     provider: Provider,
     *,
     telegram_chat_id: str,
     slack_chat_id: str,
+    email_to: str = "",
+    email_account: str = "",
 ) -> None:
     if provider == Provider.INTERACTIVE_SHELL:
+        return
+    if provider == Provider.EMAIL:
+        _validate_email_channel(email_to, email_account)
         return
     if provider == Provider.TELEGRAM:
         bot_token = resolve_telegram_credentials({}).get("bot_token", "")
@@ -795,6 +842,7 @@ def _validate_channel_ready(
 
 __all__ = [
     "LoopMutation",
+    "email_recipients",
     "LoopSummary",
     "ManualLoop",
     "STARTER_LOOPS",

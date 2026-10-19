@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from typing import Any
 
 from infrastructure.delivery.notifications.delivery_transport import post_json
 from infrastructure.delivery.notifications.redaction import redact_slack_token
@@ -12,8 +13,25 @@ from infrastructure.scheduling.scheduler.delivery import (
     slack_can_deliver,
     strip_html,
 )
-from infrastructure.scheduling.scheduler.types import ScheduledTask
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 from integrations.slack.delivery import send_slack_webhook_message
+from integrations.slack.formatting import markdown_to_slack_mrkdwn
+from integrations.slack.report_blocks import report_blocks
+
+#: Kinds whose message is a model-written report, rendered as Block Kit. Other
+#: kinds (digests, reminders) already compose their own Slack text.
+_REPORT_KINDS = frozenset({TaskKind.MANUAL_LOOP, TaskKind.RECURRING_SKILL})
+#: A report is read in the channel, not as a row of link preview cards.
+_NO_UNFURL = {"unfurl_links": False, "unfurl_media": False}
+
+
+def slack_message_payload(task: ScheduledTask, message: str) -> dict[str, Any]:
+    """The ``text`` (and, for a report, ``blocks``) one scheduled message posts as."""
+    plain = strip_html(message)
+    if task.kind in _REPORT_KINDS:
+        text, blocks = report_blocks(plain, loop_name=task.name)
+        return {"text": text, "blocks": blocks, **_NO_UNFURL}
+    return {"text": markdown_to_slack_mrkdwn(plain), **_NO_UNFURL}
 
 
 class SlackScheduledDelivery:
@@ -21,7 +39,8 @@ class SlackScheduledDelivery:
 
     A resolved ``chat_id`` uses the bot-token ``chat.postMessage`` API (new
     top-level message); an empty ``chat_id`` uses the channel-bound incoming
-    webhook. Slack uses mrkdwn, not HTML, so tags are stripped.
+    webhook. Slack uses mrkdwn, not HTML, so tags are stripped, and a
+    report is posted as Block Kit (:func:`slack_message_payload`).
     """
 
     def deliver(self, task: ScheduledTask, message: str) -> tuple[bool, str, str]:
@@ -43,14 +62,14 @@ class SlackScheduledDelivery:
                 return False, "Missing chat_id or webhook_url for Slack delivery", ""
             return False, "Scheduled tasks require Slack bot access_token for chat_id delivery", ""
 
-        plain_message = strip_html(message)
+        body = slack_message_payload(task, message)
 
         if access_token and chat_id:
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json; charset=utf-8",
             }
-            payload = {"channel": chat_id, "text": plain_message}
+            payload = {"channel": chat_id, **body}
             response = post_json(
                 url="https://slack.com/api/chat.postMessage",
                 payload=payload,
@@ -73,5 +92,7 @@ class SlackScheduledDelivery:
                 return False, f"Slack error: {safe_error}", ""
             return True, "", str(response.data.get("ts", ""))
 
-        ok, error = send_slack_webhook_message(plain_message, webhook_url=webhook_url)
+        text = str(body.pop("text"))
+        blocks = body.pop("blocks", None)
+        ok, error = send_slack_webhook_message(text, webhook_url=webhook_url, blocks=blocks, **body)
         return ok, error, ""

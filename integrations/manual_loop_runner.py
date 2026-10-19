@@ -14,6 +14,7 @@ from core.agent_harness import AgentSession, SessionCore
 from core.tool import ToolExecutionHooks
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CHANNELS_PARAM,
     LOOP_MODE_AGENT,
     LOOP_MODE_PARAM,
     LOOP_REPORT_ARGS_PARAM,
@@ -23,6 +24,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
 )
 from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_recipe
 from infrastructure.scheduling.scheduler.previous_runs import previous_runs_block
+from infrastructure.scheduling.scheduler.report_style import report_style_block
 from infrastructure.scheduling.scheduler.run_activity import (
     CARRY_NOTE_MAX_CHARS,
     compact_text,
@@ -121,7 +123,8 @@ def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") 
 
     ``previous_runs`` is the loop's PREVIOUS RUNS block; it goes right before the
     stored task so the tick reads its history before the work. A stateless loop
-    never shows it.
+    never shows it. Every tick carries the reply format guide
+    (:mod:`infrastructure.scheduling.scheduler.report_style`) for where it is delivered.
     """
     prompt = str(
         payload.get("loop_prompt") or payload.get("prompt") or payload.get("description") or ""
@@ -141,8 +144,19 @@ def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") 
         binding = f"\nStored repository target: {json.dumps(scope)}\n" if scope else ""
         recipe = _skill_recipe(payload)
         instructions = _STATELESS_AGENT_LOOP_INSTRUCTIONS if stateless else _AGENT_LOOP_INSTRUCTIONS
-        return f"{instructions}\nLoop name: {name}{binding}{history}\n\nTask:\n{prompt}{recipe}"
-    return f"{_MANUAL_LOOP_INSTRUCTIONS}\nLoop name: {name}{history}\n\nReport request:\n{prompt}"
+        style = f"\nWhen this tick has a result to deliver, format it as below.\n{_style(payload)}"
+        return (
+            f"{instructions}{style}\nLoop name: {name}{binding}{history}\n\nTask:\n{prompt}{recipe}"
+        )
+    return (
+        f"{_MANUAL_LOOP_INSTRUCTIONS}\n{_style(payload)}\nLoop name: {name}{history}\n\n"
+        f"Report request:\n{prompt}"
+    )
+
+
+def _style(payload: AgentPayload) -> str:
+    channels = str(payload.get(LOOP_CHANNELS_PARAM) or "").split(",")
+    return report_style_block(channels, timezone=str(payload.get("timezone") or ""))
 
 
 def _skill_recipe(payload: AgentPayload) -> str:

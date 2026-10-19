@@ -347,6 +347,8 @@ class WebappLoopSync:
             channels=_strings(channels) or None,
             slack_chat_id=str(payload.get("slack_chat_id") or ""),
             telegram_chat_id=str(payload.get("telegram_chat_id") or ""),
+            email_to=str(payload.get("email_to") or ""),
+            email_account=str(payload.get("email_account") or ""),
             mode=str(payload.get("mode") or LOOP_MODE_REPORT),
             extra_params={LOOP_WEBAPP_REQUEST_ID_PARAM: request_id},
         )

@@ -27,6 +27,7 @@ EXECUTOR_DELIVERS = frozenset(
         Provider.SLACK,
         Provider.DISCORD,
         Provider.ROCKETCHAT,
+        Provider.EMAIL,
         Provider.INTERACTIVE_SHELL,
     }
 )

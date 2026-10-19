@@ -25,6 +25,7 @@ from infrastructure.scheduling.scheduler.credentials import (
 from infrastructure.scheduling.scheduler.delivery import resolve_slack_delivery_chat_id
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CHANNELS_PARAM,
+    LOOP_EMAIL_TO_PARAM,
     LOOP_SLACK_CHAT_ID_PARAM,
     LOOP_TELEGRAM_CHAT_ID_PARAM,
 )
@@ -75,6 +76,7 @@ def configured_target_keys(task: ScheduledTask) -> tuple[TargetKey, ...]:
     chat_params = {
         Provider.SLACK: LOOP_SLACK_CHAT_ID_PARAM,
         Provider.TELEGRAM: LOOP_TELEGRAM_CHAT_ID_PARAM,
+        Provider.EMAIL: LOOP_EMAIL_TO_PARAM,
     }
     targets: list[TargetKey] = []
     for provider in channels:
@@ -202,6 +204,8 @@ def _target_for_provider(task: ScheduledTask, provider: Provider) -> DeliveryTar
             task,
             webhook_url=str(slack_creds.get("webhook_url") or ""),
         )
+    elif provider == Provider.EMAIL:
+        chat_id = task.params.get(LOOP_EMAIL_TO_PARAM, "").strip()
     elif provider == Provider.INTERACTIVE_SHELL:
         chat_id = ""
     return DeliveryTarget(

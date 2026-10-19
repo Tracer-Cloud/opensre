@@ -91,3 +91,44 @@ def send_smtp_report(
         except Exception:  # noqa: BLE001
             client.close()
     return True, ""
+
+
+def send_smtp_email(
+    *,
+    subject: str,
+    text: str,
+    html: str,
+    smtp_ctx: dict[str, Any],
+    recipients: list[str],
+) -> tuple[bool, str]:
+    """Send one multipart (plain text + HTML) email via SMTP to ``recipients``."""
+    to = [address.strip() for address in recipients if address.strip()]
+    from_address = str(smtp_ctx.get("from_address") or "").strip()
+    if not to:
+        return False, "Missing recipient email address"
+    if not from_address:
+        return False, "Missing from_address"
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = from_address
+    message["To"] = ", ".join(to)
+    message.set_content(text)
+    message.add_alternative(html, subtype="html")
+
+    try:
+        client = _connect_client(smtp_ctx)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[smtp] connection failed: %s", exc)
+        return False, f"Could not connect to the SMTP server ({type(exc).__name__})"
+    try:
+        client.send_message(message)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[smtp] send failed: %s", exc)
+        return False, f"The SMTP server refused the message ({type(exc).__name__})"
+    finally:
+        try:
+            client.quit()
+        except Exception:  # noqa: BLE001
+            client.close()
+    return True, ""

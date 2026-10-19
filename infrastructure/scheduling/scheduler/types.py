@@ -61,6 +61,7 @@ class Provider(StrEnum):
     ROCKETCHAT = "rocketchat"
     INTERACTIVE_SHELL = "interactive_shell"
     BUZZ = "buzz"
+    EMAIL = "email"
 
 
 def _generate_task_id() -> str:

@@ -220,6 +220,7 @@ def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
             "task_name": task.name,
             "loop_prompt": prompt,
             "window_hours": task.window_hours,
+            "timezone": task.timezone,
         }
         return runners.agent(payload)
     except Exception as exc:

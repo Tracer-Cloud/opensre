@@ -45,9 +45,10 @@ logger = logging.getLogger(__name__)
 _INTEGRATIONS_PATH = "/api/agent/integrations"
 _VIEWER_FIELD = "viewerUserId"
 #: Services taken from the member's view: GitHub (personal connections and a
-#: per-owner default) and Pipedream (the member's own Gmail, Drive, documents).
-#: The rest stay workspace-wide.
-_MEMBER_SERVICES = frozenset({"github", "pipedream"})
+#: per-owner default), Pipedream (the member's own Gmail, Drive, documents) and
+#: SMTP (the mailboxes they send from, for email loops). The rest stay
+#: workspace-wide.
+_MEMBER_SERVICES = frozenset({"github", "pipedream", "smtp"})
 
 _lock = threading.Lock()
 #: (organization, actor) -> (fetched_at, records or None for "no member view")

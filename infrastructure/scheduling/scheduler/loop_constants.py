@@ -5,6 +5,12 @@ from __future__ import annotations
 LOOP_CHANNELS_PARAM = "loop_channels"
 LOOP_CREATED_BY_PARAM = "loop_created_by"
 LOOP_DESCRIPTION_PARAM = "loop_description"
+LOOP_EMAIL_ACCOUNT_PARAM = "loop_email_account"
+"""The loop owner's mailbox an email loop sends from: ``smtp:<record>`` or ``gmail:<account id>``."""
+
+LOOP_EMAIL_TO_PARAM = "loop_email_to"
+"""Comma-separated recipients of an email loop; its email destination's chat id."""
+
 LOOP_GROUP_ID_PARAM = "loop_group_id"
 LOOP_LEGACY_TASK_KIND_PARAM = "opensre_legacy_task_kind"
 LOOP_MIGRATION_NOTICE_PARAM = "opensre_task_migration_notice"
@@ -50,6 +56,8 @@ __all__ = [
     "LOOP_CHANNELS_PARAM",
     "LOOP_CREATED_BY_PARAM",
     "LOOP_DESCRIPTION_PARAM",
+    "LOOP_EMAIL_ACCOUNT_PARAM",
+    "LOOP_EMAIL_TO_PARAM",
     "LOOP_GROUP_ID_PARAM",
     "LOOP_LEGACY_TASK_KIND_PARAM",
     "LOOP_MIGRATION_NOTICE_PARAM",
