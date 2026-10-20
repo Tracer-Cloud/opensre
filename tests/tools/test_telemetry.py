@@ -811,71 +811,6 @@ def _sentry_mcp_call_tool_case() -> ToolFailureCase:
     )
 
 
-def _patch_x_mcp_runtime(mp: pytest.MonkeyPatch) -> None:
-    """Shared patches for X MCP cases — bypass the config/runtime guards."""
-    from integrations.x_mcp.tools import x_mcp_tool as mod
-
-    mp.setattr(
-        mod,
-        "x_mcp_config_from_env",
-        MagicMock(
-            return_value=SimpleNamespace(
-                mode="streamable-http",
-                command="",
-                url="http://127.0.0.1:8000/mcp",
-                auth_token="",
-                bearer_token="",
-                args=(),
-                headers={},
-            )
-        ),
-    )
-    mp.setattr(mod, "x_mcp_runtime_unavailable_reason", MagicMock(return_value=None))
-    mp.setattr(mod, "describe_x_mcp_error", MagicMock(return_value="mocked error"))
-
-
-def _x_mcp_list_case() -> ToolFailureCase:
-    def patch(mp: pytest.MonkeyPatch) -> None:
-        from integrations.x_mcp.tools import x_mcp_tool as mod
-
-        _patch_x_mcp_runtime(mp)
-        mp.setattr(mod, "list_x_mcp_server_tools", MagicMock(side_effect=RuntimeError("mcp")))
-
-    def invoke() -> dict[str, Any]:
-        from integrations.x_mcp.tools.x_mcp_tool import list_x_tools
-
-        return list_x_tools()
-
-    return ToolFailureCase(
-        "x_mcp_list_tools",
-        patch,
-        invoke,
-        "list_x_tools",
-        "x_mcp",
-    )
-
-
-def _x_mcp_call_tool_case() -> ToolFailureCase:
-    def patch(mp: pytest.MonkeyPatch) -> None:
-        from integrations.x_mcp.tools import x_mcp_tool as mod
-
-        _patch_x_mcp_runtime(mp)
-        mp.setattr(mod, "invoke_x_mcp_tool", MagicMock(side_effect=RuntimeError("mcp")))
-
-    def invoke() -> dict[str, Any]:
-        from integrations.x_mcp.tools.x_mcp_tool import call_x_tool
-
-        return call_x_tool(tool_name="search-tweets", arguments={})
-
-    return ToolFailureCase(
-        "x_mcp_call_tool",
-        patch,
-        invoke,
-        "call_x_tool",
-        "x_mcp",
-    )
-
-
 def _pipedream_source() -> dict[str, Any]:
     return {
         "access_mode": "webapp_proxy",
@@ -1024,8 +959,6 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _posthog_mcp_call_tool_case(),
     _sentry_mcp_list_case(),
     _sentry_mcp_call_tool_case(),
-    _x_mcp_list_case(),
-    _x_mcp_call_tool_case(),
     _pipedream_list_case(),
     _pipedream_call_tool_case(),
     _runbook_guidance_case(),
@@ -1240,9 +1173,6 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         # Sentry MCP — both swallow sites in SentryMCPTool/__init__.py.
         "list_sentry_tools",
         "call_sentry_tool",
-        # X MCP — both swallow sites in x_mcp_tool/__init__.py.
-        "list_x_tools",
-        "call_x_tool",
         "load_runbook_guidance",
     }
 )

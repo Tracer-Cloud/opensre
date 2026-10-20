@@ -23,7 +23,7 @@ def test_hidden_imports_cover_runtime_discovered_tool_packages() -> None:
     hidden_imports = set(runtime_hidden_imports(_REPO_ROOT))
 
     assert set(INTEGRATION_TOOL_PACKAGES) <= hidden_imports
-    assert "integrations.x_mcp.tools.x_mcp_tool" in hidden_imports
+    assert "integrations.sentry_mcp.tools.sentry_mcp_tool" in hidden_imports
     assert "tools.system.work_items" in hidden_imports
     assert "tools.system.work_items.tool" in hidden_imports
 

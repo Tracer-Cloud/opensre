@@ -1,6 +1,6 @@
 """Shared transport-mode vocabulary for hosted/local MCP integrations.
 
-x_mcp, posthog_mcp, sentry_mcp, and the GitHub MCP integration each
+posthog_mcp, sentry_mcp, and the GitHub MCP integration each
 accept the same three client transports. A shared leaf enum means adding a
 fourth transport is one edit here instead of a multi-file sweep across every
 integration's own ``Literal`` and private ``_KNOWN_*_MODES`` frozenset.

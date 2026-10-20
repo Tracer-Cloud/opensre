@@ -92,7 +92,6 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.twilio.tools",
     "integrations.vercel.tools",
     "integrations.victoria_logs.tools",
-    "integrations.x_mcp.tools",
 )
 
 _SKIP_MODULE_NAMES = {

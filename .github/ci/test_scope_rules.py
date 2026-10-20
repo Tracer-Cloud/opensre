@@ -514,13 +514,6 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
-        "integrations/x_mcp/",
-        (
-            "tests/integrations/test_x_mcp.py",
-            "tests/tools/test_x_mcp_tool.py",
-        ),
-    ),
-    PathRule(
         "integrations/argocd/",
         (
             "tests/integrations/argocd/",

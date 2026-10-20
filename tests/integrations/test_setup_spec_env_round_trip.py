@@ -70,7 +70,6 @@ from integrations.tracer.setup import TRACER_SETUP
 from integrations.twilio.setup import TWILIO_SETUP
 from integrations.vercel.setup import VERCEL_SETUP
 from integrations.whatsapp.setup import WHATSAPP_SETUP
-from integrations.x_mcp.setup import X_MCP_SETUP
 
 # A distinct, recognizable value per field, so two fields of the same
 # integration swapping places fails instead of coincidentally matching. Values
@@ -180,10 +179,6 @@ _SUBMITTED: dict[str, dict[str, str]] = {
         "url": "https://mcp.eu.sentry.dev/mcp",
         "auth_token": "sentry-user-auth-token",
         "host": "sentry.checkout.internal",
-    },
-    "x_mcp": {
-        "url": "https://x-mcp.checkout.internal/mcp",
-        "auth_token": "x-mcp-tunnel-token",
     },
     "betterstack": {
         "query_endpoint": "https://eu-nbg-2-connect.betterstackdata.com",
@@ -339,7 +334,6 @@ _SPECS = [
     WHATSAPP_SETUP,
     POSTHOG_MCP_SETUP,
     SENTRY_MCP_SETUP,
-    X_MCP_SETUP,
     BETTERSTACK_SETUP,
     SERVICENOW_SETUP,
     POSTGRESQL_SETUP,

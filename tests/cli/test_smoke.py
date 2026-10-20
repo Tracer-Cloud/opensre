@@ -70,12 +70,6 @@ _CLEARED_ENV_KEYS = (
     "TRACER_API_URL",
     "TRACER_WEB_APP_URL",
     "TRUSTEDROUTER_API_KEY",
-    "X_BEARER_TOKEN",
-    "X_MCP_ARGS",
-    "X_MCP_AUTH_TOKEN",
-    "X_MCP_COMMAND",
-    "X_MCP_MODE",
-    "X_MCP_URL",
 )
 
 

@@ -19,7 +19,6 @@ from integrations.posthog_mcp import (
     list_posthog_mcp_tools,
 )
 from integrations.sentry_mcp import SentryMCPConfig, call_sentry_mcp_tool, list_sentry_mcp_tools
-from integrations.x_mcp import XMCPConfig, call_x_mcp_tool, list_x_mcp_tools
 
 
 @dataclass(frozen=True)
@@ -293,23 +292,6 @@ async def _consume_session(config: _Config) -> None:
                 "sse_url_hint": "https://mcp.sentry.dev/sse",
             },
         ),
-        (
-            XMCPConfig(
-                url="http://127.0.0.1:9000/mcp",
-                auth_token="proxy-token",
-                bearer_token="x-token",
-            ),
-            list_x_mcp_tools,
-            {
-                "session_url": "http://127.0.0.1:9000/mcp",
-                "stdio_env": {"X_BEARER_TOKEN": "x-token"},
-                "integration_name": "X",
-                "config_env_name": "X_MCP",
-                "sse_url_hint": "http://127.0.0.1:8000/sse",
-                "streamable_url_hint": "http://127.0.0.1:8000/mcp",
-                "timeout_entire_operation": True,
-            },
-        ),
     ],
 )
 def test_vendor_list_operations_preserve_connection_options(
@@ -345,11 +327,6 @@ def test_vendor_list_operations_preserve_connection_options(
             SentryMCPConfig(auth_token="sentry-token"),
             call_sentry_mcp_tool,
             {"timeout_call": True},
-        ),
-        (
-            XMCPConfig(),
-            call_x_mcp_tool,
-            {"timeout_call": False, "timeout_entire_operation": True},
         ),
     ],
 )

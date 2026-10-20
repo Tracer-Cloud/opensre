@@ -1,6 +1,6 @@
 """Shared unavailable-response builder for MCP bridge tools.
 
-Every MCP bridge tool (``posthog_mcp``, ``sentry_mcp``, ``x_mcp``)
+Every MCP bridge tool (``posthog_mcp``, ``sentry_mcp``)
 returns the same degraded payload when it can't reach its backend: the base
 ``tool_unavailable`` envelope, optionally annotated with the ``tool`` that was
 being dispatched and the ``arguments`` it was called with. This module holds

@@ -2435,10 +2435,6 @@
     "seconds": 0.139,
     "tests": 12
   },
-  "tests/integrations/test_x_mcp.py": {
-    "seconds": 0.427,
-    "tests": 25
-  },
   "tests/integrations/tracer/test_aws_batch_jobs.py": {
     "seconds": 0.339,
     "tests": 14
@@ -3830,10 +3826,6 @@
   "tests/tools/test_work_items_tools.py": {
     "seconds": 0.147,
     "tests": 7
-  },
-  "tests/tools/test_x_mcp_tool.py": {
-    "seconds": 0.212,
-    "tests": 31
   },
   "tests/tools/utils/test_eks_workload_helper.py": {
     "seconds": 0.147,

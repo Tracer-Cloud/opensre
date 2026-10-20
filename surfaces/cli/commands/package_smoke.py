@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 _REQUIRED_TOOL_NAMES = frozenset(
     {
-        "call_x_tool",
+        "call_sentry_tool",
         "execute_python_code",
         "generate_work_status_report",
         "kubernetes_list_pods",
@@ -37,7 +37,7 @@ _REQUIRED_ACTION_SKILL_NAMES = frozenset(
         "onboarding-github-ci",
     }
 )
-_REQUIRED_INTEGRATION_VERIFIER_NAMES = frozenset({"datadog", "grafana", "x_mcp"})
+_REQUIRED_INTEGRATION_VERIFIER_NAMES = frozenset({"datadog", "grafana", "sentry_mcp"})
 _GUIDED_TOOL_NAMES = frozenset({"execute_python_code", "generate_work_status_report"})
 # Proves the frozen build ships the fat skill body, not just the index entry.
 _ACTION_SKILL_BODY_MARKERS = {"repair-github-ci": "fix_github_pr_ci"}

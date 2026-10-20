@@ -187,7 +187,6 @@ def load_env_integration_services() -> list[str]:
     )
     add("posthog_mcp", _any_env("POSTHOG_MCP_COMMAND", "POSTHOG_MCP_URL", "POSTHOG_MCP_AUTH_TOKEN"))
     add("sentry_mcp", _any_env("SENTRY_MCP_COMMAND", "SENTRY_MCP_URL", "SENTRY_MCP_AUTH_TOKEN"))
-    add("x_mcp", _any_env("X_MCP_COMMAND", "X_MCP_URL", "X_MCP_AUTH_TOKEN"))
     add("mariadb", _all_env("MARIADB_HOST", "MARIADB_DATABASE"))
     add("opensearch", _env_is_set("OPENSEARCH_URL"))
 

@@ -263,14 +263,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=45,
     ),
     IntegrationSpec(
-        service="x_mcp",
-        aliases=("x mcp", "x-mcp", "twitter", "twitter_mcp", "twitter-mcp"),
-        has_verifier=True,
-        direct_effective=True,
-        setup_order=39,
-        verify_order=49,
-    ),
-    IntegrationSpec(
         service="mysql",
         has_verifier=True,
         direct_effective=True,

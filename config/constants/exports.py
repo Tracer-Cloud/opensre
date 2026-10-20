@@ -672,9 +672,6 @@ EXPORTS: dict[str, str] = {
     # work_items
     "OPENSRE_WORK_ITEMS_DIR_ENV": "work_items",
     "WORK_ITEM_REMINDER_RUN_AT_PARAM": "work_items",
-    # x_mcp
-    "X_MCP_AUTH_TOKEN_ENV": "x_mcp",
-    "X_MCP_URL_ENV": "x_mcp",
 }
 
 __all__, __getattr__, __dir__ = bind_package_exports("config.constants", EXPORTS)

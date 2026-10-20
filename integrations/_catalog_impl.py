@@ -237,7 +237,6 @@ from config.constants.twilio import (
     WHATSAPP_DEFAULT_TO_ENV,
 )
 from config.constants.vercel import VERCEL_API_TOKEN_ENV, VERCEL_TEAM_ID_ENV
-from config.constants.x_mcp import X_MCP_AUTH_TOKEN_ENV, X_MCP_URL_ENV
 from config.llm_credentials import resolve_env_credential
 from config.tracer_urls import get_tracer_base_url
 from infrastructure.observability.errors.boundary import report_exception
@@ -365,8 +364,6 @@ from integrations.vercel import classify as _classify_vercel
 from integrations.vercel.client import VercelConfig
 from integrations.victoria_logs import classify as _classify_victoria_logs
 from integrations.whatsapp import classify as _classify_whatsapp
-from integrations.x_mcp import build_x_mcp_config
-from integrations.x_mcp import classify as _classify_x_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -515,7 +512,6 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "posthog": _classify_posthog,
     "posthog_mcp": _classify_posthog_mcp,
     "sentry_mcp": _classify_sentry_mcp,
-    "x_mcp": _classify_x_mcp,
     "mysql": _classify_mysql,
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
@@ -1486,36 +1482,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
         except Exception as exc:
             _report_env_loader_failure(exc, integration="sentry_mcp")
-
-    x_mcp_mode = os.getenv("X_MCP_MODE", "streamable-http").strip().lower()
-    x_mcp_mode = x_mcp_mode or "streamable-http"
-    x_mcp_command = os.getenv("X_MCP_COMMAND", "").strip()
-    x_mcp_token = resolve_env_credential(X_MCP_AUTH_TOKEN_ENV)
-    x_mcp_bearer_token = resolve_env_credential("X_BEARER_TOKEN")
-    x_mcp_url = os.getenv(X_MCP_URL_ENV, "").strip()
-    if (x_mcp_mode == "stdio" and x_mcp_command) or (x_mcp_mode != "stdio" and x_mcp_url):
-        try:
-            x_mcp_config = build_x_mcp_config(
-                {
-                    "url": x_mcp_url,
-                    "mode": x_mcp_mode,
-                    "command": x_mcp_command,
-                    "args": [part for part in os.getenv("X_MCP_ARGS", "").strip().split() if part],
-                    "auth_token": x_mcp_token,
-                    "bearer_token": x_mcp_bearer_token,
-                }
-            )
-            integrations.append(
-                _active_env_record(
-                    "x_mcp",
-                    {
-                        **x_mcp_config.model_dump(exclude={"integration_id"}),
-                        "connection_verified": True,
-                    },
-                )
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="x_mcp")
 
     mariadb_host = os.getenv(MARIADB_HOST_ENV, "").strip()
     mariadb_database = os.getenv(MARIADB_DATABASE_ENV, "").strip()

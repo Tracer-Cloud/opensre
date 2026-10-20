@@ -125,8 +125,7 @@
               "integrations/monitoring/signoz",
               "integrations/monitoring/splunk",
               "integrations/monitoring/tempo",
-              "integrations/monitoring/victoria_logs",
-              "integrations/monitoring/x-mcp"
+              "integrations/monitoring/victoria_logs"
             ]
           },
           {
@@ -790,10 +789,6 @@
     {
       "source": "/work-management",
       "destination": "/platform/work-management"
-    },
-    {
-      "source": "/x-mcp",
-      "destination": "/integrations/monitoring/x-mcp"
     }
   ],
   "seo": {

@@ -1,7 +1,7 @@
 """Normalize MCP integration source dicts for tool param extraction.
 
 MCP-backed tools read connection settings from the verified integration
-source (e.g. ``posthog_mcp``, ``sentry_mcp``, ``x_mcp``). Catalog and
+source (e.g. ``posthog_mcp``, ``sentry_mcp``). Catalog and
 runtime configs may use prefixed keys (``posthog_url``) or short aliases
 (``url``). These helpers pick the first non-empty value across alias keys
 and coerce list fields into stripped string lists.

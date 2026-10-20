@@ -21,14 +21,14 @@ def test_source_is_passed_through() -> None:
 
 
 def test_tool_name_added_when_truthy() -> None:
-    result = unavailable_response("x_mcp", "failed", tool_name="post_tweet")
-    assert result["tool"] == "post_tweet"
+    result = unavailable_response("sentry_mcp", "failed", tool_name="get_issue_details")
+    assert result["tool"] == "get_issue_details"
 
 
 def test_tool_name_omitted_when_none_or_empty() -> None:
-    assert "tool" not in unavailable_response("x_mcp", "failed")
-    assert "tool" not in unavailable_response("x_mcp", "failed", tool_name=None)
-    assert "tool" not in unavailable_response("x_mcp", "failed", tool_name="")
+    assert "tool" not in unavailable_response("sentry_mcp", "failed")
+    assert "tool" not in unavailable_response("sentry_mcp", "failed", tool_name=None)
+    assert "tool" not in unavailable_response("sentry_mcp", "failed", tool_name="")
 
 
 def test_arguments_added_when_provided() -> None:
