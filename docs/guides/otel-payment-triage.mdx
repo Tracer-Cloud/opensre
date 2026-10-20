@@ -1,19 +1,46 @@
 ---
 title: "OTel payment auto-triage pilot"
-description: "Run a headless, self-hosted payment failure investigation with Telegram lifecycle reports."
+description: "Run the payment demo, understand what OpenSRE watches, and receive failure and recovery reports."
 ---
 
 This opt-in pilot runs the official OpenTelemetry Demo payment service, one
-ClickStack Collector, and ClickHouse. OpenSRE reads bounded evidence and reports
-a new incident and its recovery. It does not run remediation or require a dashboard.
+ClickStack Collector, and ClickHouse. OpenSRE checks the payment error rate,
+investigates a new incident, and reports its recovery. It does not change your
+application or require a dashboard.
 Existing vendor integrations are unchanged.
+
+## How the pieces fit together
+
+```text
+Payment service (standard OpenTelemetry SDK)
+  → Collector: receives telemetry through OTLP
+  → ClickHouse: stores metrics, traces, and logs
+
+OpenSRE triage watch
+  → reads recent payment metrics from ClickHouse every 30 seconds
+  → on a new incident, reads a small set of related traces and logs
+  → asks the configured API model to summarize that evidence
+  → saves the report locally and sends it to Telegram, if enabled
+```
+
+**OpenSRE reads ClickHouse, not the Collector.** The Collector receives and
+forwards telemetry; it is not the history store. You configure these separately:
+
+| File | What you configure |
+| --- | --- |
+| `examples/telemetry-payment/collector.yaml` | How the Collector receives telemetry, derives request counts, and writes to ClickHouse. |
+| `examples/telemetry-payment/watch.yaml` | Where OpenSRE reads the stored data, which service to watch, and when to open or recover an incident. |
+
+Raw telemetry stays in ClickHouse. The local `watch.db` SQLite file stores
+incident state, reports, and pending deliveries—not the telemetry stream.
 
 ## Start the demo
 
 Use a source checkout with Docker Compose and a configured OpenSRE API model.
 A tool-enabled model CLI is not supported for this bounded investigation.
 For Telegram, first run `uv run opensre integrations setup telegram` and choose
-a default destination the bot can access. Omit `--telegram` for terminal-only reports.
+your own chat or a group the bot can access—not another bot's account.
+Omit `--telegram` for terminal-only reports.
 
 From the repository root:
 
@@ -45,6 +72,74 @@ window and exits. `--chat-id` optionally overrides the configured Telegram desti
 Stop with Ctrl-C; retained reports and pending deliveries survive restart.
 Run the same command with the same state file to resume. Changing source, rule,
 bot identity, or destination requires a new state file.
+
+## Understand the watch configuration
+
+The included `watch.yaml` is ready for this demo:
+
+```yaml
+source:
+  backend: clickhouse
+  host: 127.0.0.1
+  port: 18123
+  database: default
+  username: opensre_reader
+watch:
+  service: payment
+  environment: demo
+  # Explicitly map the collector's unsampled, delta SERVER-span counter.
+  metric:
+    name: traces.span.metrics.calls
+    status_attribute: status.code
+    error_value: STATUS_CODE_ERROR
+    kind_attribute: span.kind
+    server_value: SPAN_KIND_SERVER
+  window_seconds: 30
+  ingestion_delay_seconds: 15
+  minimum_requests: 5
+  error_ratio: 0.2
+  healthy_windows: 2
+```
+
+Read this as: **“Check payment in demo every 30 seconds. With at least five
+requests, open an incident if 20% or more fail. Recover only after two
+consecutive healthy windows.”**
+
+| Setting | Meaning |
+| --- | --- |
+| `source` | The ClickHouse connection, using a read-only account. Port `18123` is ClickHouse HTTP, not an OTLP port. |
+| `service`, `environment` | Limit all metric, trace, and log reads to this service and environment. |
+| `metric` | Identify the request counter, its error label, and the label selecting incoming server requests. Keep this mapping unchanged for the demo. |
+| `window_seconds` | How much data each check covers and how often the watch checks. |
+| `ingestion_delay_seconds` | Wait before checking a completed window so telemetry has time to arrive. Late data can still be missed. |
+| `minimum_requests` | Below this request count, the result is unknown—not healthy. |
+| `error_ratio` | The fraction of requests that must fail to open an incident: `0.2` means 20%. |
+| `healthy_windows` | How many consecutive below-threshold windows, each with enough requests, are needed to recover. |
+
+Keep passwords out of YAML. The setup command creates the demo password;
+loading `.env` above supplies `OPENSRE_TELEMETRY_CLICKHOUSE_PASSWORD` to OpenSRE.
+
+### What happens on each check?
+
+For example, a check at **12:01:15** examines **12:00:30–12:01:00**:
+a completed 30-second window with a 15-second allowance for ingestion.
+
+| Result in that window | What OpenSRE does |
+| --- | --- |
+| 30 requests, no errors, no open incident | Prints `Telemetry: healthy`; no model call or Telegram report. |
+| 30 requests, 30 errors, no open incident | Opens one incident, reads up to ten traces and ten logs, and produces an opening report. |
+| Errors stay at or above 20% during that incident | Keeps the incident open; does not repeat model analysis or create another opening report. |
+| Two consecutive windows below 20%, each with at least five requests | Marks the incident recovered and produces a recovery report, without another model call. |
+| Missing data, fewer than five requests, or a failed query | Prints `Telemetry: unknown`; does not declare recovery. An unknown window resets the recovery streak. |
+
+This watches **application telemetry, not Collector health**. An unknown result
+does not tell you whether the Collector stopped, the application stopped, or
+there was simply no traffic. Previously stored data may remain eligible briefly
+after collection stops; missing data is not detected instantly.
+
+Keep the watch terminal running: closing it pauses detection even if the
+Collector keeps storing data. Restarting resumes recent checks, but does not
+backfill missed windows. A slow investigation can also skip windows.
 
 ## Reproduce failure and recovery
 
@@ -78,7 +173,7 @@ Delivery is at-least-once: a crash after Telegram accepts a message but before
 OpenSRE saves its acknowledgment can produce a duplicate. Notifications carry
 an incident ID. Keep the local state file private; it contains investigation reports.
 
-## What the rule measures
+## Measurement and investigation limits
 
 The demo's application counter counts successful payments only. The Collector
 therefore derives a delta request counter from **unsampled SERVER spans**.
@@ -87,17 +182,11 @@ use this rule on sampled traces or substitute a cumulative counter: the reader
 rejects non-delta data. An application-native all-requests/error counter is a
 better production source when available, but requires an appropriate mapping.
 
-A window needs at least five requests. An error ratio of 20% or more opens one
-incident. Two consecutive eligible windows below 20% recover it. Missing,
-invalid, stale, or unavailable telemetry is **unknown**, not recovery. Gaps
-break the recovery streak; the pilot does not backfill windows missed while stopped.
-The 15-second ingestion allowance is not a completeness guarantee for late data.
-
-A new incident gets up to ten traces and ten logs from the same service,
-environment, and time window. A single model synthesis has a 90-second wall
-clock deadline; quiet checks and recovery do not invoke a model. If evidence
-or the model is unavailable, the retained report explicitly says the cause is
-unknown. This is bounded synthesis, not a general-purpose tool-calling agent.
+The model sees only the selected evidence from the incident's service,
+environment, and time window, with a 90-second analysis deadline. It cannot
+run tools, execute SQL, or make changes to the application. If evidence or the
+model is unavailable, OpenSRE saves a partial report with the cause marked
+unknown. A report is an evidence-based explanation, not a guaranteed root cause.
 
 ## Connect your own application
 
