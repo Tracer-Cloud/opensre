@@ -1934,33 +1934,37 @@ wheels = [
 
 [[package]]
 name = "litellm"
-version = "1.103.2"
+version = "1.105.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "boto3" },
     { name = "click" },
     { name = "fastuuid" },
+    { name = "filelock" },
     { name = "httpx", extra = ["http2"] },
+    { name = "huggingface-hub" },
     { name = "importlib-metadata" },
     { name = "jinja2" },
     { name = "jsonschema" },
     { name = "openai" },
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/89/ac/c11888f2fbd37225c48ecdb8535b38f8b0e0cb2219dcd5f3f1698c28ff58/litellm-1.103.2.tar.gz", hash = "sha256:fa4f6f158bb6e9da41958fe57dd292ac851f23ecceb75b50e70177255e291d3b", size = 18954395, upload-time = "2026-10-01T06:21:17.081Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/ce/083565ef5a988c27ac4e9f63f36b4289397a59a41be83931619eed9d76e3/litellm-1.105.1.tar.gz", hash = "sha256:f1a274db0b2bcc78c34ed34c06df2c1dcd0dc038469193684927f6bb2cab2d97", size = 20321773, upload-time = "2026-10-14T04:28:23.557Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/d2/5d721cc501d48850caf76f0bf6eb5b179e76b8720663d626c465fd92d1a6/litellm-1.103.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ff38483d5dd7384e285aaec0d60ce4b0924a5c14f7250af6549baac409ca4150", size = 27764146, upload-time = "2026-10-01T06:20:45.163Z" },
-    { url = "https://files.pythonhosted.org/packages/32/75/6ee7223edc0da9fda4cd1804dbfb7f7cd1d1e62bf608b002b7fb72b97c6b/litellm-1.103.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:2dc9ebb340a9b3ba0e0a72e6ba86d28b702f5489e53eb6ef96c5831fcaa50108", size = 27226858, upload-time = "2026-10-01T06:20:50.556Z" },
-    { url = "https://files.pythonhosted.org/packages/cf/db/386cd31aac601c1d76933447f0f0fcf37ef3a4179ebe68a1a25423b99d6f/litellm-1.103.2-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:36632b326132139db55eb47186b08f8425cb8c1757f0b3201ee2aa251139aa0a", size = 27534490, upload-time = "2026-10-01T06:20:56.07Z" },
-    { url = "https://files.pythonhosted.org/packages/40/a6/21554ab56309662a81e143cfc7f233e2a48a2ee0b162a7f8955df9219f99/litellm-1.103.2-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:a9d54a0e48c5342b7cbfeb7f0053caca2aa0bb5d68ed69133ccf7107402855cb", size = 28079655, upload-time = "2026-10-01T06:21:00.634Z" },
-    { url = "https://files.pythonhosted.org/packages/63/6d/c5b5c1fa526d453e807984139ecf5fbe6f640a110569e7d84fbc4e045559/litellm-1.103.2-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:c9c4b32c685ca62d7eaf246c94e4a943c884d1ab56607b408b2c9cdf959b658c", size = 27616993, upload-time = "2026-10-01T06:21:05.156Z" },
-    { url = "https://files.pythonhosted.org/packages/cc/e1/2fe0fd0e8668ac6de67dec958524a26878c0ad963676cda2ceeb281e200e/litellm-1.103.2-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:f73617d4d6b6741903f01f003b23c825045276b35a057a72080c816772a90e31", size = 28196360, upload-time = "2026-10-01T06:21:09.427Z" },
-    { url = "https://files.pythonhosted.org/packages/fa/c2/ecb4f45b170e9c5271132f6a399c9a3eb934c077ae6c8e2ac35f4d66ffa5/litellm-1.103.2-cp310-abi3-win_amd64.whl", hash = "sha256:0dc3fb3439653e218bca4c905efd5bdb69e61ab4df31dbb0ede05013e1c4c649", size = 28140642, upload-time = "2026-10-01T06:21:13.457Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/71/72b0e4c54a8fb0e10a35adb611f2f03febc27ac4fdf9b372c4f4a7d53442/litellm-1.105.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:633886584ffb6421485349376f2c1666d4854fecc3ab8b1cdb24537817d4e1cc", size = 38069260, upload-time = "2026-10-14T04:27:50.741Z" },
+    { url = "https://files.pythonhosted.org/packages/40/3b/a060486a4cb637d2aff7bedd2d9bdd807793cf8820153bca74fd14d7cbd4/litellm-1.105.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:3253da7d4967e367fb7e4e404b598a26037c45ba6d67a79356a81d3f8b9f9f3a", size = 36430187, upload-time = "2026-10-14T04:27:55.416Z" },
+    { url = "https://files.pythonhosted.org/packages/75/05/52960a61798299aaf333d0010d1010a55099aa22bdedea3958672a4ce571/litellm-1.105.1-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:beb5044645144308b39560049c0f68875ad7de07e681ad0b73e2bc6c3705ba61", size = 37752535, upload-time = "2026-10-14T04:27:59.691Z" },
+    { url = "https://files.pythonhosted.org/packages/07/1d/44e5c54df750ccb610285c778f92651794534a480dcce730eaf9d0aa8b31/litellm-1.105.1-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:f3d743c2d274c6537f7341213607c927c486676012a9d94412a8a8ccbe2f51f1", size = 38775911, upload-time = "2026-10-14T04:28:03.87Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/4c/ee5ce0ac611f595da18e01b613dbac6af241c5142c0e08765e5b29737605/litellm-1.105.1-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:d0392f5e773ab4bdb15daf2856d89afce74dc8b7e6d802f52060a23778ef650b", size = 37873313, upload-time = "2026-10-14T04:28:08.943Z" },
+    { url = "https://files.pythonhosted.org/packages/19/5d/6b44374c4ec2a297072fd331694c98dd7463407f17129b173d472c89c080/litellm-1.105.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:d422f4fa44b424c541276bf55355b3650e2db01c08922f250baaf61eeaf788cf", size = 38907646, upload-time = "2026-10-14T04:28:14.409Z" },
+    { url = "https://files.pythonhosted.org/packages/36/10/05865e564be95fa2e5d14bf94667a0d00684341f193645dde9ebaf5495cd/litellm-1.105.1-cp310-abi3-win_amd64.whl", hash = "sha256:e2b46bc884b1aa7299a238158f7ff3f3dad49821a0dcfa4a77a54cf38e78bac2", size = 39775121, upload-time = "2026-10-14T04:28:19.755Z" },
 ]
 
 [[package]]
@@ -2710,7 +2714,7 @@ requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'opensre-hub'", specifier = ">=0.26.0" },
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "kubernetes", specifier = ">=28.1.0,<37.0.0" },
-    { name = "litellm", specifier = ">=1.90.0,<1.104.0" },
+    { name = "litellm", specifier = ">=1.90.0,<1.106.0" },
     { name = "mcp", specifier = ">=1.28.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "openai", specifier = ">=2.0.0" },
