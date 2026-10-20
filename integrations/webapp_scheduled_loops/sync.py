@@ -15,10 +15,14 @@ redelivered request is acknowledged again without being applied again. A
 created loop also carries its request id, which covers a crash between the
 create and the record. A ``run`` is recorded before its run starts, so a crash
 can lose a run but never repeat one. Nothing here raises to the caller's thread.
+
+The app authorizes each change before queueing it (only a loop's owner may
+change or run a private loop), so requests here see every member's loops.
 """
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 import logging
@@ -36,10 +40,12 @@ from config.scope_context import bound_storage_scope
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CREATED_BY_PARAM,
     LOOP_MODE_REPORT,
+    LOOP_WEBAPP_CREATOR,
     LOOP_WEBAPP_REQUEST_ID_PARAM,
 )
 from infrastructure.scheduling.scheduler.loop_edit import (
     DELIVERY_FIELDS,
+    PRIVATE_FIELD,
     edit_loop,
     loop_changes,
     validate_loop_changes,
@@ -85,11 +91,12 @@ _RUNS_KEPT_WHEN_LARGE = (5, 2, 1, 0)
 #: An unchanged loop list is sent again after this long (the contract's heartbeat).
 _HEARTBEAT_SECONDS = 30 * 60
 #: Actor for a request that names no member.
-_WEBAPP_ACTOR = "webapp"
+_WEBAPP_ACTOR = LOOP_WEBAPP_CREATOR
 _UNEXPECTED_FAILURE = "The agent could not apply this change; try again in a minute."
 _MISSING_LOOP = "That task no longer exists."
 _RUN_IN_PROGRESS = "This task is already running; try again when it finishes."
 _RUN_UNAVAILABLE = "This agent cannot run tasks on demand."
+_RUN_CLOSING = "This agent is restarting; try again in a minute."
 _RUN_ACTION = "run"
 #: Fields an ``update`` request may change (the rest of the loop is kept).
 _UPDATE_FIELDS = ("name", "prompt", "cron", "timezone", "mode")
@@ -257,14 +264,33 @@ class WebappLoopSync:
         ``(None, None)`` leaves the request pending: this gateway is shutting
         down, and the next one picks it up.
         """
-        loop_id = str(request.get("loop_id") or "")
         actor = str(request.get("requested_by") or "").strip() or _WEBAPP_ACTOR
+        return self._reserve_run(str(request.get("loop_id") or ""), actor)
+
+    def start_run(self, loop_id: str) -> str:
+        """Start a run of ``loop_id`` now, as the app's Run now does; "" once it started.
+
+        For a member's chat turn (``run_scheduled_loop``), which already checked
+        that the member may run this loop. Otherwise a short reason it did not start.
+        """
+        outcome, start = self._reserve_run(loop_id, _WEBAPP_ACTOR)
+        if start is None:
+            return outcome.error if outcome is not None else _RUN_CLOSING
+        start()
+        return ""
+
+    def _reserve_run(
+        self, loop_id: str, actor: str
+    ) -> tuple[RecordedOutcome | None, Callable[[], None] | None]:
+        """Reserve ``loop_id`` for one run; the callable starts it. ``(None, None)`` while closing."""
         runners = self._runners
         if runners is None:
             return RecordedOutcome(False, error=_RUN_UNAVAILABLE), None
         try:
             with self._scope(actor):
-                summary, _error = resolve_loop_summary(loop_id) if loop_id else (None, "")
+                summary, _error = (
+                    resolve_loop_summary(loop_id, include_private=True) if loop_id else (None, "")
+                )
             if summary is None:
                 return RecordedOutcome(False, error=_MISSING_LOOP), None
             with self._runs_lock:
@@ -275,7 +301,7 @@ class WebappLoopSync:
                     return RecordedOutcome(False, error=_RUN_IN_PROGRESS), None
                 self._running.add(summary.id)
         except Exception:
-            logger.exception("[webapp-loops] accepting run request %s failed", request.get("id"))
+            logger.exception("[webapp-loops] reserving a run of loop %s failed", loop_id)
             return RecordedOutcome(False, error=_UNEXPECTED_FAILURE), None
         accepted, task_ids = summary.id, summary.task_ids
         return RecordedOutcome(True, ref=accepted), lambda: self._start_run(
@@ -285,9 +311,11 @@ class WebappLoopSync:
     def _start_run(
         self, loop_id: str, task_ids: tuple[str, ...], runners: SchedulerRunners
     ) -> None:
+        # A fresh context: the run acts as a scheduled tick (a private loop as its
+        # owner), never as the member's turn that asked for it.
         thread = threading.Thread(
-            target=self._run_loop,
-            args=(loop_id, task_ids, runners),
+            target=contextvars.Context().run,
+            args=(self._run_loop, loop_id, task_ids, runners),
             name=f"opensre-webapp-loop-run-{loop_id}",
             daemon=True,
         )
@@ -362,27 +390,34 @@ class WebappLoopSync:
             email_account=str(payload.get("email_account") or ""),
             mode=str(payload.get("mode") or LOOP_MODE_REPORT),
             extra_params={LOOP_WEBAPP_REQUEST_ID_PARAM: request_id},
+            private=_flag(payload.get(PRIVATE_FIELD)),
         )
         return RecordedOutcome(True, ref=created.task.id)
 
     def _change(self, action: str, loop_id: str) -> RecordedOutcome:
         # Scoped to this organization: another's loop resolves as missing.
-        summary, _error = resolve_loop_summary(loop_id) if loop_id else (None, "")
+        summary, _error = (
+            resolve_loop_summary(loop_id, include_private=True) if loop_id else (None, "")
+        )
         if summary is None:
             # Already deleted (a retried request) counts as done for a delete.
             if action == "delete":
                 return RecordedOutcome(True, ref=loop_id)
             return RecordedOutcome(False, error=_MISSING_LOOP)
         if action == "delete":
-            mutation, error = delete_loop(summary.id)
+            mutation, error = delete_loop(summary.id, include_private=True)
         else:
-            mutation, error = set_loop_enabled(summary.id, enabled=action == "resume")
+            mutation, error = set_loop_enabled(
+                summary.id, enabled=action == "resume", include_private=True
+            )
         if mutation is None:
             return RecordedOutcome(False, error=error)
         return RecordedOutcome(True, ref=summary.id)
 
     def _update(self, loop_id: str, raw_payload: Any) -> RecordedOutcome:
-        summary, _error = resolve_loop_summary(loop_id) if loop_id else (None, "")
+        summary, _error = (
+            resolve_loop_summary(loop_id, include_private=True) if loop_id else (None, "")
+        )
         if summary is None:
             return RecordedOutcome(False, error=_MISSING_LOOP)
         payload = raw_payload if isinstance(raw_payload, Mapping) else {}
@@ -409,8 +444,13 @@ class WebappLoopSync:
                 if payload.get(key) is not None
             }
             changes = {**changes, **validate_loop_changes(delivery)}
+        private = _flag(payload.get(PRIVATE_FIELD))
+        if private is not None:
+            changes = {**changes, **loop_changes(private=private)}
         if not changes:
-            raise ValueError("say what to change: time, cron, timezone, prompt, name or mode")
+            raise ValueError(
+                "say what to change: time, cron, timezone, prompt, name, mode or private"
+            )
         mutation, error = edit_loop(summary.task_ids, changes, loop_id=summary.id)
         if mutation is None:
             return RecordedOutcome(False, error=error)
@@ -429,7 +469,11 @@ class WebappLoopSync:
             snapshot = get_task_store_snapshot()
             if not snapshot.complete:
                 return None
-            tasks = [task for task in snapshot.tasks if visible_to_current_scope(task)]
+            tasks = [
+                task
+                for task in snapshot.tasks
+                if visible_to_current_scope(task, include_private=True)
+            ]
         by_id = {task.id: task for task in tasks}
         # A one-shot work-item reminder runs at a time, not on a cron; the
         # Tasks page lists recurring schedules only.
@@ -468,6 +512,11 @@ def _strings(value: Any) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, str):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _flag(value: Any) -> bool | None:
+    """A JSON boolean as given; ``None`` for anything else (left as it is)."""
+    return value if isinstance(value, bool) else None
 
 
 def _fit_report(loops: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -513,6 +562,7 @@ def _loop_row(loop: LoopSummary, tasks: Sequence[ScheduledTask]) -> dict[str, An
         "schedule_error": loop.schedule_error,
         "last_run": loop.last_run,
         "next_run": loop.next_run,
+        "private": loop.private,
     }
     if first is not None:
         row["created_at"] = first.created_at

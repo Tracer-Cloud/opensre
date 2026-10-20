@@ -4,6 +4,12 @@ from __future__ import annotations
 
 LOOP_CHANNELS_PARAM = "loop_channels"
 LOOP_CREATED_BY_PARAM = "loop_created_by"
+LOOP_SHELL_CREATOR = "interactive_shell"
+"""``loop_created_by`` of a loop made outside any organization's turn (the local CLI)."""
+
+LOOP_WEBAPP_CREATOR = "webapp"
+"""``loop_created_by`` of a loop the web app asked for without naming a member."""
+
 LOOP_DESCRIPTION_PARAM = "loop_description"
 LOOP_EMAIL_ACCOUNT_PARAM = "loop_email_account"
 """The loop owner's mailbox an email loop sends from: ``smtp:<record>`` or ``gmail:<account id>``."""
@@ -25,6 +31,9 @@ LOOP_MODES = (LOOP_MODE_REPORT, LOOP_MODE_AGENT)
 LOOP_STATUS_ACTIVE = "active"
 LOOP_STATUS_PAUSED = "paused"
 LOOP_STATUS_DRAFT = "draft"
+
+LOOP_PRIVATE_PARAM = "loop_private"
+"""``"true"`` when the loop is its creator's own: it runs as them and only they see or change it."""
 
 LOOP_PROMPT_PARAM = "loop_prompt"
 LOOP_REPORT_PARAM = "loop_report"
@@ -65,9 +74,11 @@ __all__ = [
     "LOOP_MODE_AGENT",
     "LOOP_MODE_PARAM",
     "LOOP_MODE_REPORT",
+    "LOOP_PRIVATE_PARAM",
     "LOOP_PROMPT_PARAM",
     "LOOP_REPORT_ARGS_PARAM",
     "LOOP_REPORT_PARAM",
+    "LOOP_SHELL_CREATOR",
     "LOOP_SKILL_PARAM",
     "LOOP_SLACK_CHAT_ID_PARAM",
     "LOOP_SLUG_PARAM",
@@ -79,5 +90,6 @@ __all__ = [
     "LOOP_TELEGRAM_CHAT_ID_PARAM",
     "LOOP_TEMPLATE_PARAM",
     "LOOP_TIME_PARAM",
+    "LOOP_WEBAPP_CREATOR",
     "LOOP_WEBAPP_REQUEST_ID_PARAM",
 ]

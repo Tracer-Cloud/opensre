@@ -6,6 +6,7 @@ from integrations.webapp_requests.client import (
     webapp_agent_target,
 )
 from integrations.webapp_requests.ledger import LedgerUnavailable, RecordedOutcome, RequestLedger
+from integrations.webapp_requests.members import member_user_id, reset_member_identity_cache
 
 __all__ = [
     "LedgerUnavailable",
@@ -13,5 +14,7 @@ __all__ = [
     "RequestLedger",
     "WebappAgentClient",
     "WebappAgentTarget",
+    "member_user_id",
+    "reset_member_identity_cache",
     "webapp_agent_target",
 ]

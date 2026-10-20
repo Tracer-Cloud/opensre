@@ -153,6 +153,7 @@ def _loop_row(loop: LoopSummary, run: TaskRun | None) -> dict[str, Any]:
         "last_run": loop.last_run,
         "next_run": loop.next_run,
         "schedule_error": loop.schedule_error,
+        "private": loop.private,
     }
     if run is not None:
         row["latest_run"] = {
@@ -210,7 +211,8 @@ def _summary(rows: list[dict[str, Any]], *, store_missing: bool) -> str:
     outputs={
         "loops": (
             "One row per loop: id, name, purpose, cadence, health, needs_attention, kind, "
-            "cron, enabled, status, next_run, latest_run"
+            "cron, enabled, status, next_run, latest_run, private (the requester's own "
+            "loop, run as them with their accounts; other members' private loops are not listed)"
         ),
         "count": "How many loops were listed",
         "store_missing": "True when no task store file exists yet (nothing was ever scheduled)",

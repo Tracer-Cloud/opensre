@@ -19,6 +19,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_GROUP_ID_PARAM,
     LOOP_MODE_PARAM,
     LOOP_MODES,
+    LOOP_PRIVATE_PARAM,
     LOOP_PROMPT_PARAM,
     LOOP_REPORT_PARAM,
     LOOP_SKILL_PARAM,
@@ -43,9 +44,12 @@ from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, T
 #: Where a loop delivers: the channel list and each channel's destination.
 #: A destination left out of an edit keeps its current value.
 DELIVERY_FIELDS = ("channels", "slack_chat_id", "telegram_chat_id", "email_to", "email_account")
+#: ``"true"`` makes the loop its owner's own; only the owner may set it (callers check).
+PRIVATE_FIELD = "private"
 _FIELDS = frozenset(
-    {"name", "prompt", "cron", "timezone", "window_hours", "mode", *DELIVERY_FIELDS}
+    {"name", "prompt", "cron", "timezone", "window_hours", "mode", PRIVATE_FIELD, *DELIVERY_FIELDS}
 )
+_NOTHING_TO_CHANGE = "say what to change: time, cron, timezone, prompt, name, mode or private"
 _DESTINATION_PARAMS = {
     "slack_chat_id": (Provider.SLACK, LOOP_SLACK_CHAT_ID_PARAM),
     "telegram_chat_id": (Provider.TELEGRAM, LOOP_TELEGRAM_CHAT_ID_PARAM),
@@ -71,6 +75,8 @@ def validate_loop_changes(changes: Mapping[str, str]) -> dict[str, str]:
             raise ValueError(f"{key.replace('_', ' ')} is required")
     if "mode" in result and result["mode"] not in LOOP_MODES:
         raise ValueError(f"mode must be one of {', '.join(LOOP_MODES)}")
+    if PRIVATE_FIELD in result and result[PRIVATE_FIELD] not in ("true", "false"):
+        raise ValueError("private must be true or false")
     if "window_hours" in result:
         try:
             window = int(result["window_hours"])
@@ -91,9 +97,11 @@ def loop_changes(
     prompt: str = "",
     name: str = "",
     mode: str = "",
+    private: bool | None = None,
 ) -> dict[str, str]:
     """The edit patch for the fields given; a ``time`` becomes a daily (or weekday) cron.
 
+    ``private`` (``None`` leaves it as it is) is the owner's to change; callers check that.
     Raises ``ValueError`` when nothing would change or ``time`` and ``cron`` are both set.
     """
     if time.strip() and cron.strip():
@@ -111,8 +119,10 @@ def loop_changes(
     }
     if time.strip():
         changes["cron"] = cron_for_time(time, weekdays=weekdays)
+    if private is not None:
+        changes[PRIVATE_FIELD] = "true" if private else "false"
     if not changes:
-        raise ValueError("say what to change: time, cron, timezone, prompt, name or mode")
+        raise ValueError(_NOTHING_TO_CHANGE)
     return validate_loop_changes(changes)
 
 
@@ -140,6 +150,8 @@ def _definition_patch(
         params[LOOP_PROMPT_PARAM] = changes["prompt"]
     if "mode" in changes:
         params[LOOP_MODE_PARAM] = changes["mode"]
+    if PRIVATE_FIELD in changes:
+        params[LOOP_PRIVATE_PARAM] = changes[PRIVATE_FIELD]
     if "channels" in changes:
         _apply_delivery(task, params, changes)
     if "cron" in changes or "timezone" in changes:
@@ -236,6 +248,7 @@ def edit_loop(
 
 __all__ = [
     "DELIVERY_FIELDS",
+    "PRIVATE_FIELD",
     "edit_loop",
     "loop_changes",
     "loop_prompt_editable",

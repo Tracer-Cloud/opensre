@@ -335,14 +335,17 @@ class GatewayController:
         """Apply Tasks-page changes from the web app and report this gateway's loops.
 
         Only a hosted organization's gateway has the web app to sync with; the
-        loops it changes are picked up by the reload watcher like any other.
+        loops it changes are picked up by the reload watcher like any other. A
+        member's "run it now" in chat starts its run here too, beside the app's.
         """
         from bootstrap.adapters import webapp_loop_sync
+        from infrastructure.scheduling.scheduler.run_now import install_loop_run_starter
 
         sync = webapp_loop_sync(self._scheduler_runners)
         if sync is None or self._webapp_loop_sync_thread is not None:
             return
         self._webapp_loop_sync = sync
+        install_loop_run_starter(sync.start_run)
 
         wake = self._webapp_loop_sync_wake
 

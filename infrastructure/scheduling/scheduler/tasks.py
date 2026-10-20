@@ -9,10 +9,13 @@ outages as success.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from contextlib import AbstractContextManager
 
 from config.constants.scheduler import SCHEDULED_TASK_TRACE_KEY
 from config.credit_attribution import bound_credit_actor, credit_actor_id
+from config.scope_context import bound_storage_scope, current_scope
 from core.agent_harness import (
     is_legacy_skill_name,
     normalize_skill_name,
@@ -21,6 +24,7 @@ from core.agent_harness import (
 )
 from infrastructure.observability.trace.trace_session import inherit_trace_session
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_CREATED_BY_PARAM
+from infrastructure.scheduling.scheduler.loop_owner import unattended_scope
 from infrastructure.scheduling.scheduler.loop_prompt import current_loop_prompt
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
@@ -53,9 +57,11 @@ def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     under the task id, so ticks of one loop share one trace session. A tick
     fired from inside a turn (``/loops run``) inherits that turn's session and
     still gains the scheduled tag and task metadata. Its credits are spent for
-    the loop's creator, unless the tick runs inside a member's turn.
+    the loop's creator, unless the tick runs inside a member's turn. Outside a
+    turn, a private loop's tick acts as its owner, with their own accounts.
     """
     with (
+        _acting_as_owner(task),
         inherit_trace_session(
             runners.host_session_id() or task.id,
             tags=(SCHEDULED_TRACE_TAG,),
@@ -68,6 +74,14 @@ def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
         bound_credit_actor(_unattended_credit_actor(task)),
     ):
         return _build_message(task, runners)
+
+
+def _acting_as_owner(task: ScheduledTask) -> AbstractContextManager[object]:
+    """Bind a private loop's owner for a tick no member's turn is running; else nothing."""
+    if current_scope() is not None:
+        return contextlib.nullcontext()
+    scope = unattended_scope(task)
+    return bound_storage_scope(scope) if scope is not None else contextlib.nullcontext()
 
 
 def _unattended_credit_actor(task: ScheduledTask) -> str | None:

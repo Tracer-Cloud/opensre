@@ -1273,8 +1273,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "list_scheduled_loops",
         # schedule_prompt_loop / stop_scheduled_loop write the task store; only
         # a bad schedule or destination is caught, anything else reaches the
-        # global wrapper.
+        # global wrapper. run_scheduled_loop reads it and hands the run off.
         "edit_scheduled_loop",
+        "run_scheduled_loop",
         "schedule_prompt_loop",
         "stop_scheduled_loop",
         # scan_local_git_workspace shells out to git per repository and lets

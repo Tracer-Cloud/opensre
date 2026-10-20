@@ -23,6 +23,7 @@ from config.scope_context import bound_storage_scope
 from core.agent_harness.tools.tool_context import ActionToolScope
 from core.agent_harness.turns.headless_adapters import InMemorySessionState
 from infrastructure.scheduling.scheduler.delivery_plan import configured_target_keys
+from infrastructure.scheduling.scheduler.run_now import install_loop_run_starter
 from infrastructure.scheduling.scheduler.storage import get_task, list_tasks
 from infrastructure.scheduling.scheduler.types import Provider
 from tools.system.scheduled_loops import manage
@@ -171,3 +172,77 @@ def test_an_ambiguous_name_never_lists_another_organizations_loops(
     assert edited["loop_id"] == ids["org_A"]
     other = get_task(ids["org_B"])
     assert other is not None and other.cron == "0 9 * * *"
+
+
+def _member(actor: str) -> StorageScope:
+    return StorageScope(principal=Principal.org("org_A"), actor=Actor(id=actor))
+
+
+def test_a_loop_asked_for_in_a_dm_is_private_and_one_in_a_channel_is_shared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setattr(loops, "resolve_slack_credentials", _slack_bot_token)
+
+    # Act: the same member asks in their DM and in #ops.
+    with bound_storage_scope(_member("U0OWNER")):
+        monkeypatch.setattr(manage, "_session", lambda _context: _chat_session("slack", "D0915KH"))
+        in_dm = manage.schedule_prompt_loop(prompt="Summarize my inboxes.", time="08:00")
+        monkeypatch.setattr(manage, "_session", lambda _context: _chat_session("slack", "C42"))
+        in_channel = manage.schedule_prompt_loop(prompt="Summarize open PRs.", time="09:00")
+
+    # Assert: the DM loop is theirs alone; the channel loop is the workspace's.
+    assert (in_dm["ok"], in_dm["private"]) == (True, True), in_dm
+    assert (in_channel["ok"], in_channel["private"]) == (True, False), in_channel
+
+
+def test_only_the_creator_can_make_a_shared_loop_private(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anyone may rewrite a shared loop; making it private lets it run as its creator."""
+    # Arrange: a shared #ops loop U0OWNER created.
+    monkeypatch.setattr(loops, "resolve_slack_credentials", _slack_bot_token)
+    monkeypatch.setattr(manage, "_session", lambda _context: _chat_session("slack", "C42"))
+    with bound_storage_scope(_member("U0OWNER")):
+        created = manage.schedule_prompt_loop(prompt="Summarize open PRs.", time="09:00")
+
+    # Act
+    with bound_storage_scope(_member("U0OTHER")):
+        refused = manage.edit_scheduled_loop(created["loop_id"], private=True)
+    with bound_storage_scope(_member("U0OWNER")):
+        accepted = manage.edit_scheduled_loop(created["loop_id"], private=True)
+
+    # Assert
+    assert refused["ok"] is False
+    assert "Only the member who created" in refused["error"]
+    assert (accepted["ok"], accepted["private"]) == (True, True), accepted
+
+
+def test_a_member_runs_their_private_loop_now_and_nobody_else_can(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: a private loop from U0OWNER's DM, and a host that starts runs.
+    monkeypatch.setattr(loops, "resolve_slack_credentials", _slack_bot_token)
+    monkeypatch.setattr(manage, "_session", lambda _context: _chat_session("slack", "D0915KH"))
+    started: list[str] = []
+
+    def start(loop_id: str) -> str:
+        started.append(loop_id)
+        return ""
+
+    install_loop_run_starter(start)
+    try:
+        with bound_storage_scope(_member("U0OWNER")):
+            created = manage.schedule_prompt_loop(prompt="Summarize my inboxes.", time="08:00")
+
+        # Act
+        with bound_storage_scope(_member("U0OTHER")):
+            refused = manage.run_scheduled_loop(created["loop_id"])
+        with bound_storage_scope(_member("U0OWNER")):
+            ran = manage.run_scheduled_loop(created["loop_id"])
+    finally:
+        install_loop_run_starter(None)
+
+    # Assert: another member reads it as missing; the owner's run started once.
+    assert refused["ok"] is False
+    assert "not found" in refused["error"]
+    assert ran["ok"] is True, ran
+    assert started == [created["loop_id"]]
