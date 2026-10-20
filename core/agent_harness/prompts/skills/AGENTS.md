@@ -500,7 +500,6 @@ Current collection:
 | `measuring-github-star-velocity` | tool usage | `tools/system/python_execution_tool/skills/…` | `execute_python_code` |
 | `summarizing-posthog-analytics` | tool usage | `integrations/posthog/tools/skills/…` | PostHog MCP tools |
 | `summarizing-sentry-issues` | tool usage | `integrations/sentry/tools/skills/…` | Sentry issue and uptime tools |
-| `querying-yandex-cloud` | tool usage | `integrations/yandex_cloud/tools/` | `find_yc_api`, `execute_yc_operation` |
 
 The onboarding tree's pre-convention slugs (`onboarding-cicd-fix`,
 `cicd-analytics-demo`, `cicd-reliability-agent`, `slack-handoff`) and the

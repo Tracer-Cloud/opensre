@@ -157,7 +157,6 @@
               "integrations/cloud/elb",
               "integrations/cloud/helm",
               "integrations/cloud/kubernetes",
-              "integrations/cloud/yandex-cloud",
               "integrations/cloud/railway",
               "integrations/cloud/s3",
               "integrations/cloud/sqs_queues",
@@ -800,10 +799,6 @@
     {
       "source": "/x-mcp",
       "destination": "/integrations/monitoring/x-mcp"
-    },
-    {
-      "source": "/yandex-cloud",
-      "destination": "/integrations/cloud/yandex-cloud"
     }
   ],
   "seo": {
