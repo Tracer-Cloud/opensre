@@ -16,7 +16,10 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.github import OPENSRE_INSTALL_GITHUB_TOKEN_ENV
 from tests.e2e.install._shared import assert_binary_smoke, assert_checksum_verified
+
+_CANARY_GITHUB_TOKEN = os.environ.pop(OPENSRE_INSTALL_GITHUB_TOKEN_ENV, None)
 
 pytestmark = [
     pytest.mark.e2e,
@@ -35,6 +38,8 @@ def _sanitized_install_env(
     install_dir: Path, *, channel: str, requested_tag: str = ""
 ) -> dict[str, str]:
     env = os.environ.copy()
+    if _CANARY_GITHUB_TOKEN:
+        env[OPENSRE_INSTALL_GITHUB_TOKEN_ENV] = _CANARY_GITHUB_TOKEN
     env["OPENSRE_INSTALL_DIR"] = str(install_dir)
     env["OPENSRE_INSTALL_CHANNEL"] = channel
     env["OPENSRE_AUTO_LAUNCH"] = "0"

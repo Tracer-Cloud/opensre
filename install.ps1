@@ -16,6 +16,8 @@ $ErrorActionPreference = "Stop"
 $script:OpenSreProgressStep = 0
 $script:OpenSreChannelExplicit = $PSBoundParameters.ContainsKey("Channel") -or [bool]$env:OPENSRE_INSTALL_CHANNEL
 $script:OpenSreInstallOrigin = if ($lp) { "landing_page" } elseif ($gh) { "github" } elseif ($dc) { "documentation" } else { "" }
+$script:OpenSreGitHubMetadataToken = [string]$env:OPENSRE_INSTALL_GITHUB_TOKEN
+Remove-Item Env:OPENSRE_INSTALL_GITHUB_TOKEN -ErrorAction SilentlyContinue
 
 function Test-OpenSreVerboseInstall {
     $value = [string]$env:OPENSRE_INSTALL_VERBOSE
@@ -541,6 +543,10 @@ function Invoke-OpenSreRestMethod {
     $params = @{
         Uri = $Uri
         Headers = Get-OpenSreRequestHeaders
+    }
+
+    if ($script:OpenSreGitHubMetadataToken -and $Uri.StartsWith("https://api.github.com/", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $params.Headers["Authorization"] = "Bearer $script:OpenSreGitHubMetadataToken"
     }
 
     $command = Get-Command Invoke-RestMethod -ErrorAction Stop
