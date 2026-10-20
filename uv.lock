@@ -4869,7 +4869,7 @@ wheels = [
 
 [[package]]
 name = "yandexcloud"
-version = "0.406.0"
+version = "0.411.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -4882,9 +4882,9 @@ dependencies = [
     { name = "requests" },
     { name = "six" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/51/e2/86d1b8c6f3edc701b15d41fbbb7c7c43bb0fc2096cc5fe778c195af265a4/yandexcloud-0.406.0.tar.gz", hash = "sha256:20c3e79940b790bfec954608d66e1f2077a85728aec42aadfdc5b4f419635811", size = 4443964, upload-time = "2026-09-07T19:02:50.711Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3d/c2/95780fbaa860df20fc4107ca9c659040c19b4c039bb918c04a29f0469490/yandexcloud-0.411.0.tar.gz", hash = "sha256:27cdfa991e02e40773e4f210295daf73cd67da72e49a87d91a0e258d10fc5d58", size = 4486944, upload-time = "2026-10-12T22:26:11.406Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/61/8418f2123f2fd19b547ad9b5cae19886e42e3e799c3316c11f6ec860976e/yandexcloud-0.406.0-py3-none-any.whl", hash = "sha256:460df9ad68dd3106c28b7c1e5ae3b91beda7abec460c94224726b24015d61f95", size = 6766828, upload-time = "2026-09-07T19:02:48.582Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/c4/d1c8dbc3e82b2dd6637303c079ca241eb7b6d71927072e23dca621d223b3/yandexcloud-0.411.0-py3-none-any.whl", hash = "sha256:6258baaa041c1323e60c48dd66d04ddd3e19a00c10c7d7105e6765bfdfd29e36", size = 6830862, upload-time = "2026-10-12T22:26:09.452Z" },
 ]
 
 [[package]]
