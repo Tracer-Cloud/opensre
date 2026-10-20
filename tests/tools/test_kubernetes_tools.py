@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from core.tool.execution import _model_arguments
 from integrations.kubernetes.tools import (
     KubernetesDescribePodTool,
     KubernetesGetEventsTool,
@@ -20,6 +23,7 @@ from integrations.kubernetes.tools import (
     KubernetesListStatefulSetsTool,
 )
 from tests.tools.conftest import BaseToolContract, mock_agent_state
+from tools.registry import get_registered_tool
 
 _MINIMAL_KUBECONFIG = (
     "apiVersion: v1\n"
@@ -864,3 +868,182 @@ def test_get_resource_run_returns_unavailable_when_no_client() -> None:
     tool = KubernetesGetResourceTool()
     result = tool.run(kubeconfig="", resource_type="deployment", name="api")
     assert result["available"] is False
+
+
+_NAMESPACED_TOOLS: list[tuple[Any, dict[str, Any]]] = [
+    (KubernetesListPodsTool, {}),
+    (KubernetesGetPodLogsTool, {"pod_name": "web-abc"}),
+    (KubernetesListDeploymentsTool, {}),
+    (KubernetesGetEventsTool, {}),
+    (KubernetesDescribePodTool, {"pod_name": "web-abc"}),
+    (KubernetesListServicesTool, {}),
+    (KubernetesListStatefulSetsTool, {}),
+    (KubernetesListDaemonSetsTool, {}),
+    (KubernetesListIngressesTool, {}),
+    (KubernetesListConfigMapsTool, {}),
+    (KubernetesGetResourceTool, {"resource_type": "deployment", "name": "api"}),
+]
+
+_NAMESPACED_IDS = [tool_cls.__name__ for tool_cls, _ in _NAMESPACED_TOOLS]
+
+
+def _sources(namespace: str = "default", allowed: Any = ()) -> dict[str, Any]:
+    return {"kubernetes": {**_K8S_SOURCE, "namespace": namespace, "allowed_namespaces": allowed}}
+
+
+@pytest.mark.parametrize(("tool_cls", "_required"), _NAMESPACED_TOOLS, ids=_NAMESPACED_IDS)
+def test_namespaced_tool_lets_model_pick_namespace_but_not_allowlist(
+    tool_cls: Any, _required: dict[str, Any]
+) -> None:
+    tool = tool_cls()
+    assert "namespace" not in tool.injected_params
+    assert "allowed_namespaces" in tool.injected_params
+
+    registered = get_registered_tool(tool.name)
+    assert registered is not None
+    props = registered.public_input_schema.get("properties", {})
+    assert "namespace" in props
+    assert "allowed_namespaces" not in props
+
+
+def test_list_nodes_stays_cluster_scoped() -> None:
+    tool = KubernetesListNodesTool()
+    assert "allowed_namespaces" not in tool.injected_params
+    assert "namespace" not in tool.input_schema["properties"]
+    assert "allowed_namespaces" not in tool.extract_params(_sources())
+
+
+@pytest.mark.parametrize(("tool_cls", "_required"), _NAMESPACED_TOOLS, ids=_NAMESPACED_IDS)
+def test_unset_allowlist_defaults_to_configured_namespace(
+    tool_cls: Any, _required: dict[str, Any]
+) -> None:
+    params = tool_cls().extract_params(_sources(namespace="prod"))
+    assert params["namespace"] == "prod"
+    assert params["allowed_namespaces"] == ("prod",)
+
+
+def test_configured_allowlist_is_passed_to_tools() -> None:
+    params = KubernetesListPodsTool().extract_params(
+        _sources(namespace="prod", allowed=("prod", "staging"))
+    )
+    assert params["allowed_namespaces"] == ("prod", "staging")
+
+
+def test_configured_namespace_is_always_allowlisted() -> None:
+    params = KubernetesListPodsTool().extract_params(
+        _sources(namespace="prod", allowed=("staging", "dev"))
+    )
+    assert params["allowed_namespaces"] == ("prod", "staging", "dev")
+
+
+@pytest.mark.parametrize(("tool_cls", "required"), _NAMESPACED_TOOLS, ids=_NAMESPACED_IDS)
+def test_namespace_outside_allowlist_is_rejected_before_connecting(
+    tool_cls: Any, required: dict[str, Any]
+) -> None:
+    tool = tool_cls()
+    with patch("integrations.kubernetes.tools._make_client") as make_client:
+        result = tool.run(
+            kubeconfig=_MINIMAL_KUBECONFIG,
+            namespace="kube-system",
+            allowed_namespaces=("staging", "prod"),
+            **required,
+        )
+
+    make_client.assert_not_called()
+    assert result["available"] is False
+    assert result["failure_state"] == "denied"
+    assert result["error"] == (
+        'namespace "kube-system" is not in the configured allowlist (allowed: prod, staging)'
+    )
+
+
+@pytest.mark.parametrize("resource_type", ["node", "nodes", "Node"])
+def test_get_resource_skips_allowlist_for_cluster_scoped_types(resource_type: str) -> None:
+    mock_core = MagicMock()
+    mock_core.read_node.return_value.to_dict.return_value = {"metadata": {"name": "node-1"}}
+    with patch(
+        "integrations.kubernetes.tools._make_client",
+        return_value=_make_client_with_core(mock_core),
+    ) as make_client:
+        KubernetesGetResourceTool().run(
+            kubeconfig=_MINIMAL_KUBECONFIG,
+            resource_type=resource_type,
+            name="node-1",
+            namespace="kube-system",
+            allowed_namespaces=("prod",),
+        )
+
+    make_client.assert_called_once()
+
+
+def test_get_resource_enforces_allowlist_for_namespaced_types() -> None:
+    with patch("integrations.kubernetes.tools._make_client") as make_client:
+        result = KubernetesGetResourceTool().run(
+            kubeconfig=_MINIMAL_KUBECONFIG,
+            resource_type="deployments",
+            name="api",
+            namespace="kube-system",
+            allowed_namespaces=("prod",),
+        )
+
+    make_client.assert_not_called()
+    assert result["failure_state"] == "denied"
+
+
+def _run_list_pods(sources: dict[str, Any], model_input: dict[str, Any]) -> tuple[Any, Any]:
+    tool = KubernetesListPodsTool()
+    kwargs = _model_arguments(tool, tool.extract_params(sources), model_input)
+    mock_pod_list = MagicMock()
+    mock_pod_list.items = []
+    mock_core = MagicMock()
+    mock_core.list_namespaced_pod.return_value = mock_pod_list
+    with patch(
+        "integrations.kubernetes.tools._make_client",
+        return_value=_make_client_with_core(mock_core),
+    ):
+        result = tool.run(**kwargs)
+    return result, mock_core
+
+
+def test_omitted_namespace_resolves_to_configured_namespace() -> None:
+    result, mock_core = _run_list_pods(_sources(namespace="prod"), {})
+
+    assert result["available"] is True
+    assert result["namespace"] == "prod"
+    assert mock_core.list_namespaced_pod.call_args.kwargs["namespace"] == "prod"
+
+
+def test_omitted_namespace_works_when_allowlist_leaves_out_configured_namespace() -> None:
+    result, mock_core = _run_list_pods(_sources(namespace="prod", allowed=("staging",)), {})
+
+    assert result["available"] is True
+    assert mock_core.list_namespaced_pod.call_args.kwargs["namespace"] == "prod"
+
+
+def test_model_can_select_an_allowlisted_namespace() -> None:
+    result, mock_core = _run_list_pods(
+        _sources(namespace="prod", allowed=("prod", "staging")), {"namespace": "staging"}
+    )
+
+    assert result["available"] is True
+    assert result["namespace"] == "staging"
+    assert mock_core.list_namespaced_pod.call_args.kwargs["namespace"] == "staging"
+
+
+def test_unset_allowlist_rejects_any_other_namespace() -> None:
+    result, mock_core = _run_list_pods(_sources(namespace="prod"), {"namespace": "staging"})
+
+    assert result["available"] is False
+    assert "(allowed: prod)" in result["error"]
+    mock_core.list_namespaced_pod.assert_not_called()
+
+
+def test_model_cannot_widen_the_allowlist() -> None:
+    result, mock_core = _run_list_pods(
+        _sources(namespace="prod"),
+        {"namespace": "kube-system", "allowed_namespaces": ["kube-system"]},
+    )
+
+    assert result["available"] is False
+    assert "(allowed: prod)" in result["error"]
+    mock_core.list_namespaced_pod.assert_not_called()

@@ -763,6 +763,9 @@ if TYPE_CHECKING:
         KUBECONFIG_NAMESPACE_ENV as KUBECONFIG_NAMESPACE_ENV,
     )
     from config.constants.kubernetes import (
+        KUBECONFIG_NAMESPACES_ENV as KUBECONFIG_NAMESPACES_ENV,
+    )
+    from config.constants.kubernetes import (
         KUBECONFIG_PATH_ENV as KUBECONFIG_PATH_ENV,
     )
     from config.constants.llm import (

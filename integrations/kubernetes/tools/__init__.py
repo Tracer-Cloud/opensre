@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool
-from core.tool_framework.utils import tool_unavailable
+from core.tool_framework.utils import tool_access_denied, tool_unavailable
 from integrations.config_models import KubernetesIntegrationConfig
 from integrations.kubernetes.client import _RESOURCE_DISPATCH, KubernetesClient
 
@@ -44,6 +45,33 @@ def _missing_client_error(extra: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _allowed_namespaces(k8s: dict[str, Any]) -> tuple[str, ...]:
+    default_namespace = k8s.get("namespace") or "default"
+    return tuple(dict.fromkeys((default_namespace, *(k8s.get("allowed_namespaces") or ()))))
+
+
+def _is_cluster_scoped(resource_type: str) -> bool:
+    key = resource_type.lower()
+    entry = _RESOURCE_DISPATCH.get(key) or _RESOURCE_DISPATCH.get(key.rstrip("s"))
+    return bool(entry and entry[2])
+
+
+def _namespace_error(
+    namespace: str,
+    allowed_namespaces: Iterable[str],
+    extra: dict[str, Any],
+) -> dict[str, Any] | None:
+    allowed = sorted(set(allowed_namespaces))
+    if namespace in allowed:
+        return None
+    return tool_access_denied(
+        "kubernetes",
+        f'namespace "{namespace}" is not in the configured allowlist '
+        f"(allowed: {', '.join(allowed)})",
+        **extra,
+    )
+
+
 _SHARED_KUBECONFIG_PROPS: dict[str, Any] = {
     "kubeconfig": {"type": "string", "description": "Raw kubeconfig YAML string"},
     "kubeconfig_path": {
@@ -54,8 +82,10 @@ _SHARED_KUBECONFIG_PROPS: dict[str, Any] = {
     "context": {"type": "string", "default": "", "description": "Kubeconfig context to use"},
     "namespace": {
         "type": "string",
-        "default": "default",
-        "description": "Kubernetes namespace to target",
+        "description": (
+            "Kubernetes namespace to target. Omit to use the configured namespace; "
+            "only namespaces in the configured allowlist are accepted."
+        ),
     },
 }
 
@@ -77,7 +107,7 @@ class KubernetesListPodsTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = ["kubeconfig"]
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -110,6 +140,7 @@ class KubernetesListPodsTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "label_selector": "",
             "limit": 50,
         }
@@ -122,8 +153,12 @@ class KubernetesListPodsTool(BaseTool):
         namespace: str = "default",
         label_selector: str = "",
         limit: int = 50,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(namespace, allowed_namespaces, {"pods": [], "total": 0})
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -177,7 +212,7 @@ class KubernetesGetPodLogsTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = ["pod_name"]
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -214,6 +249,7 @@ class KubernetesGetPodLogsTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "pod_name": k8s.get("pod_name", ""),
             "container": k8s.get("container", ""),
             "tail_lines": 100,
@@ -228,8 +264,12 @@ class KubernetesGetPodLogsTool(BaseTool):
         namespace: str = "default",
         container: str = "",
         tail_lines: int = 100,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(namespace, allowed_namespaces, {"lines": [], "total": 0})
+        if namespace_error is not None:
+            return namespace_error
         if not pod_name:
             return tool_unavailable(
                 "kubernetes",
@@ -287,7 +327,7 @@ class KubernetesListDeploymentsTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = []
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -315,6 +355,7 @@ class KubernetesListDeploymentsTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "limit": 50,
         }
 
@@ -325,8 +366,14 @@ class KubernetesListDeploymentsTool(BaseTool):
         context: str = "",
         namespace: str = "default",
         limit: int = 50,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(
+            namespace, allowed_namespaces, {"deployments": [], "total": 0}
+        )
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -375,7 +422,7 @@ class KubernetesGetEventsTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = []
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -411,6 +458,7 @@ class KubernetesGetEventsTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "field_selector": "",
             "limit": 50,
         }
@@ -423,8 +471,14 @@ class KubernetesGetEventsTool(BaseTool):
         namespace: str = "default",
         field_selector: str = "",
         limit: int = 50,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(
+            namespace, allowed_namespaces, {"events": [], "total": 0}
+        )
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -485,7 +539,7 @@ class KubernetesDescribePodTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = ["pod_name"]
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -509,6 +563,7 @@ class KubernetesDescribePodTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "pod_name": k8s.get("pod_name", ""),
         }
 
@@ -519,8 +574,14 @@ class KubernetesDescribePodTool(BaseTool):
         kubeconfig_path: str = "",
         context: str = "",
         namespace: str = "default",
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(
+            namespace, allowed_namespaces, {"spec": {}, "status": {}}
+        )
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -662,7 +723,7 @@ class KubernetesListServicesTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = []
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -695,6 +756,7 @@ class KubernetesListServicesTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "label_selector": "",
             "limit": 50,
         }
@@ -707,8 +769,14 @@ class KubernetesListServicesTool(BaseTool):
         namespace: str = "default",
         label_selector: str = "",
         limit: int = 50,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(
+            namespace, allowed_namespaces, {"services": [], "total": 0}
+        )
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -757,7 +825,7 @@ class KubernetesListStatefulSetsTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = []
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -785,6 +853,7 @@ class KubernetesListStatefulSetsTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "limit": 50,
         }
 
@@ -795,8 +864,14 @@ class KubernetesListStatefulSetsTool(BaseTool):
         context: str = "",
         namespace: str = "default",
         limit: int = 50,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(
+            namespace, allowed_namespaces, {"statefulsets": [], "total": 0}
+        )
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -844,7 +919,7 @@ class KubernetesListDaemonSetsTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = []
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -872,6 +947,7 @@ class KubernetesListDaemonSetsTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "limit": 50,
         }
 
@@ -882,8 +958,14 @@ class KubernetesListDaemonSetsTool(BaseTool):
         context: str = "",
         namespace: str = "default",
         limit: int = 50,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(
+            namespace, allowed_namespaces, {"daemonsets": [], "total": 0}
+        )
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -932,7 +1014,7 @@ class KubernetesListIngressesTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = []
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -960,6 +1042,7 @@ class KubernetesListIngressesTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "limit": 50,
         }
 
@@ -970,8 +1053,14 @@ class KubernetesListIngressesTool(BaseTool):
         context: str = "",
         namespace: str = "default",
         limit: int = 50,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(
+            namespace, allowed_namespaces, {"ingresses": [], "total": 0}
+        )
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -1019,7 +1108,7 @@ class KubernetesListConfigMapsTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = []
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -1047,6 +1136,7 @@ class KubernetesListConfigMapsTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "limit": 50,
         }
 
@@ -1057,8 +1147,14 @@ class KubernetesListConfigMapsTool(BaseTool):
         context: str = "",
         namespace: str = "default",
         limit: int = 50,
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        namespace_error = _namespace_error(
+            namespace, allowed_namespaces, {"configmaps": [], "total": 0}
+        )
+        if namespace_error is not None:
+            return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
@@ -1120,7 +1216,7 @@ class KubernetesGetResourceTool(BaseTool):
     ]
     surfaces = (ToolSurface.CHAT,)
     requires = ["resource_type", "name"]
-    injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
+    injected_params = ["kubeconfig", "kubeconfig_path", "context", "allowed_namespaces"]
     input_schema = {
         "type": "object",
         "properties": {
@@ -1153,6 +1249,7 @@ class KubernetesGetResourceTool(BaseTool):
             "kubeconfig_path": k8s.get("kubeconfig_path", ""),
             "context": k8s.get("context", ""),
             "namespace": k8s.get("namespace", "default"),
+            "allowed_namespaces": _allowed_namespaces(k8s),
             "resource_type": k8s.get("resource_type", ""),
             "name": k8s.get("name", ""),
         }
@@ -1165,8 +1262,17 @@ class KubernetesGetResourceTool(BaseTool):
         kubeconfig_path: str = "",
         context: str = "",
         namespace: str = "default",
+        allowed_namespaces: tuple[str, ...] = ("default",),
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        if not _is_cluster_scoped(resource_type):
+            namespace_error = _namespace_error(
+                namespace,
+                allowed_namespaces,
+                {"resource": {}, "resource_type": resource_type, "name": name},
+            )
+            if namespace_error is not None:
+                return namespace_error
         client = _make_client(
             {
                 "kubernetes": {
