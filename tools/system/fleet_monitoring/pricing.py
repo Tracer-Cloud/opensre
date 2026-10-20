@@ -162,6 +162,13 @@ _LOCAL_MODEL_PRICES: dict[str, ModelPrice] = {
     "claude-3-5-sonnet-20241022": _price(
         3.00, 15.00, cache_read_usd_per_million=0.30, cache_write_usd_per_million=3.75
     ),
+    "claude-opus-4-20250514": _price(
+        15.00, 75.00, cache_read_usd_per_million=1.50, cache_write_usd_per_million=18.75
+    ),
+    "claude-opus-4-1": _price(
+        15.00, 75.00, cache_read_usd_per_million=1.50, cache_write_usd_per_million=18.75
+    ),
+    "llama-3.3-70b-versatile": _price(0.59, 0.79),
     # Claude 5.x releases (September 2026) absent from litellm's bundled table.
     # Per 1M tokens, from Anthropic pricing:
     # Sonnet 5.5: 2.00 / 10.00, cache read 0.20, cache write 2.50.

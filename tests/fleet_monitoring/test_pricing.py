@@ -290,6 +290,17 @@ class TestFamilyFallbackCoherence:
 
 
 class TestKnownModelCoverage:
+    @pytest.mark.parametrize("model", ("claude-opus-4-20250514", "claude-opus-4-1"))
+    def test_legacy_opus_models_keep_historical_cache_rates(self, model: str) -> None:
+        usage = TokenUsage(
+            input_tokens=100,
+            cache_read_input_tokens=2000,
+            cache_creation_input_tokens=500,
+            output_tokens=50,
+        )
+        expected = (100 * 15e-6) + (2000 * 1.5e-6) + (500 * 18.75e-6) + (50 * 75e-6)
+        assert usd_for_usage(usage, model) == pytest.approx(expected)
+
     def test_claude_code_default_models_have_prices(self) -> None:
         # Defensive regression: the most common claude-code models
         # must each return a price so the dashboard does not silently
@@ -377,11 +388,10 @@ class TestConfiguredProviderCompatibility:
         # where the deployment happens to be named after its model.
         assert usd_per_token_blended("gpt-4o") is not None
 
-    def test_groq_bare_model_resolves_via_compat_provider_fallback(self) -> None:
-        # litellm only keys this under "groq/llama-3.3-70b-versatile"; the
-        # bare id Groq's own API (and OpenSRE's wire format) actually uses
-        # must still resolve.
-        assert usd_per_token_blended("llama-3.3-70b-versatile") is not None
+    def test_groq_legacy_bare_model_keeps_historical_price(self) -> None:
+        assert usd_per_token_blended("llama-3.3-70b-versatile") == pytest.approx(
+            0.7 * 0.59e-6 + 0.3 * 0.79e-6
+        )
 
     def test_minimax_bare_mixed_case_model_resolves(self) -> None:
         # litellm keys MiniMax under "minimax/MiniMax-M2.1" (mixed case);
