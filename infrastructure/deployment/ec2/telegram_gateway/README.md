@@ -48,7 +48,7 @@ uv run python -m infrastructure.deployment.ec2.telegram_gateway.lifecycle destro
 
 ### Environment variables
 
-Copy [`.env.deploy.example`](../../../.env.deploy.example) and set
+Copy [`.env.deploy.example`](../../../../.env.deploy.example) and set
 `TELEGRAM_BOT_TOKEN`, plus `LLM_PROVIDER` and API keys used by the main deploy.
 
 | Variable | Required | Used by |

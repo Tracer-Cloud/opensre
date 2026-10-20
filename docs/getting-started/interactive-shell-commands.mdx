@@ -111,6 +111,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/resume <id>` | Restore a past session's conversation context |
 | `/resume <id>:<entry>` | Restore a specific session branch point |
 | `/new` | Start a new session file while keeping LLM context |
+| `/rename <name>` | Rename the current session (`/rename --reset` clears the name) |
 | `/goal` | Set a finish line and keep working toward it across turns — see [Goals](/getting-started/goals) |
 
 ### Integrations, models, and tools
@@ -131,6 +132,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/history` | Show or manage persisted command history |
 | `/privacy` | History persistence, redaction status, and threat model |
 | `/memory` | List and manage the agent's long-term memory |
+| `/knowledge` | Show workspace knowledge and check memory health (`show <name>`, `audit`, `scan [service]`) |
 
 ### Tasks and background work
 
@@ -173,6 +175,7 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | `/update` | Check for updates and upgrade OpenSRE |
 | `/posthog` | Run or schedule PostHog per-metric summary reports |
 | `/runbooks` | Manage trusted runbook sources for guided investigations |
+| `/skills` | Publish skills and inspect the live skills release (`status`, `update`, `push <name>`, `rollback`) |
 | `/debug` | Targeted runtime diagnostics |
 | `/uninstall` | Remove OpenSRE and local data **elevated** |
 

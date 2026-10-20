@@ -105,7 +105,7 @@ Verification checks the bot token against Discord `/users/@me` only.
 
 | Symptom | Fix |
 | --- | --- |
-| **Bot online but ignores channel messages** | Enable **Message Content Intent** and restart the gateway. Ensure your user id is on the allowlist (`opensre messaging list` or `DISCORD_ALLOWED_USERS`). |
+| **Bot online but ignores channel messages** | Enable **Message Content Intent** and restart the gateway. Ensure your user id is on the allowlist (`opensre messaging status --platform discord` or `DISCORD_ALLOWED_USERS`). |
 | **Gateway shows Discord not configured** | Set `DISCORD_BOT_TOKEN` and at least one allowed user (or `DISCORD_ALLOW_OPEN_GUILD=1`). |
 | **Bot online but silent turns** | Set `ORGANIZATION_ID` — without it every turn is refused. |
 
