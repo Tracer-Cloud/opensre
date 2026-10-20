@@ -134,7 +134,7 @@ opensre
 
 Webapp contributors can run `opensre setup --dev` to authenticate through `http://localhost:3000`.
 
-**Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), and local agent fleet monitoring (`/agents`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/getting-started/interactive-shell-commands)** for the full reference.
+**Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`) and integrations (`/integrations list`, `/integrations verify`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/getting-started/interactive-shell-commands)** for the full reference.
 
 **Headless CLI** — run one agent turn non-interactively from a terminal, script, or CI job:
 
@@ -164,7 +164,6 @@ Other useful commands:
 
 ```bash
 opensre integrations setup
-opensre fleet scan
 opensre update
 opensre uninstall   # remove opensre and all local data
 ```
@@ -215,7 +214,6 @@ framework layers, see [AGENTS.md](AGENTS.md).
 | 🔗 **Evidence-backed root cause**        | Every conclusion is linked to the data behind it                                 |
 | 🛡️ **Reversible identifier masking**     | Redact pods, clusters, and account IDs before external LLM calls; restore in output |
 | 📊 **Session cost & history**            | Per-session token tracking (`/cost`) and resumable REPL sessions (`/sessions`) |
-| 👥 **Local agent fleet**                 | Monitor Claude Code, Cursor, Codex, and other coding agents on your machine      |
 | 🤖 **Full LLM flexibility**              | Bring your own model — Anthropic, OpenAI, Codex, Ollama, Gemini, OpenRouter, TrustedRouter, NVIDIA NIM, Bedrock |
 
 OpenSRE connects to **60+** tools across LLMs, observability, cloud infrastructure, data platforms, incident management, and MCP. The full matrix (with roadmap links) lives in the **[product docs](https://www.opensre.com/docs)**; a detailed catalog is also maintained in-repo as the project grows.

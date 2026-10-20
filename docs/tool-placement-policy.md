@@ -46,7 +46,6 @@ Applied to the pre-existing top-level `tools/` packages:
 
 | Package | Placement | Why |
 | --- | --- | --- |
-| `tools/system/fleet_monitoring/` | system | Local AI-agent fleet monitoring; no vendor. |
 | `tools/system/python_execution_tool/` | system | Generic sandboxed Python execution; the GitHub token import is one of several optional credential sources, not the tool's purpose. |
 | `tools/system/sre_guidance_tool/` | system | Local knowledge-base retrieval; no vendor. |
 | `tools/cross_vendor/fix_sentry_issue/` | cross_vendor | Reads a Sentry issue and hands the fix to the Pi coding agent — two `integrations/` packages in one tool's logic. |
