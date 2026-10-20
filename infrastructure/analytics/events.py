@@ -79,7 +79,7 @@ class Event(StrEnum):
     UPDATE_COMPLETED = "update_completed"
     UPDATE_FAILED = "update_failed"
 
-    # Local agent monitoring (Monitor Local Agents feature)
+    # Streaming secret detection
     AGENT_EXPOSURE_DETECTED = "agent_secret_detected"
 
     # Scheduled deliveries
