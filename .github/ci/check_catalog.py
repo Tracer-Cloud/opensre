@@ -67,7 +67,6 @@ def quality_checks() -> tuple[Check, ...]:
                 "pytest",
                 "-q",
                 "tests/core/agent/test_tool_registry.py",
-                "tests/fleet_monitoring/test_probe.py::test_psutil_is_not_imported_outside_sanctioned_modules",
                 "tests/shared",
                 "tests/quality",
             ),

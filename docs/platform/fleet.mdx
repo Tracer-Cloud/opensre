@@ -1,72 +1,14 @@
 ---
-title: 'Legacy Fleet Migration'
-description: 'Move native OpenSRE activity monitoring to sessions, tasks, schedules, and account usage while preserving legacy external-agent data.'
+title: 'Local Agent Fleet'
+description: 'Slash-command surface for monitoring, coordinating, and exchanging context between local AI agents (Claude Code, Cursor, Aider, ...)'
 ---
 
-<Warning>
-Legacy external-agent fleet monitoring (`/fleet` and `opensre fleet`) is deprecated.
-Existing commands remain available during the notice period. No removal release
-has been set. New OpenSRE work should use the native commands below.
-</Warning>
+## Overview
 
-## Monitor OpenSRE activity
-
-Choose a command for the work you want to inspect:
-
-| Need | Command |
-| --- | --- |
-| Current session state and configuration | `/status` |
-| Saved OpenSRE conversations | `/sessions` |
-| Background shell tasks | `/tasks` |
-| Cancel one background task | `/cancel <id>` |
-| Native loops and their run history | `/loops` |
-| Scheduled tasks and execution history | `/cron list`, `/cron logs` |
-| Session token usage and estimated provider cost | `/cost` |
-| Remaining hosted OpenSRE credits | `/credits` |
-| Hosted usage and top-ups | `/account usage` |
-
-Measured tokens, estimated external-provider USD cost, and billed OpenSRE credits
-are different quantities. Do not add fleet cost estimates to hosted usage or
-treat fleet budgets as credit limits. Fleet budgets are stored but not enforced;
-`/fleet conflicts` collects no write events, so an empty report does not mean
-there are no conflicting writes.
-
-These native commands do not monitor external Cursor, Claude Code, Codex, or
-Aider processes. There is no automatic redirect from fleet to native commands.
-Use each external tool's own monitoring for those processes. OpenSRE does not
-yet provide one combined activity view across sessions, background shell tasks,
-and scheduled runs; inspect the relevant views above separately.
-
-## Migration and removal stages
-
-1. **Notice period (this release):** fleet commands warn on use and remain
-   available with their existing behavior. CLI warnings go to stderr so JSON
-   stdout stays parseable. Fleet is removed from feature promotion and the docs
-   navigation; this reference URL remains available.
-2. **Removal announcement (future release):** a release note will name the
-   removal version after maintainers assess adoption and migration needs. Until
-   that announcement, there is no scheduled removal date.
-3. **Removal (separate change):** remove the legacy commands and collectors,
-   retain this migration URL, and leave saved data on disk. Do not reinterpret
-   external PIDs as native session or task IDs.
-
-## Preserve your data
-
-This deprecation does not delete or migrate your saved fleet files:
-
-- `~/.opensre/agents.jsonl` — registrations and wait relationships
-- `~/.opensre/agents.yaml` — budgets, thresholds, and provider pricing overrides
-- `~/.opensre/branch_claims.jsonl` — branch claims
-
-Back up these files before a future removal if you need their contents. They are
-not native sessions, task history, or a billing ledger, and will not be imported
-into those stores. The local context bus is a live stream, not a durable history.
-
-## Legacy command reference
-
-The commands below remain available during the notice period.
-
-The legacy fleet view monitors external local coding-agent processes:
+OpenSRE treats every other AI agent running on your machine — Claude Code,
+Cursor, Aider, Codex CLI, Gemini, and similar tools — as a microservice and
+applies normal SRE practice: golden signals, SLOs, and incident response. The
+fleet view lives behind one slash command in the interactive shell:
 
 ```text
 > /fleet
@@ -224,7 +166,7 @@ Claude Code and Codex models supported here, with optional
 `agents.yaml` input/output overrides. Pricing returns `None` for
 unknown models and the cell falls back to `-`; the dashboard never
 invents a rate. The yaml `hourly_budget_usd` field is **not** the
-cell content. It is stored but not enforced
+cell content — it is reserved for a future budget-alarm feature
 (you can still set budgets with `/fleet budget`).
 
 Model resolution order (highest to lowest):
@@ -491,7 +433,7 @@ EOF
   concurrently may arrive in different orders at different subscribers. Do not
   build logic that depends on delivery guarantees or ordering.
 - **No replay buffer.** Subscribers see only what is published *after* they
-  attach.
+  attach. A persistent ring buffer is a candidate for a follow-up phase.
 
 ## Related
 
@@ -501,11 +443,11 @@ EOF
 | --- | --- |
 | `(none)` | Dashboard: registered + discovered agents with pid, uptime, CPU, tokens/min, $/hr, status |
 | `budget` | View hourly budgets from `~/.opensre/agents.yaml` |
-| `budget <agent> <usd>` | Store `hourly_budget_usd` for one agent; not enforced |
+| `budget <agent> <usd>` | Set `hourly_budget_usd` for one agent |
 | `bus` | Live-tail cross-agent context bus until Ctrl+C |
 | `claim <branch> <agent>` | Exclusive branch claim (agent must be in registry) |
 | `release <branch>` | Release a claim |
-| `conflicts` | Incomplete: no write-event collector; an empty report does not establish safety |
+| `conflicts` | File-write conflict report between agents |
 | `kill <pid> [--force]` | SIGTERM → wait → SIGKILL (**elevated**); refuses self-PID |
 | `trace <pid>` | Live stdout tail of agent process |
 | `wait <pid> --on <other-pid>` | Record wait dependency for graph |

@@ -511,10 +511,6 @@
     "seconds": 0.02,
     "tests": 3
   },
-  "tests/cli/test_agents_command.py": {
-    "seconds": 0.216,
-    "tests": 11
-  },
   "tests/cli/test_args.py": {
     "seconds": 0.032,
     "tests": 6
@@ -1514,102 +1510,6 @@
   "tests/filestorage/test_vercel_provider.py": {
     "seconds": 0.152,
     "tests": 10
-  },
-  "tests/fleet_monitoring/meters/test_claude_code.py": {
-    "seconds": 0.084,
-    "tests": 13
-  },
-  "tests/fleet_monitoring/meters/test_codex.py": {
-    "seconds": 0.125,
-    "tests": 15
-  },
-  "tests/fleet_monitoring/meters/test_registry.py": {
-    "seconds": 0.075,
-    "tests": 12
-  },
-  "tests/fleet_monitoring/test_bus.py": {
-    "seconds": 2.458,
-    "tests": 38
-  },
-  "tests/fleet_monitoring/test_config.py": {
-    "seconds": 0.158,
-    "tests": 22
-  },
-  "tests/fleet_monitoring/test_conflicts.py": {
-    "seconds": 0.054,
-    "tests": 11
-  },
-  "tests/fleet_monitoring/test_coordination.py": {
-    "seconds": 0.215,
-    "tests": 32
-  },
-  "tests/fleet_monitoring/test_discovery.py": {
-    "seconds": 0.784,
-    "tests": 114
-  },
-  "tests/fleet_monitoring/test_lifecycle.py": {
-    "seconds": 20.127,
-    "tests": 5
-  },
-  "tests/fleet_monitoring/test_pricing.py": {
-    "seconds": 9.819,
-    "tests": 46
-  },
-  "tests/fleet_monitoring/test_probe.py": {
-    "seconds": 0.622,
-    "tests": 7
-  },
-  "tests/fleet_monitoring/test_provider_ids.py": {
-    "seconds": 0.025,
-    "tests": 4
-  },
-  "tests/fleet_monitoring/test_providers.py": {
-    "seconds": 0.191,
-    "tests": 26
-  },
-  "tests/fleet_monitoring/test_quality.py": {
-    "seconds": 0.111,
-    "tests": 13
-  },
-  "tests/fleet_monitoring/test_registry.py": {
-    "seconds": 0.165,
-    "tests": 24
-  },
-  "tests/fleet_monitoring/test_sampler.py": {
-    "seconds": 5.758,
-    "tests": 13
-  },
-  "tests/fleet_monitoring/test_status.py": {
-    "seconds": 0.068,
-    "tests": 12
-  },
-  "tests/fleet_monitoring/test_sweep.py": {
-    "seconds": 0.169,
-    "tests": 14
-  },
-  "tests/fleet_monitoring/test_tail.py": {
-    "seconds": 0.672,
-    "tests": 54
-  },
-  "tests/fleet_monitoring/test_token_rate.py": {
-    "seconds": 9.042,
-    "tests": 20
-  },
-  "tests/fleet_monitoring/token_sources/test_base.py": {
-    "seconds": 0.034,
-    "tests": 3
-  },
-  "tests/fleet_monitoring/token_sources/test_claude_code.py": {
-    "seconds": 0.11,
-    "tests": 12
-  },
-  "tests/fleet_monitoring/token_sources/test_codex.py": {
-    "seconds": 0.147,
-    "tests": 11
-  },
-  "tests/fleet_monitoring/token_sources/test_registry.py": {
-    "seconds": 0.09,
-    "tests": 13
   },
   "tests/github_ci/test_empty_collection_guard.py": {
     "seconds": 16.92,
@@ -2771,10 +2671,6 @@
     "seconds": 0.183,
     "tests": 19
   },
-  "tests/interactive_shell/test_agents_commands.py": {
-    "seconds": 0.426,
-    "tests": 57
-  },
   "tests/interactive_shell/test_alert_listener.py": {
     "seconds": 0.495,
     "tests": 2
@@ -3058,14 +2954,6 @@
   "tests/shared/llm_setup/test_validation.py": {
     "seconds": 0.234,
     "tests": 19
-  },
-  "tests/shared/terminal/test_agents_view.py": {
-    "seconds": 0.149,
-    "tests": 16
-  },
-  "tests/shared/terminal/test_agents_view_integration.py": {
-    "seconds": 6.03,
-    "tests": 3
   },
   "tests/shared/terminal/test_choice_menu.py": {
     "seconds": 0.664,

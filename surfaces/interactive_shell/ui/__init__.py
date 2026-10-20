@@ -42,10 +42,6 @@ if TYPE_CHECKING:
         STREAM_LABEL_ASSISTANT,
         stream_to_console,
     )
-    from surfaces.shared.terminal.agents.agents_view import (
-        _build_agents_table,
-        render_agents_table,
-    )
     from surfaces.shared.terminal.tables import (
         COMMAND_OUTPUT_GUTTER_WIDTH,
         MCP_INTEGRATION_SERVICES,
@@ -62,8 +58,6 @@ if TYPE_CHECKING:
 # Heavy re-exports resolved lazily so importing ``ui`` (done on every REPL boot
 # via the prompt/completion path) does not force the table + streaming stack.
 _LAZY_SUBMODULE_EXPORTS: dict[str, str] = {
-    "_build_agents_table": "surfaces.shared.terminal.agents",
-    "render_agents_table": "surfaces.shared.terminal.agents",
     "STREAM_LABEL_ANSWER": "surfaces.interactive_shell.ui.streaming",
     "STREAM_LABEL_ASSISTANT": "surfaces.interactive_shell.ui.streaming",
     "stream_to_console": "surfaces.interactive_shell.ui.streaming",
@@ -112,12 +106,10 @@ __all__ = [
     "STREAM_LABEL_ASSISTANT",
     "TEXT",
     "WARNING",
-    "_build_agents_table",
     "print_valid_choice_list",
     "print_command_output",
     "print_repl_json",
     "print_repl_table",
-    "render_agents_table",
     "refresh_welcome_poster",
     "repl_render_launch_poster",
     "render_launch_banner",

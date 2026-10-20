@@ -74,5 +74,4 @@ class Session(SessionCore):
         """
         super().release_resources()
         self.terminal.prompt_refresh_fn = None
-        self.terminal.fleet_sampler_starter = None
         self.terminal.startup_work_release = None

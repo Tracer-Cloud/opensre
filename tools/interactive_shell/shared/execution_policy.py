@@ -52,7 +52,6 @@ ExecutionVerdict = Literal["allow", "ask", "deny"]
 class ToolExecutionMode(StrEnum):
     FOREGROUND = "foreground"
     BACKGROUND = "background"
-    FOREGROUND_STREAMING = "foreground_streaming"
 
 
 @dataclass(frozen=True)

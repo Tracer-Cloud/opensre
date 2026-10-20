@@ -39,7 +39,6 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
     assert loop_input_policy.turn_needs_exclusive_stdin("/memory list", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/model", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops", session) is True
-    assert loop_input_policy.turn_needs_exclusive_stdin("/fleet", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/theme", session) is True
 
     # Typed bare `/model set` opens the provider picker.
@@ -78,7 +77,6 @@ def test_turn_needs_exclusive_stdin_for_integration_list_browser(
         "/integrations verify",
         "/integrations verify github",
         "/verify github",
-        "/fleet budget",
         "/help all",
         "/help /model",
         "/help tasks",
@@ -577,7 +575,7 @@ class TestDispatchSpinnerBehavior:
             # literal commands, so the spinner shows while the planner runs.
             "tasks",
             "help",
-            "opensre fleet scan",
+            "opensre cron list",
         ],
     )
     def test_non_slash_dispatches_show_assistant_spinner(self, text: str) -> None:

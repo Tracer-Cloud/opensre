@@ -131,13 +131,6 @@ class TerminalSession:
     ci_fix_count_fn: Callable[[], int] | None = field(default=None, repr=False)
     """Cached deployment repair count; reading it performs no disk or network I/O."""
 
-    fleet_sampler_starter: Callable[[], None] | None = field(default=None, repr=False)
-    """Loop-owned hook to lazily start the fleet sampler on first live ``/fleet`` use.
-
-    Set by the interactive-shell controller so the sampler (and its ``psutil`` dependency)
-    stays out of base REPL startup and only runs when fleet monitoring is actually
-    requested. Thread-safe: the starter marshals task creation onto the REPL event loop."""
-
     startup_work_release: Callable[[], None] | None = field(default=None, repr=False)
     """Launch hook that starts work held back until the shell first waits on the user.
 
@@ -414,11 +407,6 @@ class TerminalSession:
         """Start launch work held for the first wait on the user (no-op when unwired)."""
         if self.startup_work_release is not None:
             self.startup_work_release()
-
-    def ensure_fleet_sampler_started(self) -> None:
-        """Request that the fleet sampler start (no-op if unwired or already running)."""
-        if self.fleet_sampler_starter is not None:
-            self.fleet_sampler_starter()
 
     def set_turn_outcome_hint(self, hint: str | None) -> None:
         """Attach a structured outcome for the current terminal handler."""

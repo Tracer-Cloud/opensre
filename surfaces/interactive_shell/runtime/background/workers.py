@@ -44,18 +44,12 @@ class BackgroundTaskPool:
         self.inbox = inbox
         self.prompt_invalidator = prompt_invalidator
         self.tasks: list[tuple[str, asyncio.Task[None]]] = []
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._sampler_started = False
         self._defer_thread_job = defer_thread_job
 
     def start_all(
         self,
         processor_coro: Callable[[], Coroutine[Any, Any, None]],
     ) -> list[tuple[str, asyncio.Task[None]]]:
-        # The fleet sampler (and its psutil dependency) is intentionally NOT
-        # started here: local-agent monitoring only runs once the user actually
-        # opens /fleet, via ``ensure_fleet_sampler_started``.
-        self._loop = asyncio.get_running_loop()
         self.tasks = [
             ("processor", asyncio.create_task(processor_coro())),
             ("alert watcher", asyncio.create_task(self._alert_watcher())),
@@ -74,28 +68,6 @@ class BackgroundTaskPool:
             else:
                 self.tasks.append((label, asyncio.create_task(asyncio.to_thread(job))))
         return self.tasks
-
-    def ensure_fleet_sampler_started(self) -> None:
-        """Start the fleet sampler on demand (first live ``/fleet`` use).
-
-        Safe to call from any thread: a shell turn (and thus the ``/fleet``
-        handler) runs in a worker thread via ``asyncio.to_thread``, so sampler
-        task creation is marshalled back onto the REPL event loop. Idempotent.
-        """
-        loop = self._loop
-        if loop is None:
-            return
-        loop.call_soon_threadsafe(self._start_sampler_task)
-
-    def _start_sampler_task(self) -> None:
-        if self._sampler_started:
-            return
-        # Imported lazily so base REPL startup does not pull the sampler +
-        # psutil into the import path.
-        from tools.system.fleet_monitoring.sampler import start_sampler
-
-        self._sampler_started = True
-        self.tasks.append(("sampler", start_sampler()))
 
     def drain_turn_start_output(self, console: Console) -> None:
         if self.inbox is not None:

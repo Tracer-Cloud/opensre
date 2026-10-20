@@ -67,7 +67,6 @@ class OpensreCommandClass(StrEnum):
 
 class OpensreExecutionMode(StrEnum):
     FOREGROUND = "foreground"
-    FOREGROUND_STREAMING = "foreground_streaming"
     BACKGROUND = "background"
 
 
@@ -170,21 +169,7 @@ def classify_opensre_command(tokens: list[str]) -> str:
         return OpensreCommandClass.READ_ONLY.value
     if _is_read_only_integrations(tokens):
         return OpensreCommandClass.READ_ONLY.value
-    if first_token == "fleet":
-        subcommand = tokens[1].lower() if len(tokens) > 1 else "list"
-        if subcommand in {"list"}:
-            return OpensreCommandClass.READ_ONLY.value
-        if subcommand == "scan" and "--register" not in tokens[2:]:
-            return OpensreCommandClass.READ_ONLY.value
     return OpensreCommandClass.MUTATING.value
-
-
-def opensre_confirmation_reason(tokens: list[str]) -> str:
-    if tokens[:2] == ["fleet", "scan"] and "--register" in tokens[2:]:
-        return "register discovered local AI-agent processes"
-    if tokens and tokens[0] == "fleet":
-        return "this updates the local AI-agent registry"
-    return "this opensre subcommand may change local config or infrastructure"
 
 
 def build_opensre_execution_plan(tokens: list[str]) -> OpensreExecutionPlan:
@@ -199,16 +184,10 @@ def build_opensre_execution_plan(tokens: list[str]) -> OpensreExecutionPlan:
         # Wait for verify/list/show so the tool observation includes pass/fail
         # and the plan can leave Invoking tools instead of parking on a task id.
         execution_mode = OpensreExecutionMode.FOREGROUND
-    elif first_token == "fleet":
-        subcommand = tokens[1].lower() if len(tokens) > 1 else "list"
-        if subcommand == "watch":
-            execution_mode = OpensreExecutionMode.FOREGROUND_STREAMING
-        elif subcommand in {"list", "register", "forget", "scan"}:
-            execution_mode = OpensreExecutionMode.FOREGROUND
 
     requires_confirmation = classification is OpensreCommandClass.MUTATING
     reason = (
-        opensre_confirmation_reason([token.lower() for token in tokens])
+        "this opensre subcommand may change local config or infrastructure"
         if requires_confirmation
         else None
     )
@@ -224,8 +203,6 @@ def to_tool_execution_plan(plan: OpensreExecutionPlan) -> ToolExecutionPlan:
     mode = ToolExecutionMode.BACKGROUND
     if plan.execution_mode is OpensreExecutionMode.FOREGROUND:
         mode = ToolExecutionMode.FOREGROUND
-    elif plan.execution_mode is OpensreExecutionMode.FOREGROUND_STREAMING:
-        mode = ToolExecutionMode.FOREGROUND_STREAMING
     if not plan.requires_confirmation:
         policy = ExecutionPolicyResult(
             verdict="allow",
@@ -299,22 +276,6 @@ def run_foreground_cli(
     )
 
 
-def spawn_streaming_cli(
-    argv_list: list[str],
-    *,
-    env: dict[str, str] | None = None,
-) -> subprocess.Popen[str]:
-    return subprocess.Popen(
-        argv_list,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-    )
-
-
 def _print_wizard_handoff(presenter: SubprocessPresenter, command_str: str) -> None:
     presenter.print(
         f"[warning]`opensre {command_str}` is an interactive wizard that needs a full terminal.[/]"
@@ -368,33 +329,6 @@ def _run_foreground_via_presenter(
     return result
 
 
-def _run_streaming_via_presenter(
-    presenter: SubprocessPresenter,
-    *,
-    argv_list: list[str],
-    display_command: str,
-) -> None:
-    presenter.print_bold_command(display_command)
-    try:
-        proc = spawn_streaming_cli(argv_list, env=_child_env(presenter))
-    except Exception as exc:  # noqa: BLE001
-        presenter.report_exception(
-            exc,
-            context="surfaces.interactive_shell.opensre_cli.start",
-        )
-        presenter.print_error(f"failed to start: {exc}")
-        presenter.session.record("cli_command", display_command, ok=False)
-        return
-    if proc.stdout is not None:
-        for line in proc.stdout:
-            presenter.print_command_output(line)
-    code = proc.wait()
-    ok = code == 0
-    if not ok:
-        presenter.print(f"[error]command failed (exit {code}):[/]")
-    presenter.session.record("cli_command", display_command, ok=ok)
-
-
 def run_opensre_cli_command_result(
     args: str,
     presenter: SubprocessPresenter,
@@ -445,26 +379,12 @@ def run_opensre_cli_command_result(
         )
 
     argv_list = build_opensre_cli_argv(tokens)
-    if prefer_foreground or execution_plan.execution_mode in {
-        ToolExecutionMode.FOREGROUND,
-        ToolExecutionMode.FOREGROUND_STREAMING,
-    }:
-        foreground = None
-        if (
-            execution_plan.execution_mode is ToolExecutionMode.FOREGROUND_STREAMING
-            and not prefer_foreground
-        ):
-            _run_streaming_via_presenter(
-                presenter,
-                argv_list=argv_list,
-                display_command=display_command,
-            )
-        else:
-            foreground = _run_foreground_via_presenter(
-                presenter,
-                argv_list=argv_list,
-                display_command=display_command,
-            )
+    if prefer_foreground or execution_plan.execution_mode is ToolExecutionMode.FOREGROUND:
+        foreground = _run_foreground_via_presenter(
+            presenter,
+            argv_list=argv_list,
+            display_command=display_command,
+        )
         return OpensreRunResult(
             outcome=OpensreRunOutcome.EXECUTED_FOREGROUND,
             attempted=True,
@@ -502,16 +422,13 @@ __all__ = [
     "OpensreRunOutcome",
     "OpensreRunResult",
     "_run_foreground_via_presenter",
-    "_run_streaming_via_presenter",
     "build_opensre_cli_argv",
     "build_opensre_execution_plan",
     "classify_opensre_command",
     "interactive_wizard_handoff_response_text",
     "is_interactive_wizard",
-    "opensre_confirmation_reason",
     "run_foreground_cli",
     "run_opensre_cli_command",
     "run_opensre_cli_command_result",
-    "spawn_streaming_cli",
     "to_tool_execution_plan",
 ]

@@ -91,11 +91,6 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         "surfaces.cli.commands.guardrails:guardrails",
     ),
     CommandSpec(
-        "fleet",
-        "Deprecated: monitor external local coding agents.",
-        "surfaces.cli.commands.agent:fleet",
-    ),
-    CommandSpec(
         "messaging",
         "Messaging security: DM pairing and identity management.",
         "surfaces.cli.commands.messaging:messaging",

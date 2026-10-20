@@ -48,11 +48,6 @@ ignore = [
 "tools/interactive_shell/synthetic/runner.py" = ["SIM115"]
 "surfaces/interactive_shell/runtime/subprocess_runner/background_task_executor.py" = ["SIM115"]
 
-# self._fd is opened in __init__ and must remain open for the lifetime of the
-# background reader thread (_reader_loop). A with-block would close the fd when
-# __init__ exits — before the thread reads anything. The fd is closed in close().
-"tools/system/fleet_monitoring/tail.py" = ["SIM115"]
-
 # tools/<vendor>_tools/__init__.py files are concatenations of multiple tool modules.
 # Imports appear in each section rather than all at the top (E402).
 "tools/*_tools/__init__.py" = ["E402", "F811"]

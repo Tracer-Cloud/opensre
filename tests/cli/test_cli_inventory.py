@@ -24,7 +24,6 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "cron",
         "debug",
         "doctor",
-        "fleet",
         "gateway",
         "guardrails",
         "health",

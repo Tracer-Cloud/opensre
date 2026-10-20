@@ -416,7 +416,6 @@ if TYPE_CHECKING:
     from config.constants.filestorage import (
         REMOTE_SYNC_REGION_ENV as REMOTE_SYNC_REGION_ENV,
     )
-    from config.constants.fleet import FLEET_DEPRECATION_NOTICE as FLEET_DEPRECATION_NOTICE
     from config.constants.gateway import (
         ATTACHMENT_MAX_FILE_CHARS as ATTACHMENT_MAX_FILE_CHARS,
     )

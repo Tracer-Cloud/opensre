@@ -229,7 +229,6 @@ ignore_names = [
   "_accept_*", "_tab_*", "_shift_*", "_next_*", "_previous_*", "_on_*",
   "_quit", "_ctrl_c", "_bulk_*", "_handle_*", "_toggle", "_escape", "_submit",
   "_escape_checkbox", "_get_choice_tokens",
-  "parse_chunk", "from_tokens",                    # fleet_monitoring meter protocol
   "steer", "emit_update", "on_update",             # agent runtime protocol surface
   "tool_description",                              # slash adapter protocol
   "reset_guardrail_evaluator", "reset_runtime_flags", "reset_cli_session_id",

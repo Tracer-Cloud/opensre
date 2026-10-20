@@ -21,11 +21,7 @@ def test_global_contracts_do_not_depend_on_changed_package() -> None:
     commands = [check.args for check in quality_checks()]
     assert any("tests/tools/test_registry_index.py" in cmd for cmd in commands)
     assert any("tests/core/agent/test_tool_registry.py" in cmd for cmd in commands)
-    assert any(
-        "tests/fleet_monitoring/test_probe.py::"
-        "test_psutil_is_not_imported_outside_sanctioned_modules" in cmd
-        for cmd in commands
-    )
+    assert any("tests/quality" in cmd for cmd in commands)
     # Registry discovery must start before unrelated tests can populate imports.
     registry = next(cmd for cmd in commands if "tests/tools/test_registry_index.py" in cmd)
     assert registry[-1] == "tests/tools/test_registry_index.py"

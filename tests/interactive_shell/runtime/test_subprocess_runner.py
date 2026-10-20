@@ -541,132 +541,6 @@ def test_run_shell_command_reports_start_failure(monkeypatch: pytest.MonkeyPatch
     }
 
 
-def test_run_opensre_agents_scan_prints_clean_foreground_output(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert command[-2:] == ["fleet", "scan"]
-        assert kwargs["capture_output"] is True
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout="agent scan\n777 claude-code-777 claude code\nNext: register\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.subprocess.run",
-        _fake_run,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    assert run_opensre_cli_command("fleet scan", session, console) is True
-
-    out = buf.getvalue()
-    assert "$ opensre fleet scan" in out
-    assert "agent scan" in out
-    assert "777 claude-code-777 claude code" in out
-    assert "started." not in out
-    assert "stdout │" not in out
-    assert session.history[-1] == {"type": "cli_command", "text": "opensre fleet scan", "ok": True}
-
-
-def test_run_opensre_agents_scan_register_explains_confirmation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout="registered 1 agent(s)\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.subprocess.run",
-        _fake_run,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    assert (
-        run_opensre_cli_command(
-            "fleet scan --register",
-            session,
-            console,
-            confirm_fn=lambda _prompt: "y",
-            is_tty=True,
-        )
-        is True
-    )
-
-    out = buf.getvalue()
-    assert "register discovered local AI-agent processes" in out
-    assert "registered 1 agent(s)" in out
-    assert "stdout │" not in out
-    assert session.history[-1] == {
-        "type": "cli_command",
-        "text": "opensre fleet scan --register",
-        "ok": True,
-    }
-
-
-def test_run_opensre_agents_watch_runs_in_foreground(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    popen_kwargs: list[dict[str, object]] = []
-
-    class _FakeProcess:
-        stdout = iter(["watching pid 1234; press Ctrl+C to stop\n", "pid 1234 exited\n"])
-
-        def wait(self) -> int:
-            return 0
-
-    def _fake_popen(command: list[str], **kwargs: object) -> _FakeProcess:
-        assert command[-3:] == ["fleet", "watch", "1234"]
-        popen_kwargs.append(kwargs)
-        return _FakeProcess()
-
-    monkeypatch.setattr(
-        _CLI_POPEN,
-        _fake_popen,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    assert (
-        run_opensre_cli_command(
-            "fleet watch 1234",
-            session,
-            console,
-            confirm_fn=lambda _prompt: "y",
-            is_tty=True,
-        )
-        is True
-    )
-
-    out = buf.getvalue()
-    assert "$ opensre fleet watch 1234" in out
-    assert "watching pid 1234" in out
-    assert "pid 1234 exited" in out
-    assert "started" not in out
-    assert "timeout" not in popen_kwargs[0]
-    assert popen_kwargs[0]["stderr"] is subprocess.STDOUT
-    assert session.task_registry.list_recent() == []
-    assert session.history[-1] == {
-        "type": "cli_command",
-        "text": "opensre fleet watch 1234",
-        "ok": True,
-    }
-
-
 def test_start_background_cli_task_uses_pty_for_live_terminal_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -723,8 +597,8 @@ def test_start_background_cli_task_uses_pty_for_live_terminal_output(
     console = Console(file=buf, force_terminal=True)
 
     task = start_background_cli_task(
-        display_command="opensre fleet scan",
-        argv_list=["python", "-m", "cli", "fleet", "scan"],
+        display_command="opensre cron list",
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -780,8 +654,8 @@ def test_start_background_cli_task_falls_back_to_pipes_when_pty_unavailable(
     console = Console(file=buf, force_terminal=True)
 
     task = start_background_cli_task(
-        display_command="opensre fleet scan",
-        argv_list=["python", "-m", "cli", "fleet", "scan"],
+        display_command="opensre cron list",
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -834,8 +708,8 @@ def test_start_background_cli_task_logs_failure_outcome_to_posthog(
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
-        display_command="opensre fleet watch 1234",
-        argv_list=["python", "-m", "cli", "fleet", "watch", "1234"],
+        display_command="opensre cron run task-1",
+        argv_list=["python", "-m", "cli", "cron", "run", "task-1"],
         session=session,
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -849,7 +723,7 @@ def test_start_background_cli_task_logs_failure_outcome_to_posthog(
     assert props["$ai_trace_id"] == task.task_id
     ai_input = props["$ai_input"]
     assert isinstance(ai_input, list)
-    assert ai_input[0]["content"] == "opensre fleet watch 1234"
+    assert ai_input[0]["content"] == "opensre cron run task-1"
     choices = props["$ai_output_choices"]
     assert isinstance(choices, list)
     content = choices[0]["content"]
@@ -892,8 +766,8 @@ def test_start_background_cli_task_logs_success_outcome_to_posthog(
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
-        display_command="opensre fleet scan --register",
-        argv_list=["python", "-m", "cli", "fleet", "scan", "--register"],
+        display_command="opensre cron run task-1",
+        argv_list=["python", "-m", "cli", "cron", "run", "task-1"],
         session=session,
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -996,8 +870,8 @@ def test_start_background_cli_task_reports_spawn_failure(
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
-        display_command="opensre fleet scan",
-        argv_list=["python", "-m", "cli", "fleet", "scan"],
+        display_command="opensre cron list",
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -1048,8 +922,8 @@ def test_start_background_cli_task_reports_watcher_failure(
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
-        display_command="opensre fleet scan",
-        argv_list=["python", "-m", "cli", "fleet", "scan"],
+        display_command="opensre cron list",
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -1108,8 +982,8 @@ def _capture_popen_kwargs(
 
 def _start_one_task(console: Console) -> None:
     start_background_cli_task(
-        display_command="opensre fleet scan",
-        argv_list=["opensre", "fleet", "scan"],
+        display_command="opensre cron list",
+        argv_list=["opensre", "cron", "list"],
         session=Session(),
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -1192,7 +1066,7 @@ def test_background_task_preserves_existing_environment(
         # Other subcommands — must NOT match.
         (["health"], False),
         (["version"], False),
-        (["fleet", "list"], False),
+        (["cron", "list"], False),
         # Edge: empty.
         ([], False),
     ],
@@ -1434,14 +1308,14 @@ def test_start_background_cli_task_echoes_command_markup_literally(
         _ImmediateThread,
     )
 
-    display_command = 'opensre fleet scan --note "[error] 5xx spike on [/api/checkout]"'
+    display_command = 'opensre cron list --note "[error] 5xx spike on [/api/checkout]"'
     session = Session()
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
         display_command=display_command,
-        argv_list=["python", "-m", "cli", "fleet", "scan"],
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
     )

@@ -38,7 +38,6 @@ def _quick_access_section() -> HelpSection:
 
 
 def _raw_help_sections() -> list[HelpSection]:
-    from surfaces.interactive_shell.command_registry.agents import COMMANDS as AGENTS_CMDS
     from surfaces.interactive_shell.command_registry.alerts import COMMANDS as ALERTS_CMDS
     from surfaces.interactive_shell.command_registry.choice_prompt import (
         COMMANDS as CHOICE_CMDS,
@@ -99,7 +98,6 @@ def _raw_help_sections() -> list[HelpSection]:
             list(WORK_CMDS) + list(LOOPS_CMDS) + list(TASK_CMDS) + list(GATEWAY_CMDS),
         ),
         ("Theme", list(THEME_CMDS)),
-        ("Agents", list(AGENTS_CMDS)),
         ("Alerts", list(ALERTS_CMDS)),
         ("CLI (parity)", list(PARITY_COMMANDS)),
         ("System", list(SYS_CMDS)),

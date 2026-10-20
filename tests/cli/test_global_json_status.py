@@ -21,7 +21,6 @@ from infrastructure.filestorage.operations import SyncRootStatus, SyncStatus
 from infrastructure.process.runtime_flags import reset_runtime_flags
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
-from tools.system.fleet_monitoring.registry import AgentRecord
 
 
 @pytest.fixture(autouse=True)
@@ -29,31 +28,6 @@ def _reset_runtime_flags() -> None:
     reset_runtime_flags()
     yield
     reset_runtime_flags()
-
-
-def test_global_json_serializes_fleet_list(monkeypatch: pytest.MonkeyPatch) -> None:
-    from surfaces.cli.app import cli
-
-    monkeypatch.setattr(
-        "surfaces.cli.commands.agent.registered_and_discovered_agents",
-        lambda _registry: [AgentRecord(name="codex", pid=42, command="codex")],
-    )
-
-    result = CliRunner().invoke(cli, ["--json", "fleet", "list"])
-
-    assert result.exit_code == 0, result.output
-    assert "deprecated" in result.stderr
-    assert json.loads(result.stdout) == [
-        {
-            "name": "codex",
-            "pid": 42,
-            "command": "codex",
-            "source": "registered",
-            "waits_on": [],
-            "provider": None,
-            "registered_at": ANY,
-        }
-    ]
 
 
 def test_global_json_serializes_work_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

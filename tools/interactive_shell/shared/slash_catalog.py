@@ -191,18 +191,6 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "Exit the interactive shell and return to the parent terminal.",
         "User asks to exit, quit, or leave the REPL",
     ),
-    "/fleet": _mcp(
-        "Deprecated legacy external-agent monitoring, retained during migration. "
-        "Use only for explicit /fleet operations on external local coding-agent processes. "
-        "Native OpenSRE activity uses /status, /sessions, /tasks, /loops, /cron; "
-        "accounting uses /cost, /credits, /account usage.",
-        "User explicitly asks to run /fleet for external local coding agents",
-        anti_examples=(
-            "User asks about native OpenSRE sessions, tasks, or scheduled runs",
-            "User asks about OpenSRE token usage, hosted credits, or billing",
-            "User asks about remote/hosted agents only",
-        ),
-    ),
     "/gateway": _mcp(
         "Control the background OpenSRE gateway daemon (web health app, Telegram chat, "
         "task scheduler). Subcommands: start, stop, status, logs [lines].",

@@ -22,7 +22,7 @@ def _literal_slash_command_text(text: str) -> str | None:
 
 
 _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
-    {"/history", "/memory", "/loops", "/work", "/fleet"}
+    {"/history", "/memory", "/loops", "/work"}
 )
 # These commands can print tables or open a picker even with arguments.
 # Reserve the whole command family so aliases and help topics stay covered.
@@ -83,7 +83,6 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         # Retention asks for a missing value; show prints a history table.
         ("/history", "retention"),
         ("/history", "show"),
-        ("/fleet", "budget"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),
