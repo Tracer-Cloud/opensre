@@ -31,18 +31,48 @@ def _fire_days(cron: str) -> set[str]:
         ("0", {"Sun"}),
         ("7", {"Sun"}),
         ("*/2", {"Sun", "Tue", "Thu", "Sat"}),
-        # A step after a name range is ignored by APScheduler, so steps become lists.
+        # A step after a name range is ignored by APScheduler, so steps become lists,
+        # whether the range is written in numbers or in names.
         ("1-5/2", {"Mon", "Wed", "Fri"}),
         ("mon-fri", {"Mon", "Tue", "Wed", "Thu", "Fri"}),
+        ("mon-fri/2", {"Mon", "Wed", "Fri"}),
     ],
 )
 def test_a_weekday_field_fires_on_its_crontab_days(day_of_week: str, fires_on: set[str]) -> None:
     assert _fire_days(f"0 10 * * {day_of_week}") == fires_on
 
 
-def test_a_weekday_number_above_7_is_rejected_before_it_is_stored() -> None:
-    with pytest.raises(ValueError, match="0-7"):
-        build_cron_trigger("0 10 * * 8", "UTC")
+def _fire_months(cron: str) -> list[str]:
+    """The months ``cron`` fires in during the year after a Sunday noon."""
+    trigger = build_cron_trigger(cron, "UTC")
+    months: list[str] = []
+    fire = trigger.get_next_fire_time(None, _SUNDAY_NOON)
+    while fire is not None and fire < _SUNDAY_NOON + timedelta(days=365):
+        months.append(f"{fire:%b}")
+        fire = trigger.get_next_fire_time(fire, fire)
+    return months
+
+
+def test_a_step_after_a_month_name_range_fires_quarterly() -> None:
+    # APScheduler drops the step after ``jan-dec``; the numeric form is the reference.
+    assert _fire_months("0 10 1 jan-dec/3 *") == _fire_months("0 10 1 1-12/3 *")
+    assert _fire_months("0 10 1 jan-dec/3 *") == ["Jan", "Apr", "Jul", "Oct"]
+
+
+@pytest.mark.parametrize(
+    ("cron", "reason"),
+    [
+        ("0 10 * * 8", "0-7"),
+        ("0 10 * * mon-fri/0", "step"),
+        ("0 10 * * fri-mon", "backwards"),
+        ("0 10 * * mon-fry", "mon-sun"),
+        # APScheduler reads ``mon-fri`` and drops the rest; the whole item must parse.
+        ("0 10 * * mon-fri/-1", "unrecognized"),
+    ],
+)
+def test_an_invalid_weekday_item_is_rejected_before_it_is_stored(cron: str, reason: str) -> None:
+    with pytest.raises(ValueError, match=reason):
+        build_cron_trigger(cron, "UTC")
 
 
 def test_the_stored_next_run_skips_the_weekend() -> None:

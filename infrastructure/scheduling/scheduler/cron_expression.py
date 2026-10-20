@@ -8,7 +8,9 @@ half a minute; a five-field line can never fire more than once per minute.
 
 Weekday numbers mean what they mean in crontab (0 and 7 are Sunday, 1 is
 Monday), although APScheduler 3.x counts from 0 = Monday; every trigger is
-built through :func:`build_cron_trigger`, which translates them.
+built through :func:`build_cron_trigger`, which translates them. It also
+expands a step after a name range (``mon-fri/2``, ``jan-dec/3``), which
+APScheduler would otherwise silently drop.
 """
 
 from __future__ import annotations
@@ -37,50 +39,89 @@ _WEEKDAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 #: Crontab weekday numbers run 0-7; both 0 and 7 are Sunday.
 _CRONTAB_LAST_WEEKDAY = 7
 _CRONTAB_WEEKDAY_ITEM = re.compile(
-    r"(?:(?P<every>\*)|(?P<first>\d+)(?:-(?P<last>\d+))?)(?:/(?P<step>\d+))?"
+    r"(?:(?P<every>\*)"
+    r"|(?P<first>\d+)(?:-(?P<last>\d+))?"
+    r"|(?P<first_name>[a-z]+)(?:-(?P<last_name>[a-z]+))?)"
+    r"(?:/(?P<step>\d+))?"
 )
+#: Crontab month numbers by name; January is 1.
+_MONTH_NUMBERS = {
+    name: number
+    for number, name in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        start=1,
+    )
+}
+_MONTH_NAME = re.compile(r"[a-z]+")
 
 
 def day_of_week_names(field: str) -> str:
     """Spell a crontab ``day_of_week`` field in the day names APScheduler 3.x reads.
 
     Numeric items (``0``, ``1-5``, ``1-5/2``, ``*/2``) are read the crontab way
-    and become names; a step is expanded into a list, because APScheduler
-    ignores a step written after a name range. Names and a bare ``*`` mean the
-    same to both and pass through. Raises ``ValueError`` for a number above 7,
-    a backwards range, or a zero step.
+    and become names; a step is expanded into a list, whether it follows
+    numbers or names (``mon-fri/2``), because APScheduler ignores a step
+    written after a name range. Raises ``ValueError`` for a number above 7,
+    an unknown name, a backwards range, a zero step, or an item APScheduler
+    would only partly read (``mon-fri/-1``), so a schedule is rejected rather
+    than silently run on other days.
     """
-    passthrough: list[str] = []
     days: set[int] = set()
     for item in field.lower().split(","):
         match = _CRONTAB_WEEKDAY_ITEM.fullmatch(item)
-        if match is None or item == "*":
-            passthrough.append(item)
-        else:
-            days.update(_crontab_weekdays(item, match))
-    return ",".join([*_weekday_ranges(days), *passthrough])
+        if match is None:
+            raise ValueError(f"unrecognized day_of_week item: {item!r}")
+        days.update(_crontab_weekdays(item, match))
+    return ",".join(_weekday_ranges(days))
 
 
 def _crontab_weekdays(item: str, match: re.Match[str]) -> set[int]:
-    """APScheduler weekday indexes for one numeric crontab item."""
+    """APScheduler weekday indexes for one numeric or named crontab item."""
     step = int(match["step"] or 1)
-    if match["every"]:
-        first, last = 0, _CRONTAB_LAST_WEEKDAY
-    else:
-        first = int(match["first"])
-        if match["last"] is not None:
-            last = int(match["last"])
-        else:
-            # ``N/step`` runs to the end of the week, like ``*/step``.
-            last = first if match["step"] is None else _CRONTAB_LAST_WEEKDAY
-    if max(first, last) > _CRONTAB_LAST_WEEKDAY:
-        raise ValueError(f"day_of_week numbers run 0-7, with 0 and 7 for Sunday: {item!r}")
-    if first > last:
-        raise ValueError(f"day_of_week range runs backwards: {item!r}")
     if step < 1:
         raise ValueError(f"day_of_week step must be at least 1: {item!r}")
+    named = match["first_name"] is not None
+    first, last = (_named_weekday_span if named else _numeric_weekday_span)(item, match)
+    if first > last:
+        raise ValueError(f"day_of_week range runs backwards: {item!r}")
+    days = range(first, last + 1, step)
+    if named:
+        return set(days)
     # Crontab 1 (Monday) is APScheduler 0; crontab 0 and 7 (Sunday) are both 6.
-    return {(day - 1) % len(_WEEKDAY_NAMES) for day in range(first, last + 1, step)}
+    return {(day - 1) % len(_WEEKDAY_NAMES) for day in days}
+
+
+def _numeric_weekday_span(item: str, match: re.Match[str]) -> tuple[int, int]:
+    """Crontab numbers (0-7) for the first and last day of a numeric item."""
+    if match["every"]:
+        return 0, _CRONTAB_LAST_WEEKDAY
+    first = int(match["first"])
+    if match["last"] is not None:
+        last = int(match["last"])
+    else:
+        # ``N/step`` runs to the end of the week, like ``*/step``.
+        last = first if match["step"] is None else _CRONTAB_LAST_WEEKDAY
+    if max(first, last) > _CRONTAB_LAST_WEEKDAY:
+        raise ValueError(f"day_of_week numbers run 0-7, with 0 and 7 for Sunday: {item!r}")
+    return first, last
+
+
+def _named_weekday_span(item: str, match: re.Match[str]) -> tuple[int, int]:
+    """APScheduler indexes (0 = Monday) for the first and last day of a named item."""
+    first = _weekday_index(match["first_name"], item)
+    if match["last_name"] is not None:
+        last = _weekday_index(match["last_name"], item)
+    else:
+        # ``mon/step`` runs to the end of the week, like ``*/step``.
+        last = first if match["step"] is None else len(_WEEKDAY_NAMES) - 1
+    return first, last
+
+
+def _weekday_index(name: str, item: str) -> int:
+    try:
+        return _WEEKDAY_NAMES.index(name)
+    except ValueError:
+        raise ValueError(f"day_of_week names run mon-sun: {item!r}") from None
 
 
 def _weekday_ranges(days: set[int]) -> list[str]:
@@ -93,6 +134,21 @@ def _weekday_ranges(days: set[int]) -> list[str]:
         first, last = _WEEKDAY_NAMES[run_days[0]], _WEEKDAY_NAMES[run_days[-1]]
         ranges.append(first if first == last else f"{first}-{last}")
     return ranges
+
+
+def _month_numbers(field: str) -> str:
+    """Spell month names in a crontab ``month`` field as numbers (``jan-dec/3`` is ``1-12/3``).
+
+    APScheduler reads a step after numbers but drops one after names. An
+    unknown name passes through for APScheduler to reject.
+    """
+    return _MONTH_NAME.sub(_month_number, field.lower())
+
+
+def _month_number(match: re.Match[str]) -> str:
+    name = match.group()
+    number = _MONTH_NUMBERS.get(name)
+    return name if number is None else str(number)
 
 
 def build_cron_trigger(cron: str, timezone: str | None) -> Any:
@@ -118,7 +174,7 @@ def build_cron_trigger(cron: str, timezone: str | None) -> Any:
             minute=minute,
             hour=hour,
             day=day,
-            month=month,
+            month=_month_numbers(month),
             day_of_week=day_of_week_names(day_of_week),
             timezone=timezone,
         )
