@@ -9,6 +9,8 @@ heartbeat, and that an older web app without the routes is harmless.
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
@@ -146,6 +148,42 @@ def test_the_mirror_files_each_memory_under_its_member_and_is_not_resent_unchang
     clock["now"] = 11 * 60
     sync.sync()
     assert len(webapp.reports) == 2  # the heartbeat resends an unchanged mirror
+
+
+class _ScriptedStop(threading.Event):
+    """The sync loop's stop event: each wait runs the next step, then the loop stops."""
+
+    def __init__(self, *steps: Callable[[], None]) -> None:
+        super().__init__()
+        self._steps = list(steps)
+
+    def wait(self, timeout: float | None = None) -> bool:  # noqa: ARG002 - a step stands in for the wait
+        if self._steps:
+            self._steps.pop(0)()
+        else:
+            self.set()
+        return self.is_set()
+
+
+def test_a_memory_saved_between_passes_reaches_the_page_before_the_next_pass(
+    tmp_path: Path,
+) -> None:
+    # It used to wait for the next five-minute pass: a member who told the agent
+    # something in Slack did not see it on the Knowledge page for minutes.
+    webapp = _Webapp()
+    sync = _sync(webapp, tmp_path)  # the clock never reaches the next full pass
+
+    sync.run_forever(
+        _ScriptedStop(
+            lambda: _remember("U_ADA", "team-roles", "Ada is head of engineering"),
+            lambda: None,  # nothing new: no store is read, nothing is sent
+        )
+    )
+
+    assert len(webapp.reports) == 2
+    first, second = webapp.reports
+    assert first["members"] == []
+    assert [m["name"] for m in second["members"][0]["memories"]] == ["team-roles"]
 
 
 def test_a_rescan_reaches_the_scan_service_and_an_unknown_one_fails_politely(

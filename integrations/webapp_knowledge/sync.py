@@ -4,8 +4,8 @@ The gateway owns the knowledge (memory stores and workspace entries on the
 organization's volume). This is the gateway half of the contract in
 opensre-webapp ``docs/knowledge.md``, the same shape as the Tasks page sync:
 
-1. ``PUT /api/agent/knowledge`` — the whole mirror, sent when it changed and
-   on a heartbeat;
+1. ``PUT /api/agent/knowledge`` — the whole mirror, sent within seconds of a
+   memory or workspace entry being written here, and on a heartbeat;
 2. ``GET /api/agent/knowledge/requests`` — changes members asked for in the
    app (forget one of their memories; admins: delete a workspace entry,
    rescan an integration);
@@ -30,7 +30,10 @@ from typing import Any
 import httpx
 
 import config.constants.paths as paths
-from config.constants.gateway import WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS
+from config.constants.gateway import (
+    WEBAPP_KNOWLEDGE_CHANGE_CHECK_SECONDS,
+    WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS,
+)
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from core.domain.knowledge import (
@@ -41,6 +44,7 @@ from core.domain.knowledge import (
 from core.domain.memory import (
     delete_memory,
     is_valid_slug,
+    knowledge_generation,
     member_memory_dir,
     memory_path,
     memory_root,
@@ -102,6 +106,8 @@ class WebappKnowledgeSync:
         )
         self._reported_digest = ""
         self._reported_at: float | None = None
+        #: The knowledge generation the last report was built from.
+        self._reported_generation: int | None = None
         #: Outcomes applied here that the ledger could not take yet, by request id.
         self._unrecorded: dict[str, RecordedOutcome] = {}
 
@@ -158,6 +164,10 @@ class WebappKnowledgeSync:
 
     def report(self, *, force: bool = False) -> None:
         """Send the mirror when it changed, when forced, or when the heartbeat is due."""
+        # Read before the stores: a write that lands while they are read moves
+        # the generation again, so the next change check reports it. A failed
+        # send is retried by the next pass or change, not every check.
+        self._reported_generation = knowledge_generation()
         with self._scope():
             snapshot = build_snapshot(self._organization, scans=self._scans())
         # The snapshot is built in a fixed order, so its JSON needs no sorting to compare.
@@ -225,14 +235,26 @@ class WebappKnowledgeSync:
         stopped: threading.Event,
         *,
         interval_seconds: float = WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS,
+        change_check_seconds: float = WEBAPP_KNOWLEDGE_CHANGE_CHECK_SECONDS,
     ) -> None:
-        """Sync until ``stopped``, one pass every ``interval_seconds``."""
+        """Sync until ``stopped``: a full pass every ``interval_seconds``.
+
+        Between passes, every ``change_check_seconds``, a memory or workspace
+        entry written in this process since the last report is reported at
+        once, so what a member tells the agent reaches the Knowledge page in
+        seconds. A check that finds nothing new reads no store.
+        """
+        next_pass = self._clock()
         while not stopped.is_set():
             try:
-                self.sync()
+                if self._clock() >= next_pass:
+                    next_pass = self._clock() + interval_seconds
+                    self.sync()
+                elif knowledge_generation() != self._reported_generation:
+                    self.report()
             except Exception as exc:  # noqa: BLE001 - keep syncing after one bad pass
                 logger.warning("[%s] sync pass failed (%s)", _LOG_TAG, type(exc).__name__)
-            stopped.wait(interval_seconds)
+            stopped.wait(change_check_seconds)
 
 
 def _forget_memory(actor: str, name: str) -> RecordedOutcome | None:

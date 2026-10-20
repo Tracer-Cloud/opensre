@@ -39,6 +39,9 @@ WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS = 2.0
 #: How often a hosted gateway mirrors its knowledge to the web app and asks
 #: for Knowledge-page changes; the same fleet idle budget as the Tasks sync.
 WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS = 300.0
+#: Between those passes, how often the mirror looks for a memory or workspace
+#: entry written since its last report: a change reaches the page about this fast.
+WEBAPP_KNOWLEDGE_CHANGE_CHECK_SECONDS = 5.0
 #: The knowledge scan and sync threads sleep between passes; cap their joins on shutdown.
 KNOWLEDGE_THREAD_JOIN_TIMEOUT_SECONDS = 2.0
 DEFAULT_MAX_CONVERSATION_LOCKS = 1024
@@ -128,6 +131,7 @@ __all__ = [
     "LOOP_SYNC_ROUTE_PATH",
     "WEBAPP_LOOP_SYNC_JOIN_TIMEOUT_SECONDS",
     "WEBAPP_KNOWLEDGE_SYNC_INTERVAL_SECONDS",
+    "WEBAPP_KNOWLEDGE_CHANGE_CHECK_SECONDS",
     "KNOWLEDGE_THREAD_JOIN_TIMEOUT_SECONDS",
     "NO_ACTIVE_TURN_MESSAGE",
     "PROMPT_CONTEXT_MAX_ITEMS",

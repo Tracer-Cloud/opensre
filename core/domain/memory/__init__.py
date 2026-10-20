@@ -9,6 +9,7 @@ the request. See ``docs/platform/memory.mdx`` for the user-facing behavior.
 from __future__ import annotations
 
 from core.domain.memory.audit import AuditFinding, MemoryAudit, audit_memories
+from core.domain.memory.changes import knowledge_generation
 from core.domain.memory.consolidation import (
     ConsolidationInput,
     ConsolidationResult,
@@ -112,6 +113,7 @@ __all__ = [
     "is_fenced",
     "is_valid_slug",
     "iter_member_stores",
+    "knowledge_generation",
     "list_memories",
     "live_memories",
     "load_live_memory",

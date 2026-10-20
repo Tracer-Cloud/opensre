@@ -23,6 +23,7 @@ from pathlib import Path
 
 from filelock import Timeout
 
+from core.domain.memory.changes import note_knowledge_changed
 from core.domain.memory.consolidation_state import record_forget_unlocked
 from core.domain.memory.fence import is_fenced_record
 from core.domain.memory.files import (
@@ -424,7 +425,13 @@ def rebuild_index() -> Path:
 
 
 def rebuild_index_best_effort() -> None:
-    """:func:`rebuild_index`, reporting failure to stderr instead of raising."""
+    """:func:`rebuild_index`, reporting failure to stderr instead of raising.
+
+    Every successful write to a store ends here (saves, merges, deletes,
+    consolidation, workspace entries), so this is also where the write is
+    announced to the Knowledge page mirror (:mod:`core.domain.memory.changes`).
+    """
+    note_knowledge_changed()
     # A failed rebuild leaves MEMORY.md stale until the next successful write.
     # That is tolerable because MEMORY.md is a human-facing convenience only:
     # every agent-facing read (list_memories, render_prompt_index) scans the
