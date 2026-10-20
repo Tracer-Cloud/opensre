@@ -491,15 +491,6 @@ def _setup_google_docs() -> None:
     _run_spec_setup(GOOGLE_DOCS_SETUP)
 
 
-def _setup_yandex_cloud() -> None:
-    from integrations.yandex_cloud.setup import setup_spec_for_this_host
-
-    # Built per call rather than imported as a constant: on a Yandex Cloud VM the
-    # folder and cloud ids come from the instance metadata service, and asking
-    # for them at import time would cost a timeout on every start elsewhere.
-    _run_spec_setup(setup_spec_for_this_host())
-
-
 _HANDLERS: dict[str, Any] = {
     "alertmanager": _setup_alertmanager,
     "aws": _setup_aws,
@@ -545,7 +536,6 @@ _HANDLERS: dict[str, Any] = {
     "servicenow": _setup_servicenow,
     "new_relic": _setup_new_relic,
     "google_docs": _setup_google_docs,
-    "yandex_cloud": _setup_yandex_cloud,
 }
 
 

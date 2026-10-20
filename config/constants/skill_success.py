@@ -52,9 +52,6 @@ SUCCESS_CRITERIA: dict[str, tuple[str, ...]] = {
     "operating-github-security-fixer": (
         "`fix_github_security_alert` returns a pushed fix, or `error` names why it stopped.",
     ),
-    "querying-yandex-cloud": (
-        "`execute_yc_operation` returns the asked data, or `find_yc_api` reports it cannot run.",
-    ),
     "repair-github-ci": (
         "`fix_github_pr_ci` returns `checks_state` `passed`, or `error_kind` after repairs stop.",
     ),

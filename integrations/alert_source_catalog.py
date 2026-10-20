@@ -68,9 +68,6 @@ _ROUTING_TABLE: dict[str, AlertSourceRouting] = {
     "tempo": routing(("tempo",), ("tempo",)),
     "temporal": routing(("temporal",), ("temporal",)),
     "new_relic": routing(("new_relic",), ("new_relic",)),
-    # One source covers the whole cloud: metrics, logs, compute, balancers and
-    # managed databases all report under "yandex_cloud".
-    "yandex_monitoring": routing(("yandex_cloud",), ("yandex_cloud",)),
 }
 
 _ALIASES_TABLE: dict[str, tuple[str, ...]] = {
@@ -88,13 +85,6 @@ _ALIASES_TABLE: dict[str, tuple[str, ...]] = {
     # here too would make eks look "relevant" for any Kubernetes alert even
     # when no EKS cluster is configured.
     "eks": ("eks",),
-    # Matching is substring, so nothing shorter than a distinctive word: "yc"
-    # would match "policy" and "recycle". Generic engine words stay with the
-    # data-plane integrations that own them, the way "pod" stays with
-    # kubernetes rather than eks - "managed postgresql" says nothing about
-    # which cloud runs it. What is left is what only Yandex says:
-    # the hostname a connection error quotes, and a product name of its own.
-    "yandex_cloud": ("yandex", "yandexcloud", "mdb.yandexcloud", "storedoc"),
     "kubernetes": (
         "kubernetes",
         "k8s",

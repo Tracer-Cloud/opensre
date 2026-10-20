@@ -675,21 +675,6 @@ EXPORTS: dict[str, str] = {
     # x_mcp
     "X_MCP_AUTH_TOKEN_ENV": "x_mcp",
     "X_MCP_URL_ENV": "x_mcp",
-    # yandex_cloud
-    "AUTH_MODE_IAM_TOKEN": "yandex_cloud",
-    "AUTH_MODE_METADATA": "yandex_cloud",
-    "AUTH_MODE_OAUTH": "yandex_cloud",
-    "AUTH_MODE_SA_KEY": "yandex_cloud",
-    "AUTH_MODE_SA_KEY_FILE": "yandex_cloud",
-    "YC_API_ENDPOINT_ENV": "yandex_cloud",
-    "YC_CLOUD_ID_ENV": "yandex_cloud",
-    "YC_ENDPOINT_OVERRIDES_ENV": "yandex_cloud",
-    "YC_FOLDER_ID_ENV": "yandex_cloud",
-    "YC_IAM_TOKEN_ENV": "yandex_cloud",
-    "YC_SA_KEY_ENV": "yandex_cloud",
-    "YC_SA_KEY_FILE_ENV": "yandex_cloud",
-    "YC_TOKEN_ENV": "yandex_cloud",
-    "YC_USE_METADATA_ENV": "yandex_cloud",
 }
 
 __all__, __getattr__, __dir__ = bind_package_exports("config.constants", EXPORTS)

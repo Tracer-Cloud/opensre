@@ -163,11 +163,9 @@ def _register_alert_source_detectors() -> None:
         register_alert_source_detector,
     )
     from integrations.grafana.alert_source_detect import detect_grafana_alert_source
-    from integrations.yandex_cloud.alert_source_detect import detect_yandex_cloud_alert_source
 
     clear_alert_source_detectors()
     register_alert_source_detector(detect_grafana_alert_source)
-    register_alert_source_detector(detect_yandex_cloud_alert_source)
 
 
 def _register_alert_source_routing() -> None:

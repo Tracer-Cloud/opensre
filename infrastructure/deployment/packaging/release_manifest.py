@@ -16,9 +16,6 @@ _RUNTIME_PACKAGE_NAMES = (
 _ACTION_SKILLS_DIR = Path("core/agent_harness/prompts/skills")
 _LOOP_TEMPLATES_DIR = Path("core/agent_harness/prompts/loop_templates")
 _SKILL_DATA_ROOTS = (Path("integrations"), Path("tools"))
-#: Data files read at runtime that are not skill documents. Without an entry
-#: here a file can be absent from both the wheel and the frozen binary.
-_RUNTIME_DATA_FILES = (Path("integrations/yandex_cloud/api_index.json"),)
 _RUNTIME_DISCOVERY_EXCLUSIONS = frozenset({"registry.py"})
 #: Non-Python trees under ``infrastructure/`` that never run from the frozen
 #: binary (e.g. a Cloudflare Worker deployed separately via ``wrangler``).
@@ -66,7 +63,6 @@ def required_skill_files(repo_root: Path) -> tuple[Path, ...]:
     files.update((repo_root / _ACTION_SKILLS_DIR).glob("**/scripts/*.py"))
     for relative_root in _SKILL_DATA_ROOTS:
         files.update((repo_root / relative_root).rglob("SKILL.md"))
-    files.update(repo_root / relative_path for relative_path in _RUNTIME_DATA_FILES)
     return tuple(sorted(path for path in files if path.is_file()))
 
 

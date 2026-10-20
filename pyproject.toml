@@ -140,12 +140,6 @@ postgresql = [
 azure_sql = [
     "pyodbc>=5.1.0,<6.0.0",
 ]
-# Cloud Logging is the one Yandex Cloud read that has no REST endpoint; the
-# entry reader is gRPC-only. Everything else in the integration is REST, so the
-# stubs stay optional and only `read_yc_logs` needs them.
-yandex_cloud_logs = [
-    "yandexcloud>=0.300.0",
-]
 
 [tool.setuptools.packages.find]
 include = [
@@ -167,7 +161,7 @@ include = [
   "skills/**/*.md",
   "skills/**/scripts/*.py",
 ]
-"integrations" = ["**/SKILL.md", "yandex_cloud/api_index.json"]
+"integrations" = ["**/SKILL.md"]
 "tools" = ["**/SKILL.md"]
 
 # With pytest-xdist (-n auto), each worker writes a fragment; put them under

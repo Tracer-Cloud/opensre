@@ -2539,46 +2539,6 @@
     "seconds": 0.427,
     "tests": 25
   },
-  "tests/integrations/test_yandex_cloud_api_index.py": {
-    "seconds": 1.181,
-    "tests": 62
-  },
-  "tests/integrations/test_yandex_cloud_catalog.py": {
-    "seconds": 0.282,
-    "tests": 31
-  },
-  "tests/integrations/test_yandex_cloud_skill_guidance.py": {
-    "seconds": 3.016,
-    "tests": 8
-  },
-  "tests/integrations/test_yc_compute.py": {
-    "seconds": 0.074,
-    "tests": 8
-  },
-  "tests/integrations/test_yc_logging.py": {
-    "seconds": 0.119,
-    "tests": 16
-  },
-  "tests/integrations/test_yc_monitoring.py": {
-    "seconds": 0.87,
-    "tests": 14
-  },
-  "tests/integrations/test_yc_network.py": {
-    "seconds": 9.167,
-    "tests": 20
-  },
-  "tests/integrations/test_yc_operation_single_resource.py": {
-    "seconds": 0.355,
-    "tests": 29
-  },
-  "tests/integrations/test_yc_operation_tool.py": {
-    "seconds": 0.756,
-    "tests": 22
-  },
-  "tests/integrations/test_yc_tool_budget.py": {
-    "seconds": 0.084,
-    "tests": 10
-  },
   "tests/integrations/tracer/test_aws_batch_jobs.py": {
     "seconds": 0.339,
     "tests": 14

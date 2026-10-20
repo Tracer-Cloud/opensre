@@ -43,7 +43,6 @@ def _skill_guidance_files() -> tuple[Path, ...]:
         REPO_ROOT / "integrations" / "github" / "tools" / "github_cli" / "SKILL.md",
         REPO_ROOT / "integrations" / "github" / "tools" / "ci_fix" / "SKILL.md",
         REPO_ROOT / "integrations" / "github" / "tools" / "security_fix" / "SKILL.md",
-        REPO_ROOT / "integrations" / "yandex_cloud" / "tools" / "SKILL.md",
     )
     discovered = sorted(
         (REPO_ROOT / "tools" / "system" / "python_execution_tool" / "skills").glob("*/SKILL.md")

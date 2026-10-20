@@ -238,15 +238,6 @@ from config.constants.twilio import (
 )
 from config.constants.vercel import VERCEL_API_TOKEN_ENV, VERCEL_TEAM_ID_ENV
 from config.constants.x_mcp import X_MCP_AUTH_TOKEN_ENV, X_MCP_URL_ENV
-from config.constants.yandex_cloud import (
-    YC_CLOUD_ID_ENV,
-    YC_FOLDER_ID_ENV,
-    YC_IAM_TOKEN_ENV,
-    YC_SA_KEY_ENV,
-    YC_SA_KEY_FILE_ENV,
-    YC_TOKEN_ENV,
-    YC_USE_METADATA_ENV,
-)
 from config.llm_credentials import resolve_env_credential
 from config.tracer_urls import get_tracer_base_url
 from infrastructure.observability.errors.boundary import report_exception
@@ -376,8 +367,6 @@ from integrations.victoria_logs import classify as _classify_victoria_logs
 from integrations.whatsapp import classify as _classify_whatsapp
 from integrations.x_mcp import build_x_mcp_config
 from integrations.x_mcp import classify as _classify_x_mcp
-from integrations.yandex_cloud import classify as _classify_yandex_cloud
-from integrations.yandex_cloud.config import YandexCloudIntegrationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -553,7 +542,6 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "prefect": _classify_prefect,
     "railway": _classify_railway,
     "new_relic": _classify_new_relic,
-    "yandex_cloud": _classify_yandex_cloud,
 }
 
 
@@ -1937,39 +1925,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 _active_env_record(
                     "temporal",
                     temporal_config.model_dump(),
-                )
-            )
-
-    yandex_cloud_folder = os.getenv(YC_FOLDER_ID_ENV, "").strip()
-    yandex_cloud_use_metadata = os.getenv(YC_USE_METADATA_ENV, "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    # A folder alone is not a configuration: every read is folder-scoped, but it
-    # still needs a credential. On an instance the metadata service is the
-    # credential, and it also knows the folder, so that flag stands on its own.
-    if yandex_cloud_folder or yandex_cloud_use_metadata:
-        try:
-            yandex_cloud_config = YandexCloudIntegrationConfig.model_validate(
-                {
-                    "folder_id": yandex_cloud_folder,
-                    "cloud_id": os.getenv(YC_CLOUD_ID_ENV, "").strip(),
-                    "sa_key_file": os.getenv(YC_SA_KEY_FILE_ENV, "").strip(),
-                    "sa_key": resolve_env_credential(YC_SA_KEY_ENV),
-                    "oauth_token": resolve_env_credential(YC_TOKEN_ENV),
-                    "iam_token": resolve_env_credential(YC_IAM_TOKEN_ENV),
-                    "use_metadata": yandex_cloud_use_metadata,
-                }
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="yandex_cloud")
-        else:
-            integrations.append(
-                _active_env_record(
-                    "yandex_cloud",
-                    yandex_cloud_config.model_dump(exclude={"integration_id"}),
                 )
             )
 
