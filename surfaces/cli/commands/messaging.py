@@ -20,7 +20,7 @@ _console = Console(highlight=False)
 _PLATFORM_CHOICES = [p.value for p in MessagingPlatform]
 
 
-def _validate_allow_user_id(platform: str, user_id: str) -> str:
+def validate_allow_user_id(platform: str, user_id: str) -> str:
     """Normalize + validate a user id for ``allow``; raise on non-native values.
 
     Inbound authorization matches the platform-native user id (Telegram
@@ -186,7 +186,7 @@ def pair_command(platform: str) -> None:
 def allow_command(platform: str, user_id: str) -> None:
     """Manually add a user to the allowed-users list (bypasses DM pairing)."""
     service = platform.lower()
-    user_id = _validate_allow_user_id(service, user_id)
+    user_id = validate_allow_user_id(service, user_id)
     record, policy = _load_identity_policy(service)
 
     if user_id in policy.allowed_user_ids:

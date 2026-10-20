@@ -316,8 +316,10 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         ),
     ),
     "/messaging": _mcp(
-        "Manage messaging security and Telegram identities. Subcommands: pair, allow, revoke, status.",
-        "User asks about Telegram pairing, messaging allowlist, or messaging status",
+        "Manage inbound identities for Telegram, Slack, Discord, and Buzz. "
+        "Subcommands: pair, allow, revoke, status. All require --platform; "
+        "allow and revoke also require --user-id. Interactive terminals collect omitted values.",
+        "User asks about messaging pairing, allowlists, revocation, or security status",
     ),
     "/model": _mcp(
         "Explicit /model command operations: show the model table, open the model menu, "

@@ -37,6 +37,7 @@ _EXCLUSIVE_STDIN_COMMANDS: frozenset[str] = frozenset(
         "/demo",
         "/help",
         "/model",
+        "/messaging",
         "/tools",
         "/trust",
         "/verbose",

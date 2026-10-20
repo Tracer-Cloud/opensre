@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.markup import escape
 
 import surfaces.interactive_shell.command_registry.cron_cmds as cron_cmds
+import surfaces.interactive_shell.command_registry.messaging_cmds as messaging_cmds
 from config.cli_command_choices import CLI_COMMAND_CHOICES
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
 from config.constants.cli_handoff import CLI_HANDOFF_FLAG
@@ -511,7 +512,7 @@ def _cmd_skills(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _cmd_messaging(session: Session, console: Console, args: list[str]) -> bool:
-    return run_cli_command(console, ["messaging", *args], session=session)
+    return messaging_cmds.cmd_messaging(session, console, args, run_cli=run_cli_command)
 
 
 def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
@@ -655,11 +656,12 @@ COMMANDS: list[SlashCommand] = [
         _cmd_messaging,
         first_arg_completions=CLI_COMMAND_CHOICES[("/messaging",)],
         usage=(
-            "/messaging pair",
-            "/messaging allow",
-            "/messaging revoke",
-            "/messaging status",
+            "/messaging status --platform <platform>",
+            "/messaging pair --platform <platform>",
+            "/messaging allow --platform <platform> --user-id <id>",
+            "/messaging revoke --platform <platform> --user-id <id>",
         ),
+        notes=("Omit required values in the terminal to choose them interactively.",),
     ),
     SlashCommand(
         "/cron",

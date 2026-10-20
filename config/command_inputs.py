@@ -29,25 +29,33 @@ class CommandInput:
         supplied_target = False
         index = 1
         while index < len(args):
-            option = args[index]
+            option, separator, inline_value = args[index].partition("=")
             if not option.startswith("--") and positionals < self.max_positionals:
                 positionals += 1
-                supplied_target = supplied_target or bool(option.strip())
+                supplied_target = supplied_target or bool(args[index].strip())
                 index += 1
                 continue
             if option in self.flag_options:
+                if separator:
+                    return False
                 has_value = True
                 index += 1
             else:
-                if option not in self.value_options or index + 1 >= len(args):
+                if option not in self.value_options:
                     return False
-                value = args[index + 1]
+                if separator:
+                    value = inline_value
+                    index += 1
+                else:
+                    if index + 1 >= len(args):
+                        return False
+                    value = args[index + 1]
+                    index += 2
                 if (
                     not value.strip() and option not in self.empty_value_options
                 ) or value.startswith("--"):
                     return False
                 has_value = bool(value.strip())
-                index += 2
                 if option in self.greedy_value_options:
                     while index < len(args) and not args[index].startswith("--"):
                         if args[index].strip():
@@ -162,6 +170,18 @@ LOOPS_EDIT_TARGET_INPUT = CommandInput(
     max_positionals=1,
     missing_target=True,
 )
+MESSAGING_PLATFORM_INPUT = CommandInput(
+    "/messaging",
+    ("status", "pair"),
+    value_options=frozenset({"--platform", "-p"}),
+    alternative_options=(frozenset({"--platform", "-p"}),),
+)
+MESSAGING_IDENTITY_INPUT = CommandInput(
+    "/messaging",
+    ("allow", "revoke"),
+    value_options=frozenset({"--platform", "-p", "--user-id", "-u"}),
+    alternative_options=(frozenset({"--platform", "-p"}), frozenset({"--user-id", "-u"})),
+)
 COMMAND_INPUTS = (
     WORK_ADD_INPUT,
     GOAL_SET_INPUT,
@@ -174,6 +194,8 @@ COMMAND_INPUTS = (
     LOOPS_EDIT_INPUT,
     WORK_EDIT_TARGET_INPUT,
     LOOPS_EDIT_TARGET_INPUT,
+    MESSAGING_PLATFORM_INPUT,
+    MESSAGING_IDENTITY_INPUT,
 )
 
 
