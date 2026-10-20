@@ -13,7 +13,6 @@ from config.interactive_override import interactive_override_env
 from core.agent_harness.spi.session_state import exclusive_stdin_active, session_terminal
 from integrations.messaging_security import MessagingIdentityPolicy
 from integrations.store import get_integration
-from surfaces.cli.commands.messaging import messaging
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.messaging_input import build_messaging_form
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
@@ -41,7 +40,7 @@ def cmd_messaging(
     if (
         interactive
         and args
-        and args[0] in messaging.commands
+        and any(args[0] == name for name, _ in CLI_COMMAND_CHOICES[("/messaging",)])
         and needs_command_input("/messaging", args)
     ):
 

@@ -19,6 +19,7 @@ class CommandInput:
     alternative_options: tuple[frozenset[str], ...] = ()
     max_positionals: int = 0
     missing_target: bool = False
+    inline_values: bool = False
 
     def matches(self, command: str, args: list[str]) -> bool:
         """Return whether this input applies to a valid but incomplete invocation."""
@@ -29,7 +30,10 @@ class CommandInput:
         supplied_target = False
         index = 1
         while index < len(args):
-            option, separator, inline_value = args[index].partition("=")
+            option = args[index]
+            separator = inline_value = ""
+            if self.inline_values:
+                option, separator, inline_value = option.partition("=")
             if not option.startswith("--") and positionals < self.max_positionals:
                 positionals += 1
                 supplied_target = supplied_target or bool(args[index].strip())
@@ -175,12 +179,14 @@ MESSAGING_PLATFORM_INPUT = CommandInput(
     ("status", "pair"),
     value_options=frozenset({"--platform", "-p"}),
     alternative_options=(frozenset({"--platform", "-p"}),),
+    inline_values=True,
 )
 MESSAGING_IDENTITY_INPUT = CommandInput(
     "/messaging",
     ("allow", "revoke"),
     value_options=frozenset({"--platform", "-p", "--user-id", "-u"}),
     alternative_options=(frozenset({"--platform", "-p"}), frozenset({"--user-id", "-u"})),
+    inline_values=True,
 )
 COMMAND_INPUTS = (
     WORK_ADD_INPUT,

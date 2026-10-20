@@ -54,6 +54,12 @@ def test_incomplete_messaging_metadata_preserves_aliases_and_explicit_calls() ->
         assert not needs_command_input("/messaging", args), args
 
 
+def test_inline_messaging_options_do_not_enable_unrelated_collectors() -> None:
+    assert needs_command_input("/messaging", ["allow", "--platform=slack"])
+    assert not needs_command_input("/goal", ["set", "--max-turns=3"])
+    assert not needs_command_input("/work", ["add", "--project=payments"])
+
+
 def test_status_selector_collects_platform_through_real_dispatch(
     monkeypatch: pytest.MonkeyPatch, isolated_store: Path
 ) -> None:

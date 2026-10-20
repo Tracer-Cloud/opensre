@@ -8,7 +8,7 @@ import click
 from prompt_toolkit.application import Application
 
 from integrations.messaging_security import MessagingPlatform
-from surfaces.cli.commands.messaging import messaging, validate_allow_user_id
+from surfaces.shared.messaging_options import messaging_parameters, validate_allow_user_id
 from surfaces.shared.terminal.components.input_form import (
     InputChoice,
     InputField,
@@ -19,7 +19,7 @@ from surfaces.shared.terminal.components.input_form import (
 
 def parse_messaging_draft(args: list[str]) -> dict[str, str]:
     """Keep supplied values unchanged while rejecting malformed option syntax."""
-    command = messaging.commands[args[0]]
+    command = click.Command(args[0], params=messaging_parameters(args[0]))
     by_flag = {
         flag: option
         for option in command.params
@@ -49,7 +49,7 @@ def build_messaging_form(
 ) -> Application[list[str] | None]:
     """Collect missing inputs; only explicit submission returns executable arguments."""
     action = args[0]
-    command = messaging.commands[action]
+    command = click.Command(action, params=messaging_parameters(action))
     values = parse_messaging_draft(args)
 
     def fields(current: dict[str, str]) -> list[InputField]:
