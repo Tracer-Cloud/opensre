@@ -52,7 +52,9 @@ _MONTH_NUMBERS = {
         start=1,
     )
 }
-_MONTH_NAME = re.compile(r"[a-z]+")
+_CRONTAB_MONTH_ITEM = re.compile(
+    r"(?:(?P<every>\*)|(?P<first>\d+|[a-z]+)(?:-(?P<last>\d+|[a-z]+))?)(?:/(?P<step>\d+))?"
+)
 
 
 def day_of_week_names(field: str) -> str:
@@ -139,16 +141,35 @@ def _weekday_ranges(days: set[int]) -> list[str]:
 def _month_numbers(field: str) -> str:
     """Spell month names in a crontab ``month`` field as numbers (``jan-dec/3`` is ``1-12/3``).
 
-    APScheduler reads a step after numbers but drops one after names. An
-    unknown name passes through for APScheduler to reject.
+    APScheduler reads a step after numbers but drops one after names. Raises
+    ``ValueError`` for an unknown name or an item that is not a whole number,
+    name, range, or step (``1jan``), which APScheduler would otherwise partly
+    read. Range bounds and step values are left for APScheduler to check.
     """
-    return _MONTH_NAME.sub(_month_number, field.lower())
+    items: list[str] = []
+    for item in field.lower().split(","):
+        match = _CRONTAB_MONTH_ITEM.fullmatch(item)
+        if match is None:
+            raise ValueError(f"unrecognized month item: {item!r}")
+        if match["every"]:
+            items.append(item)
+            continue
+        spelled = _month_number(match["first"], item)
+        if match["last"] is not None:
+            spelled += f"-{_month_number(match['last'], item)}"
+        if match["step"] is not None:
+            spelled += f"/{match['step']}"
+        items.append(spelled)
+    return ",".join(items)
 
 
-def _month_number(match: re.Match[str]) -> str:
-    name = match.group()
-    number = _MONTH_NUMBERS.get(name)
-    return name if number is None else str(number)
+def _month_number(value: str, item: str) -> str:
+    if value.isdigit():
+        return value
+    number = _MONTH_NUMBERS.get(value)
+    if number is None:
+        raise ValueError(f"month names run jan-dec: {item!r}")
+    return str(number)
 
 
 def build_cron_trigger(cron: str, timezone: str | None) -> Any:

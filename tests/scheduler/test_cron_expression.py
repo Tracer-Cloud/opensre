@@ -68,9 +68,14 @@ def test_a_step_after_a_month_name_range_fires_quarterly() -> None:
         ("0 10 * * mon-fry", "mon-sun"),
         # APScheduler reads ``mon-fri`` and drops the rest; the whole item must parse.
         ("0 10 * * mon-fri/-1", "unrecognized"),
+        ("0 10 1 jam *", "jan-dec"),
+        # A name glued to a number must not be read as ``11`` (November).
+        ("0 10 1 1jan *", "unrecognized"),
     ],
 )
-def test_an_invalid_weekday_item_is_rejected_before_it_is_stored(cron: str, reason: str) -> None:
+def test_an_invalid_weekday_or_month_item_is_rejected_before_it_is_stored(
+    cron: str, reason: str
+) -> None:
     with pytest.raises(ValueError, match=reason):
         build_cron_trigger(cron, "UTC")
 
