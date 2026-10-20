@@ -147,7 +147,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 
 | Command | What it does |
 | --- | --- |
-| `/fleet` | View and manage the local AI agent fleet |
+| `/fleet` | Deprecated external-agent monitoring; see the [migration guide](/platform/fleet) |
 | `/alerts` | Alert listener inbox status |
 | `/choose` | Reopen the selection menu the agent is waiting on |
 
@@ -899,10 +899,10 @@ Prints guidance only — does not kill processes:
 </AccordionGroup>
 
 ### Agents and alerts
-Fleet coordination is documented further on [Agents](/platform/fleet). Register discovered agents with `opensre fleet scan --register` before `/fleet trace` targets them.
+Legacy external-agent fleet monitoring is deprecated. Existing commands remain available during migration; see the [migration guide](/platform/fleet) for native OpenSRE activity commands and data preservation.
 
 <AccordionGroup>
-<Accordion title="/fleet">
+<Accordion title="/fleet (deprecated)">
 
 ```text
 /fleet
@@ -923,11 +923,11 @@ Fleet coordination is documented further on [Agents](/platform/fleet). Register 
 | --- | --- |
 | (none) | Dashboard: registered + discovered agents (Cursor, Claude Code, Codex, Aider, …) with pid, uptime, CPU, tokens/min, $/hr, status |
 | `budget` | View hourly budgets from `~/.opensre/agents.yaml` |
-| `budget &lt;agent&gt; &lt;usd&gt;` | Set `hourly_budget_usd` for one agent |
+| `budget &lt;agent&gt; &lt;usd&gt;` | Store `hourly_budget_usd` for one agent; budgets are not enforced |
 | `bus` | Live-tail cross-agent context bus until Ctrl+C |
 | `claim &lt;branch&gt; &lt;agent&gt;` | Exclusive branch claim (agent must be in registry) |
 | `release &lt;branch&gt;` | Release a claim |
-| `conflicts` | File-write conflict report between agents |
+| `conflicts` | Incomplete: no write events are collected; an empty report does not establish safety |
 | `kill &lt;pid&gt; [--force]` | SIGTERM → wait → SIGKILL **elevated**; refuses self-PID |
 | `trace &lt;pid&gt;` | Live stdout tail of agent process |
 | `wait &lt;pid&gt; --on &lt;other-pid&gt;` | Record wait dependency for graph |
@@ -1491,7 +1491,7 @@ Continue chatting, then optionally:
 - [Session History](/platform/sessions) — persistence format, privacy, `/new` vs `/clear`
 - [Interactive Shell Privacy](/platform/interactive-shell-privacy) — redaction, env vars, threat model
 - [LLM providers](/platform/llm-providers) — `/model` and `/effort`
-- [Agents](/platform/fleet) — fleet dashboard, bus, trace, budgets
+- [Legacy fleet migration](/platform/fleet) — deprecation, native activity commands, and data preservation
 - [Cron](/platform/cron) — `/cron` scheduled deliveries
 - [Sync to your own object store](/install/remote-sync) — `/remote-sync`
 

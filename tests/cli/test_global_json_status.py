@@ -42,7 +42,8 @@ def test_global_json_serializes_fleet_list(monkeypatch: pytest.MonkeyPatch) -> N
     result = CliRunner().invoke(cli, ["--json", "fleet", "list"])
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output) == [
+    assert "deprecated" in result.stderr
+    assert json.loads(result.stdout) == [
         {
             "name": "codex",
             "pid": 42,

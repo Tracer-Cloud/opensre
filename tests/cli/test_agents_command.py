@@ -83,6 +83,21 @@ def test_agents_register_list_and_forget(isolated_registry_path: Path) -> None:
     assert AgentRegistry(path=isolated_registry_path).list() == []
 
 
+def test_fleet_list_warns_without_rewriting_saved_registry(isolated_registry_path: Path) -> None:
+    registry = AgentRegistry(path=isolated_registry_path)
+    registry.register(AgentRecord(name="legacy-agent", pid=1234, command="claude"))
+    before = isolated_registry_path.read_bytes()
+
+    result = CliRunner().invoke(cli, ["fleet", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "deprecated" in result.stderr
+    assert "/status, /sessions, /tasks" in result.stderr
+    assert "legacy-agent" in result.stdout
+    assert "deprecated" not in result.stdout
+    assert isolated_registry_path.read_bytes() == before
+
+
 def test_agents_register_persists_provider_for_node_launched_codex(
     isolated_registry_path: Path,
 ) -> None:

@@ -137,6 +137,8 @@ class TestAgentsDispatch:
         assert "8421" in out
         assert "cursor-tab" in out
         assert "9133" in out
+        assert "deprecated" in out
+        assert "/status, /sessions, /tasks" in out
 
     def test_no_subcommand_renders_discovered_agents(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(

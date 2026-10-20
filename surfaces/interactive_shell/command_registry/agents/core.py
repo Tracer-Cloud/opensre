@@ -2,7 +2,7 @@
 
 Bare ``/fleet`` renders the registered-agents dashboard; subcommands
 cover ``budget``, ``bus``, ``claim``, ``conflicts``, ``kill``, ``release``,
-and ``trace`` (with more surfaces planned for monitor-local-agents).
+and ``trace``. This legacy surface is deprecated and retained during migration.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.tree import Tree
 
+from config.constants.fleet import FLEET_DEPRECATION_NOTICE
 from surfaces.interactive_shell.command_registry.agents.conflicts_view import render_conflicts
 from surfaces.interactive_shell.command_registry.agents.kill import _cmd_agents_kill
 from surfaces.interactive_shell.command_registry.agents.trace import _cmd_agents_trace
@@ -405,6 +406,7 @@ def _cmd_agents_graph(console: Console) -> bool:
 
 
 def _cmd_agents(session: Session, console: Console, args: list[str]) -> bool:
+    console.print(FLEET_DEPRECATION_NOTICE, style=str(WARNING), markup=False)
     # The sampler is lazy: the first /fleet renders a cold snapshot and starts
     # the background sampler so CPU/token columns warm up on subsequent views.
     session.terminal.ensure_fleet_sampler_started()
@@ -452,7 +454,7 @@ def _cmd_agents(session: Session, console: Console, args: list[str]) -> bool:
 COMMANDS: list[SlashCommand] = [
     SlashCommand(
         "/fleet",
-        "Show and manage registered local AI agents.",
+        "Deprecated: legacy external-agent monitoring.",
         _cmd_agents,
         usage=(
             "/fleet",

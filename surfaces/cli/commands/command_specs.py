@@ -92,7 +92,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         "fleet",
-        "Manage the local AI agent fleet (Claude Code, Cursor, Aider, ...).",
+        "Deprecated: monitor external local coding agents.",
         "surfaces.cli.commands.agent:fleet",
     ),
     CommandSpec(

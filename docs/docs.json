@@ -98,7 +98,6 @@
           "platform/principal-scoped-storage",
           "platform/memory",
           "platform/work-management",
-          "platform/fleet",
           "platform/cron",
           "platform/closed-loop-learning"
         ]

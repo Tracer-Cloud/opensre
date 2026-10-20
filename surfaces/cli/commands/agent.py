@@ -9,6 +9,7 @@ import click
 from rich.console import Console
 from rich.markup import escape
 
+from config.constants.fleet import FLEET_DEPRECATION_NOTICE
 from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.terminal.theme import BOLD_BRAND, DIM, HIGHLIGHT
 from surfaces.shared.terminal.components.rendering import repl_table
@@ -24,7 +25,12 @@ from tools.system.fleet_monitoring.registry import AgentRecord, AgentRegistry
 
 @click.group(name="fleet")
 def fleet() -> None:
-    """Manage the local AI agent fleet (Claude Code, Cursor, Aider, ...)."""
+    """Deprecated: monitor external local coding agents.
+
+    Existing commands remain available during migration. See
+    https://www.opensre.com/docs/platform/fleet for native OpenSRE activity commands.
+    """
+    click.echo(FLEET_DEPRECATION_NOTICE, err=True)
 
 
 def _pid_exists(pid: int) -> bool:
