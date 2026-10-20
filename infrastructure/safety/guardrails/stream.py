@@ -1,7 +1,7 @@
 """Streaming redaction wrapper around :class:`GuardrailEvaluator`.
 
-Used by the local-agents fleet view (``/fleet trace <pid>``) to redact
-secrets from agent stdout before it reaches the user's terminal scrollback.
+Redacts secrets from streamed stdout before it reaches the user's terminal
+scrollback.
 
 The shipped engine assumes a single complete string (LLM input or output),
 so calling it on raw stdout chunks would miss any secret whose bytes
