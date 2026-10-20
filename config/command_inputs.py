@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
+
+
+def split_input_option(token: str, value_options: Collection[str]) -> tuple[str, str | None]:
+    """Split long inline and attached short values using Click's option grammar."""
+    if token.startswith("--"):
+        option, separator, value = token.partition("=")
+        return option, value if separator else None
+    if len(token) > 2 and token[:2] in value_options:
+        return token[:2], token[2:]
+    return token, None
 
 
 @dataclass(frozen=True)
@@ -31,23 +42,23 @@ class CommandInput:
         index = 1
         while index < len(args):
             option = args[index]
-            separator = inline_value = ""
+            inline_value: str | None = None
             if self.inline_values:
-                option, separator, inline_value = option.partition("=")
+                option, inline_value = split_input_option(option, self.value_options)
             if not option.startswith("--") and positionals < self.max_positionals:
                 positionals += 1
                 supplied_target = supplied_target or bool(args[index].strip())
                 index += 1
                 continue
             if option in self.flag_options:
-                if separator:
+                if inline_value is not None:
                     return False
                 has_value = True
                 index += 1
             else:
                 if option not in self.value_options:
                     return False
-                if separator:
+                if inline_value is not None:
                     value = inline_value
                     index += 1
                 else:

@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 import click
 from prompt_toolkit.application import Application
 
+from config.command_inputs import split_input_option
 from integrations.messaging_security import MessagingPlatform
 from surfaces.shared.messaging_options import messaging_parameters, validate_allow_user_id
 from surfaces.shared.terminal.components.input_form import (
@@ -29,11 +30,11 @@ def parse_messaging_draft(args: list[str]) -> dict[str, str]:
     values = {option.name: "" for option in command.params if option.name}
     index = 1
     while index < len(args):
-        flag, separator, value = args[index].partition("=")
+        flag, value = split_input_option(args[index], by_flag)
         option = by_flag.get(flag)
         if option is None:
             raise click.UsageError(f"Unknown option: {flag}")
-        if not separator:
+        if value is None:
             index += 1
             if index >= len(args):
                 raise click.UsageError(f"{flag} requires a value.")

@@ -39,6 +39,8 @@ def test_incomplete_messaging_metadata_preserves_aliases_and_explicit_calls() ->
         ["status"],
         ["pair"],
         ["allow", "-p", "slack"],
+        ["allow", "-pslack"],
+        ["allow", "-uU001"],
         ["allow", "--user-id=U001"],
         ["revoke", "--platform", "slack"],
     ):
@@ -58,6 +60,18 @@ def test_inline_messaging_options_do_not_enable_unrelated_collectors() -> None:
     assert needs_command_input("/messaging", ["allow", "--platform=slack"])
     assert not needs_command_input("/goal", ["set", "--max-turns=3"])
     assert not needs_command_input("/work", ["add", "--project=payments"])
+
+
+def test_attached_short_values_survive_form_validation() -> None:
+    from surfaces.interactive_shell.ui.messaging_input import build_messaging_form
+
+    with create_app_session(output=DummyOutput()):
+        for args, keys in (
+            (["allow", "-pslack"], "U001\r\x13\x03"),
+            (["allow", "-uU001"], "\x1b[B\r\x13\x03"),
+        ):
+            app = build_messaging_form(args, allowed_users=lambda _: ())
+            assert run_keys(app, keys) == ["allow", "--platform", "slack", "--user-id", "U001"]
 
 
 def test_status_selector_collects_platform_through_real_dispatch(
