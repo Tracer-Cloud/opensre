@@ -71,6 +71,21 @@ def test_search_issues_success(client: JiraClient) -> None:
     assert result["total"] == 2
 
 
+def test_search_issues_posts_to_enhanced_jql_search(client: JiraClient) -> None:
+    mock_resp = MagicMock()
+    # The enhanced search response pages with nextPageToken and carries no total.
+    mock_resp.json.return_value = {"issues": [{"key": "OPS-1", "fields": {}}], "isLast": True}
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch("httpx.Client.post", return_value=mock_resp) as mock_post:
+        result = client.search_issues(jql="project = OPS")
+
+    url = mock_post.call_args.args[0]
+    assert url == "https://myteam.atlassian.net/rest/api/3/search/jql"
+    assert result["success"] is True
+    assert result["total"] == 1
+
+
 def test_search_issues_http_error(client: JiraClient) -> None:
     mock_resp = MagicMock()
     mock_resp.status_code = 400
