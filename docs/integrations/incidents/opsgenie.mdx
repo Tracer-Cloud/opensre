@@ -1,7 +1,44 @@
 ---
 title: "OpsGenie"
-description: "Connect OpsGenie so OpenSRE can read active alerts and incident context"
+description: "Maintain an existing OpsGenie connection while migrating before April 5, 2027"
 ---
+
+<Warning>
+Opsgenie shuts down on **April 5, 2027**. Atlassian ended new sales and signups
+on June 4, 2025. Complete your migration before shutdown; Atlassian says access
+will end and unmigrated data will be deleted. See the
+[official timeline](https://www.atlassian.com/software/opsgenie/pricing) and
+[migration resources](https://www.atlassian.com/software/opsgenie/migration).
+</Warning>
+
+OpenSRE's OpsGenie integration is **maintenance-only** for existing users during
+migration. New deployments should choose a supported incident platform. Existing
+configuration, verification, and alert tools remain available during the
+transition; this notice does not disable them.
+
+## Migration checklist
+
+1. Assign a migration owner and choose a cutover date before April 5, 2027,
+   leaving time to test alert delivery and roll back before shutdown.
+2. Inventory alert sources, routing rules, escalation policies, on-call schedules,
+   API consumers, and runbooks. Follow Atlassian's migration resources if moving
+   to Jira Service Management, or your chosen provider's migration guide.
+3. Migrate or export the incident history and configuration you need to retain
+   before Opsgenie becomes inaccessible.
+4. Configure and verify the replacement connection in OpenSRE separately. Do not
+   assume OpsGenie credentials or tools work with the replacement. OpenSRE's
+   existing [PagerDuty](/integrations/incidents/pagerduty) and
+   [Incident.io](/integrations/incidents/incident_io) guides describe those options;
+   they are not automatic migration paths.
+5. Test a representative alert through routing, paging, acknowledgement, and
+   investigation in OpenSRE. Keep the existing OpsGenie connection until the
+   replacement is validated.
+6. After cutover, remove the OpsGenie record with
+   `opensre integrations remove opsgenie`, remove `OPSGENIE_API_KEY` and
+   `OPSGENIE_REGION` from your environment or secret manager, and revoke the old
+   API key. If connected through OpenSRE Cloud, also disconnect OpsGenie at
+   **app.opensre.com → Integrations**. Update runbooks that call `opsgenie_alerts`
+   or `opsgenie_alert_detail`.
 
 ## Overview
 
@@ -14,7 +51,7 @@ with environment variables or the integration store, then verify with
 
 ## Prerequisites
 
-- OpsGenie account (Atlassian or standalone)
+- Existing OpsGenie account (new signups have ended)
 - API key with read access
 
 ## Setup
