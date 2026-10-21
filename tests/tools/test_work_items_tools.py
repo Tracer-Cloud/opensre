@@ -173,6 +173,61 @@ def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert tasks[1].enabled is True
 
 
+def test_rescheduling_same_reminder_keeps_it_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+    item = make_work_item(title="Check clusters", remind_at="2027-08-24T10:00:00Z")
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C999")]
+    first = schedule_item_reminder(item, targets=targets, timezone="UTC")
+    assert first is not None
+
+    # Same reminder time and target; only the title changed.
+    renamed = dataclasses.replace(item, title="Check clusters v2")
+    scheduled = schedule_item_reminder(renamed, targets=targets, timezone="UTC")
+
+    assert scheduled is not None
+    assert scheduled.id == first.id
+    assert scheduled.enabled is True
+    assert [task.enabled for task in list_tasks()] == [True]
+
+
+def test_rescheduling_back_to_replaced_reminder_reenables_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+    item = make_work_item(title="Check clusters", remind_at="2027-08-24T10:00:00Z")
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C999")]
+    original = schedule_item_reminder(item, targets=targets, timezone="UTC")
+    moved = dataclasses.replace(item, remind_at="2027-08-24T14:00:00Z")
+    schedule_item_reminder(moved, targets=targets, timezone="UTC")
+
+    # Moving the reminder back to its first time must not leave it disabled.
+    restored = schedule_item_reminder(item, targets=targets, timezone="UTC")
+
+    assert original is not None
+    assert restored is not None
+    assert restored.id == original.id
+    assert restored.enabled is True
+    assert [task.enabled for task in list_tasks()] == [True, False]
+
+
 def test_reminder_scheduling_resolves_naive_datetime_in_requested_timezone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

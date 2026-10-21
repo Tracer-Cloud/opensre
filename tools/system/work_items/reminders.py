@@ -18,13 +18,15 @@ from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, T
 from tools.system.work_items.validation import validate_provider
 
 
-def disable_existing_item_reminders(item_id: str) -> int:
-    """Disable enabled one-shot reminders for ``item_id`` so updates replace them."""
+def disable_existing_item_reminders(item_id: str, *, keep_task_id: str = "") -> int:
+    """Disable enabled one-shot reminders for ``item_id`` except ``keep_task_id``."""
     disabled = 0
     for task in list_tasks():
         if task.kind is not TaskKind.WORK_ITEM_REMINDER:
             continue
         if not task.enabled:
+            continue
+        if keep_task_id and task.id == keep_task_id:
             continue
         if task.params.get("work_item_id", "").strip() != item_id:
             continue
@@ -53,8 +55,6 @@ def schedule_item_reminder(
     valid_targets = [target for target in targets if validate_provider(target.provider) is not None]
     if not valid_targets:
         return None
-    # Replace any prior reminder for this work item before scheduling a new one.
-    disable_existing_item_reminders(item.id)
     primary = valid_targets[0]
     parsed_provider = Provider(primary.provider)
     task = ScheduledTask(
@@ -73,7 +73,15 @@ def schedule_item_reminder(
             ),
         },
     )
-    return add_scheduled_task(task)
+    # The store dedupes by schedule identity, which ignores ``enabled``, so an
+    # identical reminder resolves to its existing row even after it was replaced.
+    stored = add_scheduled_task(task)
+    if not stored.enabled:
+        stored.enabled = True
+        update_task(stored)
+    # Replace any prior reminder for this work item with the one just stored.
+    disable_existing_item_reminders(item.id, keep_task_id=stored.id)
+    return stored
 
 
 _disable_existing_item_reminders = disable_existing_item_reminders
