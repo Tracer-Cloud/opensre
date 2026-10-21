@@ -34,7 +34,8 @@ def _map_jira_search_issues(
             evidence,
             source="jira_search_issues",
             label="Jira Search Results",
-            summary=f"{len(issues)} issues",
+            summary=f"{len(issues)} issues"
+            + (" (more available)" if output.get("truncated") else ""),
         )
 
 
@@ -411,7 +412,9 @@ class JiraSearchIssuesTool(BaseTool):
     }
     outputs = {
         "issues": "List of issues with key, summary, status, priority, labels, and assignee",
-        "total": "Total number of matching issues",
+        "total": "Total number of matching issues, or null when more pages exist",
+        "truncated": "true when more matching issues exist beyond the returned page",
+        "next_page_token": "Token for the next page of results; empty on the last page",
     }
 
     def is_available(self, sources: dict) -> bool:
@@ -455,7 +458,9 @@ class JiraSearchIssuesTool(BaseTool):
             "source": "jira",
             "available": True,
             "issues": result.get("issues", []),
-            "total": result.get("total", 0),
+            "total": result.get("total"),
+            "truncated": bool(result.get("truncated")),
+            "next_page_token": result.get("next_page_token", ""),
             "jql": jql,
         }
 
