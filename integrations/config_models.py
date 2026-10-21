@@ -27,10 +27,6 @@ from integrations._validators import (
 _LOCAL_GRAFANA_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}
 DEFAULT_DATADOG_SITE = "datadoghq.com"
 DEFAULT_CORALOGIX_BASE_URL = "https://api.coralogix.com"
-DEFAULT_OPSGENIE_BASE_URLS: dict[str, str] = {
-    "us": "https://api.opsgenie.com",
-    "eu": "https://api.eu.opsgenie.com",
-}
 DEFAULT_INCIDENT_IO_BASE_URL = "https://api.incident.io"
 DEFAULT_PAGERDUTY_BASE_URL = "https://api.pagerduty.com"
 
@@ -234,31 +230,6 @@ class SlackWebhookConfig(StrictConfigModel):
         if hostname != "slack.com" and not hostname.endswith(".slack.com"):
             raise ValueError("Slack webhook host must be a Slack domain.")
         return self
-
-
-class OpsGenieIntegrationConfig(StrictConfigModel):
-    """Normalized OpsGenie credentials used by resolution and verification flows."""
-
-    api_key: str
-    region: str = "us"
-    integration_id: str = ""
-
-    @field_validator("region", mode="before")
-    @classmethod
-    def _normalize_region(cls, value: object) -> str:
-        raw = str(value or "us").strip().lower()
-        return raw if raw in DEFAULT_OPSGENIE_BASE_URLS else "us"
-
-    @property
-    def base_url(self) -> str:
-        return DEFAULT_OPSGENIE_BASE_URLS.get(self.region, DEFAULT_OPSGENIE_BASE_URLS["us"])
-
-    @property
-    def headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"GenieKey {self.api_key}",
-            "Content-Type": "application/json",
-        }
 
 
 class PagerDutyIntegrationConfig(StrictConfigModel):

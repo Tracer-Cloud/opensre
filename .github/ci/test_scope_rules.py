@@ -444,14 +444,6 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
-        "integrations/opsgenie/",
-        (
-            "tests/integrations/opsgenie/",
-            "tests/tools/test_opsgenie_alert_detail_tool.py",
-            "tests/tools/test_opsgenie_alerts_tool.py",
-        ),
-    ),
-    PathRule(
         "integrations/pagerduty/",
         (
             "tests/integrations/pagerduty/",

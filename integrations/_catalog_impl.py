@@ -269,7 +269,6 @@ from integrations.config_models import (
     IncidentIoIntegrationConfig,
     JiraIntegrationConfig,
     KubernetesIntegrationConfig,
-    OpsGenieIntegrationConfig,
     PagerDutyIntegrationConfig,
     RailwayIntegrationConfig,
     RocketChatConfig,
@@ -315,7 +314,6 @@ from integrations.new_relic import classify as _classify_new_relic
 from integrations.new_relic.config import NewRelicIntegrationConfig
 from integrations.openobserve import classify as _classify_openobserve
 from integrations.opensearch import classify as _classify_opensearch
-from integrations.opsgenie import classify as _classify_opsgenie
 from integrations.pagerduty import classify as _classify_pagerduty
 from integrations.pipedream import classify as _classify_pipedream
 from integrations.postgresql import build_postgresql_config
@@ -499,7 +497,6 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "mongodb_atlas": _classify_mongodb_atlas,
     "mariadb": _classify_mariadb,
     "vercel": _classify_vercel,
-    "opsgenie": _classify_opsgenie,
     "pagerduty": _classify_pagerduty,
     "pipedream": _classify_pipedream,
     "incident_io": _classify_incident_io,
@@ -1076,25 +1073,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 _active_env_record(
                     "vercel",
                     vercel_config.model_dump(exclude={"integration_id"}),
-                )
-            )
-
-    opsgenie_api_key = resolve_env_credential("OPSGENIE_API_KEY")
-    if opsgenie_api_key:
-        try:
-            opsgenie_config = OpsGenieIntegrationConfig.model_validate(
-                {
-                    "api_key": opsgenie_api_key,
-                    "region": os.getenv("OPSGENIE_REGION", "us").strip() or "us",
-                }
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="opsgenie")
-        else:
-            integrations.append(
-                _active_env_record(
-                    "opsgenie",
-                    opsgenie_config.model_dump(exclude={"integration_id"}),
                 )
             )
 

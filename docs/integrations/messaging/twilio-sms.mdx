@@ -8,7 +8,7 @@ description: "Send OpenSRE notifications via Twilio SMS as a standalone, indepen
 OpenSRE's Twilio integration sends notifications via **SMS** using the Twilio Messaging API. It is configured independently of the existing `whatsapp` integration, though both can share the same Twilio account credentials. Delivery-only — no gateway or pairing.
 
 <Note>
-WhatsApp delivery is owned entirely by the separate `whatsapp` integration (`opensre integrations setup whatsapp`) — see the [WhatsApp](/integrations/messaging/whatsapp) page. The `twilio` integration documented here is SMS-only. For voice paging on critical incidents, route through PagerDuty or Opsgenie, which provide voice escalation with proper acknowledgement.
+WhatsApp delivery is owned entirely by the separate `whatsapp` integration (`opensre integrations setup whatsapp`) — see the [WhatsApp](/integrations/messaging/whatsapp) page. The `twilio` integration documented here is SMS-only. For voice paging on critical incidents, route through PagerDuty, which provides voice escalation with proper acknowledgement.
 </Note>
 
 ## Prerequisites

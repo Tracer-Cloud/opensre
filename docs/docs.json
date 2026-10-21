@@ -136,7 +136,6 @@
               "integrations/incidents/alertmanager",
               "integrations/incidents/runbook-guided-investigations",
               "integrations/incidents/incident_io",
-              "integrations/incidents/opsgenie",
               "integrations/incidents/pagerduty",
               "integrations/incidents/sentry",
               "integrations/incidents/sentry-mcp",
@@ -650,10 +649,6 @@
     {
       "source": "/opensearch",
       "destination": "/integrations/databases/opensearch"
-    },
-    {
-      "source": "/opsgenie",
-      "destination": "/integrations/incidents/opsgenie"
     },
     {
       "source": "/pagerduty",

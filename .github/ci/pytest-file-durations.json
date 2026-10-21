@@ -1939,10 +1939,6 @@
     "seconds": 0.01,
     "tests": 3
   },
-  "tests/integrations/opsgenie/test_client.py": {
-    "seconds": 0.665,
-    "tests": 25
-  },
   "tests/integrations/pagerduty/test_client.py": {
     "seconds": 0.944,
     "tests": 33
@@ -3490,14 +3486,6 @@
   "tests/tools/test_opensearch_analytics_tool.py": {
     "seconds": 0.386,
     "tests": 30
-  },
-  "tests/tools/test_opsgenie_alert_detail_tool.py": {
-    "seconds": 0.078,
-    "tests": 15
-  },
-  "tests/tools/test_opsgenie_alerts_tool.py": {
-    "seconds": 0.063,
-    "tests": 15
   },
   "tests/tools/test_pagerduty_incident_detail_tool.py": {
     "seconds": 0.129,

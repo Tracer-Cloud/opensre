@@ -155,7 +155,6 @@ def load_env_integration_services() -> list[str]:
         or _all_env("RAILWAY_PROJECT", "RAILWAY_SERVICE", "RAILWAY_ENVIRONMENT"),
     )
     add("vercel", _env_is_set("VERCEL_API_TOKEN"))
-    add("opsgenie", _env_is_set("OPSGENIE_API_KEY"))
     add("pagerduty", _env_is_set("PAGERDUTY_API_KEY"))
     add("incident_io", _env_is_set("INCIDENT_IO_API_KEY"))
     add("jira", _all_env("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"))

@@ -5,7 +5,6 @@ from __future__ import annotations
 from surfaces.cli.wizard.integration_validators.alerting import (
     validate_alertmanager_integration,
     validate_betterstack_integration,
-    validate_opsgenie_integration,
 )
 from surfaces.cli.wizard.integration_validators.aws import validate_aws_integration
 from surfaces.cli.wizard.integration_validators.http_probe_validators import (
@@ -42,7 +41,6 @@ __all__ = [
     "validate_grafana_integration",
     "validate_jira_integration",
     "validate_opensearch_integration",
-    "validate_opsgenie_integration",
     "validate_posthog_mcp_integration",
     "validate_rocketchat",
     "validate_rocketchat_webhook",

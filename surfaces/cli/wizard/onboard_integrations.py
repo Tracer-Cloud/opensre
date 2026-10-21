@@ -122,12 +122,6 @@ ONBOARD_INTEGRATION_CHOICES: tuple[Choice, ...] = (
         hint="Query firing alerts and silences from Prometheus Alertmanager",
     ),
     Choice(
-        value="opsgenie",
-        label="OpsGenie",
-        group="Incident & Comms",
-        hint="Investigate alerts and triage state from OpsGenie",
-    ),
-    Choice(
         value="pagerduty",
         label="PagerDuty",
         group="Incident & Comms",

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from integrations.alertmanager import make_alertmanager_client
 from integrations.betterstack import build_betterstack_config, validate_betterstack_config
-from integrations.opsgenie import OpsGenieClient, OpsGenieConfig
 
 from .shared import IntegrationHealthResult
 
@@ -70,31 +69,3 @@ def validate_alertmanager_integration(
         )
     except Exception as err:
         return IntegrationHealthResult(ok=False, detail=f"Alertmanager validation failed: {err}")
-
-
-def validate_opsgenie_integration(
-    *,
-    api_key: str,
-    region: str = "us",
-) -> IntegrationHealthResult:
-    """Validate OpsGenie connectivity by listing alerts."""
-    if not api_key:
-        return IntegrationHealthResult(ok=False, detail="OpsGenie API key is required.")
-    try:
-        config = OpsGenieConfig(api_key=api_key, region=region)
-        with OpsGenieClient(config) as client:
-            result = client.list_alerts(limit=1)
-        if result.get("success"):
-            return IntegrationHealthResult(
-                ok=True,
-                detail=f"OpsGenie validated ({config.region.upper()} region); API key accepted.",
-            )
-        return IntegrationHealthResult(
-            ok=False,
-            detail=f"OpsGenie validation failed: {result.get('error', 'unknown error')}",
-        )
-    except Exception as err:
-        return IntegrationHealthResult(
-            ok=False,
-            detail=f"OpsGenie validation failed: {err}",
-        )

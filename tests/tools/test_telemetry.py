@@ -1444,8 +1444,6 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         # Same shape over core/domain/repositories: a malformed repository
         # name returns an error dict; a failed write escapes to the wrapper.
         "repository_preferences",
-        "opsgenie_alert_detail",
-        "opsgenie_alerts",
         "pagerduty_incident_detail",
         "pagerduty_incidents",
         "pagerduty_oncall",
