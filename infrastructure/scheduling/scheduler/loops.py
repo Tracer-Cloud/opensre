@@ -33,9 +33,11 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_PARAM,
     LOOP_MODE_REPORT,
     LOOP_MODES,
+    LOOP_PRIVATE_PARAM,
     LOOP_PROMPT_PARAM,
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
+    LOOP_SHELL_CREATOR,
     LOOP_SLACK_CHAT_ID_PARAM,
     LOOP_SLUG_PARAM,
     LOOP_SOURCE_PARAM,
@@ -45,6 +47,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_TELEGRAM_CHAT_ID_PARAM,
     LOOP_TIME_PARAM,
 )
+from infrastructure.scheduling.scheduler.loop_owner import loop_is_private, loop_owner
 from infrastructure.scheduling.scheduler.loop_prompt import (
     current_loop_description,
     current_loop_prompt,
@@ -66,7 +69,6 @@ from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, T
 
 _ONBOARDING_LOOP_SOURCE = "onboarding"
 _MANUAL_LOOP_SOURCE = "manual"
-_MANUAL_LOOP_CREATED_BY = "interactive_shell"
 _LEGACY_MORNING_REPORT_PROMPT = (
     "Summarize the reliability picture for the last 24 hours: notable "
     "alerts, error spikes, and anything on-call should know this morning."
@@ -133,6 +135,10 @@ class LoopSummary:
     next_run: str | None
     schedule_error: str = ""
     mode: str = LOOP_MODE_REPORT
+    #: The member who created it ("" when a process did).
+    owner: str = ""
+    #: The owner's own loop: it runs as them and only they see or change it.
+    private: bool = False
 
     @property
     def status(self) -> str:
@@ -349,6 +355,7 @@ def create_manual_loop(
     report_args: Mapping[str, str] | None = None,
     mode: str = LOOP_MODE_REPORT,
     extra_params: Mapping[str, str] | None = None,
+    private: bool | None = None,
 ) -> ManualLoop:
     """Create an active recurring prompt loop.
 
@@ -358,6 +365,8 @@ def create_manual_loop(
     ``report`` produces a report body only, ``agent`` lets the tick act with
     the tools the prompt names. ``extra_params`` (e.g. the webapp request a
     loop was created from) is stored with the loop and never overrides it.
+    ``private`` makes it the creating member's own loop (see ``loop_owner``);
+    ``None`` leaves it shared.
     """
     loop_prompt = prompt.strip()
     if not loop_prompt:
@@ -394,7 +403,9 @@ def create_manual_loop(
     }
     if acting_scope() is None:
         # In an organization's turn the store records the member who acted instead.
-        params[LOOP_CREATED_BY_PARAM] = _MANUAL_LOOP_CREATED_BY
+        params[LOOP_CREATED_BY_PARAM] = LOOP_SHELL_CREATOR
+    if private is not None:
+        params[LOOP_PRIVATE_PARAM] = "true" if private else "false"
     time_label = loop_time_label(cron_expr)
     if time_label:
         params[LOOP_TIME_PARAM] = time_label
@@ -476,14 +487,19 @@ def list_loop_summaries(
     store_path: Path | None = None,
     now: datetime | None = None,
     read_only: bool = False,
+    include_private: bool = False,
 ) -> list[LoopSummary]:
     """Return the loops the current scope may see, sorted with active loops first.
 
     The store is process-wide: a turn bound to an organization sees only that
-    organization's loops, so a name or id never resolves to, or lists, another's.
+    organization's loops, so a name or id never resolves to, or lists, another's,
+    and another member's private loops only with ``include_private`` (the web
+    app sync).
     """
     tasks = list_tasks(store_path, read_only=True) if read_only else list_tasks(store_path)
-    visible = [task for task in tasks if visible_to_current_scope(task)]
+    visible = [
+        task for task in tasks if visible_to_current_scope(task, include_private=include_private)
+    ]
     return summarize_loops(visible, include_disabled=include_disabled, now=now)
 
 
@@ -494,6 +510,7 @@ def resolve_loop_summary(
     store_path: Path | None = None,
     now: datetime | None = None,
     read_only: bool = False,
+    include_private: bool = False,
 ) -> tuple[LoopSummary | None, str]:
     """Resolve a loop by id prefix, task id prefix, or exact name."""
     query = identifier.strip()
@@ -508,6 +525,7 @@ def resolve_loop_summary(
             store_path=store_path,
             now=now,
             read_only=read_only,
+            include_private=include_private,
         )
         if loop.id.startswith(query)
         or lowered == loop.name.casefold()
@@ -527,9 +545,12 @@ def set_loop_enabled(
     enabled: bool,
     store_path: Path | None = None,
     now: datetime | None = None,
+    include_private: bool = False,
 ) -> tuple[LoopMutation | None, str]:
     """Enable or disable all tasks that belong to one loop."""
-    loop, error = resolve_loop_summary(identifier, store_path=store_path, now=now)
+    loop, error = resolve_loop_summary(
+        identifier, store_path=store_path, now=now, include_private=include_private
+    )
     if loop is None:
         return None, error
 
@@ -559,9 +580,12 @@ def delete_loop(
     *,
     store_path: Path | None = None,
     now: datetime | None = None,
+    include_private: bool = False,
 ) -> tuple[LoopMutation | None, str]:
     """Delete all tasks that belong to one loop."""
-    loop, error = resolve_loop_summary(identifier, store_path=store_path, now=now)
+    loop, error = resolve_loop_summary(
+        identifier, store_path=store_path, now=now, include_private=include_private
+    )
     if loop is None:
         return None, error
 
@@ -723,6 +747,8 @@ def _summarize_group(
         next_run=min(next_runs) if next_runs else representative.next_run,
         schedule_error="; ".join(schedule_errors),
         mode=representative.params.get(LOOP_MODE_PARAM, "").strip() or LOOP_MODE_REPORT,
+        owner=loop_owner(representative),
+        private=loop_is_private(representative),
     )
 
 

@@ -26,7 +26,7 @@ import integrations.webapp_requests.ledger as request_ledger
 import integrations.webapp_scheduled_loops.loop_runs as loop_runs_module
 import integrations.webapp_scheduled_loops.sync as sync_module
 from config.principal import Actor, Principal, StorageScope
-from config.scope_context import bound_storage_scope
+from config.scope_context import bound_storage_scope, current_scope
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_GROUP_ID_PARAM,
     LOOP_PROMPT_PARAM,
@@ -138,6 +138,48 @@ def test_a_task_created_in_the_app_is_scheduled_once_and_listed_back() -> None:
     assert {ack["loopId"] for _, ack in webapp.acks} == {task.id}
     assert webapp.reports[0][0]["id"] == task.id
     assert webapp.reports[0][0]["webapp_request_id"] == _REQUEST_ID
+
+
+def test_a_private_loop_from_the_app_is_its_requesters_and_still_mirrored() -> None:
+    # Arrange: a member creates a loop that reads their own inbox.
+    request = _create_request()
+    request["payload"]["private"] = True
+    webapp = _Webapp(pending=[request])
+
+    # Act
+    _sync(webapp).sync()
+
+    # Assert: theirs, and reported though the report is not their turn.
+    [task] = list_tasks()
+    assert task.params["loop_private"] == "true"
+    assert task.params["loop_created_by"] == "user_2abc"
+    assert [(row["id"], row["private"]) for row in webapp.reports[-1]] == [(task.id, True)]
+
+
+def test_a_run_a_chat_turn_starts_does_not_run_as_that_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The run is a scheduled tick: a private loop then acts as its owner, a shared one as nobody."""
+    # Arrange
+    seen: list[StorageScope | None] = []
+
+    def run_task_now(task_id: str, _runners: SchedulerRunners, *, run_paused: bool) -> bool:
+        seen.append(current_scope())
+        return True
+
+    monkeypatch.setattr(sync_module, "run_task_now", run_task_now)
+    loop_id, _request = _loop_run_request()
+    sync = _sync(_Webapp())
+
+    # Act: a member asks for the run inside their own turn.
+    asker = StorageScope(principal=Principal.org(_ORG), actor=Actor(id="U0ASKER"))
+    with bound_storage_scope(asker):
+        started = sync.start_run(loop_id)
+    _join_runs()
+
+    # Assert
+    assert started == ""
+    assert seen == [None]
 
 
 def test_the_app_cannot_pause_another_organizations_loop() -> None:

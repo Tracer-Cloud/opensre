@@ -28,9 +28,11 @@ def install_harness_adapters() -> None:
     nothing until both registries have been installed.
     """
     import infrastructure.harness_providers as harness_providers
+    from infrastructure.scheduling.scheduler.loop_owner import install_member_resolver
     from integrations.harness_adapters import (
         register_harness_adapters as register_integrations,
     )
+    from integrations.webapp_requests import member_user_id
     from tools.harness_adapters import register_harness_adapters as register_tools
     from tools.interactive_shell.subprocess_presenter import (
         headless_subprocess_presenter_factory,
@@ -43,6 +45,8 @@ def install_harness_adapters() -> None:
     harness_providers.IntegrationSetupCommand(
         lambda service_id: f"/integrations setup {service_id}"
     ).install()
+    # A private loop's owner is one member under their Slack and web app ids.
+    install_member_resolver(member_user_id)
 
 
 def scheduler_runners() -> SchedulerRunners:

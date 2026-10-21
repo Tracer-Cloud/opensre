@@ -29,6 +29,9 @@ class _CountingSync:
         self.passed.set()
         return False
 
+    def start_run(self, _loop_id: str) -> str:
+        return ""
+
 
 @pytest.fixture
 def controller(
