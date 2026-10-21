@@ -1,13 +1,20 @@
-"""Read the pinned ClickStack legacy Map-schema through bounded ClickHouse HTTP queries."""
+"""Read the pinned ClickStack legacy Map-schema through bounded ClickHouse SDK streams."""
 
 from __future__ import annotations
 
 import json
 from typing import Any, Literal
 
-import httpx
+import clickhouse_connect  # type: ignore[import-untyped]
+from clickhouse_connect.driver import Client  # type: ignore[import-untyped]
 from pydantic import Field
+from urllib3 import PoolManager
 
+from config.constants.telemetry import (
+    TELEMETRY_CLICKHOUSE_TIMEOUT_SECONDS,
+    TELEMETRY_QUERY_MAX_RESPONSE_BYTES,
+    TELEMETRY_QUERY_MAX_RESULT_ROWS,
+)
 from config.strict_config import StrictConfigModel
 from core.telemetry.models import Evidence, Measurement, MetricMapping, Scope
 
@@ -23,17 +30,53 @@ class ClickHouseEvidenceConfig(StrictConfigModel):
 
 class ClickHouseEvidenceReader:
     def __init__(
-        self, config: ClickHouseEvidenceConfig, password: str, *, client: httpx.Client | None = None
+        self, config: ClickHouseEvidenceConfig, password: str, *, client: Client | None = None
     ) -> None:
         self.config = config
         self._password = password
-        self._client = client or httpx.Client(timeout=8, trust_env=False)
+        self._client = client
         self._owns_client = client is None
+        self._pool: PoolManager | None = None
 
     def close(self) -> None:
-        """Release only an internally owned HTTP client."""
-        if self._owns_client:
-            self._client.close()
+        """Release only an internally owned SDK client and connection pool."""
+        if not self._owns_client:
+            return
+        try:
+            if self._client is not None:
+                self._client.close()
+        finally:
+            if self._pool is not None:
+                self._pool.clear()
+
+    def _get_client(self) -> Client:
+        if self._client is None:
+            # Ignore ambient proxy variables and isolate this reader's connection cleanup.
+            pool = PoolManager()
+            host = self.config.host
+            if ":" in host:
+                host = f"[{host}]"
+            try:
+                self._client = clickhouse_connect.get_client(
+                    host=host,
+                    port=self.config.port,
+                    database=self.config.database,
+                    username=self.config.username,
+                    password=self._password,
+                    secure=self.config.secure,
+                    interface="https" if self.config.secure else "http",
+                    connect_timeout=TELEMETRY_CLICKHOUSE_TIMEOUT_SECONDS,
+                    send_receive_timeout=TELEMETRY_CLICKHOUSE_TIMEOUT_SECONDS,
+                    pool_mgr=pool,
+                    compress=False,
+                    autogenerate_session_id=False,
+                    query_retries=0,
+                )
+            except Exception:
+                pool.clear()
+                raise
+            self._pool = pool
+        return self._client
 
     def verify(self) -> None:
         """Require database-enforced read-only credentials, not just a request setting."""
@@ -46,37 +89,28 @@ class ClickHouseEvidenceReader:
     def _query(
         self, sql: str, parameters: dict[str, object], *, readonly: bool = True
     ) -> list[dict[str, Any]]:
-        host = self.config.host
-        if ":" in host:
-            host = f"[{host}]"
-        url = f"{'https' if self.config.secure else 'http'}://{host}:{self.config.port}/"
         settings = {
-            "database": self.config.database,
             "max_execution_time": "5",
             "max_rows_to_read": "500000",
             "max_bytes_to_read": "50000000",
-            "max_result_rows": "20",
+            "max_result_rows": str(TELEMETRY_QUERY_MAX_RESULT_ROWS),
             "result_overflow_mode": "throw",
             "output_format_json_quote_64bit_integers": "0",
         }
         if readonly:
             settings["readonly"] = "2"
-        settings.update({f"param_{key}": str(value) for key, value in parameters.items()})
-        chunks = bytearray()
-        with self._client.stream(
-            "POST",
-            url,
-            params=settings,
-            content=sql + " FORMAT JSON",
-            auth=(self.config.username, self._password),
+        # The SDK owns transport and parameter binding; bound bytes before JSON decoding.
+        with self._get_client().raw_stream(
+            sql,
+            parameters=parameters,
+            settings=settings,
+            fmt="JSON",
         ) as response:
-            response.raise_for_status()
-            for chunk in response.iter_bytes():
-                chunks.extend(chunk)
-                if len(chunks) > 65536:
-                    raise ValueError("Telemetry response exceeds the byte limit.")
-        data = json.loads(chunks)["data"]
-        if not isinstance(data, list) or len(data) > 20:
+            payload = response.read(TELEMETRY_QUERY_MAX_RESPONSE_BYTES + 1)
+        if len(payload) > TELEMETRY_QUERY_MAX_RESPONSE_BYTES:
+            raise ValueError("Telemetry response exceeds the byte limit.")
+        data = json.loads(payload)["data"]
+        if not isinstance(data, list) or len(data) > TELEMETRY_QUERY_MAX_RESULT_ROWS:
             raise ValueError("Telemetry response exceeds the row limit.")
         return data
 
@@ -121,7 +155,7 @@ class ClickHouseEvidenceReader:
         return Measurement(float(row["total"]), float(row["errors"]), float(row["latest"]))
 
     def evidence(self, scope: Scope) -> Evidence:
-        """Fetch ten traces and ten logs, with no arbitrary attribute-map export."""
+        """Read at most ten span rows and ten logs, without exporting arbitrary attribute maps."""
         where = (
             " WHERE ServiceName = {service:String} "
             "AND ResourceAttributes['deployment.environment.name'] = {environment:String} "

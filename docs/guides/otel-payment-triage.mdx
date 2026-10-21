@@ -33,6 +33,8 @@ forwards telemetry; it is not the history store. You configure these separately:
 
 Raw telemetry stays in ClickHouse. The local `watch.db` SQLite file stores
 incident state, reports, and pending deliveries—not the telemetry stream.
+The Collector's exporter creates and fills the telemetry tables; OpenSRE's
+read-only account does not create them or manage their schema.
 
 ## Start the demo
 
@@ -127,7 +129,7 @@ a completed 30-second window with a 15-second allowance for ingestion.
 | Result in that window | What OpenSRE does |
 | --- | --- |
 | 30 requests, no errors, no open incident | Prints `Telemetry: healthy`; no model call or Telegram report. |
-| 30 requests, 30 errors, no open incident | Opens one incident, reads up to ten traces and ten logs, and produces an opening report. |
+| 30 requests, 30 errors, no open incident | Opens one incident, reads up to ten span rows and ten logs, and produces an opening report. |
 | Errors stay at or above 20% during that incident | Keeps the incident open; does not repeat model analysis or create another opening report. |
 | Two consecutive windows below 20%, each with at least five requests | Marks the incident recovered and produces a recovery report, without another model call. |
 | Missing data, fewer than five requests, or a failed query | Prints `Telemetry: unknown`; does not declare recovery. An unknown window resets the recovery streak. |
@@ -187,6 +189,7 @@ environment, and time window, with a 90-second analysis deadline. It cannot
 run tools, execute SQL, or make changes to the application. If evidence or the
 model is unavailable, OpenSRE saves a partial report with the cause marked
 unknown. A report is an evidence-based explanation, not a guaranteed root cause.
+The span sample is not a collection of complete distributed traces.
 
 ## Connect your own application
 

@@ -72,6 +72,7 @@ dependencies = [
     "pymysql>=1.1.0,<2.0.0",
     # ClickHouse (used by first-class SigNoz + ClickHouse integrations)
     "clickhouse-connect>=0.15.1,<1.0.0",
+    "urllib3>=2.0,<3",
     "sentry-sdk>=2.59.0",
     # File locking for atomic store operations
     "filelock>=3.29.0",

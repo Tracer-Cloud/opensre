@@ -2574,6 +2574,7 @@ dependencies = [
     { name = "slack-sdk" },
     { name = "tracer-decorator" },
     { name = "tzdata" },
+    { name = "urllib3" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -2713,6 +2714,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'" },
     { name = "types-requests", marker = "extra == 'dev'" },
     { name = "tzdata", specifier = ">=2026.1" },
+    { name = "urllib3", specifier = ">=2.0,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
     { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.14" },
     { name = "yandexcloud", marker = "extra == 'yandex-cloud-logs'", specifier = ">=0.300.0" },

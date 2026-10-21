@@ -1424,10 +1424,19 @@ if TYPE_CHECKING:
         TELEMETRY_CLICKHOUSE_PASSWORD_ENV as TELEMETRY_CLICKHOUSE_PASSWORD_ENV,
     )
     from config.constants.telemetry import (
+        TELEMETRY_CLICKHOUSE_TIMEOUT_SECONDS as TELEMETRY_CLICKHOUSE_TIMEOUT_SECONDS,
+    )
+    from config.constants.telemetry import (
         TELEMETRY_EVIDENCE_MAX_CHARS as TELEMETRY_EVIDENCE_MAX_CHARS,
     )
     from config.constants.telemetry import (
         TELEMETRY_MODEL_TIMEOUT_SECONDS as TELEMETRY_MODEL_TIMEOUT_SECONDS,
+    )
+    from config.constants.telemetry import (
+        TELEMETRY_QUERY_MAX_RESPONSE_BYTES as TELEMETRY_QUERY_MAX_RESPONSE_BYTES,
+    )
+    from config.constants.telemetry import (
+        TELEMETRY_QUERY_MAX_RESULT_ROWS as TELEMETRY_QUERY_MAX_RESULT_ROWS,
     )
     from config.constants.telemetry import (
         TELEMETRY_REPORT_MAX_CHARS as TELEMETRY_REPORT_MAX_CHARS,
