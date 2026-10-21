@@ -34,7 +34,6 @@ _CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("azure_monitor", "Azure Monitor", ()),
     ("hermes", "Hermes", ()),
     ("pagerduty", "PagerDuty", ("pager duty",)),
-    ("opsgenie", "Opsgenie", ()),
     ("incident_io", "incident.io", ("incidentio", "incident io")),
     ("aws", "AWS", ()),
     ("aws_lambda", "AWS Lambda", ("lambda",)),

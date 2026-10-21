@@ -176,12 +176,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=20,
     ),
     IntegrationSpec(
-        service="opsgenie",
-        has_verifier=True,
-        direct_effective=True,
-        verify_order=21,
-    ),
-    IntegrationSpec(
         service="incident_io",
         aliases=("incident.io", "incidentio"),
         has_verifier=True,

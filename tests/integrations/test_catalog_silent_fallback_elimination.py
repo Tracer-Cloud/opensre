@@ -107,7 +107,6 @@ _CLASSIFY_PATCH_TARGETS: list[tuple[str, str, str]] = [
     ("mongodb_atlas", "integrations.mongodb_atlas", "build_mongodb_atlas_config"),
     ("mariadb", "integrations.mariadb", "build_mariadb_config"),
     ("vercel", "integrations.vercel", "VercelConfig"),
-    ("opsgenie", "integrations.opsgenie", "OpsGenieIntegrationConfig"),
     ("incident_io", "integrations.incident_io", "IncidentIoIntegrationConfig"),
     ("jira", "integrations.jira", "JiraIntegrationConfig"),
     ("discord", "integrations.discord", "DiscordBotConfig"),
@@ -266,11 +265,6 @@ _ENV_LOADER_CASES: list[tuple[str, dict[str, str], str]] = [
         "vercel",
         {"VERCEL_API_TOKEN": "t"},
         "VercelConfig",
-    ),
-    (
-        "opsgenie",
-        {"OPSGENIE_API_KEY": "k"},
-        "OpsGenieIntegrationConfig",
     ),
     (
         "jira",

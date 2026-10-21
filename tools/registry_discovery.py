@@ -64,7 +64,6 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.new_relic.tools",
     "integrations.openobserve.tools",
     "integrations.opensearch.tools",
-    "integrations.opsgenie.tools",
     "integrations.pagerduty.tools",
     "integrations.pi.tools",
     "integrations.pipedream.tools",

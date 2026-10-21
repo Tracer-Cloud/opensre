@@ -34,7 +34,6 @@ def test_legacy_integration_health_import_surface_still_exports_validators() -> 
         "validate_grafana_integration",
         "validate_jira_integration",
         "validate_opensearch_integration",
-        "validate_opsgenie_integration",
         "validate_posthog_mcp_integration",
         "validate_rocketchat",
         "validate_rocketchat_webhook",

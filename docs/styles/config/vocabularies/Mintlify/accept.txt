@@ -144,7 +144,6 @@ FastAPI
 Groq
 Ollama
 Ollama's
-Opsgenie
 Postgres
 SuperGrok
 Toolcall

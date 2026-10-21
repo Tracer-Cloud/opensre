@@ -8,7 +8,6 @@ from surfaces.cli.wizard.configurators.alerting import (
     _configure_alertmanager,
     _configure_betterstack,
     _configure_incident_io,
-    _configure_opsgenie,
     _configure_pagerduty,
 )
 from surfaces.cli.wizard.configurators.aws import _configure_aws
@@ -99,7 +98,6 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "jira": _configure_jira,
         "servicenow": _configure_servicenow,
         "alertmanager": _configure_alertmanager,
-        "opsgenie": _configure_opsgenie,
         "pagerduty": _configure_pagerduty,
         "incident_io": _configure_incident_io,
         "posthog": _configure_posthog,
@@ -132,7 +130,6 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "jira": "jira",
         "servicenow": "servicenow",
         "alertmanager": "alertmanager",
-        "opsgenie": "opsgenie",
         "pagerduty": "pagerduty",
         "incident_io": "incident.io",
         "posthog": "posthog",

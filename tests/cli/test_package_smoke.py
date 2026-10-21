@@ -34,7 +34,7 @@ def test_package_smoke_finds_essential_tools_and_skills() -> None:
     # Deep-checked essentials only (required name set).
     assert payload["checked_tools"] == 7
     assert payload["action_skills"] >= 5
-    assert payload["integration_verifiers"] >= 59
+    assert payload["integration_verifiers"] >= 58
     assert "planning_instructions" not in payload
 
 
