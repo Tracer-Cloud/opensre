@@ -35,8 +35,7 @@
           "index",
           "getting-started/showcase",
           "getting-started/features",
-          "guides/faq",
-          "guides/otel-payment-triage"
+          "guides/faq"
         ]
       },
       {
@@ -76,6 +75,12 @@
           "getting-started/interactive-shell-commands",
           "getting-started/interactive-shell-assistant",
           "getting-started/goals"
+        ]
+      },
+      {
+        "group": "Guides",
+        "pages": [
+          "guides/otel-payment-triage"
         ]
       },
       {
