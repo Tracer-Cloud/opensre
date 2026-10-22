@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from rich.console import Console
 
+from surfaces.shared.terminal.tables.provider import detect_provider_model
+
 if TYPE_CHECKING:
     from infrastructure.turn_host.turn_runner import TurnRunner
 
@@ -418,6 +420,7 @@ async def _run_agent_turn_loop(
         await emit(AgentEvent(type="turn_error", error=exc))
     finally:
         runtime.state.finish_dispatch(dispatch_cancel)
+        runtime.session.terminal.provider_model = await asyncio.to_thread(detect_provider_model)
         await emit(AgentEvent(type="turn_end"))
 
 

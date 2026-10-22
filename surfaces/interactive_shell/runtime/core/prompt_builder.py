@@ -46,6 +46,7 @@ from surfaces.shared.terminal.components.cpr_stdin import (
     drain_stale_cpr_bytes,
     strip_cpr_sequences,
 )
+from surfaces.shared.terminal.tables.provider import detect_provider_model
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -104,6 +105,7 @@ class PromptBuilder:
         return strip_cpr_sequences(prompt_status_ansi(self.session, quiet=self.spinner.streaming))
 
     def setup(self) -> None:
+        self.session.terminal.provider_model = detect_provider_model()
         if self.pt_session is None:
             self.transcript_view = TranscriptControl(self.transcript)
             self.pt_session = input_prompt.build_prompt_session(

@@ -99,6 +99,9 @@ class TerminalSession:
     auto_level: AutoLevel = DEFAULT_AUTO_LEVEL
     """Auto (Off|Low|Med|High) shown above the input box."""
 
+    provider_model: tuple[str, str] = ("unknown", "unknown")
+    """Display route resolved at prompt setup and after turns, never during redraw."""
+
     prompt_history_backend: History | None = None
     """The live ``prompt_toolkit.History`` object backing the input prompt.
 
