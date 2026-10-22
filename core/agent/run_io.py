@@ -2,18 +2,36 @@
 
 ``AgentRunInput`` is the resolved per-run input ``Agent.run`` assembles and
 hands to ``run_react_loop``; ``AgentRunResult`` is what the loop returns.
+``RunProgress`` is what a run has produced so far, for host policies the loop
+consults mid-run.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeAlias
 
 from core.llm.types import ToolCall
 from core.messages import MessageMapper, RuntimeMessage, RuntimeMessageLike
 from core.tool.contracts import RuntimeTool
 from core.tool.execution import ToolExecutionResult
+
+
+@dataclass(frozen=True)
+class RunProgress:
+    """What a run has produced before its next model call: the transcript and tool results.
+
+    The same two fields as :class:`AgentRunResult`, so a host rule written for
+    the finished run can judge the run in progress.
+    """
+
+    messages: Sequence[RuntimeMessage]
+    tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]]
+
+
+#: Whether the reply the next model call writes may show while it streams.
+ReplyStreamPolicy: TypeAlias = Callable[[RunProgress], bool]  # noqa: UP040
 
 
 @dataclass
@@ -108,4 +126,4 @@ class AgentRunInput[RuntimeToolT: RuntimeTool]:
         )
 
 
-__all__ = ["AgentRunInput", "AgentRunResult"]
+__all__ = ["AgentRunInput", "AgentRunResult", "ReplyStreamPolicy", "RunProgress"]

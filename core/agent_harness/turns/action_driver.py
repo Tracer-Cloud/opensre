@@ -16,8 +16,9 @@ import json
 import logging
 import re
 import shlex
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
@@ -25,6 +26,7 @@ from config.llm_reasoning_effort import apply_reasoning_effort
 from core.agent import Agent, AgentRunResult
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
+from core.agent.run_io import ReplyStreamPolicy
 from core.agent_harness.accounting.self_recording_tools import SELF_RECORDING_ACTION_TOOL_NAMES
 from core.agent_harness.accounting.token_accounting import tap_provider_usage
 from core.agent_harness.agent_builder import AgentConfig, build_agent
@@ -414,6 +416,7 @@ def _latest_unshown_outcome_report(
     deferred_replies: Sequence[str],
     *,
     history_count: int = 0,
+    already_shown: Sequence[str] = (),
 ) -> str:
     """The model's outcome report, when it is not already the closing reply.
 
@@ -421,8 +424,12 @@ def _latest_unshown_outcome_report(
     to print that prose as a working note and then append every tool snapshot.
     Only this turn's messages count: the first ``history_count`` are earlier
     turns replayed as context, whose reports were already delivered.
+    ``already_shown`` holds replies a surface printed while they streamed.
     """
-    shown = {final_text.strip(), *(text.strip() for text in deferred_replies if text.strip())}
+    shown = {
+        final_text.strip(),
+        *(text.strip() for text in (*deferred_replies, *already_shown) if text.strip()),
+    }
     latest = ""
     messages = list(getattr(result, "messages", ()) or ())
     for message in messages[history_count:]:
@@ -590,6 +597,55 @@ def _grounded_output_tools_only(result: Any) -> bool:
         if not getattr(tool_result, "model_only", False)
     ]
     return bool(names) and all(name in _GROUNDED_OUTPUT_TOOL_NAMES for name in names)
+
+
+def _closing_may_be_invented(result: Any) -> bool:
+    """True when only self-recording tools ran and none carried its output back.
+
+    The model then wrote its closing without seeing what the user saw, so the
+    composer drops it unless it asks the user something.
+    """
+    return (
+        _self_recording_tools_only(result)
+        and not _grounded_output_tools_only(result)
+        and not _has_quiet_shell_run(result)
+    )
+
+
+def _streamed_replies(session: SessionState) -> tuple[str, ...]:
+    """Replies of this turn a surface already printed while they streamed."""
+    terminal = getattr(session, "terminal", None)
+    return tuple(getattr(terminal, "streamed_replies", None) or ())
+
+
+def _reply_shows_as_written(
+    progress: Any,
+    session: SessionState,
+    deferred_replies: Sequence[str],
+    *,
+    history_count: int,
+) -> bool:
+    """Whether the closing the model writes next will be shown exactly as written.
+
+    :func:`_compose_response`'s rules, judged before the closing exists, so a
+    closing the composer could still drop, or put an earlier report ahead of,
+    never shows while it streams: a menu answer's bare acknowledgement, a recap
+    of figures a tool already painted, a closing written after self-recording
+    tools without their output, and a reply led by an unshown outcome report.
+    """
+    terminal = getattr(session, "terminal", None)
+    selected_choice = getattr(terminal, "pending_choice_response", None)
+    if isinstance(selected_choice, str) and selected_choice.strip():
+        return False
+    if _painted_results_only(progress) or _closing_may_be_invented(progress):
+        return False
+    return not _latest_unshown_outcome_report(
+        progress,
+        "",
+        deferred_replies,
+        history_count=history_count,
+        already_shown=_streamed_replies(session),
+    )
 
 
 def _asks_the_user(final_text: str) -> bool:
@@ -801,6 +857,7 @@ def _build_action_agent(
     # literal `/slash` paths execute exactly one explicit command by design,
     # so "did the agent reach the goal" is not a meaningful question there.
     goal: Goal | None = None
+    reply_stream_policy: ReplyStreamPolicy | None = None
     executed_tool_names: list[str] = []
     executed_outcomes: list[ExecutedToolOutcome] = []
     deferred_replies: list[str] = []
@@ -910,6 +967,14 @@ def _build_action_agent(
             executed_outcomes=executed_outcomes,
             trace_context=lambda: turn_trace_state(session),
         )
+        # A closing shows while it streams only when the composer will show
+        # it exactly as written; otherwise it waits for the composed reply.
+        reply_stream_policy = partial(
+            _reply_shows_as_written,
+            session=session,
+            deferred_replies=deferred_replies,
+            history_count=len(history),
+        )
 
     # WAL first, observer second: the tool intent must be on disk before
     # any surface side effect reacts to the same event.
@@ -936,6 +1001,7 @@ def _build_action_agent(
         tool_hooks=tool_hooks,
         on_runtime_event=on_runtime_event,
         goal=goal,
+        reply_stream_policy=reply_stream_policy,
     )
     return ActionTurnPlan(
         agent=build_agent(config),
@@ -1102,12 +1168,7 @@ def _compose_response(
         and not _asks_the_user(final_text)
     ):
         suppression_reason = "painted_figures_recap"
-    elif (
-        _self_recording_tools_only(result)
-        and not _grounded_output_tools_only(result)
-        and not _asks_the_user(final_text)
-        and not _has_quiet_shell_run(result)
-    ):
+    elif _closing_may_be_invented(result) and not _asks_the_user(final_text):
         suppression_reason = "self_recording_tools"
     final_text_chunk = "" if suppression_reason else final_text
     # The model sometimes restates the plan (or every historical snapshot) in its
@@ -1118,7 +1179,11 @@ def _compose_response(
     # github_cli / other registry tools without double-printing shell output.
     # response_text still includes history for persistence / non-TTY surfaces.
     assistant_report = _latest_unshown_outcome_report(
-        result, final_text_chunk, deferred_replies, history_count=history_count
+        result,
+        final_text_chunk,
+        deferred_replies,
+        history_count=history_count,
+        already_shown=_streamed_replies(session),
     )
     closing_already_has_report = is_outcome_report(final_text_chunk) or any(
         is_outcome_report(text) for text in deferred_replies
@@ -1292,13 +1357,28 @@ def _show_response(
     body = final_text or ("\n".join(display_chunks) if display_chunks else "")
     if body:
         if body.strip():
-            return output.stream(label="OpenSRE", chunks=iter([body]))
+            return output.stream(label="OpenSRE", chunks=_display_parts(body, display_chunks))
         if handled:
             _end_silent_tool_turn(output)
         return ""
     if handled:
         _end_silent_tool_turn(output)
     return ""
+
+
+def _display_parts(body: str, display_chunks: Sequence[str]) -> Iterator[str]:
+    """``body`` as one chunk per display part (closing, tool results, hint).
+
+    The chunks join back to ``body`` exactly. A surface that printed the
+    closing while it streamed recognises it as the first chunk and prints only
+    the rest; every other surface reads the same text it always did.
+    """
+    if not display_chunks or "\n".join(display_chunks) != body:
+        yield body
+        return
+    yield display_chunks[0]
+    for chunk in display_chunks[1:]:
+        yield f"\n{chunk}"
 
 
 def _end_silent_tool_turn(output: OutputSink) -> None:

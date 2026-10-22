@@ -31,7 +31,7 @@ from config.constants.tool_discovery import (
 from config.llm_models import DEFAULT_MAX_TOKENS
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.loop_host import LoopHost
-from core.agent.run_io import AgentRunInput, AgentRunResult
+from core.agent.run_io import AgentRunInput, AgentRunResult, RunProgress
 from core.context_budget import (
     context_budget_ceiling_for_model,
     enforce_context_budget,
@@ -204,6 +204,11 @@ def _traced_exception_message(exc: BaseException) -> str | None:
     from infrastructure.analytics.event_properties import bounded_error_message
 
     return bounded_error_message(exc) or None
+
+
+def _discard_text_delta(delta: str) -> None:
+    """Receive streamed text a surface must not see yet."""
+    _ = delta
 
 
 def _invoke_accepts(llm: Any, keyword: str) -> bool:
@@ -561,8 +566,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         ):
             try:
                 response = self._invoke_within_budget(
-                    provider_request,
-                    self._text_delta_emitter(iteration) if self._streams_text else None,
+                    provider_request, self._text_delta_callback(iteration)
                 )
             except LLMRequestCancelled:
                 # A user stop, not a failure: close the spans as cancelled.
@@ -630,6 +634,21 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             return
         scale = input_tokens / estimated_tokens
         self._token_scale = min(max(scale, _MIN_TOKEN_SCALE), _MAX_TOKEN_SCALE)
+
+    def _text_delta_callback(self, iteration: int) -> TextDeltaCallback | None:
+        """What receives this call's streamed text: the emitter, a discard, or nothing.
+
+        The host decides once per call, from the run so far, whether the reply
+        may show while it streams. A reply it may still withhold or rewrite is
+        streamed into a discard instead: the request still streams, so a cancel
+        stops it mid-reply, but none of its text reaches a surface early.
+        """
+        if not self._streams_text:
+            return None
+        progress = RunProgress(messages=self._messages, tool_results=self._tool_results)
+        if self._host._reply_streams_live(progress):
+            return self._text_delta_emitter(iteration)
+        return _discard_text_delta
 
     def _text_delta_emitter(self, iteration: int) -> TextDeltaCallback:
         """Emit each streamed piece of a reply as a partial ``MessageUpdateEvent``."""

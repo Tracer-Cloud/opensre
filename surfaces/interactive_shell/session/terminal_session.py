@@ -210,6 +210,17 @@ class TerminalSession:
     The closing reply must not repeat those results. The response composer
     reads and clears the flag."""
 
+    live_reply: Any = None
+    """The model reply printing into the transcript while it streams (a ``ReplyStream``).
+
+    The action observer opens it on the first streamed text; the shell sink
+    finishes a closing with the rest of the turn's reply."""
+
+    streamed_replies: list[str] = field(default_factory=list)
+    """Replies of this run already in the transcript because they streamed.
+
+    The response composer does not show them a second time."""
+
     action_log_entries: list[ActionLogEntry] = field(default_factory=list)
     """Tool calls buffered for the current turn's grouped action log (call order).
 

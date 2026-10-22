@@ -12,6 +12,7 @@ from typing import Any, Generic, TypeVar
 
 from core.agent import Agent
 from core.agent.goals import Goal
+from core.agent.run_io import ReplyStreamPolicy
 from core.events import RuntimeEventCallback
 from core.llm.types import AgentLLMClient, ResolvedIntegrations
 from core.provider import ProviderHooks
@@ -39,6 +40,7 @@ class AgentConfig(Generic[RuntimeToolT]):  # noqa: UP046
     provider_hooks: ProviderHooks | None = None
     on_runtime_event: RuntimeEventCallback | None = None
     goal: Goal | None = None
+    reply_stream_policy: ReplyStreamPolicy | None = None
 
 
 def build_agent(  # noqa: UP047
@@ -61,6 +63,7 @@ def build_agent(  # noqa: UP047
         provider_hooks=config.provider_hooks,
         on_runtime_event=config.on_runtime_event,
         goal=config.goal,
+        reply_stream_policy=config.reply_stream_policy,
     )
 
 

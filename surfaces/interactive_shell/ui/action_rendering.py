@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import re
+from functools import partial
 from typing import Any
 
 from rich.console import Console
@@ -48,11 +49,12 @@ from infrastructure.terminal.theme import (
     TEXT,
 )
 from infrastructure.text import is_data_blob
+from infrastructure.text.plan_snapshots import strip_plan_snapshots
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.core.state import SpinnerState
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
 from surfaces.interactive_shell.ui.action_log import flush_action_log
-from surfaces.interactive_shell.ui.streaming import render_note_block
+from surfaces.interactive_shell.ui.streaming import ReplyStream, render_note_block
 from surfaces.interactive_shell.ui.task_plan import (
     GATEWAY_ACTIVITY_MARKER,
     render_plan_breakdown,
@@ -331,12 +333,22 @@ class ActionRenderObserver:
         self._pending_result_tools: set[str] = set()
 
     def __call__(self, kind: str, data: dict[str, Any]) -> None:
+        if kind == "agent_start":
+            self.session.terminal.live_reply = None
+            self.session.terminal.streamed_replies.clear()
+            return
         if kind == "llm_start":
+            # A reply still open here was not the last one (a conclusion the
+            # host sent back): it ends where it stands.
+            self._finish_live_reply()
             self._clear_reply_preview()
             self._set_spinner_phase(SpinnerState.THINKING_PHASE)
             return
         if kind == "agent_end":
-            # The finished reply prints next, through the turn's own rendering.
+            # A finished closing stays open for the turn's remaining parts; a
+            # cancelled run prints nothing after it, so its reply ends here.
+            if data.get("cancelled"):
+                self._finish_live_reply()
             self._clear_reply_preview()
             # Safety flush: the batch drain below normally empties the buffer,
             # but a turn that ends without a clean drain still gets its log.
@@ -344,13 +356,11 @@ class ActionRenderObserver:
             return
         if kind == "message_update":
             if data.get(PARTIAL_MESSAGE_KEY):
-                self._preview_reply(data)
+                self._stream_reply(data)
                 return
-            if data.get("has_tool_calls"):
-                # Commentary before tool calls prints as a note right now. A
-                # final answer keeps its preview until the turn prints it.
-                self._clear_reply_preview()
-            self._render_intermediate_message(data)
+            self._clear_reply_preview()
+            if not self._settle_live_reply(data):
+                self._render_intermediate_message(data)
             return
         if kind == "tool_update":
             with contextlib.suppress(Exception):
@@ -441,15 +451,60 @@ class ActionRenderObserver:
         line = f"{label} {content}".strip() if content else label
         record_task_plan_work(self.session, line)
 
-    def _preview_reply(self, data: dict[str, Any]) -> None:
-        """Show a streamed piece of the reply in the prompt region; print nothing.
+    def _stream_reply(self, data: dict[str, Any]) -> None:
+        """Print a streamed piece of the reply as soon as it completes a paragraph.
 
-        The complete text still arrives once, as a note or as the reply, so
-        writing pieces to scrollback here would show the reply twice.
+        Finished paragraphs go to the transcript in the reply's own format; the
+        paragraph still being written shows in the prompt region above the
+        status row. The loop streams only text the turn will show as written.
         """
+        terminal = self.session.terminal
+        live = terminal.live_reply
+        if live is None:
+            live = ReplyStream(
+                self.console,
+                before_first_paragraph=partial(flush_action_log, self.console, self.session),
+                transform=strip_plan_snapshots,
+            )
+            terminal.live_reply = live
+        live.feed(str(data.get("content") or ""))
         spinner = get_turn_spinner()
         if spinner is not None and getattr(spinner, "streaming", False):
-            spinner.append_reply_preview(str(data.get("content") or ""))
+            spinner.set_reply_preview(live.pending)
+
+    def _settle_live_reply(self, data: dict[str, Any]) -> bool:
+        """Settle the live reply when its response is complete; True when it is on screen.
+
+        A closing prints its last paragraph now, so the whole reply is up the
+        moment the model stops; it stays open for the turn's remaining parts.
+        Commentary before tool calls that already reached the transcript ends
+        there instead of being repeated as a note. Commentary still held in
+        the prompt region is dropped, and the working-note path prints it.
+        """
+        terminal = self.session.terminal
+        live = terminal.live_reply
+        if live is None:
+            return False
+        if not data.get("has_tool_calls"):
+            live.flush()
+            return True
+        terminal.live_reply = None
+        if not live.printed:
+            return False
+        live.finish()
+        terminal.streamed_replies.append(str(data.get("content") or "").strip())
+        return True
+
+    def _finish_live_reply(self) -> None:
+        """End an open live reply where it stands and remember it was shown."""
+        terminal = self.session.terminal
+        live = terminal.live_reply
+        if live is None:
+            return
+        terminal.live_reply = None
+        if live.printed or live.pending.strip():
+            live.finish()
+            terminal.streamed_replies.append(live.text.strip())
 
     def _clear_reply_preview(self) -> None:
         spinner = get_turn_spinner()

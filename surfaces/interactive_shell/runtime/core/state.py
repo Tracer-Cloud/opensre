@@ -379,9 +379,9 @@ class SpinnerState:
                 del self._in_flight_actions[index]
                 return
 
-    def append_reply_preview(self, delta: str) -> None:
-        """Add streamed reply text to the live preview, keeping only its tail."""
-        self.reply_preview = (self.reply_preview + delta)[-self._REPLY_PREVIEW_MAX_CHARS :]
+    def set_reply_preview(self, text: str) -> None:
+        """Show the reply text not yet in the transcript, keeping only its tail."""
+        self.reply_preview = text[-self._REPLY_PREVIEW_MAX_CHARS :]
 
     def clear_reply_preview(self) -> None:
         """Drop the live preview once the reply is printed or abandoned."""
