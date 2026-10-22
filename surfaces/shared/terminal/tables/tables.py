@@ -21,16 +21,19 @@ from infrastructure.terminal.theme import (
     DIM,
     ERROR,
     HIGHLIGHT,
+    SECONDARY,
     WARNING,
 )
 from surfaces.shared.terminal.components.rendering import (
     _prepare_tty_for_rich,
+    print_repl_renderable,
     print_repl_table,
     repl_print,
     repl_print_continue,
     repl_table,
 )
 from surfaces.shared.terminal.tables.provider import resolve_provider_models
+from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 if TYPE_CHECKING:
     from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
@@ -117,12 +120,6 @@ _INTEGRATION_COLS: list[ColumnDef] = [
     ColumnDef("detail", style=DIM, flex=True),
 ]
 
-_MODEL_COLS: list[ColumnDef] = [
-    ColumnDef("provider", style="bold", no_wrap=True),
-    ColumnDef("reasoning model"),
-    ColumnDef("toolcall model"),
-]
-
 _TOOL_COLS: list[ColumnDef] = [
     ColumnDef("tool", style="bold", no_wrap=True),
     ColumnDef("surfaces", style=DIM, no_wrap=True),
@@ -184,11 +181,26 @@ def render_models_table(
         return
     provider = str(getattr(settings, "provider", "unknown"))
     reasoning_model, toolcall_model = resolve_provider_models(settings, provider)
-    render_table(
+    print_repl_renderable(
         console,
-        f"LLM connection · {source}",
-        _MODEL_COLS,
-        [(provider, reasoning_model, toolcall_model)],
+        RecordTable(
+            "LLM connection",
+            (
+                RecordColumn("Provider"),
+                RecordColumn("Reasoning model"),
+                RecordColumn("Toolcall model"),
+            ),
+            (
+                RecordRow(
+                    (
+                        Text(provider, style="bold"),
+                        Text(reasoning_model, style=SECONDARY),
+                        Text(toolcall_model, style=SECONDARY),
+                    )
+                ),
+            ),
+            subtitle=source,
+        ),
     )
 
 

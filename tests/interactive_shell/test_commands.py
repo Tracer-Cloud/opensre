@@ -521,9 +521,9 @@ class TestSpecificListCommands:
         dispatch_slash("/model show", Session(), console)
         output = buf.getvalue()
         assert "local configuration" in output
-        assert "provider" in output
-        assert "reasoning model" in output
-        assert "toolcall model" in output
+        assert "Provider" in output
+        assert "Reasoning model" in output
+        assert "Toolcall model" in output
         assert "anthropic" in output
 
     def test_model_show_identifies_the_opensre_webapp_source(self, monkeypatch: object) -> None:
@@ -1371,7 +1371,7 @@ class TestModelCommand:
 
         output = buf.getvalue()
         assert "switched LLM provider" in output
-        assert "toolcall model" in output
+        assert "Toolcall model" in output
         contents = env_path.read_text(encoding="utf-8")
         assert "LLM_PROVIDER=anthropic" in contents
         assert "ANTHROPIC_REASONING_MODEL=claude-opus-4-7" in contents
