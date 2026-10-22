@@ -16,11 +16,15 @@ checked against the real client rather than ``Any``.
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Protocol
 
 from config.constants.llm import ANTHROPIC_THINKING_BINDING_KEY
 from core.llm.types import AgentLLMResponse, ToolCall
 from core.messages.runtime_message_types import ProviderMessage, RuntimeContent
+
+#: Defines every SDK-backed agent client :func:`adapter_for` dispatches on.
+_SDK_AGENT_CLIENTS_MODULE = "core.llm.transports.sdk.agent_clients"
 
 
 class _ToolResultClient(Protocol):
@@ -196,21 +200,27 @@ class _CLIAdapter[LLMT: _ConstructAssistantClient](_GenericAdapter[LLMT]):
 
 def adapter_for(llm: Any) -> MessageAdapter[Any]:
     """Resolve the message adapter for a provider client (the one dispatch point)."""
-    from core.llm.transports.sdk.agent_clients import (
-        AnthropicAgentClient,
-        BedrockConverseAgentClient,
-        CLIBackedAgentClient,
-        OpenAIAgentClient,
-    )
+    # No SDK client can exist before its module is loaded, and loading it imports
+    # the provider SDKs: a static tool-call turn must not pay that just to learn
+    # it holds none.
+    if _SDK_AGENT_CLIENTS_MODULE in sys.modules:
+        from core.llm.transports.sdk.agent_clients import (
+            AnthropicAgentClient,
+            BedrockConverseAgentClient,
+            CLIBackedAgentClient,
+            OpenAIAgentClient,
+        )
 
-    if isinstance(llm, BedrockConverseAgentClient):
-        return _BedrockConverseAdapter(llm)
-    if isinstance(llm, AnthropicAgentClient):
-        return _AnthropicAdapter(llm)
-    if isinstance(llm, OpenAIAgentClient) or _is_litellm_agent_client(llm):
+        if isinstance(llm, BedrockConverseAgentClient):
+            return _BedrockConverseAdapter(llm)
+        if isinstance(llm, AnthropicAgentClient):
+            return _AnthropicAdapter(llm)
+        if isinstance(llm, OpenAIAgentClient):
+            return _OpenAIAdapter(llm)
+        if isinstance(llm, CLIBackedAgentClient):
+            return _CLIAdapter(llm)
+    if _is_litellm_agent_client(llm):
         return _OpenAIAdapter(llm)
-    if isinstance(llm, CLIBackedAgentClient):
-        return _CLIAdapter(llm)
     return _GenericAdapter(llm)
 
 

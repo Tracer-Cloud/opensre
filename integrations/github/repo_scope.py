@@ -16,7 +16,11 @@ from core.domain.repositories import (
     load_repository_preferences,
     preferred_repository_for_name,
 )
-from integrations.github.accessible_repos import accessible_repositories, repository_named_in
+from integrations.github.accessible_repos import (
+    accessible_repositories,
+    could_name_repository,
+    repository_named_in,
+)
 from integrations.github.identity import workspace_public_repository_source
 from integrations.github.rest_token import resolved_github_rest_token
 
@@ -240,8 +244,12 @@ class _GithubVcsRepoScopeProvider:
             return split_repo_full_name(named)
         # With no preference saved, "the opensre repo" is the one reachable
         # original of that name: the connection knows it, so never ask.
-        reachable = repository_named_in(
-            message, accessible_repositories(resolved_github_rest_token(resolved or {}))
+        reachable = (
+            repository_named_in(
+                message, accessible_repositories(resolved_github_rest_token(resolved or {}))
+            )
+            if could_name_repository(message)
+            else None
         )
         if reachable:
             return split_repo_full_name(reachable)
@@ -284,6 +292,10 @@ class _GithubVcsRepoScopeProvider:
         """Return all GitHub repositories named in ``text``; a bare one only from the user."""
         _ = env
         return find_github_repository_references(text, include_bare=role == "user")
+
+    def prewarm(self, resolved: Mapping[str, Any]) -> None:
+        """List the repositories the connection reaches, which short names resolve against."""
+        accessible_repositories(resolved_github_rest_token(resolved))
 
 
 GITHUB_VCS_REPO_SCOPE_PROVIDER = _GithubVcsRepoScopeProvider()

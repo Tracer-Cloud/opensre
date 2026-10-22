@@ -252,6 +252,9 @@ class _GitlabVcsRepoScopeProvider:
             )
         )
 
+    def prewarm(self, resolved: Mapping[str, Any]) -> None:
+        """GitLab scope inference reads nothing remote."""
+
 
 GITLAB_VCS_REPO_SCOPE_PROVIDER = _GitlabVcsRepoScopeProvider()
 

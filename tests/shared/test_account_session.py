@@ -8,6 +8,7 @@ from http import HTTPStatus
 import httpx
 import pytest
 
+from config import account_credits
 from config.account import AccountRecord
 from surfaces.shared import account_session
 from surfaces.shared.account_session import AccountSessionState
@@ -168,6 +169,38 @@ def test_webapp_session_credits_are_attached_to_active_status(
     assert status.state is AccountSessionState.ACTIVE
     assert status.credits is not None
     assert status.credits.total == 100_000
+
+
+def test_a_validated_sign_in_answers_the_first_turns_credit_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shell's first turn re-read the balance the sign-in check had just returned."""
+    payload = _session_payload()
+    payload["credits"] = {"total": 100_000}
+    for module in (account_session, account_credits):
+        monkeypatch.setattr(module, "load_account_record", _record)
+        monkeypatch.setattr(module, "resolve_account_token", lambda: "token")
+    monkeypatch.setattr(
+        account_session.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=payload),
+    )
+    account_credits.reset_hosted_credits_cache()
+    account_session.account_status()
+
+    def _second_request(*_args: object, **_kwargs: object) -> httpx.Response:
+        raise AssertionError("the sign-in check already read this balance")
+
+    monkeypatch.setattr(account_credits.httpx, "get", _second_request)
+    try:
+        read = account_credits.fetch_hosted_credits()
+    finally:
+        account_credits.reset_hosted_credits_cache()
+
+    assert read.kind is account_credits.HostedCreditsKindValue.OK
+    assert read.credits is not None
+    assert read.credits.total == 100_000
+    assert read.usage_url == "https://app.opensre.com/usage"
 
 
 def test_webapp_model_change_updates_the_route_before_shell_start(
