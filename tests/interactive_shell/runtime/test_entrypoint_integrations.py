@@ -364,11 +364,11 @@ def test_launch_banner_captures_shell_render_after_successful_first_paint(
         lambda **_kwargs: events.append("captured"),
     )
 
-    finish = main_entrypoint._start_launch_banner(
+    spin = main_entrypoint._start_launch_banner(
         Console(file=io.StringIO(), force_terminal=False),
         on_painted=lambda: events.append("captured"),
     )
-    finish()
+    spin.finish()
 
     assert events == ["rendered", "captured"]
 

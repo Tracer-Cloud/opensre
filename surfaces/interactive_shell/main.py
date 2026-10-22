@@ -184,33 +184,54 @@ def _prepare_shell_start(
     return True
 
 
+class _LaunchSpin:
+    """The wordmark spin a launch boots under, turning on a daemon thread.
+
+    End it exactly once, with :meth:`finish` or :meth:`abort`, before anything
+    else writes to the screen. Off a TTY the spin is a no-op.
+    """
+
+    def __init__(self, console: Console, *, on_painted: Callable[[], None] | None) -> None:
+        self._console = console
+        self._on_painted = on_painted
+        self._stop = threading.Event()
+        self._abort = threading.Event()
+        self._thread = threading.Thread(
+            target=animate_launch_wordmark,
+            args=(console,),
+            kwargs={"stop": self._stop, "abort": self._abort},
+            name="launch-banner-spin",
+            daemon=True,
+        )
+        self._thread.start()
+
+    @property
+    def aborted(self) -> bool:
+        """Whether :meth:`abort` ended the spin, so the launch must start another."""
+        return self._abort.is_set()
+
+    def finish(self) -> None:
+        """Stop the spin (after its minimum frames), wait for it, print the static banner."""
+        self._stop.set()
+        self._thread.join()
+        render_terminal_ui(self._console, animate=False)
+        if self._on_painted is not None:
+            self._on_painted()
+
+    def abort(self) -> None:
+        """End the spin at its next frame and wait until its rows are erased."""
+        self._abort.set()
+        self._thread.join()
+
+
 def _start_launch_banner(
     console: Console, *, on_painted: Callable[[], None] | None = None
-) -> Callable[[], None]:
-    """Spin the wordmark on a thread while the runtime boots; return the finisher.
+) -> _LaunchSpin:
+    """Spin the wordmark on a thread while the launch loads; return the spin.
 
-    The finisher stops the spin (after its minimum frames), waits for it, and
-    prints the static banner — call it before anything else writes to the
-    screen. Off a TTY the spin is a no-op and only the static banner prints.
+    ``on_painted`` fires when :meth:`_LaunchSpin.finish` prints the static banner.
     """
-    stop = threading.Event()
-    spinner = threading.Thread(
-        target=animate_launch_wordmark,
-        args=(console,),
-        kwargs={"stop": stop},
-        name="launch-banner-spin",
-        daemon=True,
-    )
-    spinner.start()
-
-    def finish() -> None:
-        stop.set()
-        spinner.join()
-        render_terminal_ui(console, animate=False)
-        if on_painted is not None:
-            on_painted()
-
-    return finish
+    return _LaunchSpin(console, on_painted=on_painted)
 
 
 def run_repl(
@@ -246,6 +267,20 @@ def run_repl(
         shell_rendered = True
         capture_interactive_shell_rendered(entrypoint="opensre_binary")
 
+    on_rendered = record_shell_rendered if record_shell else None
+    spin: _LaunchSpin | None = None
+
+    def start_spin() -> _LaunchSpin:
+        # Wipe the calling shell or completed sign-in screen so the REPL
+        # reads as its own screen, then load it under the launch animation.
+        repl_clear_screen()
+        return _start_launch_banner(out, on_painted=on_rendered)
+
+    def spin_while_validating() -> Callable[[], None]:
+        nonlocal spin
+        spin = start_spin()
+        return spin.abort
+
     finish_banner: Callable[[], None] | None = None
     tools_ready: Callable[[], None] | None = None
     try:
@@ -253,16 +288,17 @@ def run_repl(
             # The sign-in check and runtime boot mostly wait on the network;
             # the first turn's tool registry loads in that time instead of after.
             tools_ready = start_tool_registry_prewarm()
+            # A stored login is checked under the launch spin, so the first
+            # paint does not wait on the webapp; the gate aborts that spin
+            # before it prints anything for a login that is not active.
             if not pass_sign_in_gate(
-                out, on_screen=record_shell_rendered if record_shell else None
+                out, on_screen=on_rendered, while_validating=spin_while_validating
             ):
                 return 0
-            # Wipe the calling shell or completed sign-in screen so the REPL
-            # reads as its own screen, then boot it under the launch animation.
-            repl_clear_screen()
-            finish_banner = _start_launch_banner(
-                out, on_painted=record_shell_rendered if record_shell else None
-            )
+            if spin is None or spin.aborted:
+                # No spin ran during the check, or a sign-in screen replaced it.
+                spin = start_spin()
+            finish_banner = spin.finish
 
         return asyncio.run(
             run_repl_async(

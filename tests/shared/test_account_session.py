@@ -57,6 +57,25 @@ def test_incomplete_local_state_never_authenticates(
     assert status.authenticated is False
 
 
+def test_a_complete_login_is_handed_on_without_a_request_or_its_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shell reads local state before its first paint, so that read never waits on the app."""
+    monkeypatch.setattr(account_session, "load_account_record", _record)
+    monkeypatch.setattr(account_session, "resolve_account_token", lambda: "secret-token")
+
+    def _no_request(*_args: object, **_kwargs: object) -> httpx.Response:
+        raise AssertionError("local state must not reach the app")
+
+    monkeypatch.setattr(account_session.httpx, "get", _no_request)
+
+    login = account_session.local_account_status()
+
+    assert isinstance(login, account_session.StoredLogin)
+    assert login.app_url == "https://app.opensre.com"
+    assert "secret-token" not in repr(login)
+
+
 def test_webapp_validation_activates_account_and_hosted_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

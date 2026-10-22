@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import io
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 
 from config.constants import PRODUCT_DISPLAY_NAME, WELCOME_DESCRIPTION
@@ -158,6 +161,83 @@ def test_launch_banner_spins_once_in_place_on_tty(monkeypatch: object) -> None:
     assert "\n" not in animation.replace("\r\n", "")
     assert written.index("\x1b[?25l") < written.index("\x1b[1G")
     assert written.index("\x1b[?25h") < written.index("Welcome to OpenSRE CLI")
+
+
+class _SpinTTY:
+    """A TTY stdout that keeps each write and can react to each frame."""
+
+    def __init__(self) -> None:
+        self.writes: list[str] = []
+        self.on_frame: Callable[[], None] = lambda: None
+
+    def write(self, text: str) -> int:
+        self.writes.append(text)
+        if "\x1b[1m" in text:
+            self.on_frame()
+        return len(text)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return True
+
+    def frames(self) -> list[str]:
+        return [text for text in self.writes if "\x1b[1m" in text]
+
+
+def _spin_tty(monkeypatch: pytest.MonkeyPatch) -> tuple[_SpinTTY, Console]:
+    stdout = _SpinTTY()
+    monkeypatch.setattr("sys.stdout", stdout)
+    console = Console(file=stdout, force_terminal=True, color_system="truecolor", width=120)
+    return stdout, console
+
+
+@pytest.mark.parametrize("frames_before_abort", [0, 1])
+def test_an_aborted_launch_spin_ends_without_its_minimum_frames(
+    monkeypatch: pytest.MonkeyPatch, frames_before_abort: int
+) -> None:
+    """A rejected login must not wait out the spin before the gate can print."""
+    stdout, console = _spin_tty(monkeypatch)
+    monkeypatch.setattr(banner_module.time, "sleep", lambda _delay: None)
+    stop, abort = threading.Event(), threading.Event()
+    if frames_before_abort:
+        stdout.on_frame = abort.set
+    else:
+        abort.set()
+
+    banner_module.animate_launch_wordmark(console, stop=stop, abort=abort)
+
+    written = "".join(stdout.writes)
+    assert len(stdout.frames()) == frames_before_abort
+    # Only drawn rows are erased: rewinding over nothing would wipe what is above.
+    assert ("\x1b[1B" in written) is bool(frames_before_abort)
+    assert written.endswith("\x1b[?25h")
+
+
+def test_a_slow_launch_rests_the_spin_on_its_front_face(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A turn shorter than the launch must not leave a blank screen until the banner."""
+    stdout, console = _spin_tty(monkeypatch)
+    stop = threading.Event()
+    ticks = 0
+
+    def _sleep(_delay: float) -> None:
+        nonlocal ticks
+        ticks += 1
+        if ticks == 100:
+            stop.set()
+
+    monkeypatch.setattr(banner_module.time, "sleep", _sleep)
+
+    banner_module.animate_launch_wordmark(console, stop=stop)
+
+    frames = stdout.frames()
+    assert len(frames) == len(banner_module.build_wordmark_spin_frames()) + 1
+    # The last frame redraws the first one (the front face) in place.
+    assert frames[-1].endswith(frames[0].removeprefix("\x1b[?2026h"))
+    assert ticks == 100
+    assert stdout.writes[-3] == frames[-1]
+    assert "\x1b[1B" in stdout.writes[-2]
 
 
 def test_launch_banner_falls_back_to_title_on_narrow_terminals(monkeypatch: object) -> None:
