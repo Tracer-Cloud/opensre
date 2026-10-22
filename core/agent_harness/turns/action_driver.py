@@ -1118,6 +1118,12 @@ class _TurnCounts:
     handled: bool
 
 
+#: Closes a reply the provider kept cutting off (``stop_reason`` ``reply_interrupted``).
+_REPLY_CUT_OFF_NOTE = (
+    '_The model provider cut this reply off before it finished. Say "continue" for the rest._'
+)
+
+
 def _compose_response(
     result: Any,
     session: SessionState,
@@ -1142,6 +1148,10 @@ def _compose_response(
     waiting_for_choice = getattr(session, "pending_user_choice", None) is not None
     generic_text = _response_text_from_generic_results(result, tools_by_name)
     hint = _pop_turn_outcome_hint(session)
+    if getattr(result, "stop_reason", "") == "reply_interrupted":
+        # The reply still broke off after every continuation: say so, or it
+        # reads as finished mid-sentence.
+        hint = "\n".join(part for part in (_REPLY_CUT_OFF_NOTE, hint) if part)
     terminal = getattr(session, "terminal", None)
     pending_choice_response = getattr(terminal, "pending_choice_response", None)
     selected_choice = (
