@@ -1,6 +1,10 @@
 <div align="center">
 
 <p align="center">
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
   <img src="docs/logo/opensre-logo-white.svg" alt="OpenSRE" width="360" />
 </p>
 
@@ -90,7 +94,7 @@ For supported platforms and troubleshooting, see [Install locally](https://www.o
 - [Deployment](#deployment)
 - [How OpenSRE Works](#how-opensre-works)
 - [Capabilities & integrations](#capabilities--integrations)
-- [Contributing & development](#contributing--development)
+- [Integrations](#integrations)
 - [Security](#security)
 - [Telemetry](#telemetry)
 - [License](#license)
