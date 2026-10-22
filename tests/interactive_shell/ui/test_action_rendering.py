@@ -168,22 +168,24 @@ def test_streamed_commentary_previews_live_then_prints_once() -> None:
     assert spinner.reply_preview == ""
 
 
-def test_streamed_final_answer_stays_in_preview_until_the_turn_prints_it() -> None:
+def test_streamed_final_answer_prints_once_the_moment_its_response_completes() -> None:
     from surfaces.shared.terminal.output.console_state import set_turn_spinner
 
     observer, buffer = _observer_with_buffer()
     spinner = _started_turn_spinner()
     try:
         observer("message_update", {"content": "All done.", PARTIAL_MESSAGE_KEY: True})
-        observer("message_update", {"content": "All done.", "has_tool_calls": False})
+        # The unfinished paragraph waits in the prompt region, not the transcript.
         assert spinner.reply_preview == "All done."
+        assert buffer.getvalue() == ""
 
+        observer("message_update", {"content": "All done.", "has_tool_calls": False})
         observer("agent_end", {})
     finally:
         set_turn_spinner(None)
 
     assert spinner.reply_preview == ""
-    assert buffer.getvalue() == ""
+    assert buffer.getvalue().count("All done.") == 1
 
 
 def test_message_update_with_blank_content_prints_nothing() -> None:

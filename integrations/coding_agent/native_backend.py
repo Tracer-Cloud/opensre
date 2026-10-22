@@ -15,7 +15,7 @@ import logging
 import time
 
 from core.agent.run_io import AgentRunResult
-from core.agent_harness.agent_builder import AgentConfig, build_agent
+from core.agent_harness.runtime import AgentConfig, build_agent
 from core.llm.factory import LLMRole, get_llm
 from core.llm.readiness import llm_ready
 from core.llm.shared.llm_retry import LLMCreditExhaustedError

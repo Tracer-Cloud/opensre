@@ -25,7 +25,7 @@ from core.llm.transports.sdk.agent_clients import (
     BedrockAgentClient,
     OpenAIAgentClient,
 )
-from core.llm.types import LLMRequestCancelled, ToolCall
+from core.llm.types import LLMRequestCancelled, LLMStreamInterrupted, ToolCall
 from tests.utils.anthropic_streams import FakeMessageStream
 from tests.utils.openai_streams import FakeChunkStream, FakeResponseStream
 
@@ -203,11 +203,13 @@ def test_anthropic_failure_after_text_propagates_without_retry(
         )
 
     deltas: list[str] = []
-    with pytest.raises(RuntimeError, match="after output began: connection reset"):
+    with pytest.raises(LLMStreamInterrupted, match="after output began: connection reset") as cut:
         _anthropic_client(stream=stream).invoke(_USER, on_text_delta=deltas.append)
 
     assert len(calls) == 1
     assert deltas == ["Let me "]
+    # The text the caller already showed comes back, so the reply can be continued.
+    assert cut.value.partial_text == "Let me "
 
 
 def test_anthropic_cancel_mid_reply_closes_the_response_without_retry() -> None:

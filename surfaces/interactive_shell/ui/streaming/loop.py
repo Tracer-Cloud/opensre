@@ -174,6 +174,11 @@ class ReplyStream:
         """Print the text still held as the reply's latest paragraph."""
         self._flush_paragraphs(force=True)
 
+    def discard_pending(self) -> None:
+        """Drop the text still held, for a reply that stopped before it was finished."""
+        self._para_buffer = []
+        self._para_chars = 0
+
     def finish(self) -> StreamRenderResult:
         """Print what is left and end the reply with its closing blank row."""
         self.flush()

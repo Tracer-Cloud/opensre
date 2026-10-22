@@ -355,7 +355,7 @@ class ActionRenderObserver:
             # A finished closing stays open for the turn's remaining parts; a
             # cancelled run prints nothing after it, so its reply ends here.
             if data.get("cancelled"):
-                self._finish_live_reply()
+                self._finish_live_reply(keep_unprinted=False)
             self._clear_reply_preview()
             # Safety flush: the batch drain below normally empties the buffer,
             # but a turn that ends without a clean drain still gets its log.
@@ -507,13 +507,19 @@ class ActionRenderObserver:
         )
         return True
 
-    def _finish_live_reply(self) -> None:
-        """End an open live reply where it stands and remember it was shown."""
+    def _finish_live_reply(self, *, keep_unprinted: bool = True) -> None:
+        """End an open live reply where it stands and remember it was shown.
+
+        A cancelled reply drops the text not yet printed: it never finished,
+        so it stays off the transcript like any reply stopped before it began.
+        """
         terminal = self.session.terminal
         live = terminal.live_reply
         if live is None:
             return
         terminal.live_reply = None
+        if not keep_unprinted:
+            live.discard_pending()
         if live.printed or live.pending.strip():
             live.finish()
             terminal.streamed_replies.append(live.text.strip())
