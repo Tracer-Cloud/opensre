@@ -1,6 +1,10 @@
 """Kubernetes client for EKS — builds in-memory config using STS presigned token.
 
 Programmatic equivalent of `aws eks get-token` — no kubectl binary required.
+
+The AWS and Kubernetes SDKs load on first use: every EKS tool imports this
+module, so the tool registry pays for it while listing tools, and the
+Kubernetes client alone takes most of a second to import.
 """
 
 from __future__ import annotations
@@ -10,22 +14,20 @@ import logging
 import os
 import tempfile
 import weakref
-from typing import Any
-
-import boto3
-import botocore.auth
-import botocore.awsrequest
-import botocore.credentials
-import botocore.session
-from kubernetes import client as k8s_client
+from typing import TYPE_CHECKING, Any
 
 from config.constants import OPENSRE_TMP_DIR, ensure_opensre_tmp_dir
 from integrations.eks.aws_credentials import stored_credentials_to_aws_creds
+
+if TYPE_CHECKING:
+    from kubernetes import client as k8s_client
 
 logger = logging.getLogger(__name__)
 
 
 def _assume_role(role_arn: str, external_id: str, session_name: str) -> dict[str, Any]:
+    import boto3
+
     logger.info("[eks] Assuming role: %s (external_id=%s)", role_arn, external_id or "none")
     sts = boto3.client("sts")
     kwargs: dict = {"RoleArn": role_arn, "RoleSessionName": session_name}
@@ -43,6 +45,10 @@ def _generate_eks_token(cluster_name: str, assumed_creds: dict[str, Any], region
     x-k8s-aws-id header included in the canonical request before signing.
     This matches exactly what aws-iam-authenticator and `aws eks get-token` do.
     """
+    import botocore.auth
+    import botocore.awsrequest
+    import botocore.credentials
+
     creds = botocore.credentials.Credentials(
         access_key=assumed_creds["AccessKeyId"],
         secret_key=assumed_creds["SecretAccessKey"],
@@ -94,6 +100,10 @@ def build_k8s_clients(
     Returns (CoreV1Api, AppsV1Api) ready to query pods, events, nodes, deployments.
     No kubeconfig file is written to disk.
     """
+    import boto3
+    import botocore.session
+    from kubernetes import client as k8s_client
+
     stored = stored_credentials_to_aws_creds(credentials)
     if stored is not None:
         # Explicit stored-integration credentials path (highest priority).
