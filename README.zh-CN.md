@@ -1,10 +1,6 @@
 <div align="center">
 
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
-</p>
-
-<p align="center">
   <img src="docs/logo/opensre-logo-white.svg" alt="OpenSRE" width="360" />
 </p>
 
@@ -29,6 +25,10 @@
       height="30"
     />
   </a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
@@ -285,7 +285,7 @@ OpenSRE 的设计充分考虑生产环境需求：LLM 提示词结构化且可�
 
 ## 遥测
 
-第一方产品分析和 Sentry 错误追踪**默认启用，可自行关闭**。快速关闭方式：
+产品使用情况分析和 Sentry 错误监控**默认启用，可自行关闭**。快速关闭方式：
 
 ```bash
 export OPENSRE_NO_TELEMETRY=1
