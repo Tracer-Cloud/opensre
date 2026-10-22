@@ -2,10 +2,43 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from config.llm_credentials import resolve_env_credential
 from surfaces.cli.app import cli
+
+
+def test_login_uses_shared_subcommand_selectors(monkeypatch) -> None:
+    from surfaces.cli.commands import auth
+
+    seen = []
+    choices = iter(["subscriptions", "chatgpt"])
+
+    def select(**kwargs):
+        seen.append(kwargs)
+        return next(choices)
+
+    monkeypatch.setattr(auth, "repl_choose_subcommand", select, raising=False)
+    monkeypatch.setattr(auth, "_configured_profile_name", lambda: "chatgpt")
+    assert auth._prompt_provider().name == "chatgpt"
+    assert seen[0]["parent"] == "/login"
+    assert seen[0]["initial_value"] == "subscriptions"
+    assert seen[1]["initial_value"] == "chatgpt"
+    assert [name for name, _ in seen[1]["options"]] == ["chatgpt"]
+
+
+def test_subscription_model_selector_can_cancel(monkeypatch) -> None:
+    import click
+
+    from surfaces.cli.commands import subscription_auth
+
+    monkeypatch.setattr(subscription_auth.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        subscription_auth, "repl_choose_subcommand", lambda **_kwargs: None, raising=False
+    )
+    with pytest.raises(click.Abort):
+        subscription_auth.choose_subscription_model([("gpt-test", "Test model")])
 
 
 def _patch_auth_env(monkeypatch, tmp_path: Path) -> Path:

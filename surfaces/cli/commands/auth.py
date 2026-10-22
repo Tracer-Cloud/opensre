@@ -7,16 +7,12 @@ import webbrowser
 from collections.abc import Iterable
 
 import click
-import questionary
 from rich.console import Console
 from rich.text import Text
 
-from infrastructure.terminal.prompt_support import (
-    QUESTIONARY_QMARK,
-    questionary_prompt_style,
-)
 from infrastructure.terminal.theme import BOLD_BRAND, ERROR, HIGHLIGHT, SECONDARY, WARNING
 from surfaces.shared.llm_setup.auth_profiles import (
+    AuthKind,
     ProviderAuthProfile,
     iter_auth_profiles,
     resolve_auth_profile,
@@ -28,6 +24,7 @@ from surfaces.shared.llm_setup.auth_service import (
     provider_status,
     verify_provider,
 )
+from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
@@ -44,10 +41,6 @@ def _resolve_or_raise(provider: str) -> ProviderAuthProfile:
         ) from exc
 
 
-def _provider_choice(profile: ProviderAuthProfile) -> questionary.Choice:
-    return questionary.Choice(f"{profile.name} ({profile.label})", value=profile.name)
-
-
 def _configured_profile_name() -> str | None:
     """The auth-profile name matching the install's active LLM provider, if any."""
     from config.llm_settings import get_configured_llm_provider
@@ -60,36 +53,24 @@ def _configured_profile_name() -> str | None:
 
 
 def _prompt_provider() -> ProviderAuthProfile:
-    kind = questionary.select(
-        "Choose how to connect:",
-        choices=[
-            questionary.Choice("API keys (provider API billing)", value="api_key"),
-            questionary.Choice("Subscriptions (Continue with ChatGPT)", value="subscription"),
-        ],
-        qmark=QUESTIONARY_QMARK,
-        style=questionary_prompt_style(),
-    ).ask()
+    configured = _configured_profile_name()
+    current = _resolve_or_raise(configured) if configured else None
+    kind = repl_choose_subcommand(
+        parent="/login",
+        options=(
+            ("api-keys", "Provider API billing"),
+            ("subscriptions", "Continue with ChatGPT"),
+        ),
+        initial_value="subscriptions" if current and current.kind == "subscription" else "api-keys",
+    )
     if kind is None:
         raise click.Abort()
-    choices = [_provider_choice(profile) for profile in iter_auth_profiles(kind)]
-
-    configured = _configured_profile_name()
-    default = next(
-        (
-            choice
-            for choice in choices
-            if isinstance(choice, questionary.Choice) and choice.value == configured
-        ),
-        None,
+    credential_kind: AuthKind = "subscription" if kind == "subscriptions" else "api_key"
+    provider = repl_choose_subcommand(
+        parent=f"/login {kind}",
+        options=[(profile.name, profile.label) for profile in iter_auth_profiles(credential_kind)],
+        initial_value=configured,
     )
-    provider = questionary.select(
-        "Choose a provider:",
-        choices=choices,
-        default=default,
-        qmark=QUESTIONARY_QMARK,
-        style=questionary_prompt_style(),
-        instruction="(use arrow keys)",
-    ).ask()
     if provider is None:
         raise click.Abort()
     return _resolve_or_raise(provider)

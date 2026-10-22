@@ -7,9 +7,8 @@ import webbrowser
 from collections.abc import Callable
 
 import click
-import questionary
 
-from infrastructure.terminal.prompt_support import QUESTIONARY_QMARK, questionary_prompt_style
+from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 
 
 def present_authorization(*, open_browser: bool) -> Callable[[str], None]:
@@ -33,12 +32,10 @@ def choose_subscription_model(models: list[tuple[str, str]]) -> str:
     if not sys.stdin.isatty():
         click.echo(f"Using model: {models[0][0]} (override with --model).")
         return models[0][0]
-    selected = questionary.select(
-        "Choose a ChatGPT model:",
-        choices=[questionary.Choice(f"{label} ({slug})", value=slug) for slug, label in models],
-        qmark=QUESTIONARY_QMARK,
-        style=questionary_prompt_style(),
-    ).ask()
+    selected = repl_choose_subcommand(
+        parent="/login chatgpt model",
+        options=models,
+    )
     if selected is None:
         raise click.Abort()
     return str(selected)
