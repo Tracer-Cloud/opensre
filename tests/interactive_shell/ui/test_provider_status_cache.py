@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from io import StringIO
 
@@ -12,7 +13,7 @@ from prompt_toolkit.output import DummyOutput
 from rich.console import Console
 
 from config.account import AccountLLMRoute
-from surfaces.interactive_shell.runtime import shell_turn_execution
+from surfaces.interactive_shell.runtime import shell_turn_execution, turn_host
 from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.runtime.turn_host import AgentTurnResources, run_agent_turn
@@ -62,3 +63,40 @@ async def test_redraws_do_not_resolve_credentials_and_completed_turn_refreshes_r
             assert reads[-1] != threading.get_ident()
         finally:
             await builder.close()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_blocked_display_refresh_stops_spinner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def blocked_route() -> tuple[str, str]:
+        loop.call_soon_threadsafe(started.set)
+        release.wait()
+        return ("chatgpt", "local-model")
+
+    monkeypatch.setattr(turn_host, "detect_provider_model", blocked_route)
+    monkeypatch.setattr(shell_turn_execution, "execute_shell_turn", lambda *_args, **_kwargs: None)
+    spinner = SpinnerState()
+    runtime = AgentTurnResources(
+        session=Session(),
+        state=ReplState(),
+        spinner=spinner,
+        invalidate_prompt=lambda: None,
+        console=Console(file=StringIO()),
+    )
+    task = asyncio.create_task(run_agent_turn(runtime, "check service health"))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=2)
+        assert spinner.streaming
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not spinner.streaming
+    finally:
+        release.set()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

@@ -420,8 +420,10 @@ async def _run_agent_turn_loop(
         await emit(AgentEvent(type="turn_error", error=exc))
     finally:
         runtime.state.finish_dispatch(dispatch_cancel)
-        runtime.session.terminal.provider_model = await asyncio.to_thread(detect_provider_model)
-        await emit(AgentEvent(type="turn_end"))
+        try:
+            runtime.session.terminal.provider_model = await asyncio.to_thread(detect_provider_model)
+        finally:
+            await emit(AgentEvent(type="turn_end"))
 
 
 async def run_input_loop(
