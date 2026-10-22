@@ -9,7 +9,6 @@ from typing import Any, cast
 from openai import OpenAIError
 from pydantic import BaseModel
 
-from config.llm_models import DEFAULT_MAX_TOKENS
 from core.context_budget import strip_internal_message_markers
 from core.llm.shared.openai_chat_completions import (
     build_assistant_message,
@@ -75,11 +74,9 @@ class ChatGPTResponsesAgentClient:
         self,
         model: str,
         *,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
         usage_callback: Callable[..., object] = emit_usage,
     ) -> None:
         self.model_id = model
-        self._max_tokens = max_tokens
         self._usage_callback = usage_callback
 
     def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
@@ -110,7 +107,6 @@ class ChatGPTResponsesAgentClient:
             "input": responses_input(strip_internal_message_markers(messages)),
             "store": False,
             "stream": True,
-            "max_output_tokens": self._max_tokens,
             "num_retries": 0,
             "timeout": 120,
             "include": ["reasoning.encrypted_content"],
@@ -118,7 +114,14 @@ class ChatGPTResponsesAgentClient:
         if system:
             kwargs["instructions"] = system
         if tools:
-            kwargs["tools"] = responses_tool_specs(tools)
+            kwargs["input"].insert(
+                0,
+                {
+                    "type": "additional_tools",
+                    "role": "developer",
+                    "tools": responses_tool_specs(tools),
+                },
+            )
         stream = None
         completed = False
         try:
@@ -197,11 +200,10 @@ class ChatGPTResponsesLLMClient:
         self,
         model: str,
         *,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
         usage_callback: Callable[..., object] | None = None,
     ) -> None:
         self._agent = ChatGPTResponsesAgentClient(
-            model, max_tokens=max_tokens, usage_callback=usage_callback or emit_usage
+            model, usage_callback=usage_callback or emit_usage
         )
 
     def with_config(self, **_kwargs: Any) -> ChatGPTResponsesLLMClient:

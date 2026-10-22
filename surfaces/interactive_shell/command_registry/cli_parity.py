@@ -362,10 +362,11 @@ def run_cli_command(
         set_turn_outcome_hint(session, format_wizard_cli_outcome(args, exit_code=exit_code))
     ok = _cli_command_succeeded(exit_code)
     if ok and args[:2] == ["auth", "login"] and not headless:
-        from config.local_env import bootstrap_opensre_env
         from core.llm.factory import reset_llm_clients
+        from surfaces.shared.llm_setup.env_sync import reload_provider_selection
 
-        bootstrap_opensre_env(override=True)
+        if "--no-set-provider" not in args:
+            reload_provider_selection()
         reset_llm_clients()
     if session is not None and not ok and not backgrounded:
         session.mark_latest(ok=False, kind="slash")

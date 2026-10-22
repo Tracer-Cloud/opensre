@@ -10,7 +10,7 @@ from config.llm_auth.records import resolve_provider_auth_record, save_provider_
 from core.llm.subscriptions import chatgpt
 from core.llm.subscriptions.types import SubscriptionLoginRequired
 from surfaces.shared.llm_setup.auth_profiles import ProviderAuthProfile, provider_for_profile
-from surfaces.shared.llm_setup.auth_service import AuthSetupResult, AuthStatus
+from surfaces.shared.llm_setup.auth_results import AuthSetupResult, AuthStatus
 from surfaces.shared.llm_setup.env_sync import sync_provider_env
 from surfaces.shared.llm_setup.persist import AuthSetupError
 

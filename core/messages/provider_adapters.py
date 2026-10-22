@@ -206,10 +206,10 @@ def adapter_for(llm: Any) -> MessageAdapter[Any]:
 
 def _is_litellm_agent_client(llm: Any) -> bool:
     cls = type(llm)
-    return (
-        cls.__module__ == "core.llm.transports.litellm.clients"
-        and cls.__name__ == "LiteLLMAgentClient"
-    )
+    return (cls.__module__, cls.__name__) in {
+        ("core.llm.transports.litellm.clients", "LiteLLMAgentClient"),
+        ("core.llm.transports.litellm.responses", "ChatGPTResponsesAgentClient"),
+    }
 
 
 def _to_converse_text_blocks(content: RuntimeContent) -> RuntimeContent:

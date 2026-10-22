@@ -11,6 +11,8 @@ import pytest
 
 from core.llm.subscriptions.types import SubscriptionAuth, SubscriptionLoginRequired
 from core.llm.transports.litellm import responses as adapter
+from core.llm.types import ToolCall
+from core.messages import MessageMapper
 
 
 def _response(output: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -66,6 +68,8 @@ def wire(monkeypatch):
         state["requests"].append(body)
         assert body["model"] == "gpt-6.1-sol"
         assert body["store"] is False and body["stream"] is True
+        assert "max_output_tokens" not in body
+        assert not body.get("tools")
         events = state["events"] or [
             {"type": "response.completed", "sequence_number": 0, "response": _response()}
         ]
@@ -127,7 +131,10 @@ def test_real_litellm_http_preserves_tool_calls_reasoning_and_usage(wire, recwar
     assert replay[0]["encrypted_content"] == "encrypted-replay"
     assert replay[1]["call_id"] == "call_1"
     assert replay[2] == {"type": "function_call_output", "call_id": "call_1", "output": "healthy"}
-    assert wire["requests"][0]["tools"][0]["name"] == "lookup"
+    tool_item = wire["requests"][0]["input"][0]
+    assert tool_item["type"] == "additional_tools"
+    assert tool_item["role"] == "developer"
+    assert tool_item["tools"][0]["name"] == "lookup"
     assert not any("ResponseAPIUsage" in str(warning.message) for warning in recwarn)
 
 
@@ -168,6 +175,23 @@ def test_missing_subscription_never_falls_back_to_an_api_key(wire, monkeypatch):
             [{"role": "user", "content": "hi"}]
         )
     assert wire["requests"] == []
+
+
+def test_multiple_tool_results_round_trip_through_message_mapper(wire):
+    client = adapter.ChatGPTResponsesAgentClient("gpt-6.1-sol")
+    mapper = MessageMapper(client)
+    calls = [
+        ToolCall(id="call_1", name="lookup", input={"service": "api"}),
+        ToolCall(id="call_2", name="lookup", input={"service": "worker"}),
+    ]
+    assistant = mapper.to_synthetic_assistant_provider_message(calls)
+    results = mapper.to_tool_result_runtime_message(calls, ["healthy", "degraded"])
+    assert len(results.provider_payloads) == 2
+    client.invoke([assistant, *mapper.to_provider_messages([results])])
+    assert wire["requests"][-1]["input"][-2:] == [
+        {"type": "function_call_output", "call_id": "call_1", "output": json.dumps("healthy")},
+        {"type": "function_call_output", "call_id": "call_2", "output": json.dumps("degraded")},
+    ]
 
 
 def test_reasoning_usage_is_counted_once(wire):
@@ -236,7 +260,7 @@ def test_factory_routes_every_role_to_subscription_and_refreshes_model_cache(wir
         agent = get_llm(LLMRole.AGENT)
         assert isinstance(agent, adapter.ChatGPTResponsesAgentClient)
         agent.invoke([{"role": "user", "content": "hello"}])
-        assert wire["requests"][-1]["max_output_tokens"] == 512
+        assert "max_output_tokens" not in wire["requests"][-1]
         for role in (LLMRole.REASONING, LLMRole.CLASSIFICATION, LLMRole.TOOLCALL):
             assert isinstance(get_llm(role), adapter.ChatGPTResponsesLLMClient)
         monkeypatch.setenv("CHATGPT_MODEL", "another-model")

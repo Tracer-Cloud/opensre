@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 from config.llm_auth.credentials import (
@@ -29,34 +28,11 @@ from surfaces.shared.llm_setup.auth_profiles import (
     provider_for_profile,
     resolve_auth_profile,
 )
+from surfaces.shared.llm_setup.auth_results import AuthSetupResult, AuthStatus
 from surfaces.shared.llm_setup.catalog import WizardCredentialKind
 from surfaces.shared.llm_setup.env_sync import sync_provider_env
 from surfaces.shared.llm_setup.persist import AuthSetupError, persist_api_key_secret
 from surfaces.shared.llm_setup.validation import validate_provider_credentials
-
-
-@dataclass(frozen=True)
-class AuthStatus:
-    """Status row for one provider auth path."""
-
-    provider: str
-    label: str
-    authenticated: bool
-    source: str
-    detail: str
-    verified: bool = False
-    stale: bool = False
-
-
-@dataclass(frozen=True)
-class AuthSetupResult:
-    """Result from configuring a provider auth path."""
-
-    provider: str
-    model: str
-    source: str
-    detail: str
-    env_path: Path | None
 
 
 def _save_auth_record(
@@ -201,8 +177,6 @@ def logout_provider(raw_name: str) -> str:
 
 __all__ = [
     "AuthSetupError",
-    "AuthSetupResult",
-    "AuthStatus",
     "configure_api_key_provider",
     "logout_provider",
     "persist_api_key_secret",

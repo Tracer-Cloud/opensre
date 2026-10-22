@@ -55,9 +55,7 @@ def build_litellm_agent_client(
     if provider == "chatgpt":
         from core.llm.provider_models import resolve_provider_models
 
-        return ChatGPTResponsesAgentClient(
-            resolve_provider_models(settings, provider)[0], max_tokens=settings.max_tokens
-        )
+        return ChatGPTResponsesAgentClient(resolve_provider_models(settings, provider)[0])
     _guard_sdk_only_provider(provider)
     from core.llm.providers.provider_registry import FIRST_PARTY_PROVIDERS
 
@@ -127,7 +125,6 @@ def build_litellm_llm_client(
 
         return ChatGPTResponsesLLMClient(
             resolve_provider_models(settings, provider)[0],
-            max_tokens=settings.max_tokens,
             usage_callback=usage_callback,
         )
     _guard_sdk_only_provider(provider)
