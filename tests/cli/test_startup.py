@@ -344,6 +344,36 @@ def test_fast_help_does_not_import_vendor_sdks() -> None:
     assert "CMDS none" in result.stdout, result.stdout + result.stderr
 
 
+def test_startup_registers_vendor_adapters_without_their_setup_chains() -> None:
+    """Every command pays ``startup.run``; harness registration must stay cheap.
+
+    Registration imports small vendor leaves (anchor parsers, detectors, metric
+    drafts). Their package roots must not drag in the setup wizard, verifier,
+    HTTP client or cloud SDK that only setup and live queries use.
+    """
+    lazy = (
+        "integrations.aws.setup",
+        "integrations.grafana.client",
+        "integrations.grafana.setup",
+        "boto3",
+        "botocore",
+        "requests",
+    )
+    probe = (
+        "import sys; from surfaces.cli import startup; from surfaces.cli.app import cli; "
+        "startup.run(cli, []); "
+        f"loaded = [n for n in {lazy!r} if n in sys.modules]; "
+        "print('LOADED', ','.join(loaded) or 'none')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "LOADED none" in result.stdout, result.stdout + result.stderr
+
+
 def test_subcommand_help_still_loads_that_command(capsys: pytest.CaptureFixture[str]) -> None:
     """``opensre ask --help`` must print real options from the ask command module."""
     from surfaces.cli.app import main

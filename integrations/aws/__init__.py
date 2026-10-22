@@ -1,9 +1,15 @@
-"""AWS integration classifier."""
+"""AWS integration classifier.
+
+``AWS_SETUP`` is re-exported lazily: harness registration imports small leaves
+of this package at every CLI startup, and those must not pull the
+setup/verifier chain (and with it ``boto3``).
+"""
 
 from __future__ import annotations
 
+import importlib
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.aws.role_mode_gate import (
@@ -15,10 +21,19 @@ from integrations.aws.role_mode_gate import (
     RoleGateChoice,
     gate_role_mode,
 )
-from integrations.aws.setup import AWS_SETUP
 from integrations.config_models import AWSIntegrationConfig
 
+if TYPE_CHECKING:
+    from integrations.aws.setup import AWS_SETUP
+
 logger = logging.getLogger(__name__)
+
+
+def __getattr__(name: str) -> object:
+    """Lazily re-export ``AWS_SETUP`` from the setup submodule (PEP 562)."""
+    if name == "AWS_SETUP":
+        return importlib.import_module("integrations.aws.setup").AWS_SETUP
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _text(credentials: dict[str, Any], key: str, default: str = "") -> str:
