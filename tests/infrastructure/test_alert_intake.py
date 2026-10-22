@@ -19,6 +19,7 @@ _REMOTE = ("203.0.113.9", 40000)
 @pytest.fixture(autouse=True)
 def inbox(monkeypatch: pytest.MonkeyPatch) -> Iterator[AlertInbox]:
     monkeypatch.delenv("OPENSRE_ALERT_LISTENER_TOKEN", raising=False)
+    monkeypatch.delenv("OPENSRE_GATEWAY_LISTENER_TOKEN", raising=False)
     box = AlertInbox(maxsize=3)
     set_current_inbox(box)
     yield box
@@ -71,3 +72,40 @@ def test_loopback_post_with_a_rebound_host_is_forbidden() -> None:
 def test_loopback_post_from_a_local_page_is_accepted(client: TestClient) -> None:
     resp = client.post("/alerts", json={"text": "x"}, headers={"Origin": "http://localhost:3000"})
     assert resp.status_code == HTTPStatus.ACCEPTED
+
+
+def test_per_tenant_token_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENSRE_GATEWAY_LISTENER_TOKEN", "tenant-a")
+    remote = TestClient(build_alert_intake_app(), client=_REMOTE)
+    resp = remote.post("/alerts", json={"text": "x"}, headers={"Authorization": "Bearer tenant-a"})
+    assert resp.status_code == HTTPStatus.ACCEPTED
+
+
+def test_another_tenants_token_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The point of the per-tenant token: one gateway's token opens only it.
+    monkeypatch.setenv("OPENSRE_GATEWAY_LISTENER_TOKEN", "tenant-a")
+    remote = TestClient(build_alert_intake_app(), client=_REMOTE)
+    resp = remote.post("/alerts", json={"text": "x"}, headers={"Authorization": "Bearer tenant-b"})
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_legacy_fleet_token_still_opens_a_rolling_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Migration window: the control plane may still present the fleet token.
+    monkeypatch.setenv("OPENSRE_GATEWAY_LISTENER_TOKEN", "tenant-a")
+    monkeypatch.setenv("OPENSRE_ALERT_LISTENER_TOKEN", "fleet")
+    remote = TestClient(build_alert_intake_app(), client=_REMOTE)
+    for token in ("tenant-a", "fleet"):
+        resp = remote.post(
+            "/alerts", json={"text": "x"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == HTTPStatus.ACCEPTED, token
+
+
+def test_a_configured_token_closes_the_loopback_bypass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENSRE_GATEWAY_LISTENER_TOKEN", "tenant-a")
+    local = TestClient(build_alert_intake_app(), client=_LOOPBACK, base_url="http://127.0.0.1")
+    assert local.post("/alerts", json={"text": "x"}).status_code == HTTPStatus.UNAUTHORIZED

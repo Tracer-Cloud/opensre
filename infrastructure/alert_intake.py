@@ -33,7 +33,23 @@ logger = logging.getLogger(__name__)
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
+#: This organization's own listener token, injected per tenant by the control
+#: plane. A hosted gateway is reachable from the internet on its prompt port,
+#: so the token guarding it must name one tenant: a token read out of one
+#: gateway must not open any other.
+_GATEWAY_LISTENER_TOKEN_ENV = "OPENSRE_GATEWAY_LISTENER_TOKEN"
+#: The fleet-wide token every gateway used to share. Still accepted so a
+#: running gateway keeps serving while the fleet rolls onto per-tenant tokens;
+#: dropped from task definitions once every gateway carries its own.
+_LEGACY_LISTENER_TOKEN_ENV = "OPENSRE_ALERT_LISTENER_TOKEN"
+
 router = APIRouter()
+
+
+def _accepted_listener_tokens() -> list[str]:
+    """Bearer tokens this process accepts, the tenant's own first."""
+    names = (_GATEWAY_LISTENER_TOKEN_ENV, _LEGACY_LISTENER_TOKEN_ENV)
+    return [value for name in names if (value := os.environ.get(name, "").strip())]
 
 
 def _current_inbox() -> AlertInbox:
@@ -49,13 +65,20 @@ def require_local_or_token(request: Request) -> JSONResponse | None:
     """Bearer-token auth when configured; otherwise loopback callers only.
 
     The trust boundary shared by every mutating endpoint behind the alert
-    listener (``/alerts``): a
-    configured token, or a local caller.
+    listener (``/alerts``, ``/v1/prompt``, ``/v1/loops/sync``): a configured
+    token, or a local caller.
     """
-    token = os.environ.get("OPENSRE_ALERT_LISTENER_TOKEN")
-    if token:
+    accepted = _accepted_listener_tokens()
+    if accepted:
         supplied = request.headers.get("authorization", "")
-        if hmac.compare_digest(supplied, f"Bearer {token}"):
+        # Every accepted token is compared, without short-circuiting, so a
+        # wrong token takes the same time to reject however much of it was
+        # right and whichever token the caller was reaching for.
+        matched = False
+        for token in accepted:
+            if hmac.compare_digest(supplied, f"Bearer {token}"):
+                matched = True
+        if matched:
             return None
         return JSONResponse({"error": "unauthorized"}, status_code=HTTPStatus.UNAUTHORIZED)
     client_host = request.client.host if request.client else ""
@@ -64,7 +87,7 @@ def require_local_or_token(request: Request) -> JSONResponse | None:
             return JSONResponse({"error": "forbidden"}, status_code=HTTPStatus.FORBIDDEN)
         return None
     return JSONResponse(
-        {"error": "set OPENSRE_ALERT_LISTENER_TOKEN to accept non-loopback callers"},
+        {"error": f"set {_GATEWAY_LISTENER_TOKEN_ENV} to accept non-loopback callers"},
         status_code=HTTPStatus.FORBIDDEN,
     )
 
