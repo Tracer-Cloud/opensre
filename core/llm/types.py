@@ -24,6 +24,19 @@ class LLMRequestCancelled(Exception):
     """
 
 
+class LLMStreamInterrupted(Exception):
+    """A streamed reply broke off after some of its text reached the caller.
+
+    Never retried as is: a second attempt would deliver that text again.
+    ``partial_text`` is everything already passed to ``on_text_delta``, so the
+    caller can keep it and ask the model to continue from where it stopped.
+    """
+
+    def __init__(self, message: str, *, partial_text: str) -> None:
+        super().__init__(message)
+        self.partial_text = partial_text
+
+
 @runtime_checkable
 class SchemaDescribedTool(Protocol):
     """The three attributes a provider reads to build a tool-schema payload.
@@ -196,6 +209,7 @@ __all__ = [
     "CancelProbe",
     "CliLLMClient",
     "LLMRequestCancelled",
+    "LLMStreamInterrupted",
     "LLMResponse",
     "LLMRoute",
     "ModelType",

@@ -315,6 +315,11 @@ def tool_call_display(tool_name: str, args: dict[str, Any]) -> tuple[str, str]:
     return label, strip_terminal_controls(content)
 
 
+#: Prose a live reply holds in the prompt region before printing at a sentence
+#: break, so a long paragraph reaches the transcript every line or two.
+_LIVE_REPLY_FLUSH_CHARS = 240
+
+
 class ActionRenderObserver:
     """Agent event observer that records planner turns not owned by action tools.
 
@@ -338,9 +343,11 @@ class ActionRenderObserver:
             self.session.terminal.streamed_replies.clear()
             return
         if kind == "llm_start":
-            # A reply still open here was not the last one (a conclusion the
+            # A call that continues a cut-off reply prints into the same block.
+            # Any other reply still open was not the last one (a conclusion the
             # host sent back): it ends where it stands.
-            self._finish_live_reply()
+            if not data.get("continues_reply"):
+                self._finish_live_reply()
             self._clear_reply_preview()
             self._set_spinner_phase(SpinnerState.THINKING_PHASE)
             return
@@ -465,6 +472,7 @@ class ActionRenderObserver:
                 self.console,
                 before_first_paragraph=partial(flush_action_log, self.console, self.session),
                 transform=strip_plan_snapshots,
+                partial_flush_chars=_LIVE_REPLY_FLUSH_CHARS,
             )
             terminal.live_reply = live
         live.feed(str(data.get("content") or ""))
@@ -492,7 +500,11 @@ class ActionRenderObserver:
         if not live.printed:
             return False
         live.finish()
-        terminal.streamed_replies.append(str(data.get("content") or "").strip())
+        # The whole printed reply and this response's own text: after a cut-off
+        # the transcript holds them as separate assistant messages.
+        terminal.streamed_replies.extend(
+            (live.text.strip(), str(data.get("content") or "").strip())
+        )
         return True
 
     def _finish_live_reply(self) -> None:

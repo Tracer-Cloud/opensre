@@ -89,6 +89,7 @@ from core.llm.types import (
     AgentLLMResponse,
     CancelProbe,
     LLMRequestCancelled,
+    LLMStreamInterrupted,
     ModelType,
     SchemaDescribedTool,
     TextDeltaCallback,
@@ -96,13 +97,6 @@ from core.llm.types import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class _InterruptedStreamError(RuntimeError):
-    """A streamed response failed after some of its text reached the caller.
-
-    Never retried: a second attempt would deliver that text again.
-    """
 
 
 def _raise_if_stopped(should_stop: CancelProbe | None, provider: str) -> None:
@@ -305,7 +299,7 @@ class AnthropicAgentClient:
                     kwargs, stream=stream, on_text_delta=on_text_delta, should_stop=should_stop
                 )
                 break
-            except (_InterruptedStreamError, LLMRequestCancelled):
+            except (LLMStreamInterrupted, LLMRequestCancelled):
                 raise
             except AuthenticationError as err:
                 raise RuntimeError(self._authentication_error_message()) from err
@@ -488,14 +482,14 @@ class AnthropicAgentClient:
         """Send one Messages request and return the complete ``Message``.
 
         Streamed, text goes to ``on_text_delta`` as it arrives; a failure after
-        that raises :class:`_InterruptedStreamError` so the caller does not retry.
+        that raises :class:`LLMStreamInterrupted` with the text delivered so far.
         ``should_stop`` is asked before sending and at every event, so a reply
         still thinking or writing a tool call stops too.
         """
         if not stream:
             return self._client.messages.create(**kwargs)
         _raise_if_stopped(should_stop, self.provider_name)
-        delivered = False
+        delivered: list[str] = []
         try:
             with self._client.messages.stream(**kwargs) as message_stream:
                 for event in message_stream:
@@ -507,7 +501,7 @@ class AnthropicAgentClient:
                         and event.delta.text
                         and on_text_delta is not None
                     ):
-                        delivered = True
+                        delivered.append(event.delta.text)
                         on_text_delta(event.delta.text)
                 return message_stream.get_final_message()
         except LLMRequestCancelled:
@@ -515,8 +509,9 @@ class AnthropicAgentClient:
         except Exception as err:
             if not delivered:
                 raise
-            raise _InterruptedStreamError(
-                f"{self.provider_name} response stream failed after output began: {err}"
+            raise LLMStreamInterrupted(
+                f"{self.provider_name} response stream failed after output began: {err}",
+                partial_text="".join(delivered),
             ) from err
 
     def _streaming_refused(self, err: Exception) -> bool:
@@ -1031,7 +1026,7 @@ class OpenAIAgentClient:
                     should_stop=should_stop,
                 )
                 break
-            except (_InterruptedStreamError, LLMRequestCancelled):
+            except (LLMStreamInterrupted, LLMRequestCancelled):
                 raise
             except AuthenticationError as err:
                 raise RuntimeError(f"{self._provider_label} authentication failed.") from err
@@ -1158,7 +1153,7 @@ class OpenAIAgentClient:
         """Send one request and return the complete response object.
 
         With ``on_text_delta`` the request streams and text goes to it as it
-        arrives; a failure after that raises :class:`_InterruptedStreamError`.
+        arrives; a failure after that raises :class:`LLMStreamInterrupted`.
         A streamed request asks ``should_stop`` before sending and at every event.
         """
         if on_text_delta is None:
@@ -1166,14 +1161,14 @@ class OpenAIAgentClient:
                 return self._client.responses.create(**kwargs)
             return self._client.chat.completions.create(**kwargs)
         _raise_if_stopped(should_stop, self._provider_label)
-        delivered = False
+        delivered: list[str] = []
         try:
             if use_responses:
                 with self._client.responses.stream(**kwargs) as events:
                     for event in events:
                         _raise_if_stopped(should_stop, self._provider_label)
                         if event.type == "response.output_text.delta" and event.delta:
-                            delivered = True
+                            delivered.append(event.delta)
                             on_text_delta(event.delta)
                     return events.get_final_response()
             from openai.lib.streaming.chat import ChatCompletionStreamState
@@ -1187,7 +1182,7 @@ class OpenAIAgentClient:
                     state.handle_chunk(chunk)
                     for choice in chunk.choices:
                         if choice.delta.content:
-                            delivered = True
+                            delivered.append(choice.delta.content)
                             on_text_delta(choice.delta.content)
             # The snapshot, not ``get_final_completion()``: that raises on a
             # length-truncated reply, which the unstreamed path returns as-is.
@@ -1197,8 +1192,9 @@ class OpenAIAgentClient:
         except Exception as err:
             if not delivered:
                 raise
-            raise _InterruptedStreamError(
-                f"{self._provider_label} response stream failed after output began: {err}"
+            raise LLMStreamInterrupted(
+                f"{self._provider_label} response stream failed after output began: {err}",
+                partial_text="".join(delivered),
             ) from err
 
     @staticmethod
