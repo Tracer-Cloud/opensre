@@ -30,6 +30,21 @@ from core.llm.subscriptions.identity import discovery, issuer_endpoint, validate
 from core.llm.subscriptions.types import SubscriptionAuth, SubscriptionLoginRequired
 
 
+class _UnusableRefreshToken(SubscriptionLoginRequired):
+    """The selected registration needs a new OAuth grant."""
+
+
+def _clear_tokens(profile: dict[str, Any]) -> None:
+    for key in (
+        "access_token",
+        "refresh_token",
+        "id_token",
+        "expires_at",
+        "earliest_refresh_at",
+    ):
+        profile.pop(key, None)
+
+
 def _metadata(store: dict[str, Any]) -> None:
     profiles = store["profiles"]
     active = str(store.get("active", ""))
@@ -101,6 +116,29 @@ def _tokens(
 def _exchange(client: httpx.Client, form: dict[str, str]) -> dict[str, Any]:
     response = client.post(CHATGPT_TOKEN_URL, data={**form, "resource": CHATGPT_RESOURCE})
     if response.status_code != HTTPStatus.OK:
+        try:
+            error = response.json()
+        except ValueError:
+            error = {}
+        code = error.get("error") if isinstance(error, dict) else None
+        if isinstance(code, dict):
+            code = code.get("code")
+        if (
+            form.get("grant_type") == "refresh_token"
+            and isinstance(code, str)
+            and code
+            in {
+                "invalid_grant",
+                "invalid_refresh_token",
+                "token_expired",
+                "refresh_token_expired",
+                "refresh_token_invalidated",
+                "refresh_token_reused",
+            }
+        ):
+            raise _UnusableRefreshToken(
+                "ChatGPT session is no longer usable. Run `opensre auth login chatgpt` again."
+            )
         raise SubscriptionLoginRequired(
             "ChatGPT token exchange failed. Run `opensre auth login chatgpt` again."
         )
@@ -240,14 +278,20 @@ def resolve() -> SubscriptionAuth:
                     )
             else:
                 with httpx.Client(timeout=30, follow_redirects=False) as client:
-                    data = _exchange(
-                        client,
-                        {
-                            "grant_type": "refresh_token",
-                            "client_id": selected,
-                            "refresh_token": profile["refresh_token"],
-                        },
-                    )
+                    try:
+                        data = _exchange(
+                            client,
+                            {
+                                "grant_type": "refresh_token",
+                                "client_id": selected,
+                                "refresh_token": profile["refresh_token"],
+                            },
+                        )
+                    except _UnusableRefreshToken:
+                        _clear_tokens(profile)
+                        write_store("chatgpt", store)
+                        _metadata(store)
+                        raise
                     profile = _tokens(client, data, selected, previous=profile)
                 store["profiles"][selected] = profile
                 write_store("chatgpt", store)
@@ -288,14 +332,7 @@ def logout() -> str:
                     pass
                 if attempt == 0:
                     time.sleep(0.5)
-        for key in (
-            "access_token",
-            "refresh_token",
-            "id_token",
-            "expires_at",
-            "earliest_refresh_at",
-        ):
-            profile.pop(key, None)
+        _clear_tokens(profile)
         write_store("chatgpt", store)
         _metadata(store)
     detail = "ChatGPT session removed locally; saved account registration retained."

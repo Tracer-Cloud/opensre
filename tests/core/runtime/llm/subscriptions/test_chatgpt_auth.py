@@ -82,6 +82,11 @@ def provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
                 assert form["refresh_token"] == "refresh-original"
                 assert form["client_id"] == "oaiapp_one"
                 assert "scope" not in form
+                if "refresh_error" in state:
+                    return httpx.Response(
+                        state.get("refresh_status", HTTPStatus.BAD_REQUEST),
+                        json={"error": state["refresh_error"]},
+                    )
                 return httpx.Response(
                     HTTPStatus.OK,
                     json={
@@ -252,6 +257,67 @@ def test_parallel_requests_refresh_once_and_persist_rotation(provider):
     assert len(provider["refreshes"]) == 1
     with subscription_lock("chatgpt"):
         assert read_store("chatgpt")["profiles"]["oaiapp_one"]["refresh_token"] == "refresh-rotated"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "invalid_grant",
+        "invalid_refresh_token",
+        "token_expired",
+        "refresh_token_expired",
+        "refresh_token_invalidated",
+        "refresh_token_reused",
+    ],
+)
+def test_terminal_refresh_error_clears_only_active_tokens_and_allows_relogin(provider, code):
+    _login()
+    with subscription_lock("chatgpt"):
+        store = read_store("chatgpt")
+        active = store["profiles"]["oaiapp_one"]
+        active["expires_at"] = time.time() - 1
+        store["profiles"]["other"] = {"access_token": "other-access", "client_id": "other"}
+        write_store("chatgpt", store)
+    provider["refresh_error"] = code
+    with pytest.raises(SubscriptionLoginRequired, match="login chatgpt"):
+        chatgpt.resolve()
+    with subscription_lock("chatgpt"):
+        cleared = read_store("chatgpt")
+    assert cleared["active"] == "oaiapp_one"
+    assert cleared["host_id"] == store["host_id"]
+    assert cleared["profiles"]["other"] == store["profiles"]["other"]
+    assert cleared["profiles"]["oaiapp_one"]["client_id"] == "oaiapp_one"
+    for key in ("access_token", "refresh_token", "id_token", "expires_at", "earliest_refresh_at"):
+        assert key not in cleared["profiles"]["oaiapp_one"]
+    assert not status("chatgpt").configured
+    with pytest.raises(SubscriptionLoginRequired, match="sign in"):
+        chatgpt.resolve()
+    assert len(provider["refreshes"]) == 1
+    del provider["refresh_error"]
+    _login()
+    assert provider["attempts"][-1]["client_id"] == "oaiapp_one"
+    assert chatgpt.resolve().token == "access-original"
+
+
+@pytest.mark.parametrize(
+    "code,http_status",
+    [
+        ("invalid_client", HTTPStatus.BAD_REQUEST),
+        ("temporarily_unavailable", HTTPStatus.SERVICE_UNAVAILABLE),
+    ],
+)
+def test_nonterminal_refresh_errors_preserve_credentials(provider, code, http_status):
+    _login()
+    with subscription_lock("chatgpt"):
+        original = read_store("chatgpt")
+        original["profiles"]["oaiapp_one"]["expires_at"] = time.time() - 1
+        write_store("chatgpt", original)
+    provider["refresh_error"], provider["refresh_status"] = code, http_status
+    with pytest.raises(SubscriptionLoginRequired):
+        chatgpt.resolve()
+    with subscription_lock("chatgpt"):
+        assert read_store("chatgpt") == original
+    assert status("chatgpt").configured
 
 
 def test_failed_revocation_clears_local_tokens_and_reports_remote_failure(provider):
