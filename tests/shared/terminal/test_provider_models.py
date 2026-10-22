@@ -4,8 +4,19 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from config.account import AccountLLMRoute
 from core.llm.provider_models import resolve_provider_models
 from surfaces.shared.terminal.tables import provider as ui_provider
+
+
+def test_prompt_model_tracks_hosted_route_then_local_selection(monkeypatch) -> None:
+    route = AccountLLMRoute(base_url="https://example.test", model="hosted-model")
+    monkeypatch.setattr("config.account.account_llm_route", lambda: route)
+    monkeypatch.setenv("LLM_PROVIDER", "chatgpt")
+    monkeypatch.setenv("CHATGPT_MODEL", "local-model")
+    assert ui_provider.detect_provider_model() == ("openai", "hosted-model")
+    monkeypatch.setattr("config.account.account_llm_route", lambda: None)
+    assert ui_provider.detect_provider_model() == ("chatgpt", "local-model")
 
 
 def test_ui_provider_reexports_core_resolver() -> None:

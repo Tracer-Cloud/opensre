@@ -17,8 +17,11 @@ from core.llm.provider_models import resolve_provider_models
 def detect_provider_model() -> tuple[str, str]:
     """Return (provider, model) for the active LLM config."""
     try:
+        from config.account import account_llm_route
         from config.llm_settings import LLMSettings
 
+        if (route := account_llm_route()) is not None:
+            return ("openai", route.model)
         settings = LLMSettings.from_env()
     except Exception:
         return ("unknown", "unknown")
