@@ -109,6 +109,39 @@ def test_incident_anchor_parsers_are_registered() -> None:
     assert len(incident_anchors._anchor_parsers) == 4
 
 
+def test_alert_parsing_registrations_resolve_the_vendor_objects_in_order() -> None:
+    """Registration stays cheap at boot, yet resolves the same vendor callables.
+
+    Anchor parsers are tried first-match-wins, so their order is part of the
+    contract, not just their presence.
+    """
+    # Arrange
+    from core.domain.alerts import alert_source
+    from integrations.alertmanager.incident_anchor import alertmanager_incident_anchor
+    from integrations.aws.alert_detail_fields import ALERT_DETAIL_FIELDS
+    from integrations.aws.cloudwatch_incident_anchor import cloudwatch_incident_anchor
+    from integrations.datadog.incident_anchor import datadog_incident_anchor
+    from integrations.grafana.alert_source_detect import detect_grafana_alert_source
+    from integrations.pagerduty.incident_anchor import pagerduty_incident_anchor
+
+    # Assert
+    assert incident_anchors._anchor_parsers == [
+        alertmanager_incident_anchor,
+        pagerduty_incident_anchor,
+        datadog_incident_anchor,
+        cloudwatch_incident_anchor,
+    ]
+    assert alert_source._alert_source_detectors == [detect_grafana_alert_source]
+    assert alert_extraction.alert_detail_field_names() == (
+        "error_message",
+        "log_query",
+        *ALERT_DETAIL_FIELDS,
+    )
+    assert {"query_grafana_metrics", "query_grafana_logs"} <= (
+        harness_providers.registered_metric_query_tools()
+    )
+
+
 def test_alert_detail_fields_registered_for_aws_and_kubernetes() -> None:
     # Act
     fields = alert_extraction.alert_detail_field_names()
