@@ -104,6 +104,8 @@ def test_real_litellm_http_preserves_tool_calls_reasoning_and_usage(wire, recwar
     result = client.invoke(
         [{"role": "user", "content": "check api"}],
         system="Be precise",
+        on_text_delta=lambda _text: None,
+        should_stop=lambda: False,
         tools=[
             {
                 "type": "function",

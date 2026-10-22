@@ -32,7 +32,13 @@ from core.llm.shared.usage import (
     extract_reasoning_tokens,
 )
 from core.llm.subscriptions.chatgpt import resolve
-from core.llm.types import AgentLLMResponse, LLMResponse, SchemaDescribedTool
+from core.llm.types import (
+    AgentLLMResponse,
+    CancelProbe,
+    LLMResponse,
+    SchemaDescribedTool,
+    TextDeltaCallback,
+)
 
 
 def _text(response: Any) -> str:
@@ -153,7 +159,12 @@ class ChatGPTResponsesAgentClient:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
+        # Like the buffered LiteLLM client, return only a complete response so
+        # reasoning items and tool-call replay retain their original payloads.
+        _ = (on_text_delta, should_stop)
         response: Any = None
         output_items: dict[int, Any] = {}
         for event in self._events(messages, system=system, tools=tools):
