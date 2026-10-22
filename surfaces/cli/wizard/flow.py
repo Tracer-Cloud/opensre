@@ -333,6 +333,15 @@ def run_llm_setup(
             provider = saved_provider
             model = saved_model_value or provider.default_model
 
+        if provider.credential_kind == WizardCredentialKind.SUBSCRIPTION:
+            from surfaces.cli.wizard.subscription import configure_subscription_wizard
+
+            selected = configure_subscription_wizard(provider)
+            if selected is None:
+                return 1
+            model = selected
+            break
+
         # The model pick comes BEFORE the credential block, in both branches: the live
         # probe must run against the model that actually gets persisted. Probing the
         # provider default instead locks out anyone who picks a non-default model — an

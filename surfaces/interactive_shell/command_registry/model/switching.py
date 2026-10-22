@@ -128,6 +128,12 @@ def switch_llm_provider(
     # provider has no credential path. Stale metadata gets a warning, because
     # confirming it requires an intentional request-time credential read.
     auth_status = credential_status(provider.value)
+    if provider.credential_kind == "subscription" and not auth_status.configured:
+        console.print(
+            f"[{ERROR}]sign in before selecting this subscription:[/] "
+            f"[bold]/auth login {provider.value}[/bold]"
+        )
+        return False
     if provider.value == "azure-openai":
         from core.llm.providers.azure_openai import azure_openai_endpoint_configured
 

@@ -18,7 +18,13 @@ from surfaces.shared.llm_setup.catalog import (
 
 
 def test_wizard_kind_values() -> None:
-    assert {kind.value for kind in WizardCredentialKind} == {"api_key", "host", "cli", "none"}
+    assert {kind.value for kind in WizardCredentialKind} == {
+        "api_key",
+        "host",
+        "cli",
+        "none",
+        "subscription",
+    }
     assert WizardCredentialKind("host") is WizardCredentialKind.HOST
 
 

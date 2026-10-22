@@ -55,6 +55,10 @@ def llm_ready() -> LLMReadiness:
         return LLMReadiness(
             provider=get_configured_llm_provider(), reason=llm_settings_error_message(exc)
         )
+    if provider == "chatgpt" and _api_key_absent(provider):
+        return LLMReadiness(
+            provider=provider, reason="Run `opensre auth login chatgpt` to sign in."
+        )
     if provider in KEYLESS_PROVIDER_VALUES or not _api_key_absent(provider):
         return LLMReadiness(provider=provider)
     return LLMReadiness(

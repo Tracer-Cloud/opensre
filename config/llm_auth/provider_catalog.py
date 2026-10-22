@@ -23,6 +23,7 @@ from config.constants.llm import (
     OPENROUTER_API_KEY_ENV,
     TRUSTEDROUTER_API_KEY_ENV,
 )
+from config.llm_auth.subscriptions import SUBSCRIPTION_PROVIDERS
 
 
 class CredentialKind(StrEnum):
@@ -39,6 +40,7 @@ class CredentialKind(StrEnum):
     API_KEY = "api_key"
     #: A vendor CLI handles its own auth (Codex, Claude Code); no key in .env.
     CLI = "cli"
+    SUBSCRIPTION = "subscription"
     #: Credentials the runtime reads from the environment (Bedrock IAM, Vertex ADC).
     AMBIENT = "ambient"
     #: A local host endpoint (Ollama); reachability, not a secret.
@@ -70,6 +72,16 @@ class ProviderSpec:
 
 
 PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
+    *(
+        ProviderSpec(
+            value=provider.value,
+            label=provider.label,
+            credential_kind=CredentialKind.SUBSCRIPTION,
+            model_env=provider.model_env,
+            allow_custom_models=True,
+        )
+        for provider in SUBSCRIPTION_PROVIDERS
+    ),
     ProviderSpec(
         value="anthropic",
         label="Anthropic API key",

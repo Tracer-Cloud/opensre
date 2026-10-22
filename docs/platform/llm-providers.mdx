@@ -3,9 +3,15 @@ title: "LLM Providers"
 description: "Supported LLM APIs and CLIs, environment variables, and how to switch between them."
 ---
 
-The interactive shell uses the model supplied by the signed-in OpenSRE account. That account route takes precedence for reasoning, classification, and tool calls; `/model` shows it but does not replace it locally.
+The interactive shell uses your signed-in OpenSRE account by default. To select
+your own provider billing, run `opensre auth login` and choose API keys or
+Subscriptions. A successful login selects that connection for reasoning,
+classification, and tool calls while retaining your OpenSRE identity.
 
-Other hosts and account-independent CLI workflows can use the providers below. Choose one with `LLM_PROVIDER`; hosted providers use an API key stored in `~/.opensre/credentials.json` or the process environment.
+Other hosts and account-independent CLI workflows can use the providers below.
+Choose one with `LLM_PROVIDER`; API providers use an API key stored in
+`~/.opensre/credentials.json` or the process environment. ChatGPT subscription
+credentials use separate storage.
 
 Default model IDs are defined in
 [`config/llm_models.py`](https://github.com/Tracer-Cloud/opensre/blob/main/config/llm_models.py).
@@ -37,6 +43,13 @@ Each provider has two model roles:
 | Azure OpenAI | `LLM_PROVIDER=azure-openai`<br />`AZURE_OPENAI_API_KEY` + resource URL | Reasoning: `gpt-5.4-mini` (deployment name)<br />Toolcall: `gpt-5.4-mini` (deployment name) |
 | Custom OpenAI-compatible | `LLM_PROVIDER=custom-openai`<br />`CUSTOM_OPENAI_API_KEY` + `CUSTOM_OPENAI_BASE_URL` | Your `CUSTOM_OPENAI_MODEL` (both roles) |
 | Custom Anthropic-compatible | `LLM_PROVIDER=custom-anthropic`<br />`CUSTOM_ANTHROPIC_API_KEY` + `CUSTOM_ANTHROPIC_BASE_URL` | Your `CUSTOM_ANTHROPIC_MODEL` (both roles) |
+
+  </Tab>
+  <Tab title="Subscriptions">
+
+| Provider | Setup | Model selection |
+| --- | --- | --- |
+| ChatGPT | `opensre auth login chatgpt` | Models available to the signed-in account; `CHATGPT_MODEL` records the selected model |
 
   </Tab>
   <Tab title="Cloud & local">
@@ -80,9 +93,11 @@ Or use the onboarding wizard, which writes the same values to `.env`:
 opensre onboard
 ```
 
-Onboarding always collects an API key for hosted providers.
+Onboarding collects an API key for API providers. Choose ChatGPT subscription
+under **Other LLM provider** to sign in using your browser.
 
-Local provider configuration supports custom model IDs for OpenAI, OpenRouter, TrustedRouter, Gemini, NVIDIA, Bedrock, local CLIs, Ollama, and DeepSeek. These settings do not override a signed-in account route:
+Local provider configuration supports custom model IDs for OpenAI, OpenRouter, TrustedRouter, Gemini, NVIDIA, Bedrock, local CLIs, Ollama, and DeepSeek. When using OpenSRE hosted billing, set `OPENSRE_LLM_CONNECTION=local` alongside
+your provider settings to select your own billing instead:
 
 ```bash
 export LLM_PROVIDER=openai
@@ -101,7 +116,7 @@ export OPENAI_REASONING_MODEL=gpt-5.4-mini
 export OPENAI_TOOLCALL_MODEL=gpt-5.4-mini
 ```
 
-`LLM_MAX_TOKENS` (default `4096`) sets the response token budget for all
+`LLM_MAX_TOKENS` (default `25000`) sets the response token budget for all
 providers.
 
 ## LiteLLM transport
@@ -156,17 +171,18 @@ issue if you need another first-class provider.
 
 ## Login and secret storage
 
-Use `opensre auth` to log in and persist an API key:
+Use `opensre auth login` to choose **API keys** (provider API billing) or
+**Subscriptions** (ChatGPT plan usage). The ChatGPT path opens your browser;
+API-key providers use a hidden paste prompt.
 
 | Command | What it does |
 | --- | --- |
-| `opensre auth` | Show auth status for API-key providers |
+| `opensre auth` | Show API-key and subscription auth status and the active provider |
 | `opensre auth login deepseek` | Guide DeepSeek setup, validate `DEEPSEEK_API_KEY`, store it in `.env` and `~/.opensre/credentials.json`, and select DeepSeek |
 | `opensre auth verify deepseek` | Check DeepSeek credentials and refresh local metadata |
 | `opensre auth logout deepseek` | Remove OpenSRE-managed DeepSeek credentials and metadata |
 
-`opensre auth login` uses a hidden paste prompt and writes the key to
-`.env` and `~/.opensre/credentials.json`.
+API-key login writes the key to `.env` and `~/.opensre/credentials.json`.
 
 `opensre auth` and `/auth status` are safe to show in prompts: they do not read
 stored secrets. For API-key providers they check environment variables and
@@ -183,6 +199,52 @@ opensre auth login anthropic
 opensre auth login deepseek
 opensre auth status
 ```
+
+## ChatGPT subscription
+
+```bash
+opensre auth login chatgpt
+opensre auth verify chatgpt
+opensre auth status chatgpt
+opensre auth logout chatgpt
+```
+
+Continue with ChatGPT in your browser and authorize OpenSRE to use your plan.
+Choose a model offered by your account, or pass `--model <model>`.
+ChatGPT plan access must be enabled during authorization; available models and
+usage limits depend on your account. Review usage and app access in
+[ChatGPT Settings → Usage](https://chatgpt.com/#settings/Usage).
+Verification checks credentials and model access; a completed inference request
+is still needed to confirm that plan usage is available.
+
+Use `--new-account` to add another account or workspace. Use
+`--profile <registration-id>` to sign in to a saved registration listed by
+`opensre auth status chatgpt`. Registrations remain separate even when their
+email addresses match. Logout clears the selected account's tokens and retains
+its registration for later sign-in. Other saved accounts and API keys remain.
+
+Login selects `LLM_PROVIDER=chatgpt` and your own plan billing, while preserving
+your OpenSRE account identity. `--no-set-provider` saves credentials without
+changing the selected provider. To restore OpenSRE hosted billing for a signed-in
+account, set `OPENSRE_LLM_CONNECTION=account` in `.env`. To switch to API billing, run
+`opensre auth login openai` (or another API provider).
+
+Subscription credentials are stored separately in owner-only files under
+`~/.opensre/subscriptions/chatgpt/`; keep this directory private and out of
+source control. `OPENSRE_SUBSCRIPTION_AUTH_DIR` overrides the parent directory.
+Subscription login requires local credential storage and is unavailable when
+`OPENSRE_DISABLE_KEYRING` is set. Tokens renew automatically; an expired or
+revoked session requires another explicit login. ChatGPT requests use LiteLLM
+automatically, regardless of `OPENSRE_LLM_TRANSPORT`.
+
+For a terminal without an available browser, pass `--no-open-browser` and open
+the displayed URL yourself. The browser must reach the terminal's loopback
+callback; for SSH, forward local port 1455 to the remote port 1455 before login.
+If that port is busy, login displays the alternate callback port to forward.
+
+This path currently supports ChatGPT for local open-source use. Other provider
+subscriptions need their own supported login adapters. Provider API keys
+remain available through the separate API-key path.
 
 ## API providers
 

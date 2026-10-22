@@ -31,6 +31,7 @@ class CredentialSource(StrEnum):
     #: Distinct from ``LOCAL``, which means a locally hosted model runtime (Ollama).
     FALLBACK = "fallback"
     METADATA = "metadata"
+    SUBSCRIPTION = "subscription"
     CLI = "cli"
     AMBIENT = "ambient"
     LOCAL = "local"
@@ -74,6 +75,7 @@ class CredentialResolution:
     @property
     def ok(self) -> bool:
         return bool(self.api_key) or self.source in {
+            CredentialSource.SUBSCRIPTION,
             CredentialSource.CLI,
             CredentialSource.AMBIENT,
             CredentialSource.LOCAL,
@@ -217,6 +219,21 @@ def status(provider: str) -> CredentialStatus:
             detail=f"Unsupported LLM provider: {provider}",
         )
 
+    if spec.credential_kind == "subscription":
+        record = resolve_provider_auth_record(spec.value)
+        from config.secrets.store import keyring_is_disabled
+
+        if record.get("source") == "subscription" and not keyring_is_disabled():
+            return _record_status(spec, record)
+        return CredentialStatus(
+            spec.value,
+            False,
+            CredentialSource.NONE,
+            False,
+            False,
+            record.get("detail") or "Run `opensre auth login chatgpt` to sign in.",
+        )
+
     if spec.credential_kind == "api_key":
         if spec.api_key_env and _env_value(spec.api_key_env):
             return _source_status(
@@ -350,6 +367,15 @@ def _mark_stale(spec: ProviderSpec, detail: str) -> None:
 def resolve_for_request(provider: str) -> CredentialResolution:
     """Resolve request-time auth for exactly one selected provider."""
     spec = require_provider_spec(provider)
+    if spec.credential_kind == "subscription":
+        state = status(spec.value)
+        return CredentialResolution(
+            spec.value,
+            "",
+            CredentialSource.SUBSCRIPTION if state.configured else CredentialSource.NONE,
+            state.detail,
+        )
+
     if spec.credential_kind == "api_key":
         env_value = _env_value(spec.api_key_env)
         if env_value:

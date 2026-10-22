@@ -17,6 +17,12 @@ def resolve_provider_models(settings: object, provider: str) -> tuple[str, str]:
     catalog names for it. Others read the provider's ``*_model`` setting, or its
     ``*_reasoning_model`` / ``*_toolcall_model`` pair.
     """
+    from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
+
+    subscription = SUBSCRIPTION_BY_VALUE.get(provider)
+    if subscription is not None:
+        model = os.getenv(subscription.model_env, "").strip() or subscription.default_model
+        return model, model
     spec = provider_spec(provider)
     if spec is not None and spec.cli_model_env:
         cli_model = os.getenv(spec.cli_model_env, "").strip() or _CLI_DEFAULT_MODEL

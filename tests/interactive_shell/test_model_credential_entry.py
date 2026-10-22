@@ -182,3 +182,10 @@ def test_custom_provider_no_model_uses_legacy_model(monkeypatch: Any) -> None:
     monkeypatch.setenv(provider.legacy_model_env, "gateway-model")
 
     assert switching._resolve_omitted_model(provider) == "gateway-model"
+
+
+def test_missing_subscription_directs_to_browser_login_without_prompting_for_key(monkeypatch):
+    _credential_status_sequence(monkeypatch, configured_after=False)
+    console = _Console()
+    assert switching.switch_llm_provider("chatgpt", console) is False
+    assert any("/auth login chatgpt" in line for line in console.printed)

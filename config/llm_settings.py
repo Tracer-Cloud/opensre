@@ -107,6 +107,7 @@ __all__ = (
 
 
 LLMProvider = Literal[
+    "chatgpt",
     "anthropic",
     "openai",
     "openrouter",

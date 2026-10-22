@@ -11,6 +11,7 @@ from config.constants.llm import (
     OPENAI_PROMPT_CACHE_KEY_HASH_CHARS,
     OPENAI_PROMPT_CACHE_KEY_PREFIX,
 )
+from core.llm.shared.openai_chat_completions import get_attr_or_item
 from core.llm.types import ToolCall
 
 _RESPONSE_OUTPUT_KEY = "_openai_response_output"
@@ -107,7 +108,7 @@ def responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def response_output_items(response: Any) -> list[dict[str, Any]]:
     """Serialize Responses output items for stateless replay on the next turn."""
     serialized: list[dict[str, Any]] = []
-    for item in getattr(response, "output", []) or []:
+    for item in get_attr_or_item(response, "output") or []:
         if hasattr(item, "model_dump"):
             serialized.append(item.model_dump(exclude_none=True))
         elif isinstance(item, dict):
@@ -118,18 +119,18 @@ def response_output_items(response: Any) -> list[dict[str, Any]]:
 def response_tool_calls(response: Any) -> list[ToolCall]:
     """Extract function calls from a Responses API result."""
     tool_calls: list[ToolCall] = []
-    for item in getattr(response, "output", []) or []:
-        if getattr(item, "type", None) != "function_call":
+    for item in get_attr_or_item(response, "output") or []:
+        if get_attr_or_item(item, "type") != "function_call":
             continue
-        raw_arguments = str(getattr(item, "arguments", "") or "")
+        raw_arguments = str(get_attr_or_item(item, "arguments") or "")
         try:
             arguments = json.loads(raw_arguments) if raw_arguments else {}
         except (json.JSONDecodeError, ValueError):
             arguments = {}
         tool_calls.append(
             ToolCall(
-                id=str(getattr(item, "call_id", "")),
-                name=str(getattr(item, "name", "")),
+                id=str(get_attr_or_item(item, "call_id")),
+                name=str(get_attr_or_item(item, "name")),
                 input=arguments if isinstance(arguments, dict) else {},
             )
         )

@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from config.constants.llm import LLM_AUTH_METHOD_ENV
+from config.constants.llm import LLM_AUTH_METHOD_ENV, OPENSRE_LLM_CONNECTION_ENV
 from config.env_file import (
     PROJECT_ENV_PATH,
     env_assignment_key,
@@ -179,6 +179,7 @@ def sync_provider_env(
 
     values: dict[str, str] = {
         "LLM_PROVIDER": provider.value,
+        OPENSRE_LLM_CONNECTION_ENV: "local",
         provider.model_env: resolved_model,
     }
     if provider.legacy_model_env:

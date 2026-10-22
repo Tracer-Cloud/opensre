@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 import config.llm_auth
-from config.account import AccountLLMRoute
 from config.llm_auth.credentials import resolve_for_request
 from config.llm_auth.records import resolve_provider_auth_record, save_provider_auth_record
 from config.llm_credentials import resolve_env_credential
@@ -35,9 +34,8 @@ def test_resolve_auth_profile_accepts_underscore_alias() -> None:
     assert resolve_auth_profile("Custom_OpenAI").provider_value == "custom-openai"
 
 
-def test_resolve_auth_profile_rejects_removed_subscription_aliases() -> None:
-    with pytest.raises(KeyError):
-        resolve_auth_profile("chatgpt")
+def test_chatgpt_has_its_own_subscription_profile() -> None:
+    assert resolve_auth_profile("chatgpt").kind == "subscription"
     with pytest.raises(KeyError):
         resolve_auth_profile("claude")
 
@@ -123,23 +121,30 @@ def test_configure_api_key_does_not_store_when_validation_fails(
     assert resolve_env_credential("DEEPSEEK_API_KEY") == ""
 
 
-def test_account_login_locks_other_llm_provider_credentials(
+def test_successful_explicit_provider_login_selects_local_billing_without_logging_out(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(
-        "config.account.account_llm_route",
-        lambda: AccountLLMRoute(
-            base_url="https://app.opensre.com/api/llm/v1",
-            model="gpt-5.4-mini",
-        ),
-    )
+    from config.account import account_llm_route
+    from config.constants.account import OPENSRE_ACCOUNT_TOKEN_ENV
+    from config.constants.billing import WEBAPP_URL_ENV
 
-    with pytest.raises(AuthSetupError, match="managed by your OpenSRE account"):
-        configure_api_key_provider(
-            profile=resolve_auth_profile("deepseek"),
-            api_key="must-not-be-saved",
-            validate=False,
-        )
+    monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
+    monkeypatch.delenv("OPENSRE_LLM_CONNECTION", raising=False)
+    monkeypatch.setenv(OPENSRE_ACCOUNT_TOKEN_ENV, "existing-opensre-account")
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example")
+    assert account_llm_route() is not None
+    result = configure_api_key_provider(
+        profile=resolve_auth_profile("deepseek"),
+        api_key="test-key",
+        validate=False,
+        env_path=tmp_path / ".env",
+    )
+    assert result.provider == "deepseek"
+    assert account_llm_route() is None
+    import os
+
+    assert os.environ[OPENSRE_ACCOUNT_TOKEN_ENV] == "existing-opensre-account"
 
 
 def test_resolve_for_request_stales_when_credential_is_genuinely_absent(

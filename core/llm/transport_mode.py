@@ -19,11 +19,13 @@ def use_litellm_transport() -> bool:
 
 def use_litellm_for_provider(provider: str) -> bool:
     """Return ``True`` when *provider* must route through LiteLLM."""
+    from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
     from core.llm.providers.azure_openai import is_azure_openai_provider
     from core.llm.providers.vertex_ai import is_vertex_ai_provider
 
     return (
         use_litellm_transport()
+        or provider in SUBSCRIPTION_BY_VALUE
         or is_azure_openai_provider(provider)
         or is_vertex_ai_provider(provider)
     )

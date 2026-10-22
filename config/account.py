@@ -247,11 +247,18 @@ def delete_account_token() -> None:
 def account_llm_route() -> AccountLLMRoute | None:
     """Return the hosted OpenAI route when this process holds an OpenSRE token.
 
+    An explicit local LLM selection takes precedence without deleting identity.
     A signed-in laptop has account metadata from ``opensre account login``. A
     hosted gateway never logs in: the control plane injects its organization's
     token (``OPENSRE_ACCOUNT_TOKEN``) and the webapp URL, and that pair is the
     route. The webapp meters the calls against the token's organization.
     """
+    from config.constants.llm import OPENSRE_LLM_CONNECTION_ENV
+    from config.local_env import bootstrap_opensre_env_once
+
+    bootstrap_opensre_env_once()
+    if os.getenv(OPENSRE_LLM_CONNECTION_ENV, "").strip().lower() == "local":
+        return None
     if not resolve_account_token():
         return None
     record = load_account_record()

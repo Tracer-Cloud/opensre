@@ -93,13 +93,16 @@ def test_auth_verify_provider_reports_the_stored_source(monkeypatch, tmp_path: P
     assert "environment" in result.output
 
 
-def test_auth_login_chatgpt_is_rejected(monkeypatch, tmp_path: Path) -> None:
+def test_subscription_login_rejects_api_keys(monkeypatch, tmp_path: Path) -> None:
     _patch_auth_env(monkeypatch, tmp_path)
 
-    result = CliRunner().invoke(cli, ["auth", "login", "chatgpt", "--no-open-browser"])
+    result = CliRunner().invoke(
+        cli, ["auth", "login", "chatgpt", "--api-key", "test-secret", "--no-open-browser"]
+    )
 
     assert result.exit_code != 0
-    assert "chatgpt" in result.output.lower() or "unknown" in result.output.lower()
+    assert "browser authorization" in result.output
+    assert not (tmp_path / "subscriptions").exists()
 
 
 def test_provider_chooser_defaults_to_the_configured_provider(monkeypatch) -> None:

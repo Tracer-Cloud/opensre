@@ -85,16 +85,6 @@ def configure_api_key_provider(
     env_path: Path | None = None,
 ) -> AuthSetupResult:
     """Validate and persist an API-key provider credential."""
-    from config.account import account_llm_route
-
-    account_route = account_llm_route()
-    if account_route is not None:
-        raise AuthSetupError(
-            "LLM provider authentication is managed by your OpenSRE account: "
-            f"openai ({account_route.model}, hosted by OpenSRE). "
-            "Sign out with `/logout` or `opensre account logout` before configuring another provider."
-        )
-
     provider = provider_for_profile(profile)
     if provider.credential_kind != WizardCredentialKind.API_KEY or not provider.api_key_env:
         raise AuthSetupError(f"{provider.label} does not use an OpenSRE-managed API key.")
@@ -172,6 +162,10 @@ def verify_provider(raw_name: str) -> AuthStatus:
     """Intentionally resolve request-time credentials and refresh metadata."""
     profile = resolve_auth_profile(raw_name)
     provider = provider_for_profile(profile)
+    if profile.kind == "subscription":
+        from surfaces.shared.llm_setup.subscription_service import verify_subscription
+
+        return verify_subscription(profile)
     resolved = verify_provider_auth(provider.value)
     return AuthStatus(
         provider.value,
@@ -190,6 +184,10 @@ def logout_provider(raw_name: str) -> str:
 
     profile = resolve_auth_profile(raw_name)
     provider = provider_for_profile(profile)
+    if profile.kind == "subscription":
+        from surfaces.shared.llm_setup.subscription_service import logout_subscription
+
+        return logout_subscription()
     delete_provider_auth_record(provider.value)
     try:
         delete_provider_auth(provider.value)

@@ -288,6 +288,30 @@ if TYPE_CHECKING:
     from config.constants.capabilities import (
         SCHEDULER_HOST_IN_PROCESS as SCHEDULER_HOST_IN_PROCESS,
     )
+    from config.constants.chatgpt import (
+        CHATGPT_AUTHORIZE_URL as CHATGPT_AUTHORIZE_URL,
+    )
+    from config.constants.chatgpt import (
+        CHATGPT_CALLBACK_PATH as CHATGPT_CALLBACK_PATH,
+    )
+    from config.constants.chatgpt import (
+        CHATGPT_DISCOVERY_URL as CHATGPT_DISCOVERY_URL,
+    )
+    from config.constants.chatgpt import (
+        CHATGPT_DYNAMIC_CLIENT as CHATGPT_DYNAMIC_CLIENT,
+    )
+    from config.constants.chatgpt import (
+        CHATGPT_ISSUER as CHATGPT_ISSUER,
+    )
+    from config.constants.chatgpt import (
+        CHATGPT_RESOURCE as CHATGPT_RESOURCE,
+    )
+    from config.constants.chatgpt import (
+        CHATGPT_SCOPES as CHATGPT_SCOPES,
+    )
+    from config.constants.chatgpt import (
+        CHATGPT_TOKEN_URL as CHATGPT_TOKEN_URL,
+    )
     from config.constants.ci_fixes import (
         CI_FIX_COUNT_LABEL as CI_FIX_COUNT_LABEL,
     )
@@ -793,10 +817,16 @@ if TYPE_CHECKING:
         OPENAI_PROMPT_CACHE_KEY_PREFIX as OPENAI_PROMPT_CACHE_KEY_PREFIX,
     )
     from config.constants.llm import (
+        OPENSRE_LLM_CONNECTION_ENV as OPENSRE_LLM_CONNECTION_ENV,
+    )
+    from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
     )
     from config.constants.llm import (
         OPENSRE_REACT_GOAL_LLM_REVIEW_ENV as OPENSRE_REACT_GOAL_LLM_REVIEW_ENV,
+    )
+    from config.constants.llm import (
+        OPENSRE_SUBSCRIPTION_AUTH_DIR_ENV as OPENSRE_SUBSCRIPTION_AUTH_DIR_ENV,
     )
     from config.constants.mariadb import (
         MARIADB_DATABASE_ENV as MARIADB_DATABASE_ENV,

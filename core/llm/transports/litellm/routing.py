@@ -25,6 +25,10 @@ from core.llm.providers.vertex_ai import (
     resolve_vertex_ai_request_kwargs,
 )
 from core.llm.transports.litellm.clients import LiteLLMAgentClient, LiteLLMLLMClient
+from core.llm.transports.litellm.responses import (
+    ChatGPTResponsesAgentClient,
+    ChatGPTResponsesLLMClient,
+)
 from core.llm.types import ModelType
 
 
@@ -44,8 +48,16 @@ def _litellm_model_for_compat(model: str) -> str:
     return model if model.startswith("openai/") else f"openai/{model}"
 
 
-def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClient:
+def build_litellm_agent_client(
+    settings: Any, provider: str
+) -> LiteLLMAgentClient | ChatGPTResponsesAgentClient:
     """Build a :class:`LiteLLMAgentClient` for the given provider and settings."""
+    if provider == "chatgpt":
+        from core.llm.provider_models import resolve_provider_models
+
+        return ChatGPTResponsesAgentClient(
+            resolve_provider_models(settings, provider)[0], max_tokens=settings.max_tokens
+        )
     _guard_sdk_only_provider(provider)
     from core.llm.providers.provider_registry import FIRST_PARTY_PROVIDERS
 
@@ -108,8 +120,16 @@ def build_litellm_llm_client(
     model_type: ModelType,
     *,
     usage_callback: Any = None,
-) -> LiteLLMLLMClient:
+) -> LiteLLMLLMClient | ChatGPTResponsesLLMClient:
     """Build a :class:`LiteLLMLLMClient` for the given provider, model tier, and settings."""
+    if provider == "chatgpt":
+        from core.llm.provider_models import resolve_provider_models
+
+        return ChatGPTResponsesLLMClient(
+            resolve_provider_models(settings, provider)[0],
+            max_tokens=settings.max_tokens,
+            usage_callback=usage_callback,
+        )
     _guard_sdk_only_provider(provider)
 
     from core.llm.providers.provider_registry import FIRST_PARTY_PROVIDERS

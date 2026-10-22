@@ -239,7 +239,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         ),
     ),
     "/login": _mcp(
-        "Shortcut for /auth login. Supports subscription aliases chatgpt and claude, "
+        "Shortcut for /auth login. Supports ChatGPT subscription browser login "
         "and API-key providers such as deepseek.",
         "User asks to log in to ChatGPT, Claude, DeepSeek, or another LLM provider",
         anti_examples=(

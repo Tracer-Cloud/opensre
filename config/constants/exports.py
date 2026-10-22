@@ -7,6 +7,14 @@ from config.package_exports import bind_package_exports
 # Re-exported name -> leaf module. Importing this package must not load
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
+    "CHATGPT_ISSUER": "chatgpt",
+    "CHATGPT_AUTHORIZE_URL": "chatgpt",
+    "CHATGPT_TOKEN_URL": "chatgpt",
+    "CHATGPT_DISCOVERY_URL": "chatgpt",
+    "CHATGPT_RESOURCE": "chatgpt",
+    "CHATGPT_DYNAMIC_CLIENT": "chatgpt",
+    "CHATGPT_SCOPES": "chatgpt",
+    "CHATGPT_CALLBACK_PATH": "chatgpt",
     "TELEMETRY_CLICKHOUSE_PASSWORD_ENV": "telemetry",
     "TELEMETRY_MODEL_TIMEOUT_SECONDS": "telemetry",
     "TELEMETRY_REPORT_MAX_CHARS": "telemetry",
@@ -340,6 +348,8 @@ EXPORTS: dict[str, str] = {
     "AZURE_OPENAI_API_VERSION_ENV": "llm",
     "AZURE_OPENAI_BASE_URL_ENV": "llm",
     "LLM_AUTH_METHOD_ENV": "llm",
+    "OPENSRE_LLM_CONNECTION_ENV": "llm",
+    "OPENSRE_SUBSCRIPTION_AUTH_DIR_ENV": "llm",
     "LLM_PROVIDER_ENV": "llm",
     "OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV": "llm",
     "OPENSRE_REACT_GOAL_LLM_REVIEW_ENV": "llm",

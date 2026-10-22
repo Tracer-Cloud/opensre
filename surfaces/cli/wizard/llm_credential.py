@@ -119,6 +119,8 @@ def _credential_line_for_saved_summary(
     the credentials file right after the wizard warned that the credential was
     never saved, or that it was saved without being verified.
     """
+    if provider.credential_kind == WizardCredentialKind.SUBSCRIPTION:
+        return "subscription credentials (browser sign-in)"
     if provider.credential_kind == WizardCredentialKind.HOST:
         # A ``host`` credential (e.g. the Ollama host URL) is written to the project
         # ``.env`` by ``_persist_llm_credential``, never the credentials file — the

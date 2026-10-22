@@ -361,6 +361,12 @@ def run_cli_command(
     if session is not None and not should_capture:
         set_turn_outcome_hint(session, format_wizard_cli_outcome(args, exit_code=exit_code))
     ok = _cli_command_succeeded(exit_code)
+    if ok and args[:2] == ["auth", "login"] and not headless:
+        from config.local_env import bootstrap_opensre_env
+        from core.llm.factory import reset_llm_clients
+
+        bootstrap_opensre_env(override=True)
+        reset_llm_clients()
     if session is not None and not ok and not backgrounded:
         session.mark_latest(ok=False, kind="slash")
     # A backgrounded tick already recorded ``still_running``. Returning True
@@ -582,13 +588,19 @@ COMMANDS: list[SlashCommand] = [
         "Log in to LLM providers and inspect local auth state.",
         _cmd_auth,
         first_arg_completions=CLI_COMMAND_CHOICES[("/auth",)],
-        usage=("/auth", "/auth status", "/auth login deepseek", "/auth logout deepseek"),
+        usage=(
+            "/auth",
+            "/auth status",
+            "/auth login chatgpt",
+            "/auth login deepseek",
+            "/auth logout deepseek",
+        ),
     ),
     SlashCommand(
         "/login",
         "Shortcut for LLM provider login.",
         _cmd_login,
-        usage=("/login", "/login chatgpt", "/login claude", "/login deepseek"),
+        usage=("/login", "/login chatgpt", "/login anthropic", "/login deepseek"),
     ),
     SlashCommand(
         "/logout",

@@ -17,6 +17,7 @@ from config.constants.llm import (
     TRUSTEDROUTER_API_KEY_ENV,
 )
 from config.llm_auth.provider_catalog import CredentialKind, require_provider_spec
+from config.llm_auth.subscriptions import SUBSCRIPTION_PROVIDERS
 from config.llm_models import (
     ANTHROPIC_REASONING_MODEL,
     AZURE_OPENAI_REASONING_MODEL,
@@ -56,6 +57,7 @@ class WizardCredentialKind(StrEnum):
     #: A locally hosted runtime prompted for a host URL, not a secret (Ollama).
     HOST = "host"
     CLI = "cli"
+    SUBSCRIPTION = "subscription"
     #: No onboarding prompt; the runtime reads ambient credentials itself.
     NONE = "none"
 
@@ -64,6 +66,7 @@ class WizardCredentialKind(StrEnum):
 WIZARD_TO_CATALOG_KIND: dict[WizardCredentialKind, CredentialKind] = {
     WizardCredentialKind.API_KEY: CredentialKind.API_KEY,
     WizardCredentialKind.CLI: CredentialKind.CLI,
+    WizardCredentialKind.SUBSCRIPTION: CredentialKind.SUBSCRIPTION,
     WizardCredentialKind.NONE: CredentialKind.AMBIENT,
     WizardCredentialKind.HOST: CredentialKind.LOCAL,
 }
@@ -942,6 +945,21 @@ SUPPORTED_PROVIDERS = (
         credential_default=DEFAULT_OLLAMA_HOST,
         credential_kind=WizardCredentialKind.HOST,
         allow_custom_models=True,
+    ),
+    *(
+        ProviderOption(
+            value=provider.value,
+            label=provider.label,
+            group="Subscriptions",
+            api_key_env="",
+            model_env=provider.model_env,
+            default_model=provider.default_model,
+            models=(ModelOption(provider.default_model, provider.default_model),),
+            credential_kind=WizardCredentialKind.SUBSCRIPTION,
+            credential_secret=False,
+            allow_custom_models=True,
+        )
+        for provider in SUBSCRIPTION_PROVIDERS
     ),
 )
 
