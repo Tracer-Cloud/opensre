@@ -48,6 +48,7 @@ def _response(output: list[dict[str, Any]] | None = None) -> dict[str, Any]:
 
 @pytest.fixture
 def wire(monkeypatch):
+    monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
     monkeypatch.setenv("OPENAI_API_KEY", "must-not-use-api-key")
     monkeypatch.setenv("OPENAI_API_BASE", "https://wrong.example")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://wrong.example")
@@ -80,7 +81,7 @@ def wire(monkeypatch):
     return state
 
 
-def test_real_litellm_http_preserves_tool_calls_reasoning_and_usage(wire):
+def test_real_litellm_http_preserves_tool_calls_reasoning_and_usage(wire, recwarn):
     output = [
         {"type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "encrypted-replay"},
         {
@@ -127,6 +128,7 @@ def test_real_litellm_http_preserves_tool_calls_reasoning_and_usage(wire):
     assert replay[1]["call_id"] == "call_1"
     assert replay[2] == {"type": "function_call_output", "call_id": "call_1", "output": "healthy"}
     assert wire["requests"][0]["tools"][0]["name"] == "lookup"
+    assert not any("ResponseAPIUsage" in str(warning.message) for warning in recwarn)
 
 
 @pytest.mark.parametrize("terminal", ["response.failed", "response.incomplete", "interrupted"])
@@ -180,6 +182,42 @@ def test_reasoning_usage_is_counted_once(wire):
     calls.clear()
     assert list(client.invoke_stream("hello")) == []
     assert calls == [("gpt-6.1-sol", 11, 7)]
+
+
+@pytest.mark.parametrize("tool_call", [False, True])
+def test_compact_completion_retains_completed_output_items(wire, tool_call):
+    output = _response()["output"]
+    if tool_call:
+        output = [
+            {
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call_1",
+                "name": "lookup",
+                "arguments": '{"service":"api"}',
+                "status": "completed",
+            }
+        ]
+    completed = _response()
+    completed["output"] = []
+    wire["events"] = [
+        {
+            "type": "response.output_item.done",
+            "sequence_number": index,
+            "output_index": index,
+            "item": item,
+        }
+        for index, item in enumerate(output)
+    ] + [{"type": "response.completed", "sequence_number": len(output), "response": completed}]
+    result = adapter.ChatGPTResponsesAgentClient("gpt-6.1-sol").invoke(
+        [{"role": "user", "content": "hello"}]
+    )
+    assert result.raw_content["_openai_response_output"] == output
+    if tool_call:
+        assert result.tool_calls[0].name == "lookup"
+        assert result.tool_calls[0].input == {"service": "api"}
+    else:
+        assert result.content == "hello"
 
 
 def test_factory_routes_every_role_to_subscription_and_refreshes_model_cache(wire, monkeypatch):

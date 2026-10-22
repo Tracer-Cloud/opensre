@@ -32,14 +32,19 @@ def test_high_auto_shows_allow_all_permission() -> None:
     assert "Ask shell + edits" in med
 
 
-def test_idle_auto_status_omits_the_model_slug() -> None:
-    """Model lives on ``/model`` and ``?``, not every idle frame."""
+def test_idle_status_updates_model_without_hiding_permissions(monkeypatch) -> None:
+    """A newly selected connection is visible on the next prompt render."""
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.auto_status.detect_provider_model",
+        lambda: ("chatgpt", "gpt-6.1-sol"),
+        raising=False,
+    )
     session = Session()
     session.terminal.auto_level = AutoLevel.HIGH
     rendered = auto_status_ansi(session)
     assert "Auto (High)" in rendered
     assert "Allow all" in rendered
-    assert "gpt-" not in rendered
+    assert "chatgpt / gpt-6.1-sol" in rendered
 
 
 def test_busy_keeps_dim_auto_under_thinking() -> None:

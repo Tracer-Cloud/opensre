@@ -14,7 +14,14 @@ from config.secrets.backend import SecretTier
 
 
 def test_credential_kind_values() -> None:
-    assert {kind.value for kind in CredentialKind} == {"api_key", "cli", "ambient", "local"}
+    assert {kind.value for kind in CredentialKind} == {
+        "api_key",
+        "cli",
+        "ambient",
+        "local",
+        "subscription",
+    }
+    assert CredentialKind("subscription") is CredentialKind.SUBSCRIPTION
     assert CredentialKind("local") is CredentialKind.LOCAL
     # StrEnum stays str-compatible for the many literal comparisons still in use.
     assert CredentialKind.API_KEY == "api_key"
@@ -36,6 +43,8 @@ def test_credential_source_values() -> None:
         "local",
         "none",
         "unknown",
+        "subscription",
     }
+    assert CredentialSource("subscription") is CredentialSource.SUBSCRIPTION
     assert CredentialSource("fallback") is CredentialSource.FALLBACK
     assert CredentialSource.NONE == "none"

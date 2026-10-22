@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Iterator, Sequence
-from typing import Any
+from typing import Any, cast
 
 from openai import OpenAIError
 from pydantic import BaseModel
@@ -93,6 +94,14 @@ class ChatGPTResponsesAgentClient:
     ) -> Iterator[Any]:
         from litellm import responses
 
+        # LiteLLM's background logging copy replaces typed Responses usage with a dict.
+        # Its worker outlives iteration, so filter only this known dependency warning.
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Pydantic serializer warnings:\n  PydanticSerializationUnexpectedValue\(Expected `ResponseAPIUsage`",
+            category=UserWarning,
+            module=r"pydantic\.main",
+        )
         auth = resolve()
         kwargs: dict[str, Any] = {
             "model": f"openai/{self.model_id}",
@@ -113,7 +122,8 @@ class ChatGPTResponsesAgentClient:
         stream = None
         completed = False
         try:
-            stream = responses(**kwargs)
+            # LiteLLM's return annotation does not narrow for synchronous stream=True.
+            stream = cast(Iterator[Any], responses(**kwargs))
             for event in stream:
                 kind = get_attr_or_item(event, "type")
                 if kind in {"response.failed", "response.incomplete", "error"}:
@@ -142,11 +152,24 @@ class ChatGPTResponsesAgentClient:
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
         response: Any = None
+        output_items: dict[int, Any] = {}
         for event in self._events(messages, system=system, tools=tools):
-            if get_attr_or_item(event, "type") == "response.completed":
+            kind = get_attr_or_item(event, "type")
+            if kind == "response.output_item.done":
+                output_items[int(get_attr_or_item(event, "output_index"))] = get_attr_or_item(
+                    event, "item"
+                )
+            elif kind == "response.completed":
                 response = get_attr_or_item(event, "response")
         if response is None:
             raise RuntimeError("ChatGPT did not return a completed response.")
+        # Plan streams can omit output from the terminal event; done items are canonical.
+        if not get_attr_or_item(response, "output") and output_items:
+            output = [output_items[index] for index in sorted(output_items)]
+            if isinstance(response, dict):
+                response = {**response, "output": output}
+            else:
+                response = response.model_copy(update={"output": output})
         calls = response_tool_calls(response)
         usage = get_attr_or_item(response, "usage")
         inp, out = coerce_usage_tokens(usage, input_key="input_tokens", output_key="output_tokens")
