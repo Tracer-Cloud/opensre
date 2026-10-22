@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 from rich.console import Console
@@ -95,6 +95,271 @@ class StreamRenderResult:
     deferred_closer: bool = False
     footer_elapsed_s: float | None = None
     footer_total_bytes: int | None = None
+
+
+class ReplyStream:
+    """One reply printed into the transcript paragraph by paragraph as its text arrives.
+
+    ``feed`` takes each piece of text. A paragraph prints as Markdown once its
+    boundary (``\\n\\n`` outside a code fence) arrives, and long prose prints at
+    a sentence break before that, so the transcript keeps up with the model.
+    ``flush`` prints what is still held without ending the reply; ``finish``
+    ends it. Terminal consoles only: callers render non-TTY output whole.
+
+    ``before_first_paragraph`` runs once, right before the first paragraph
+    prints, so output meant to sit above the reply (the action log) lands
+    first. ``transform`` rewrites each paragraph before it prints.
+    ``partial_flush_chars`` is how much prose may wait for its paragraph to end
+    before it prints at a sentence break.
+    """
+
+    def __init__(
+        self,
+        console: Console,
+        *,
+        defer_want_me_to_closer: bool = False,
+        before_first_paragraph: Callable[[], None] | None = None,
+        transform: Callable[[str], str] | None = None,
+        partial_flush_chars: int = _PARTIAL_FLUSH_CHAR_THRESHOLD,
+    ) -> None:
+        self._console = console
+        self._partial_flush_chars = partial_flush_chars
+        self._partial_flush_min_chars = round(
+            partial_flush_chars * _PARTIAL_FLUSH_MIN_CHARS / _PARTIAL_FLUSH_CHAR_THRESHOLD
+        )
+        self._defer_want_me_to_closer = defer_want_me_to_closer
+        self._before_first_paragraph = before_first_paragraph
+        self._transform = transform
+        self._buffer: list[str] = []
+        self._para_buffer: list[str] = []
+        self._para_chars = 0
+        # The chunk before the current one, so a ``\n\n`` split across two
+        # chunks is still seen as a boundary without indexing ``_para_buffer``.
+        self._prev_chunk: str | None = None
+        self._started = time.monotonic()
+        self._progress_hook = getattr(console, "update_streaming_progress", None)
+        self._total_bytes = 0
+        self._last_progress_at = 0.0
+        self._rendered_paragraphs = 0
+        self._deferred_closer = False
+
+    @property
+    def text(self) -> str:
+        """Every piece fed so far."""
+        return "".join(self._buffer)
+
+    @property
+    def pending(self) -> str:
+        """Text fed but not printed yet."""
+        return "".join(self._para_buffer)
+
+    @property
+    def printed(self) -> bool:
+        """Whether any paragraph of the reply reached the transcript."""
+        return self._rendered_paragraphs > 0
+
+    def feed(self, chunk: str) -> None:
+        """Take one piece of the reply and print every paragraph it completes."""
+        if not chunk:
+            return
+        self._buffer.append(chunk)
+        self._para_buffer.append(chunk)
+        self._para_chars += len(chunk)
+        self._total_bytes += len(chunk)
+        self._maybe_update_progress(time.monotonic())
+        self._maybe_flush_after_append(chunk, self._prev_chunk)
+        self._prev_chunk = chunk
+
+    def flush(self) -> None:
+        """Print the text still held as the reply's latest paragraph."""
+        self._flush_paragraphs(force=True)
+
+    def discard_pending(self) -> None:
+        """Drop the text still held, for a reply that stopped before it was finished."""
+        self._para_buffer = []
+        self._para_chars = 0
+
+    def finish(self) -> StreamRenderResult:
+        """Print what is left and end the reply with its closing blank row."""
+        self.flush()
+        elapsed = time.monotonic() - self._started
+        if self._deferred_closer:
+            # Footer after the canonical closer is flushed by the caller.
+            return StreamRenderResult(
+                text=self.text,
+                deferred_closer=True,
+                footer_elapsed_s=elapsed,
+                footer_total_bytes=self._total_bytes,
+            )
+        # One blank after the reply keeps the next user row off the answer body.
+        self._console.print()
+        return StreamRenderResult(text=self.text, deferred_closer=False)
+
+    def _maybe_update_progress(self, now: float) -> None:
+        if self._progress_hook is None:
+            return
+        if now - self._last_progress_at < _PROGRESS_INTERVAL_SECONDS:
+            return
+        try:
+            self._progress_hook(self._total_bytes)
+        except Exception:
+            self._progress_hook = None
+            return
+        self._last_progress_at = now
+
+    def _render_paragraph_body(self, text: str, *, source_break: bool = True) -> None:
+        visible = self._transform(text) if self._transform is not None else text
+        if not visible.strip():
+            return
+        markdown = _build_markdown_block(visible)
+        starts_with_self_spacing_block = bool(
+            markdown.parsed and markdown.parsed[0].type in _SELF_SPACING_BLOCK_TOKEN_TYPES
+        )
+        if not self._rendered_paragraphs:
+            if self._before_first_paragraph is not None:
+                self._before_first_paragraph()
+            # One blank row keeps the user turn and its reply distinct.
+            self._console.print()
+        if self._rendered_paragraphs and source_break and not starts_with_self_spacing_block:
+            # ``_flush_paragraphs`` consumes the source ``\n\n`` boundary.
+            # Restore it explicitly unless Rich adds equivalent leading space
+            # for the next standalone block. This matters most after lists,
+            # whose renderer adds no trailing blank line.
+            self._console.print()
+        # The first paragraph carries the assistant marker in the gutter; every
+        # paragraph hangs in the same indented body column. Explicit TEXT so
+        # body never falls through to terminal white and washes the marker out.
+        with self._console.use_theme(ui_theme.MARKDOWN_THEME):
+            self._console.print(
+                transcript_gutter(
+                    markdown,
+                    lead=self._rendered_paragraphs == 0,
+                    label_style=ui_theme.reply_marker_style(),
+                ),
+                style=str(ui_theme.TEXT),
+                width=reply_width(self._console),
+            )
+        self._rendered_paragraphs += 1
+
+    def _render_paragraph(self, text: str, *, source_break: bool = True) -> None:
+        if not text.strip():
+            return
+        if self._defer_want_me_to_closer and _paragraph_has_want_me_to(text):
+            self._deferred_closer = True
+            # Keep evidence / questions visible; hold only from Want-me-to onward.
+            lowered = text.lower()
+            pos = lowered.find(WANT_ME_TO_MARKER)
+            start = pos
+            if start >= 2 and text[start - 2 : start] == "**":
+                start -= 2
+            head = text[:start].rstrip() if start > 0 else ""
+            if head.strip():
+                self._render_paragraph_body(head, source_break=source_break)
+            return
+        self._render_paragraph_body(text, source_break=source_break)
+
+    def _flush_paragraphs(self, *, force: bool = False) -> None:
+        break_len = len(_PARAGRAPH_BREAK)
+        while True:
+            text = "".join(self._para_buffer)
+            search_from = 0
+            rendered = False
+            while True:
+                idx = text.find(_PARAGRAPH_BREAK, search_from)
+                if idx < 0:
+                    break
+                paragraph = text[: idx + break_len]
+                # Odd line-start fence count means a fence is still
+                # open; the boundary is inside it, so skip and keep
+                # scanning for the next ``\n\n`` that lands outside
+                # any fence. Only line-start fences count (per
+                # CommonMark), so an inline mention like
+                # ``Use ``` to open a block`` doesn't trip this check.
+                if len(_CODE_FENCE_LINE_RE.findall(paragraph)) % 2 == 1:
+                    search_from = idx + break_len
+                    continue
+                self._render_paragraph(paragraph)
+                tail = text[idx + break_len :]
+                self._para_buffer = [tail] if tail else []
+                self._para_chars = len(tail)
+                rendered = True
+                break
+            if not rendered:
+                break
+        if force:
+            tail = "".join(self._para_buffer)
+            if tail.strip():
+                self._render_paragraph(tail)
+            self._para_buffer = []
+            self._para_chars = 0
+
+    def _partial_flush_index(self, text: str) -> int:
+        """Return a visible prose boundary for latency flushes, or ``-1``."""
+        if len(text) < self._partial_flush_chars or _has_open_code_fence(text):
+            return -1
+
+        candidate = text
+        if self._defer_want_me_to_closer:
+            marker_pos = text.lower().find(WANT_ME_TO_MARKER)
+            if marker_pos >= 0:
+                candidate = text[:marker_pos]
+        if len(candidate) < self._partial_flush_chars:
+            return -1
+
+        sentence_indices = [
+            candidate.rfind(sep, 0, len(candidate)) + len(sep)
+            for sep in _PARTIAL_FLUSH_SENTENCE_BREAKS
+            if candidate.rfind(sep, 0, len(candidate)) >= self._partial_flush_min_chars
+        ]
+        if sentence_indices:
+            return max(sentence_indices)
+
+        space_idx = candidate.rfind(" ", 0, len(candidate))
+        if space_idx >= self._partial_flush_min_chars:
+            return space_idx + 1
+        return self._partial_flush_chars
+
+    def _flush_partial_if_needed(self) -> None:
+        if self._para_chars < self._partial_flush_chars:
+            return
+        text = "".join(self._para_buffer)
+        idx = self._partial_flush_index(text)
+        if idx <= 0:
+            return
+        self._render_paragraph(text[:idx], source_break=False)
+        tail = text[idx:]
+        self._para_buffer = [tail] if tail else []
+        self._para_chars = len(tail)
+
+    def _maybe_flush_after_append(self, chunk: str, prev_chunk: str | None) -> None:
+        """Cheap fast-path before the O(buffer) join inside ``_flush_paragraphs``.
+
+        A paragraph boundary requires ``\\n\\n``. The second ``\\n``
+        must be in the *current* chunk (any earlier chunks were already
+        flushed or had no boundary). Skip the full flush when ``\\n``
+        is absent here AND the chunk-to-chunk seam can't form a
+        boundary either. Without this guard, a long single-paragraph
+        response (e.g. 4k chunks, no blank-line separators) becomes
+        O(n²) because every chunk triggers a full
+        ``"".join(para_buffer)``.
+        """
+        if _PARAGRAPH_BREAK in chunk:
+            self._flush_paragraphs()
+            self._flush_partial_if_needed()
+            return
+        # Cross-chunk boundary: previous chunk ended with ``\n`` and
+        # this chunk's leading ``\n`` completes the ``\n\n``.
+        newline = _PARAGRAPH_BREAK[0]
+        if (
+            prev_chunk is not None
+            and newline in chunk
+            and prev_chunk.endswith(newline)
+            and chunk.startswith(newline)
+        ):
+            self._flush_paragraphs()
+            self._flush_partial_if_needed()
+            return
+        self._flush_partial_if_needed()
 
 
 def stream_to_console(
@@ -181,36 +446,14 @@ def stream_to_console_state(
                 return StreamRenderResult(text="".join(peeked) + "".join(drained))
             break
 
-    # Paragraph-level streaming: chunks accumulate in ``para_buffer``
-    # until a paragraph boundary (``\n\n`` outside a code block) closes
-    # the paragraph, at which point we render that paragraph as
-    # Markdown via ``console.print(Markdown(...))``. Visible "streaming"
-    # is per-paragraph rather than per-chunk — a true live re-render
-    # would need cursor manipulation that fights ``patch_stdout``. The
-    # spinner (``⠋ thinking… (Ns · ↓ X tokens)``) ticks during long
-    # paragraphs to confirm chunks are still arriving, and code blocks
-    # are kept whole (we never split on ``\n\n`` while a fence is open).
-    buffer: list[str] = list(peeked)
-    para_buffer: list[str] = list(peeked)
-    para_chars = sum(len(c) for c in peeked)
-    started = time.monotonic()
-    progress_hook = getattr(console, "update_streaming_progress", None)
-    total_bytes = sum(len(c) for c in peeked)
-    last_progress_at = 0.0
-    rendered_paragraphs = 0
-    deferred_closer = False
-
-    def _maybe_update_progress(now: float, *, force: bool = False) -> float:
-        nonlocal progress_hook
-        if progress_hook is None:
-            return last_progress_at
-        if not force and now - last_progress_at < _PROGRESS_INTERVAL_SECONDS:
-            return last_progress_at
-        try:
-            progress_hook(total_bytes)
-        except Exception:
-            progress_hook = None
-        return now
+    # Paragraph-level streaming (``ReplyStream``): visible "streaming" is
+    # per-paragraph rather than per-chunk — a true live re-render would need
+    # cursor manipulation that fights ``patch_stdout``. The spinner
+    # (``⠋ thinking… (Ns · ↓ X tokens)``) ticks during long paragraphs to
+    # confirm chunks are still arriving, and code blocks are kept whole.
+    stream = ReplyStream(console, defer_want_me_to_closer=defer_want_me_to_closer)
+    for chunk in peeked:
+        stream.feed(chunk)
 
     def _is_cancelled() -> bool:
         # ``getattr`` keeps this layer decoupled from the loop's
@@ -219,177 +462,6 @@ def stream_to_console_state(
         # so this stays False for them.
         return bool(getattr(console, "cancel_requested", False))
 
-    def _render_paragraph_body(text: str, *, source_break: bool = True) -> None:
-        nonlocal rendered_paragraphs
-        visible = text
-        if not visible.strip():
-            return
-        markdown = _build_markdown_block(visible)
-        starts_with_self_spacing_block = bool(
-            markdown.parsed and markdown.parsed[0].type in _SELF_SPACING_BLOCK_TOKEN_TYPES
-        )
-        if not rendered_paragraphs:
-            # One blank row keeps the user turn and its reply distinct.
-            console.print()
-        if rendered_paragraphs and source_break and not starts_with_self_spacing_block:
-            # ``_flush_paragraphs`` consumes the source ``\n\n`` boundary.
-            # Restore it explicitly unless Rich adds equivalent leading space
-            # for the next standalone block. This matters most after lists,
-            # whose renderer adds no trailing blank line.
-            console.print()
-        # The first paragraph carries the assistant marker in the gutter; every
-        # paragraph hangs in the same indented body column. Explicit TEXT so
-        # body never falls through to terminal white and washes the marker out.
-        with console.use_theme(ui_theme.MARKDOWN_THEME):
-            console.print(
-                transcript_gutter(
-                    markdown,
-                    lead=rendered_paragraphs == 0,
-                    label_style=ui_theme.reply_marker_style(),
-                ),
-                style=str(ui_theme.TEXT),
-                width=reply_width(console),
-            )
-        rendered_paragraphs += 1
-
-    def _render_paragraph(text: str, *, source_break: bool = True) -> None:
-        nonlocal deferred_closer
-        if not text.strip():
-            return
-        if defer_want_me_to_closer and _paragraph_has_want_me_to(text):
-            deferred_closer = True
-            # Keep evidence / questions visible; hold only from Want-me-to onward.
-            lowered = text.lower()
-            pos = lowered.find(WANT_ME_TO_MARKER)
-            start = pos
-            if start >= 2 and text[start - 2 : start] == "**":
-                start -= 2
-            head = text[:start].rstrip() if start > 0 else ""
-            if head.strip():
-                _render_paragraph_body(head, source_break=source_break)
-            return
-        _render_paragraph_body(text, source_break=source_break)
-
-    def _flush_paragraphs(*, force: bool = False) -> None:
-        nonlocal para_buffer, para_chars
-        break_len = len(_PARAGRAPH_BREAK)
-        while True:
-            text = "".join(para_buffer)
-            search_from = 0
-            rendered = False
-            while True:
-                idx = text.find(_PARAGRAPH_BREAK, search_from)
-                if idx < 0:
-                    break
-                paragraph = text[: idx + break_len]
-                # Odd line-start fence count means a fence is still
-                # open; the boundary is inside it, so skip and keep
-                # scanning for the next ``\n\n`` that lands outside
-                # any fence. Only line-start fences count (per
-                # CommonMark), so an inline mention like
-                # ``Use ``` to open a block`` doesn't trip this check.
-                if len(_CODE_FENCE_LINE_RE.findall(paragraph)) % 2 == 1:
-                    search_from = idx + break_len
-                    continue
-                _render_paragraph(paragraph)
-                tail = text[idx + break_len :]
-                para_buffer = [tail] if tail else []
-                para_chars = len(tail)
-                rendered = True
-                break
-            if not rendered:
-                break
-        if force:
-            tail = "".join(para_buffer)
-            if tail.strip():
-                _render_paragraph(tail)
-            para_buffer = []
-            para_chars = 0
-
-    def _partial_flush_index(text: str) -> int:
-        """Return a visible prose boundary for latency flushes, or ``-1``."""
-        if len(text) < _PARTIAL_FLUSH_CHAR_THRESHOLD or _has_open_code_fence(text):
-            return -1
-
-        candidate = text
-        if defer_want_me_to_closer:
-            marker_pos = text.lower().find(WANT_ME_TO_MARKER)
-            if marker_pos >= 0:
-                candidate = text[:marker_pos]
-        if len(candidate) < _PARTIAL_FLUSH_CHAR_THRESHOLD:
-            return -1
-
-        sentence_indices = [
-            candidate.rfind(sep, 0, len(candidate)) + len(sep)
-            for sep in _PARTIAL_FLUSH_SENTENCE_BREAKS
-            if candidate.rfind(sep, 0, len(candidate)) >= _PARTIAL_FLUSH_MIN_CHARS
-        ]
-        if sentence_indices:
-            return max(sentence_indices)
-
-        space_idx = candidate.rfind(" ", 0, len(candidate))
-        if space_idx >= _PARTIAL_FLUSH_MIN_CHARS:
-            return space_idx + 1
-        return _PARTIAL_FLUSH_CHAR_THRESHOLD
-
-    def _flush_partial_if_needed() -> None:
-        nonlocal para_buffer, para_chars
-        if para_chars < _PARTIAL_FLUSH_CHAR_THRESHOLD:
-            return
-        text = "".join(para_buffer)
-        idx = _partial_flush_index(text)
-        if idx <= 0:
-            return
-        _render_paragraph(text[:idx], source_break=False)
-        tail = text[idx:]
-        para_buffer = [tail] if tail else []
-        para_chars = len(tail)
-
-    def _maybe_flush_after_append(chunk: str, prev_chunk: str | None) -> None:
-        """Cheap fast-path before the O(buffer) join inside ``_flush_paragraphs``.
-
-        A paragraph boundary requires ``\\n\\n``. The second ``\\n``
-        must be in the *current* chunk (any earlier chunks were already
-        flushed or had no boundary). Skip the full flush when ``\\n``
-        is absent here AND the chunk-to-chunk seam can't form a
-        boundary either. Without this guard, a long single-paragraph
-        response (e.g. 4k chunks, no blank-line separators) becomes
-        O(n²) because every chunk triggers a full
-        ``"".join(para_buffer)``.
-
-        ``prev_chunk`` is the chunk immediately before this one — the
-        caller threads it explicitly so we don't reach into
-        ``para_buffer[-2]`` and read like magic indexing.
-        """
-        if not chunk:
-            return
-        if _PARAGRAPH_BREAK in chunk:
-            _flush_paragraphs()
-            _flush_partial_if_needed()
-            return
-        # Cross-chunk boundary: previous chunk ended with ``\n`` and
-        # this chunk's leading ``\n`` completes the ``\n\n``.
-        newline = _PARAGRAPH_BREAK[0]
-        if (
-            prev_chunk is not None
-            and newline in chunk
-            and prev_chunk.endswith(newline)
-            and chunk.startswith(newline)
-        ):
-            _flush_paragraphs()
-            _flush_partial_if_needed()
-            return
-        _flush_partial_if_needed()
-
-    if peeked:
-        last_progress_at = _maybe_update_progress(time.monotonic(), force=True)
-        _flush_paragraphs()
-        _flush_partial_if_needed()
-
-    # Track the chunk immediately preceding the current one so the
-    # cross-chunk seam check can detect ``\n\n`` straddling the
-    # boundary without reaching into ``para_buffer`` by index.
-    prev_chunk: str | None = peeked[-1] if peeked else None
     try:
         while True:
             if _is_cancelled():
@@ -397,33 +469,12 @@ def stream_to_console_state(
             chunk = _next_chunk(chunks_iter)
             if chunk is None:
                 break
-            if not chunk:
-                continue
-            buffer.append(chunk)
-            para_buffer.append(chunk)
-            para_chars += len(chunk)
-            total_bytes += len(chunk)
-            last_progress_at = _maybe_update_progress(time.monotonic())
-            _maybe_flush_after_append(chunk, prev_chunk)
-            prev_chunk = chunk
+            stream.feed(chunk)
     finally:
         # Render whatever's left in the paragraph buffer so the user
         # sees the full response even if it didn't end on ``\n\n``.
-        _flush_paragraphs(force=True)
-
-    elapsed = time.monotonic() - started
-    text = "".join(buffer)
-    if deferred_closer:
-        # Footer after the canonical closer is flushed by the caller.
-        return StreamRenderResult(
-            text=text,
-            deferred_closer=True,
-            footer_elapsed_s=elapsed,
-            footer_total_bytes=total_bytes,
-        )
-    # One blank after the reply keeps the next user row off the answer body.
-    console.print()
-    return StreamRenderResult(text=text, deferred_closer=False)
+        stream.flush()
+    return stream.finish()
 
 
 def publish_full_response(console: Console, text: str, *, label: str = "assistant") -> None:

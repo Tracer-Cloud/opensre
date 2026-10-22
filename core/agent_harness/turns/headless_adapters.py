@@ -21,6 +21,7 @@ from core.agent_harness.turns.turn_results import (
     ToolCallingTurnResult,
     TurnResult,
 )
+from core.state import ShownTools
 
 
 @dataclass
@@ -31,6 +32,8 @@ class InMemorySessionState:
     cli_agent_messages: list[tuple[str, str]] = field(default_factory=list)
     # Structured records of recent turns, replayed with the transcript.
     turn_evidence: list[Any] = field(default_factory=list)
+    # The tool list the conversation has seen, kept in place across turns.
+    shown_tools: ShownTools = field(default_factory=ShownTools)
     configured_integrations: list[str] = field(default_factory=list)
     configured_integrations_known: bool = False
     pending_schedule_offer: PendingScheduleOffer | None = None

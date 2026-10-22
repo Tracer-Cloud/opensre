@@ -35,8 +35,10 @@ from core.llm.shared.structured_output import StructuredOutputClient  # noqa: E4
 from core.llm.shared.tool_schema_normalize import build_openai_tool_specs  # noqa: E402
 from core.llm.types import (  # noqa: E402
     AgentLLMResponse,
+    CancelProbe,
     LLMResponse,
     SchemaDescribedTool,
+    TextDeltaCallback,
     ToolCall,
 )
 
@@ -137,7 +139,13 @@ class LiteLLMAgentClient:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
+        # Not streamed: providers behind LiteLLM differ in streamed tool-call
+        # deltas, and a rebuilt stream can drop provider fields (e.g. Gemini
+        # thought signatures) the unstreamed replay keeps.
+        _ = (on_text_delta, should_stop)
         kwargs = self._build_request_kwargs(messages, system=system, tools=tools)
         response = invoke_with_litellm_agent_retries(
             self._completion,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from http import HTTPStatus
 
@@ -18,7 +18,11 @@ from config.account import (
     resolve_account_token,
     save_account_record,
 )
-from config.account_credits import AccountCredits, parse_credit_balance_payload
+from config.account_credits import (
+    AccountCredits,
+    parse_credit_balance_payload,
+    remember_hosted_credits,
+)
 from config.constants.account import (
     OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
     OPENSRE_ACCOUNT_SESSION_PATH,
@@ -141,8 +145,22 @@ def _get_session(url: str, token: str) -> httpx.Response:
         time.sleep(delay)
 
 
-def account_status(*, app_url: str | None = None) -> AccountStatus:
-    """Validate complete local account state against the webapp."""
+@dataclass(frozen=True)
+class StoredLogin:
+    """A complete local login that only the webapp can confirm or reject."""
+
+    record: AccountRecord
+    token: str = field(repr=False)
+    app_url: str
+
+
+def local_account_status(*, app_url: str | None = None) -> AccountStatus | StoredLogin:
+    """Decide the account state from local files, or return the login to validate.
+
+    Signed-out, incomplete and invalid-app-URL states need no network. Any other
+    login is only a :class:`StoredLogin` until :func:`validate_stored_login`
+    hears from the webapp.
+    """
     record = load_account_record()
     token = resolve_account_token()
     if not token and record is None:
@@ -172,8 +190,14 @@ def account_status(*, app_url: str | None = None) -> AccountStatus:
             record,
             "The stored OpenSRE app URL is invalid.",
         )
+    return StoredLogin(record, token, resolved_app_url)
+
+
+def validate_stored_login(login: StoredLogin) -> AccountStatus:
+    """Validate a complete local login against the webapp."""
+    record = login.record
     try:
-        response = _get_session(f"{resolved_app_url}{OPENSRE_ACCOUNT_SESSION_PATH}", token)
+        response = _get_session(f"{login.app_url}{OPENSRE_ACCOUNT_SESSION_PATH}", login.token)
     except httpx.HTTPError:
         return AccountStatus(
             AccountSessionState.UNAVAILABLE,
@@ -212,13 +236,32 @@ def account_status(*, app_url: str | None = None) -> AccountStatus:
                 record,
                 "OpenSRE could not save the current hosted-model state.",
             )
+    credits = parse_credit_balance_payload(payload)
+    if credits is not None:
+        remember_hosted_credits(credits, token=login.token, record=refreshed_record)
     provider = f"{refreshed_record.llm_provider} ({refreshed_record.llm_model})"
     return AccountStatus(
         AccountSessionState.ACTIVE,
         refreshed_record,
         f"Authenticated with OpenSRE; LLM provider: {provider}.",
-        parse_credit_balance_payload(payload),
+        credits,
     )
 
 
-__all__ = ["AccountCredits", "AccountSessionState", "AccountStatus", "account_status"]
+def account_status(*, app_url: str | None = None) -> AccountStatus:
+    """Validate complete local account state against the webapp."""
+    local = local_account_status(app_url=app_url)
+    if isinstance(local, StoredLogin):
+        return validate_stored_login(local)
+    return local
+
+
+__all__ = [
+    "AccountCredits",
+    "AccountSessionState",
+    "AccountStatus",
+    "StoredLogin",
+    "account_status",
+    "local_account_status",
+    "validate_stored_login",
+]

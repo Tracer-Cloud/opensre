@@ -53,6 +53,7 @@ def _map_generate_work_status_report(
     anti_examples=["Creating or updating tasks", "Posting to Slack directly"],
     surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     input_schema={
         "type": "object",
         "properties": {

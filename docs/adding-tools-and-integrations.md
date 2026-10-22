@@ -36,6 +36,7 @@ Tool packages must be substantive production modules — no empty or discovery-o
 - [ ] Output is normalized enough for the agent/LLM to consume reliably
 - [ ] Secrets never leak through `extract_params`, return values, logs, or traceable tool-call kwargs; secret/PII output is run through `infrastructure/safety/masking/` before return
 - [ ] External side effects declare `side_effect_level`, `requires_approval`, and `approval_reason` where appropriate
+- [ ] A pure read may set `concurrency_safe=True` so it runs in parallel with other reads from the same model response: it must declare `side_effect_level` `NONE` or `READ_ONLY`, keep the default action role, need no approval or runtime context, and share no unlocked client or cache between calls
 - [ ] To appear in both chat and action turns, set `surfaces=(ToolSurface.CHAT, ToolSurface.ACTION)`
 
 ### Live payload parsing

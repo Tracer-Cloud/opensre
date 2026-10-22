@@ -5,6 +5,7 @@ Supports Anthropic (native + Bedrock), OpenAI-compatible, and subprocess CLI pro
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from config.constants.llm import ANTHROPIC_THINKING_BINDING_KEY
 from config.llm_models import DEFAULT_MAX_TOKENS
 from core.context_budget import strip_internal_message_markers
 from core.llm.shared.llm_retry import (
@@ -56,16 +58,51 @@ from core.llm.transports.sdk.anthropic_cache import (
     messages_with_cache as _anthropic_messages_with_cache,
 )
 from core.llm.transports.sdk.anthropic_cache import (
+    replay_stable_blocks as _anthropic_replay_stable_blocks,
+)
+from core.llm.transports.sdk.anthropic_cache import (
     tools_with_cache as _anthropic_tools_with_cache,
+)
+from core.llm.transports.sdk.anthropic_deferred_tools import (
+    deferred_schema as _anthropic_deferred_schema,
+)
+from core.llm.transports.sdk.anthropic_deferred_tools import (
+    deferred_tool_request as _anthropic_deferred_tool_request,
+)
+from core.llm.transports.sdk.anthropic_deferred_tools import (
+    is_deferred_tools_unsupported_error as _is_deferred_tools_unsupported_error,
+)
+from core.llm.transports.sdk.anthropic_deferred_tools import (
+    supports_deferred_tools as _supports_deferred_tools,
+)
+from core.llm.transports.sdk.anthropic_thinking import (
+    bind_thinking,
+    carries_thinking,
+    is_thinking_block,
 )
 from core.llm.transports.sdk.request_headers import (
     RequestHeaders,
     http_client_with_request_headers,
     sdk_http_client_kwargs,
 )
-from core.llm.types import AgentLLMResponse, ModelType, SchemaDescribedTool, ToolCall
+from core.llm.types import (
+    AgentLLMResponse,
+    CancelProbe,
+    LLMRequestCancelled,
+    LLMStreamInterrupted,
+    ModelType,
+    SchemaDescribedTool,
+    TextDeltaCallback,
+    ToolCall,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_if_stopped(should_stop: CancelProbe | None, provider: str) -> None:
+    """Raise :class:`LLMRequestCancelled` once the caller's probe says stop."""
+    if should_stop is not None and should_stop():
+        raise LLMRequestCancelled(f"{provider} request cancelled by the caller")
 
 
 def _anthropic_tool_schema(tool: Any) -> dict[str, Any]:
@@ -77,9 +114,14 @@ def _anthropic_tool_schema(tool: Any) -> dict[str, Any]:
     }
 
 
+def _endpoint_tag(base_url: Any) -> str:
+    """A short fingerprint of an API endpoint, safe to persist beside recorded messages."""
+    return hashlib.sha256(str(base_url or "").encode("utf-8")).hexdigest()[:12]
+
+
 # Anthropic prompt-caching breakpoint (ephemeral, 5-minute TTL by default).
-# Prefix match order is tools → system → messages; mark the last tool and the
-# system block so ReAct iterations can reuse the stable prefix.
+# Prefix match order is tools → system → messages; mark the last tool loaded up
+# front and the system block so ReAct iterations can reuse the stable prefix.
 class AnthropicAgentClient:
     """Anthropic client with native tool-calling for the agent loop."""
 
@@ -90,6 +132,15 @@ class AnthropicAgentClient:
     # first time the provider rejects the cache markers with a 400 (e.g.
     # Bedrock-hosted Claude models that predate prompt caching).
     _cache_markers_enabled = True
+    # Responses stream by default. Flipped the same way when the provider
+    # refuses the streaming endpoint itself (see ``_streaming_refused``).
+    _streaming_enabled = True
+    # Best-effort deferred tool loading (``anthropic_deferred_tools``), same
+    # lifecycle: off for the client's lifetime after a 400 that blames it.
+    _deferred_tools_enabled = True
+    # ``anthropic-beta`` value a platform needs before it accepts deferred
+    # tools and tool references; the first-party API needs none.
+    _deferred_tools_beta: str | None = None
 
     def __init__(
         self,
@@ -131,8 +182,30 @@ class AnthropicAgentClient:
     def model_id(self) -> str | None:
         return self._model
 
+    @property
+    def provider_binding(self) -> str:
+        """Which client may resend this one's assistant messages verbatim: same endpoint and model.
+
+        A thinking block is readable only by the model that wrote it, as served
+        by the platform that served it.
+        """
+        base_url = getattr(getattr(self, "_client", None), "base_url", "")
+        model = getattr(self, "_model", "")
+        return f"{self.provider_name.lower()}:{_endpoint_tag(base_url)}:{model}"
+
     def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         return [_anthropic_tool_schema(t) for t in tools]
+
+    def deferred_tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
+        """Declarations of ``tools`` the model loads only when a tool search result references them.
+
+        Appended after :meth:`tool_schemas` for the tools the conversation was
+        not shown up front. Empty when this model cannot load tools by
+        reference or the provider rejected it, so the request keeps its shape.
+        """
+        if not (self._deferred_tools_enabled and _supports_deferred_tools(self._model)):
+            return []
+        return [_anthropic_deferred_schema(_anthropic_tool_schema(t)) for t in tools]
 
     def describe_image(
         self,
@@ -178,6 +251,8 @@ class AnthropicAgentClient:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
         from anthropic import (
             AuthenticationError,
@@ -189,7 +264,21 @@ class AnthropicAgentClient:
         )
 
         cache = self._cache_markers_enabled
-        clean_messages = strip_internal_message_markers(messages)
+        stream = self._streaming_enabled
+        # Fallback retries resend ``messages`` as given, never this request's
+        # copies: a request without deferred tools must not carry references.
+        request_messages, request_tools, deferred = _anthropic_deferred_tool_request(
+            messages, tools or [], enabled=self._deferred_tools_enabled
+        )
+        # Thinking blocks whose conversation changed since they were written
+        # would be rejected by the API's history-editing check; drop them first.
+        # The binding covers the request as sent, tool references included.
+        thinking_binding: dict[str, str] | None = None
+        if carries_thinking(request_messages):
+            request_messages, thinking_binding = bind_thinking(
+                request_messages, system=system, tools=request_tools
+            )
+        clean_messages = strip_internal_message_markers(request_messages)
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self._max_tokens,
@@ -197,26 +286,66 @@ class AnthropicAgentClient:
         }
         if system:
             kwargs["system"] = _anthropic_cached_system(system) if cache else system
-        if tools:
-            kwargs["tools"] = _anthropic_tools_with_cache(tools) if cache else tools
+        if request_tools:
+            kwargs["tools"] = _anthropic_tools_with_cache(request_tools) if cache else request_tools
+        if deferred and self._deferred_tools_beta:
+            kwargs["extra_headers"] = {"anthropic-beta": self._deferred_tools_beta}
 
         backoff = _RETRY_INITIAL_BACKOFF_SEC
         last_err: Exception | None = None
         for attempt in range(_RETRY_MAX_ATTEMPTS):
             try:
-                response = self._client.messages.create(**kwargs)
+                response = self._request_message(
+                    kwargs, stream=stream, on_text_delta=on_text_delta, should_stop=should_stop
+                )
                 break
+            except (LLMStreamInterrupted, LLMRequestCancelled):
+                raise
             except AuthenticationError as err:
                 raise RuntimeError(self._authentication_error_message()) from err
             except NotFoundError as err:
                 raise RuntimeError(self._model_not_found_error_message()) from err
             except PermissionDeniedError as err:
+                if stream and self._streaming_refused(err):
+                    # Keyed on how *this* request went out, like the cache
+                    # fallback below; the unstreamed retry cannot recurse.
+                    self._streaming_enabled = False
+                    logger.warning(
+                        "%s refused response streaming for model '%s'; sending unstreamed "
+                        "requests (no live text while the model answers).",
+                        self.provider_name,
+                        self._model,
+                    )
+                    return self.invoke(
+                        messages,
+                        system=system,
+                        tools=tools,
+                        on_text_delta=on_text_delta,
+                        should_stop=should_stop,
+                    )
                 raise RuntimeError(self._permission_denied_error_message()) from err
             except BadRequestError as err:
                 # Anthropic surfaces "credit balance too low" as HTTP 400;
                 # distinguish credit exhaustion (fatal) from real schema
                 # errors before wrapping into a generic RuntimeError.
                 maybe_raise_credit_exhausted(self.provider_name, err)
+                if deferred and _is_deferred_tools_unsupported_error(err):
+                    # Same keying as the cache fallback below; checked first
+                    # because every model that defers tools also caches.
+                    self._deferred_tools_enabled = False
+                    logger.warning(
+                        "%s model '%s' rejected deferred tool loading; retrying with every "
+                        "revealed tool loaded up front (a tool search re-prices the prompt cache).",
+                        self.provider_name,
+                        self._model,
+                    )
+                    return self.invoke(
+                        messages,
+                        system=system,
+                        tools=tools,
+                        on_text_delta=on_text_delta,
+                        should_stop=should_stop,
+                    )
                 if cache and _is_cache_unsupported_error(err):
                     # Keyed on what *this* request carried, not the shared
                     # flag: a concurrent turn may already have cleared it, and
@@ -229,7 +358,13 @@ class AnthropicAgentClient:
                         self.provider_name,
                         self._model,
                     )
-                    return self.invoke(messages, system=system, tools=tools)
+                    return self.invoke(
+                        messages,
+                        system=system,
+                        tools=tools,
+                        on_text_delta=on_text_delta,
+                        should_stop=should_stop,
+                    )
                 raise RuntimeError(self._bad_request_error_message(err)) from err
             except RateLimitError as err:
                 # OpenAI's insufficient_quota lands here too, dressed as 429
@@ -315,6 +450,14 @@ class AnthropicAgentClient:
             elif block_type == "tool_use":
                 tool_calls.append(ToolCall(id=block.id, name=block.name, input=dict(block.input)))
 
+        message_markers: dict[str, Any] = {}
+        if any(is_thinking_block(block) for block in content_blocks):
+            if thinking_binding is None:
+                _sent, thinking_binding = bind_thinking(
+                    request_messages, system=system, tools=request_tools
+                )
+            message_markers[ANTHROPIC_THINKING_BINDING_KEY] = thinking_binding
+
         cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
         return AgentLLMResponse(
             content="".join(text_parts),
@@ -325,7 +468,56 @@ class AnthropicAgentClient:
             cache_creation_tokens=cache_write,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            message_markers=message_markers,
         )
+
+    def _request_message(
+        self,
+        kwargs: dict[str, Any],
+        *,
+        stream: bool,
+        on_text_delta: TextDeltaCallback | None,
+        should_stop: CancelProbe | None,
+    ) -> Any:
+        """Send one Messages request and return the complete ``Message``.
+
+        Streamed, text goes to ``on_text_delta`` as it arrives; a failure after
+        that raises :class:`LLMStreamInterrupted` with the text delivered so far.
+        ``should_stop`` is asked before sending and at every event, so a reply
+        still thinking or writing a tool call stops too.
+        """
+        if not stream:
+            return self._client.messages.create(**kwargs)
+        _raise_if_stopped(should_stop, self.provider_name)
+        delivered: list[str] = []
+        try:
+            with self._client.messages.stream(**kwargs) as message_stream:
+                for event in message_stream:
+                    # A stop raises out of the ``with``, which closes the response.
+                    _raise_if_stopped(should_stop, self.provider_name)
+                    if (
+                        event.type == "content_block_delta"
+                        and event.delta.type == "text_delta"
+                        and event.delta.text
+                        and on_text_delta is not None
+                    ):
+                        delivered.append(event.delta.text)
+                        on_text_delta(event.delta.text)
+                return message_stream.get_final_message()
+        except LLMRequestCancelled:
+            raise
+        except Exception as err:
+            if not delivered:
+                raise
+            raise LLMStreamInterrupted(
+                f"{self.provider_name} response stream failed after output began: {err}",
+                partial_text="".join(delivered),
+            ) from err
+
+    def _streaming_refused(self, err: Exception) -> bool:
+        """Whether a permission error refuses the streaming endpoint, not the model."""
+        _ = err
+        return False
 
     @staticmethod
     def build_tool_result_message(tool_calls: list[ToolCall], results: list[Any]) -> dict[str, Any]:
@@ -344,8 +536,15 @@ class AnthropicAgentClient:
 
     @staticmethod
     def build_assistant_message(raw_content: Any) -> dict[str, Any]:
-        """Build the assistant message preserving full Anthropic content blocks."""
-        return {"role": "assistant", "content": raw_content}
+        """Build the assistant message preserving full Anthropic content blocks.
+
+        Text and tool-use blocks take the shape a later turn's replay rebuilds
+        them in, so the history it resends matches this request's cached prefix;
+        every other block (thinking, server tools) is echoed as the API sent it.
+        """
+        if not isinstance(raw_content, list):
+            return {"role": "assistant", "content": raw_content}
+        return {"role": "assistant", "content": _anthropic_replay_stable_blocks(raw_content)}
 
     def _authentication_error_message(self) -> str:
         return f"{self.provider_name} authentication failed. {self.auth_error_hint}"
@@ -368,6 +567,9 @@ class BedrockAgentClient(AnthropicAgentClient):
         "Check AWS credentials (for example AWS_PROFILE, AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, "
         "or instance role) and AWS_REGION/AWS_DEFAULT_REGION."
     )
+    # Bedrock InvokeModel accepts deferred tools and tool references only
+    # under this beta; the SDK moves the header into the body's anthropic_beta.
+    _deferred_tools_beta = "tool-search-tool-2025-10-19"
 
     def __init__(self, model: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> None:
         from anthropic import AnthropicBedrock
@@ -381,6 +583,11 @@ class BedrockAgentClient(AnthropicAgentClient):
             timeout=AGENT_CLIENT_TIMEOUT_SEC,
         )
         super().__init__(model=model, max_tokens=max_tokens, client=bedrock_client)
+
+    def _streaming_refused(self, err: Exception) -> bool:
+        # IAM grants bedrock:InvokeModel and bedrock:InvokeModelWithResponseStream
+        # separately; a policy with only the first can still answer unstreamed.
+        return "InvokeModelWithResponseStream" in str(err)
 
     def _permission_denied_error_message(self) -> str:
         return (
@@ -431,7 +638,12 @@ class BedrockConverseAgentClient:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
+        # Converse is not streamed (ConverseStream is a separate API); the
+        # caller sees the whole reply when it completes, and a cancel waits too.
+        _ = (on_text_delta, should_stop)
         import botocore.exceptions
 
         from core.llm.transports.sdk.bedrock_converse import (
@@ -530,6 +742,16 @@ _OPENAI_GPT5_PLUS_RE = re.compile(r"(?:^|[^A-Za-z0-9])gpt-[56]", re.IGNORECASE)
 
 def _supports_openai_parallel_tool_calls_param(api_key_env: str) -> bool:
     """Return whether this client targets OpenAI's native chat-completions API."""
+    return api_key_env == "OPENAI_API_KEY"
+
+
+def _streams_tool_calls(api_key_env: str) -> bool:
+    """Return whether this client's endpoint streams tool calls in OpenAI's own shape.
+
+    OpenAI itself, directly or through the OpenSRE hosted route. Compatible
+    providers differ in streamed tool-call deltas and in provider fields (e.g.
+    Gemini's ``thought_signature``) that the unstreamed replay keeps verbatim.
+    """
     return api_key_env == "OPENAI_API_KEY"
 
 
@@ -651,6 +873,23 @@ class OpenAIAgentClient:
         return self._model
 
     @property
+    def provider_binding(self) -> str | None:
+        """Which client may resend this one's assistant messages verbatim, or ``None``.
+
+        Only official OpenAI (or the OpenSRE hosted route), whose message shapes
+        are known: a Responses message carries reasoning items of the model that
+        wrote it, a Chat Completions message the call arguments exactly as the
+        model wrote them. Other OpenAI-compatible providers replay earlier turns
+        rebuilt from text and calls.
+        """
+        api_key_env = str(getattr(self, "_api_key_env", "OPENAI_API_KEY"))
+        if api_key_env != "OPENAI_API_KEY":
+            return None
+        model = str(getattr(self, "_model", ""))
+        api = "responses" if uses_responses_api(model, api_key_env) else "chat"
+        return f"openai-{api}:{_endpoint_tag(getattr(self, '_base_url', None))}:{model}"
+
+    @property
     def _provider_label(self) -> str:
         api_key_env = str(getattr(self, "_api_key_env", "OPENAI_API_KEY"))
         override = _PROVIDER_LABEL_OVERRIDES.get(api_key_env)
@@ -723,6 +962,8 @@ class OpenAIAgentClient:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
         from core.llm.hosted_credits import admit_hosted_credits
 
@@ -770,16 +1011,23 @@ class OpenAIAgentClient:
                 kwargs["tool_choice"] = "auto"
                 if _supports_openai_parallel_tool_calls_param(api_key_env):
                     kwargs["parallel_tool_calls"] = True
+        # Streamed only for a caller that takes the text, on an endpoint whose
+        # streamed tool calls match what the unstreamed path returns.
+        stream_to = on_text_delta if _streams_tool_calls(api_key_env) else None
 
         backoff = _RETRY_INITIAL_BACKOFF_SEC
         last_err: Exception | None = None
         for attempt in range(_RETRY_MAX_ATTEMPTS):
             try:
-                if use_responses:
-                    response = self._client.responses.create(**kwargs)
-                else:
-                    response = self._client.chat.completions.create(**kwargs)
+                response = self._request_completion(
+                    kwargs,
+                    use_responses=use_responses,
+                    on_text_delta=stream_to,
+                    should_stop=should_stop,
+                )
                 break
+            except (LLMStreamInterrupted, LLMRequestCancelled):
+                raise
             except AuthenticationError as err:
                 raise RuntimeError(f"{self._provider_label} authentication failed.") from err
             except NotFoundError as err:
@@ -872,21 +1120,82 @@ class OpenAIAgentClient:
                 input_dict = {}
             tool_calls.append(ToolCall(id=tc.id, name=tc.function.name, input=input_dict))
 
+        # Preserve the raw API message so provider-specific fields (e.g. Gemini
+        # thought_signature in tool_calls) survive into the next conversation turn.
+        # exclude_none=True strips null fields (refusal, audio, function_call …)
+        # that strict OpenAI-compatible endpoints may reject on replay.
+        raw_message = msg.model_dump(exclude_none=True)
+        if stream_to is not None:
+            # A streamed tool call keeps the delta ``index`` it was assembled
+            # by. The unstreamed reply has none, and this message is replayed.
+            for raw_call in raw_message.get("tool_calls") or []:
+                raw_call.pop("index", None)
         return AgentLLMResponse(
             content=content,
             tool_calls=tool_calls,
             stop_reason=stop_reason,
-            # Preserve the raw API message so provider-specific fields (e.g. Gemini
-            # thought_signature in tool_calls) survive into the next conversation turn.
-            # exclude_none=True strips null fields (refusal, audio, function_call …)
-            # that strict OpenAI-compatible endpoints may reject on replay.
-            raw_content=msg.model_dump(exclude_none=True),
+            raw_content=raw_message,
             cache_read_tokens=cache_read,
             cache_creation_tokens=cache_write,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             reasoning_tokens=extract_reasoning_tokens(usage),
         )
+
+    def _request_completion(
+        self,
+        kwargs: dict[str, Any],
+        *,
+        use_responses: bool,
+        on_text_delta: TextDeltaCallback | None,
+        should_stop: CancelProbe | None,
+    ) -> Any:
+        """Send one request and return the complete response object.
+
+        With ``on_text_delta`` the request streams and text goes to it as it
+        arrives; a failure after that raises :class:`LLMStreamInterrupted`.
+        A streamed request asks ``should_stop`` before sending and at every event.
+        """
+        if on_text_delta is None:
+            if use_responses:
+                return self._client.responses.create(**kwargs)
+            return self._client.chat.completions.create(**kwargs)
+        _raise_if_stopped(should_stop, self._provider_label)
+        delivered: list[str] = []
+        try:
+            if use_responses:
+                with self._client.responses.stream(**kwargs) as events:
+                    for event in events:
+                        _raise_if_stopped(should_stop, self._provider_label)
+                        if event.type == "response.output_text.delta" and event.delta:
+                            delivered.append(event.delta)
+                            on_text_delta(event.delta)
+                    return events.get_final_response()
+            from openai.lib.streaming.chat import ChatCompletionStreamState
+
+            state = ChatCompletionStreamState()
+            with self._client.chat.completions.create(
+                **kwargs, stream=True, stream_options={"include_usage": True}
+            ) as chunks:
+                for chunk in chunks:
+                    _raise_if_stopped(should_stop, self._provider_label)
+                    state.handle_chunk(chunk)
+                    for choice in chunk.choices:
+                        if choice.delta.content:
+                            delivered.append(choice.delta.content)
+                            on_text_delta(choice.delta.content)
+            # The snapshot, not ``get_final_completion()``: that raises on a
+            # length-truncated reply, which the unstreamed path returns as-is.
+            return state.current_completion_snapshot
+        except LLMRequestCancelled:
+            raise
+        except Exception as err:
+            if not delivered:
+                raise
+            raise LLMStreamInterrupted(
+                f"{self._provider_label} response stream failed after output began: {err}",
+                partial_text="".join(delivered),
+            ) from err
 
     @staticmethod
     def build_tool_result_message(tool_calls: list[ToolCall], results: list[Any]) -> dict[str, Any]:
@@ -950,7 +1259,12 @@ class CLIBackedAgentClient:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
+        # Not streamed: a reply is parsed as a tool call or as text only once
+        # the subprocess finishes, so partial output could be tool-call JSON.
+        _ = (on_text_delta, should_stop)
         from infrastructure.harness_providers import flatten_cli_messages_to_prompt
 
         tool_block = ""

@@ -3,6 +3,7 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.redis import (
     RedisConfig,
@@ -19,6 +20,8 @@ from integrations.redis import (
         "Uses the non-blocking SCAN cursor (never KEYS) and is safe on large keyspaces."
     ),
     source="redis",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Estimate how many keys match a pattern when investigating key growth or leaks.",

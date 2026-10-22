@@ -173,6 +173,29 @@ def test_bindable_output_stream_stops_when_turn_cancel_set() -> None:
     assert inner.seen == ["a"]
 
 
+def test_bindable_output_drops_reply_previews_once_turn_cancel_set() -> None:
+    """A stop or timeout message owns the placeholder; a late piece must not reopen it."""
+    from infrastructure.turn_host.bindable_output import BindableOutput
+
+    class _Inner:
+        def __init__(self) -> None:
+            self.turn_cancel = threading.Event()
+            self.previews: list[str] = []
+
+        def preview_reply(self, text: str) -> None:
+            self.previews.append(text)
+
+    inner = _Inner()
+    bindable = BindableOutput()
+    bindable.bind(inner)  # type: ignore[arg-type]
+
+    bindable.preview_reply("Checking ")
+    inner.turn_cancel.set()
+    bindable.preview_reply("Checking the pods")
+
+    assert inner.previews == ["Checking "]
+
+
 def test_predicate_cancel_writes_the_host_event() -> None:
     from core.agent_harness.turns.host_cancel import bind_cancel_predicate
 

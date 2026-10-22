@@ -16,8 +16,9 @@ import json
 import logging
 import re
 import shlex
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
@@ -25,6 +26,7 @@ from config.llm_reasoning_effort import apply_reasoning_effort
 from core.agent import Agent, AgentRunResult
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
+from core.agent.run_io import ReplyStreamPolicy
 from core.agent_harness.accounting.self_recording_tools import SELF_RECORDING_ACTION_TOOL_NAMES
 from core.agent_harness.accounting.token_accounting import tap_provider_usage
 from core.agent_harness.agent_builder import AgentConfig, build_agent
@@ -87,7 +89,12 @@ from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.agent_harness.turns.prompt_size import PromptSize, measure_history, measure_prompt
 from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.skill_value import record_skill_value
-from core.agent_harness.turns.structured_history import history_messages, tool_items_from_run
+from core.agent_harness.turns.structured_history import (
+    context_digest,
+    history_messages,
+    session_context_to_send,
+    tool_items_from_run,
+)
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
@@ -98,7 +105,13 @@ from core.agent_harness.turns.work_outcome import (
     tap_executed_tool_outcomes,
 )
 from core.events import runtime_event_callback_from_observer
-from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.llm.types import (
+    AgentLLMResponse,
+    CancelProbe,
+    SchemaDescribedTool,
+    TextDeltaCallback,
+    ToolCall,
+)
 from core.state.history_settings import structured_history_enabled
 from core.tool import SideEffectLevel
 from core.tool.execution import (
@@ -154,6 +167,9 @@ class ActionTurnPlan:
     # Earlier turns replayed as typed messages ahead of ``user_message``
     # (``turns.structured_history``); empty for explicit ``!``/``/`` commands.
     history: tuple[Any, ...] = ()
+    # Fingerprint of the session-context section ``user_message`` carries; ""
+    # when the replayed history already holds it (or no model is called).
+    context_digest: str = ""
     # Size of each prompt block, the replayed history, and the tool schemas the
     # model receives; ``None`` for explicit commands, which call no model.
     prompt_size: PromptSize | None = None
@@ -212,9 +228,13 @@ class _StaticToolCallLLM:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
         _ = system
         _ = tools
+        _ = on_text_delta
+        _ = should_stop
         if self._used:
             return AgentLLMResponse(content="", tool_calls=[], raw_content=None)
         self._used = True
@@ -396,6 +416,7 @@ def _latest_unshown_outcome_report(
     deferred_replies: Sequence[str],
     *,
     history_count: int = 0,
+    already_shown: Sequence[str] = (),
 ) -> str:
     """The model's outcome report, when it is not already the closing reply.
 
@@ -403,8 +424,12 @@ def _latest_unshown_outcome_report(
     to print that prose as a working note and then append every tool snapshot.
     Only this turn's messages count: the first ``history_count`` are earlier
     turns replayed as context, whose reports were already delivered.
+    ``already_shown`` holds replies a surface printed while they streamed.
     """
-    shown = {final_text.strip(), *(text.strip() for text in deferred_replies if text.strip())}
+    shown = {
+        final_text.strip(),
+        *(text.strip() for text in (*deferred_replies, *already_shown) if text.strip()),
+    }
     latest = ""
     messages = list(getattr(result, "messages", ()) or ())
     for message in messages[history_count:]:
@@ -572,6 +597,55 @@ def _grounded_output_tools_only(result: Any) -> bool:
         if not getattr(tool_result, "model_only", False)
     ]
     return bool(names) and all(name in _GROUNDED_OUTPUT_TOOL_NAMES for name in names)
+
+
+def _closing_may_be_invented(result: Any) -> bool:
+    """True when only self-recording tools ran and none carried its output back.
+
+    The model then wrote its closing without seeing what the user saw, so the
+    composer drops it unless it asks the user something.
+    """
+    return (
+        _self_recording_tools_only(result)
+        and not _grounded_output_tools_only(result)
+        and not _has_quiet_shell_run(result)
+    )
+
+
+def _streamed_replies(session: SessionState) -> tuple[str, ...]:
+    """Replies of this turn a surface already printed while they streamed."""
+    terminal = getattr(session, "terminal", None)
+    return tuple(getattr(terminal, "streamed_replies", None) or ())
+
+
+def _reply_shows_as_written(
+    progress: Any,
+    session: SessionState,
+    deferred_replies: Sequence[str],
+    *,
+    history_count: int,
+) -> bool:
+    """Whether the closing the model writes next will be shown exactly as written.
+
+    :func:`_compose_response`'s rules, judged before the closing exists, so a
+    closing the composer could still drop, or put an earlier report ahead of,
+    never shows while it streams: a menu answer's bare acknowledgement, a recap
+    of figures a tool already painted, a closing written after self-recording
+    tools without their output, and a reply led by an unshown outcome report.
+    """
+    terminal = getattr(session, "terminal", None)
+    selected_choice = getattr(terminal, "pending_choice_response", None)
+    if isinstance(selected_choice, str) and selected_choice.strip():
+        return False
+    if _painted_results_only(progress) or _closing_may_be_invented(progress):
+        return False
+    return not _latest_unshown_outcome_report(
+        progress,
+        "",
+        deferred_replies,
+        history_count=history_count,
+        already_shown=_streamed_replies(session),
+    )
 
 
 def _asks_the_user(final_text: str) -> bool:
@@ -783,6 +857,7 @@ def _build_action_agent(
     # literal `/slash` paths execute exactly one explicit command by design,
     # so "did the agent reach the goal" is not a meaningful question there.
     goal: Goal | None = None
+    reply_stream_policy: ReplyStreamPolicy | None = None
     executed_tool_names: list[str] = []
     executed_outcomes: list[ExecutedToolOutcome] = []
     deferred_replies: list[str] = []
@@ -791,6 +866,7 @@ def _build_action_agent(
     prompt_context = ""
     history: tuple[Any, ...] = ()
     prompt_size: PromptSize | None = None
+    sent_context_digest = ""
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -819,26 +895,38 @@ def _build_action_agent(
         snapshot = turn_snapshot or TurnSnapshot.from_session(message, session, surface=None)
         envelope = build_action_system_prompt_envelope(snapshot)
         # Earlier turns go ahead of the new message as typed messages, oldest
-        # first, so their tool calls and results reach the model verbatim and the
-        # prefix (system, tools, history) stays the same from turn to turn.
+        # first, each exactly as it was sent, so their tool calls and results
+        # reach the model verbatim and the prefix (system, tools, history) the
+        # provider cached stays the same from turn to turn.
         if structured_history_enabled():
             history = tuple(
                 history_messages(snapshot.conversation_messages, snapshot.turn_evidence)
             )
-        # Cached half stays byte-identical across turns; ephemeral (plan, turn
-        # facts) rides with the user message so Anthropic's system
-        # cache_control breakpoint is not invalidated every turn.
-        system = envelope.render_cached()
-        prompt_skill, prompt_context = action_prompt_skill_and_context(envelope)
-        ephemeral = envelope.render_ephemeral()
-        user_message = build_action_user_message(message, prefix=ephemeral)
+        # The system prompt is only the stable layer, byte-identical for the
+        # session. The session context (integrations, repositories, memory)
+        # rides in the user message, and only when the replayed history does not
+        # already carry it; the ephemeral layer (plan, turn facts) rides every turn.
+        layers = envelope.render_split()
+        system = layers.cached
+        session_context = session_context_to_send(
+            layers.context, snapshot.conversation_messages, snapshot.turn_evidence
+        )
+        if session_context:
+            sent_context_digest = context_digest(session_context)
+        prompt_skill, prompt_context = action_prompt_skill_and_context(
+            envelope, session_context=session_context
+        )
+        user_message = build_action_user_message(
+            message, context=session_context, prefix=layers.ephemeral
+        )
         prompt_size = measure_prompt(
             envelope,
             history=measure_history(
                 history, snapshot.conversation_messages, snapshot.turn_evidence
             ),
             tool_schema_count=len(agent_tools),
-            request_chars=len(user_message) - len(ephemeral),
+            request_chars=len(user_message) - len(layers.ephemeral) - len(session_context),
+            session_context_sent=bool(session_context),
         )
         # ReAct goal: host gates (unfinished plan) reject stop. Same-LLM
         # review is opt-in. The verifier reads executed tool names from the
@@ -879,6 +967,14 @@ def _build_action_agent(
             executed_outcomes=executed_outcomes,
             trace_context=lambda: turn_trace_state(session),
         )
+        # A closing shows while it streams only when the composer will show
+        # it exactly as written; otherwise it waits for the composed reply.
+        reply_stream_policy = partial(
+            _reply_shows_as_written,
+            session=session,
+            deferred_replies=deferred_replies,
+            history_count=len(history),
+        )
 
     # WAL first, observer second: the tool intent must be on disk before
     # any surface side effect reacts to the same event.
@@ -905,11 +1001,13 @@ def _build_action_agent(
         tool_hooks=tool_hooks,
         on_runtime_event=on_runtime_event,
         goal=goal,
+        reply_stream_policy=reply_stream_policy,
     )
     return ActionTurnPlan(
         agent=build_agent(config),
         user_message=user_message,
         history=history,
+        context_digest=sent_context_digest,
         prompt_size=prompt_size,
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
@@ -1020,6 +1118,12 @@ class _TurnCounts:
     handled: bool
 
 
+#: Closes a reply the provider kept cutting off (``stop_reason`` ``reply_interrupted``).
+_REPLY_CUT_OFF_NOTE = (
+    '_The model provider cut this reply off before it finished. Say "continue" for the rest._'
+)
+
+
 def _compose_response(
     result: Any,
     session: SessionState,
@@ -1044,6 +1148,10 @@ def _compose_response(
     waiting_for_choice = getattr(session, "pending_user_choice", None) is not None
     generic_text = _response_text_from_generic_results(result, tools_by_name)
     hint = _pop_turn_outcome_hint(session)
+    if getattr(result, "stop_reason", "") == "reply_interrupted":
+        # The reply still broke off after every continuation: say so, or it
+        # reads as finished mid-sentence.
+        hint = "\n".join(part for part in (_REPLY_CUT_OFF_NOTE, hint) if part)
     terminal = getattr(session, "terminal", None)
     pending_choice_response = getattr(terminal, "pending_choice_response", None)
     selected_choice = (
@@ -1070,12 +1178,7 @@ def _compose_response(
         and not _asks_the_user(final_text)
     ):
         suppression_reason = "painted_figures_recap"
-    elif (
-        _self_recording_tools_only(result)
-        and not _grounded_output_tools_only(result)
-        and not _asks_the_user(final_text)
-        and not _has_quiet_shell_run(result)
-    ):
+    elif _closing_may_be_invented(result) and not _asks_the_user(final_text):
         suppression_reason = "self_recording_tools"
     final_text_chunk = "" if suppression_reason else final_text
     # The model sometimes restates the plan (or every historical snapshot) in its
@@ -1086,7 +1189,11 @@ def _compose_response(
     # github_cli / other registry tools without double-printing shell output.
     # response_text still includes history for persistence / non-TTY surfaces.
     assistant_report = _latest_unshown_outcome_report(
-        result, final_text_chunk, deferred_replies, history_count=history_count
+        result,
+        final_text_chunk,
+        deferred_replies,
+        history_count=history_count,
+        already_shown=_streamed_replies(session),
     )
     closing_already_has_report = is_outcome_report(final_text_chunk) or any(
         is_outcome_report(text) for text in deferred_replies
@@ -1260,13 +1367,28 @@ def _show_response(
     body = final_text or ("\n".join(display_chunks) if display_chunks else "")
     if body:
         if body.strip():
-            return output.stream(label="OpenSRE", chunks=iter([body]))
+            return output.stream(label="OpenSRE", chunks=_display_parts(body, display_chunks))
         if handled:
             _end_silent_tool_turn(output)
         return ""
     if handled:
         _end_silent_tool_turn(output)
     return ""
+
+
+def _display_parts(body: str, display_chunks: Sequence[str]) -> Iterator[str]:
+    """``body`` as one chunk per display part (closing, tool results, hint).
+
+    The chunks join back to ``body`` exactly. A surface that printed the
+    closing while it streamed recognises it as the first chunk and prints only
+    the rest; every other surface reads the same text it always did.
+    """
+    if not display_chunks or "\n".join(display_chunks) != body:
+        yield body
+        return
+    yield display_chunks[0]
+    for chunk in display_chunks[1:]:
+        yield f"\n{chunk}"
 
 
 def _end_silent_tool_turn(output: OutputSink) -> None:
@@ -1557,6 +1679,8 @@ def _run_action_turn(
         tool_evidence=tool_evidence,
         evidence_success_count=evidence_success_count,
         history_items=history_items,
+        sent_text=built.user_message,
+        context_digest=built.context_digest,
     )
 
 

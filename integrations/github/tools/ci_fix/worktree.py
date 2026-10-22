@@ -82,27 +82,23 @@ def create_branch_worktree(
 
 
 def create_branch_checkout(
-    workspace: str, ctx: CiFixContext, *, token: str | None = None
+    workspace: str, ctx: CiFixContext, *, token: str | None = None, branch_name: str = ""
 ) -> BranchWorktree:
-    """Create the repair branch in an already-isolated checkout.
+    """Check out a branch at the fetched target head in an already-isolated checkout.
 
     A remote repair starts in a run-owned clone, so adding a linked worktree
     would check out the repository a second time. Explicit user checkouts still
     use :func:`create_branch_worktree` to isolate their branch and local WIP.
+    ``branch_name`` defaults to a fresh repair branch; a fix pushed straight to
+    the target names the target itself, which the clone already has and resets.
     """
     target_branch = ctx.target_branch or ctx.base_branch
-    branch_name = build_branch_name(ctx)
+    branch_name = branch_name or build_branch_name(ctx)
     try:
         ensure_git_repo(workspace)
         fetch_remote_branch(workspace, target_branch, token=token)
         result = subprocess.run(
-            [
-                "git",
-                "checkout",
-                "-b",
-                branch_name,
-                f"origin/{target_branch}",
-            ],
+            ["git", "checkout", "-B", branch_name, f"origin/{target_branch}"],
             cwd=workspace,
             capture_output=True,
             text=True,

@@ -45,6 +45,7 @@ def _community_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     anti_examples=["Posting replies", "Changing GitHub labels or assignees"],
     surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     evidence_mapper=_map_summarize_community_followups,
     input_schema={
         "type": "object",

@@ -429,6 +429,35 @@ def test_a_revoked_token_clears_the_snapshot_and_bumps_the_generation(
     assert acct.account_integrations_generation() == generation_after_fetch + 1
 
 
+def test_a_snapshot_read_with_a_revoked_token_never_answers_for_a_new_sign_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The launch reads integrations while the sign-in gate may replace the token."""
+    # Arrange: the stored token is revoked; signing in again keeps user and org
+    _signed_in(monkeypatch)
+    current_token = ["revoked-token"]
+    monkeypatch.setattr(acct, "resolve_account_token", lambda: current_token[0])
+    seen = _respond_with(
+        monkeypatch,
+        [
+            httpx.Response(401, json={"error": "unauthorized"}),
+            httpx.Response(200, json=_vault_payload()),
+        ],
+    )
+    assert acct.load_account_integrations() == []
+
+    # Act: the gate's sign-in saves a new token within the snapshot's TTL
+    current_token[0] = "new-token"
+    records = acct.load_account_integrations()
+
+    # Assert: the new login is asked, not answered by the revoked token's empty set
+    assert [record["service"] for record in records] == ["github"]
+    assert [request["authorization"] for request in seen] == [
+        "Bearer revoked-token",
+        "Bearer new-token",
+    ]
+
+
 def test_the_setup_page_is_the_signed_in_organizations_home(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

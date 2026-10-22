@@ -182,20 +182,19 @@ def test_per_turn_conversation_never_reaches_the_cached_prefix() -> None:
     assert marker in ephemeral
 
 
-def test_the_split_halves_reassemble_into_the_unchanged_render() -> None:
-    """``render()`` output must not move while the halves are introduced.
+def test_the_split_layers_reassemble_into_the_unchanged_render() -> None:
+    """``render()`` output must not move while the layers are introduced.
 
-    Stated as the general contract — join the non-empty halves with the
+    Stated as the general contract — join the non-empty layers with the
     envelope's own separator — so the assertion holds for any envelope, not
     only one that happens to separate with the empty string. Requires every
-    ephemeral block to follow every cached block in declaration order.
+    layer's blocks to follow the previous layer's in declaration order.
     """
     # Arrange
     envelope = build_action_system_prompt_envelope(_turn([("user", "hello")]))
 
     # Act
-    cached, ephemeral = envelope.render_split()
-    rejoined = envelope.separator.join(half for half in (cached, ephemeral) if half)
+    rejoined = envelope.separator.join(layer for layer in envelope.render_split() if layer)
 
     # Assert
     assert rejoined == envelope.render()
@@ -242,8 +241,10 @@ def test_the_action_envelope_exposes_a_stable_half_the_provider_can_cache() -> N
     second = _turn([("user", "hello"), ("assistant", "hi"), ("user", "again")])
 
     # Act
-    first_cached, first_ephemeral = build_action_system_prompt_envelope(first).render_split()
-    second_cached, _ = build_action_system_prompt_envelope(second).render_split()
+    first_cached, _context, first_ephemeral = build_action_system_prompt_envelope(
+        first
+    ).render_split()
+    second_cached = build_action_system_prompt_envelope(second).render_split().cached
 
     # Assert
     assert first_cached == second_cached
@@ -356,7 +357,11 @@ def test_newest_conversation_survives_head_preserving_truncation() -> None:
 def test_split_reassembles_when_long_term_memory_is_present(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Volatile memory must sit before ephemeral so join(cached, eph) == render()."""
+    """Memory rides the session context, between the system prompt and the turn.
+
+    It changes on a memory write, so in the cached system prompt one write would
+    re-price the whole prefix; joining the layers still reproduces ``render()``.
+    """
     from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
     from core.domain.memory import save_memory
 
@@ -375,19 +380,20 @@ def test_split_reassembles_when_long_term_memory_is_present(
     assert PromptBlockId.LONG_TERM_MEMORY in ids
     assert ids.index(PromptBlockId.LONG_TERM_MEMORY) < ids.index(PromptBlockId.RECENT_CONVERSATION)
 
-    cached, ephemeral = envelope.render_split()
-    rejoined = envelope.separator.join(half for half in (cached, ephemeral) if half)
+    cached, context, ephemeral = envelope.render_split()
+    rejoined = envelope.separator.join(layer for layer in (cached, context, ephemeral) if layer)
     assert rejoined == envelope.render()
-    assert "LONG-TERM MEMORY" in cached
+    assert "LONG-TERM MEMORY" in context
+    assert "LONG-TERM MEMORY" not in cached
     assert "RECENT CONVERSATION" in ephemeral
     assert marker in ephemeral
     assert marker not in cached
 
 
-def test_relevant_memories_ride_the_turn_while_the_index_stays_cached(
+def test_relevant_memories_ride_the_turn_while_the_index_stays_in_the_session_context(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Memory bodies change with every request, so they must never enter the cached half."""
+    """Memory bodies change with every request, so they must stay out of the cached layers."""
     from dataclasses import replace
 
     from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
@@ -412,8 +418,10 @@ def test_relevant_memories_ride_the_turn_while_the_index_stays_cached(
     kafka = build_action_system_prompt_envelope(replace(_turn([]), text="name the kafka topic"))
 
     assert redis.render_cached() == kafka.render_cached()
-    redis_cached, redis_turn = redis.render_split()
-    assert "zzmarker-redis-body" in redis_turn and "zzmarker-redis-body" not in redis_cached
+    assert redis.render_context() == kafka.render_context()
+    redis_cached, redis_context, redis_turn = redis.render_split()
+    assert "zzmarker-redis-body" in redis_turn
+    assert "zzmarker-redis-body" not in redis_cached + redis_context
     assert "zzmarker-kafka-body" not in redis_turn
     ids = [block.id for block in redis.blocks]
     assert (
@@ -421,14 +429,14 @@ def test_relevant_memories_ride_the_turn_while_the_index_stays_cached(
     )
 
 
-def test_every_tier_lands_in_exactly_one_half() -> None:
-    """The halves must partition the blocks whatever tiers exist.
+def test_every_tier_lands_in_exactly_one_layer() -> None:
+    """The layers must partition the blocks whatever tiers exist.
 
-    Selecting the cached half by set membership and the ephemeral half by
-    equality partitions only while the enum has exactly today's members. A tier
-    added later would fall in neither half and vanish from the prompt with
-    nothing failing, so the invariant is asserted over every enum member rather
-    than over the four blocks the action prompt happens to build.
+    Selecting layers by set membership partitions only while the enum has
+    exactly today's members. A tier added later would fall in no layer and
+    vanish from the prompt with nothing failing, so the invariant is asserted
+    over every enum member rather than over the blocks the action prompt
+    happens to build.
     """
     # Arrange
     from core.agent_harness.prompts import PromptTier
@@ -442,12 +450,13 @@ def test_every_tier_lands_in_exactly_one_half() -> None:
     )
 
     # Act
-    cached, ephemeral = envelope.render_split()
+    layers = envelope.render_split()
 
     # Assert
     for tier in PromptTier:
         marker = f"marker-{tier.value}"
-        assert (marker in cached) ^ (marker in ephemeral), f"{tier} landed in neither or both"
+        landed = sum(marker in layer for layer in layers)
+        assert landed == 1, f"{tier} landed in {landed} layers"
 
 
 def test_layers_are_emitted_in_tier_order_however_blocks_were_added() -> None:

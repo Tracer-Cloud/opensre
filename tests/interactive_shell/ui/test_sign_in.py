@@ -57,7 +57,7 @@ def test_welcome_title_renders_in_the_accent_colour() -> None:
 def test_gate_proceeds_immediately_when_already_signed_in(monkeypatch) -> None:
     # No screen, no menu when the user is already signed in.
     rendered: list[bool] = []
-    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: rendered.append(True))
+    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c, **_k: rendered.append(True))
     console, _ = _console()
 
     result = run_sign_in_gate(console, is_signed_in=lambda: True, login=lambda: False)
@@ -79,7 +79,7 @@ def test_gate_fails_closed_on_non_interactive_stdin(monkeypatch) -> None:
 def test_gate_logs_in_then_proceeds(monkeypatch) -> None:
     login_calls: list[bool] = []
     monkeypatch.setattr(sign_in, "repl_tty_interactive", lambda: True)
-    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
+    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c, **_k: None)
     monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda: SignInChoice.LOGIN)
     console, _ = _console()
 
@@ -95,7 +95,7 @@ def test_gate_logs_in_then_proceeds(monkeypatch) -> None:
 
 def test_gate_exit_declines(monkeypatch) -> None:
     monkeypatch.setattr(sign_in, "repl_tty_interactive", lambda: True)
-    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
+    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c, **_k: None)
     monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda: SignInChoice.EXIT)
     console, _ = _console()
 
@@ -112,7 +112,7 @@ def test_gate_retries_after_a_failed_login_then_exits(monkeypatch) -> None:
     # Login fails once, then the user picks Exit — the gate re-prompts, does not loop forever.
     choices = iter([SignInChoice.LOGIN, SignInChoice.EXIT])
     monkeypatch.setattr(sign_in, "repl_tty_interactive", lambda: True)
-    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
+    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c, **_k: None)
     monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda: next(choices))
     console, _ = _console()
 
@@ -126,7 +126,7 @@ def test_application_cursor_arrows_move_the_selection_instead_of_exiting(
 ) -> None:
     # Arrange: terminals in application-cursor mode send ESC O B / ESC O A for
     # down / up. Each used to read as Esc, and dismissing the gate exits the shell.
-    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
+    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c, **_k: None)
     monkeypatch.setattr(sys, "stdout", TtyStringIO())
     console, _ = _console()
     choices: list[SignInChoice | None] = []

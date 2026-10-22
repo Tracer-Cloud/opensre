@@ -30,6 +30,7 @@ from integrations.postgresql import (
     source_id="postgresql_pg_locks",
     evidence_type=EvidenceType.QUERY_STATS,
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     examples=[
         "Check for blocked queries causing application timeouts.",
         "Find which query is blocking a deployment migration.",

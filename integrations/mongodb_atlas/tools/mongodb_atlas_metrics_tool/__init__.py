@@ -3,6 +3,7 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.mongodb_atlas import (
     MongoDBAtlasConfig,
@@ -17,6 +18,8 @@ from integrations.mongodb_atlas.tools._evidence import map_get_mongodb_atlas_clu
     name="get_mongodb_atlas_cluster_metrics",
     description="Retrieve key process-level metrics for a MongoDB Atlas cluster including connections, opcounters, CPU, memory, cache, and disk IOPS.",
     source="mongodb_atlas",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     is_available=atlas_is_available,
     injected_params=("api_private_key", "api_public_key", "base_url"),

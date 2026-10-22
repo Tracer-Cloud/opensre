@@ -318,6 +318,8 @@ class SpinnerState:
     _MIN_HINT_GAP = 2
     # Traveling light wave across the status sentence (Cursor / Droid style).
     _SHIMMER_PERIOD_SECONDS = 1.5
+    # The reply preview shows a few rows, so only the newest text is kept.
+    _REPLY_PREVIEW_MAX_CHARS = 2_000
 
     def __init__(self, frames: tuple[str, ...] | None = None) -> None:
         if frames:
@@ -331,6 +333,8 @@ class SpinnerState:
         # start before any end, so a single slot would display the last tool
         # and clear on the first completion.
         self._in_flight_actions: list[_InFlightAction] = []
+        # Tail of the model reply streaming right now; empty when none is.
+        self.reply_preview: str = ""
 
     @property
     def active_action(self) -> str:
@@ -375,12 +379,21 @@ class SpinnerState:
                 del self._in_flight_actions[index]
                 return
 
+    def set_reply_preview(self, text: str) -> None:
+        """Show the reply text not yet in the transcript, keeping only its tail."""
+        self.reply_preview = text[-self._REPLY_PREVIEW_MAX_CHARS :]
+
+    def clear_reply_preview(self) -> None:
+        """Drop the live preview once the reply is printed or abandoned."""
+        self.reply_preview = ""
+
     def start(self) -> None:
         self.streaming = True
         self.started_at = time.monotonic()
         self.bytes_in = 0
         self.phase = self.EXECUTING_PHASE
         self._in_flight_actions.clear()
+        self.reply_preview = ""
 
     def set_phase(self, label: str) -> None:
         """Animate a caller-supplied phase label on the status row.
@@ -400,6 +413,7 @@ class SpinnerState:
         self.streaming = False
         self.phase = ""
         self._in_flight_actions.clear()
+        self.reply_preview = ""
 
     def toolbar_ansi(self) -> str:
         # Always return an empty string so prompt_toolkit's ConditionalContainer

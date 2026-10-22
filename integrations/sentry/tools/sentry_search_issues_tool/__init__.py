@@ -8,7 +8,7 @@ import httpx
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.sentry import (
@@ -119,6 +119,8 @@ def _search_issues_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 @tool(
     name="search_sentry_issues",
     source="sentry",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Search Sentry issues related to an incident or failure signature.",
     use_cases=[
         "Checking whether an alert maps to a known Sentry issue",

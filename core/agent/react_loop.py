@@ -11,23 +11,27 @@ host can drive it. ``run_react_loop`` is the one-line functional entry.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from typing import Any
 
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
 from config.constants.tool_discovery import (
     DISCOVERY_DETAIL_KEYS_KEY,
     DISCOVERY_PROGRESS_KEY,
     MAX_STAGNANT_DISCOVERY_ITERATIONS,
     MODEL_ONLY_PRESENTATION_KEY,
+    REQUEST_SCOPED_RESULTS_METADATA_KEY,
 )
 from config.llm_models import DEFAULT_MAX_TOKENS
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.loop_host import LoopHost
-from core.agent.run_io import AgentRunInput, AgentRunResult
+from core.agent.run_io import AgentRunInput, AgentRunResult, RunProgress
 from core.context_budget import (
     context_budget_ceiling_for_model,
     enforce_context_budget,
@@ -48,7 +52,13 @@ from core.events import (
     TurnStartEvent,
 )
 from core.llm.failure_classification import is_context_length_overflow
-from core.llm.types import ToolCall
+from core.llm.types import (
+    CancelProbe,
+    LLMRequestCancelled,
+    LLMStreamInterrupted,
+    TextDeltaCallback,
+    ToolCall,
+)
 from core.messages import AssistantRuntimeMessage, MessageMapper, UserRuntimeMessage
 from core.provider import ProviderRequest
 from core.tool.contracts import RuntimeTool
@@ -100,6 +110,20 @@ _OVERFLOW_RETRY_MIN_MESSAGE_TOKENS = 4_000
 _MIN_TOKEN_SCALE = 0.25
 _MAX_TOKEN_SCALE = 1.5
 _MAX_CEILING_STRETCH = 3.0
+
+# A streamed request asks whether to stop at every event, often hundreds of
+# times a second. A host's cancel check may read a store (a scheduled run
+# re-reads its task file), so it runs at most this often during a stream.
+_STREAM_CANCEL_POLL_SECONDS = 0.1
+
+# A reply whose stream breaks after text reached the user (a provider or proxy
+# cutting the connection at its time limit) is kept and continued, this often.
+_MAX_REPLY_RESUMES = 3
+_RESUME_REPLY_PROMPT = (
+    "Your reply above was cut off by a connection limit after the text shown. "
+    "Continue it from exactly where it stopped, mid-sentence if need be, without "
+    "repeating any of it and without mentioning the interruption."
+)
 
 _SAFETY_HANDOFF_PROMPT = """\
 The tool loop has stopped for safety ({reason}). Tools are disabled for this response.
@@ -198,6 +222,31 @@ def _traced_exception_message(exc: BaseException) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
+class _InterruptedReply:
+    """A model call whose streamed reply broke off; ``text`` already reached the user."""
+
+    text: str
+
+
+def _discard_text_delta(delta: str) -> None:
+    """Receive streamed text a surface must not see yet."""
+    _ = delta
+
+
+def _invoke_accepts(llm: Any, keyword: str) -> bool:
+    """Whether ``llm.invoke`` takes the optional ``keyword``.
+
+    A client written against the older ``invoke(messages, *, system, tools)``
+    (test doubles, out-of-tree integrations) keeps working; it is neither
+    streamed nor stopped mid-reply.
+    """
+    try:
+        return keyword in inspect.signature(llm.invoke).parameters
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+@dataclass(frozen=True, slots=True)
 class _IterationResult:
     """Outcome summary for one loop iteration."""
 
@@ -231,6 +280,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._max_stagnant_iterations = run_input.max_stagnant_iterations
         self._messages = run_input.messages
         self._msg_formatter = MessageMapper(self._llm)
+        self._streams_text = _invoke_accepts(self._llm, "on_text_delta")
+        self._accepts_cancel_probe = _invoke_accepts(self._llm, "should_stop")
         self._live_catalog = LiveToolCatalog[RuntimeToolT].from_resources(self._tool_resources)
         self._catalog_snapshot = self._live_catalog.snapshot() if self._live_catalog else None
         initial_tools = (
@@ -238,6 +289,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         )
         self._runtime_tools = list(host._filter_tools(initial_tools))
         self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
+        self._deferred_tool_schemas = self._declare_deferred_tools()
         max_output_tokens = getattr(self._llm, "_max_tokens", DEFAULT_MAX_TOKENS)
         if not isinstance(max_output_tokens, int):
             max_output_tokens = DEFAULT_MAX_TOKENS
@@ -266,6 +318,12 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._stagnant_discovery_iterations = 0
         self._seen_discovery_details: set[str] = set()
         self._safety_handoff_attempted = False
+        # A reply cut off mid-stream: the text already shown, how often it has
+        # been continued, and whether the next call carries it on.
+        self._reply_prefix = ""
+        self._reply_resumes = 0
+        self._continues_reply = False
+        self._reply_streams = True
         self._operation_run_id = uuid.uuid4().hex[:12]
 
     def run(self) -> AgentRunResult:
@@ -350,8 +408,24 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._catalog_snapshot = snapshot
         self._runtime_tools = list(self._host._filter_tools(list(snapshot)))
         self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
+        self._deferred_tool_schemas = self._declare_deferred_tools()
         self._fixed_overhead_tokens = system_and_tools_overhead(self._system, self._tool_schemas)
         self._record_catalog_snapshot(reason="expanded")
+
+    def _declare_deferred_tools(self) -> list[dict[str, Any]]:
+        """Declarations of the tools the model may load later by reference, where the client can.
+
+        A client that loads a tool only where a tool result references it
+        (``deferred_tool_schemas``) gets the catalog's hidden and revealed tools
+        declared up front, so a search's reveal leaves the request's tools as
+        they were. They stay out of the context budget: the model does not see
+        them until a reference loads one.
+        """
+        declare = getattr(self._llm, "deferred_tool_schemas", None)
+        if self._live_catalog is None or self._live_catalog.deferred is None or declare is None:
+            return []
+        deferred = self._host._filter_tools(list(self._live_catalog.deferred()))
+        return list(declare(deferred)) if deferred else []
 
     def _run_iteration(self, iteration: int) -> _IterationResult:
         """Run one think -> observe step."""
@@ -418,10 +492,20 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     "tool_count": len(self._runtime_tools),
                     "max_iterations": self._max_iterations,
                     "executed_count": len(self._executed),
+                    **({"continues_reply": True} if self._continues_reply else {}),
                 },
             )
         )
         response = self._think(iteration)
+        if response is None:
+            # Cancelled mid-reply: the unfinished reply is not recorded.
+            self._mark_cancelled()
+            return _IterationResult(should_stop=True, outcome="cancelled")
+        if isinstance(response, _InterruptedReply):
+            return self._resume_interrupted_reply(response.text, iteration)
+        self._continues_reply = False
+        reply_prefix, self._reply_prefix = self._reply_prefix, ""
+        self._reply_resumes = 0
         assistant_message = self._msg_formatter.to_assistant_runtime_message(response)
         self._host._emit_runtime(MessageStartEvent(message=assistant_message, iteration=iteration))
         if response.content:
@@ -439,7 +523,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._messages.append(assistant_message)
 
         if not response.has_tool_calls:
-            return self._handle_conclusion(response, assistant_message, iteration)
+            return self._handle_conclusion(
+                response, assistant_message, iteration, reply_prefix=reply_prefix
+            )
         return self._observe(response, assistant_message, iteration)
 
     def _think(
@@ -449,8 +535,15 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         tool_schemas: list[dict[str, Any]] | None = None,
         request_kind: str = "work",
     ) -> Any:
-        """Build the request, apply the provider hooks, and call the LLM."""
-        request_tools = self._tool_schemas if tool_schemas is None else tool_schemas
+        """Build the request, apply the provider hooks, and call the LLM.
+
+        Returns ``None`` when the host cancelled while the reply was streaming.
+        """
+        request_tools = (
+            [*self._tool_schemas, *self._deferred_tool_schemas]
+            if tool_schemas is None
+            else tool_schemas
+        )
         transformed_messages = self._host._transform_messages(self._messages)
         llm_messages = self._host._convert_to_llm(self._llm, transformed_messages)
         estimated_tokens = enforce_context_budget(
@@ -507,7 +600,22 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 },
             ) as span_attrs,
         ):
-            response = self._invoke_within_budget(provider_request)
+            try:
+                response = self._invoke_within_budget(
+                    provider_request, self._text_delta_callback(iteration)
+                )
+            except LLMRequestCancelled:
+                # A user stop, not a failure: close the spans as cancelled.
+                mark_span_outcome(span_attrs, "cancelled")
+                if is_observation_sink_active():
+                    generation.update(metadata={"stop_reason": "cancelled"})
+                return None
+            except LLMStreamInterrupted as exc:
+                # Cut off after text reached the user: the loop keeps that text.
+                mark_span_outcome(span_attrs, "interrupted")
+                if is_observation_sink_active():
+                    generation.update(metadata={"stop_reason": "interrupted"})
+                return _InterruptedReply(exc.partial_text)
             span_attrs["has_tool_calls"] = response.has_tool_calls
             span_attrs["tool_call_count"] = len(response.tool_calls)
             span_attrs["content_chars"] = len(response.content or "")
@@ -569,7 +677,75 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         scale = input_tokens / estimated_tokens
         self._token_scale = min(max(scale, _MIN_TOKEN_SCALE), _MAX_TOKEN_SCALE)
 
-    def _invoke_within_budget(self, provider_request: ProviderRequest) -> Any:
+    def _text_delta_callback(self, iteration: int) -> TextDeltaCallback | None:
+        """What receives this call's streamed text: the emitter, a discard, or nothing.
+
+        The host decides once per call, from the run so far, whether the reply
+        may show while it streams. A reply it may still withhold or rewrite is
+        streamed into a discard instead: the request still streams, so a cancel
+        stops it mid-reply, but none of its text reaches a surface early.
+        """
+        if not self._streams_text:
+            return None
+        if not self._continues_reply:
+            # A continued reply keeps the decision made for its first part.
+            progress = RunProgress(messages=self._messages, tool_results=self._tool_results)
+            self._reply_streams = self._host._reply_streams_live(progress)
+        if self._reply_streams:
+            return self._text_delta_emitter(iteration)
+        return _discard_text_delta
+
+    def _text_delta_emitter(self, iteration: int) -> TextDeltaCallback:
+        """Emit each streamed piece of a reply as a partial ``MessageUpdateEvent``."""
+
+        def emit(delta: str) -> None:
+            self._host._emit_runtime(
+                MessageUpdateEvent(
+                    message=None,
+                    delta=delta,
+                    iteration=iteration,
+                    data={PARTIAL_MESSAGE_KEY: True},
+                )
+            )
+
+        return emit
+
+    def _stream_cancel_probe(self) -> CancelProbe:
+        """The host's cancel check for one request, run at most once per poll interval."""
+        next_check = 0.0
+
+        def should_stop() -> bool:
+            nonlocal next_check
+            now = time.monotonic()
+            if now < next_check:
+                return False
+            next_check = now + _STREAM_CANCEL_POLL_SECONDS
+            return self._cancel_requested()
+
+        return should_stop
+
+    def _invoke_llm(
+        self,
+        provider_request: ProviderRequest,
+        on_text_delta: TextDeltaCallback | None,
+    ) -> Any:
+        stream_kwargs: dict[str, Any] = {}
+        if on_text_delta is not None:
+            stream_kwargs["on_text_delta"] = on_text_delta
+        if self._accepts_cancel_probe:
+            stream_kwargs["should_stop"] = self._stream_cancel_probe()
+        return self._llm.invoke(
+            provider_request.messages,
+            system=provider_request.system,
+            tools=provider_request.tools,
+            **stream_kwargs,
+        )
+
+    def _invoke_within_budget(
+        self,
+        provider_request: ProviderRequest,
+        on_text_delta: TextDeltaCallback | None = None,
+    ) -> Any:
         """Call the model; on a size rejection, shrink the budget and retry once.
 
         A provider or proxy may reject a request the static budget allowed.
@@ -578,11 +754,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         same request is sent again. A second rejection propagates.
         """
         try:
-            return self._llm.invoke(
-                provider_request.messages,
-                system=provider_request.system,
-                tools=provider_request.tools,
-            )
+            return self._invoke_llm(provider_request, on_text_delta)
+        except (LLMRequestCancelled, LLMStreamInterrupted):
+            raise
         except Exception as exc:
             if not is_context_length_overflow(str(exc)):
                 raise
@@ -607,20 +781,58 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 fixed_overhead_tokens=self._fixed_overhead_tokens,
                 ceiling=self._ceiling,
             )
-            return self._llm.invoke(
-                provider_request.messages,
-                system=provider_request.system,
-                tools=provider_request.tools,
-            )
+            return self._invoke_llm(provider_request, on_text_delta)
+
+    def _resume_interrupted_reply(self, partial_text: str, iteration: int) -> _IterationResult:
+        """Keep a reply that broke off mid-stream and ask the model to continue it.
+
+        The text already reached the user, so it stays: it joins the transcript
+        as the assistant's message, a user message asks for the rest, and the
+        next call's text carries on in the same reply. Once
+        ``_MAX_REPLY_RESUMES`` continuations have broken off too, the reply
+        ends where it stands and is the answer.
+        """
+        self._reply_prefix += partial_text
+        self._messages.append(AssistantRuntimeMessage(content=partial_text))
+        record_decision(
+            "reply_interrupted",
+            attributes={
+                "iteration": iteration,
+                "resumes": self._reply_resumes,
+                "partial_chars": len(partial_text),
+                "run_id": self._operation_run_id,
+            },
+        )
+        if self._reply_resumes >= _MAX_REPLY_RESUMES:
+            self._final_text = self._reply_prefix
+            self._reply_prefix = ""
+            self._continues_reply = False
+            self._hit_cap = False
+            self._stop_reason = "reply_interrupted"
+            return _IterationResult(should_stop=True, outcome=self._stop_reason)
+        self._reply_resumes += 1
+        self._continues_reply = True
+        self._messages.append(UserRuntimeMessage(content=_RESUME_REPLY_PROMPT))
+        return _IterationResult(should_stop=False, outcome="reply_interrupted")
 
     def _handle_conclusion(
-        self, response: Any, assistant_message: Any, iteration: int
+        self,
+        response: Any,
+        assistant_message: Any,
+        iteration: int,
+        *,
+        reply_prefix: str = "",
     ) -> _IterationResult:
-        """Accept a no-tool reply, or nudge and continue when the host rejects it."""
+        """Accept a no-tool reply, or nudge and continue when the host rejects it.
+
+        ``reply_prefix`` is the part of this reply streamed before a cut-off;
+        the answer is that text followed by this response's.
+        """
+        final_text = reply_prefix + (response.content or "")
         record_decision(
             "model_conclusion",
             attributes={
-                "final_text": response.content or "",
+                "final_text": final_text,
                 "iteration": iteration,
                 "run_id": self._operation_run_id,
             },
@@ -648,7 +860,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         accept, nudge = self._host._should_accept_conclusion(
             evidence_count=len(self._executed),
             iteration=iteration,
-            final_text=response.content or "",
+            final_text=final_text,
             tool_results=self._tool_results,
         )
         if not accept:
@@ -679,7 +891,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 data={"accepted": True},
             )
         )
-        self._final_text = response.content or ""
+        self._final_text = final_text
         self._hit_cap = False
         self._stop_reason = "no_tools_needed" if not self._executed else "completed"
         return _IterationResult(should_stop=True, outcome=self._stop_reason)
@@ -737,12 +949,15 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         model_only_indices = tuple(
             index for index, result in enumerate(results) if result.model_only
         )
-        if model_only_indices:
+        request_scoped_indices = tuple(
+            index for index in model_only_indices if results[index].request_scoped
+        )
+        if request_scoped_indices:
             tool_result_message = replace(
                 tool_result_message,
                 metadata={
                     **tool_result_message.metadata,
-                    "model_only_result_indices": model_only_indices,
+                    REQUEST_SCOPED_RESULTS_METADATA_KEY: request_scoped_indices,
                 },
             )
         self._messages.append(tool_result_message)
@@ -862,9 +1077,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._safety_handoff_attempted = True
         iteration = self._iterations_used
         reason = self._stop_reason.replace("_", " ")
-        self._messages.append(
-            UserRuntimeMessage(content=_SAFETY_HANDOFF_PROMPT.format(reason=reason))
-        )
+        handoff_prompt = UserRuntimeMessage(content=_SAFETY_HANDOFF_PROMPT.format(reason=reason))
+        self._messages.append(handoff_prompt)
         self._host._emit_runtime(
             TurnStartEvent(
                 iteration=iteration,
@@ -877,6 +1091,11 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 tool_schemas=[],
                 request_kind="safety_handoff",
             )
+            if response is None:
+                # Cancelled mid-reply: end the way a cancel before the handoff does.
+                self._messages.remove(handoff_prompt)
+                self._mark_cancelled()
+                return
             content = str(response.content or "").strip()
             if content:
                 # Do not retain tool calls a non-conforming provider may emit

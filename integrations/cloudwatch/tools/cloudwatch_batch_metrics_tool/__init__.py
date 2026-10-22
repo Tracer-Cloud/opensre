@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from infrastructure.evidence.evidence_compaction import truncate_list
 from integrations.aws.cloudwatch_client import get_metric_statistics
@@ -19,6 +19,8 @@ _METRIC_NAMES: dict[str, str] = {
 @tool(
     name="get_cloudwatch_batch_metrics",
     source="cloudwatch",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Get CloudWatch metrics for AWS Batch jobs.",
     use_cases=[
         "Proving resource constraint hypothesis",

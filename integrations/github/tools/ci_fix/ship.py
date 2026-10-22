@@ -20,6 +20,7 @@ from integrations.git import (
     ensure_git_repo,
     fetch_local_branch,
     head_sha,
+    push_base_branch,
     push_branch,
     remote_branch_sha,
 )
@@ -78,6 +79,7 @@ def push_ci_fix(
     github_token: str | None = None,
     already_committed: bool = False,
     recorded_through: str | None = None,
+    direct: bool = False,
 ) -> PushResult:
     """Commit files changed by the fix run and push the repair or PR branch.
 
@@ -85,6 +87,8 @@ def push_ci_fix(
     commit push without new file changes. ``recorded_through`` is the last
     commit whose creation was already reported; a coding agent that committed
     past it is recorded here instead of being treated as an empty repair.
+    ``direct`` pushes a branch target's fix onto that branch itself, never
+    forced; a branch rule that requires a pull request refuses it.
     """
     token = resolve_github_token(github_token)
     pushed_head_sha = ""
@@ -138,12 +142,15 @@ def push_ci_fix(
             ),
             PreparedPush(ctx.head_sha, pushed_head_sha, ctx.head_branch, changed),
         )
-        push_branch(
-            workspace,
-            ctx.head_branch,
-            base_default="" if ctx.is_branch_target else ctx.base_branch,
-            token=token or None,
-        )
+        if direct:
+            push_base_branch(workspace, ctx.head_branch, token=token or None)
+        else:
+            push_branch(
+                workspace,
+                ctx.head_branch,
+                base_default="" if ctx.is_branch_target else ctx.base_branch,
+                token=token or None,
+            )
     except GitCommandError as exc:
         raise GitHubCiFixError(exc.kind, exc.message, branch_name=ctx.head_branch) from exc
     return PushResult(

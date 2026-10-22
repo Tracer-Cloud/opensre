@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.aws.s3_client import list_objects
 
@@ -21,6 +22,8 @@ def _extract_list_s3_params(sources: dict[str, dict]) -> dict:
 @tool(
     name="list_s3_objects",
     source="storage",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List objects in an S3 bucket with optional prefix filter.",
     use_cases=[
         "Exploring S3 bucket contents and finding relevant data files",

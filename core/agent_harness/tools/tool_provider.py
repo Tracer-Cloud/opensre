@@ -174,7 +174,7 @@ class DefaultToolProvider:
             base_names=(tool.name for tool in tools),
             request_names=request_names,
         )
-        self._live_catalog = LiveToolCatalog(catalog.snapshot)
+        self._live_catalog = LiveToolCatalog(catalog.snapshot, deferred=catalog.deferred)
         return list(catalog.snapshot())
 
     def tool_resources(self) -> dict[str, Any]:

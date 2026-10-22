@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.signoz import (
@@ -79,6 +80,8 @@ def _traces_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_signoz_traces",
     display_name="SigNoz traces",
     source="signoz",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     tags=("traces", "observability"),
     description="Query SigNoz traces for error rate, latency, and slow spans.",
     use_cases=[

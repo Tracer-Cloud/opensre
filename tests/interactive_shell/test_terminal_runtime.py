@@ -16,6 +16,7 @@ import pytest
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import CompleteEvent
+from prompt_toolkit.data_structures import Size
 from prompt_toolkit.document import Document
 from prompt_toolkit.history import FileHistory, InMemoryHistory
 from prompt_toolkit.input import DummyInput
@@ -23,6 +24,7 @@ from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.output.color_depth import ColorDepth
+from prompt_toolkit.output.vt100 import Vt100_Output
 
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
@@ -195,7 +197,39 @@ def test_full_screen_transcript_takes_the_wheel_through_mouse_reporting() -> Non
         prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
 
     assert prompt.app.renderer.mouse_support() is True
-    assert prompt.app.layout.container.style == "class:terminal"
+
+
+def test_full_screen_frame_keeps_the_terminal_background() -> None:
+    """Entering the full-screen view must not repaint the user's terminal.
+
+    Regression: painting the root with the theme ``BG`` turned the whole screen
+    a light grey on terminals whose palette renders that colour lighter than
+    their own background, the moment the shell switched to the transcript view.
+    Only the composer plate and menu selection may carry a background.
+    """
+    set_active_theme("blue")
+    buffer = io.StringIO()
+    output = Vt100_Output(
+        buffer,
+        lambda: Size(rows=20, columns=60),
+        term="xterm-256color",
+        default_color_depth=ColorDepth.DEPTH_24_BIT,
+    )
+    with create_app_session(input=DummyInput(), output=output):
+        prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
+        app = prompt.app
+
+        async def _render_frame() -> None:
+            app.renderer.render(app, app.layout)
+
+        asyncio.run(_render_frame())
+
+    painted = set(re.findall(r"48;2;(\d+;\d+;\d+)", buffer.getvalue()))
+    assert painted, "expected the composer plate to carry a background"
+    assert painted <= {
+        _rgb(THEME_REGISTRY["blue"].INPUT_SURFACE),
+        _rgb(ui_theme.menu_selection_hex()),
+    }
 
 
 def test_full_screen_terminal_background_honors_no_color(
@@ -623,17 +657,11 @@ def test_build_prompt_style_tracks_active_theme() -> None:
     assert amber_attrs.color != teal_attrs.color
 
 
-def test_prompt_style_paints_the_full_screen_terminal_background() -> None:
-    set_active_theme("blue")
+def test_prompt_style_keeps_transparent_filler_unstyled() -> None:
     style = _build_prompt_style()
-    terminal = style.get_attrs_for_style_str("class:terminal")
-    transcript = style.get_attrs_for_style_str("class:transcript")
     filler = style.get_attrs_for_style_str("")
+    default = style.get_attrs_for_style_str("class:default")
 
-    assert terminal.bgcolor == THEME_REGISTRY["blue"].BG.lstrip("#")
-    assert transcript.color == THEME_REGISTRY["blue"].TEXT.lstrip("#")
-    # The base filler remains transparent. The full-screen root owns the
-    # background, avoiding foreground-only padding during terminal resizes.
     assert not any(
         (
             filler.color,
@@ -644,6 +672,7 @@ def test_prompt_style_paints_the_full_screen_terminal_background() -> None:
             filler.reverse,
         )
     )
+    assert default.color
 
 
 def test_command_tray_current_item_uses_highlight_style() -> None:

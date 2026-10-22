@@ -31,7 +31,7 @@ from core.domain.memory.store import (
     parsed_memories,
 )
 from core.domain.memory.summaries import read_memory_summary
-from core.domain.memory.usage import load_usage, record_memory_usage
+from core.domain.memory.usage import record_memory_usage
 
 type _Signature = tuple[tuple[str, int, int], ...]
 
@@ -94,13 +94,9 @@ def _cached_prompt_index(
     _summary_signature: tuple[int, int] | None,
     max_chars: int,
 ) -> str:
-    # Usage is read only when the memories or the summary change, so ordering by
-    # usage cannot change the cached prompt prefix from one turn to the next.
-    directory = Path(directory_key)
     return render_prompt_index_from_records(
         _live_store(directory_key, signature).records,
-        usage=load_usage(directory),
-        summary=read_memory_summary(directory),
+        summary=read_memory_summary(Path(directory_key)),
         max_chars=max_chars,
     )
 
@@ -108,10 +104,11 @@ def _cached_prompt_index(
 def render_prompt_index(*, max_chars: int = DEFAULT_PROMPT_INDEX_CHARS) -> str:
     """The stable memory block: ``memory_summary.md`` plus one line per live memory.
 
-    ``""`` when there is nothing to show. Byte-identical across turns until a
-    memory or the summary changes, so it can sit in the cached prompt prefix.
-    Ensures the on-disk store exists so the first chat does not depend on a
-    prior write to create ``~/.opensre/memory``.
+    ``""`` when there is nothing to show. A pure function of the memory files
+    and the summary, byte-identical until one of them changes — however often
+    memories are used, and whichever process renders it — so a session sends it
+    in its context section once. Ensures the on-disk store exists so the first
+    chat does not depend on a prior write to create ``~/.opensre/memory``.
     """
     directory = ensure_memory_store()
     return _cached_prompt_index(

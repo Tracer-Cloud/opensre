@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.aws.s3_client import get_full_object
 
@@ -29,6 +30,8 @@ def _extract_get_s3_object_params(sources: dict[str, dict]) -> dict:
     name="get_s3_object",
     display_name="S3 audit",
     source="storage",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Get full S3 object content — audit payloads, configs, lineage data.",
     use_cases=[
         "Retrieving audit payloads when audit_key found in S3 metadata",

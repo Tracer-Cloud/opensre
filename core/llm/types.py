@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, TypeAlias, runtime_checkable
@@ -10,6 +10,31 @@ from typing import Any, Protocol, TypeAlias, runtime_checkable
 from pydantic import BaseModel
 
 ResolvedIntegrations: TypeAlias = dict[str, Any]  # noqa: UP040
+#: Receives each piece of assistant text as the provider streams it.
+TextDeltaCallback: TypeAlias = Callable[[str], None]  # noqa: UP040
+#: Asked while a request streams whether the caller has cancelled it.
+CancelProbe: TypeAlias = Callable[[], bool]  # noqa: UP040
+
+
+class LLMRequestCancelled(Exception):
+    """A streamed request stopped because the caller's ``should_stop`` said so.
+
+    Never retried. Text already passed to ``on_text_delta`` belongs to a reply
+    that did not finish.
+    """
+
+
+class LLMStreamInterrupted(Exception):
+    """A streamed reply broke off after some of its text reached the caller.
+
+    Never retried as is: a second attempt would deliver that text again.
+    ``partial_text`` is everything already passed to ``on_text_delta``, so the
+    caller can keep it and ask the model to continue from where it stopped.
+    """
+
+    def __init__(self, message: str, *, partial_text: str) -> None:
+        super().__init__(message)
+        self.partial_text = partial_text
 
 
 @runtime_checkable
@@ -98,6 +123,10 @@ class AgentLLMResponse:
     output_tokens: int | None = None
     #: The part of ``output_tokens`` spent on hidden reasoning, when reported.
     reasoning_tokens: int | None = None
+    #: Internal ``_opensre_*`` keys the client keeps on the assistant message
+    #: built from this response; the client reads them on later requests and
+    #: they never reach the provider.
+    message_markers: dict[str, Any] = field(default_factory=dict)
 
     @property
     def has_tool_calls(self) -> bool:
@@ -132,8 +161,21 @@ class AgentLLMClient(Protocol):
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
-        """Run one provider request and return the assistant response."""
+        """Run one provider request and return the assistant response.
+
+        ``on_text_delta`` receives the response text as it is generated, on the
+        calling thread; it must not raise. A request is retried only until the
+        first delta is delivered. Clients that cannot stream ignore it and
+        return the same response.
+
+        ``should_stop`` is asked before a streamed request is sent and between
+        its events, not only text deltas. Once it returns true the response is
+        closed and :class:`LLMRequestCancelled` raised, with no retry. It must
+        be cheap and must not raise. Unstreamed requests ignore it.
+        """
 
 
 @runtime_checkable
@@ -164,11 +206,15 @@ class CliLLMClient(Protocol):
 __all__ = [
     "AgentLLMClient",
     "AgentLLMResponse",
+    "CancelProbe",
     "CliLLMClient",
+    "LLMRequestCancelled",
+    "LLMStreamInterrupted",
     "LLMResponse",
     "LLMRoute",
     "ModelType",
     "ResolvedIntegrations",
     "StreamingReasoningClient",
+    "TextDeltaCallback",
     "ToolCall",
 ]

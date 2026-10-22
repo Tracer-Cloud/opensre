@@ -22,6 +22,7 @@ from core.llm.types import ToolCall
 from core.tool.contracts import AgentToolContext, RegisteredTool
 from core.tool.execution import execute_tool_calls
 from integrations.coding_agent import CodingResult
+from integrations.git import PUSH_RULE_REJECTED, GitCommandError
 from integrations.github.tools.ci_fix.context import (
     CI_TARGET_BRANCH,
     CiFixContext,
@@ -380,10 +381,38 @@ def test_create_branch_checkout_reuses_an_isolated_clone(tmp_path: Path) -> None
     assert commands[1] == [
         "git",
         "checkout",
-        "-b",
+        "-B",
         result.branch_name,
         "origin/main",
     ]
+
+
+def test_push_to_branch_pushes_onto_the_target_and_surfaces_a_refusing_branch_rule() -> None:
+    ctx = replace(_BRANCH_CTX, head_branch="main", head_sha="a" * 40)
+    pushed_main = MagicMock()
+    with (
+        patch("integrations.github.tools.ci_fix.ship.ensure_git_repo"),
+        patch("integrations.github.tools.ci_fix.ship.current_branch", return_value="main"),
+        patch(
+            "integrations.github.tools.ci_fix.ship.changed_since_baseline", return_value=["a.py"]
+        ),
+        patch("integrations.github.tools.ci_fix.ship.commit_paths"),
+        patch("integrations.github.tools.ci_fix.ship.head_sha", return_value="b" * 40),
+        patch("integrations.github.tools.ci_fix.ship.remote_branch_sha", return_value="a" * 40),
+        patch("integrations.github.tools.ci_fix.ship.save_prepared_push"),
+        patch("integrations.github.tools.ci_fix.ship.push_base_branch", pushed_main),
+        patch("integrations.github.tools.ci_fix.ship.push_branch") as push_branch,
+    ):
+        fix = CodingResult(success=True, summary="fix")
+        direct = push_ci_fix("/w", ctx=ctx, result=fix, direct=True)
+        pushed_main.side_effect = GitCommandError(PUSH_RULE_REJECTED, "protected")
+        with pytest.raises(GitHubCiFixError) as refused:
+            push_ci_fix("/w", ctx=ctx, result=fix, direct=True)
+
+    assert (direct.branch_name, direct.head_sha) == ("main", "b" * 40)
+    pushed_main.assert_called_with("/w", "main", token=None)
+    push_branch.assert_not_called()
+    assert refused.value.kind == PUSH_RULE_REJECTED
 
 
 def test_gather_ci_fix_context_ignores_cancelled_sibling_checks() -> None:

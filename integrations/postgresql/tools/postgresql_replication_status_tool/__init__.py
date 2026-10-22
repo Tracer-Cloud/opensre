@@ -3,6 +3,7 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.postgresql import (
@@ -17,6 +18,8 @@ from integrations.postgresql import (
     name="get_postgresql_replication_status",
     description="Retrieve PostgreSQL replication status including replica lag, WAL positions, and streaming status.",
     source="postgresql",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Investigating replication lag issues during database incidents",

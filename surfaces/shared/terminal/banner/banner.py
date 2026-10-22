@@ -219,6 +219,7 @@ def animate_launch_wordmark(
     console: Console,
     *,
     stop: threading.Event | None = None,
+    abort: threading.Event | None = None,
     min_frames: int = _WORDMARK_SPIN_MIN_FRAMES,
 ) -> None:
     """Turn the terminal wordmark once before the interactive prompt starts.
@@ -226,6 +227,10 @@ def animate_launch_wordmark(
     With ``stop``, the turn ends early once the event is set and at least
     ``min_frames`` have shown — so the runtime can boot under the animation and
     the prompt appears as soon as it is ready instead of after a fixed delay.
+    A turn that completes before ``stop`` is set rests on the front face until
+    it is, so a slow launch never leaves the screen blank. ``abort`` ends the
+    animation at the next frame regardless of ``min_frames``. Either way the
+    rows it drew are erased before it returns.
     """
     if (
         console.file is not sys.stdout
@@ -235,24 +240,30 @@ def animate_launch_wordmark(
     ):
         return
 
+    def ended(shown: int) -> bool:
+        if abort is not None and abort.is_set():
+            return True
+        return stop is not None and stop.is_set() and shown >= min_frames
+
     frames = build_wordmark_spin_frames()
     stream = sys.stdout
+    shown = 0
     try:
         stream.write(_HIDE_CURSOR)
-        for index, frame in enumerate(frames):
-            if stop is not None and stop.is_set() and index >= min_frames:
+        for frame in (*frames, frames[0]) if stop is not None else frames:
+            if ended(shown):
                 break
-            stream.write(
-                _animation_frame(
-                    frame,
-                    width=console.width,
-                    rewind=index > 0,
-                )
-            )
+            stream.write(_animation_frame(frame, width=console.width, rewind=shown > 0))
+            shown += 1
             stream.flush()
             time.sleep(_WORDMARK_SPIN_FRAME_INTERVAL_SECONDS)
+        while stop is not None and not ended(shown):
+            time.sleep(_WORDMARK_SPIN_FRAME_INTERVAL_SECONDS)
     finally:
-        stream.write(_clear_animation(frames[0]))
+        # Nothing to erase when an abort came before the first frame; the
+        # rewind would otherwise wipe rows above the cursor.
+        if shown:
+            stream.write(_clear_animation(frames[0]))
         stream.write(_SHOW_CURSOR)
         stream.flush()
 

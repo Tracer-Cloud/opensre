@@ -162,6 +162,7 @@ def _map_summarize_github_pr_status(
     requires=["owner", "repo"],
     surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     evidence_mapper=_map_list_github_work_items,
     input_schema={
         "type": "object",
@@ -370,6 +371,7 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
     requires=["owner", "repo"],
     surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     evidence_mapper=_map_summarize_github_pr_status,
     input_schema={
         "type": "object",
@@ -538,6 +540,7 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
     requires=["owner", "repo"],
     surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     input_schema={
         "type": "object",
         "properties": {

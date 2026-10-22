@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import builtins
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from typing import Any, cast
 
 import pytest
 
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
 from core.agent import Agent, AgentRunResult
 from core.agent_harness.runtime import TurnBinding
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
@@ -431,6 +432,44 @@ def test_runtime_events_emit_typed_lifecycle_and_streaming_order() -> None:
     ]
     message_updates = [event for event in events if isinstance(event, MessageUpdateEvent)]
     assert [event.delta for event in message_updates] == ["final"]
+
+
+class StreamingFakeLLM(FakeLLM):
+    """Streams each scripted reply's text in two pieces before returning it."""
+
+    def invoke(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> AgentLLMResponse:
+        response = super().invoke(messages, system=system, tools=tools)
+        if on_text_delta is not None and response.content:
+            middle = len(response.content) // 2
+            on_text_delta(response.content[:middle])
+            on_text_delta(response.content[middle:])
+        return response
+
+
+def test_streamed_text_reaches_observers_as_partial_updates_before_the_message() -> None:
+    llm = StreamingFakeLLM(iter([_text_response("final answer")]))
+    events: list[RuntimeEvent] = []
+
+    _agent(llm, _tools(FakeTool("query_logs")), on_runtime_event=events.append).run(
+        [{"role": "user", "content": "hello"}]
+    )
+
+    updates = [event for event in events if isinstance(event, MessageUpdateEvent)]
+    assert [(event.delta, bool(event.data.get(PARTIAL_MESSAGE_KEY))) for event in updates] == [
+        ("final ", True),
+        ("answer", True),
+        ("final answer", False),
+    ]
+    kinds = [event.type for event in events]
+    # The pieces arrive while the request is still open.
+    assert kinds.index("message_update") < kinds.index("provider_request_end")
 
 
 def test_message_update_flags_tool_call_iterations() -> None:

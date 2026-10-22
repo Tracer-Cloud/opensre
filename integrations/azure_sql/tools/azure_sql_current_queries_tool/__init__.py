@@ -3,6 +3,7 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.azure_sql import (
@@ -20,6 +21,8 @@ from integrations.azure_sql import (
         " threshold, including wait types and resource usage."
     ),
     source="azure_sql",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Identifying long-running queries causing lock contention",

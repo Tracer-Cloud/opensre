@@ -112,6 +112,11 @@ class SingleMessageTurnOutput:
     def set_tool_status(self, status: str) -> None:
         self._set_status(status)
 
+    def preview_reply(self, text: str) -> None:
+        """Show the reply the model is writing; a status or the answer replaces it."""
+        if text.strip() and time.monotonic() - self._last_edit >= self._edit_interval:
+            self._edit_preview(text)
+
     def finish_streamed_response(self, answer: str) -> None:
         self._finalize(answer or EMPTY_RESPONSE_MESSAGE)
 

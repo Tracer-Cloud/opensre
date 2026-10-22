@@ -114,19 +114,19 @@ def test_a_turn_cannot_write_scan_only_types_with_the_remember_tool() -> None:
     assert list_workspace_entries() == []
 
 
-def test_the_organization_rides_the_cached_half_and_matches_ride_the_turn() -> None:
+def test_the_organization_rides_the_session_context_and_matches_ride_the_turn() -> None:
     _organization()
 
     envelope = build_action_system_prompt_envelope(_turn("who is on call for payments?"))
-    cached, ephemeral = envelope.render_split()
+    _cached, context, ephemeral = envelope.render_split()
 
     ids = [block.id for block in envelope.blocks]
     assert ids.index(PromptBlockId.WORKSPACE_KNOWLEDGE) < ids.index(
         PromptBlockId.RELEVANT_WORKSPACE_KNOWLEDGE
     )
-    assert "Acme sells payment terminals." in cached
+    assert "Acme sells payment terminals." in context
     assert "#payments-oncall" in ephemeral
-    # The organization is already in the cached half; it is never repeated per turn.
+    # The organization is already in the session context; it is never repeated per turn.
     assert "Acme sells payment terminals." not in ephemeral
 
 

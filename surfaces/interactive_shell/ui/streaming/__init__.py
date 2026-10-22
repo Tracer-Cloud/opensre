@@ -36,6 +36,7 @@ from infrastructure.terminal.markdown import ReplyMarkdown as Markdown  # noqa: 
 from surfaces.interactive_shell.ui.streaming.closer import finish_deferred_closer
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.interactive_shell.ui.streaming.loop import (
+    ReplyStream,
     StreamRenderResult,
     publish_full_response,
     stream_to_console,
@@ -54,6 +55,7 @@ from surfaces.shared.terminal.components.token_format import (
 )
 
 __all__ = [
+    "ReplyStream",
     "StreamingConsole",
     "STREAM_LABEL_ANSWER",
     "STREAM_LABEL_ASSISTANT",

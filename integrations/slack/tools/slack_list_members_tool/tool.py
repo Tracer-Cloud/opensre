@@ -61,6 +61,7 @@ class SlackListTeamMembersTool(BaseTool):
     tags = (SUMMARIZE_OBSERVATION_TAG,)
     requires = ["slack"]
     side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     requires_approval = False
     input_schema = {
         "type": "object",

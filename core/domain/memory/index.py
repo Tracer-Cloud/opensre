@@ -2,21 +2,21 @@
 
 The prompt sees memory twice:
 
-- the **index** — every memory as one ``[type] name — description`` line, most
-  useful first, plus ``memory_summary.md`` above it. It changes only when the
-  memories change, so it sits in the cached half of the prompt;
+- the **index** — every memory as one ``[type] name — description`` line, by
+  kind and then most recently updated first, plus ``memory_summary.md`` above
+  it. It is a pure function of the memory files, so a session sends it once and
+  again only after a memory or the summary changes;
 - **relevant memories** — full bodies of the few memories that match the
   current request, rebuilt every turn.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 from core.domain.memory.files import INDEX_FILENAME, write_text_atomically
 from core.domain.memory.models import TRUNCATION_MARKER, MemoryRecord, MemoryType
-from core.domain.memory.usage import MemoryUsage
 
 _INDEX_HEADER = (
     "# Long-term memory index\n"
@@ -64,26 +64,19 @@ def _type_rank(memory_type: MemoryType) -> int:
     return _TYPE_RANK.get(memory_type, len(_TYPE_RANK))
 
 
-def index_order(
-    records: Sequence[MemoryRecord], usage: Mapping[str, MemoryUsage]
-) -> list[MemoryRecord]:
-    """Most useful first: ``organization``, ``user``, ``preference``, ``integration``, the rest.
+def index_order(records: Sequence[MemoryRecord]) -> list[MemoryRecord]:
+    """Most useful kinds first: ``organization``, ``user``, ``preference``, ``integration``, the rest.
 
     A personal store holds only the person's types and a workspace store only
     the organization's, so each sees its own lead types first.
 
-    Within a group, the memory touched most recently — updated or put in front
-    of the model — comes first, then the more often used, then by name.
+    Within a kind, the most recently updated memory comes first, then by name.
+    How often a memory reached the model never moves it: usage changes every
+    turn, and an index that reordered with it would have to be sent again.
     """
-    unused = MemoryUsage()
-
-    def last_activity(record: MemoryRecord) -> str:
-        return max(record.updated_at, usage.get(record.slug, unused).last_used_at)
-
     # Stable sorts, least significant key first.
     ordered = sorted(records, key=lambda record: record.slug)
-    ordered.sort(key=lambda record: usage.get(record.slug, unused).use_count, reverse=True)
-    ordered.sort(key=last_activity, reverse=True)
+    ordered.sort(key=lambda record: record.updated_at, reverse=True)
     ordered.sort(key=lambda record: _type_rank(record.memory_type))
     return ordered
 
@@ -118,15 +111,14 @@ def render_index_lines(records: Sequence[MemoryRecord], *, max_chars: int) -> st
 def render_prompt_index(
     records: Sequence[MemoryRecord],
     *,
-    usage: Mapping[str, MemoryUsage],
     summary: str = "",
     max_chars: int = DEFAULT_PROMPT_INDEX_CHARS,
 ) -> str:
-    """The cached memory block: the consolidated summary, then the index lines.
+    """The memory block of the session context: the consolidated summary, then the index lines.
 
     ``""`` when there is neither a summary nor a memory to list.
     """
-    lines = render_index_lines(index_order(records, usage), max_chars=max(max_chars, 0))
+    lines = render_index_lines(index_order(records), max_chars=max(max_chars, 0))
     summary = summary.strip()
     if not summary:
         return lines

@@ -4,7 +4,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool import EvidenceType
+from core.tool import EvidenceType, SideEffectLevel
 from core.tool_framework import tool
 from integrations.supabase import (
     get_storage_buckets,
@@ -39,6 +39,8 @@ def _map_get_supabase_storage_buckets(
     name="get_supabase_storage_buckets",
     description="List all Supabase Storage buckets and their configuration metadata.",
     source="supabase",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Auditing storage bucket configuration during a file upload incident",

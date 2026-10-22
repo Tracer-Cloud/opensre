@@ -16,6 +16,12 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+constraints = [
+    { name = "certifi", specifier = ">=2026.10.19" },
+    { name = "virtualenv", specifier = ">=21.14.12" },
+]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"

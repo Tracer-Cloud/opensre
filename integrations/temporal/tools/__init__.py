@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.temporal.client import TemporalClient, TemporalConfig
 
@@ -55,6 +55,8 @@ class TemporalNamespaceInfoTool(BaseTool):
 
     name = "temporal_namespace_info"
     source = "temporal"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     evidence_mapper = _map_temporal_namespace_info
     description = (
         "Fetch Temporal namespace health overview: namespace state and workflow "
@@ -192,6 +194,8 @@ class TemporalTaskQueueTool(BaseTool):
 
     name = "temporal_task_queue"
     source = "temporal"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     evidence_mapper = _map_temporal_task_queue
     description = (
         "Describe a Temporal task queue: active worker pollers and backlog stats "
@@ -345,6 +349,8 @@ class TemporalWorkflowHistoryTool(BaseTool):
 
     name = "temporal_workflow_history"
     source = "temporal"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     evidence_mapper = _map_temporal_workflow_history
     description = (
         "Fetch the event history for a specific Temporal workflow execution. "
@@ -514,6 +520,8 @@ class TemporalWorkflowsTool(BaseTool):
 
     name = "temporal_workflows"
     source = "temporal"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     evidence_mapper = _map_temporal_workflows
     description = (
         "List recent Temporal workflow executions showing workflowId, type, status, "

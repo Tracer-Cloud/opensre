@@ -43,17 +43,24 @@ def test_showing_a_memory_in_the_prompt_counts_as_a_use() -> None:
     assert "kafka-topics" not in usage
 
 
-def test_usage_orders_the_index_once_the_memories_change(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_usage_never_reorders_the_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The index rides the session context, which is sent again whenever its bytes change.
+
+    Usage changes every turn. Ordered by usage, the index reshuffled the next
+    time anything re-rendered it (a memory write, another process), and the
+    session paid to send an unchanged set of memories again.
+    """
     stamp = "2026-09-01T08:00:00+00:00"
     monkeypatch.setattr("core.domain.memory.store._now_iso", lambda: stamp)
     _save("alpha-service", "Alpha service runbook", "body")
     _save("beta-service", "Beta service runbook", "body")
-    assert render_prompt_index().splitlines()[0].startswith("- [infrastructure] alpha-service")
+    before = render_prompt_index().splitlines()
 
     record_memory_usage(["beta-service"], now=datetime(2026, 9, 2, tzinfo=UTC))
     _save("gamma-service", "Gamma service runbook", "body")
 
-    assert render_prompt_index().splitlines()[0].startswith("- [infrastructure] beta-service")
+    after = render_prompt_index().splitlines()
+    assert [line for line in after if "gamma-service" not in line] == before
 
 
 def test_a_held_lock_skips_the_update_instead_of_stalling_the_turn() -> None:

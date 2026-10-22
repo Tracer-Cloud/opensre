@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.argocd.client import make_argocd_client
 from integrations.argocd.tools._evidence import (
@@ -21,6 +21,8 @@ class ArgoCDApplicationDiffTool(BaseTool):
     name = "argocd_application_diff"
     evidence_mapper = map_argocd_application_diff
     source = "argocd"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch Argo CD server-side diff output and report whether live cluster state "
         "has drifted from the desired GitOps state."
@@ -151,6 +153,8 @@ class ArgoCDApplicationStatusTool(BaseTool):
     name = "argocd_application_status"
     evidence_mapper = map_argocd_application_status
     source = "argocd"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch Argo CD application sync status, health status, current revision, "
         "and recent deployment history."

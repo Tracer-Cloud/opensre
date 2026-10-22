@@ -16,21 +16,32 @@ from core.domain.repositories import (
     load_repository_preferences,
     preferred_repository_for_name,
 )
-from integrations.github.accessible_repos import accessible_repositories, repository_named_in
+from integrations.github.accessible_repos import (
+    accessible_repositories,
+    could_name_repository,
+    repository_named_in,
+)
 from integrations.github.identity import workspace_public_repository_source
 from integrations.github.rest_token import resolved_github_rest_token
 
+# Names as GitHub allows them: an owner is letters, digits, ``-`` and ``_``; a
+# repository also takes ``.``. A trailing ``.`` is read as a full stop, and a
+# quote or bracket after a name is not part of it.
+_OWNER = r"(?P<owner>[A-Za-z0-9][A-Za-z0-9_-]*)"
+_REPO = r"(?P<repo>[A-Za-z0-9_.-]*[A-Za-z0-9_-])"
+
 _GITHUB_HOST_RE = re.compile(
-    r"(?:https?://)?(?:www\.)?github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s#?]+)",
+    rf"(?:(?:https?://)?(?:www\.)?github\.com/|git@github\.com:){_OWNER}/{_REPO}",
     re.IGNORECASE,
 )
-_REPO_QUALIFIER_RE = re.compile(
-    r"\brepo:(?P<owner>[^/\s]+)/(?P<repo>[^/\s#?]+)",
-    re.IGNORECASE,
-)
+_REPO_QUALIFIER_RE = re.compile(rf"\brepo:{_OWNER}/{_REPO}", re.IGNORECASE)
+# A bare ``owner/repo`` stands alone: never part of a longer path (``a/b/c``,
+# ``src/.env``), though a full stop may follow it.
 _BARE_REPO_RE = re.compile(
-    r"(?<![/\w.-])(?P<owner>[A-Za-z0-9][\w.-]*)/(?P<repo>[A-Za-z0-9][\w.-]*)(?![/\w.-])",
+    rf"(?<![/\w.-]){_OWNER}/(?P<repo>[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?)(?!\.?[/\w-])",
 )
+_EXPLICIT_REFERENCE_PATTERNS = (_GITHUB_HOST_RE, _REPO_QUALIFIER_RE)
+_ALL_REFERENCE_PATTERNS = (*_EXPLICIT_REFERENCE_PATTERNS, _BARE_REPO_RE)
 
 _PUBLIC_WORKSPACE_SCOPE_MARKER = "public_workspace"
 # Template text such as "provide `owner/opensre`" is a question, not a repository:
@@ -52,13 +63,20 @@ def split_repo_full_name(value: str) -> tuple[str, str]:
     return owner.strip(), repo.strip().removesuffix(".git")
 
 
-def find_github_repository_references(text: str) -> tuple[tuple[str, str], ...]:
-    """Return every distinct owner/repo in textual recency order."""
+def find_github_repository_references(
+    text: str, *, include_bare: bool = True
+) -> tuple[tuple[str, str], ...]:
+    """Return every distinct owner/repo in textual recency order.
+
+    A github.com URL, git remote or ``repo:`` qualifier always counts; a bare
+    ``owner/repo`` only with ``include_bare``. Leave it off for text that carries
+    tool output, where file paths and words like ``AI/Agent`` look the same.
+    """
     if not text.strip():
         return ()
 
     matches: list[tuple[int, tuple[str, str]]] = []
-    for pattern in (_GITHUB_HOST_RE, _REPO_QUALIFIER_RE, _BARE_REPO_RE):
+    for pattern in _ALL_REFERENCE_PATTERNS if include_bare else _EXPLICIT_REFERENCE_PATTERNS:
         for match in pattern.finditer(text):
             owner = match.group("owner").strip()
             repo = match.group("repo").strip().removesuffix(".git")
@@ -72,10 +90,27 @@ def find_github_repository_references(text: str) -> tuple[tuple[str, str], ...]:
     return tuple(references)
 
 
-def parse_github_repository_reference(text: str) -> tuple[str, str] | None:
+def parse_github_repository_reference(
+    text: str, *, include_bare: bool = True
+) -> tuple[str, str] | None:
     """Return the last owner/repo pair found in *text*, or ``None``."""
-    references = find_github_repository_references(text)
+    references = find_github_repository_references(text, include_bare=include_bare)
     return references[-1] if references else None
+
+
+def _scope_from_history(
+    conversation_messages: Sequence[tuple[str, str]] | None,
+) -> tuple[str, str] | None:
+    """The repository named by the newest message that names one.
+
+    An assistant message carries the output of the tools it ran, so a bare
+    ``owner/repo`` counts only in the user's own messages.
+    """
+    for role, content in reversed(conversation_messages or ()):
+        scope = parse_github_repository_reference(content, include_bare=role == "user")
+        if scope:
+            return scope
+    return None
 
 
 def _parse_git_remote_url(url: str) -> tuple[str, str] | None:
@@ -125,11 +160,9 @@ def infer_github_repo_scope(
     if from_message:
         return from_message
 
-    if conversation_messages:
-        for _role, content in reversed(conversation_messages):
-            from_history = parse_github_repository_reference(content)
-            if from_history:
-                return from_history
+    from_history = _scope_from_history(conversation_messages)
+    if from_history:
+        return from_history
 
     if cached:
         return cached
@@ -211,16 +244,18 @@ class _GithubVcsRepoScopeProvider:
             return split_repo_full_name(named)
         # With no preference saved, "the opensre repo" is the one reachable
         # original of that name: the connection knows it, so never ask.
-        reachable = repository_named_in(
-            message, accessible_repositories(resolved_github_rest_token(resolved or {}))
+        reachable = (
+            repository_named_in(
+                message, accessible_repositories(resolved_github_rest_token(resolved or {}))
+            )
+            if could_name_repository(message)
+            else None
         )
         if reachable:
             return split_repo_full_name(reachable)
-        if conversation_messages:
-            for _role, content in reversed(conversation_messages):
-                from_history = parse_github_repository_reference(content)
-                if from_history:
-                    return from_history
+        from_history = _scope_from_history(conversation_messages)
+        if from_history:
+            return from_history
         if cached:
             return cached
         workspace_scope = _infer_workspace_repo_scope(env=env, cwd=cwd)
@@ -251,11 +286,16 @@ class _GithubVcsRepoScopeProvider:
         self,
         *,
         text: str,
+        role: str,
         env: Mapping[str, str] | None,
     ) -> tuple[tuple[str, ...], ...]:
-        """Return all GitHub repositories explicitly named in ``text``."""
+        """Return all GitHub repositories named in ``text``; a bare one only from the user."""
         _ = env
-        return find_github_repository_references(text)
+        return find_github_repository_references(text, include_bare=role == "user")
+
+    def prewarm(self, resolved: Mapping[str, Any]) -> None:
+        """List the repositories the connection reaches, which short names resolve against."""
+        accessible_repositories(resolved_github_rest_token(resolved))
 
 
 GITHUB_VCS_REPO_SCOPE_PROVIDER = _GithubVcsRepoScopeProvider()

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
-from config.constants.conversation_history import OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV
+from config.constants.conversation_history import (
+    HISTORY_PROVIDER_MESSAGE_MAX_AGE_SECONDS,
+    OPENSRE_HISTORY_TOOL_RESULT_CHARS_ENV,
+)
 from config.constants.tool_output import OPENSRE_TOOL_OUTPUT_TOKEN_LIMIT_ENV
 from core.agent_harness.turns.headless_adapters import NullToolProvider
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
@@ -29,6 +33,7 @@ from core.messages import (
     ToolResultRuntimeMessage,
     UserRuntimeMessage,
 )
+from core.state.turn_evidence import ASSISTANT_PROVIDER_KEY
 from core.tool import tool_output_byte_budget, truncate_output_text
 
 
@@ -174,12 +179,15 @@ def test_a_follow_up_sees_the_earlier_tool_call_and_its_result() -> None:
     agent = InMemoryHeadlessBuild().agent(tools=_OneToolProvider(), llm_factory=lambda: llm)
 
     agent.dispatch("Is CI failing?")
+    first_turn = llm.requests[0]
     agent.dispatch("Rerun the one that failed")
 
     second_turn = llm.requests[-1]
     roles = [message["role"] for message in second_turn]
     assert roles == ["user", "assistant", "tool", "assistant", "user"]
-    assert second_turn[0]["content"] == "Is CI failing?"
+    # The earlier message replays exactly as it was sent, with its context.
+    assert second_turn[0]["content"] == first_turn[0]["content"]
+    assert second_turn[0]["content"].startswith("USER MESSAGE (literal): <<<Is CI failing?>>>")
     assert second_turn[1]["tool_calls"] == [{"id": "call_1", "name": "ci_runs"}]
     # The exact value the follow-up refers to arrives as the tool's own output.
     assert "9312" in str(second_turn[2]["results"][0]["output"])
@@ -331,3 +339,80 @@ def test_a_restored_bare_yes_still_finds_its_evidence() -> None:
     replayed = history_messages(restored, [evidence])
 
     assert any(isinstance(message, ToolResultRuntimeMessage) for message in replayed)
+
+
+_OPUS = AnthropicAgentClient(model="claude-opus-5-5", client=object())
+_THINKING_REPLY = [
+    {"type": "thinking", "thinking": "", "signature": "sig-1"},
+    {"type": "text", "text": "Checking."},
+    {"type": "tool_use", "id": "toolu_1", "name": "ci_runs", "input": {"repo": "o/r"}},
+]
+
+
+def _answered_turn(call: ToolCall, raw_content: list[dict[str, Any]]) -> list[Any]:
+    """A run in which Opus answered with ``raw_content`` and the call returned a result."""
+    response = AgentLLMResponse(content="Checking.", tool_calls=[call], raw_content=raw_content)
+    return [
+        UserRuntimeMessage(content="USER MESSAGE (literal): <<<Is CI failing?>>>"),
+        MessageMapper(_OPUS).to_assistant_runtime_message(response),
+        ToolResultRuntimeMessage(tool_calls=(call,), results=('{"failing_run_id": "9312"}',)),
+        AssistantRuntimeMessage(content="One run is failing."),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("call", "recorded"),
+    [
+        (ToolCall(id="toolu_1", name="ci_runs", input={"repo": "o/r"}), True),
+        # Replay renames the id, so the provider message would name a call no result answers.
+        (ToolCall(id="toolu.1/x", name="ci_runs", input={"repo": "o/r"}), False),
+        # The item keeps only public arguments; the provider message would persist the secret.
+        (
+            ToolCall(id="toolu_1", name="ci_runs", input={"repo": "o/r", "api_token": "s3cr3t"}),
+            False,
+        ),
+    ],
+    ids=["whole", "renamed_id", "redacted_argument"],
+)
+def test_a_tool_call_keeps_the_provider_message_only_when_its_item_replays_it_whole(
+    call: ToolCall, recorded: bool
+) -> None:
+    raw = [*_THINKING_REPLY[:2], {**_THINKING_REPLY[2], "id": call.id, "input": call.input}]
+
+    [assistant, _results] = tool_items_from_run(_answered_turn(call, raw), history_count=0)
+
+    assert (ASSISTANT_PROVIDER_KEY in assistant) is recorded
+    assert "s3cr3t" not in json.dumps(assistant)
+
+
+@pytest.mark.parametrize(
+    ("replaying_llm", "age_seconds", "resent"),
+    [
+        (_OPUS, 0, True),
+        (AnthropicAgentClient(model="claude-sonnet-5-5", client=object()), 0, False),
+        (OpenAIAgentClient(model="gpt-5.6-sol", credential_resolver=lambda _name: "k"), 0, False),
+        (_OPUS, HISTORY_PROVIDER_MESSAGE_MAX_AGE_SECONDS + 60, False),
+    ],
+    ids=["same_client", "other_model", "other_provider", "stale"],
+)
+def test_a_recorded_provider_message_is_resent_only_by_the_client_that_wrote_it(
+    replaying_llm: Any, age_seconds: int, resent: bool
+) -> None:
+    call = ToolCall(id="toolu_1", name="ci_runs", input={"repo": "o/r"})
+    items = [
+        dict(item)
+        for item in tool_items_from_run(_answered_turn(call, _THINKING_REPLY), history_count=0)
+    ]
+    record = dict(items[0][ASSISTANT_PROVIDER_KEY])
+    record["recorded_at"] -= age_seconds
+    items[0][ASSISTANT_PROVIDER_KEY] = record
+    evidence = build_turn_evidence("Is CI failing?", "One run is failing.", items)
+    transcript = [("user", "Is CI failing?"), ("assistant", "One run is failing.")]
+
+    provider = MessageMapper(replaying_llm).to_provider_messages(
+        history_messages(transcript, [evidence])
+    )
+
+    assert ("sig-1" in json.dumps(provider)) is resent
+    # Rebuilt or resent, the call still reaches the model paired with its result.
+    assert "toolu_1" in json.dumps(provider[1]) and "9312" in json.dumps(provider[2])

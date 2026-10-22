@@ -8,7 +8,7 @@ from typing import Any
 
 from core.agent_harness.ports import SessionState
 from core.agent_harness.session.persistence.contracts import TURN_EVIDENCE_CUSTOM_TYPE
-from core.state import history_window_messages
+from core.state import ShownTools, history_window_messages
 from core.state.history_settings import structured_history_enabled
 from core.state.transcript_window import compact_messages_to_window
 
@@ -20,6 +20,8 @@ def record_conversation_turn(
     *,
     tool_items: Sequence[Mapping[str, Any]] = (),
     typed_text: str = "",
+    sent_text: str = "",
+    context_digest: str = "",
 ) -> None:
     """Append one user/assistant exchange and compact to the message window.
 
@@ -29,9 +31,10 @@ def record_conversation_turn(
     batches (``tool_items``, from ``structured_history.tool_items_from_run``)
     are recorded beside the text and persisted, so later turns and a resumed
     session replay what the tools returned; ``typed_text`` is the message as
-    typed when ``user_text`` is its expansion. After each turn, schedules a
-    best-effort memory extraction so durable facts are saved without waiting
-    for session exit.
+    typed when ``user_text`` is its expansion, and ``sent_text`` the message as
+    the model received it, with ``context_digest`` naming the session context
+    it carried. After each turn, schedules a best-effort memory extraction so
+    durable facts are saved without waiting for session exit.
     """
     session.cli_agent_messages.append(("user", user_text))
     session.cli_agent_messages.append(("assistant", assistant_text))
@@ -41,7 +44,15 @@ def record_conversation_turn(
             session.cli_agent_messages, max_messages=window
         )
     if structured_history_enabled():
-        _record_turn_evidence(session, user_text, assistant_text, tool_items, typed_text)
+        _record_turn_evidence(
+            session,
+            user_text,
+            assistant_text,
+            tool_items,
+            typed_text=typed_text,
+            sent_text=sent_text,
+            context_digest=context_digest,
+        )
     _schedule_turn_memory_extraction(session)
 
 
@@ -50,7 +61,10 @@ def _record_turn_evidence(
     user_text: str,
     assistant_text: str,
     tool_items: Sequence[Mapping[str, Any]],
+    *,
     typed_text: str,
+    sent_text: str,
+    context_digest: str,
 ) -> None:
     """Keep the turn's evidence on the session and append it to the session log."""
     from core.agent_harness.turns.structured_history import build_turn_evidence
@@ -58,7 +72,16 @@ def _record_turn_evidence(
     records = getattr(session, "turn_evidence", None)
     if not isinstance(records, list):
         return
-    evidence = build_turn_evidence(user_text, assistant_text, tool_items, typed_text=typed_text)
+    shown = getattr(session, "shown_tools", None)
+    evidence = build_turn_evidence(
+        user_text,
+        assistant_text,
+        tool_items,
+        typed_text=typed_text,
+        sent_text=sent_text,
+        context_digest=context_digest,
+        shown_tools=shown if isinstance(shown, ShownTools) else None,
+    )
     records.append(evidence)
     # Bound the list the same way MutableAgentState does for its own records.
     keep = len(session.cli_agent_messages) // 2 + 4

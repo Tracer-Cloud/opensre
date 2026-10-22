@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from core.agent.mixins import EventEmitterMixin, SteeringMixin, ToolFilterMixin
 from core.agent.provider_hooks import ProviderHookDelegate
 from core.agent.react_loop import run_react_loop
-from core.agent.run_io import AgentRunInput, AgentRunResult
+from core.agent.run_io import AgentRunInput, AgentRunResult, ReplyStreamPolicy, RunProgress
 from core.events import RuntimeEventCallback, TupleEventCallback
 from core.llm.types import AgentLLMClient, ToolCall
 from core.messages import ProviderMessage, RuntimeMessage, RuntimeMessageLike
@@ -53,6 +53,7 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
         tool_resources: dict[str, Any] | None = None,
         provider_hooks: ProviderHooks | None = None,
         goal: Goal | None = None,
+        reply_stream_policy: ReplyStreamPolicy | None = None,
     ) -> None:
         if llm is None:
             raise ValueError("Agent: llm= must be set at construction.")
@@ -72,6 +73,7 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
         self._tool_resources = dict(tool_resources or {})
         self._hooks = ProviderHookDelegate(provider_hooks or ProviderHooks())
         self._goal = goal
+        self._reply_stream_policy = reply_stream_policy
         self._steering_messages: deque[str] = deque()
         self._follow_up_messages: deque[str] = deque()
         self._react_iterations_used = 0
@@ -137,6 +139,14 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
                 max_stagnant_iterations=self._max_stagnant_iterations,
             )
         raise ValueError("Agent.run requires initial_messages or runtime_request.")
+
+    def _reply_streams_live(self, progress: RunProgress) -> bool:
+        """Hook: whether the next model call's reply may show while it streams.
+
+        Without a ``reply_stream_policy`` every reply streams.
+        """
+        policy = self._reply_stream_policy
+        return True if policy is None else policy(progress)
 
     def _should_accept_conclusion(
         self,

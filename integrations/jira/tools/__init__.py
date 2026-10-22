@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.jira.client import make_jira_client
 from integrations.jira.tools.search_issues import JiraSearchIssuesTool, jira_search_issues
@@ -257,6 +257,8 @@ class JiraIssueDetailTool(BaseTool):
 
     name = "jira_issue_detail"
     source = "jira"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     evidence_mapper = _map_jira_issue_detail
     description = (
         "Fetch the full details of a specific Jira issue to pull context, status, "

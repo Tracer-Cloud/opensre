@@ -52,6 +52,7 @@ def tool(
     approval_expiry_seconds: int | None = None,
     role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
+    concurrency_safe: bool | None = None,
 ) -> BaseTool:
     pass
 
@@ -89,6 +90,7 @@ def tool[F: Callable[..., Any]](
     approval_expiry_seconds: int | None = None,
     role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
+    concurrency_safe: bool | None = None,
 ) -> F:
     pass
 
@@ -126,6 +128,7 @@ def tool[F: Callable[..., Any]](
     approval_expiry_seconds: int | None = None,
     role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
+    concurrency_safe: bool | None = None,
 ) -> Callable[[F], F]:
     pass
 
@@ -162,6 +165,7 @@ def tool[F: Callable[..., Any]](
     approval_expiry_seconds: int | None = None,
     role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
+    concurrency_safe: bool | None = None,
 ) -> Any:
     """Register a lightweight function tool or annotate an existing BaseTool.
 
@@ -202,6 +206,7 @@ def tool[F: Callable[..., Any]](
                 approval_expiry_seconds is not None,
                 role is not None,
                 accepts_runtime_context is not None,
+                concurrency_safe is not None,
             ]
         )
 
@@ -218,6 +223,7 @@ def tool[F: Callable[..., Any]](
                 or role is not None
                 or accepts_runtime_context is not None
                 or evidence_mapper is not None
+                or concurrency_safe is not None
             ):
                 setattr(
                     target,
@@ -234,6 +240,7 @@ def tool[F: Callable[..., Any]](
                         role=role,
                         accepts_runtime_context=accepts_runtime_context,
                         evidence_mapper=evidence_mapper,
+                        concurrency_safe=concurrency_safe,
                     ),
                 )
             return target
@@ -273,6 +280,7 @@ def tool[F: Callable[..., Any]](
                     approval_expiry_seconds=approval_expiry_seconds,
                     role=role,
                     accepts_runtime_context=accepts_runtime_context,
+                    concurrency_safe=concurrency_safe,
                 ),
             )
         return target

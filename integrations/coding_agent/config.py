@@ -27,7 +27,8 @@ def coding_agent_provider(env: Mapping[str, str] | None = None) -> str:
     """Which coding-agent backend to use (``CODING_AGENT``; defaults to ``auto``).
 
     ``auto`` lets the runner pick the first installed-and-authenticated backend
-    (Pi, Claude Code, Codex, or Cursor); a concrete name pins one backend.
+    (Pi, Claude Code, Codex, or Cursor, else the built-in ``opensre`` agent); a
+    concrete name pins one backend.
     """
     source = env if env is not None else os.environ
     return (source.get("CODING_AGENT") or _DEFAULT_PROVIDER).strip().lower() or _DEFAULT_PROVIDER

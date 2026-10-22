@@ -40,15 +40,19 @@ def build_welcome_box() -> RenderableType:
     return Panel(body, box=ROUNDED, border_style=str(DIM), padding=(1, 2))
 
 
-def render_sign_in_screen(console: Console) -> None:
-    """Paint the launch banner, the welcome box, and the sign-in prompt line."""
+def render_sign_in_screen(console: Console, *, animate: bool = True) -> None:
+    """Paint the launch banner, the welcome box, and the sign-in prompt line.
+
+    ``animate=False`` skips the wordmark turn when the launch already showed one.
+    """
     screen = Group(
         build_launch_banner(console),
         build_welcome_box(),
         Text(),
         Text(SIGN_IN_PROMPT, style=str(SECONDARY)),
     )
-    animate_launch_wordmark(console)
+    if animate:
+        animate_launch_wordmark(console)
     console.print(screen)
 
 
@@ -77,6 +81,7 @@ def run_sign_in_gate(
     login: Callable[[], bool],
     on_prompted: Callable[[], None] | None = None,
     on_choice: Callable[[SignInChoice | None], None] | None = None,
+    animate: bool = True,
 ) -> bool:
     """Gate the REPL behind sign-in; return ``True`` to proceed, ``False`` to exit.
 
@@ -87,7 +92,8 @@ def run_sign_in_gate(
     ``on_prompted`` fires once when the screen is shown; ``on_choice`` fires for
     every menu round with the pick, or ``None`` when the menu was dismissed
     without one (Esc, ``q``, Ctrl-C, Ctrl-D, or EOF). Neither fires for an
-    already signed-in or non-interactive run.
+    already signed-in or non-interactive run. ``animate`` is passed to
+    :func:`render_sign_in_screen`.
     """
     if is_signed_in():
         return True
@@ -97,7 +103,7 @@ def run_sign_in_gate(
         )
         console.print("Run [bold]opensre account login[/bold] from an interactive terminal.")
         return False
-    render_sign_in_screen(console)
+    render_sign_in_screen(console, animate=animate)
     if on_prompted is not None:
         on_prompted()
     while True:

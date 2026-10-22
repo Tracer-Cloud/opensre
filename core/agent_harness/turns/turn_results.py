@@ -48,6 +48,12 @@ class ToolCallingTurnResult:
     #: The turn's tool-call batches and bounded results, recorded with the
     #: transcript so later turns replay them (``turns.structured_history``).
     history_items: tuple[Mapping[str, Any], ...] = ()
+    #: The user message exactly as the model received it (the text wrapped with
+    #: its context); later turns replay it verbatim. ``""`` when no model ran.
+    sent_text: str = ""
+    #: Fingerprint of the session-context section ``sent_text`` carried;
+    #: ``""`` when the history already held that section.
+    context_digest: str = ""
 
 
 @dataclass(frozen=True)

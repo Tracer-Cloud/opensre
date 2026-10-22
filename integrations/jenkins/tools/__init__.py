@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.jenkins import jenkins_config_from_env
@@ -92,6 +93,8 @@ def _list_jenkins_builds_extract_params(sources: dict[str, dict]) -> dict[str, A
 @tool(
     name="list_jenkins_builds",
     source="jenkins",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List recent Jenkins builds for a job with status and timestamp.",
     use_cases=[
         "Checking whether a recent build or deployment coincided with the alert",
@@ -169,6 +172,8 @@ def _get_jenkins_build_log_extract_params(sources: dict[str, dict]) -> dict[str,
 @tool(
     name="get_jenkins_build_log",
     source="jenkins",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Fetch the console log for a specific Jenkins build.",
     use_cases=[
         "Reading the error output of a failed build",
@@ -238,6 +243,8 @@ def _get_jenkins_pipeline_stages_extract_params(sources: dict[str, dict]) -> dic
 @tool(
     name="get_jenkins_pipeline_stages",
     source="jenkins",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List the pipeline stages of a Jenkins build with per-stage status and duration.",
     use_cases=[
         "Identifying which pipeline stage failed in a deployment",
@@ -304,6 +311,8 @@ def _list_jenkins_jobs_extract_params(sources: dict[str, dict]) -> dict[str, Any
 @tool(
     name="list_jenkins_jobs",
     source="jenkins",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List Jenkins jobs with their last-build status.",
     use_cases=[
         "Discovering which jobs exist when the failing job name is unknown",
@@ -359,6 +368,8 @@ def _list_jenkins_running_builds_extract_params(sources: dict[str, dict]) -> dic
 @tool(
     name="list_jenkins_running_builds",
     source="jenkins",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List Jenkins builds currently in progress across all jobs.",
     use_cases=[
         "Checking whether a build is running right now during an active incident",

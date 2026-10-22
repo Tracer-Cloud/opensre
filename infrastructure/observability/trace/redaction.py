@@ -12,7 +12,8 @@ _SENSITIVE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _RUNTIME_KEY_RE = re.compile(r"(^_|backend$|_backend$)", re.IGNORECASE)
-_SAFE_METRIC_KEYS = frozenset({"schema_tokens"})
+# Token counts, not credentials: ``max_output_tokens`` is the shell tool's output budget.
+_SAFE_METRIC_KEYS = frozenset({"max_output_tokens", "schema_tokens"})
 
 _REDACTED_PLACEHOLDER = "[redacted]"
 _RUNTIME_OBJECT_PLACEHOLDER = "[runtime object]"

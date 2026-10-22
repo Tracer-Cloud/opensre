@@ -10,7 +10,13 @@ from typing import Any
 from rich.console import Console
 
 from core.agent_harness.ports import LlmFactory
-from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.llm.types import (
+    AgentLLMResponse,
+    CancelProbe,
+    SchemaDescribedTool,
+    TextDeltaCallback,
+    ToolCall,
+)
 
 
 @dataclass
@@ -30,6 +36,8 @@ class FakeActionLLM:
         *,
         system: str | None = None,  # noqa: ARG002
         tools: list[dict[str, Any]] | None = None,  # noqa: ARG002
+        on_text_delta: TextDeltaCallback | None = None,  # noqa: ARG002
+        should_stop: CancelProbe | None = None,  # noqa: ARG002
     ) -> AgentLLMResponse:
         self.invocations += 1
         if not self.responses:

@@ -16,6 +16,10 @@ class LiveToolCatalog[ToolT: RuntimeTool]:
     """Return the same immutable snapshot until the available tools change."""
 
     snapshot: Callable[[], tuple[ToolT, ...]]
+    #: Tools a provider that loads tools by reference may declare up front:
+    #: everything the snapshot does not show up front, including the tools a
+    #: search revealed. Changes only when the snapshot does.
+    deferred: Callable[[], tuple[ToolT, ...]] | None = None
 
     def bind(self, resources: dict[str, Any]) -> None:
         """Attach this catalog to one run's resources."""

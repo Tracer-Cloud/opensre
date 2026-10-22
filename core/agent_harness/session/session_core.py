@@ -31,7 +31,7 @@ from core.agent_harness.session.persistence.contracts import SessionStore
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.task_plan.plan import TaskPlan
-from core.state import MutableAgentState, TurnEvidence
+from core.state import MutableAgentState, ShownTools, TurnEvidence
 from infrastructure.harness_providers import integration_sources_stamp
 from infrastructure.scheduling.task_registry import TaskRegistry
 
@@ -218,6 +218,11 @@ class SessionCore:
     @turn_evidence.setter
     def turn_evidence(self, value: list[TurnEvidence]) -> None:
         self.agent.turn_evidence = value
+
+    @property
+    def shown_tools(self) -> ShownTools:
+        """The tool list this conversation has seen, kept in place across turns."""
+        return self.agent.shown_tools
 
     def record(
         self,

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 from rich.console import Console
 
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
@@ -165,6 +166,47 @@ def test_hosted_prompt_records_compact_activity_and_chat_keeps_its_status(
     assert status.startswith("⏳")
     assert "pwd" in status
     assert len(recorded) == 2
+
+
+def test_chat_placeholder_previews_each_model_calls_streaming_reply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def _fake_build(**kwargs: Any) -> Any:
+        seen.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.DefaultHeadlessBuild",
+        default_headless_build_stub(_fake_build),
+    )
+    # Every delta lands after the rejoin interval, so none is held back.
+    clock = iter(range(1, 100))
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.time.monotonic", lambda: float(next(clock))
+    )
+    chat = MagicMock()
+    pool = SessionAgentPool(console=Console(force_terminal=False))
+    pool.agent_for(
+        session=SessionCore(store=InMemorySessionStore()),
+        output=chat,
+        logger=logging.getLogger("test.pool"),
+    )
+    observer = seen["tools"].observer(message="probe")
+
+    observer("llm_start", {"iteration": 0})
+    observer("message_update", {"content": "Checking ", PARTIAL_MESSAGE_KEY: True})
+    observer("message_update", {"content": "the pods", PARTIAL_MESSAGE_KEY: True})
+    observer("message_update", {"content": "Checking the pods", "has_tool_calls": True})
+    observer("llm_start", {"iteration": 1})
+    observer("message_update", {"content": "All pods ready", PARTIAL_MESSAGE_KEY: True})
+
+    assert [call.args[0] for call in chat.preview_reply.call_args_list] == [
+        "Checking ",
+        "Checking the pods",
+        "All pods ready",
+    ]
 
 
 def test_pool_builds_separate_agents_per_session(monkeypatch: pytest.MonkeyPatch) -> None:

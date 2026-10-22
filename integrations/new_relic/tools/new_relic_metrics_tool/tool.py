@@ -91,6 +91,7 @@ class NewRelicMetricsTool(BaseTool):
     requires = ["new_relic"]
     evidence_type = EvidenceType.METRICS
     side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     injected_params = ("api_key", "account_id", "base_url")
     input_schema = {
         "type": "object",

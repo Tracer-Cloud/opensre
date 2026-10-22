@@ -1,9 +1,11 @@
-"""Anthropic prompt-cache breakpoint markers.
+"""Anthropic prompt-cache breakpoint markers and replay-stable content blocks.
 
 A leaf module: both the agent client and the plain messages client mark cache
 breakpoints, and neither imports the other. Anthropic caches the request prefix
 up to each ``cache_control`` marker, so a byte-stable prefix plus a marker turns
 resent input into cache reads (~0.1x input price) instead of full-price tokens.
+The block builders give a live assistant turn and its later replay one shape,
+so the history a request resends matches the prefix the provider cached.
 
 Marking a prefix shorter than the model's minimum cacheable length is safe: the
 request succeeds and simply is not cached, so callers do not need to measure
@@ -19,11 +21,75 @@ unsupported model works uncached instead of failing every call.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Final
+
+from config.constants.llm import ANTHROPIC_DEFER_LOADING_KEY
 
 #: Anthropic's 5-minute ephemeral cache. Written once, read by later requests
 #: whose prefix matches byte-for-byte.
 ANTHROPIC_CACHE_CONTROL: Final[dict[str, str]] = {"type": "ephemeral"}
+
+
+def text_block(text: str) -> dict[str, Any]:
+    """A text content block, in the one shape a live turn and its replay both send."""
+    return {"type": "text", "text": text}
+
+
+def tool_use_block(call_id: str, name: str, tool_input: Any) -> dict[str, Any]:
+    """A tool-use content block, in the one shape a live turn and its replay both send."""
+    return {"type": "tool_use", "id": call_id, "name": name, "input": tool_input}
+
+
+def _field(block: Any, name: str) -> Any:
+    return block.get(name) if isinstance(block, dict) else getattr(block, name, None)
+
+
+def request_block(block: Any) -> Any:
+    """A response content block as the SDK encodes it in a request body, as a plain dict."""
+    if isinstance(block, dict):
+        return block
+    dump = getattr(block, "model_dump", None)
+    if not callable(dump):
+        return block
+    return dump(
+        mode="json",
+        exclude_unset=True,
+        by_alias=True,
+        exclude=getattr(block, "__api_exclude__", None),
+    )
+
+
+def replay_stable_blocks(blocks: Sequence[Any]) -> list[Any]:
+    """A response's content with its text and tool-use blocks in replay shape.
+
+    The SDK echoes a response block with every field the API set, in its own
+    field order, while a later turn rebuilds the same text and calls from the
+    recorded turn (:func:`text_block`, :func:`tool_use_block`). Sending both in
+    one shape keeps the cached prefix byte-identical from turn to turn. A block
+    a replay cannot rebuild (thinking, citations, server or programmatic tool
+    use) is sent unchanged, as the plain dict the SDK would encode it to, so the
+    message can be recorded and replayed later byte for byte.
+    """
+    stable: list[Any] = []
+    for block in blocks:
+        kind = _field(block, "type")
+        caller = _field(block, "caller")
+        if kind == "text" and not _field(block, "citations"):
+            stable.append(text_block(str(_field(block, "text") or "")))
+        elif (
+            kind == "tool_use"
+            and not _field(block, "toolset_name")
+            and (caller is None or _field(caller, "type") == "direct")
+        ):
+            stable.append(
+                tool_use_block(
+                    str(_field(block, "id")), str(_field(block, "name")), _field(block, "input")
+                )
+            )
+        else:
+            stable.append(request_block(block))
+    return stable
 
 
 def cached_system(system: str) -> list[dict[str, Any]]:
@@ -38,11 +104,20 @@ def cached_system(system: str) -> list[dict[str, Any]]:
 
 
 def tools_with_cache(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Mark the last tool schema, caching the whole tool block before it."""
+    """Mark the last tool loaded up front, caching the whole tool block before it."""
     if not tools:
         return tools
     cached = [dict(tool) for tool in tools]
-    cached[-1] = {**cached[-1], "cache_control": dict(ANTHROPIC_CACHE_CONTROL)}
+    last = next(
+        (
+            index
+            for index in range(len(cached) - 1, -1, -1)
+            if cached[index].get(ANTHROPIC_DEFER_LOADING_KEY) is not True
+        ),
+        None,
+    )
+    if last is not None:
+        cached[last] = {**cached[last], "cache_control": dict(ANTHROPIC_CACHE_CONTROL)}
     return cached
 
 
@@ -80,6 +155,15 @@ def messages_with_cache(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [*messages[:-1], {**last, "content": marked_content}]
 
 
+#: Bedrock's ValidationException often rejects a request without naming the
+#: offending field, so a fallback keyed on a feature has to count this generic
+#: wording as a signal too. Matched only on a 400, where the request is already
+#: failing.
+BEDROCK_UNNAMED_REJECTION_SIGNALS: Final[tuple[str, ...]] = (
+    "does not support the requested feature",
+    "invalid request body",
+)
+
 #: Substrings a provider 400 uses when the request failed *because of* the
 #: cache markers: Anthropic names the offending ``cache_control`` field,
 #: Bedrock's Converse-era wording says "cachePoint" / "prompt caching".
@@ -88,11 +172,7 @@ _CACHE_UNSUPPORTED_SIGNALS: Final[tuple[str, ...]] = (
     "cachepoint",
     "prompt caching",
     "prompt cache",
-    # Bedrock's ValidationException often rejects the request without naming the
-    # offending field, so the generic wording has to count as a signal too. These
-    # are matched only on a 400, where the request is already failing.
-    "does not support the requested feature",
-    "invalid request body",
+    *BEDROCK_UNNAMED_REJECTION_SIGNALS,
 )
 
 
@@ -157,9 +237,14 @@ def _message_without_marker(message: Any) -> Any:
 
 __all__ = [
     "ANTHROPIC_CACHE_CONTROL",
+    "BEDROCK_UNNAMED_REJECTION_SIGNALS",
     "cached_system",
     "is_cache_unsupported_error",
     "messages_with_cache",
+    "replay_stable_blocks",
+    "request_block",
     "strip_cache_markers",
+    "text_block",
+    "tool_use_block",
     "tools_with_cache",
 ]

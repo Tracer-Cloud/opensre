@@ -252,3 +252,13 @@ dev = [
     "import-linter>=2.0",
     "vulture>=2.14",
 ]
+
+# Security floors for transitive dependencies. A re-lock or a Dependabot
+# lockfile edit must never resolve below a published advisory's fix.
+[tool.uv]
+constraint-dependencies = [
+    # GHSA-6q48-6c7w-9gw2: bundled emSign root chains to compromised intermediates.
+    "certifi>=2026.10.19",
+    # CVE-2026-113725/-113726/-113732/-113776 (dev only, via pre-commit).
+    "virtualenv>=21.14.12",
+]

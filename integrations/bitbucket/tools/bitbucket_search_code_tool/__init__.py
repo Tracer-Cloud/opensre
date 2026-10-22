@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
 from integrations.bitbucket.client import search_code
@@ -72,6 +73,8 @@ def _search_bitbucket_code_available(sources: dict[str, dict]) -> bool:
     name="search_bitbucket_code",
     description="Search code across a Bitbucket workspace or specific repository.",
     source="bitbucket",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Finding where a specific function or configuration is defined",

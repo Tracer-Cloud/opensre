@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.jira.client import make_jira_client
 
@@ -29,6 +29,8 @@ class JiraSearchIssuesTool(BaseTool):
 
     name = "jira_search_issues"
     source = "jira"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     evidence_mapper = _map_jira_search_issues
     description = (
         "Search Jira issues using JQL to find related incidents, open bugs, or recent tasks "

@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, Protocol
 
+from core.agent.run_io import RunProgress
 from core.events import RuntimeEvent
 from core.llm.types import ToolCall
 from core.messages import ProviderMessage, RuntimeMessage
@@ -58,6 +59,13 @@ class LoopHost[RuntimeToolT: RuntimeTool](Protocol):
 
         Return ``(True, None)`` to accept, or ``(False, nudge)`` to inject a
         user message and continue. Hosts without a reviewed goal always accept.
+        """
+
+    def _reply_streams_live(self, progress: RunProgress) -> bool:
+        """Whether the reply the next model call writes may show while it streams.
+
+        A host that may still withhold or rewrite that text once the run ends
+        returns False; its text then shows only when the host prints the reply.
         """
 
     def _transform_messages(self, messages: list[RuntimeMessage]) -> list[RuntimeMessage]:

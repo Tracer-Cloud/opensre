@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, NamedTuple
 
 
 class PromptBlockId(StrEnum):
@@ -58,11 +58,14 @@ class PromptBlockKind(StrEnum):
 
 
 class PromptTier(StrEnum):
-    """How often a block's text changes, which is what decides cacheability.
+    """How often a block's text changes, which decides where in the request it rides.
 
-    The first three form the cached prefix, joined in declaration order;
-    :attr:`EPHEMERAL` must stay outside it or it invalidates everything before
-    it on every turn.
+    The provider caches the request prefix, and any change invalidates
+    everything after it. :attr:`STABLE` blocks are the system prompt, identical
+    for the whole session. :attr:`CONTEXT` and :attr:`VOLATILE` blocks can
+    change mid-session, so they ride in the conversation as one session-context
+    section, sent again only when it changes while the history keeps the earlier
+    copy. :attr:`EPHEMERAL` blocks ride with every user message.
     """
 
     #: Changes on release or config.
@@ -75,9 +78,9 @@ class PromptTier(StrEnum):
     EPHEMERAL = "ephemeral"
 
 
-_CACHED_TIERS: frozenset[PromptTier] = frozenset(
-    {PromptTier.STABLE, PromptTier.CONTEXT, PromptTier.VOLATILE}
-)
+_CACHED_TIERS: frozenset[PromptTier] = frozenset({PromptTier.STABLE})
+#: Tiers rendered as the session-context section rather than the system prompt.
+SESSION_CONTEXT_TIERS: frozenset[PromptTier] = frozenset({PromptTier.CONTEXT, PromptTier.VOLATILE})
 
 #: Layer order the prompt is emitted in, so the layout is a property of the
 #: envelope rather than of the order a builder happens to append in.
@@ -174,38 +177,66 @@ class PromptEnvelope:
         """Render every non-empty block, layer by layer."""
         return self._render(self.blocks)
 
-    def _partition(self) -> tuple[list[PromptBlock], list[PromptBlock]]:
-        """Split the blocks into ``(cached, ephemeral)``, losing none.
+    def _partition(self) -> tuple[list[PromptBlock], list[PromptBlock], list[PromptBlock]]:
+        """Split the blocks into ``(cached, context, ephemeral)``, losing none.
 
-        Anything not in :data:`_CACHED_TIERS` is ephemeral, so a tier added
-        later stays out of the cached prefix instead of vanishing from both
-        halves.
+        A tier in neither named set is ephemeral, so a tier added later stays
+        out of the cached prefix instead of vanishing from every layer.
         """
         cached: list[PromptBlock] = []
+        context: list[PromptBlock] = []
         ephemeral: list[PromptBlock] = []
         for block in self.blocks:
-            target = cached if block.tier in _CACHED_TIERS else ephemeral
-            target.append(block)
-        return cached, ephemeral
+            if block.tier in _CACHED_TIERS:
+                cached.append(block)
+            elif block.tier in SESSION_CONTEXT_TIERS:
+                context.append(block)
+            else:
+                ephemeral.append(block)
+        return cached, context, ephemeral
 
-    def render_split(self) -> tuple[str, str]:
-        """Return ``(cached, ephemeral)``.
+    def render_split(self) -> PromptLayers:
+        """Return the rendered ``(cached, context, ephemeral)`` layers.
 
-        Joining the two non-empty halves with ``separator`` reproduces
+        Joining the non-empty layers with ``separator`` reproduces
         :meth:`render`, so splitting never changes what the model reads — only
-        where it sits. The cached half is what a provider marks as a cache
-        breakpoint; the ephemeral half belongs with the user turn.
+        where it sits. The cached layer is the system prompt a provider marks as
+        a cache breakpoint; the context layer is the session-context section;
+        the ephemeral layer belongs with the user turn.
         """
-        cached, ephemeral = self._partition()
-        return self._render(cached), self._render(ephemeral)
+        cached, context, ephemeral = self._partition()
+        return PromptLayers(self._render(cached), self._render(context), self._render(ephemeral))
 
     def render_cached(self) -> str:
-        """Render the blocks that are stable enough to sit behind a cache marker."""
+        """Render the blocks that stay identical for the session: the cached system prompt."""
         return self._render(self._partition()[0])
+
+    def render_context(self) -> str:
+        """Render the session-context blocks, which change only on a session event."""
+        return self._render(self._partition()[1])
 
     def render_ephemeral(self) -> str:
         """Render the per-turn blocks that must stay out of the cached prefix."""
-        return self._render(self._partition()[1])
+        return self._render(self._partition()[2])
 
 
-__all__ = ["PromptBlock", "PromptBlockId", "PromptBlockKind", "PromptEnvelope", "PromptTier"]
+class PromptLayers(NamedTuple):
+    """An envelope rendered as its three layers, in the order the model reads them."""
+
+    #: The system prompt: identical for the whole session.
+    cached: str
+    #: The session-context section: changes on a session event, such as a memory write.
+    context: str
+    #: The per-turn blocks.
+    ephemeral: str
+
+
+__all__ = [
+    "SESSION_CONTEXT_TIERS",
+    "PromptBlock",
+    "PromptBlockId",
+    "PromptBlockKind",
+    "PromptEnvelope",
+    "PromptLayers",
+    "PromptTier",
+]

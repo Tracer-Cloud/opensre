@@ -4,6 +4,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.mariadb import (
@@ -48,6 +49,8 @@ def _map_get_mariadb_slow_queries(
     name="get_mariadb_slow_queries",
     description="Retrieve top MariaDB queries by average execution time from performance_schema.events_statements_summary_by_digest.",
     source="mariadb",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     is_available=mariadb_is_available,
     injected_params=("host", "password", "username"),

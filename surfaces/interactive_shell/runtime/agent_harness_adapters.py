@@ -18,12 +18,14 @@ from core.agent_harness import OutputSink
 from core.agent_harness.spi.defaults import DefaultErrorReporter
 from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
 from infrastructure.safety.terminal_output import strip_terminal_controls
+from infrastructure.text.plan_snapshots import strip_plan_snapshots
 from surfaces.interactive_shell.ui import DIM, ERROR, TEXT
 from surfaces.interactive_shell.ui.transcript import TranscriptRole, transcript_prefix
 
 if TYPE_CHECKING:
     from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.streaming import (
+    ReplyStream,
     StreamRenderResult,
     finish_deferred_closer,
     publish_full_response,
@@ -128,6 +130,24 @@ class ShellOutputSink:
         # All tool iterations are done by the time the reply streams: flush the
         # buffered action log now so it sits above the reply, grouped as one.
         self._flush_pending_action_log()
+        live = self._take_live_reply()
+        if live is not None:
+            parts = list(chunks)
+            if (
+                parts
+                and suppress_if_starts_with is None
+                and not defer_want_me_to_closer
+                and _shows_live_text(live, parts[0])
+            ):
+                # The closing is already on screen: the rest prints beneath it.
+                for part in parts[1:]:
+                    live.feed(part)
+                live.finish()
+                self._defer_want_me_to_closer = False
+                self._stream_result = None
+                return "".join(parts)
+            live.finish()
+            chunks = parts
         self._defer_want_me_to_closer = defer_want_me_to_closer
         if defer_want_me_to_closer:
             stream_result = stream_to_console_state(
@@ -146,6 +166,15 @@ class ShellOutputSink:
             chunks=iter(chunks),
             suppress_if_starts_with=suppress_if_starts_with,
         )
+
+    def _take_live_reply(self) -> ReplyStream | None:
+        """The reply the transcript is printing while it streams, handed over once."""
+        terminal = getattr(self._session, "terminal", None)
+        live = getattr(terminal, "live_reply", None)
+        if terminal is None or not isinstance(live, ReplyStream):
+            return None
+        terminal.live_reply = None
+        return live
 
     def finish_streamed_response(self, answer: str) -> None:
         """Flush a deferred / rewritten Want-me-to closer after gather normalize."""
@@ -167,6 +196,11 @@ class ShellOutputSink:
             footer_elapsed_s=stream_result.footer_elapsed_s,
             footer_total_bytes=stream_result.footer_total_bytes,
         )
+
+
+def _shows_live_text(live: ReplyStream, closing: str) -> bool:
+    """Whether the live reply already shows ``closing``, the composed reply's first part."""
+    return strip_plan_snapshots(live.text).strip() == closing.strip()
 
 
 def resolve_output_sink(

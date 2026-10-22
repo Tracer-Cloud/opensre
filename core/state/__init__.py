@@ -14,6 +14,7 @@ from core.state.agent_state import (
     MutableAgentState,
     history_window_messages,
 )
+from core.state.shown_tools import ShownTools
 from core.state.turn_evidence import TurnEvidence, match_turn_evidence
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "MAX_CONVERSATION_TURNS",
     "AgentMessageRole",
     "MutableAgentState",
+    "ShownTools",
     "TurnEvidence",
     "history_window_messages",
     "match_turn_evidence",

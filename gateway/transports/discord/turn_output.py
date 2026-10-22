@@ -85,6 +85,11 @@ class DiscordTurnOutput:
     def set_tool_status(self, status: str) -> None:
         self._set_status(status)
 
+    def preview_reply(self, text: str) -> None:
+        """Show the reply the model is writing; a status or the answer replaces it."""
+        if text.strip():
+            self._edit_preview(text)
+
     def finish_streamed_response(self, answer: str) -> None:
         self.finalize(answer)
 

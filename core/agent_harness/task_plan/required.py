@@ -36,15 +36,21 @@ def plan_required(
     tool_name: str,
     arguments: Mapping[str, Any] | None,
     is_action: bool,
+    work_in_flight: int = 0,
 ) -> bool:
-    """True when a loaded skill's second work call has no open plan."""
+    """True when a loaded skill's second work call has no open plan.
+
+    ``work_in_flight`` counts work calls already admitted that have not
+    returned. Calls that run together are all admitted before any returns, so
+    without it every call in such a batch would pass as the first.
+    """
     if not is_action or not is_plan_work_name(tool_name, arguments):
         return False
     if not getattr(session, "active_skill", None):
         return False
     if session_goal_is_attached(session):
         return False
-    if work_returns_this_turn(session) < 1:
+    if work_returns_this_turn(session) + work_in_flight < 1:
         return False
     return not plan_is_open(session)
 

@@ -15,6 +15,8 @@ WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS: Final[float] = 120.0
 CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS: Final[float] = 300.0
 # Background reads one prefetching tool keeps at once (one thread each).
 TOOL_PREFETCH_MAX_ENTRIES: Final[int] = 4
+# Concurrency-safe calls from one model response that run at once (one thread each).
+MAX_CONCURRENT_TOOL_CALLS: Final[int] = 10
 
 
 class ToolBlockedBy(StrEnum):
@@ -43,6 +45,7 @@ class ToolSkippedBy(StrEnum):
 __all__ = [
     "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS",
+    "MAX_CONCURRENT_TOOL_CALLS",
     "TOOL_PREFETCH_MAX_ENTRIES",
     "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS",
     "ToolBlockedBy",

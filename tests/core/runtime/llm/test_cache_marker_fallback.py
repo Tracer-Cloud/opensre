@@ -23,6 +23,7 @@ from core.llm.transports.sdk.anthropic_cache import (
     is_cache_unsupported_error,
     strip_cache_markers,
 )
+from tests.utils.anthropic_streams import FakeMessageStream
 
 _CACHE_REJECTION_MESSAGE = (
     "messages.0: Extra inputs are not permitted: cache_control is not supported for this model"
@@ -42,7 +43,7 @@ def _bad_request(message: str) -> Exception:
 
 
 class _FlakyMessages:
-    """messages.create that raises on the first call, then succeeds."""
+    """messages.create (or .stream) that raises on the first call, then succeeds."""
 
     def __init__(self, first_error: Exception) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -57,6 +58,9 @@ class _FlakyMessages:
             stop_reason="end_turn",
             usage=SimpleNamespace(input_tokens=10, output_tokens=2),
         )
+
+    def stream(self, **kwargs: Any) -> FakeMessageStream:
+        return FakeMessageStream(self.create(**kwargs))
 
 
 class _InactiveGuardrailEvaluator:

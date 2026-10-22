@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.tool import SideEffectLevel
 from core.tool_framework import FALLBACK_PLANNING_TAG, tool
 from tools.system.sre_guidance_tool._evidence import map_get_sre_guidance
 from tools.system.sre_guidance_tool.knowledge_base import (
@@ -22,6 +23,8 @@ def _extract_guidance_params(sources: dict[str, dict[str, Any]]) -> dict[str, An
     name="get_sre_guidance",
     display_name="SRE runbook",
     source="knowledge",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Retrieve SRE best practices for data pipeline incidents.",
     use_cases=[
         "Understanding pipeline failure patterns (delayed data, corrupt data)",

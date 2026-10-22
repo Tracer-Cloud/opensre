@@ -23,7 +23,7 @@ from core.agent_harness.turns.headless_adapters import (
     InMemorySessionState,
 )
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
-from core.llm.types import AgentLLMResponse
+from core.llm.types import AgentLLMResponse, CancelProbe, TextDeltaCallback
 from core.tool import RegisteredTool
 from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
@@ -114,9 +114,17 @@ def _run(
             *,
             system: str | None = None,
             tools: list[dict[str, Any]] | None = None,
+            on_text_delta: TextDeltaCallback | None = None,
+            should_stop: CancelProbe | None = None,
         ) -> AgentLLMResponse:
             received.append(messages)
-            return super().invoke(messages, system=system, tools=tools)
+            return super().invoke(
+                messages,
+                system=system,
+                tools=tools,
+                on_text_delta=on_text_delta,
+                should_stop=should_stop,
+            )
 
     llm = LoopLLM(script)
     session = _Session(configured_integrations_known=True, resolved_integrations_cache={})

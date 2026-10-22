@@ -373,7 +373,38 @@ Turn assembly starts in ``turns/orchestrator.py`` with
 **Conversation history is replayed, not quoted.** Earlier turns go to the model
 as typed messages ahead of the new user message (``turns/structured_history.py``):
 each user message, every assistant tool-call batch with its results (bounded at
-record time, head and tail kept), and the reply. ``record_conversation_turn``
+record time, head and tail kept), and the reply.
+
+**Each request extends the previous one byte for byte** (the provider caches the
+prefix tools → system → messages; any changed byte re-prices everything after
+it). Pinned by ``tests/core/agent_harness/turns/test_prompt_cache_prefix.py``:
+
+- ``system`` is only the ``STABLE`` tier. ``CONTEXT``/``VOLATILE`` blocks
+  (integrations, repositories, setup state, workspace knowledge, the memory
+  index) form a session-context section in the user message, sent only when its
+  digest differs from the newest one the replayed history carries
+  (``session_context_to_send``). Never move a block that can change mid-session
+  back into ``STABLE``.
+- A turn replays exactly as it was sent: the evidence keeps the user message as
+  the model received it (``sent``), and live assistant blocks use the same
+  builders as their replay (``anthropic_cache.replay_stable_blocks``). Each
+  tool-call batch also keeps the provider's own message, reasoning included
+  (``TurnEvidence`` ``ASSISTANT_PROVIDER_KEY``); only a client with the same
+  ``provider_binding`` (endpoint and model) resends it, any other rebuilds it
+  from text and calls. The Anthropic client drops each thinking block whose
+  prefix changed since it was written (``anthropic_thinking.bind_thinking``),
+  because the API's history-editing check rejects it with a 400; an edit to
+  replayed history therefore costs the reasoning after it, not the request.
+- The tool list is append-only per conversation (``core.state.ShownTools``):
+  tools keep their position and first-shown description, a search's reveals stay
+  visible (so its result replays), new tools join at the end.
+- A client that loads tools by reference (``deferred_tool_schemas``; Anthropic
+  models from version 4.5 on, ``anthropic_deferred_tools``) also declares the rest of the
+  catalog deferred from the first request (``ProgressiveToolCatalog.deferred``),
+  and each ``tool_search`` result references what it revealed, so a reveal does
+  not change ``tools`` even within a turn. A 400 that blames it turns it off for
+  the client's lifetime. Other providers get the list above unchanged.
+- The memory index is a pure function of the memory files; usage never orders it. ``record_conversation_turn``
 stores a turn's ``TurnEvidence`` beside its ``(user, assistant)`` text pair and
 appends it to the session log as a ``turn_evidence`` record; ``restore_context``
 brings it back. Evidence is matched to transcript pairs by reply text, so a

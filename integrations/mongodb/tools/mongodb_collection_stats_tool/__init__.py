@@ -4,6 +4,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.mongodb import (
     MongoDBConfig,
@@ -35,6 +36,8 @@ def _map_get_mongodb_collection_stats(
     name="get_mongodb_collection_stats",
     description="Retrieve document counts, size metrics, and index information for a specific MongoDB collection.",
     source="mongodb",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     is_available=mongodb_database_is_available,
     injected_params=("connection_string",),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import re
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -11,6 +12,7 @@ from rich.console import Console
 from rich.text import Text
 
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from infrastructure.terminal.theme import BOLD_SKILL, TEXT
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
@@ -134,6 +136,56 @@ def test_message_update_final_answer_is_not_rendered() -> None:
     observer("message_update", {"content": "All done.", "has_tool_calls": False})
 
     assert buffer.getvalue() == ""
+
+
+def _started_turn_spinner() -> Any:
+    from surfaces.interactive_shell.runtime.core.state import SpinnerState
+    from surfaces.shared.terminal.output.console_state import set_turn_spinner
+
+    spinner = SpinnerState()
+    spinner.start()
+    set_turn_spinner(spinner)
+    return spinner
+
+
+def test_streamed_commentary_previews_live_then_prints_once() -> None:
+    """Pieces go to the prompt-region preview; scrollback gets the note once."""
+    from surfaces.shared.terminal.output.console_state import set_turn_spinner
+
+    observer, buffer = _observer_with_buffer()
+    spinner = _started_turn_spinner()
+    try:
+        for piece in ("### [1/2] Checking ", "pods"):
+            observer("message_update", {"content": piece, PARTIAL_MESSAGE_KEY: True})
+        assert buffer.getvalue() == ""
+        assert spinner.reply_preview == "### [1/2] Checking pods"
+
+        observer("message_update", {"content": "### [1/2] Checking pods", "has_tool_calls": True})
+    finally:
+        set_turn_spinner(None)
+
+    assert buffer.getvalue().count("Checking pods") == 1
+    assert spinner.reply_preview == ""
+
+
+def test_streamed_final_answer_prints_once_the_moment_its_response_completes() -> None:
+    from surfaces.shared.terminal.output.console_state import set_turn_spinner
+
+    observer, buffer = _observer_with_buffer()
+    spinner = _started_turn_spinner()
+    try:
+        observer("message_update", {"content": "All done.", PARTIAL_MESSAGE_KEY: True})
+        # The unfinished paragraph waits in the prompt region, not the transcript.
+        assert spinner.reply_preview == "All done."
+        assert buffer.getvalue() == ""
+
+        observer("message_update", {"content": "All done.", "has_tool_calls": False})
+        observer("agent_end", {})
+    finally:
+        set_turn_spinner(None)
+
+    assert spinner.reply_preview == ""
+    assert buffer.getvalue().count("All done.") == 1
 
 
 def test_message_update_with_blank_content_prints_nothing() -> None:

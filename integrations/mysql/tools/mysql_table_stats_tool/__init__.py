@@ -4,6 +4,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.mysql import (
@@ -41,6 +42,8 @@ def _map_get_mysql_table_stats(
     name="get_mysql_table_stats",
     description="Retrieve MySQL table statistics including row counts and data/index sizes from information_schema.",
     source="mysql",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Identifying the largest tables consuming storage during capacity incidents",

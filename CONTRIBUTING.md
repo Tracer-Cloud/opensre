@@ -189,6 +189,10 @@ This ensures you understand the code, not just copied it. Reviewers will pay ext
 
 ## Code Quality Standards
 
+See [AGENTS.md](AGENTS.md) for repository-wide conventions and
+[Contributor notes](CONTRIBUTOR_NOTES.md) for test fakes, LLM request handling,
+and safe CodeQL remediation.
+
 - **Clarity over cleverness:** Code should be easy to understand and maintain
 - **DRY principle:** Don't repeat yourself; extract common patterns
 - **Strong typing:** Use type hints for all function parameters and returns

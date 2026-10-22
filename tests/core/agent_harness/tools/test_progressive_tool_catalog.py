@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from core.agent_harness.tools.progressive_tool_catalog import ProgressiveToolCatalog
+from core.state import ShownTools
 from core.tool import RegisteredTool, SideEffectLevel
 
 
@@ -123,10 +124,14 @@ def test_activating_every_tool_reports_nothing_remaining() -> None:
     result = search(names=[tool.name for tool in tools])
 
     assert result.details["remaining_hidden"] == 0
-    assert "tool_search" not in {tool.name for tool in catalog.snapshot()}
+    # Tool search keeps its slot: dropping the first tool would re-price the
+    # whole cached prompt for nothing.
+    names = [tool.name for tool in catalog.snapshot()]
+    assert names[0] == "tool_search"
+    assert set(names) == {"tool_search", *(tool.name for tool in tools)}
 
 
-def test_visible_tool_search_expands_the_full_description_and_guidance() -> None:
+def test_searching_a_visible_tool_returns_its_full_text_without_rewriting_its_schema() -> None:
     full = _tool("skill_view", "Full workflow guidance")
     full.compact_description = "Find a workflow"
     full.skill_guidance = "Use the exact workflow contract."
@@ -139,13 +144,43 @@ def test_visible_tool_search_expands_the_full_description_and_guidance() -> None
     )
 
     initial = catalog.snapshot()
-    assert next(tool for tool in initial if tool.name == "skill_view").description == (
-        "Find a workflow"
-    )
-
     result = next(tool for tool in initial if tool.name == "tool_search")(names=["skill_view"])
 
+    assert result.details["matches"][0]["description"] == "Full workflow guidance"
     assert result.details["matches"][0]["guidance"] == "Use the exact workflow contract."
-    assert next(tool for tool in catalog.snapshot() if tool.name == "skill_view").description == (
-        "Full workflow guidance"
-    )
+    assert catalog.snapshot() == initial
+
+
+def test_the_tool_list_only_grows_at_its_end_across_turns() -> None:
+    """Tools open the cached prefix: a tool moved, rewritten or dropped re-prices all of it.
+
+    Each turn builds a new catalog over the session's ``ShownTools``. What a
+    search revealed stays visible on the next turn, and tools that join later
+    (here, the controls a session goal adds) land after everything already shown.
+    """
+    tools = _large_catalog()
+    session = SimpleNamespace(active_skill=None, session_goal=None, shown_tools=ShownTools())
+
+    def turn() -> ProgressiveToolCatalog:
+        return ProgressiveToolCatalog(
+            session, lambda: tools, enabled=True, base_names=(tool.name for tool in tools)
+        )
+
+    def sent(catalog: ProgressiveToolCatalog) -> list[tuple[str, str, object]]:
+        return [(tool.name, tool.description, tool.input_schema) for tool in catalog.snapshot()]
+
+    first = turn()
+    search = next(tool for tool in first.snapshot() if tool.name == "tool_search")
+    search(names=["specialist_7"])
+    search(names=["list_eks_pods"])
+    seen = sent(first)
+
+    session.session_goal = object()
+    following = sent(turn())
+
+    assert following[: len(seen)] == seen
+    assert [name for name, _description, _schema in seen[-2:]] == [
+        "specialist_7",
+        "list_eks_pods",
+    ]
+    assert "session_goal_complete" in {name for name, _d, _s in following[len(seen) :]}

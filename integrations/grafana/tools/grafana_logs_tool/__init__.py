@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import integrations.grafana.tools._helpers as grafana_helpers
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.evidence.evidence_compaction import summarize_counts
@@ -54,6 +55,8 @@ def _map_grafana_logs(
     name="query_grafana_logs",
     display_name="Grafana Loki",
     source="grafana",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     evidence_mapper=_map_grafana_logs,
     description=(
         "Query Grafana Loki log streams for one service_name (required). "

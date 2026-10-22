@@ -22,7 +22,9 @@ from surfaces.cli.ask.approval import unknown_allowed_tools
 from surfaces.cli.ask.file_input import AskFileInput
 from surfaces.cli.ask.service import AskExitCode, AskSignal, AskStatus
 
-_CHAT_ONLY_TOOL = "query_tempo"
+# A chat-only tool that changes state, so ``opensre ask`` always needs authority for it;
+# read-only tools run without it.
+_CHAT_ONLY_TOOL = "jira_create_issue"
 _LLM_CONFIGURED = LLMReadiness(provider="openai")
 
 
@@ -975,7 +977,7 @@ def test_chat_only_tool_denial_suggests_valid_authorized_rerun(monkeypatch) -> N
     assert denied.status is AskStatus.APPROVAL_DENIED
     assert denied.denied_tools == (_CHAT_ONLY_TOOL,)
     assert f"--allowed-tool {_CHAT_ONLY_TOOL}" in denied.response
-    assert unknown_allowed_tools((_CHAT_ONLY_TOOL, "query_temop")) == ("query_temop",)
+    assert unknown_allowed_tools((_CHAT_ONLY_TOOL, "jira_create_isue")) == ("jira_create_isue",)
 
     authorized = service.run_ask(
         "prompt",
