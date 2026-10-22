@@ -11,8 +11,8 @@ from rich.console import Console
 from rich.text import Text
 
 from infrastructure.terminal.theme import BOLD_BRAND, ERROR, HIGHLIGHT, SECONDARY, WARNING
+from surfaces.shared.llm_setup.auth_menu import prompt_auth_provider
 from surfaces.shared.llm_setup.auth_profiles import (
-    AuthKind,
     ProviderAuthProfile,
     iter_auth_profiles,
     resolve_auth_profile,
@@ -24,7 +24,6 @@ from surfaces.shared.llm_setup.auth_service import (
     provider_status,
     verify_provider,
 )
-from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
@@ -39,41 +38,6 @@ def _resolve_or_raise(provider: str) -> ProviderAuthProfile:
         raise click.UsageError(
             f"Unknown auth provider '{provider}'. Choose one of: {_provider_choices()}."
         ) from exc
-
-
-def _configured_profile_name() -> str | None:
-    """The auth-profile name matching the install's active LLM provider, if any."""
-    from config.llm_settings import get_configured_llm_provider
-
-    configured = get_configured_llm_provider()
-    for profile in iter_auth_profiles():
-        if configured == profile.provider_value or configured in profile.all_names:
-            return profile.name
-    return None
-
-
-def _prompt_provider() -> ProviderAuthProfile:
-    configured = _configured_profile_name()
-    current = _resolve_or_raise(configured) if configured else None
-    kind = repl_choose_subcommand(
-        parent="/login",
-        options=(
-            ("api-keys", "Provider API billing"),
-            ("subscriptions", "Continue with ChatGPT"),
-        ),
-        initial_value="subscriptions" if current and current.kind == "subscription" else "api-keys",
-    )
-    if kind is None:
-        raise click.Abort()
-    credential_kind: AuthKind = "subscription" if kind == "subscriptions" else "api_key"
-    provider = repl_choose_subcommand(
-        parent=f"/login {kind}",
-        options=[(profile.name, profile.label) for profile in iter_auth_profiles(credential_kind)],
-        initial_value=configured,
-    )
-    if provider is None:
-        raise click.Abort()
-    return _resolve_or_raise(provider)
 
 
 def _maybe_open_setup_page(profile: ProviderAuthProfile, *, enabled: bool) -> None:
@@ -198,7 +162,9 @@ def auth_login(
     new_account: bool,
 ) -> None:
     """Configure one LLM provider auth path."""
-    profile = _resolve_or_raise(provider) if provider else _prompt_provider()
+    profile = _resolve_or_raise(provider) if provider else prompt_auth_provider()
+    if profile is None:
+        raise click.Abort()
     if profile_id and new_account:
         raise click.UsageError("Use --profile or --new-account, not both.")
     if profile.kind != "subscription" and (profile_id or new_account):

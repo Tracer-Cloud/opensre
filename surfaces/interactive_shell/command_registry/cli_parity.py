@@ -448,12 +448,22 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
 
 
 def _cmd_auth(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    if args == ["login"]:
+        return _cmd_login(session, console, [])
     # ``login`` (and provider flows) prompt on the real TTY; status/logout print.
     capture_output = not args or args[0].lower() in {"status", "logout"}
     return run_cli_command(console, ["auth", *args], capture_output=capture_output, session=session)
 
 
 def _cmd_login(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    # Show metadata-only choices before paying the child CLI's startup cost.
+    if not args and session_terminal(session) is not None:
+        from surfaces.shared.llm_setup.auth_menu import prompt_auth_provider
+
+        profile = prompt_auth_provider()
+        if profile is None:
+            return True
+        args = [profile.name]
     # Interactive provider login prompts on the real TTY.
     return run_cli_command(console, ["auth", "login", *args], capture_output=False, session=session)
 
