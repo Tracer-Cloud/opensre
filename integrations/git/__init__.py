@@ -14,6 +14,7 @@ from integrations.git.checkout import (
     origin_url,
     remote_branch_sha,
 )
+from integrations.git.command_verbs import SHELL_OPERATORS, command_tokens, git_invocations
 from integrations.git.conflict_resolution import (
     LOCKFILE_NAMES,
     ConflictHunk,
@@ -105,6 +106,9 @@ from integrations.git.merge import (
 from integrations.git.worktree_capture import WorktreeChanges, capture_worktree_changes
 
 __all__ = [
+    "SHELL_OPERATORS",
+    "command_tokens",
+    "git_invocations",
     "BRANCH_FAILED",
     "COMBINED",
     "DROPPED",

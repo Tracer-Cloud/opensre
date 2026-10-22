@@ -86,7 +86,6 @@ from integrations.github.tools.ci_fix.worktree import (
     cleanup_branch_worktree,
     create_branch_checkout,
     create_branch_worktree,
-    create_target_checkout,
 )
 
 SOURCE: Final = "github"
@@ -257,15 +256,12 @@ def with_push_output(
         "checks_state": verification.state.value,
         "check_names": list(verification.check_names),
     }
-    if push.note:
-        result["push_note"] = push.note
     if verification.state is CheckState.PASSED:
         return {
             **result,
-            "response_text": _with_push_note(
-                push,
+            "response_text": (
                 f"Fixed failing CI for {target}, {_merge_phrase(output)}pushed {push.branch_name}, "
-                f"and all {checks_noun} passed.",
+                f"and all {checks_noun} passed."
             ),
         }
     if verification.state is CheckState.CONFLICTED:
@@ -321,11 +317,6 @@ def with_push_output(
             f"{DEFAULT_CHECK_WAIT_SECONDS // 60} minutes."
         ),
     }
-
-
-def _with_push_note(push: PushResult, text: str) -> str:
-    """Lead with why a requested direct push went to a repair branch, when it did."""
-    return f"{push.note}. {text}" if push.note else text
 
 
 def push_error_output(output: dict[str, Any], exc: GitHubCiFixError) -> dict[str, Any]:
@@ -568,7 +559,9 @@ def run_ci_fix(
                 if ctx.is_branch_target:
                     token = resolve_github_token(github_token)
                     if push_to_branch:
-                        worktree = create_target_checkout(ws, ctx, token=token)
+                        worktree = create_branch_checkout(
+                            ws, ctx, token=token, branch_name=ctx.target_branch
+                        )
                     elif not isolated_clone:
                         worktree = create_branch_worktree(ws, ctx, token=token)
                         workspaces.callback(cleanup_branch_worktree, ws, worktree)
@@ -610,7 +603,6 @@ def run_ci_fix(
                     recorded_through=merge.commit_sha if merge is not None else ctx.head_sha,
                     direct=push_to_branch,
                 )
-            ctx = replace(ctx, head_branch=push.branch_name)
         except GitHubCiFixError as exc:
             return push_error_output(output, _reported(ctx, exc, github_token))
         verified = _verify_repair(ctx, output, push, github_token, timer=phases, **check_wait)

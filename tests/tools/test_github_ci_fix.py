@@ -381,14 +381,13 @@ def test_create_branch_checkout_reuses_an_isolated_clone(tmp_path: Path) -> None
     assert commands[1] == [
         "git",
         "checkout",
-        "-b",
+        "-B",
         result.branch_name,
         "origin/main",
     ]
 
 
-def test_push_to_branch_lands_on_the_target_unless_a_branch_rule_refuses_it() -> None:
-    """A user who asked for main gets main; a protected main gets a repair branch and a reason."""
+def test_push_to_branch_pushes_onto_the_target_and_surfaces_a_refusing_branch_rule() -> None:
     ctx = replace(_BRANCH_CTX, head_branch="main", head_sha="a" * 40)
     pushed_main = MagicMock()
     with (
@@ -402,22 +401,18 @@ def test_push_to_branch_lands_on_the_target_unless_a_branch_rule_refuses_it() ->
         patch("integrations.github.tools.ci_fix.ship.remote_branch_sha", return_value="a" * 40),
         patch("integrations.github.tools.ci_fix.ship.save_prepared_push"),
         patch("integrations.github.tools.ci_fix.ship.push_base_branch", pushed_main),
-        patch("integrations.github.tools.ci_fix.ship.create_branch") as create_branch,
         patch("integrations.github.tools.ci_fix.ship.push_branch") as push_branch,
     ):
-        direct = push_ci_fix(
-            "/w", ctx=ctx, result=CodingResult(success=True, summary="fix"), direct=True
-        )
+        fix = CodingResult(success=True, summary="fix")
+        direct = push_ci_fix("/w", ctx=ctx, result=fix, direct=True)
         pushed_main.side_effect = GitCommandError(PUSH_RULE_REJECTED, "protected")
-        refused = push_ci_fix(
-            "/w", ctx=ctx, result=CodingResult(success=True, summary="fix"), direct=True
-        )
+        with pytest.raises(GitHubCiFixError) as refused:
+            push_ci_fix("/w", ctx=ctx, result=fix, direct=True)
 
-    assert (direct.branch_name, direct.note) == ("main", "")
-    assert refused.branch_name.startswith("opensre/ci-fix-main-")
-    assert "branch rule requires a pull request" in refused.note
-    create_branch.assert_called_once_with("/w", refused.branch_name, base_default="main")
-    push_branch.assert_called_once_with("/w", refused.branch_name, base_default="", token=None)
+    assert (direct.branch_name, direct.head_sha) == ("main", "b" * 40)
+    pushed_main.assert_called_with("/w", "main", token=None)
+    push_branch.assert_not_called()
+    assert refused.value.kind == PUSH_RULE_REJECTED
 
 
 def test_gather_ci_fix_context_ignores_cancelled_sibling_checks() -> None:

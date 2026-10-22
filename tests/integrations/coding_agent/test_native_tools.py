@@ -6,52 +6,33 @@ import subprocess
 import time
 from pathlib import Path
 
-import pytest
-
-from integrations.coding_agent.native_tools import WorkspaceTools, refused_git_verb
+from integrations.coding_agent.native_tools import WorkspaceTools
 
 
-def _checkout(tmp_path: Path) -> Path:
+def test_tools_stay_inside_the_checkout_and_leave_git_history_to_the_caller(
+    tmp_path: Path,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     (repo / "app.py").write_text("value = 1\n")
-    return repo
-
-
-def test_tools_refuse_paths_outside_the_checkout_and_git_history_changes(tmp_path: Path) -> None:
-    repo = _checkout(tmp_path)
     (tmp_path / "secret.txt").write_text("token")
     (repo / "link").symlink_to(tmp_path / "secret.txt")
-    tools = WorkspaceTools(str(repo), deadline=time.monotonic() + 60)
+    workspace = WorkspaceTools(str(repo), deadline=time.monotonic() + 60)
+    tools = {tool.name: tool.run for tool in workspace.registered_tools()}
 
-    assert tools.read_file("../secret.txt")["ok"] is False
-    assert tools.read_file(str(tmp_path / "secret.txt"))["ok"] is False
-    assert tools.read_file("link")["ok"] is False
-    assert tools.write_file("../escape.txt", "x")["ok"] is False
-    assert tools.write_file(".git/hooks/pre-commit", "x")["ok"] is False
+    for path in ("../secret.txt", str(tmp_path / "secret.txt"), "link"):
+        assert tools["read_file"](path=path)["ok"] is False
+    assert tools["write_file"](path="../escape.txt", content="x")["ok"] is False
+    assert tools["write_file"](path=".git/hooks/pre-commit", content="x")["ok"] is False
     assert not (tmp_path / "escape.txt").exists()
 
-    assert tools.edit_file("app.py", "value = 1", "value = 2")["ok"] is False
-    assert tools.read_file("app.py")["ok"] is True
-    assert tools.edit_file("app.py", "value = 1", "value = 2")["ok"] is True
+    edit = {"path": "app.py", "old_string": "value = 1", "new_string": "value = 2"}
+    assert tools["edit_file"](**edit)["ok"] is False  # not read yet
+    assert tools["read_file"](path="app.py")["ok"] is True
+    assert tools["edit_file"](**edit)["ok"] is True
     assert (repo / "app.py").read_text() == "value = 2\n"
 
-    pushed = tools.bash("git -C . push origin main")
-    assert pushed["ok"] is False
-    assert "push" in pushed["error"]
-
-
-@pytest.mark.parametrize(
-    ("command", "verb"),
-    [
-        ("git commit -am fix", "commit"),
-        ("make lint && git push", "push"),
-        ("sh -c 'git reset --hard'", "reset"),
-        ("/usr/bin/git -c user.name=x checkout -- app.py", "checkout"),
-        ("git status && git diff", None),
-        ("ls .git/hooks && cat .gitignore", None),
-    ],
-)
-def test_refused_git_verb(command: str, verb: str | None) -> None:
-    assert refused_git_verb(command) == verb
+    for command in ("git commit -am fix", "make lint && git push", "sh -c 'git reset --hard'"):
+        assert tools["bash"](command=command)["ok"] is False
+    assert tools["bash"](command="git status --short")["ok"] is True

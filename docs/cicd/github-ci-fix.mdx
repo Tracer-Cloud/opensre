@@ -32,7 +32,7 @@ export CODING_WORKSPACE=/path/to/repo  # optional, for current-checkout requests
 # export CODING_MODEL=...
 ```
 
-With `CODING_AGENT=auto` (the default) OpenSRE picks the first ready CLI and falls back to its built-in agent (`opensre`). The built-in agent reads, searches, and edits files and runs commands (tests, linters, builds) only inside the repair checkout, with `CI=true` and without your OpenSRE or provider secrets in its environment, and never commits or pushes itself. `CODING_MODEL` applies to CLIs only; the built-in agent uses your configured LLM. On a host that sets `CODING_AGENT_SANDBOX=host` (such as the hosted gateway), `auto` skips the built-in agent because it has no sandbox of its own; set `CODING_AGENT=opensre` there to opt in.
+With `CODING_AGENT=auto` (the default) OpenSRE picks the first ready CLI and falls back to its built-in agent (`opensre`). The built-in agent reads, searches, and edits files and runs commands (tests, linters, builds) only inside the repair checkout, with `CI=true` and without your OpenSRE or provider secrets in its environment, and never commits or pushes itself. `CODING_MODEL` applies to CLIs only; the built-in agent uses your configured LLM.
 
 ## Credentials
 
@@ -84,7 +84,7 @@ fix the CI on main in Tracer-Cloud/opensre-webapp and push straight to main
 
 If no checks are failing, OpenSRE says so and does not push. The one exception is a PR that conflicts with its base branch: GitHub never starts checks for it, so OpenSRE treats bringing the base branch in as the fix. It does **not** open a new PR. Merged or closed PRs are refused — if the failure already landed on the base branch, ask for the branch itself ("fix the CI on main").
 
-In branch mode OpenSRE reads the failing workflow runs on the branch's head commit, creates a fresh `opensre/ci-fix-*` repair branch in the isolated checkout (or a linked worktree when you selected a local checkout), pushes that branch, and waits for the pushed commit's own workflow runs. It does **not** push directly to `main` unless you ask for that. When you explicitly ask to push straight to the branch ("push straight to main", "commit directly to main"), OpenSRE makes the fix in a fresh clone of that branch, commits it there, pushes it without force, and verifies that commit's workflow runs. If `main` moved during the repair, nothing is pushed. If a branch protection rule requires a pull request, OpenSRE pushes a fresh `opensre/ci-fix-*` branch instead and says so.
+In branch mode OpenSRE reads the failing workflow runs on the branch's head commit, creates a fresh `opensre/ci-fix-*` repair branch in the isolated checkout (or a linked worktree when you selected a local checkout), pushes that branch, and waits for the pushed commit's own workflow runs. It does **not** push directly to `main` unless you ask for that. When you explicitly ask to push straight to the branch ("push straight to main", "commit directly to main"), OpenSRE makes the fix in a fresh clone of that branch, commits it there, pushes it without force, and verifies that commit's workflow runs. If `main` moved during the repair, nothing is pushed. If a branch protection rule requires a pull request, GitHub refuses the push and OpenSRE reports that; ask for a repair branch instead.
 
 ## Verify
 

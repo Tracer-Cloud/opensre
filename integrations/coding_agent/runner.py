@@ -5,10 +5,10 @@ dispatches to it. ``auto`` picks the first *ready* backend in ``_AUTO_ORDER``
 (installed and not explicitly unauthenticated), so a machine with Claude Code,
 Codex, or Cursor — but not Pi — still gets a working coding agent without
 configuration, and a machine with none of them falls back to OpenSRE's built-in
-agent on the shell's own LLM. New backends register in ``_BACKENDS`` and every caller keeps using
-:func:`run_coding_task` / :func:`verify_coding_agent` unchanged. Inside
-:func:`reuse_coding_agent_choice` the readiness probes run once and the ready
-backend they found is reused.
+agent on the shell's own LLM. New backends register in ``_BACKENDS`` and every
+caller keeps using :func:`run_coding_task` / :func:`verify_coding_agent`
+unchanged. Inside :func:`reuse_coding_agent_choice` the readiness probes run
+once and the ready backend they found is reused.
 """
 
 from __future__ import annotations
@@ -19,12 +19,11 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 from config.account import account_llm_route
-from config.constants import CODING_AGENT_SANDBOX_HOST
 from integrations.coding_agent.claude_code_backend import run as _claude_code_run
 from integrations.coding_agent.claude_code_backend import verify as _claude_code_verify
 from integrations.coding_agent.codex_backend import run as _codex_run
 from integrations.coding_agent.codex_backend import verify as _codex_verify
-from integrations.coding_agent.config import coding_agent_provider, coding_agent_sandbox
+from integrations.coding_agent.config import coding_agent_provider
 from integrations.coding_agent.cursor_backend import run as _cursor_run
 from integrations.coding_agent.cursor_backend import verify as _cursor_verify
 from integrations.coding_agent.hosted_credentials import hosted_openai_subprocess_env
@@ -68,9 +67,6 @@ _ALIASES: dict[str, str] = {
     "claude": "claude-code",
     "claude_code": "claude-code",
     "claudecode": "claude-code",
-    "native": NATIVE_PROVIDER,
-    "builtin": NATIVE_PROVIDER,
-    "built-in": NATIVE_PROVIDER,
 }
 
 
@@ -80,16 +76,10 @@ def _normalize(provider: str | None) -> str:
 
 
 def _auto_order() -> tuple[str, ...]:
-    """Prefer Codex when a signed-in account can bill the hosted OpenSRE ledger.
-
-    The built-in agent has no sandbox of its own, so ``auto`` never picks it where
-    the host is the only boundary (``CODING_AGENT_SANDBOX=host``, the hosted
-    gateway); pin ``CODING_AGENT=opensre`` there to opt in.
-    """
-    order = _AUTO_ORDER if hosted_openai_subprocess_env() is None else _HOSTED_AUTO_ORDER
-    if coding_agent_sandbox() == CODING_AGENT_SANDBOX_HOST:
-        return tuple(name for name in order if name != NATIVE_PROVIDER)
-    return order
+    """Prefer Codex when a signed-in account can bill the hosted OpenSRE ledger."""
+    if hosted_openai_subprocess_env() is None:
+        return _AUTO_ORDER
+    return _HOSTED_AUTO_ORDER
 
 
 def _hosted_codex_model() -> str | None:
@@ -128,7 +118,7 @@ def _select_auto_backend() -> tuple[str, _Backend, str] | tuple[None, None, str]
         details.append(f"{name}: {detail}")
     if hosted:
         return None, None, _HOSTED_CODEX_HINT
-    supported = ", ".join(_auto_order())
+    supported = ", ".join(_AUTO_ORDER)
     return None, None, f"No coding agent is ready (checked {supported}). {'; '.join(details)}"
 
 

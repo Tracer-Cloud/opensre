@@ -10,14 +10,12 @@ from dataclasses import dataclass
 from integrations.coding_agent import CodingResult
 from integrations.git import (
     BRANCH_FAILED,
-    PUSH_RULE_REJECTED,
     GitCommandError,
     assert_not_protected,
     changed_since_baseline,
     checkout_branch,
     commit_paths,
     committed_paths_since,
-    create_branch,
     current_branch,
     ensure_git_repo,
     fetch_local_branch,
@@ -37,7 +35,6 @@ from integrations.github.tools.ci_fix.storage.attempts import (
     repair_key,
     save_prepared_push,
 )
-from integrations.github.tools.ci_fix.worktree import build_branch_name
 
 _GIT_TIMEOUT_SEC = 60
 _SUBJECT_MAX = 72
@@ -54,8 +51,6 @@ class PushResult:
     branch_name: str
     head_sha: str
     changed_files: list[str]
-    #: Why a requested direct push landed on a repair branch instead; empty otherwise.
-    note: str = ""
 
 
 def checkout_target_branch(workspace: str, ctx: CiFixContext, *, token: str | None = None) -> None:
@@ -92,8 +87,8 @@ def push_ci_fix(
     commit push without new file changes. ``recorded_through`` is the last
     commit whose creation was already reported; a coding agent that committed
     past it is recorded here instead of being treated as an empty repair.
-    ``direct`` pushes a branch target's fix onto that branch itself (the user
-    asked to skip the repair branch); it is never forced.
+    ``direct`` pushes a branch target's fix onto that branch itself, never
+    forced; a branch rule that requires a pull request refuses it.
     """
     token = resolve_github_token(github_token)
     pushed_head_sha = ""
@@ -148,7 +143,7 @@ def push_ci_fix(
             PreparedPush(ctx.head_sha, pushed_head_sha, ctx.head_branch, changed),
         )
         if direct:
-            pushed_branch, note = _push_onto_target(workspace, ctx, token)
+            push_base_branch(workspace, ctx.head_branch, token=token or None)
         else:
             push_branch(
                 workspace,
@@ -156,32 +151,12 @@ def push_ci_fix(
                 base_default="" if ctx.is_branch_target else ctx.base_branch,
                 token=token or None,
             )
-            pushed_branch, note = ctx.head_branch, ""
     except GitCommandError as exc:
         raise GitHubCiFixError(exc.kind, exc.message, branch_name=ctx.head_branch) from exc
     return PushResult(
-        branch_name=pushed_branch,
+        branch_name=ctx.head_branch,
         head_sha=pushed_head_sha,
         changed_files=changed,
-        note=note,
-    )
-
-
-def _push_onto_target(workspace: str, ctx: CiFixContext, token: str) -> tuple[str, str]:
-    """Push the fix onto the checked-out target branch; a branch rule that refuses it gets a repair branch."""
-    try:
-        push_base_branch(workspace, ctx.head_branch, token=token or None)
-    except GitCommandError as exc:
-        if exc.kind != PUSH_RULE_REJECTED:
-            raise
-    else:
-        return ctx.head_branch, ""
-    branch = build_branch_name(ctx)
-    create_branch(workspace, branch, base_default=ctx.head_branch)
-    push_branch(workspace, branch, base_default="", token=token or None)
-    return branch, (
-        f"GitHub refused the direct push to {ctx.head_branch} because a branch rule "
-        f"requires a pull request, so the fix was pushed to {branch} instead"
     )
 
 
