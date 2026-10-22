@@ -18,18 +18,13 @@ def _build_prompt_style() -> Style:
     selection = f"bg:{ui_theme.menu_selection_hex()}"
     return Style.from_dict(
         {
-            # The transcript runs in prompt-toolkit's full-screen buffer. Paint
-            # its base surface so every foreground token is evaluated against
-            # the active theme rather than the user's terminal preference.
-            "terminal": f"bg:{theme.BG}",
-            # Rich output without an explicit foreground reaches the full-screen
-            # transcript as an unstyled fragment. Give that content the same
-            # readable foreground as regular shell body text.
-            "transcript": f"fg:{theme.TEXT}",
             "prompt-frame-line": f"bold {theme.HIGHLIGHT}",
-            # Keep prompt-toolkit's transparent filler unstyled. The full-screen
-            # root owns its background; adding a foreground here makes filler
-            # cells visible and risks resize reflow artifacts.
+            # Keep prompt-toolkit's transparent filler truly unstyled so the
+            # user's terminal background shows through the full-screen view.
+            # Painting it repaints the whole screen in a palette colour the
+            # terminal may render far lighter than its own background; giving
+            # it a foreground makes blank cells visible to the renderer, which
+            # then writes every row to the edge and reflows on a width shrink.
             "": "",
             "default": text_fg,
             "composer-cursor": "reverse",
