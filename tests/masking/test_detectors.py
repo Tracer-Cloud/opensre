@@ -168,3 +168,16 @@ def test_extra_regex_pattern_is_applied() -> None:
     matches = find_identifiers("ticket OPS-1234 assigned", policy)
     jira = next(m for m in matches if m.kind == "jira_key")
     assert jira.value == "OPS-1234"
+
+
+@pytest.mark.parametrize(
+    ("field", "kind"),
+    [("namespace", "namespace"), ("cluster", "cluster"), ("service_name", "service_name")],
+)
+def test_contextual_fields_detected_in_json(field: str, kind: str) -> None:
+    text = '{"' + field + '": "prod"}'
+    matches = find_identifiers(text, _policy((kind,)))
+
+    assert len(matches) == 1
+    assert matches[0].value == "prod"
+    assert text[matches[0].start : matches[0].end] == "prod"

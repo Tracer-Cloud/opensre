@@ -110,6 +110,21 @@ class MaskingRules:
         matches = find_identifiers(text, self.policy, self._compiled_extras)
         if not matches:
             return text
+        # Skip matches that fall inside an existing placeholder token so a second
+        # mask() pass over already-masked text does not nest tokens like <<ENV_1>_0>.
+        if "<" in text and self._placeholder_map:
+            occupied = [
+                (m.start(), m.end())
+                for m in _PLACEHOLDER_TOKEN_RE.finditer(text)
+                if m.group(0) in self._placeholder_map
+            ]
+            if occupied:
+                matches = [
+                    dm for dm in matches
+                    if not any(ps <= dm.start and dm.end <= pe for ps, pe in occupied)
+                ]
+        if not matches:
+            return text
         return self._apply_replacements(text, matches)
 
     def _apply_replacements(self, text: str, matches: list[DetectedIdentifier]) -> str:
@@ -145,11 +160,14 @@ class MaskingRules:
         )
 
     def mask_value(self, value: Any) -> Any:
-        """Recursively mask strings inside dicts/lists/tuples."""
+        """Recursively mask strings, including dictionary keys, in containers."""
         if isinstance(value, str):
             return self.mask(value)
         if isinstance(value, dict):
-            return {k: self.mask_value(v) for k, v in value.items()}
+            return {
+                (self.mask(k) if isinstance(k, str) else k): self.mask_value(v)
+                for k, v in value.items()
+            }
         if isinstance(value, list):
             return [self.mask_value(v) for v in value]
         if isinstance(value, tuple):
@@ -157,11 +175,14 @@ class MaskingRules:
         return value
 
     def unmask_value(self, value: Any) -> Any:
-        """Recursively unmask strings inside dicts/lists/tuples."""
+        """Recursively restore strings, including dictionary keys, in containers."""
         if isinstance(value, str):
             return self.unmask(value)
         if isinstance(value, dict):
-            return {k: self.unmask_value(v) for k, v in value.items()}
+            return {
+                (self.unmask(k) if isinstance(k, str) else k): self.unmask_value(v)
+                for k, v in value.items()
+            }
         if isinstance(value, list):
             return [self.unmask_value(v) for v in value]
         if isinstance(value, tuple):

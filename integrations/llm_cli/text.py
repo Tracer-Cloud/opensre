@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from infrastructure.safety.masking.rules import MaskingRules
 
 
-def flatten_messages_to_prompt(prompt_or_messages: Any) -> str:
+def flatten_messages_to_prompt(
+    prompt_or_messages: Any, *, masking: MaskingRules | None = None
+) -> str:
     """Turn structured chat messages or a plain string into one text block."""
     if isinstance(prompt_or_messages, str):
         return prompt_or_messages
@@ -25,6 +31,21 @@ def flatten_messages_to_prompt(prompt_or_messages: Any) -> str:
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "text":
                     text_bits.append(str(block.get("text", "")))
+                elif isinstance(block, dict) and block.get("type") == "json":
+                    payload = json.dumps(block.get("data"), default=str)
+                    if masking is not None:
+                        from infrastructure.safety.guardrails.apply import apply_guardrails_to_text
+
+                        # Guardrails still see original values before reversible masking.
+                        try:
+                            guarded = json.loads(apply_guardrails_to_text(payload))
+                        except json.JSONDecodeError:
+                            # A free-form redaction can destroy JSON. Omit the block
+                            # rather than forward any remaining escaped identifiers.
+                            payload = "[REDACTED]"
+                        else:
+                            payload = json.dumps(masking.mask_value(guarded), default=str)
+                    text_bits.append(payload)
                 else:
                     text_bits.append(str(block))
             content = "\n".join(text_bits)

@@ -1436,15 +1436,15 @@ def test_cli_backed_agent_client_tool_call_parsing() -> None:
     )
     client = CLIBackedAgentClient(fake_adapter, model=None)
 
-    # Patch CLIBackedLLMClient.invoke to return a known JSON response.
+    # Patch CLIBackedLLMClient._invoke_raw to return a known JSON response.
     import unittest.mock as mock
 
     from core.llm.types import LLMResponse
 
     json_response = '{"tool_calls": [{"id": "c1", "name": "my_tool", "input": {"x": 1}}]}'
     with mock.patch(
-        "integrations.llm_cli.runner.CLIBackedLLMClient.invoke",
-        return_value=LLMResponse(content=json_response),
+        "integrations.llm_cli.runner.CLIBackedLLMClient._invoke_raw",
+        return_value=(LLMResponse(content=json_response), None),
     ):
         result = client.invoke([{"role": "user", "content": "investigate"}])
 
@@ -1474,7 +1474,7 @@ def test_cli_tool_call_input_unparseable_arguments_stay_empty() -> None:
 
 
 def test_cli_backed_agent_client_build_assistant_message_includes_tool_json() -> None:
-    """Assistant history must retain tool_calls JSON for multi-turn CLI prompts."""
+    """Assistant history retains structured arguments until the CLI serializes them."""
     from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
     from core.llm.types import ToolCall
 
@@ -1483,9 +1483,12 @@ def test_cli_backed_agent_client_build_assistant_message_includes_tool_json() ->
         [ToolCall(id="t1", name="query_logs", input={"q": "error"})],
     )
     assert msg["role"] == "assistant"
-    assert "query_logs" in msg["content"]
-    assert '"tool_calls"' in msg["content"]
-    assert "t1" in msg["content"]
+    assert msg["content"] == [
+        {
+            "type": "json",
+            "data": {"tool_calls": [{"id": "t1", "name": "query_logs", "input": {"q": "error"}}]},
+        }
+    ]
 
 
 def test_try_parse_tool_call_json_uses_raw_decode_not_greedy_brace_span() -> None:
@@ -1587,7 +1590,7 @@ def test_cli_backed_agent_client_reuses_single_cli_llm_client() -> None:
     with mock.patch.object(CLIBackedLLMClient, "__init__", counting_init):
         client = CLIBackedAgentClient(fake_adapter, model=None)
         with mock.patch.object(
-            CLIBackedLLMClient, "invoke", return_value=LLMResponse(content="ok")
+            CLIBackedLLMClient, "_invoke_raw", return_value=(LLMResponse(content="ok"), None)
         ):
             client.invoke([{"role": "user", "content": "a"}])
             client.invoke([{"role": "user", "content": "b"}])
@@ -1621,8 +1624,8 @@ def test_cli_backed_agent_client_plain_text_response() -> None:
     client = CLIBackedAgentClient(fake_adapter, model=None)
 
     with mock.patch(
-        "integrations.llm_cli.runner.CLIBackedLLMClient.invoke",
-        return_value=LLMResponse(content="The root cause is a memory leak."),
+        "integrations.llm_cli.runner.CLIBackedLLMClient._invoke_raw",
+        return_value=(LLMResponse(content="The root cause is a memory leak."), None),
     ):
         result = client.invoke([{"role": "user", "content": "summarise"}])
 
@@ -1657,8 +1660,8 @@ def test_cli_backed_agent_client_invalid_tool_json_falls_back_to_text_response()
     raw = '{"tool_calls":"not-a-list"}'
 
     with mock.patch(
-        "integrations.llm_cli.runner.CLIBackedLLMClient.invoke",
-        return_value=LLMResponse(content=raw),
+        "integrations.llm_cli.runner.CLIBackedLLMClient._invoke_raw",
+        return_value=(LLMResponse(content=raw), None),
     ):
         result = client.invoke([{"role": "user", "content": "summarise"}])
 
@@ -1693,8 +1696,8 @@ def test_cli_backed_agent_client_filtered_tool_calls_fall_back_to_text_response(
     raw = '{"tool_calls":[{"id":"c1","name":"   ","input":{"x":1}}]}'
 
     with mock.patch(
-        "integrations.llm_cli.runner.CLIBackedLLMClient.invoke",
-        return_value=LLMResponse(content=raw),
+        "integrations.llm_cli.runner.CLIBackedLLMClient._invoke_raw",
+        return_value=(LLMResponse(content=raw), None),
     ):
         result = client.invoke([{"role": "user", "content": "summarise"}])
 

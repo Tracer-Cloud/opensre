@@ -153,3 +153,40 @@ def test_partial_overlap_matches_do_not_corrupt_text() -> None:
     assert masked.count("<") == 1
     # Round trip returns the original text byte-for-byte.
     assert ctx.unmask(masked) == "host 192.168.1.50 online"
+
+
+def test_double_mask_pass_does_not_nest_placeholders() -> None:
+    """Regression: a second mask() pass on already-masked text must not create
+    nested tokens like <<ENV_1>_0> when an extra pattern matches the label
+    portion of an existing placeholder (double-masking bug in _prepare_invocation)."""
+    policy = MaskingPolicy.model_validate(
+        {
+            "enabled": True,
+            "kinds": (),
+            # Pattern whose kind label "ENV" appears verbatim inside <ENV_0> —
+            # without the guard, the second pass would match "ENV" inside the
+            # placeholder and produce the nested token <<ENV_1>_0>.
+            "extra_patterns": {"ENV": r"ENV"},
+        }
+    )
+    ctx = MaskingRules(policy=policy)
+    first = ctx.mask("value ENV is secret")
+    assert "<ENV_0>" in first
+
+    # Second pass (mirrors _prepare_invocation calling masking.mask() after
+    # flatten_messages_to_prompt has already called masking.mask_value()).
+    second = ctx.mask(first)
+    assert "<ENV_0>" in second
+    assert "<<" not in second
+    assert ctx.unmask(second) == "value ENV is secret"
+
+
+def test_unmask_value_restores_nested_map_keys() -> None:
+    ctx = _enabled_ctx()
+    original = "192.168.1.50"
+    placeholder = ctx.mask(original)
+    payload = {"inputs": [{original: original}], 7: True}
+    masked = ctx.mask_value(payload)
+
+    assert masked == {"inputs": [{placeholder: placeholder}], 7: True}
+    assert ctx.unmask_value(masked) == payload

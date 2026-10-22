@@ -17,6 +17,11 @@ from typing import ClassVar
 
 from pydantic import Field, field_validator
 
+from config.constants.masking import (
+    OPENSRE_MASK_ENABLED_ENV,
+    OPENSRE_MASK_EXTRA_REGEX_ENV,
+    OPENSRE_MASK_KINDS_ENV,
+)
 from config.strict_config import StrictConfigModel
 
 logger = logging.getLogger(__name__)
@@ -43,9 +48,9 @@ class MaskingPolicy(StrictConfigModel):
     kinds: tuple[IdentifierKind, ...] = ALL_KINDS
     extra_patterns: dict[str, str] = Field(default_factory=dict)
 
-    _ENV_ENABLED: ClassVar[str] = "OPENSRE_MASK_ENABLED"
-    _ENV_KINDS: ClassVar[str] = "OPENSRE_MASK_KINDS"
-    _ENV_EXTRA_REGEX: ClassVar[str] = "OPENSRE_MASK_EXTRA_REGEX"
+    _ENV_ENABLED: ClassVar[str] = OPENSRE_MASK_ENABLED_ENV
+    _ENV_KINDS: ClassVar[str] = OPENSRE_MASK_KINDS_ENV
+    _ENV_EXTRA_REGEX: ClassVar[str] = OPENSRE_MASK_EXTRA_REGEX_ENV
 
     @field_validator("kinds", mode="before")
     @classmethod

@@ -951,18 +951,26 @@ class CLIBackedAgentClient:
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
-        from infrastructure.harness_providers import flatten_cli_messages_to_prompt
-
-        tool_block = ""
-        if tools:
-            tool_lines = json.dumps(tools, indent=2)
-            tool_block = f"\n\nAvailable tools (JSON schema):\n{tool_lines}\n"
-
         system_block = f"System: {system}\n" if system else ""
-        instruction = self._TOOL_CALL_INSTRUCTION + tool_block
-        prompt = f"{system_block}{instruction}\n\n{flatten_cli_messages_to_prompt(messages)}"
+        blocks: list[dict[str, Any]] = [
+            {"type": "text", "text": system_block + self._TOOL_CALL_INSTRUCTION}
+        ]
+        if tools:
+            blocks.extend(
+                [
+                    {"type": "text", "text": "Available tools (JSON schema):"},
+                    {"type": "json", "data": tools},
+                ]
+            )
+        prompt = [{"role": "system", "content": blocks}, *messages]
 
-        text = self._cli_client.invoke(prompt).content.strip()
+        # Keep placeholders until both the tool envelope and its arguments are parsed.
+        invoke_raw = getattr(self._cli_client, "_invoke_raw", None)
+        if callable(invoke_raw):
+            response, masking = invoke_raw(prompt)
+        else:
+            response, masking = self._cli_client.invoke(prompt), None
+        text = response.content.strip()
 
         # Try to parse a JSON tool call response.
         tool_calls: list[ToolCall] = []
@@ -976,17 +984,25 @@ class CLIBackedAgentClient:
                     name = tc.get("name")
                     if not isinstance(name, str) or not name.strip():
                         continue
+                    tool_input = _cli_tool_call_input(tc)
+                    call_id = str(tc.get("id") or f"call_{i}")
+                    if masking is not None:
+                        name = masking.unmask(name)
+                        call_id = masking.unmask(call_id)
+                        tool_input = masking.unmask_value(tool_input)
                     tool_calls.append(
                         ToolCall(
-                            id=str(tc.get("id") or f"call_{i}"),
+                            id=call_id,
                             name=name.strip(),
-                            input=_cli_tool_call_input(tc),
+                            input=tool_input,
                         )
                     )
             content = "" if tool_calls else text
         else:
             content = text
 
+        if masking is not None:
+            content = masking.unmask(content)
         return AgentLLMResponse(
             content=content,
             tool_calls=tool_calls,
@@ -996,25 +1012,30 @@ class CLIBackedAgentClient:
 
     @staticmethod
     def build_tool_result_message(tool_calls: list[ToolCall], results: list[Any]) -> dict[str, Any]:
-        parts = [
-            f"Tool result for {tc.name} (id={tc.id}): {json.dumps(result, default=str)}"
-            for tc, result in zip(tool_calls, results)
-        ]
-        return {"role": "user", "content": "\n".join(parts)}
+        blocks: list[dict[str, Any]] = []
+        for tc, result in zip(tool_calls, results):
+            blocks.extend(
+                [
+                    {"type": "text", "text": f"Tool result for {tc.name} (id={tc.id}):"},
+                    {"type": "json", "data": result},
+                ]
+            )
+        return {"role": "user", "content": blocks}
 
     @staticmethod
     def build_assistant_message(content: str, tool_calls: list[ToolCall]) -> dict[str, Any]:
-        """Match OpenAIAgentClient signature; embed tool JSON in content for CLI history."""
+        """Keep tool arguments structured until the CLI boundary masks and serializes them."""
         if tool_calls:
             payload = {
                 "tool_calls": [
                     {"id": tc.id, "name": tc.name, "input": tc.input} for tc in tool_calls
                 ]
             }
-            tool_json = json.dumps(payload)
+            blocks: list[dict[str, Any]] = []
             if content.strip():
-                return {"role": "assistant", "content": f"{content.strip()}\n\n{tool_json}"}
-            return {"role": "assistant", "content": tool_json}
+                blocks.append({"type": "text", "text": content.strip()})
+            blocks.append({"type": "json", "data": payload})
+            return {"role": "assistant", "content": blocks}
         return {"role": "assistant", "content": content}
 
 

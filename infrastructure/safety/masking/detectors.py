@@ -34,15 +34,15 @@ class DetectedIdentifier:
 
 _POD_RE = re.compile(r"\b([a-z0-9](?:[-a-z0-9]*[a-z0-9])?-[a-f0-9]{5,10}(?:-[a-z0-9]{3,10})?)\b")
 _NAMESPACE_RE = re.compile(
-    r"\b(?:kube_namespace|namespace|ns)[=:\s]+([a-z0-9][-a-z0-9]*)\b", re.IGNORECASE
+    r"\b(?:kube_namespace|namespace|ns)[\"']?[=:\s]+[\"']?([a-z0-9][-a-z0-9]*)\b", re.IGNORECASE
 )
 _CLUSTER_RE = re.compile(
-    r"\b(?:kube_cluster|eks_cluster|cluster(?:_name)?)[=:\s]+"
+    r"\b(?:kube_cluster|eks_cluster|cluster(?:_name)?)[\"']?[=:\s]+[\"']?"
     r"([a-zA-Z0-9][-a-zA-Z0-9_]{1,})\b",
     re.IGNORECASE,
 )
 _SERVICE_NAME_RE = re.compile(
-    r"\b(?:service|service_name|app|deployment)[=:\s]+([a-zA-Z0-9][-a-zA-Z0-9_]{1,})\b",
+    r"\b(?:service|service_name|app|deployment)[\"']?[=:\s]+[\"']?([a-zA-Z0-9][-a-zA-Z0-9_]{1,})\b",
     re.IGNORECASE,
 )
 _HOSTNAME_RE = re.compile(
