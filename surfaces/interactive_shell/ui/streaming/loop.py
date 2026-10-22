@@ -109,6 +109,8 @@ class ReplyStream:
     ``before_first_paragraph`` runs once, right before the first paragraph
     prints, so output meant to sit above the reply (the action log) lands
     first. ``transform`` rewrites each paragraph before it prints.
+    ``partial_flush_chars`` is how much prose may wait for its paragraph to end
+    before it prints at a sentence break.
     """
 
     def __init__(
@@ -118,8 +120,13 @@ class ReplyStream:
         defer_want_me_to_closer: bool = False,
         before_first_paragraph: Callable[[], None] | None = None,
         transform: Callable[[str], str] | None = None,
+        partial_flush_chars: int = _PARTIAL_FLUSH_CHAR_THRESHOLD,
     ) -> None:
         self._console = console
+        self._partial_flush_chars = partial_flush_chars
+        self._partial_flush_min_chars = round(
+            partial_flush_chars * _PARTIAL_FLUSH_MIN_CHARS / _PARTIAL_FLUSH_CHAR_THRESHOLD
+        )
         self._defer_want_me_to_closer = defer_want_me_to_closer
         self._before_first_paragraph = before_first_paragraph
         self._transform = transform
@@ -283,7 +290,7 @@ class ReplyStream:
 
     def _partial_flush_index(self, text: str) -> int:
         """Return a visible prose boundary for latency flushes, or ``-1``."""
-        if len(text) < _PARTIAL_FLUSH_CHAR_THRESHOLD or _has_open_code_fence(text):
+        if len(text) < self._partial_flush_chars or _has_open_code_fence(text):
             return -1
 
         candidate = text
@@ -291,24 +298,24 @@ class ReplyStream:
             marker_pos = text.lower().find(WANT_ME_TO_MARKER)
             if marker_pos >= 0:
                 candidate = text[:marker_pos]
-        if len(candidate) < _PARTIAL_FLUSH_CHAR_THRESHOLD:
+        if len(candidate) < self._partial_flush_chars:
             return -1
 
         sentence_indices = [
             candidate.rfind(sep, 0, len(candidate)) + len(sep)
             for sep in _PARTIAL_FLUSH_SENTENCE_BREAKS
-            if candidate.rfind(sep, 0, len(candidate)) >= _PARTIAL_FLUSH_MIN_CHARS
+            if candidate.rfind(sep, 0, len(candidate)) >= self._partial_flush_min_chars
         ]
         if sentence_indices:
             return max(sentence_indices)
 
         space_idx = candidate.rfind(" ", 0, len(candidate))
-        if space_idx >= _PARTIAL_FLUSH_MIN_CHARS:
+        if space_idx >= self._partial_flush_min_chars:
             return space_idx + 1
-        return _PARTIAL_FLUSH_CHAR_THRESHOLD
+        return self._partial_flush_chars
 
     def _flush_partial_if_needed(self) -> None:
-        if self._para_chars < _PARTIAL_FLUSH_CHAR_THRESHOLD:
+        if self._para_chars < self._partial_flush_chars:
             return
         text = "".join(self._para_buffer)
         idx = self._partial_flush_index(text)
