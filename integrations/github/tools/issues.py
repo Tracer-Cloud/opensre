@@ -6,6 +6,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
 from integrations.github.agent_tools import (
@@ -60,6 +61,8 @@ def _map_search_github_issues(
 @tool(
     name="search_github_issues",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Search GitHub repository issues through the configured GitHub MCP server.",
     use_cases=[
         "Investigating crash, error, or exception reports filed as issues",

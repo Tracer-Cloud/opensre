@@ -9,90 +9,87 @@ discord = os.environ["DISCORD_INVITE_URL"]
 contributor = os.environ["CONTRIBUTOR_LOGIN"]
 
 templates: list[str] = [
-    (f"🎉 **MERGED!** @{contributor} just shipped something. The diff gods are pleased. 🙌"),
+    (f"🎉 **MERGED!** {contributor} just shipped something. The diff gods are pleased. 🙌"),
     (
-        f"🚀 **Houston, we have a merge.** @{contributor} your PR is in orbit. "
+        f"🚀 **Houston, we have a merge.** {contributor} your PR is in orbit. "
         "Thanks for launching this one!"
     ),
     (
-        f"💜 **One more reason the project grows.** Thanks @{contributor} — "
+        f"💜 **One more reason the project grows.** Thanks {contributor} — "
         "your contribution just landed!"
     ),
     (
-        f"🎊 **Achievement unlocked: PR Merged.** @{contributor} passed code review, "
+        f"🎊 **Achievement unlocked: PR Merged.** {contributor} passed code review, "
         "survived CI, and shipped. Respect. 🤝"
     ),
     (
-        f'🔥 **Another one.** @{contributor} said "here\'s a PR" and maintainers said '
+        f'🔥 **Another one.** {contributor} said "here\'s a PR" and maintainers said '
         "\"ship it\". That's how it's done."
     ),
     (
-        f"🧑‍💻 **@{contributor} has entered the contributor hall of fame.** "
+        f"🧑‍💻 **{contributor} has entered the contributor hall of fame.** "
         "Merged. Done. Shipped. Go touch grass (then come back with another PR). 🌱"
     ),
     (
-        f"🎯 **Bullseye.** @{contributor} opened a PR, kept the vibes clean, "
+        f"🎯 **Bullseye.** {contributor} opened a PR, kept the vibes clean, "
         "and got it merged. Absolute cinema. 🎬"
     ),
     (
-        f"⚡ **LGTM → Merged.** @{contributor}, your work is in. "
+        f"⚡ **LGTM → Merged.** {contributor}, your work is in. "
         "Every commit counts — thank you for this one."
     ),
     # new additions
     (
-        f'😤 **@{contributor} said "I will fix this" and then actually fixed it.** '
+        f'😤 **{contributor} said "I will fix this" and then actually fixed it.** '
         "Legendary behavior."
     ),
     (
-        f"🍕 **@{contributor}'s PR:** crispy edges, no unnecessary toppings, delivered on time. "
+        f"🍕 **{contributor}'s PR:** crispy edges, no unnecessary toppings, delivered on time. "
         "Understood the assignment. 🔥"
     ),
-    (f"🌊 **Merged.** @{contributor} is now permanently woven into git history. No take-backs. 😄"),
+    (f"🌊 **Merged.** {contributor} is now permanently woven into git history. No take-backs. 😄"),
     (
         f"🤖 **CI passed. Linter didn't scream. Reviewer typed LGTM.** "
-        f"@{contributor}, every machine in this pipeline just slow-clapped. 🖥️✨"
+        f"{contributor}, every machine in this pipeline just slow-clapped. 🖥️✨"
     ),
-    (f"🧠 **@{contributor} opened a PR.** Maintainers feared them. CI genuflected. It merged. 🚨"),
+    (f"🧠 **{contributor} opened a PR.** Maintainers feared them. CI genuflected. It merged. 🚨"),
     (
         f"😭 **Clear commit message. Green tests. Kind review.** "
-        f"@{contributor}, stop making the rest of us look bad."
+        f"{contributor}, stop making the rest of us look bad."
     ),
     (
         f"🐸 **Rebase? Handled. Conflicts? Squashed. CI? Vibing.** "
-        f"@{contributor} touched the untouchable and lived. 🫡"
+        f"{contributor} touched the untouchable and lived. 🫡"
     ),
     (
-        f"🏆 **@{contributor} did not come to play.** "
+        f"🏆 **{contributor} did not come to play.** "
         "PR opened. Review survived. Merged clean. Retire the jersey. 🎽"
     ),
     (
-        f"🎲 **Researchers are baffled.** @{contributor} opened a PR, got it reviewed without drama, "
+        f"🎲 **Researchers are baffled.** {contributor} opened a PR, got it reviewed without drama, "
         "and merged clean. This violates known laws of open source. 🔬"
     ),
     (
-        f"🌮 **@{contributor}'s PR:** showed up unannounced, improved everything, left zero bugs. "
+        f"🌮 **{contributor}'s PR:** showed up unannounced, improved everything, left zero bugs. "
         "Just like a perfect taco. 🌮"
     ),
+    (f"🐉 **Legend says** enough merged PRs and you ascend. {contributor} is dangerously close. 🌤️"),
     (
-        f"🐉 **Legend says** enough merged PRs and you ascend. "
-        f"@{contributor} is dangerously close. 🌤️"
-    ),
-    (
-        f"🛸 **Aliens watching our repo** just upgraded @{contributor}'s threat level to: "
+        f"🛸 **Aliens watching our repo** just upgraded {contributor}'s threat level to: "
         "*do not engage — too competent*. 👽"
     ),
     (
         f'🎻 **"The diff was clean, the tests did pass, the reviewer wept."** '
-        f"That poem was about @{contributor}'s PR. 🥹"
+        f"That poem was about {contributor}'s PR. 🥹"
     ),
-    (f"🍵 **@{contributor} made tea, opened a PR, and merged before it cooled.** No notes. ☕"),
+    (f"🍵 **{contributor} made tea, opened a PR, and merged before it cooled.** No notes. ☕"),
     (
         f"🏄 **Some PRs rot in review for six weeks.** "
-        f'@{contributor}\'s said "not today" and merged like it owned the place. 🌊'
+        f'{contributor}\'s said "not today" and merged like it owned the place. 🌊'
     ),
     (
         f"💼 **Interviewer:** describe a time you shipped something impactful.\n\n"
-        f"**@{contributor}:** *points at this PR*\n\n"
+        f"**{contributor}:** *points at this PR*\n\n"
         "**Interviewer:** you're hired. 🤝"
     ),
 ]

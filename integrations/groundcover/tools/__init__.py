@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.groundcover.availability import groundcover_available_or_backend
@@ -50,6 +51,8 @@ def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_groundcover_logs",
     display_name="groundcover logs",
     source="groundcover",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     tags=("logs", "observability"),
     description=(
         "Search groundcover logs with gcQL. Use for application errors, exceptions, and service "
@@ -220,6 +223,8 @@ def _traces_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_groundcover_traces",
     display_name="groundcover traces",
     source="groundcover",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     tags=("traces", "observability"),
     description=(
         "Query groundcover traces/spans with gcQL. Use to find slow spans, failing spans, and "

@@ -334,6 +334,8 @@ EXPORTS: dict[str, str] = {
     "KUBECONFIG_NAMESPACE_ENV": "kubernetes",
     "KUBECONFIG_PATH_ENV": "kubernetes",
     # llm
+    "ANTHROPIC_DEFER_LOADING_KEY": "llm",
+    "ANTHROPIC_THINKING_BINDING_KEY": "llm",
     "AZURE_OPENAI_API_KEY_ENV": "llm",
     "OPENAI_API_KEY_ENV": "llm",
     "OPENAI_BASE_URL_ENV": "llm",
@@ -528,6 +530,8 @@ EXPORTS: dict[str, str] = {
     # runbooks
     "RUNBOOK_CONTENT_MAX_CHARS": "runbooks",
     "RUNBOOK_MANIFEST_MAX_CHARS": "runbooks",
+    # runtime_events
+    "PARTIAL_MESSAGE_KEY": "runtime_events",
     # scheduler
     "WEEKDAY_CRON_FIELD": "scheduler",
     "NON_RETRYABLE_WORK_ERROR_KINDS": "scheduler",
@@ -616,6 +620,7 @@ EXPORTS: dict[str, str] = {
     # tooling
     "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",
+    "MAX_CONCURRENT_TOOL_CALLS": "tooling",
     "TOOL_PREFETCH_MAX_ENTRIES": "tooling",
     "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "ToolBlockedBy": "tooling",
@@ -628,6 +633,8 @@ EXPORTS: dict[str, str] = {
     "INITIAL_TOOL_SCHEMA_TOKEN_LIMIT": "tool_discovery",
     "MAX_STAGNANT_DISCOVERY_ITERATIONS": "tool_discovery",
     "MODEL_ONLY_PRESENTATION_KEY": "tool_discovery",
+    "REPLAY_WITH_HISTORY_KEY": "tool_discovery",
+    "REQUEST_SCOPED_RESULTS_METADATA_KEY": "tool_discovery",
     "SESSION_GOAL_CONTROL_TOOL_NAMES": "tool_discovery",
     "TOOL_DISCOVERY_STATE_DENIED": "tool_discovery",
     "TOOL_DISCOVERY_STATE_MATCHED": "tool_discovery",
@@ -637,6 +644,7 @@ EXPORTS: dict[str, str] = {
     "TOOL_DISCOVERY_STATE_TRANSPORT_FAILURE": "tool_discovery",
     "TOOL_FAILURE_STATE_KEY": "tool_discovery",
     "TOOL_FAILURE_STATES": "tool_discovery",
+    "TOOL_SEARCH_MATCHES_KEY": "tool_discovery",
     "TOOL_SEARCH_MAX_RESULTS": "tool_discovery",
     "TOOL_SEARCH_NAME": "tool_discovery",
     # tracer

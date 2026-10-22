@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from core.domain.types.evidence import record_evidence_entry
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.signoz import (
@@ -62,6 +63,8 @@ def _metrics_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_signoz_metrics",
     display_name="SigNoz metrics",
     source="signoz",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     tags=("metrics", "observability"),
     description=("Query SigNoz metrics (CPU, memory, request rate) by service and time window."),
     use_cases=[

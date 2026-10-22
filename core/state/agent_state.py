@@ -2,9 +2,9 @@
 
 ``session.agent`` is a :class:`MutableAgentState` — mutable state that
 persists *across* turns. Production reads and writes ``messages`` (transcript),
-``turn_evidence`` (what each turn's tools returned), and ``clear()`` only.
-Per-turn data (tools, resolved integrations, system prompt, iteration cap) is on
-``TurnSnapshot``.
+``turn_evidence`` (what each turn's tools returned), ``shown_tools`` (the tool
+list the conversation has seen), and ``clear()`` only. Per-turn data (tools,
+resolved integrations, system prompt, iteration cap) is on ``TurnSnapshot``.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import Literal
 
 from config.constants.conversation_history import STRUCTURED_HISTORY_MAX_TURNS
 from core.state.history_settings import structured_history_enabled
+from core.state.shown_tools import ShownTools
 from core.state.transcript_window import compact_messages_to_window
 from core.state.turn_evidence import TurnEvidence
 
@@ -48,6 +49,8 @@ class MutableAgentState:
     def __init__(self, *, messages: Sequence[tuple[str, str]] = ()) -> None:
         self._messages: list[tuple[str, str]] = list(messages)
         self._turn_evidence: list[TurnEvidence] = []
+        #: The tools this conversation has been shown, kept in place across turns.
+        self.shown_tools = ShownTools()
 
     @property
     def messages(self) -> list[tuple[str, str]]:
@@ -83,6 +86,7 @@ class MutableAgentState:
     def clear(self) -> None:
         self._messages.clear()
         self._turn_evidence.clear()
+        self.shown_tools.clear()
 
     def _replace_messages(self, messages: Sequence[tuple[str, str]]) -> None:
         self._messages = list(messages)

@@ -319,10 +319,15 @@ class SessionManager:
             session.cli_agent_messages = restored
         evidence = data.get(RestoreContextKey.TURN_EVIDENCE)
         if isinstance(evidence, list) and hasattr(session, "turn_evidence"):
-            from core.state import TurnEvidence
+            from core.state import ShownTools, TurnEvidence
 
             records = (TurnEvidence.from_json(item) for item in evidence)
             session.turn_evidence = [record for record in records if record is not None]
+            # The replayed turns name the tools they used; keep showing them in
+            # place so the rebuilt session's requests extend the cached prefix.
+            shown = getattr(session, "shown_tools", None)
+            if isinstance(shown, ShownTools):
+                shown.restore_from(session.turn_evidence)
         context = data.get(RestoreContextKey.ACCUMULATED_CONTEXT)
         if isinstance(context, dict):
             session.accumulated_context = dict(context)

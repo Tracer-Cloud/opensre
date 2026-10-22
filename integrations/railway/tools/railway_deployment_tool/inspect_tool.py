@@ -54,6 +54,7 @@ class InspectRailwayDeploymentTool(BaseTool):
     source: ClassVar[EvidenceSource] = "railway"
     surfaces = (ToolSurface.CHAT, ToolSurface.ACTION)
     side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Show the latest successful Railway deployment and source commit metadata for a service."
     )

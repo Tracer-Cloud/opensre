@@ -91,6 +91,7 @@ def _map_grafana_metrics(
     source_id="grafana_mimir",
     evidence_type=EvidenceType.METRICS,
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     examples=[
         "Query `pipeline_runs_total` to verify throughput drops.",
         "Query HTTP error rate metric with a `service_name` filter.",

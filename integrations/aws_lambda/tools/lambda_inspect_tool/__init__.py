@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.aws.lambda_client import get_function_code, get_function_configuration
 from integrations.aws_lambda.availability import lambda_available, lambda_name
@@ -15,6 +16,8 @@ def _extract_inspect_lambda_params(sources: dict[str, dict]) -> dict:
     name="inspect_lambda_function",
     display_name="Lambda config",
     source="cloudwatch",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Inspect a Lambda function's configuration and optionally its code.",
     use_cases=[
         "Understanding function configuration (timeout, memory, env vars)",

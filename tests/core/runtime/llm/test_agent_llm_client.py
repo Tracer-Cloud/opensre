@@ -14,6 +14,7 @@ from core.llm.transports.sdk.agent_clients import (
     _cli_tool_call_input,
     _try_parse_tool_call_json,
 )
+from tests.utils.anthropic_streams import streaming_messages
 
 
 def _install_fake_anthropic(monkeypatch: pytest.MonkeyPatch) -> types.SimpleNamespace:
@@ -43,11 +44,11 @@ def _install_fake_anthropic(monkeypatch: pytest.MonkeyPatch) -> types.SimpleName
 
     class Anthropic:
         def __init__(self, **_: object) -> None:
-            self.messages = types.SimpleNamespace(create=lambda **_: None)
+            self.messages = streaming_messages(lambda **_: None)
 
     class AnthropicBedrock:
         def __init__(self, **_: object) -> None:
-            self.messages = types.SimpleNamespace(create=lambda **_: None)
+            self.messages = streaming_messages(lambda **_: None)
 
     fake_module.AuthenticationError = AuthenticationError
     fake_module.BadRequestError = BadRequestError
@@ -80,7 +81,7 @@ def test_bedrock_auth_error_message_references_aws_credentials(
     def raise_auth_error(**_: object) -> object:
         raise fake_anthropic.AuthenticationError("expired")
 
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_auth_error))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_auth_error))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -104,9 +105,7 @@ def test_bedrock_permission_denied_is_not_retried_and_mentions_marketplace(
         calls += 1
         raise fake_anthropic.PermissionDeniedError("marketplace denied")
 
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_permission_denied)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_permission_denied))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -136,9 +135,7 @@ def test_internal_server_error_with_model_billing_fails_fast(
         )
 
     client = AnthropicAgentClient(model="claude-opus-4-7")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_billing_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_billing_error))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -164,9 +161,7 @@ def test_internal_server_error_without_model_data_is_retried(
         raise fake_anthropic.InternalServerError("Internal server error", body={})
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_transient_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_transient_error))
 
     with pytest.raises(RuntimeError, match="API failed after 3 attempts"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -194,7 +189,7 @@ def test_anthropic_rate_limit_error_is_retried_then_raises(
         raise fake_anthropic.RateLimitError("slow down")
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_rate_limit))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_rate_limit))
 
     with pytest.raises(RuntimeError, match="Anthropic rate limit exceeded"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -220,7 +215,7 @@ def test_anthropic_invoke_strips_internal_message_markers(
         )
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=capture_create))
+    client._client = types.SimpleNamespace(messages=streaming_messages(capture_create))
 
     messages = [
         {"role": "user", "content": "alert"},
@@ -267,7 +262,7 @@ def test_anthropic_invoke_marks_system_and_last_tool_for_prompt_cache(
         )
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=capture_create))
+    client._client = types.SimpleNamespace(messages=streaming_messages(capture_create))
 
     tools = [
         {"type": "custom", "name": "a", "description": "a", "input_schema": {"type": "object"}},
@@ -359,9 +354,7 @@ def test_anthropic_credit_balance_too_low_raises_LLMCreditExhaustedError(
         )
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_credit_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_credit_error))
 
     with pytest.raises(LLMCreditExhaustedError, match="credit exhausted"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -504,7 +497,7 @@ def test_anthropic_rate_limit_honors_retry_after_header(
         raise err
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_with_header))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_with_header))
 
     with pytest.raises(RuntimeError, match="Anthropic rate limit exceeded"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -538,7 +531,7 @@ def test_bedrock_rate_limit_error_is_retried_then_raises(
         raise fake_anthropic.RateLimitError("slow down")
 
     client = BedrockAgentClient(model="us.anthropic.claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_rate_limit))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_rate_limit))
 
     with pytest.raises(RuntimeError, match="Bedrock rate limit exceeded"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1212,9 +1205,7 @@ def test_sdk_type_error_for_missing_api_key_fails_fast(
         )
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_auth_type_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_auth_type_error))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1240,9 +1231,7 @@ def test_unrelated_type_error_is_retried_and_wrapped(
         raise TypeError("unexpected argument 'foo'")
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_unrelated_type_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_unrelated_type_error))
 
     with pytest.raises(RuntimeError, match="API failed after 3 attempts"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1718,7 +1707,7 @@ def test_bedrock_bad_request_cross_region_inference_gives_helpful_message(
     def raise_bad_request(**_: object) -> object:
         raise fake_anthropic.BadRequestError(bedrock_error_body)
 
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_bad_request))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_bad_request))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1740,7 +1729,7 @@ def test_bedrock_bad_request_generic_error_uses_default_message(
     def raise_bad_request(**_: object) -> object:
         raise fake_anthropic.BadRequestError("content policy violation")
 
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_bad_request))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_bad_request))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1972,7 +1961,7 @@ def test_anthropic_unexpected_response_shape_raises_runtime_error(
     client = AnthropicAgentClient(
         model="claude-opus-4-7",
         client=types.SimpleNamespace(
-            messages=types.SimpleNamespace(create=lambda **_: "unexpected string response")
+            messages=streaming_messages(lambda **_: "unexpected string response")
         ),
     )
 
@@ -1993,9 +1982,7 @@ def test_anthropic_agent_client_emits_provider_usage(monkeypatch: pytest.MonkeyP
         usage=types.SimpleNamespace(input_tokens=123, output_tokens=45),
     )
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=lambda **_: response)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(lambda **_: response))
 
     usage: list[tuple[str, int, int]] = []
     set_usage_hook(

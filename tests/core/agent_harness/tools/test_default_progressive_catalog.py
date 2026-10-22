@@ -89,7 +89,7 @@ class _SearchThenFinishLLM:
         return {"role": "tool", "tool_calls": tool_calls, "results": results}
 
 
-def test_real_provider_and_react_loop_expand_without_persisting_discovery_output() -> None:
+def test_real_provider_and_react_loop_keep_what_a_search_revealed_for_the_session() -> None:
     session = SessionCore()
     provider = _provider(session)
     tools = provider.action_tools(confirm_fn=None, is_tty=False, resolved_integrations={})
@@ -108,7 +108,15 @@ def test_real_provider_and_react_loop_expand_without_persisting_discovery_output
     assert result.final_text == "catalog expanded"
     assert len(llm.requests) == 2
     assert result.tool_results[0][1].model_only is True
-    assert tool_items_from_run(result.messages, history_count=0) == ()
+    # The revealed tool stays visible on the next turn, so the search replays
+    # with the history as it was sent instead of re-pricing the cached prefix.
+    [search, observed] = tool_items_from_run(result.messages, history_count=0)
+    assert [call["name"] for call in search["tool_calls"]] == ["tool_search"]
+    assert "code_implement" in observed["results"][0]["content"]
+    next_turn = _provider(session).action_tools(
+        confirm_fn=None, is_tty=False, resolved_integrations={}
+    )
+    assert "code_implement" in {tool.name for tool in next_turn}
 
 
 class _EmptySearchLoopLLM(_SearchThenFinishLLM):

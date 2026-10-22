@@ -4,6 +4,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.mysql import (
@@ -48,6 +49,8 @@ def _map_get_mysql_slow_queries(
     name="get_mysql_slow_queries",
     description="Retrieve slow MySQL queries from performance_schema, ranked by average execution time.",
     source="mysql",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Identifying slow queries that may be causing performance degradation",

@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -18,6 +19,7 @@ from itertools import islice
 
 from rich.console import Console
 
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
 from config.constants.turn_concurrency import (
     DEFAULT_MAX_CACHED_SESSION_AGENTS,
     OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV,
@@ -40,6 +42,12 @@ from infrastructure.turn_host.status_messages import status_from_tool_start
 from infrastructure.turn_host.turn_output import TurnOutput
 
 _logger = logging.getLogger(__name__)
+
+# The streaming reply is rejoined at most this often. Each chat transport
+# throttles its own message edits on top of this.
+_REPLY_PREVIEW_INTERVAL_SECONDS = 0.5
+# Events that end one model call's streaming reply or start the next one.
+_REPLY_BOUNDARY_KINDS = frozenset({"llm_start", "message_update", "tool_start", "agent_end"})
 
 
 def configured_session_agent_cap() -> int:
@@ -66,13 +74,22 @@ def configured_session_agent_cap() -> int:
 
 
 class _ToolStatusObserver:
-    """Push live tool-progress status lines to the turn's bound output."""
+    """Push live tool-progress status lines and the streaming reply to the bound output."""
 
     def __init__(self, output: BindableOutput, describe: DescribeTool | None) -> None:
         self._output = output
         self._describe = describe
+        # Text of the model call streaming right now, and when it was last sent.
+        self._reply_parts: list[str] = []
+        self._reply_sent_at = 0.0
 
     def __call__(self, kind: str, data: dict[str, object]) -> None:
+        if kind == "message_update" and data.get(PARTIAL_MESSAGE_KEY):
+            self._preview_reply(str(data.get("content") or ""))
+            return
+        if kind in _REPLY_BOUNDARY_KINDS:
+            # That call's reply is complete, or a new call is starting.
+            self._reply_parts.clear()
         if kind != "tool_start":
             return
         tool_name = str(data.get("name") or "").strip()
@@ -86,6 +103,15 @@ class _ToolStatusObserver:
         self._output.set_tool_status(
             status_from_tool_start(tool_name, data.get("input"), describe=self._describe)
         )
+
+    def _preview_reply(self, delta: str) -> None:
+        """Send the reply streamed so far, at most once per interval."""
+        self._reply_parts.append(delta)
+        now = time.monotonic()
+        if now - self._reply_sent_at < _REPLY_PREVIEW_INTERVAL_SECONDS:
+            return
+        self._reply_sent_at = now
+        self._output.preview_reply("".join(self._reply_parts))
 
     def _accepts_hosted_activity(self) -> bool:
         """True when the bound sink is the hosted-prompt collector, not a chat."""

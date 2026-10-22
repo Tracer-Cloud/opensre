@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
 from integrations.pagerduty.client import make_pagerduty_client
@@ -72,6 +72,8 @@ class PagerDutyIncidentDetailTool(BaseTool):
     name = "pagerduty_incident_detail"
     evidence_mapper = _map_pagerduty_incident_detail
     source = "pagerduty"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch the full details, assignments, acknowledgements, and activity timeline "
         "for a specific PagerDuty incident to understand its lifecycle and current state."
@@ -231,6 +233,8 @@ class PagerDutyIncidentsTool(BaseTool):
     name = "pagerduty_incidents"
     evidence_mapper = _map_pagerduty_incidents
     source = "pagerduty"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Search PagerDuty incidents to find active pages, identify unacknowledged triggered "
         "incidents, and correlate incident context with infrastructure events during RCA."
@@ -397,6 +401,8 @@ class PagerDutyOnCallTool(BaseTool):
     name = "pagerduty_oncall"
     evidence_mapper = _map_pagerduty_oncall
     source = "pagerduty"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch current on-call responders for PagerDuty escalation policies to identify "
         "who is responsible for responding to an active incident or service."
@@ -528,6 +534,8 @@ class PagerDutyServicesTool(BaseTool):
     name = "pagerduty_services"
     evidence_mapper = _map_pagerduty_services
     source = "pagerduty"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch PagerDuty services with their escalation policies, integrations, and alert "
         "routing rules to understand how alerts flow through the incident management system."

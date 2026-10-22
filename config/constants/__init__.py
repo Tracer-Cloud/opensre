@@ -766,6 +766,12 @@ if TYPE_CHECKING:
         KUBECONFIG_PATH_ENV as KUBECONFIG_PATH_ENV,
     )
     from config.constants.llm import (
+        ANTHROPIC_DEFER_LOADING_KEY as ANTHROPIC_DEFER_LOADING_KEY,
+    )
+    from config.constants.llm import (
+        ANTHROPIC_THINKING_BINDING_KEY as ANTHROPIC_THINKING_BINDING_KEY,
+    )
+    from config.constants.llm import (
         AZURE_OPENAI_API_KEY_ENV as AZURE_OPENAI_API_KEY_ENV,
     )
     from config.constants.llm import (
@@ -1541,6 +1547,12 @@ if TYPE_CHECKING:
         MODEL_ONLY_PRESENTATION_KEY as MODEL_ONLY_PRESENTATION_KEY,
     )
     from config.constants.tool_discovery import (
+        REPLAY_WITH_HISTORY_KEY as REPLAY_WITH_HISTORY_KEY,
+    )
+    from config.constants.tool_discovery import (
+        REQUEST_SCOPED_RESULTS_METADATA_KEY as REQUEST_SCOPED_RESULTS_METADATA_KEY,
+    )
+    from config.constants.tool_discovery import (
         SESSION_GOAL_CONTROL_TOOL_NAMES as SESSION_GOAL_CONTROL_TOOL_NAMES,
     )
     from config.constants.tool_discovery import (
@@ -1565,6 +1577,9 @@ if TYPE_CHECKING:
         TOOL_FAILURE_STATE_KEY as TOOL_FAILURE_STATE_KEY,
     )
     from config.constants.tool_discovery import TOOL_FAILURE_STATES as TOOL_FAILURE_STATES
+    from config.constants.tool_discovery import (
+        TOOL_SEARCH_MATCHES_KEY as TOOL_SEARCH_MATCHES_KEY,
+    )
     from config.constants.tool_discovery import (
         TOOL_SEARCH_MAX_RESULTS as TOOL_SEARCH_MAX_RESULTS,
     )
@@ -1595,6 +1610,9 @@ if TYPE_CHECKING:
     )
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
+    )
+    from config.constants.tooling import (
+        MAX_CONCURRENT_TOOL_CALLS as MAX_CONCURRENT_TOOL_CALLS,
     )
     from config.constants.tooling import (
         TOOL_PREFETCH_MAX_ENTRIES as TOOL_PREFETCH_MAX_ENTRIES,

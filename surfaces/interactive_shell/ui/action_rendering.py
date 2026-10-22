@@ -26,6 +26,7 @@ from config.constants.gateway import (
     PROMPT_PROGRESS_KIND_TOOL,
     PROMPT_PROGRESS_PLAN_OMITTED,
 )
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
 from config.constants.tool_discovery import TOOL_SEARCH_NAME
 from core.agent_harness.spi.accounting import SELF_RECORDING_ACTION_TOOL_NAMES
 from core.agent_harness.spi.activity import (
@@ -331,14 +332,24 @@ class ActionRenderObserver:
 
     def __call__(self, kind: str, data: dict[str, Any]) -> None:
         if kind == "llm_start":
+            self._clear_reply_preview()
             self._set_spinner_phase(SpinnerState.THINKING_PHASE)
             return
         if kind == "agent_end":
+            # The finished reply prints next, through the turn's own rendering.
+            self._clear_reply_preview()
             # Safety flush: the batch drain below normally empties the buffer,
             # but a turn that ends without a clean drain still gets its log.
             flush_action_log(self.console, self.session)
             return
         if kind == "message_update":
+            if data.get(PARTIAL_MESSAGE_KEY):
+                self._preview_reply(data)
+                return
+            if data.get("has_tool_calls"):
+                # Commentary before tool calls prints as a note right now. A
+                # final answer keeps its preview until the turn prints it.
+                self._clear_reply_preview()
             self._render_intermediate_message(data)
             return
         if kind == "tool_update":
@@ -429,6 +440,21 @@ class ActionRenderObserver:
         label, content = tool_call_display(name, args if isinstance(args, dict) else {})
         line = f"{label} {content}".strip() if content else label
         record_task_plan_work(self.session, line)
+
+    def _preview_reply(self, data: dict[str, Any]) -> None:
+        """Show a streamed piece of the reply in the prompt region; print nothing.
+
+        The complete text still arrives once, as a note or as the reply, so
+        writing pieces to scrollback here would show the reply twice.
+        """
+        spinner = get_turn_spinner()
+        if spinner is not None and getattr(spinner, "streaming", False):
+            spinner.append_reply_preview(str(data.get("content") or ""))
+
+    def _clear_reply_preview(self) -> None:
+        spinner = get_turn_spinner()
+        if spinner is not None:
+            spinner.clear_reply_preview()
 
     def _set_spinner_phase(self, label: str) -> None:
         # Only relabel an already-running spinner; never activate one. Literal

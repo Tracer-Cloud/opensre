@@ -7,6 +7,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload, tool_unavailable
 from integrations.gitlab import (
@@ -56,6 +57,8 @@ def _get_gitlab_file_available(sources: dict[str, dict]) -> bool:
 @tool(
     name="get_gitlab_file",
     source="gitlab",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Read the contents of a specific file from a GitLab repository.",
     use_cases=[
         "Reading a config file that may explain a misconfiguration causing the incident",

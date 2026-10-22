@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,15 +57,23 @@ EVICTED_TOOL_RESULT_TEXT = (
 )
 
 
-def strip_internal_message_markers(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return a copy of ``messages`` without internal ``_opensre_*`` keys.
+def strip_internal_message_markers(
+    messages: list[dict[str, Any]], *, keep: Collection[str] = ()
+) -> list[dict[str, Any]]:
+    """Return a copy of ``messages`` without internal ``_opensre_*`` keys, except ``keep``.
 
     Context-budget eviction tags seed and duplicate tool exchanges with these
     markers. They must remain on the in-memory transcript for trimming heuristics
-    but are rejected by strict provider message schemas (e.g. Anthropic).
+    but are rejected by strict provider message schemas (e.g. Anthropic). A
+    marker the provider client itself reads is kept for it (``keep``); the
+    client strips it before sending.
     """
     return [
-        {key: value for key, value in message.items() if not key.startswith("_opensre_")}
+        {
+            key: value
+            for key, value in message.items()
+            if not key.startswith("_opensre_") or key in keep
+        }
         for message in messages
     ]
 

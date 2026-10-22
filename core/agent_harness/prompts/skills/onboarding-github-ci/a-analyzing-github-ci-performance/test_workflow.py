@@ -32,7 +32,7 @@ from core.agent_harness.turns.headless_adapters import (
     InMemorySessionState,
 )
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
-from core.llm.types import AgentLLMResponse
+from core.llm.types import AgentLLMResponse, CancelProbe, TextDeltaCallback
 from core.tool import RegisteredTool
 from core.tool_framework.utils import tool_unavailable
 from tests.core.agent.orchestration.action_execution_test_harness import (
@@ -212,13 +212,21 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
             *,
             system: str | None = None,
             tools: list[dict[str, Any]] | None = None,
+            on_text_delta: TextDeltaCallback | None = None,
+            should_stop: CancelProbe | None = None,
         ) -> AgentLLMResponse:
             assert any(
                 load_skill_body(skill.name) in str(message.get("content", ""))
                 for message in messages
             )
             received.append(messages)
-            return super().invoke(messages, system=system, tools=tools)
+            return super().invoke(
+                messages,
+                system=system,
+                tools=tools,
+                on_text_delta=on_text_delta,
+                should_stop=should_stop,
+            )
 
     llm = SkillLLM(
         [

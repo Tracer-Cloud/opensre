@@ -6,6 +6,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.agent_tools import (
@@ -58,6 +59,8 @@ def _map_get_github_repository_tree(
 @tool(
     name="get_github_repository_tree",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Browse a GitHub repository tree through the MCP server.",
     use_cases=[
         "Understanding repository structure during an incident",

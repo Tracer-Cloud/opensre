@@ -6,6 +6,7 @@ from typing import Any
 
 import integrations.grafana.tools._helpers as grafana_helpers
 from core.domain.types.evidence import record_evidence_entry
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 
@@ -71,6 +72,8 @@ def _map_grafana_alert_rules(
     name="query_grafana_alert_rules",
     display_name="Grafana alerts",
     source="grafana",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     evidence_mapper=_map_grafana_alert_rules,
     description="Query Grafana alert rules to understand what is being monitored.",
     use_cases=[

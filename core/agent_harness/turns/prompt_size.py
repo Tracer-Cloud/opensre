@@ -9,19 +9,26 @@ per token, the estimate history compaction measures against its budget.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from core.agent_harness.prompts.kernel.envelope import PromptBlockId, PromptEnvelope, PromptTier
+from core.agent_harness.prompts.kernel.envelope import (
+    SESSION_CONTEXT_TIERS,
+    PromptBlockId,
+    PromptEnvelope,
+    PromptTier,
+)
 from core.agent_harness.turns.structured_history import (
     CHARS_PER_TOKEN,
     history_chars,
     history_messages,
+    session_context_to_send,
 )
 from core.agent_harness.turns.transcript_compaction import preview_compaction
-from core.state import TurnEvidence, match_turn_evidence
+from core.state import ShownTools, TurnEvidence, match_turn_evidence
 from core.state.history_settings import structured_history_enabled
 from core.state.transcript_window import is_summary_message
 
@@ -149,13 +156,20 @@ def measure_prompt(
     history: HistorySize,
     tool_schema_count: int | None = None,
     request_chars: int = 0,
+    session_context_sent: bool = True,
 ) -> PromptSize:
-    """Size every block of ``envelope`` the model reads, in the order it reads them."""
+    """Size every block of ``envelope`` the model reads, in the order it reads them.
+
+    ``session_context_sent`` is false when the call's message leaves the
+    session-context section out because the replayed history already carries
+    it: those blocks are then counted once, inside ``history``.
+    """
     ordered = sorted(envelope.blocks, key=lambda block: _TIER_RANK[block.tier])
     blocks = tuple(
         BlockSize(id=str(block.id), tier=str(block.tier), chars=len(text))
         for block in ordered
-        if (text := block.render())
+        if (session_context_sent or block.tier not in SESSION_CONTEXT_TIERS)
+        and (text := block.render())
     )
     return PromptSize(
         blocks=blocks,
@@ -192,10 +206,14 @@ def measure_next_prompt(session: SessionState, *, surface: str) -> PromptSize:
     history = measure_history(replayed, messages, evidence)
     if preview is not None:
         history = replace(history, compacted_messages=preview.summarized_messages)
+    envelope = build_action_system_prompt_envelope(snapshot)
     return measure_prompt(
-        build_action_system_prompt_envelope(snapshot),
+        envelope,
         history=history,
         tool_schema_count=_default_tool_count(session),
+        session_context_sent=bool(
+            session_context_to_send(envelope.render_context(), messages, evidence)
+        ),
     )
 
 
@@ -210,10 +228,14 @@ def _default_tool_count(session: SessionState) -> int | None:
         return None
     from core.agent_harness.tools.tool_provider import DefaultToolProvider
 
+    shown = getattr(session, "shown_tools", None)
+    # The catalog records what it shows; a preview must leave that as it was.
+    preview = shown.unchanged() if isinstance(shown, ShownTools) else contextlib.nullcontext()
     try:
-        tools = DefaultToolProvider(session, None).action_tools(
-            confirm_fn=None, is_tty=None, resolved_integrations=dict(resolved)
-        )
+        with preview:
+            tools = DefaultToolProvider(session, None).action_tools(
+                confirm_fn=None, is_tty=None, resolved_integrations=dict(resolved)
+            )
     except Exception:  # noqa: BLE001 - a preview must not fail on one count
         logger.debug("tool count unavailable for the prompt preview", exc_info=True)
         return None

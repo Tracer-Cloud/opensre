@@ -48,6 +48,10 @@ class BindableOutput:
         cancel = getattr(inner, "turn_cancel", None)
         return cancel if isinstance(cancel, threading.Event) else None
 
+    def _turn_cancelled(self) -> bool:
+        cancel = self.turn_cancel
+        return cancel is not None and cancel.is_set()
+
     def _require(self) -> TurnOutput:
         inner = self._inner
         if inner is None:
@@ -85,8 +89,7 @@ class BindableOutput:
     def _stop_chunks_on_cancel(self, chunks: Iterable[str]) -> Iterator[str]:
         """Stop draining the LLM stream when the host soft-timeout Event fires."""
         for chunk in chunks:
-            cancel = self.turn_cancel
-            if isinstance(cancel, threading.Event) and cancel.is_set():
+            if self._turn_cancelled():
                 return
             yield chunk
 
@@ -110,6 +113,18 @@ class BindableOutput:
         note = getattr(self._require(), "note_activity", None)
         if callable(note):
             note(text, kind=kind)
+
+    def preview_reply(self, text: str) -> None:
+        """Forward the reply streamed so far when the bound sink can preview it.
+
+        Dropped once the turn is cancelled: the stop or timeout message already
+        owns the placeholder, and a late piece would reopen it.
+        """
+        if self._turn_cancelled():
+            return
+        preview = getattr(self._require(), "preview_reply", None)
+        if callable(preview):
+            preview(text)
 
     def __getattr__(self, name: str) -> Any:
         # Forward optional transport-specific attributes (e.g. tool_hooks readers).

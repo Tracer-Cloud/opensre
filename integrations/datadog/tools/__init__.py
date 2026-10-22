@@ -170,6 +170,8 @@ def _context_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_datadog_all",
     display_name="Datadog",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Fetch Datadog logs, monitors, and events in parallel for fast investigation.",
     use_cases=[
         "Full Datadog context in a single fast operation",
@@ -312,6 +314,8 @@ def _events_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_datadog_events",
     display_name="Datadog events",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Query Datadog events for deployments, alerts, and system changes.",
     use_cases=[
         "Finding recent deployment events that may correlate with failures",
@@ -418,6 +422,8 @@ _DATADOG_LOGS_ANTI = (
     name="query_datadog_logs",
     display_name="Datadog logs",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     tags=("logs", "observability"),
     description=(
         "Search Datadog Logs with a concrete query string (required), e.g. "
@@ -618,6 +624,8 @@ def _monitors_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_datadog_monitors",
     display_name="Datadog monitors",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List Datadog monitors to understand alerting configuration and current states.",
     use_cases=[
         "Understanding which monitors triggered an alert",
@@ -700,6 +708,8 @@ def _node_pods_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 @tool(
     name="get_pods_on_node",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Resolve a node IP address to all pods running on that node via Datadog.",
     use_cases=[
         "Mapping a node IP from an infrastructure alert to specific pods",

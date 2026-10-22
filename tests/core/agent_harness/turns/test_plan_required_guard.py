@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import threading
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,7 +17,7 @@ from core.agent_harness.tools.tool_context import ActionToolScope
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
-from core.tool.contracts import AgentTool, AgentToolContext
+from core.tool.contracts import AgentTool, AgentToolContext, RegisteredTool, SideEffectLevel
 from core.tool.execution import (
     BeforeToolCallResult,
     ToolExecutionHooks,
@@ -131,6 +133,57 @@ def test_an_open_plan_lets_work_continue_but_a_settled_one_does_not() -> None:
     session.task_plan = _plan("completed", "completed")
     decision = hooks.before_tool_call(_request("shell_run"))
     assert decision is not None and decision.blocked is True
+
+
+def _concurrent_read(name: str, run: Any) -> RegisteredTool:
+    return RegisteredTool(
+        name=name,
+        description="test read",
+        input_schema={"type": "object", "properties": {"value": {"type": "string"}}},
+        source="knowledge",
+        run=run,
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        concurrency_safe=True,
+    )
+
+
+def test_reads_admitted_together_still_need_a_plan_for_the_second() -> None:
+    """Parallel reads are all admitted before any returns; the second is still refused."""
+    # Arrange: a loaded skill, no plan, and two reads the executor runs together.
+    # Each read stays open until both calls have been decided, so neither has
+    # returned when the other is admitted.
+    session = Session(active_skill="repair-github-ci")
+    plan_hooks = with_task_plan_hooks(None, session)
+    both_decided = threading.Event()
+    decisions: list[BeforeToolCallResult | None] = []
+
+    def before(request: ToolExecutionRequest) -> BeforeToolCallResult | None:
+        decision = plan_hooks.before_tool_call(request)
+        decisions.append(decision)
+        if len(decisions) == 2:
+            both_decided.set()
+        return decision
+
+    def read(value: str) -> ToolExecutionResult:
+        both_decided.wait(timeout=10)
+        return ToolExecutionResult(content=value, details={"ok": True})
+
+    tools = [_concurrent_read("list_pods", read), _concurrent_read("list_nodes", read)]
+    calls = [
+        ToolCall(id=f"call-{tool.name}", name=tool.name, input={"value": tool.name})
+        for tool in tools
+    ]
+
+    # Act
+    results = execute_tool_calls(
+        calls, tools, {}, hooks=replace(plan_hooks, before_tool_call=before)
+    )
+
+    # Assert: one read ran, the other came back with the plan instruction.
+    refused = [result for result in results if result.is_error]
+    assert len(refused) == 1
+    assert refused[0].metadata.get("plan_required") is True
+    assert PLAN_REQUIRED_REASON in str(refused[0].content)
 
 
 def test_a_base_refusal_wins_over_the_plan_rule() -> None:

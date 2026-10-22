@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.tempo import TempoConfig, tempo_extract_params
@@ -88,6 +89,8 @@ def _dispatch(
     name="query_tempo",
     display_name="Grafana Tempo",
     source="tempo",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     evidence_mapper=_map_query_tempo,
     tags=("traces", "observability"),
     description=(

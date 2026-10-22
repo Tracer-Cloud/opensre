@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.bitbucket.client import get_file_contents
@@ -41,6 +42,8 @@ def _get_bitbucket_file_contents_available(sources: dict[str, dict]) -> bool:
     name="get_bitbucket_file_contents",
     description="Retrieve the contents of a file from a Bitbucket repository at a specific revision.",
     source="bitbucket",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Reading configuration files that may explain a failure",

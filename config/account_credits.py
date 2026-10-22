@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from config.account import (
+    AccountRecord,
     load_account_record,
     normalize_account_app_url,
     resolve_account_token,
@@ -259,7 +260,7 @@ def fetch_hosted_credits(*, app_url: str | None = None, fresh: bool = False) -> 
     """
     record = load_account_record()
     token = resolve_account_token()
-    key = (token or "", (app_url or (record.app_url if record is not None else "")))
+    key = _cache_key(token, app_url, record)
     now = time.monotonic()
     cached = _HostedCreditsCache
     if (
@@ -274,6 +275,35 @@ def fetch_hosted_credits(*, app_url: str | None = None, fresh: bool = False) -> 
     cached.read = read
     cached.at = now
     return read
+
+
+def remember_hosted_credits(
+    credits: AccountCredits,
+    *,
+    token: str,
+    record: AccountRecord,
+    app_url: str | None = None,
+) -> None:
+    """Cache a balance the account session endpoint already returned.
+
+    That payload is the ledger :func:`fetch_hosted_credits` falls back to, so a
+    validated sign-in answers the first turn's read instead of a second request.
+    """
+    cached = _HostedCreditsCache
+    cached.key = _cache_key(token, app_url, record)
+    cached.read = HostedCreditsRead(
+        HostedCreditsKindValue.OK,
+        credits,
+        "OpenSRE hosted credits.",
+        usage_page_url(app_url=app_url or record.app_url),
+    )
+    cached.at = time.monotonic()
+
+
+def _cache_key(
+    token: str | None, app_url: str | None, record: AccountRecord | None
+) -> tuple[str, str]:
+    return (token or "", app_url or (record.app_url if record is not None else ""))
 
 
 def _cache_ttl(read: HostedCreditsRead) -> float:
@@ -302,6 +332,7 @@ __all__ = [
     "cached_hosted_credits",
     "fetch_hosted_credits",
     "parse_credit_balance_payload",
+    "remember_hosted_credits",
     "reset_hosted_credits_cache",
     "usage_page_url",
 ]

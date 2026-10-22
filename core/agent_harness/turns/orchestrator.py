@@ -244,6 +244,8 @@ def _run_turn(
             response_text,
             tool_items=action_result.history_items,
             typed_text=typed_text,
+            sent_text=action_result.sent_text,
+            context_digest=action_result.context_digest,
         )
     return accounting.finalize(
         TurnResult(

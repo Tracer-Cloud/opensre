@@ -87,7 +87,12 @@ from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.agent_harness.turns.prompt_size import PromptSize, measure_history, measure_prompt
 from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.skill_value import record_skill_value
-from core.agent_harness.turns.structured_history import history_messages, tool_items_from_run
+from core.agent_harness.turns.structured_history import (
+    context_digest,
+    history_messages,
+    session_context_to_send,
+    tool_items_from_run,
+)
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
@@ -98,7 +103,13 @@ from core.agent_harness.turns.work_outcome import (
     tap_executed_tool_outcomes,
 )
 from core.events import runtime_event_callback_from_observer
-from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.llm.types import (
+    AgentLLMResponse,
+    CancelProbe,
+    SchemaDescribedTool,
+    TextDeltaCallback,
+    ToolCall,
+)
 from core.state.history_settings import structured_history_enabled
 from core.tool import SideEffectLevel
 from core.tool.execution import (
@@ -154,6 +165,9 @@ class ActionTurnPlan:
     # Earlier turns replayed as typed messages ahead of ``user_message``
     # (``turns.structured_history``); empty for explicit ``!``/``/`` commands.
     history: tuple[Any, ...] = ()
+    # Fingerprint of the session-context section ``user_message`` carries; ""
+    # when the replayed history already holds it (or no model is called).
+    context_digest: str = ""
     # Size of each prompt block, the replayed history, and the tool schemas the
     # model receives; ``None`` for explicit commands, which call no model.
     prompt_size: PromptSize | None = None
@@ -212,9 +226,13 @@ class _StaticToolCallLLM:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
         _ = system
         _ = tools
+        _ = on_text_delta
+        _ = should_stop
         if self._used:
             return AgentLLMResponse(content="", tool_calls=[], raw_content=None)
         self._used = True
@@ -791,6 +809,7 @@ def _build_action_agent(
     prompt_context = ""
     history: tuple[Any, ...] = ()
     prompt_size: PromptSize | None = None
+    sent_context_digest = ""
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -819,26 +838,38 @@ def _build_action_agent(
         snapshot = turn_snapshot or TurnSnapshot.from_session(message, session, surface=None)
         envelope = build_action_system_prompt_envelope(snapshot)
         # Earlier turns go ahead of the new message as typed messages, oldest
-        # first, so their tool calls and results reach the model verbatim and the
-        # prefix (system, tools, history) stays the same from turn to turn.
+        # first, each exactly as it was sent, so their tool calls and results
+        # reach the model verbatim and the prefix (system, tools, history) the
+        # provider cached stays the same from turn to turn.
         if structured_history_enabled():
             history = tuple(
                 history_messages(snapshot.conversation_messages, snapshot.turn_evidence)
             )
-        # Cached half stays byte-identical across turns; ephemeral (plan, turn
-        # facts) rides with the user message so Anthropic's system
-        # cache_control breakpoint is not invalidated every turn.
-        system = envelope.render_cached()
-        prompt_skill, prompt_context = action_prompt_skill_and_context(envelope)
-        ephemeral = envelope.render_ephemeral()
-        user_message = build_action_user_message(message, prefix=ephemeral)
+        # The system prompt is only the stable layer, byte-identical for the
+        # session. The session context (integrations, repositories, memory)
+        # rides in the user message, and only when the replayed history does not
+        # already carry it; the ephemeral layer (plan, turn facts) rides every turn.
+        layers = envelope.render_split()
+        system = layers.cached
+        session_context = session_context_to_send(
+            layers.context, snapshot.conversation_messages, snapshot.turn_evidence
+        )
+        if session_context:
+            sent_context_digest = context_digest(session_context)
+        prompt_skill, prompt_context = action_prompt_skill_and_context(
+            envelope, session_context=session_context
+        )
+        user_message = build_action_user_message(
+            message, context=session_context, prefix=layers.ephemeral
+        )
         prompt_size = measure_prompt(
             envelope,
             history=measure_history(
                 history, snapshot.conversation_messages, snapshot.turn_evidence
             ),
             tool_schema_count=len(agent_tools),
-            request_chars=len(user_message) - len(ephemeral),
+            request_chars=len(user_message) - len(layers.ephemeral) - len(session_context),
+            session_context_sent=bool(session_context),
         )
         # ReAct goal: host gates (unfinished plan) reject stop. Same-LLM
         # review is opt-in. The verifier reads executed tool names from the
@@ -910,6 +941,7 @@ def _build_action_agent(
         agent=build_agent(config),
         user_message=user_message,
         history=history,
+        context_digest=sent_context_digest,
         prompt_size=prompt_size,
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
@@ -1557,6 +1589,8 @@ def _run_action_turn(
         tool_evidence=tool_evidence,
         evidence_success_count=evidence_success_count,
         history_items=history_items,
+        sent_text=built.user_message,
+        context_digest=built.context_digest,
     )
 
 

@@ -4,6 +4,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.kafka import (
     KafkaConfig,
@@ -41,6 +42,8 @@ def _map_get_kafka_consumer_group_lag(
     name="get_kafka_consumer_group_lag",
     description="Retrieve consumer group lag per partition from a Kafka cluster, showing committed offsets versus high watermarks.",
     source="kafka",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Diagnosing consumer lag causing processing delays",

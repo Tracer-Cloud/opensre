@@ -6,6 +6,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
@@ -67,6 +68,8 @@ def _issue_details_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 @tool(
     name="get_sentry_issue_details",
     source="sentry",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Fetch full details for a Sentry issue.",
     use_cases=[
         "Inspecting the main error group linked to an alert",

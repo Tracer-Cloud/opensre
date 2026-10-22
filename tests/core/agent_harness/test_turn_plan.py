@@ -201,6 +201,50 @@ def test_one_turn_remembers_all_named_repositories_and_activates_last() -> None:
     assert plan.snapshot.known_vcs_repositories == {"github": ("facebook/react", "vercel/next.js")}
 
 
+_PYPROJECT_SHELL_OUTPUT = """\
+[project]
+name = "opensre"
+classifiers = ["Topic :: Scientific/Engineering :: Artificial Intelligence"]
+dependencies = [
+    # Core AI/Agent
+    "anthropic>=0.77.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/Tracer-Cloud/opensre"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "gateway/tests"]
+"""
+
+
+def test_tool_output_in_history_names_repositories_only_by_url_or_remote() -> None:
+    """A shell turn printed pyproject.toml and the session remembered ``AI/Agent`` as a repository."""
+    session = Session()
+    session.resolved_integrations_cache = {"github": {"connection_verified": True}}
+    # A recorded assistant reply carries the turn's shell output verbatim.
+    session.cli_agent_messages = [
+        ("user", "Which remote is this checkout on?"),
+        ("assistant", "origin\tgit@github.com:vrk7/opensre.git (fetch)"),
+        ("user", "Show me this project's pyproject.toml."),
+        ("assistant", _PYPROJECT_SHELL_OUTPUT),
+    ]
+
+    plan = build_turn_plan(
+        TurnSnapshot.from_session(
+            "Which of these dependencies are pinned?",
+            session,
+            surface="interactive_shell",
+        ),
+        session,
+    )
+
+    assert plan.snapshot.active_vcs_repositories == {"github": "Tracer-Cloud/opensre"}
+    assert plan.snapshot.known_vcs_repositories == {
+        "github": ("vrk7/opensre", "Tracer-Cloud/opensre")
+    }
+
+
 def test_repo_scope_uses_workspace_only_without_explicit_or_sticky_scope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

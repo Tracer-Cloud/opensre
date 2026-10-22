@@ -64,6 +64,7 @@ class PostgreSQLSlowQueriesOutput(BaseModel):
     source_id="postgresql_pg_stat_statements",
     evidence_type=EvidenceType.QUERY_STATS,
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     examples=[
         "List slow queries above 1000ms to diagnose database latency spikes.",
         "Lower threshold to 200ms to inspect emerging query regressions.",

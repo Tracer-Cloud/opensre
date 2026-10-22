@@ -33,6 +33,9 @@ class MessageMapper:
         self._llm = llm
         # Resolve the provider dispatch once — the llm is fixed for this mapper's lifetime.
         self._adapter = adapter_for(llm)
+        self._client_markers = self._adapter.client_markers()
+        binding = getattr(llm, "provider_binding", None)
+        self._binding = binding if isinstance(binding, str) and binding else None
 
     @staticmethod
     def to_runtime_messages(messages: Sequence[RuntimeMessageLike]) -> list[RuntimeMessage]:
@@ -44,16 +47,21 @@ class MessageMapper:
 
         ``provider_payload``/``provider_payloads`` on a coerced RuntimeMessage retain
         internal ``_opensre_*`` markers (see ``_metadata_from_provider_message``), so
-        the outbound render is stripped here rather than trusting each producer.
+        the outbound render is stripped here rather than trusting each producer —
+        except the markers the provider client reads itself, which it strips.
         """
         result: list[ProviderMessage] = []
         for message in messages:
             result.extend(self._for_runtime_message(message))
-        return strip_internal_message_markers(result)
+        return strip_internal_message_markers(result, keep=self._client_markers)
 
     def to_assistant_provider_message(self, response: AgentLLMResponse) -> ProviderMessage:
         """Build the provider assistant-message payload from an LLM response."""
-        return self._adapter.to_assistant_provider_message(response)
+        message = self._adapter.to_assistant_provider_message(response)
+        markers = getattr(response, "message_markers", None)
+        if isinstance(markers, dict) and markers:
+            return {**message, **markers}
+        return message
 
     def to_tool_result_provider_messages(
         self,
@@ -78,6 +86,7 @@ class MessageMapper:
             content=response.content or "",
             tool_calls=tuple(response.tool_calls),
             provider_payload=self.to_assistant_provider_message(response),
+            provider_binding=self._binding,
         )
 
     def to_tool_result_runtime_message(
@@ -96,7 +105,10 @@ class MessageMapper:
         if isinstance(message, UserRuntimeMessage):
             return [{"role": "user", "content": message.content}]
         if isinstance(message, AssistantRuntimeMessage):
-            if message.provider_payload is not None:
+            if message.provider_payload is not None and message.provider_binding in (
+                None,
+                self._binding,
+            ):
                 return [dict(message.provider_payload)]
             content = message.content
             text = content if isinstance(content, str) else json.dumps(content, default=str)

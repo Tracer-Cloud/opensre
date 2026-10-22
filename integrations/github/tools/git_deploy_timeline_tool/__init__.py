@@ -25,6 +25,7 @@ from typing import Any
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.incident_window import IncidentWindow
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.agent_tools import (
@@ -178,6 +179,8 @@ def _map_get_git_deploy_timeline(
 @tool(
     name="get_git_deploy_timeline",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description=(
         "List commits on a GitHub branch within a time window (defaults to the last "
         "120 minutes). Used to correlate an alert with recent deploys by asking "

@@ -56,8 +56,10 @@ class _CacheState:
     fetched_at: float
     #: Whether a fetch ever succeeded; a transient failure keeps this snapshot.
     populated: bool
-    #: Account origin, Clerk user and active organization; snapshots stay isolated.
-    account_scope: tuple[str, str, str] | None
+    #: Account origin, Clerk user, active organization and the token's digest;
+    #: snapshots stay isolated, and one read with a revoked token never answers
+    #: for the token a later sign-in saved.
+    account_scope: tuple[str, str, str, str] | None
 
 
 _lock = threading.Lock()
@@ -83,13 +85,18 @@ def load_account_integrations(*, refresh: bool = False) -> list[dict[str, Any]]:
     """
     record = load_account_record()
     token = resolve_account_token()
-    account_scope: tuple[str, str, str] | None = None
+    account_scope: tuple[str, str, str, str] | None = None
     if record is not None and token:
         try:
             origin = normalize_account_app_url(record.app_url)
         except ValueError:
             origin = record.app_url.strip()
-        account_scope = (origin, record.user_id, record.organization_id or "")
+        account_scope = (
+            origin,
+            record.user_id,
+            record.organization_id or "",
+            hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        )
     now = time.monotonic()
     with _lock:
         if _state.account_scope != account_scope:

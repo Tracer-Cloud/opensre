@@ -27,6 +27,10 @@ HISTORY_KEEP_RECENT_TOKENS = 16_000
 HISTORY_TOOL_ARGUMENTS_MAX_CHARS = 2_000
 #: Characters of one assistant message kept in replayed history.
 HISTORY_ASSISTANT_TEXT_MAX_CHARS = 8_000
+#: Age after which a recorded provider message replays rebuilt from its text and
+#: calls instead of verbatim. Well inside the 30 days OpenAI keeps the stored
+#: reasoning items a Responses message refers to by id.
+HISTORY_PROVIDER_MESSAGE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 #: Characters of a model-written compaction summary.
 HISTORY_SUMMARY_MAX_CHARS = 12_000
 
@@ -36,6 +40,7 @@ __all__ = [
     "HISTORY_COMPACT_AFTER_TURNS",
     "HISTORY_KEEP_MAX_TURNS",
     "HISTORY_KEEP_RECENT_TOKENS",
+    "HISTORY_PROVIDER_MESSAGE_MAX_AGE_SECONDS",
     "HISTORY_SUMMARY_MAX_CHARS",
     "HISTORY_TOOL_ARGUMENTS_MAX_CHARS",
     "OPENSRE_HISTORY_TOKEN_BUDGET_ENV",

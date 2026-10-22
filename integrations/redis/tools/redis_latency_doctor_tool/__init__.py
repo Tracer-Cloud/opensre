@@ -3,6 +3,7 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.redis import (
     RedisConfig,
@@ -21,6 +22,8 @@ from integrations.redis import (
         "specific event."
     ),
     source="redis",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Find the root cause of a Redis latency spike during an incident.",

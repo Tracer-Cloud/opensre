@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.aws_lambda.availability import lambda_available, lambda_name
 from integrations.aws_lambda.tools.lambda_invocation_logs_tool import get_lambda_invocation_logs
@@ -15,6 +16,8 @@ def _extract_lambda_errors_params(sources: dict[str, dict]) -> dict:
     name="get_lambda_errors",
     display_name="Lambda errors",
     source="cloudwatch",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Get Lambda function error logs.",
     use_cases=[
         "Quickly finding error messages from a Lambda function",

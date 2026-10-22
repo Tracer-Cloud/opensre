@@ -1,4 +1,13 @@
-"""Session-local progressive disclosure for the action-tool catalog."""
+"""Session-local progressive disclosure for the action-tool catalog.
+
+Tool definitions open the request prefix the provider caches, so the visible
+list is append-only for the conversation (:class:`~core.state.ShownTools`): a
+tool keeps the position and the description it was first shown with, tools a
+search reveals stay visible on later turns, and new tools join at the end. A
+provider that loads tools by reference declares the rest of the catalog up
+front instead (:meth:`ProgressiveToolCatalog.deferred`) and loads a reveal from
+the search result, so the declared list does not change at all.
+"""
 
 from __future__ import annotations
 
@@ -15,14 +24,17 @@ from config.constants.tool_discovery import (
     INITIAL_TOOL_CATALOG_ORDER,
     INITIAL_TOOL_SCHEMA_TOKEN_LIMIT,
     MODEL_ONLY_PRESENTATION_KEY,
+    REPLAY_WITH_HISTORY_KEY,
     SESSION_GOAL_CONTROL_TOOL_NAMES,
     TOOL_DISCOVERY_STATE_MATCHED,
     TOOL_DISCOVERY_STATE_NO_MATCH,
+    TOOL_SEARCH_MATCHES_KEY,
     TOOL_SEARCH_MAX_RESULTS,
     TOOL_SEARCH_NAME,
 )
 from core.context_budget import system_and_tools_overhead
 from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
+from core.state import ShownTools
 from core.tool import (
     RegisteredTool,
     SideEffectLevel,
@@ -67,17 +79,22 @@ def _compact_view(tool: RegisteredTool) -> RegisteredTool:
 
 
 def _result(payload: dict[str, Any], *, progress: bool) -> ToolExecutionResult:
-    """Return discovery data to the model without making it user-facing."""
+    """Return discovery data to the model without making it user-facing.
+
+    The tools a search reveals stay visible for the session, so the result
+    stays true on later turns and history replays it as it was sent.
+    """
     return ToolExecutionResult(
         content=json.dumps(payload, default=str),
         details=payload,
         metadata={
             "tool_name": TOOL_SEARCH_NAME,
             MODEL_ONLY_PRESENTATION_KEY: True,
+            REPLAY_WITH_HISTORY_KEY: True,
             DISCOVERY_PROGRESS_KEY: progress,
             DISCOVERY_DETAIL_KEYS_KEY: tuple(
                 str(match.get("name"))
-                for match in payload.get("matches", ())
+                for match in payload.get(TOOL_SEARCH_MATCHES_KEY, ())
                 if isinstance(match, dict) and match.get("name")
             ),
         },
@@ -101,10 +118,14 @@ class ProgressiveToolCatalog:
         self._enabled = enabled
         self._base_names = frozenset(base_names)
         self._request_names = tuple(dict.fromkeys(request_names))
-        self._activated: set[str] = set()
+        # Insertion-ordered: tools a search reveals join the list in that order.
+        self._activated: dict[str, None] = {}
         self._expanded: set[str] = set()
+        shown = getattr(session, "shown_tools", None)
+        self._shown = shown if isinstance(shown, ShownTools) else ShownTools()
         self._last_key: tuple[Any, ...] | None = None
         self._snapshot: tuple[RegisteredTool, ...] = ()
+        self._deferred: tuple[RegisteredTool, ...] = ()
         self._discovery_tool = RegisteredTool(
             name=TOOL_SEARCH_NAME,
             description=(
@@ -153,41 +174,63 @@ class ProgressiveToolCatalog:
             raise ValueError(f"registered tool name {TOOL_SEARCH_NAME!r} is reserved")
 
         by_name = {tool.name: tool for tool in full}
-        initial_names = self._initial_names(by_name)
-        visible_names = set(initial_names) | self._activated
-        hidden_exists = any(tool.name not in visible_names for tool in full)
+        names = self._visible_names(by_name)
         signature = tuple(
             (tool.name, tool.description, tool.compact_description, tool.skill_guidance)
             for tool in full
         )
-        key = (
-            signature,
-            initial_names,
-            tuple(sorted(self._activated)),
-            tuple(sorted(self._expanded)),
-            hidden_exists,
-        )
+        key = (signature, tuple(names), frozenset(self._shown.full))
         if key == self._last_key:
             return self._snapshot
 
-        visible: list[RegisteredTool] = []
-        if hidden_exists:
-            visible.append(_compact_view(self._discovery_tool))
-        ordered_names = [*initial_names]
-        ordered_names.extend(
-            tool.name
-            for tool in full
-            if tool.name in self._activated and tool.name not in initial_names
-        )
-        for name in ordered_names:
-            tool = by_name.get(name)
-            if tool is None:
-                continue
-            visible.append(tool if name in self._expanded else _compact_view(tool))
-
         self._last_key = key
-        self._snapshot = tuple(visible)
+        self._snapshot = tuple(self._view(name, by_name) for name in names)
+        up_front = {name for name in names if name not in self._shown.full}
+        self._deferred = tuple(tool for tool in full if tool.name not in up_front)
         return self._snapshot
+
+    def deferred(self) -> tuple[RegisteredTool, ...]:
+        """Catalog tools the conversation was not shown up front, for loading by reference.
+
+        A provider that loads a tool only where a tool search result references
+        it declares these from the first request on, so a reveal leaves the
+        declared list as it was. They are the hidden tools and the tools a
+        search revealed, in catalog order and with their full description: the
+        view a search reveals them with.
+        """
+        self.snapshot()
+        return self._deferred
+
+    def _visible_names(self, by_name: dict[str, RegisteredTool]) -> list[str]:
+        """The conversation's tool list: tools already shown, in place, then new ones.
+
+        A tool shown earlier stays where it was while it still exists, even when
+        this turn's initial selection would leave it out; one that no longer
+        exists drops out. New tools — this turn's initial selection, then those
+        a search revealed, in that order — join at the end, a tool a search
+        matched with its full description. Tool search leads the list the first
+        time hidden tools exist and stays once shown.
+        """
+        revealed = (name for name in self._activated if name in by_name)
+        wanted = [*self._initial_names(by_name), *revealed]
+        names = [name for name in self._shown.names if name in by_name or name == TOOL_SEARCH_NAME]
+        visible = set(names)
+        added = [name for name in dict.fromkeys(wanted) if name not in visible]
+        visible.update(added)
+        if TOOL_SEARCH_NAME not in visible and any(name not in visible for name in by_name):
+            added.insert(0, TOOL_SEARCH_NAME)
+        names.extend(added)
+        self._shown.names[:] = names
+        self._shown.full.update(name for name in added if name in self._expanded)
+        self._shown.full.intersection_update(names)
+        return names
+
+    def _view(self, name: str, by_name: dict[str, RegisteredTool]) -> RegisteredTool:
+        """The tool as the conversation first saw it: compact, or full when a search revealed it."""
+        if name == TOOL_SEARCH_NAME:
+            return _compact_view(self._discovery_tool)
+        tool = by_name[name]
+        return tool if name in self._shown.full else _compact_view(tool)
 
     def _initial_names(self, by_name: dict[str, RegisteredTool]) -> tuple[str, ...]:
         ordered = [
@@ -248,7 +291,7 @@ class ProgressiveToolCatalog:
         before_visible = {tool.name for tool in self.snapshot()}
         newly_activated = set(unique) - before_visible
         newly_expanded = set(unique) - self._expanded
-        self._activated.update(unique)
+        self._activated.update(dict.fromkeys(unique))
         self._expanded.update(unique)
         progress = bool(newly_activated or newly_expanded)
         visible_names = {tool.name for tool in self.snapshot()}
@@ -258,7 +301,7 @@ class ProgressiveToolCatalog:
             "state": state,
             "error_kind": None if unique else state,
             "query": clean_query,
-            "matches": [
+            TOOL_SEARCH_MATCHES_KEY: [
                 {
                     "name": tool.name,
                     "description": tool.description,
@@ -271,7 +314,8 @@ class ProgressiveToolCatalog:
             "not_found": not_found,
             "remaining_hidden": sum(tool.name not in visible_names for tool in full),
             "summary": (
-                "Matched tools are visible with full descriptions and guidance on the next step."
+                "Matched tools can be called from the next step; their full descriptions "
+                "and guidance are in this result."
                 if unique
                 else "No matching available tool. Continue without discovery or use a known name."
             ),

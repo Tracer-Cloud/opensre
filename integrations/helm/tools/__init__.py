@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from integrations.helm.client_factory import helm_client_for_run
 from integrations.helm.unavailable import helm_base_unavailable
 
@@ -16,6 +16,8 @@ class HelmListReleasesTool(BaseTool):
 
     name = "helm_list_releases"
     source = "helm"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List Helm releases (JSON metadata) using the local Helm CLI against the "
         "configured kubeconfig/context."
@@ -135,6 +137,8 @@ class HelmReleaseStatusTool(BaseTool):
 
     name = "helm_release_status"
     source = "helm"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = "Fetch Helm release status (resources, hooks metadata, notes) as structured JSON."
     use_cases = [
         "Checking whether a Helm release is in failed/pending state",
@@ -224,6 +228,8 @@ class HelmReleaseHistoryTool(BaseTool):
 
     name = "helm_release_history"
     source = "helm"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = "Fetch Helm revision history (status, chart version, description per revision)."
     use_cases = [
         "Seeing recent failed rollouts or rollbacks for a Helm release",
@@ -311,6 +317,8 @@ class HelmGetReleaseValuesTool(BaseTool):
 
     name = "helm_get_release_values"
     source = "helm"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = "Fetch Helm values for a release as JSON. May include secrets — handle carefully."
     use_cases = [
         "Confirming image tags, replica counts, or feature flags shipped with a chart revision",
@@ -403,6 +411,8 @@ class HelmGetReleaseManifestTool(BaseTool):
 
     name = "helm_get_release_manifest"
     source = "helm"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch the rendered Kubernetes manifest YAML for a Helm release (truncated if huge)."
     )

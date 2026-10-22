@@ -142,6 +142,7 @@ def _map_get_github_star_history(
     },
     surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     input_schema={
         "type": "object",
         "properties": {

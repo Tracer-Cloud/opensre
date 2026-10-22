@@ -10,19 +10,40 @@ keys so the rest of the stack can treat local and cloud Grafana separately:
 
 Authentication details (token vs basic vs anonymous) are owned by
 ``GrafanaIntegrationConfig``; this module only decides local vs cloud routing.
+
+The client and ``GRAFANA_SETUP`` are re-exported lazily: harness registration
+imports small leaves of this package at every CLI startup, and those must not
+pull the HTTP client or the setup/verifier chain.
 """
 
 from __future__ import annotations
 
+import importlib
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import GrafanaIntegrationConfig
-from integrations.grafana.client import get_grafana_client_from_credentials
-from integrations.grafana.setup import GRAFANA_SETUP
+
+if TYPE_CHECKING:
+    from integrations.grafana.client import get_grafana_client_from_credentials
+    from integrations.grafana.setup import GRAFANA_SETUP
+
+#: Public name -> the submodule that defines it, imported on first access.
+_LAZY_EXPORTS: dict[str, str] = {
+    "GRAFANA_SETUP": "integrations.grafana.setup",
+    "get_grafana_client_from_credentials": "integrations.grafana.client",
+}
 
 logger = logging.getLogger(__name__)
+
+
+def __getattr__(name: str) -> object:
+    """Resolve a lazily re-exported name to its submodule attribute (PEP 562)."""
+    module_path = _LAZY_EXPORTS.get(name)
+    if module_path is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(importlib.import_module(module_path), name)
 
 
 def classify(

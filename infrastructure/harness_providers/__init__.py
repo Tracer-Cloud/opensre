@@ -97,6 +97,7 @@ from infrastructure.harness_providers.repo_scope import (
     VcsRepoScopeProvider,
     clear_vcs_repo_scope_providers,
     enrich_resolved_with_repo_scopes,
+    prewarm_repo_scopes,
     register_vcs_repo_scope_provider,
 )
 from infrastructure.harness_providers.repo_scope import reset as _reset_repo_scope
@@ -229,6 +230,7 @@ __all__ = [
     "metric_query_draft_for",
     "preferred_evidence_sources_by_kind",
     "preferred_evidence_sources_for",
+    "prewarm_repo_scopes",
     "register_action_prompt_fragment",
     "register_assistant_prompt_fragment",
     "register_discovery_targets",

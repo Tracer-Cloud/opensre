@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.alertmanager.client import make_alertmanager_client
 
@@ -50,6 +50,8 @@ class AlertmanagerAlertsTool(BaseTool):
     name = "alertmanager_alerts"
     evidence_mapper = _map_alertmanager_alerts
     source = "alertmanager"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Query Alertmanager to list firing, silenced, and inhibited alerts. "
         "Use this to discover concurrent alerts that may share a root cause, "
@@ -236,6 +238,8 @@ class AlertmanagerSilencesTool(BaseTool):
     name = "alertmanager_silences"
     evidence_mapper = _map_alertmanager_silences
     source = "alertmanager"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Query Alertmanager silences to see which alerts are currently suppressed and why. "
         "Helps distinguish planned maintenance windows from unexpected alert suppression."

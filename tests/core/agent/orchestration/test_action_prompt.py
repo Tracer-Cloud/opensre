@@ -391,7 +391,7 @@ def test_scheduling_guidance_survives_prompt_assembly() -> None:
     snapshot = _ctx(messages=[("user", "give me a morning report")])
 
     # Act
-    cached, _ephemeral = build_action_system_prompt_envelope(snapshot).render_split()
+    cached = build_action_system_prompt_envelope(snapshot).render_split().cached
     assembled = " ".join(cached.lower().split())
     body = " ".join(load_skill_body("delivering-morning-briefings").lower().split())
 

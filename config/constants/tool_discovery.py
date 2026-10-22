@@ -6,7 +6,16 @@ TOOL_SEARCH_MAX_RESULTS = 8
 MAX_STAGNANT_DISCOVERY_ITERATIONS = 3
 
 TOOL_SEARCH_NAME = "tool_search"
+#: Key of a tool-search result's payload listing the tools it found, each a
+#: mapping with the tool's ``name``. Providers that load a tool by reference
+#: read it to know which tools the result makes available.
+TOOL_SEARCH_MATCHES_KEY = "matches"
 MODEL_ONLY_PRESENTATION_KEY = "model_only"
+#: Result metadata: a model-only result that stays true after its request (the
+#: catalog keeps the tools a search revealed), so history replays it.
+REPLAY_WITH_HISTORY_KEY = "replay_with_history"
+#: Tool-result message metadata: indices of the results history must not replay.
+REQUEST_SCOPED_RESULTS_METADATA_KEY = "request_scoped_result_indices"
 DISCOVERY_PROGRESS_KEY = "discovery_progress"
 DISCOVERY_DETAIL_KEYS_KEY = "discovery_detail_keys"
 TOOL_FAILURE_STATE_KEY = "failure_state"
@@ -68,6 +77,8 @@ __all__ = [
     "INITIAL_TOOL_SCHEMA_TOKEN_LIMIT",
     "MAX_STAGNANT_DISCOVERY_ITERATIONS",
     "MODEL_ONLY_PRESENTATION_KEY",
+    "REPLAY_WITH_HISTORY_KEY",
+    "REQUEST_SCOPED_RESULTS_METADATA_KEY",
     "SESSION_GOAL_CONTROL_TOOL_NAMES",
     "TOOL_DISCOVERY_STATE_DENIED",
     "TOOL_DISCOVERY_STATE_MATCHED",
@@ -77,6 +88,7 @@ __all__ = [
     "TOOL_DISCOVERY_STATE_TRANSPORT_FAILURE",
     "TOOL_FAILURE_STATE_KEY",
     "TOOL_FAILURE_STATES",
+    "TOOL_SEARCH_MATCHES_KEY",
     "TOOL_SEARCH_MAX_RESULTS",
     "TOOL_SEARCH_NAME",
 ]

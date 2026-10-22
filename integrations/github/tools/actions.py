@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
 from integrations.github.agent_tools import (
@@ -715,6 +716,8 @@ def _map_list_github_actions_workflow_runs(
 @tool(
     name="list_github_actions_workflow_runs",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description=(
         "List GitHub Actions workflow runs for a repository, each with status, "
         "conclusion and run_attempt. Without head_sha the rows are the newest "
@@ -932,6 +935,8 @@ def _map_list_github_actions_active_runs(
 @tool(
     name="list_github_actions_active_runs",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List GitHub Actions workflow runs that are currently queued or in progress.",
     use_cases=[
         "Seeing what deployment jobs are still running during an incident",
@@ -1062,6 +1067,8 @@ def _map_list_github_actions_run_jobs(
 @tool(
     name="list_github_actions_run_jobs",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List jobs and step outcomes for a GitHub Actions workflow run.",
     use_cases=[
         "Finding which job failed in a deployment workflow",
@@ -1197,6 +1204,8 @@ def _map_get_github_actions_step_log(
 @tool(
     name="get_github_actions_step_log",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Fetch the log output for a failed GitHub Actions job step.",
     use_cases=[
         "Reading the error output for the step that broke a deployment",

@@ -7,6 +7,7 @@ from core.agent_harness.prompts.kernel.envelope import (
     PromptBlockId,
     PromptBlockKind,
     PromptEnvelope,
+    PromptLayers,
     PromptTier,
 )
 from core.agent_harness.prompts.kernel.surfaces import (
@@ -20,6 +21,7 @@ __all__ = [
     "PromptBlockId",
     "PromptBlockKind",
     "PromptEnvelope",
+    "PromptLayers",
     "PromptSurface",
     "PromptTier",
     "SurfaceProfile",

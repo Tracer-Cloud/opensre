@@ -4,6 +4,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.mysql import (
@@ -41,6 +42,8 @@ def _map_get_mysql_server_status(
     name="get_mysql_server_status",
     description="Retrieve MySQL server metrics including connections, uptime, query rates, and InnoDB buffer pool statistics.",
     source="mysql",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Checking MySQL server health during an incident",

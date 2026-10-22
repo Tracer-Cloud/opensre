@@ -27,6 +27,7 @@ from surfaces.interactive_shell.ui.prompt_visibility import (
     hidden_typing_box_pad,
     typing_box_hidden,
 )
+from surfaces.interactive_shell.ui.reply_preview import reply_preview_ansi
 from surfaces.interactive_shell.ui.task_plan import (
     gateway_plan_overlay_ansi,
     task_plan_overlay_ansi,
@@ -167,7 +168,15 @@ def render_prompt_region(
     # renders on a fixed row under the box, so it never moves with the spinner.
     status_lead = "\n" if prefix and not plan_prefix else ""
     if prefix:
-        return ANSI(f"{plan_prefix}{status_lead}{prefix}\n\n{fallback}{base}")
+        # The reply the model is writing right now sits above the status row,
+        # with the same blank-row seam the plan overlay uses.
+        preview = (
+            reply_preview_ansi(spinner.reply_preview, width=prompt_line_width())
+            if spinner.streaming
+            else ""
+        )
+        preview_block = f"{strip_cpr_sequences(preview)}\n\n" if preview else ""
+        return ANSI(f"{plan_prefix}{status_lead}{preview_block}{prefix}\n\n{fallback}{base}")
     return ANSI(f"{plan_prefix}{fallback}{base}")
 
 

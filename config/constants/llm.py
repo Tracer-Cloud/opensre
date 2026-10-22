@@ -45,6 +45,14 @@ OPENSRE_REACT_GOAL_LLM_REVIEW_ENV: Final[str] = "OPENSRE_REACT_GOAL_LLM_REVIEW"
 OPENAI_PROMPT_CACHE_KEY_PREFIX: Final[str] = "opensre-sys-"
 OPENAI_PROMPT_CACHE_KEY_HASH_CHARS: Final[int] = 32
 
+#: Anthropic tool-schema field that keeps a tool out of the prompt until a tool
+#: reference loads it. Such a tool sits outside the cached prefix and cannot
+#: carry a cache marker: the API rejects the request.
+ANTHROPIC_DEFER_LOADING_KEY: Final[str] = "defer_loading"
+#: Internal marker on an assistant message: the conversation its thinking blocks
+#: are bound to, as ``{"prefix": <digest>, "after": <block id or "">}``.
+ANTHROPIC_THINKING_BINDING_KEY: Final[str] = "_opensre_thinking_binding"
+
 
 def react_goal_llm_review_enabled() -> bool:
     """True when the same-LLM ReAct goal reviewer is opted back in."""

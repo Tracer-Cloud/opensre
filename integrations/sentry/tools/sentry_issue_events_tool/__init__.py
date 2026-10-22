@@ -6,6 +6,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.sentry import list_sentry_issue_events as sentry_list_issue_events
@@ -55,6 +56,8 @@ def _issue_events_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 @tool(
     name="list_sentry_issue_events",
     source="sentry",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List recent events for a Sentry issue.",
     use_cases=[
         "Reviewing the latest stack traces attached to an issue",

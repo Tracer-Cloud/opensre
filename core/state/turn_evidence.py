@@ -15,19 +15,61 @@ replaying the wrong turn.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-#: The user's message for the turn (clean text, no per-turn context blocks).
+#: The user's message for the turn: ``text`` is the clean text; ``sent`` (when
+#: present) is the message exactly as the model received it, wrapped with the
+#: turn's context, which replay sends again byte for byte; ``context_digest``
+#: (when present) fingerprints the session-context section that message carried.
 ITEM_USER = "user"
+#: Key of an ``ITEM_USER`` item holding the message exactly as the model received it.
+USER_SENT_KEY = "sent"
+#: Key of an ``ITEM_USER`` item fingerprinting the session context its message carried.
+USER_CONTEXT_DIGEST_KEY = "context_digest"
 #: One assistant message: text and the tool calls it requested, if any.
 ITEM_ASSISTANT = "assistant"
+#: Key of an ``ITEM_ASSISTANT`` item holding the provider's own message for it,
+#: exactly as the model sent it (reasoning included): ``{"binding": <client
+#: binding>, "message": <JSON-safe message>, "recorded_at": <Unix seconds>}``.
+#: Only a client with the same binding resends it; any other rebuilds the
+#: message from its text and calls.
+ASSISTANT_PROVIDER_KEY = "provider"
 #: The results of the preceding assistant message's tool calls, in call order.
 ITEM_TOOL_RESULTS = "tool_results"
 
 _ITEM_KINDS = frozenset({ITEM_USER, ITEM_ASSISTANT, ITEM_TOOL_RESULTS})
 _TRUNCATION_MARKER = "\n…[{omitted} characters omitted]…\n"
+
+
+def provider_record(
+    binding: str, message: Mapping[str, Any], *, recorded_at: float
+) -> dict[str, Any] | None:
+    """The ``ASSISTANT_PROVIDER_KEY`` value for ``message``; ``None`` when it is not plain JSON."""
+    try:
+        copied = json.loads(json.dumps(message, ensure_ascii=False, allow_nan=False))
+    except (TypeError, ValueError):
+        return None
+    if not binding or not isinstance(copied, dict):
+        return None
+    return {"binding": binding, "message": copied, "recorded_at": int(recorded_at)}
+
+
+def recorded_provider_message(item: Mapping[str, Any]) -> tuple[dict[str, Any], str, int] | None:
+    """The provider message, binding and record time an assistant item carries, if any."""
+    record = item.get(ASSISTANT_PROVIDER_KEY)
+    if not isinstance(record, Mapping):
+        return None
+    message = record.get("message")
+    binding = record.get("binding")
+    recorded_at = record.get("recorded_at")
+    if not isinstance(message, Mapping) or not isinstance(binding, str) or not binding:
+        return None
+    if not isinstance(recorded_at, int) or isinstance(recorded_at, bool):
+        return None
+    return dict(message), binding, recorded_at
 
 
 def cap_text(text: str, max_chars: int) -> str:
@@ -57,6 +99,12 @@ class TurnEvidence:
     #: (a bare "yes" becomes the offer it accepted). The session log keeps the
     #: typed form, so a restored transcript matches on this instead.
     typed_text: str = ""
+    #: The tool list the conversation had been shown when the turn ended
+    #: (:class:`~core.state.ShownTools`), so a session rebuilt from its log —
+    #: as the gateway does for every message — keeps each tool in place.
+    shown_tools: tuple[str, ...] = ()
+    #: Of ``shown_tools``, the tools shown with their full description.
+    full_tools: tuple[str, ...] = ()
 
     @property
     def has_tool_activity(self) -> bool:
@@ -64,10 +112,18 @@ class TurnEvidence:
         return any(item.get("kind") == ITEM_TOOL_RESULTS for item in self.items)
 
     def char_count(self) -> int:
-        """Characters the turn adds when replayed (text, arguments and results)."""
+        """Characters the turn adds when replayed (text, arguments and results).
+
+        An assistant message recorded with the provider's own message counts as
+        that message, reasoning included, since the same client resends it whole.
+        """
         total = 0
         for item in self.items:
-            total += len(str(item.get("text") or ""))
+            recorded = recorded_provider_message(item)
+            if recorded is not None:
+                total += len(json.dumps(recorded[0], ensure_ascii=False))
+                continue
+            total += len(str(item.get(USER_SENT_KEY) or item.get("text") or ""))
             for call in item.get("tool_calls") or ():
                 total += len(str(call.get("name") or "")) + len(str(call.get("input") or ""))
             for result in item.get("results") or ():
@@ -83,6 +139,9 @@ class TurnEvidence:
         }
         if self.typed_text:
             record["typed_text"] = self.typed_text
+        if self.shown_tools:
+            record["shown_tools"] = list(self.shown_tools)
+            record["full_tools"] = list(self.full_tools)
         return record
 
     def answers(self, user_text: str) -> bool:
@@ -114,7 +173,16 @@ class TurnEvidence:
             assistant_text=assistant_text,
             items=items,
             typed_text=typed_text if isinstance(typed_text, str) else "",
+            shown_tools=_names(payload.get("shown_tools")),
+            full_tools=_names(payload.get("full_tools")),
         )
+
+
+def _names(value: Any) -> tuple[str, ...]:
+    """A persisted list of tool names; empty when it is not one."""
+    if not isinstance(value, list):
+        return ()
+    return tuple(name for name in value if isinstance(name, str))
 
 
 def match_turn_evidence(
@@ -158,10 +226,15 @@ def match_turn_evidence(
 
 
 __all__ = [
+    "ASSISTANT_PROVIDER_KEY",
     "ITEM_ASSISTANT",
     "ITEM_TOOL_RESULTS",
     "ITEM_USER",
+    "USER_CONTEXT_DIGEST_KEY",
+    "USER_SENT_KEY",
     "TurnEvidence",
     "cap_text",
     "match_turn_evidence",
+    "provider_record",
+    "recorded_provider_message",
 ]

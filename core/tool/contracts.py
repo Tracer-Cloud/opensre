@@ -381,6 +381,7 @@ class BaseTool(ABC):
     approval_reason: ClassVar[str] = ""  # Human-readable reason for requiring approval
     approval_expiry_seconds: ClassVar[int] = DEFAULT_APPROVAL_EXPIRY_SECONDS
     accepts_runtime_context: ClassVar[bool] = False
+    concurrency_safe: ClassVar[bool] = False  # See ``RegisteredTool.concurrency_safe``
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -486,6 +487,22 @@ def _normalize_surfaces(surfaces: Iterable[ToolSurface] | None) -> tuple[ToolSur
     return normalize_surfaces(surfaces)
 
 
+_CONCURRENT_SIDE_EFFECT_LEVELS = frozenset({SideEffectLevel.NONE, SideEffectLevel.READ_ONLY})
+
+
+def _concurrency_refusal(tool: RegisteredTool) -> str | None:
+    """Why ``tool`` may not declare ``concurrency_safe``, or ``None`` when it may."""
+    if tool.side_effect_level not in _CONCURRENT_SIDE_EFFECT_LEVELS:
+        return "it must declare side_effect_level none or read_only"
+    if tool.role != ToolRole.ACTION:
+        return f"a {tool.role} tool must run alone"
+    if tool.requires_approval:
+        return "a call that needs approval must run alone"
+    if tool.accepts_runtime_context:
+        return "runtime context reaches the session and console, which worker threads must not"
+    return None
+
+
 @dataclass
 class RegisteredTool:
     """Uniform runtime representation shared by all registered tools."""
@@ -526,6 +543,11 @@ class RegisteredTool:
     approval_expiry_seconds: int = DEFAULT_APPROVAL_EXPIRY_SECONDS
     role: ToolRole = ToolRole.ACTION
     accepts_runtime_context: bool = False
+    #: A pure read that may run on a worker thread beside the other
+    #: concurrency-safe calls of the same response. Requires a declared ``NONE``
+    #: or ``READ_ONLY`` side effect, the ``ACTION`` role, no approval and no
+    #: runtime context; a tool that breaks one of those fails at construction.
+    concurrency_safe: bool = False
     origin_module: str = ""
     origin_name: str = ""
     skill_guidance: str = ""
@@ -577,6 +599,8 @@ class RegisteredTool:
             raise TypeError("is_available must be callable")
         if not callable(self.extract_params):
             raise TypeError("extract_params must be callable")
+        if self.concurrency_safe and (refusal := _concurrency_refusal(self)):
+            raise ValueError(f"{self.name} cannot be concurrency_safe: {refusal}")
 
     @property
     def inputs(self) -> dict[str, str]:
@@ -635,6 +659,7 @@ class RegisteredTool:
         role: ToolRole | None = None,
         accepts_runtime_context: bool | None = None,
         evidence_mapper: EvidenceMapper | None = None,
+        concurrency_safe: bool | None = None,
     ) -> RegisteredTool:
         metadata = tool.metadata()
         input_model = cast(type[BaseModel] | None, getattr(tool, "input_model", None))
@@ -701,6 +726,11 @@ class RegisteredTool:
                 if accepts_runtime_context is not None
                 else tool.__class__.accepts_runtime_context
             ),
+            concurrency_safe=bool(
+                concurrency_safe
+                if concurrency_safe is not None
+                else tool.__class__.concurrency_safe
+            ),
             origin_module=tool.__class__.__module__,
             origin_name=tool.__class__.__name__,
         )
@@ -739,6 +769,7 @@ class RegisteredTool:
         approval_expiry_seconds: int | None = None,
         role: ToolRole | None = None,
         accepts_runtime_context: bool | None = None,
+        concurrency_safe: bool | None = None,
     ) -> RegisteredTool:
         if source is None:
             raise ValueError("Function tools must declare a source.")
@@ -785,6 +816,7 @@ class RegisteredTool:
             ),
             role=ToolRole.ACTION if role is None else role,
             accepts_runtime_context=bool(accepts_runtime_context),
+            concurrency_safe=bool(concurrency_safe),
             origin_module=func.__module__,
             origin_name=func.__name__,
         )

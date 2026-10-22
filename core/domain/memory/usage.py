@@ -1,8 +1,9 @@
 """How often each memory reached the model, kept beside the memories in ``.usage.json``.
 
 A memory counts as used when its full text is put in front of the model: in
-the per-turn RELEVANT MEMORIES block or in a ``memory_recall`` result. Index
-order and age-based archiving read these counts. Recording is best-effort and
+the per-turn RELEVANT MEMORIES block or in a ``memory_recall`` result.
+Age-based archiving reads these counts; the prompt index does not, so a use
+never reorders what a session has already sent. Recording is best-effort and
 never blocks a turn for long: the write gives up after a short lock wait.
 """
 

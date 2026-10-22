@@ -84,6 +84,7 @@ def _summary(view: StructureView) -> str:
     },
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     input_schema=_INPUT_SCHEMA,
     tags=("safe",),
 )

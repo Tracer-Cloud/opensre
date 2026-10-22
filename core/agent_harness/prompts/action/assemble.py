@@ -46,6 +46,14 @@ logger = logging.getLogger(__name__)
 
 _USER_TEMPLATE = "USER MESSAGE (literal): <<<{text}>>>"
 
+#: Opens the session-context section of a user message. A turn sends the section
+#: only when it changed, and the history replays earlier copies verbatim, so the
+#: newest copy in the conversation is the current one.
+SESSION_CONTEXT_HEADER = (
+    "SESSION CONTEXT (as of this message; it stays current until a later message "
+    "carries a new SESSION CONTEXT, which replaces it):\n"
+)
+
 
 def _runtime_facts_blocks(surface: str | None) -> tuple[str, str]:
     """The ``(static, live)`` runtime facts, each ``""`` when they cannot be read.
@@ -196,10 +204,11 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.agent_harness.turns.turn_snapshot",
         )
     )
-    # Volatile before ephemeral so render_cached + render_ephemeral reassemble
-    # into render() and the cache breakpoint can sit after memory. Workspace
-    # knowledge first: a scan rewrites it far less often than a member's own
-    # memory changes, so a personal write never re-caches it.
+    # Session context (the context and volatile tiers) leaves the system prompt
+    # for the conversation, so a memory write or a newly named repository adds
+    # one section to the history instead of re-pricing the whole prefix.
+    # Workspace knowledge first: a scan rewrites it far less often than a
+    # member's own memory changes.
     blocks.extend(
         _optional_block(
             id=PromptBlockId.WORKSPACE_KNOWLEDGE,
@@ -471,7 +480,7 @@ def interrupted_turn_recovery_block(turn_snapshot: TurnSnapshot) -> str:
 
 
 def long_term_memory_block() -> str:
-    """The stable memory index (summary plus one line per memory) for the cached prompt half."""
+    """The memory index (summary plus one line per memory) for the session-context section."""
     from core.domain.memory import (
         ensure_memory_store,
         memory_available_here,
@@ -486,7 +495,7 @@ def long_term_memory_block() -> str:
         return ""
     return (
         "LONG-TERM MEMORY (durable facts from earlier sessions; the index lists "
-        "stored memories one per line, most useful first). The full text of "
+        "stored memories one per line, by kind, most recently updated first). The full text of "
         "memories that match this request appears under RELEVANT MEMORIES; read "
         "any other with memory_recall. When the USER MESSAGE contains a new useful "
         "durable fact, call memory_remember in this turn even if they never said "
@@ -499,7 +508,7 @@ def long_term_memory_block() -> str:
 
 
 def workspace_knowledge_block() -> str:
-    """The organization profile and workspace entry index for the cached prompt half."""
+    """The organization profile and workspace entry index for the session-context section."""
     from core.domain.knowledge import render_workspace_block
 
     rendered = render_workspace_block()
@@ -577,38 +586,49 @@ def relevant_memories_block(turn_snapshot: TurnSnapshot) -> str:
     )
 
 
-def build_action_user_message(text: str, *, prefix: str = "") -> str:
-    """Wrap the user turn; optional ``prefix`` carries ephemeral system halves.
+def session_context_section(context: str) -> str:
+    """The session-context section a user message carries; ``""`` when ``context`` is empty."""
+    return "".join((SESSION_CONTEXT_HEADER, context)) if context else ""
 
-    ``prefix`` is where per-turn conversation / prior-action-facts land once the
-    action driver opts into :meth:`PromptEnvelope.render_cached` — the same text
-    the model used to see at the end of ``system``, moved here so the cached
-    system prefix stays byte-stable across turns.
+
+def build_action_user_message(text: str, *, context: str = "", prefix: str = "") -> str:
+    """Wrap the user turn with the parts of the prompt that stay out of ``system``.
+
+    ``context`` is the envelope's session-context layer, given only when the
+    replayed history does not already carry it: the history replays the user
+    message verbatim, so an unchanged section is never sent twice. ``prefix``
+    is the ephemeral layer (this turn's plan, facts and memories). Neither sits
+    in ``system``, so the cached system prefix stays byte-stable across turns.
 
     Layout (required by head-preserving truncation ``text[:keep]``):
 
     1. Literal user message first — never drop the active request.
-    2. Ephemeral history next, newest-first — when the combined turn is over
-       budget, the tail cut removes the oldest chatter, not the latest turns
-       the follow-up is referring to.
+    2. Session context, then the ephemeral blocks: the order the model read them
+       in when they were part of the system prompt. In the text-history fallback
+       the conversation rides last, newest-first, so a tail cut over budget
+       removes the oldest chatter, not the latest turns a follow-up refers to.
     """
     body = _USER_TEMPLATE.format(text=sanitize_action_text(text.strip()))
-    if not prefix:
+    if not context and not prefix:
         return body
     # Ephemeral history can be large; join avoids an intermediate f-string copy.
-    return "".join((body, "\n", prefix))
+    return "".join((body, "\n", session_context_section(context), prefix))
 
 
-def action_prompt_skill_and_context(envelope: PromptEnvelope) -> tuple[str, str]:
-    """Split the per-turn half into the active skill body and the other context.
+def action_prompt_skill_and_context(
+    envelope: PromptEnvelope, *, session_context: str = ""
+) -> tuple[str, str]:
+    """Split this turn's model context into the active skill body and the rest.
 
-    The cached system prompt is recorded separately. The active skill rides in
-    the ephemeral half only while the user is answering that skill; everything
-    else in that half (conversation, plan, facts) is the model context.
+    The cached system prompt is recorded separately. ``session_context`` is the
+    session-context layer this turn's message carried (``""`` when the history
+    already held it). The active skill rides in the ephemeral layer only while
+    the user is answering that skill; everything else (session context,
+    conversation, plan, facts) is the model context.
     """
     skill = envelope.block(PromptBlockId.ACTIVE_SKILL)
     skill_text = skill.render().strip() if skill is not None else ""
-    context = envelope.render_ephemeral()
+    context = "".join((session_context_section(session_context), envelope.render_ephemeral()))
     if skill_text:
         context = context.replace(skill_text, "", 1)
     return skill_text, context.strip()
@@ -621,10 +641,12 @@ def sanitize_action_text(text: str) -> str:
 
 
 __all__ = [
+    "SESSION_CONTEXT_HEADER",
     "build_action_system_prompt_envelope",
     "build_action_system_prompt",
     "action_prompt_skill_and_context",
     "build_action_user_message",
+    "session_context_section",
     "connected_integrations_block",
     "interrupted_turn_recovery_block",
     "long_term_memory_block",
