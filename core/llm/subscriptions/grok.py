@@ -1,4 +1,4 @@
-"""xAI device OAuth with explicit client registration and isolated rotating sessions."""
+"""xAI device OAuth with a public CLI registration and isolated rotating sessions."""
 
 from __future__ import annotations
 
@@ -17,7 +17,9 @@ from config.constants.grok import (
     GROK_DEVICE_GRANT,
     GROK_DISCOVERY_URL,
     GROK_ISSUER,
+    GROK_OAUTH_CLIENT_ID,
     GROK_OAUTH_CLIENT_ID_ENV,
+    GROK_OAUTH_REFERRER,
     GROK_RESOURCE,
     GROK_SCOPES,
 )
@@ -104,6 +106,12 @@ def _tokens(data: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any]:
 
 def _available_models(client: httpx.Client, token: str) -> list[tuple[str, str]]:
     response = client.get(f"{GROK_RESOURCE}/models", headers={"Authorization": f"Bearer {token}"})
+    if response.status_code in {HTTPStatus.PAYMENT_REQUIRED, HTTPStatus.FORBIDDEN}:
+        raise SubscriptionLoginRequired(
+            "xAI denied Grok subscription model access. Check the signed-in account's "
+            "active plan and remaining allowance at https://grok.com. "
+            "No API-key fallback was used."
+        )
     response.raise_for_status()
     result = [
         (str(item["id"]), str(item.get("name") or item["id"]))
@@ -134,12 +142,8 @@ def login(
                 "Unknown xAI account ID. See `opensre auth status grok`."
             )
         previous = dict(store["profiles"].get(selected, {}))
-    client_id = str(previous.get("client_id") or os.getenv(GROK_OAUTH_CLIENT_ID_ENV, "")).strip()
-    if not client_id:
-        raise SubscriptionLoginRequired(
-            f"Set {GROK_OAUTH_CLIENT_ID_ENV} to an xAI-approved OpenSRE OAuth client ID. "
-            "OpenSRE onboarding and live subscription validation are pending."
-        )
+    configured_client = os.getenv(GROK_OAUTH_CLIENT_ID_ENV, "").strip()
+    client_id = str(previous.get("client_id") or configured_client or GROK_OAUTH_CLIENT_ID)
     with httpx.Client(timeout=30, follow_redirects=False) as client:
         metadata = _discovery(client)
         token_url = _endpoint(metadata["token_endpoint"])
@@ -148,6 +152,7 @@ def login(
             data={
                 "client_id": client_id,
                 "scope": GROK_SCOPES,
+                "referrer": GROK_OAUTH_REFERRER,
             },
         )
         response.raise_for_status()

@@ -99,7 +99,8 @@ def wire(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
             )
         if path == "/oauth2/device/code":
             form = parse_qs(request.content.decode())
-            assert form["client_id"] == ["approved-test-client"]
+            assert form["client_id"] == [state.get("client_id", "approved-test-client")]
+            assert form["referrer"] == ["opensre"]
             return httpx.Response(
                 HTTPStatus.OK,
                 json={
@@ -112,7 +113,7 @@ def wire(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
             )
         if path == "/oauth2/token":
             form = parse_qs(request.content.decode())
-            assert form["client_id"] == ["approved-test-client"]
+            assert form["client_id"] == [state.get("client_id", "approved-test-client")]
             if form["grant_type"] == ["refresh_token"]:
                 state["refreshes"].append(form)
                 if "refresh_error" in state:
@@ -147,6 +148,14 @@ def wire(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
             return httpx.Response(HTTPStatus.OK, json={"sub": state["subject"]})
         if path == "/v1/models":
             assert request.headers["authorization"].startswith("Bearer ")
+            if "model_status" in state:
+                return httpx.Response(
+                    state["model_status"],
+                    json={
+                        "code": "personal-team-blocked:spending-limit",
+                        "error": "provider detail must not be displayed",
+                    },
+                )
             return httpx.Response(HTTPStatus.OK, json={"data": [{"id": "grok-4.3"}]})
         if path == "/revoke":
             return httpx.Response(state.get("revoke_status", HTTPStatus.OK))
@@ -285,11 +294,35 @@ def test_failed_login_preserves_existing_session(wire, mutation):
     assert all(request.url.host != "attacker.example" for request in wire["requests"])
 
 
-def test_missing_registration_fails_before_network(wire, monkeypatch):
+def test_default_client_login_refresh_and_reconnect_without_configuration(wire, monkeypatch):
     monkeypatch.delenv("OPENSRE_GROK_OAUTH_CLIENT_ID")
-    with pytest.raises(SubscriptionLoginRequired, match="approved.*OAuth client"):
-        _login()
-    assert wire["requests"] == []
+    wire["client_id"] = "b1a00492-073a-47ea-816f-4c329264a828"
+    presented: list[str] = []
+    assert grok.login(presented.append, select_model=lambda models: models[0][0]) == "grok-4.3"
+    assert presented == ["https://accounts.x.ai/device?user_code=ABCD-EFGH"]
+    store = _store()
+    account = store["active"]
+    assert store["profiles"][account]["client_id"] == wire["client_id"]
+    monkeypatch.setenv("OPENSRE_GROK_OAUTH_CLIENT_ID", "other-client")
+    _expire()
+    assert grok.resolve().token == "renewed-token"
+    grok.logout()
+    _login(profile_id=account)
+    assert _store()["profiles"][account]["client_id"] == wire["client_id"]
+
+
+def test_model_access_denied_explains_plan_gate_without_replacing_session(wire):
+    _login()
+    original = _store()
+    wire["model_status"] = HTTPStatus.FORBIDDEN
+    result = CliRunner().invoke(cli, ["auth", "login", "grok", "--no-open-browser"])
+    assert result.exit_code != 0
+    assert "active plan and remaining allowance" in result.output
+    assert "No API-key fallback" in result.output
+    assert "provider detail" not in result.output
+    assert "subscription-token" not in result.output
+    assert _store() == original
+    assert "completion" not in wire
 
 
 def test_concurrent_refresh_rotates_once_and_keeps_registration(wire, monkeypatch):

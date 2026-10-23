@@ -50,7 +50,7 @@ Each provider has two model roles:
 | Provider | Setup | Model selection |
 | --- | --- | --- |
 | ChatGPT | `opensre auth login chatgpt` | Models available to the signed-in account; `CHATGPT_MODEL` records the selected model |
-| Grok subscription (local testing) | `opensre auth login grok` | Requires an xAI-approved client ID; `GROK_MODEL` records the selected account model |
+| Grok subscription (local testing) | `opensre auth login grok` | Browser login; no client-ID setup; `GROK_MODEL` records the selected account model |
 
   </Tab>
   <Tab title="Cloud & local">
@@ -248,20 +248,17 @@ Provider API keys remain available through the separate API-key path.
 
 ## Grok subscription (local testing)
 
-The Grok adapter implements device OAuth and xAI Responses streaming through LiteLLM.
-**OpenSRE's xAI onboarding and live subscription validation are pending.** An eligible
-subscription and an xAI-approved OAuth client registration for OpenSRE are required;
-this implementation does not include a pre-approved client ID. xAI's announcements for
-[OpenCode](https://x.ai/news/grok-opencode) and
-[Kilo Code](https://x.ai/news/grok-kilocode) document those integrations' subscription
-access, not OpenSRE registration or current plan eligibility.
-
-After obtaining an approved registration, set the required non-secret client ID:
+Sign in with an eligible Grok subscription; no API key or client-ID setup is needed.
+**Live subscription inference and billing validation in OpenSRE remain pending.**
 
 ```bash
-export OPENSRE_GROK_OAUTH_CLIENT_ID='<approved OpenSRE client ID>'
 opensre auth login grok
 ```
+
+OpenSRE uses the public Grok CLI OAuth registration also used by OpenCode, Kilo,
+and Hermes. If you have a separate xAI-approved registration, optionally set
+`OPENSRE_GROK_OAUTH_CLIENT_ID` before adding an account. Existing accounts keep the
+registration used at sign-in, even if this override changes.
 
 Login prints a verification URL containing your short user code and optionally opens
 it in a browser. For SSH/headless hosts, use `--no-open-browser` and open the URL on
@@ -271,6 +268,10 @@ account-visible models, or pass optional `--model <model-id>`; `GROK_MODEL` defa
 to `grok-4.3` when no selection has been saved. Models must be recognized by the
 installed LiteLLM version for native streaming; an unknown model fails explicitly
 instead of silently substituting a buffered request.
+
+Browser approval alone does not guarantee model access. If xAI denies access,
+check that the authorized account has an active eligible plan and remaining
+allowance. OpenSRE does not switch to a paid API key when subscription access fails.
 
 ```bash
 opensre auth status grok

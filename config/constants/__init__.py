@@ -652,7 +652,13 @@ if TYPE_CHECKING:
         GROK_ISSUER as GROK_ISSUER,
     )
     from config.constants.grok import (
+        GROK_OAUTH_CLIENT_ID as GROK_OAUTH_CLIENT_ID,
+    )
+    from config.constants.grok import (
         GROK_OAUTH_CLIENT_ID_ENV as GROK_OAUTH_CLIENT_ID_ENV,
+    )
+    from config.constants.grok import (
+        GROK_OAUTH_REFERRER as GROK_OAUTH_REFERRER,
     )
     from config.constants.grok import (
         GROK_RESOURCE as GROK_RESOURCE,

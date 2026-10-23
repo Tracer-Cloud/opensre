@@ -7,6 +7,8 @@ from config.package_exports import bind_package_exports
 # Re-exported name -> leaf module. Importing this package must not load
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
+    "GROK_OAUTH_CLIENT_ID": "grok",
+    "GROK_OAUTH_REFERRER": "grok",
     "GROK_OAUTH_CLIENT_ID_ENV": "grok",
     "GROK_ISSUER": "grok",
     "GROK_DISCOVERY_URL": "grok",

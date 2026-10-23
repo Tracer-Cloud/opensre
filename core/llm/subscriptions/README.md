@@ -44,14 +44,17 @@ Clients resolve the active account on each request. Tokens never enter cache key
 
 The Grok adapter uses RFC 8628 device authorization and LiteLLM's native xAI Responses
 route. The browser can run on another device; there is no loopback callback.
-`OPENSRE_GROK_OAUTH_CLIENT_ID` must contain an xAI-approved client registration for
-OpenSRE. No other application's client ID or credential store is reused. Credentials
-retain their original client ID across refresh and reconnect.
+The default is the public Grok CLI client registration shared by OpenCode, Kilo,
+and Hermes, with `referrer=opensre` attribution. See
+[Kilo's implementation](https://github.com/Kilo-Org/kilocode/blob/main/packages/opencode/src/plugin/xai.ts).
+`OPENSRE_GROK_OAUTH_CLIENT_ID` optionally overrides it for new accounts. Credentials
+retain their original client ID across refresh and reconnect; no other application's
+credential store is reused.
 
 xAI officially announced subscription access for
 [OpenCode](https://x.ai/news/grok-opencode) and
 [Kilo Code](https://x.ai/news/grok-kilocode). This establishes those integrations;
-OpenSRE onboarding, current plan eligibility, and live subscription billing remain
+current plan eligibility in OpenSRE and live subscription billing remain
 unconfirmed. Authentication/model-list success does not prove inference entitlement.
 The adapter is covered with synthetic OAuth and real LiteLLM HTTP/SSE tests; local
 subscription acceptance is still required before claiming production support.
