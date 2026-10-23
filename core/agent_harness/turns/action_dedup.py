@@ -70,8 +70,8 @@ def with_duplicate_action_call_guard(
     Suppress ``slash_invoke`` / ``shell_run`` / ``cli_exec`` when the call's
     fingerprint is in ``last_fully_succeeded_batch`` *or* already succeeded
     earlier in the current provider batch (same-batch duplicates). Guarded
-    tools run sequentially, so ``batch_succeeded`` is visible to the next
-    ``before()`` in the batch.
+    tools are mutating, so they never run in a parallel group and
+    ``batch_succeeded`` is visible to the next ``before()`` in the batch.
 
     Snapshot updates at the next batch boundary:
 
