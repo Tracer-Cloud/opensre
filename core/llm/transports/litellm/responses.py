@@ -35,6 +35,7 @@ from core.llm.subscriptions.chatgpt import resolve
 from core.llm.types import (
     AgentLLMResponse,
     CancelProbe,
+    LLMRequestCancelled,
     LLMResponse,
     SchemaDescribedTool,
     TextDeltaCallback,
@@ -67,6 +68,11 @@ def _stream_error(event: Any) -> RuntimeError:
     )
 
 
+def _raise_if_stopped(should_stop: CancelProbe | None) -> None:
+    if should_stop is not None and should_stop():
+        raise LLMRequestCancelled("ChatGPT request cancelled by the caller")
+
+
 class ChatGPTResponsesAgentClient:
     """Stateless tool turns with request-scoped OAuth and no API-key fallback."""
 
@@ -94,7 +100,9 @@ class ChatGPTResponsesAgentClient:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> Iterator[Any]:
+        _raise_if_stopped(should_stop)
         from litellm import responses
 
         # LiteLLM's background logging copy replaces typed Responses usage with a dict.
@@ -131,15 +139,19 @@ class ChatGPTResponsesAgentClient:
         stream = None
         completed = False
         try:
+            _raise_if_stopped(should_stop)
             # LiteLLM's return annotation does not narrow for synchronous stream=True.
             stream = cast(Iterator[Any], responses(**kwargs))
             for event in stream:
+                _raise_if_stopped(should_stop)
                 kind = get_attr_or_item(event, "type")
                 if kind in {"response.failed", "response.incomplete", "error"}:
                     raise _stream_error(event)
                 if kind == "response.completed":
                     completed = True
                 yield event
+                # A text callback can cancel the turn; do not wait for another SSE event.
+                _raise_if_stopped(should_stop)
             if not completed:
                 raise RuntimeError(
                     "ChatGPT stream ended before response.completed. Retry the request."
@@ -149,7 +161,9 @@ class ChatGPTResponsesAgentClient:
             body = getattr(original, "body", None) or {}
             raise _stream_error({"error": body}) from None
         finally:
-            close = getattr(stream, "close", None)
+            # LiteLLM's sync Responses iterator has no close(); it owns an HTTP response.
+            response = getattr(stream, "response", stream)
+            close = getattr(response, "close", None)
             if close is not None:
                 close()
 
@@ -162,14 +176,16 @@ class ChatGPTResponsesAgentClient:
         on_text_delta: TextDeltaCallback | None = None,
         should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
-        # Like the buffered LiteLLM client, return only a complete response so
-        # reasoning items and tool-call replay retain their original payloads.
-        _ = (on_text_delta, should_stop)
+        # Live text is separate from the completed payload used for reasoning/tool replay.
         response: Any = None
         output_items: dict[int, Any] = {}
-        for event in self._events(messages, system=system, tools=tools):
+        for event in self._events(messages, system=system, tools=tools, should_stop=should_stop):
             kind = get_attr_or_item(event, "type")
-            if kind == "response.output_item.done":
+            if kind == "response.output_text.delta" and on_text_delta is not None:
+                delta = str(get_attr_or_item(event, "delta") or "")
+                if delta:
+                    on_text_delta(delta)
+            elif kind == "response.output_item.done":
                 output_items[int(get_attr_or_item(event, "output_index"))] = get_attr_or_item(
                     event, "item"
                 )

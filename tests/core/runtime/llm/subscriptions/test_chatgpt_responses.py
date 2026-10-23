@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
+from threading import Event, get_ident
 from typing import Any
 
 import httpx
@@ -11,7 +14,7 @@ import pytest
 
 from core.llm.subscriptions.types import SubscriptionAuth, SubscriptionLoginRequired
 from core.llm.transports.litellm import responses as adapter
-from core.llm.types import ToolCall
+from core.llm.types import LLMRequestCancelled, ToolCall
 from core.messages import MessageMapper
 
 
@@ -48,6 +51,23 @@ def _response(output: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     }
 
 
+class _EventStream(httpx.SyncByteStream):
+    """Lazy SSE bytes that record consumption and HTTP response closure."""
+
+    def __init__(self, events: list[dict[str, Any]]) -> None:
+        self.events = events
+        self.read = 0
+        self.closed = False
+
+    def __iter__(self) -> Iterator[bytes]:
+        for event in self.events:
+            self.read += 1
+            yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n".encode()
+
+    def close(self) -> None:
+        self.closed = True
+
+
 @pytest.fixture
 def wire(monkeypatch):
     monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
@@ -73,16 +93,155 @@ def wire(monkeypatch):
         events = state["events"] or [
             {"type": "response.completed", "sequence_number": 0, "response": _response()}
         ]
-        content = "".join(
-            f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events
-        )
+        stream = state.get("stream") or _EventStream(events)
+        state["opened_stream"] = stream
         return httpx.Response(
-            HTTPStatus.OK, headers={"Content-Type": "text/event-stream"}, content=content
+            HTTPStatus.OK, headers={"Content-Type": "text/event-stream"}, stream=stream
         )
 
     transport = httpx.MockTransport(handle)
     monkeypatch.setattr(httpx.Client, "_transport_for_url", lambda _self, _url: transport)
     return state
+
+
+@pytest.mark.parametrize("cancel_during_auth", [False, True])
+def test_cancel_before_send_never_opens_an_http_request(wire, monkeypatch, cancel_during_auth):
+    stopped = False
+
+    def resolve():
+        nonlocal stopped
+        stopped = True
+        return SubscriptionAuth("oauth-test-token", "https://api.openai.com/v1")
+
+    if cancel_during_auth:
+        monkeypatch.setattr(adapter, "resolve", resolve)
+    else:
+        stopped = True
+    with pytest.raises(LLMRequestCancelled):
+        adapter.ChatGPTResponsesAgentClient("gpt-6.1-sol").invoke(
+            [{"role": "user", "content": "hello"}], should_stop=lambda: stopped
+        )
+    assert wire["requests"] == []
+
+
+@pytest.mark.parametrize("text_delta", [False, True])
+def test_cancel_closes_http_stream_and_releases_worker_before_the_next_event(wire, text_delta):
+    cancelled = Event()
+    reached_tail = Event()
+    release_tail = Event()
+    first = (
+        {
+            "type": "response.output_text.delta",
+            "delta": "partial",
+            "sequence_number": 0,
+            "item_id": "msg_1",
+            "output_index": 0,
+            "content_index": 0,
+        }
+        if text_delta
+        else {"type": "response.created", "sequence_number": 0, "response": _response()}
+    )
+
+    class HeldStream(_EventStream):
+        def __iter__(self) -> Iterator[bytes]:
+            for chunk in super().__iter__():
+                if not text_delta:
+                    cancelled.set()
+                yield chunk
+            reached_tail.set()
+            assert release_tail.wait(5), "cancelled worker read beyond its first event"
+
+    stream = HeldStream([first])
+    wire["stream"] = stream
+    deltas = []
+
+    def on_delta(text):
+        deltas.append(text)
+        cancelled.set()
+
+    client = adapter.ChatGPTResponsesAgentClient("gpt-6.1-sol")
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        pending = worker.submit(
+            client.invoke,
+            [{"role": "user", "content": "hello"}],
+            should_stop=cancelled.is_set,
+            on_text_delta=on_delta,
+        )
+        try:
+            with pytest.raises(LLMRequestCancelled):
+                pending.result(timeout=3)
+            assert stream.closed and not reached_tail.is_set()
+            assert deltas == (["partial"] if text_delta else [])
+            wire.pop("stream")
+            next_turn = worker.submit(client.invoke, [{"role": "user", "content": "next"}])
+            assert next_turn.result(timeout=3).content == "hello"
+            assert len(wire["requests"]) == 2  # one cancelled request, one next turn; no retry
+        finally:
+            release_tail.set()
+
+
+def test_text_deltas_arrive_live_on_calling_thread_with_unchanged_replay(wire):
+    output = [
+        {"type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "replay"},
+        *_response()["output"],
+        {
+            "type": "function_call",
+            "id": "fc_1",
+            "call_id": "call_1",
+            "name": "lookup",
+            "arguments": '{"service":"api"}',
+            "status": "completed",
+        },
+    ]
+    completed = _response(output)
+    completed["output"] = []
+    events = (
+        [
+            {
+                "type": "response.output_text.delta",
+                "delta": delta,
+                "sequence_number": index,
+                "item_id": "msg_1",
+                "output_index": 1,
+                "content_index": 0,
+            }
+            for index, delta in enumerate(["hel", "lo"])
+        ]
+        + [
+            {
+                "type": "response.output_item.done",
+                "sequence_number": index + 2,
+                "output_index": index,
+                "item": item,
+            }
+            for index, item in enumerate(output)
+        ]
+        + [{"type": "response.completed", "sequence_number": 5, "response": completed}]
+    )
+    stream = _EventStream(events)
+    wire["stream"] = stream
+    deltas = []
+    caller = get_ident()
+
+    def on_delta(text):
+        assert get_ident() == caller
+        assert stream.read == len(deltas) + 1
+        assert not stream.closed
+        deltas.append(text)
+
+    usage = []
+    client = adapter.ChatGPTResponsesAgentClient(
+        "gpt-6.1-sol", usage_callback=lambda *args: usage.append(args)
+    )
+    streamed = client.invoke([{"role": "user", "content": "hello"}], on_text_delta=on_delta)
+    wire["stream"] = _EventStream(events)
+    buffered = client.invoke([{"role": "user", "content": "hello"}])
+    assert deltas == ["hel", "lo"] and stream.closed
+    assert streamed == buffered
+    assert streamed.content == "hello"
+    assert streamed.raw_content["_openai_response_output"] == output
+    assert streamed.tool_calls[0].input == {"service": "api"}
+    assert usage == [("gpt-6.1-sol", 11, 7)] * 2
 
 
 def test_real_litellm_http_preserves_tool_calls_reasoning_and_usage(wire, recwarn):
