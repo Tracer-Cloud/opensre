@@ -364,6 +364,23 @@ def test_failed_revocation_still_clears_selected_tokens(wire):
     assert "access_token" not in _store()["profiles"][_store()["active"]]
 
 
+def test_revocation_cleanup_failure_is_reported(wire, monkeypatch):
+    _login()
+    original_exit = httpx.Client.__exit__
+
+    def exit_with_error(client: httpx.Client, *args: Any) -> None:
+        original_exit(client, *args)
+        raise httpx.HTTPError("Client cleanup failed")
+
+    monkeypatch.setattr(httpx.Client, "__exit__", exit_with_error)
+
+    assert "Remote revocation was not confirmed" in grok.logout()
+    store = _store()
+    profile = store["profiles"][store["active"]]
+    assert not {"access_token", "refresh_token", "expires_at"}.intersection(profile)
+    assert profile["client_id"] == "approved-test-client"
+
+
 def test_streamed_tool_arguments_and_tool_result_replay(wire):
     _login()
     output = [

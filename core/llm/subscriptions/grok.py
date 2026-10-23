@@ -285,7 +285,7 @@ def logout() -> str:
                     )
                     confirmed = response.status_code == HTTPStatus.OK
             except (httpx.HTTPError, RuntimeError, ValueError, KeyError):
-                pass
+                confirmed = False
         _clear(profile)
         write_store("grok", store)
         _metadata(store)
