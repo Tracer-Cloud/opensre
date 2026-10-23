@@ -193,6 +193,25 @@ def test_an_unreachable_app_never_offers_sign_in(monkeypatch: Any) -> None:
     assert analytics.events == []
 
 
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt, SystemExit])
+def test_threaded_validation_propagates_errors(
+    monkeypatch: pytest.MonkeyPatch, error_type: type[BaseException]
+) -> None:
+    error = error_type("validation stopped")
+
+    def _validate(_login: StoredLogin) -> AccountStatus:
+        raise error
+
+    monkeypatch.setattr(account_session, "validate_stored_login", _validate)
+    login = StoredLogin(_record(), "token", "https://app.opensre.com")
+    answer = account_gate._validate_on_thread(login)
+
+    with pytest.raises(error_type) as raised:
+        answer.result(timeout=5)
+
+    assert raised.value is error
+
+
 @pytest.mark.parametrize("state", [AccountSessionState.INVALID, AccountSessionState.UNAVAILABLE])
 def test_a_login_rejected_under_the_launch_spin_still_stops_the_launch(
     monkeypatch: Any, state: AccountSessionState

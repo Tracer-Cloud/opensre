@@ -69,7 +69,9 @@ def _validate_on_thread(login: StoredLogin) -> Future[AccountStatus]:
     def _validate() -> None:
         try:
             answer.set_result(validate_stored_login(login))
-        except BaseException as exc:
+        except Exception as exc:
+            answer.set_exception(exc)
+        except (KeyboardInterrupt, SystemExit) as exc:
             answer.set_exception(exc)
 
     threading.Thread(target=_validate, name=_CHECK_THREAD_NAME, daemon=True).start()
