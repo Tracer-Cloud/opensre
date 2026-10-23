@@ -43,7 +43,8 @@ class GrokResponsesAgentClient(ResponsesAgentClient):
             "store": False,
             "stream": True,
             "num_retries": 0,
-            "timeout": 120,
+            "timeout": 900,
+            "include": ["reasoning.encrypted_content"],
         }
         if system:
             kwargs["instructions"] = system

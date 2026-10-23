@@ -166,7 +166,9 @@ def wire(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
                         "error": {"message": "subscription unavailable", "type": "quota_exceeded"}
                     },
                 )
-            assert body["store"] is False and "include" not in body
+            assert body["store"] is False
+            assert body["include"] == ["reasoning.encrypted_content"]
+            assert request.extensions["timeout"]["read"] >= 900
             events = state.get(
                 "events",
                 [

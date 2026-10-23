@@ -293,7 +293,9 @@ the client ID that issued the session. Logout clears only the selected account's
 tokens and attempts remote revocation; it reports if remote revocation is unconfirmed.
 
 Requests use LiteLLM automatically, require a completed Responses event, and preserve
-live text, tool/results, reasoning replay, cancellation cleanup, and token usage.
+live text, tool/results, encrypted reasoning replay, cancellation cleanup, and token usage.
+Grok requests allow a 900-second timeout for long reasoning generations, following
+[xAI’s guidance](https://docs.x.ai/developers/model-capabilities/text/best-practices).
 An interrupted stream is an error. Quota/entitlement/auth failures never switch to
 `XAI_API_KEY`, another account, or usage billing.
 
