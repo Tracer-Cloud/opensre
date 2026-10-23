@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterator, Sequence
+from contextlib import closing
 from typing import Any, cast
 
 from openai import OpenAIError
@@ -37,6 +38,7 @@ from core.llm.types import (
     CancelProbe,
     LLMRequestCancelled,
     LLMResponse,
+    LLMStreamInterrupted,
     SchemaDescribedTool,
     TextDeltaCallback,
 )
@@ -101,7 +103,7 @@ class ChatGPTResponsesAgentClient:
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
         should_stop: CancelProbe | None = None,
-    ) -> Iterator[Any]:
+    ) -> Generator[Any]:
         _raise_if_stopped(should_stop)
         from litellm import responses
 
@@ -179,20 +181,35 @@ class ChatGPTResponsesAgentClient:
         # Live text is separate from the completed payload used for reasoning/tool replay.
         response: Any = None
         output_items: dict[int, Any] = {}
-        for event in self._events(messages, system=system, tools=tools, should_stop=should_stop):
-            kind = get_attr_or_item(event, "type")
-            if kind == "response.output_text.delta" and on_text_delta is not None:
-                delta = str(get_attr_or_item(event, "delta") or "")
-                if delta:
-                    on_text_delta(delta)
-            elif kind == "response.output_item.done":
-                output_items[int(get_attr_or_item(event, "output_index"))] = get_attr_or_item(
-                    event, "item"
-                )
-            elif kind == "response.completed":
-                response = get_attr_or_item(event, "response")
-        if response is None:
-            raise RuntimeError("ChatGPT did not return a completed response.")
+        delivered: list[str] = []
+        try:
+            with closing(
+                self._events(messages, system=system, tools=tools, should_stop=should_stop)
+            ) as events:
+                for event in events:
+                    kind = get_attr_or_item(event, "type")
+                    if kind == "response.output_text.delta" and on_text_delta is not None:
+                        delta = str(get_attr_or_item(event, "delta") or "")
+                        if delta:
+                            delivered.append(delta)
+                            on_text_delta(delta)
+                    elif kind == "response.output_item.done":
+                        output_items[int(get_attr_or_item(event, "output_index"))] = (
+                            get_attr_or_item(event, "item")
+                        )
+                    elif kind == "response.completed":
+                        response = get_attr_or_item(event, "response")
+            if response is None:
+                raise RuntimeError("ChatGPT did not return a completed response.")
+        except LLMRequestCancelled:
+            raise
+        except Exception as exc:
+            if not delivered:
+                raise
+            raise LLMStreamInterrupted(
+                f"ChatGPT response stream failed after output began: {exc}",
+                partial_text="".join(delivered),
+            ) from exc
         # Plan streams can omit output from the terminal event; done items are canonical.
         if not get_attr_or_item(response, "output") and output_items:
             output = [output_items[index] for index in sorted(output_items)]

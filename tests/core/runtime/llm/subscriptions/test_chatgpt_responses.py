@@ -14,7 +14,7 @@ import pytest
 
 from core.llm.subscriptions.types import SubscriptionAuth, SubscriptionLoginRequired
 from core.llm.transports.litellm import responses as adapter
-from core.llm.types import LLMRequestCancelled, ToolCall
+from core.llm.types import LLMRequestCancelled, LLMStreamInterrupted, ToolCall
 from core.messages import MessageMapper
 
 
@@ -324,6 +324,54 @@ def test_partial_text_is_never_success_without_completed_event(wire, terminal):
     assert next(stream) == "partial"
     with pytest.raises(RuntimeError):
         list(stream)
+
+
+@pytest.mark.parametrize("deliver_text", [False, True])
+@pytest.mark.parametrize(
+    "terminal", ["response.failed", "response.incomplete", "eof", "disconnect"]
+)
+def test_agent_stream_failure_retains_only_delivered_text(wire, terminal, deliver_text):
+    events = [
+        {
+            "type": "response.output_text.delta",
+            "delta": text,
+            "sequence_number": index,
+            "item_id": "msg_1",
+            "output_index": 0,
+            "content_index": 0,
+        }
+        for index, text in enumerate(["part", "ial"])
+    ]
+    if terminal.startswith("response."):
+        failed = _response()
+        failed["status"] = terminal.removeprefix("response.")
+        failed["error"] = {"code": "server_error", "message": "failed"}
+        events.append({"type": terminal, "sequence_number": 2, "response": failed})
+
+    class FailingStream(_EventStream):
+        def __iter__(self) -> Iterator[bytes]:
+            yield from super().__iter__()
+            if terminal == "disconnect":
+                raise httpx.ReadError("connection reset")
+
+    stream = FailingStream(events)
+    wire["stream"] = stream
+    deltas = []
+    usage = []
+    client = adapter.ChatGPTResponsesAgentClient(
+        "gpt-6.1-sol", usage_callback=lambda *args: usage.append(args)
+    )
+    expected = LLMStreamInterrupted if deliver_text else (RuntimeError, httpx.ReadError)
+    with pytest.raises(expected) as error:
+        client.invoke(
+            [{"role": "user", "content": "hello"}],
+            on_text_delta=deltas.append if deliver_text else None,
+        )
+    if deliver_text:
+        assert error.value.partial_text == "partial"
+    assert deltas == (["part", "ial"] if deliver_text else [])
+    assert stream.closed and len(wire["requests"]) == 1
+    assert usage == []
 
 
 def test_missing_subscription_never_falls_back_to_an_api_key(wire, monkeypatch):
