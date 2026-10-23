@@ -163,7 +163,7 @@ def logout_provider(raw_name: str) -> str:
     if profile.kind == "subscription":
         from surfaces.shared.llm_setup.subscription_service import logout_subscription
 
-        return logout_subscription()
+        return logout_subscription(provider.value)
     delete_provider_auth_record(provider.value)
     try:
         delete_provider_auth(provider.value)

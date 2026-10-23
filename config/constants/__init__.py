@@ -642,6 +642,24 @@ if TYPE_CHECKING:
     from config.constants.grafana import (
         GRAFANA_VERIFY_SSL_ENV as GRAFANA_VERIFY_SSL_ENV,
     )
+    from config.constants.grok import (
+        GROK_DEVICE_GRANT as GROK_DEVICE_GRANT,
+    )
+    from config.constants.grok import (
+        GROK_DISCOVERY_URL as GROK_DISCOVERY_URL,
+    )
+    from config.constants.grok import (
+        GROK_ISSUER as GROK_ISSUER,
+    )
+    from config.constants.grok import (
+        GROK_OAUTH_CLIENT_ID_ENV as GROK_OAUTH_CLIENT_ID_ENV,
+    )
+    from config.constants.grok import (
+        GROK_RESOURCE as GROK_RESOURCE,
+    )
+    from config.constants.grok import (
+        GROK_SCOPES as GROK_SCOPES,
+    )
     from config.constants.groundcover import (
         GROUNDCOVER_API_KEY_ENV as GROUNDCOVER_API_KEY_ENV,
     )

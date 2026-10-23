@@ -151,8 +151,11 @@ def login(
     select_model: Callable[[list[tuple[str, str]]], str],
     profile_id: str | None = None,
     new_account: bool = False,
+    credential: str | None = None,
 ) -> str:
     """Validate a browser login before activating it; retain registrations across logout."""
+    if credential is not None:
+        raise SubscriptionLoginRequired("ChatGPT subscriptions use OAuth, not an API key.")
     with subscription_lock("chatgpt"):
         store = read_store("chatgpt")
         store.setdefault("host_id", f"urn:uuid:{uuid.uuid4()}")
@@ -298,11 +301,16 @@ def resolve() -> SubscriptionAuth:
         return SubscriptionAuth(profile["access_token"], CHATGPT_RESOURCE)
 
 
-def verify() -> list[tuple[str, str]]:
+def models() -> list[tuple[str, str]]:
     """Check token renewal and current account model access."""
     auth = resolve()
     with httpx.Client(timeout=30, follow_redirects=False) as client:
         return available_models(client, auth.token)
+
+
+def verify() -> list[tuple[str, str]]:
+    """Check token renewal and current account model access."""
+    return models()
 
 
 def logout() -> str:

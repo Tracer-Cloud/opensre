@@ -231,7 +231,7 @@ def status(provider: str) -> CredentialStatus:
             CredentialSource.NONE,
             False,
             False,
-            record.get("detail") or "Run `opensre auth login chatgpt` to sign in.",
+            record.get("detail") or f"Run `opensre auth login {spec.value}` to sign in.",
         )
 
     if spec.credential_kind == "api_key":

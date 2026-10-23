@@ -27,7 +27,7 @@ def test_login_uses_readable_auth_selectors(monkeypatch) -> None:
     assert [label for _, label in seen[0]["choices"]] == ["API key", "Subscriptions"]
     assert seen[0]["initial_value"] == "subscriptions"
     assert seen[1]["initial_value"] == "chatgpt"
-    assert [name for name, _ in seen[1]["choices"]] == ["chatgpt"]
+    assert [name for name, _ in seen[1]["choices"]] == ["chatgpt", "grok"]
 
 
 def test_subscription_model_selector_can_cancel(monkeypatch) -> None:
@@ -40,7 +40,9 @@ def test_subscription_model_selector_can_cancel(monkeypatch) -> None:
         subscription_auth, "repl_choose_subcommand", lambda **_kwargs: None, raising=False
     )
     with pytest.raises(click.Abort):
-        subscription_auth.choose_subscription_model([("gpt-test", "Test model")])
+        subscription_auth.choose_subscription_model(
+            [("gpt-test", "Test model")], provider="chatgpt"
+        )
 
 
 def _patch_auth_env(monkeypatch, tmp_path: Path) -> Path:
@@ -136,7 +138,7 @@ def test_subscription_login_rejects_api_keys(monkeypatch, tmp_path: Path) -> Non
     )
 
     assert result.exit_code != 0
-    assert "browser authorization" in result.output
+    assert "oauth authorization" in result.output
     assert not (tmp_path / "subscriptions").exists()
 
 

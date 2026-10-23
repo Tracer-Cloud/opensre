@@ -1,8 +1,9 @@
-"""ChatGPT plan inference using LiteLLM's public Responses interface."""
+"""Complete subscription Responses streams with tool replay, cancellation, and usage."""
 
 from __future__ import annotations
 
 import warnings
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import closing
 from typing import Any, cast
@@ -10,7 +11,6 @@ from typing import Any, cast
 from openai import OpenAIError
 from pydantic import BaseModel
 
-from core.context_budget import strip_internal_message_markers
 from core.llm.shared.openai_chat_completions import (
     build_assistant_message,
     build_tool_result_message,
@@ -21,8 +21,6 @@ from core.llm.shared.openai_chat_completions import (
 from core.llm.shared.openai_responses import (
     response_raw_message,
     response_tool_calls,
-    responses_input,
-    responses_tool_specs,
 )
 from core.llm.shared.structured_output import StructuredOutputClient
 from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
@@ -32,7 +30,6 @@ from core.llm.shared.usage import (
     extract_cache_tokens,
     extract_reasoning_tokens,
 )
-from core.llm.subscriptions.chatgpt import resolve
 from core.llm.types import (
     AgentLLMResponse,
     CancelProbe,
@@ -54,32 +51,16 @@ def _text(response: Any) -> str:
     )
 
 
-def _stream_error(event: Any) -> RuntimeError:
-    response = get_attr_or_item(event, "response")
-    error = get_attr_or_item(response, "error") or get_attr_or_item(event, "error") or event
-    code = get_attr_or_item(error, "code")
-    if code in {
-        "subscription_sharing_usage_limit_exceeded",
-        "subscription_sharing_usage_unavailable",
-    }:
-        return RuntimeError(
-            "ChatGPT plan usage is unavailable or its limit was reached. Review ChatGPT Settings → Usage, then retry."
-        )
-    return RuntimeError(
-        "ChatGPT inference failed or was incomplete. Retry the request; verify access with `opensre auth verify chatgpt`."
-    )
-
-
 def _raise_if_stopped(should_stop: CancelProbe | None) -> None:
     if should_stop is not None and should_stop():
-        raise LLMRequestCancelled("ChatGPT request cancelled by the caller")
+        raise LLMRequestCancelled("Subscription request cancelled by the caller")
 
 
-class ChatGPTResponsesAgentClient:
+class ResponsesAgentClient(ABC):
     """Stateless tool turns with request-scoped OAuth and no API-key fallback."""
 
-    provider_name = "ChatGPT subscription"
-    auth_error_hint = "Run `opensre auth login chatgpt`."
+    provider_name = "Subscription"
+    auth_error_hint = "Run subscription login again."
     build_tool_result_messages = staticmethod(build_tool_result_messages)
     build_tool_result_message = staticmethod(build_tool_result_message)
     build_assistant_message = staticmethod(build_assistant_message)
@@ -95,6 +76,21 @@ class ChatGPTResponsesAgentClient:
 
     def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         return build_openai_tool_specs(tools)
+
+    @abstractmethod
+    def _request(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        system: str | None,
+        tools: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        """Resolve credentials and serialize a provider-specific Responses request."""
+
+    def _stream_error(self, _event: Any) -> RuntimeError:
+        return RuntimeError(
+            f"{self.provider_name} inference failed or was incomplete. {self.auth_error_hint}"
+        )
 
     def _events(
         self,
@@ -115,29 +111,7 @@ class ChatGPTResponsesAgentClient:
             category=UserWarning,
             module=r"pydantic\.main",
         )
-        auth = resolve()
-        kwargs: dict[str, Any] = {
-            "model": f"openai/{self.model_id}",
-            "api_key": auth.token,
-            "api_base": auth.base_url,
-            "input": responses_input(strip_internal_message_markers(messages)),
-            "store": False,
-            "stream": True,
-            "num_retries": 0,
-            "timeout": 120,
-            "include": ["reasoning.encrypted_content"],
-        }
-        if system:
-            kwargs["instructions"] = system
-        if tools:
-            kwargs["input"].insert(
-                0,
-                {
-                    "type": "additional_tools",
-                    "role": "developer",
-                    "tools": responses_tool_specs(tools),
-                },
-            )
+        kwargs = self._request(messages, system=system, tools=tools)
         stream = None
         completed = False
         try:
@@ -148,7 +122,7 @@ class ChatGPTResponsesAgentClient:
                 _raise_if_stopped(should_stop)
                 kind = get_attr_or_item(event, "type")
                 if kind in {"response.failed", "response.incomplete", "error"}:
-                    raise _stream_error(event)
+                    raise self._stream_error(event)
                 if kind == "response.completed":
                     completed = True
                 yield event
@@ -156,12 +130,12 @@ class ChatGPTResponsesAgentClient:
                 _raise_if_stopped(should_stop)
             if not completed:
                 raise RuntimeError(
-                    "ChatGPT stream ended before response.completed. Retry the request."
+                    f"{self.provider_name} stream ended before response.completed. Retry the request."
                 )
         except OpenAIError as exc:
             original = getattr(exc, "original_exception", None) or exc
             body = getattr(original, "body", None) or {}
-            raise _stream_error({"error": body}) from None
+            raise self._stream_error({"error": body}) from None
         finally:
             # LiteLLM's sync Responses iterator has no close(); it owns an HTTP response.
             response = getattr(stream, "response", stream)
@@ -200,14 +174,14 @@ class ChatGPTResponsesAgentClient:
                     elif kind == "response.completed":
                         response = get_attr_or_item(event, "response")
             if response is None:
-                raise RuntimeError("ChatGPT did not return a completed response.")
+                raise RuntimeError(f"{self.provider_name} did not return a completed response.")
         except LLMRequestCancelled:
             raise
         except Exception as exc:
             if not delivered:
                 raise
             raise LLMStreamInterrupted(
-                f"ChatGPT response stream failed after output began: {exc}",
+                f"{self.provider_name} response stream failed after output began: {exc}",
                 partial_text="".join(delivered),
             ) from exc
         # Plan streams can omit output from the terminal event; done items are canonical.
@@ -237,20 +211,13 @@ class ChatGPTResponsesAgentClient:
         )
 
 
-class ChatGPTResponsesLLMClient:
+class ResponsesLLMClient:
     """Reasoning and structured output over the same subscription connection."""
 
-    def __init__(
-        self,
-        model: str,
-        *,
-        usage_callback: Callable[..., object] | None = None,
-    ) -> None:
-        self._agent = ChatGPTResponsesAgentClient(
-            model, usage_callback=usage_callback or emit_usage
-        )
+    def __init__(self, agent: ResponsesAgentClient) -> None:
+        self._agent = agent
 
-    def with_config(self, **_kwargs: Any) -> ChatGPTResponsesLLMClient:
+    def with_config(self, **_kwargs: Any) -> ResponsesLLMClient:
         return self
 
     def with_structured_output(self, model: type[BaseModel]) -> StructuredOutputClient:
@@ -274,13 +241,14 @@ class ChatGPTResponsesLLMClient:
         )
 
     def invoke_stream(self, prompt_or_messages: Any) -> Iterator[str]:
-        for event in self._agent._events(self._messages(prompt_or_messages)):
-            kind = get_attr_or_item(event, "type")
-            if kind == "response.output_text.delta":
-                yield str(get_attr_or_item(event, "delta") or "")
-            elif kind == "response.completed":
-                usage = get_attr_or_item(get_attr_or_item(event, "response"), "usage")
-                inp, out = coerce_usage_tokens(
-                    usage, input_key="input_tokens", output_key="output_tokens"
-                )
-                self._agent._usage_callback(self._agent.model_id, inp, out)
+        with closing(self._agent._events(self._messages(prompt_or_messages))) as events:
+            for event in events:
+                kind = get_attr_or_item(event, "type")
+                if kind == "response.output_text.delta":
+                    yield str(get_attr_or_item(event, "delta") or "")
+                elif kind == "response.completed":
+                    usage = get_attr_or_item(get_attr_or_item(event, "response"), "usage")
+                    inp, out = coerce_usage_tokens(
+                        usage, input_key="input_tokens", output_key="output_tokens"
+                    )
+                    self._agent._usage_callback(self._agent.model_id, inp, out)

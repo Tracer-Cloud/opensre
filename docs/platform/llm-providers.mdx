@@ -50,6 +50,7 @@ Each provider has two model roles:
 | Provider | Setup | Model selection |
 | --- | --- | --- |
 | ChatGPT | `opensre auth login chatgpt` | Models available to the signed-in account; `CHATGPT_MODEL` records the selected model |
+| Grok subscription (local testing) | `opensre auth login grok` | Requires an xAI-approved client ID; `GROK_MODEL` records the selected account model |
 
   </Tab>
   <Tab title="Cloud & local">
@@ -173,7 +174,7 @@ issue if you need another first-class provider.
 ## Login and secret storage
 
 Use `opensre auth login` to choose **API keys** (provider API billing) or
-**Subscriptions** (ChatGPT plan usage). The ChatGPT path opens your browser;
+**Subscriptions** (provider plan usage). OAuth subscriptions use browser authorization;
 API-key providers use a hidden paste prompt.
 
 | Command | What it does |
@@ -243,9 +244,62 @@ the displayed URL yourself. The browser must reach the terminal's loopback
 callback; for SSH, forward local port 1455 to the remote port 1455 before login.
 If that port is busy, login displays the alternate callback port to forward.
 
-This path currently supports ChatGPT for local open-source use. Other provider
-subscriptions need their own supported login adapters. Provider API keys
-remain available through the separate API-key path.
+Provider API keys remain available through the separate API-key path.
+
+## Grok subscription (local testing)
+
+The Grok adapter implements device OAuth and xAI Responses streaming through LiteLLM.
+**OpenSRE's xAI onboarding and live subscription validation are pending.** An eligible
+subscription and an xAI-approved OAuth client registration for OpenSRE are required;
+this implementation does not include a pre-approved client ID. xAI's announcements for
+[OpenCode](https://x.ai/news/grok-opencode) and
+[Kilo Code](https://x.ai/news/grok-kilocode) document those integrations' subscription
+access, not OpenSRE registration or current plan eligibility.
+
+After obtaining an approved registration, set the required non-secret client ID:
+
+```bash
+export OPENSRE_GROK_OAUTH_CLIENT_ID='<approved OpenSRE client ID>'
+opensre auth login grok
+```
+
+Login prints a verification URL containing your short user code and optionally opens
+it in a browser. For SSH/headless hosts, use `--no-open-browser` and open the URL on
+another device; no port forwarding is needed. Login polls until approval, denial, or
+expiry. Ctrl+C cancels without replacing your saved connection. Choose one of the
+account-visible models, or pass optional `--model <model-id>`; `GROK_MODEL` defaults
+to `grok-4.3` when no selection has been saved. Models must be recognized by the
+installed LiteLLM version for native streaming; an unknown model fails explicitly
+instead of silently substituting a buffered request.
+
+```bash
+opensre auth status grok
+opensre auth verify grok
+opensre auth login grok --new-account
+opensre auth login grok --profile <saved-account-id>
+opensre auth logout grok
+```
+
+`status` lists saved account IDs without reading tokens. `verify` checks renewal and
+model discovery; inference entitlement and quota are still enforced by xAI.
+`--no-set-provider` saves the account without changing the active model connection.
+Login otherwise selects `LLM_PROVIDER=grok` and `OPENSRE_LLM_CONNECTION=local`, keeping
+OpenSRE account identity separate from the chosen billing route.
+
+Tokens are stored under `~/.opensre/subscriptions/grok/`, or under
+`$OPENSRE_SUBSCRIPTION_AUTH_DIR/grok/` if that optional override is set. Storage must
+be enabled (`OPENSRE_DISABLE_KEYRING` must be unset). Refresh and reconnect retain
+the client ID that issued the session. Logout clears only the selected account's
+tokens and attempts remote revocation; it reports if remote revocation is unconfirmed.
+
+Requests use LiteLLM automatically, require a completed Responses event, and preserve
+live text, tool/results, reasoning replay, cancellation cleanup, and token usage.
+An interrupted stream is an error. Quota/entitlement/auth failures never switch to
+`XAI_API_KEY`, another account, or usage billing.
+
+Before relying on this connection, locally validate login, actual inference, tool/result
+replay, reconnect, live renewal, quota handling, subscription billing attribution, and
+logout with an eligible account. The automated tests use synthetic credentials.
 
 ## API providers
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
 from surfaces.shared.llm_setup.catalog import (
     PROVIDER_BY_VALUE,
     SUPPORTED_PROVIDERS,
@@ -75,7 +76,7 @@ def iter_auth_profiles(kind: AuthKind | None = None) -> tuple[ProviderAuthProfil
                 provider_value=provider.value,
                 label=provider.label,
                 kind="subscription",
-                auth_hint="Sign in using your browser; provider plan limits apply.",
+                auth_hint=SUBSCRIPTION_BY_VALUE[provider.value].auth_hint,
             )
             for provider in SUPPORTED_PROVIDERS
             if provider.credential_kind == WizardCredentialKind.SUBSCRIPTION

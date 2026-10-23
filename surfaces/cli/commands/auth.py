@@ -171,9 +171,12 @@ def auth_login(
         raise click.UsageError("--profile and --new-account apply to subscription login.")
     try:
         if profile.kind == "subscription":
-            if api_key is not None:
+            from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
+
+            spec = SUBSCRIPTION_BY_VALUE[profile.provider_value]
+            if api_key is not None and spec.auth_method != "api_key":
                 raise click.UsageError(
-                    "Subscription login uses browser authorization. For an API key, use `auth login openai`."
+                    f"{profile.label} uses {spec.auth_method} authorization, not an API key."
                 )
             from surfaces.cli.commands.subscription_auth import (
                 choose_subscription_model,
@@ -185,8 +188,15 @@ def auth_login(
                 profile=profile,
                 model=model,
                 set_provider=set_provider,
-                present=present_authorization(open_browser=open_browser),
-                choose_model=choose_subscription_model,
+                present=present_authorization(
+                    open_browser=open_browser, provider=profile.provider_value
+                ),
+                choose_model=lambda models: choose_subscription_model(
+                    models, provider=profile.provider_value
+                ),
+                credential=(api_key or click.prompt(f"{profile.label} key", hide_input=True))
+                if spec.auth_method == "api_key"
+                else None,
                 profile_id=profile_id,
                 new_account=new_account,
             )

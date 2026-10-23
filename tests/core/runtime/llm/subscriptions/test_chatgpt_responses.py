@@ -12,8 +12,8 @@ from typing import Any
 import httpx
 import pytest
 
+from core.llm.subscriptions import chatgpt_clients as adapter
 from core.llm.subscriptions.types import SubscriptionAuth, SubscriptionLoginRequired
-from core.llm.transports.litellm import responses as adapter
 from core.llm.types import LLMRequestCancelled, LLMStreamInterrupted, ToolCall
 from core.messages import MessageMapper
 
