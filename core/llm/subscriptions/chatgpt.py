@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import math
 import secrets
 import time
@@ -28,6 +29,8 @@ from config.llm_auth.subscription_storage import read_store, subscription_lock, 
 from core.llm.subscriptions.callback import OAuthCallback
 from core.llm.subscriptions.identity import discovery, issuer_endpoint, validate_identity
 from core.llm.subscriptions.types import SubscriptionAuth, SubscriptionLoginRequired
+
+logger = logging.getLogger(__name__)
 
 
 class _UnusableRefreshToken(SubscriptionLoginRequired):
@@ -336,8 +339,12 @@ def logout() -> str:
                         confirmed = response.status_code == HTTPStatus.OK
                         if response.status_code < HTTPStatus.INTERNAL_SERVER_ERROR:
                             break
-                except (httpx.HTTPError, KeyError, ValueError, SubscriptionLoginRequired):
-                    pass
+                except (httpx.HTTPError, KeyError, ValueError, SubscriptionLoginRequired) as exc:
+                    logger.warning(
+                        "ChatGPT token revocation attempt %s failed (%s).",
+                        attempt + 1,
+                        type(exc).__name__,
+                    )
                 if attempt == 0:
                     time.sleep(0.5)
         _clear_tokens(profile)

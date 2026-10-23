@@ -151,6 +151,8 @@ def provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
             form = parse_qs(request.content.decode())
             assert form["client_id"] == [state["issued"]]
             state["revoked"] = form["token"][0]
+            if "revoke_error" in state:
+                raise state["revoke_error"]
             return httpx.Response(state.get("revoke_status", HTTPStatus.OK))
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
@@ -326,6 +328,32 @@ def test_failed_revocation_clears_local_tokens_and_reports_remote_failure(provid
     assert "Remote revocation was not confirmed" in chatgpt.logout()
     with pytest.raises(SubscriptionLoginRequired, match="sign in"):
         chatgpt.resolve()
+    assert not status("chatgpt").configured
+
+
+@pytest.mark.parametrize(
+    "error_type", [httpx.ConnectError, KeyError, ValueError, SubscriptionLoginRequired]
+)
+def test_revocation_exceptions_are_logged_without_tokens_and_still_clear_session(
+    provider, monkeypatch, caplog, error_type
+):
+    _login()
+    provider["revoke_error"] = error_type("refresh-original")
+    monkeypatch.setattr(chatgpt.time, "sleep", lambda _delay: None)
+
+    assert "Remote revocation was not confirmed" in chatgpt.logout()
+
+    warnings = [record for record in caplog.records if record.name == chatgpt.__name__]
+    assert len(warnings) == 2
+    assert all(
+        record.levelname == "WARNING" and error_type.__name__ in record.message
+        for record in warnings
+    )
+    assert "refresh-original" not in caplog.text
+    with subscription_lock("chatgpt"):
+        profile = read_store("chatgpt")["profiles"]["oaiapp_one"]
+    assert not {"access_token", "refresh_token", "id_token", "expires_at"}.intersection(profile)
+    assert profile["client_id"] == "oaiapp_one"
     assert not status("chatgpt").configured
 
 
