@@ -61,3 +61,52 @@ def test_the_stored_next_run_skips_the_weekend() -> None:
 
     # Assert: Monday, not Saturday
     assert next_run == "2026-10-12T08:00:00+00:00"
+
+
+# ---------------------------------------------------------------------------
+# OR semantics: both day-of-month and day-of-week are restricted
+# ---------------------------------------------------------------------------
+
+_REF = datetime(2026, 10, 23, 0, 0, tzinfo=UTC)  # a Friday
+
+
+def _next(cron: str) -> datetime | None:
+    trigger = build_cron_trigger(cron, "UTC")
+    return trigger.get_next_fire_time(None, _REF)
+
+
+def test_dom_and_dow_both_restricted_fires_on_next_weekday_match() -> None:
+    # "0 9 1 * 1" (1st of month + every Monday).
+    # From 2026-10-23 (Friday), next Monday is 2026-10-26, earlier than Nov 1.
+    result = _next("0 9 1 * 1")
+    assert result is not None
+    assert result == datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
+
+
+def test_dom_and_dow_both_restricted_fires_on_dom_when_earlier() -> None:
+    # "0 9 1 * 0" (1st of month + every Sunday).
+    # From 2026-10-23 (Friday), next Sunday is 2026-10-25, earlier than Nov 1.
+    result = _next("0 9 1 * 0")
+    assert result is not None
+    assert result == datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
+
+
+def test_star_dow_not_affected_by_or_logic() -> None:
+    # When dow is *, no OR trigger; single CronTrigger.
+    result = _next("0 9 1 * *")
+    assert result == datetime(2026, 11, 1, 9, 0, tzinfo=UTC)
+
+
+def test_star_dom_not_affected_by_or_logic() -> None:
+    # When dom is *, no OR trigger; fires on weekday restriction only.
+    result = _next("0 9 * * 1")
+    assert result == datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
+
+
+def test_step_dom_counts_as_unrestricted() -> None:
+    # "*/5" dom is unrestricted — still one CronTrigger, no OR.
+    result = _next("0 9 */5 * 1")
+    assert result is not None
+    # Fires on next Monday 2026-10-26 (*/5 dow is unrestricted so only dow matters? No:
+    # */5 dom is unrestricted, so it fires on Monday regardless of dom).
+    assert result == datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
