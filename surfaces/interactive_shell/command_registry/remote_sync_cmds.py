@@ -119,12 +119,17 @@ def _run_sync(console: Console, args: list[str]) -> bool:
     return True
 
 
+_SETUP_VALUE_FLAGS: tuple[str, ...] = ("provider", "bucket", "prefix", "region", "profile")
+
+
 def _flag_value(args: list[str], name: str) -> str | None:
-    """Return ``--name value`` from ``args``, or None."""
+    """Return ``--name value`` or ``--name=value`` from ``args``, or None."""
     token = f"--{name}"
     for index, arg in enumerate(args):
         if arg == token and index + 1 < len(args):
-            return args[index + 1]
+            candidate = args[index + 1]
+            if not candidate.startswith("--") and candidate.strip():
+                return candidate
         if arg.startswith(f"{token}="):
             return arg.split("=", 1)[1]
     return None
@@ -132,6 +137,15 @@ def _flag_value(args: list[str], name: str) -> str | None:
 
 def _run_setup(console: Console, args: list[str]) -> bool:
     """Write stored settings from flags (gateway-safe: no interactive prompts)."""
+    for index, arg in enumerate(args):
+        for name in _SETUP_VALUE_FLAGS:
+            if arg == f"--{name}" and (
+                index + 1 >= len(args)
+                or args[index + 1].startswith("--")
+                or not args[index + 1].strip()
+            ):
+                console.print(f"[{ERROR}]--{name} requires a value[/]")
+                return True
     provider = _flag_value(args, "provider") or DEFAULT_REMOTE_SYNC_PROVIDER
     bucket = _flag_value(args, "bucket")
     if not bucket or not bucket.strip():

@@ -205,6 +205,61 @@ def test_setup_disabled_says_off_without_a_sync_suggestion(
     assert "remote-sync sync" not in out
 
 
+@pytest.mark.parametrize(
+    ("command", "expected_error"),
+    [
+        (
+            "/remote-sync setup --provider vercel --bucket --prefix team/",
+            "--bucket requires a value",
+        ),
+        (
+            "/remote-sync setup --provider aws --bucket real-bucket --region --profile prod",
+            "--region requires a value",
+        ),
+        (
+            "/remote-sync setup --bucket --disabled",
+            "--bucket requires a value",
+        ),
+        (
+            "/remote-sync setup --bucket real-bucket --region",
+            "--region requires a value",
+        ),
+    ],
+)
+def test_setup_missing_flag_value_rejected_without_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: str, expected_error: str
+) -> None:
+    from config.constants import paths as paths_mod
+
+    monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
+    console, buf = _capture()
+    assert dispatch_slash(command, Session(), console) is True
+    out = buf.getvalue()
+    assert expected_error in out
+    assert not (tmp_path / "config.yml").exists()
+
+
+def test_setup_flag_equals_syntax_with_empty_prefix_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.constants import paths as paths_mod
+
+    monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
+    console, buf = _capture()
+    assert (
+        dispatch_slash(
+            "/remote-sync setup --provider=vercel --bucket=opensre-remote-sync --prefix=",
+            Session(),
+            console,
+        )
+        is True
+    )
+    out = buf.getvalue()
+    assert "settings saved" in out
+    assert "opensre" in out
+    assert (tmp_path / "config.yml").exists()
+
+
 def test_sync_error_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
     def _boom(**_kwargs: object) -> SyncReport:
         raise RemoteSyncConfigError("bad flags")
