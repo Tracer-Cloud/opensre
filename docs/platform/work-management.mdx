@@ -53,6 +53,11 @@ opensre work add "ping owners about demo blockers" \
   --provider slack --chat-id C0123ABCD
 ```
 
+Updating a work item with the same reminder time, timezone, and destinations
+keeps its existing reminder enabled without creating a duplicate. Changing the
+reminder time replaces the previous reminder; you can also move it back to a
+previously scheduled time. Completing the work item disables its reminders.
+
 Recurring check-ins:
 
 ```bash

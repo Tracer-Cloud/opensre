@@ -13,8 +13,13 @@ from core.domain.work_items import (
     WorkItemPriority,
     make_work_item,
 )
-from infrastructure.scheduling.scheduler.storage import list_tasks
-from infrastructure.scheduling.scheduler.types import Provider
+from infrastructure.scheduling.scheduler.storage import (
+    get_runs,
+    list_tasks,
+    patch_task_definitions,
+    try_queue_run,
+)
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskStatus
 from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
 from tools.system.work_items.delivery import (
     delivery_targets,
@@ -22,6 +27,7 @@ from tools.system.work_items.delivery import (
     invalid_delivery_targets,
 )
 from tools.system.work_items.reminders import (
+    disable_existing_item_reminders,
     schedule_item_reminder,
 )
 from tools.system.work_items.tool import (
@@ -171,6 +177,75 @@ def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert len(tasks) == 2
     assert tasks[0].enabled is False
     assert tasks[1].enabled is True
+
+
+@pytest.mark.parametrize("reschedule_to_other_time", [False, True])
+def test_rescheduling_same_reminder_keeps_one_enabled_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reschedule_to_other_time: bool
+) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+
+    def _reload_without_overlapping_reminders() -> None:
+        assert sum(task.enabled for task in list_tasks()) <= 1
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        _reload_without_overlapping_reminders,
+    )
+    item = make_work_item(title="Check clusters", remind_at="2027-08-24T10:00:00Z")
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C999")]
+    original = schedule_item_reminder(item, targets=targets, timezone="UTC")
+    assert original is not None
+    run_database = tmp_path / "scheduler.db"
+    assert try_queue_run(original.id, item.remind_at, db_path=run_database)
+    if reschedule_to_other_time:
+        later = dataclasses.replace(item, remind_at="2027-08-24T14:00:00Z")
+        schedule_item_reminder(later, targets=targets, timezone="UTC")
+
+    renamed = dataclasses.replace(item, title="Check clusters v2")
+    scheduled = schedule_item_reminder(renamed, targets=targets, timezone="UTC")
+
+    assert scheduled is not None
+    assert scheduled.id == original.id
+    assert scheduled.enabled is True
+    assert [task.id for task in list_tasks() if task.enabled] == [original.id]
+    expected_status = TaskStatus.SKIPPED if reschedule_to_other_time else TaskStatus.PENDING
+    assert get_runs(original.id, db_path=run_database)[0].status is expected_status
+
+
+def test_disabling_reminders_preserves_concurrent_scheduler_updates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+    item = make_work_item(title="Check clusters", remind_at="2027-08-24T10:00:00Z")
+    scheduled = schedule_item_reminder(
+        item, targets=[WorkItemChannelTarget(provider="slack", chat_id="C999")], timezone="UTC"
+    )
+    assert scheduled is not None
+    snapshots = list_tasks()
+    progress = {"last_run": "2027-08-24T09:00:00+00:00", "next_run": item.remind_at}
+
+    def _list_tasks_after_progress() -> list[ScheduledTask]:
+        patch_task_definitions((scheduled.id,), lambda _current: progress)
+        return snapshots
+
+    monkeypatch.setattr("tools.system.work_items.reminders.list_tasks", _list_tasks_after_progress)
+
+    assert disable_existing_item_reminders(item.id) == 1
+    stored = list_tasks()[0]
+    assert stored.enabled is False
+    assert stored.last_run == progress["last_run"]
+    assert stored.next_run == progress["next_run"]
 
 
 def test_reminder_scheduling_resolves_naive_datetime_in_requested_timezone(
