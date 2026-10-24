@@ -45,6 +45,7 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
     patch_task_definitions,
     record_task_success,
     remove_task,
+    replace_work_item_reminder,
     update_task,
 )
 
@@ -80,6 +81,7 @@ __all__ = [
     "record_task_success",
     "record_run_report",
     "remove_task",
+    "replace_work_item_reminder",
     "renew_claims",
     "retire_pending_runs",
     "run_database_path",

@@ -12,21 +12,22 @@ from core.domain.work_items import (
     resolve_work_item_datetime,
     work_items_path,
 )
-from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
-from infrastructure.scheduling.scheduler.storage import list_tasks, patch_task_definitions
+from infrastructure.scheduling.scheduler.storage import (
+    list_tasks,
+    patch_task_definitions,
+    replace_work_item_reminder,
+)
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tools.system.work_items.validation import validate_provider
 
 
-def disable_existing_item_reminders(item_id: str, *, keep_task_id: str = "") -> int:
-    """Disable enabled reminders for ``item_id``, except the retained replacement."""
+def disable_existing_item_reminders(item_id: str) -> int:
+    """Disable enabled one-shot reminders for ``item_id``."""
     disabled = 0
     for task in list_tasks():
         if task.kind is not TaskKind.WORK_ITEM_REMINDER:
             continue
         if not task.enabled:
-            continue
-        if task.id == keep_task_id:
             continue
         if task.params.get("work_item_id", "").strip() != item_id:
             continue
@@ -62,7 +63,6 @@ def schedule_item_reminder(
         timezone=schedule_timezone,
         provider=parsed_provider,
         chat_id=primary.chat_id,
-        enabled=False,
         params={
             "work_item_id": item.id,
             "store_path": str(work_items_path()),
@@ -73,17 +73,7 @@ def schedule_item_reminder(
             ),
         },
     )
-    # Keep active reminders and their queued runs. A cancelled reminder needs a
-    # fresh ID because its skipped fire time cannot be claimed again.
-    scheduled = add_scheduled_task(task, replace_disabled=True)
-    # New definitions stay disabled until superseded reminders are stopped.
-    disable_existing_item_reminders(item.id, keep_task_id=scheduled.id)
-    if not scheduled.enabled:
-        updated = patch_task_definitions((scheduled.id,), lambda _current: {"enabled": True})
-        if updated is None:
-            return None
-        scheduled = updated[0]
-    return scheduled
+    return replace_work_item_reminder(task)
 
 
 _disable_existing_item_reminders = disable_existing_item_reminders

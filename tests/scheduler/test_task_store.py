@@ -23,6 +23,7 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
     get_task_store_snapshot,
     list_tasks,
     remove_task,
+    replace_work_item_reminder,
     update_task,
 )
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind, TaskStatus
@@ -290,27 +291,71 @@ class TestAddTaskDeduplicates:
         fields.update(overrides)
         return ScheduledTask(**fields)  # type: ignore[arg-type]
 
-    def test_disabled_definition_replacement_is_opt_in(self, store_path: Path) -> None:
-        original = add_task(self._daily_summary(enabled=False), store_path)
+    def test_reminder_replacement_preserves_history_and_generic_add(self, store_path: Path) -> None:
         fire_time = "2027-08-24T10:00:00Z"
+        original = add_task(
+            ScheduledTask(
+                kind=TaskKind.WORK_ITEM_REMINDER,
+                cron="",
+                provider=Provider.SLACK,
+                enabled=False,
+                params={"work_item_id": "item-1", "run_at": fire_time},
+            ),
+            store_path,
+        )
         run_database = _db_path(store_path)
         assert try_queue_run(original.id, fire_time, db_path=run_database)
         claim = try_claim(original.id, fire_time, db_path=run_database)
         assert claim is not None
         assert complete_run(claim, status=TaskStatus.SKIPPED, db_path=run_database)
-        unchanged = add_task(self._daily_summary(), store_path)
+        candidate = original.model_copy(update={"id": "replacement", "enabled": True})
+        unchanged = add_task(candidate, store_path)
         assert unchanged.id == original.id
         assert unchanged.enabled is False
 
-        replacement = add_task(self._daily_summary(), store_path, replace_disabled=True)
+        replacement = replace_work_item_reminder(candidate, store_path)
 
         assert replacement.id != original.id
         assert [task.id for task in list_tasks(store_path)] == [replacement.id]
         assert get_runs(original.id, db_path=run_database)[0].status is TaskStatus.SKIPPED
         assert try_claim(replacement.id, fire_time, db_path=run_database) is not None
-        assert (
-            add_task(self._daily_summary(), store_path, replace_disabled=True).id == replacement.id
+        assert replace_work_item_reminder(candidate, store_path).id == replacement.id
+
+    def test_reminder_replacement_does_not_disable_other_organizations_or_items(
+        self, store_path: Path
+    ) -> None:
+        first = ScheduledTask(
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="",
+            provider=Provider.SLACK,
+            organization="org-a",
+            params={"work_item_id": "item-1", "run_at": "2027-08-24T10:00:00Z"},
+            last_run="2027-08-23T10:00:00Z",
         )
+        add_task(first, store_path)
+        other_org = first.model_copy(update={"id": "other-org", "organization": "org-b"})
+        other_item = first.model_copy(
+            update={"id": "other-item", "params": {**first.params, "work_item_id": "item-2"}}
+        )
+        add_task(other_org, store_path)
+        add_task(other_item, store_path)
+        replacement = first.model_copy(
+            update={
+                "id": "new-time",
+                "params": {**first.params, "run_at": "2027-08-24T14:00:00Z"},
+            }
+        )
+
+        replace_work_item_reminder(replacement, store_path)
+
+        stored = {task.id: task for task in list_tasks(store_path)}
+        assert stored[first.id].enabled is False
+        assert stored[first.id].last_run == first.last_run
+        assert {task.id for task in stored.values() if task.enabled} == {
+            replacement.id,
+            other_org.id,
+            other_item.id,
+        }
 
     def test_identical_task_is_stored_once(self, store_path: Path) -> None:
         # Arrange

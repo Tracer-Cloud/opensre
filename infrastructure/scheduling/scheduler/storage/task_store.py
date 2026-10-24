@@ -322,20 +322,12 @@ def _owned_by_acting_scope(task: ScheduledTask) -> ScheduledTask:
     return task.model_copy(update=update) if update else task
 
 
-def add_task(
-    task: ScheduledTask,
-    store_path: Path | None = None,
-    *,
-    replace_disabled: bool = False,
-) -> ScheduledTask:
+def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
     """Persist a scheduled task, or update the matching schedule's skill revision.
 
     Confirming the same schedule twice is one schedule. Without this, every
     confirmation appended a row — a real install reached 37 byte-identical
     ``daily_summary`` entries, none of which could deliver.
-
-    ``replace_disabled`` replaces a disabled definition with the supplied task
-    and its fresh ID, retaining the old ID's execution history separately.
     """
     path = store_path or default_task_store_path()
     task = _owned_by_acting_scope(task)
@@ -349,15 +341,11 @@ def add_task(
         )
         if existing_index is not None:
             existing = raw[existing_index]
-            if replace_disabled and not existing.get("enabled", True):
-                raw[existing_index] = task.model_dump(mode="json")
-                stored_task = task
-            else:
-                refreshed = _refresh_template_copies(existing, task)
-                if existing.get("skill_revision", "") == task.skill_revision and not refreshed:
-                    return ScheduledTask.model_validate(existing)
-                existing["skill_revision"] = task.skill_revision
-                stored_task = ScheduledTask.model_validate(existing)
+            refreshed = _refresh_template_copies(existing, task)
+            if existing.get("skill_revision", "") == task.skill_revision and not refreshed:
+                return ScheduledTask.model_validate(existing)
+            existing["skill_revision"] = task.skill_revision
+            stored_task = ScheduledTask.model_validate(existing)
         else:
             raw.append(task.model_dump(mode="json"))
             stored_task = task
@@ -365,6 +353,62 @@ def add_task(
     # A new task or pinned revision changed the schedule: wake the scheduler to resync.
     reload_signal.request_scheduler_reload()
     return stored_task
+
+
+def replace_work_item_reminder(
+    task: ScheduledTask, store_path: Path | None = None
+) -> ScheduledTask:
+    """Atomically retain or replace a reminder and disable its superseded definitions.
+
+    Active matches keep their ID and pending work. Disabled matches receive the
+    candidate's fresh ID so cancelled run history cannot block the new reminder.
+    """
+    if task.kind is not TaskKind.WORK_ITEM_REMINDER:
+        raise ValueError("reminder replacement requires a work-item reminder")
+    path = store_path or default_task_store_path()
+    task = _owned_by_acting_scope(task).model_copy(update={"enabled": True})
+    candidate = task.model_dump(mode="json")
+    disabled_ids: list[str] = []
+    with FileLock(_lock_path(path)):
+        raw = _load_for_write(path)
+        wanted = _schedule_identity(candidate)
+        existing_index = next(
+            (index for index, entry in enumerate(raw) if _schedule_identity(entry) == wanted),
+            None,
+        )
+        changed = False
+        if existing_index is None:
+            raw.append(candidate)
+            changed = True
+        else:
+            existing = ScheduledTask.model_validate(raw[existing_index])
+            if existing.enabled:
+                task = existing
+            else:
+                disabled_ids.append(existing.id)
+                raw[existing_index] = candidate
+                changed = True
+        for entry in raw:
+            if (
+                entry.get("id") != task.id
+                and entry.get("kind") == TaskKind.WORK_ITEM_REMINDER.value
+                and _owner_of(entry) == _owner_of(candidate)
+                and (entry.get("params") or {}).get("work_item_id") == task.params["work_item_id"]
+                and (entry.get("params") or {}).get("store_path") == task.params.get("store_path")
+                and entry.get("enabled", True)
+            ):
+                entry["enabled"] = False
+                disabled_ids.append(str(entry["id"]))
+                changed = True
+        if changed:
+            _save_raw(path, raw)
+    # Superseded IDs are never revived, so cancelling their queued runs cannot
+    # cancel a concurrent confirmation of the retained reminder.
+    for task_id in disabled_ids:
+        skip_queued_runs(task_id, reason="disabled", db_path=_run_database_for_store(path))
+    if changed:
+        reload_signal.request_scheduler_reload()
+    return task
 
 
 def remove_task(task_id: str, store_path: Path | None = None) -> bool:
@@ -622,5 +666,6 @@ __all__ = [
     "patch_task_definitions",
     "record_task_success",
     "remove_task",
+    "replace_work_item_reminder",
     "update_task",
 ]

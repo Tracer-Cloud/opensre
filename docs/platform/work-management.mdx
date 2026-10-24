@@ -54,8 +54,9 @@ opensre work add "ping owners about demo blockers" \
 ```
 
 Updating a work item with the same reminder time, timezone, and destinations
-keeps its existing reminder enabled without creating a duplicate. Changing the
-reminder time replaces the previous reminder; you can also move it back to a
+keeps its existing reminder enabled without creating a duplicate. Concurrent
+confirmations of the same reminder also retain one active scheduled task.
+Changing the reminder time replaces the previous reminder; you can also move it back to a
 previously scheduled time. Restoring a cancelled reminder creates a fresh
 scheduled task ID so its cancelled run history does not block delivery.
 Completing the work item disables its reminders.

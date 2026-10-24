@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -219,6 +221,48 @@ def test_rescheduling_same_reminder_keeps_one_enabled_task(
     else:
         assert scheduled.id == original.id
     assert get_runs(scheduled.id, db_path=run_database)[0].status is TaskStatus.RUNNING
+
+
+def test_concurrent_reminder_confirmations_keep_one_deliverable_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+    first_saved = threading.Event()
+    second_done = threading.Event()
+    item = make_work_item(title="Check clusters", remind_at="2027-08-24T10:00:00Z")
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C999")]
+
+    def _reload_with_interleaved_confirmation() -> None:
+        if not first_saved.is_set():
+            first_saved.set()
+            assert second_done.wait(10), "second confirmation did not finish"
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        _reload_with_interleaved_confirmation,
+    )
+
+    def _confirm_second() -> ScheduledTask | None:
+        try:
+            return schedule_item_reminder(item, targets=targets, timezone="UTC")
+        finally:
+            second_done.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(schedule_item_reminder, item, targets=targets, timezone="UTC")
+        assert first_saved.wait(10), "first confirmation did not persist"
+        second = pool.submit(_confirm_second)
+        second_task = second.result(timeout=15)
+        first_task = first.result(timeout=15)
+
+    assert first_task is not None
+    assert second_task is not None
+    assert first_task.id == second_task.id
+    assert [task.id for task in list_tasks() if task.enabled] == [first_task.id]
+    assert try_claim(first_task.id, item.remind_at, db_path=tmp_path / "scheduler.db") is not None
 
 
 def test_disabling_reminders_preserves_concurrent_scheduler_updates(
