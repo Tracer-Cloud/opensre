@@ -73,9 +73,9 @@ def schedule_item_reminder(
             ),
         },
     )
-    # Deduplication can return an existing reminder, including a disabled one.
-    # Retain that row so repeating a schedule does not cancel its queued run.
-    scheduled = add_scheduled_task(task)
+    # Keep active reminders and their queued runs. A cancelled reminder needs a
+    # fresh ID because its skipped fire time cannot be claimed again.
+    scheduled = add_scheduled_task(task, replace_disabled=True)
     # New definitions stay disabled until superseded reminders are stopped.
     disable_existing_item_reminders(item.id, keep_task_id=scheduled.id)
     if not scheduled.enabled:

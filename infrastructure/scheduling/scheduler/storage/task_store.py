@@ -322,12 +322,20 @@ def _owned_by_acting_scope(task: ScheduledTask) -> ScheduledTask:
     return task.model_copy(update=update) if update else task
 
 
-def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
+def add_task(
+    task: ScheduledTask,
+    store_path: Path | None = None,
+    *,
+    replace_disabled: bool = False,
+) -> ScheduledTask:
     """Persist a scheduled task, or update the matching schedule's skill revision.
 
     Confirming the same schedule twice is one schedule. Without this, every
     confirmation appended a row — a real install reached 37 byte-identical
     ``daily_summary`` entries, none of which could deliver.
+
+    ``replace_disabled`` replaces a disabled definition with the supplied task
+    and its fresh ID, retaining the old ID's execution history separately.
     """
     path = store_path or default_task_store_path()
     task = _owned_by_acting_scope(task)
@@ -341,11 +349,15 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
         )
         if existing_index is not None:
             existing = raw[existing_index]
-            refreshed = _refresh_template_copies(existing, task)
-            if existing.get("skill_revision", "") == task.skill_revision and not refreshed:
-                return ScheduledTask.model_validate(existing)
-            existing["skill_revision"] = task.skill_revision
-            stored_task = ScheduledTask.model_validate(existing)
+            if replace_disabled and not existing.get("enabled", True):
+                raw[existing_index] = task.model_dump(mode="json")
+                stored_task = task
+            else:
+                refreshed = _refresh_template_copies(existing, task)
+                if existing.get("skill_revision", "") == task.skill_revision and not refreshed:
+                    return ScheduledTask.model_validate(existing)
+                existing["skill_revision"] = task.skill_revision
+                stored_task = ScheduledTask.model_validate(existing)
         else:
             raw.append(task.model_dump(mode="json"))
             stored_task = task

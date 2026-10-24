@@ -17,6 +17,7 @@ from infrastructure.scheduling.scheduler.storage import (
     get_runs,
     list_tasks,
     patch_task_definitions,
+    try_claim,
     try_queue_run,
 )
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskStatus
@@ -209,11 +210,15 @@ def test_rescheduling_same_reminder_keeps_one_enabled_task(
     scheduled = schedule_item_reminder(renamed, targets=targets, timezone="UTC")
 
     assert scheduled is not None
-    assert scheduled.id == original.id
     assert scheduled.enabled is True
-    assert [task.id for task in list_tasks() if task.enabled] == [original.id]
-    expected_status = TaskStatus.SKIPPED if reschedule_to_other_time else TaskStatus.PENDING
-    assert get_runs(original.id, db_path=run_database)[0].status is expected_status
+    assert [task.id for task in list_tasks() if task.enabled] == [scheduled.id]
+    assert try_claim(scheduled.id, item.remind_at, db_path=run_database) is not None
+    if reschedule_to_other_time:
+        assert scheduled.id != original.id
+        assert get_runs(original.id, db_path=run_database)[0].status is TaskStatus.SKIPPED
+    else:
+        assert scheduled.id == original.id
+    assert get_runs(scheduled.id, db_path=run_database)[0].status is TaskStatus.RUNNING
 
 
 def test_disabling_reminders_preserves_concurrent_scheduler_updates(

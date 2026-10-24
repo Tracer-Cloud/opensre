@@ -10,7 +10,12 @@ import pytest
 
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from core.domain.work_items import add_work_item
-from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim, try_queue_run
+from infrastructure.scheduling.scheduler.storage.run_store import (
+    complete_run,
+    get_runs,
+    try_claim,
+    try_queue_run,
+)
 from infrastructure.scheduling.scheduler.storage.task_store import (
     _quarantine_unreadable,
     add_task,
@@ -284,6 +289,28 @@ class TestAddTaskDeduplicates:
         }
         fields.update(overrides)
         return ScheduledTask(**fields)  # type: ignore[arg-type]
+
+    def test_disabled_definition_replacement_is_opt_in(self, store_path: Path) -> None:
+        original = add_task(self._daily_summary(enabled=False), store_path)
+        fire_time = "2027-08-24T10:00:00Z"
+        run_database = _db_path(store_path)
+        assert try_queue_run(original.id, fire_time, db_path=run_database)
+        claim = try_claim(original.id, fire_time, db_path=run_database)
+        assert claim is not None
+        assert complete_run(claim, status=TaskStatus.SKIPPED, db_path=run_database)
+        unchanged = add_task(self._daily_summary(), store_path)
+        assert unchanged.id == original.id
+        assert unchanged.enabled is False
+
+        replacement = add_task(self._daily_summary(), store_path, replace_disabled=True)
+
+        assert replacement.id != original.id
+        assert [task.id for task in list_tasks(store_path)] == [replacement.id]
+        assert get_runs(original.id, db_path=run_database)[0].status is TaskStatus.SKIPPED
+        assert try_claim(replacement.id, fire_time, db_path=run_database) is not None
+        assert (
+            add_task(self._daily_summary(), store_path, replace_disabled=True).id == replacement.id
+        )
 
     def test_identical_task_is_stored_once(self, store_path: Path) -> None:
         # Arrange
