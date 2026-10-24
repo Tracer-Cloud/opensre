@@ -120,18 +120,34 @@ def _run_sync(console: Console, args: list[str]) -> bool:
 
 
 def _flag_value(args: list[str], name: str) -> str | None:
-    """Return ``--name value`` from ``args``, or None."""
+    """Return ``--name value`` from ``args``, or None.
+
+    Returns None when the next token is missing or starts with ``--``
+    (another flag), matching the validation in loops_cmds._take_flag_value.
+    """
     token = f"--{name}"
     for index, arg in enumerate(args):
-        if arg == token and index + 1 < len(args):
-            return args[index + 1]
+        if arg == token:
+            if index + 1 < len(args) and not args[index + 1].startswith("--"):
+                return args[index + 1]
+            return None
         if arg.startswith(f"{token}="):
             return arg.split("=", 1)[1]
     return None
 
 
+def _flag_present(args: list[str], name: str) -> bool:
+    """Return True when ``--name`` appears in ``args`` (with or without ``=value``)."""
+    token = f"--{name}"
+    return any(a == token or a.startswith(f"{token}=") for a in args)
+
+
 def _run_setup(console: Console, args: list[str]) -> bool:
     """Write stored settings from flags (gateway-safe: no interactive prompts)."""
+    for flag in ("provider", "bucket", "prefix", "region", "profile"):
+        if _flag_present(args, flag) and _flag_value(args, flag) is None:
+            console.print(f"[{ERROR}]--{flag} requires a value[/].")
+            return True
     provider = _flag_value(args, "provider") or DEFAULT_REMOTE_SYNC_PROVIDER
     bucket = _flag_value(args, "bucket")
     if not bucket or not bucket.strip():

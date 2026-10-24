@@ -284,3 +284,58 @@ def test_repl_and_headless_agent_same_command_object() -> None:
     assert repl.command_exists("/remote-sync")
     assert headless.command_exists("/remote-sync")
     assert SLASH_COMMANDS["/remote-sync"].handler is not None
+
+
+# ---------------------------------------------------------------------------
+# Regression: flag with missing value must not be saved as "--next-flag"
+# ---------------------------------------------------------------------------
+
+
+def test_setup_rejects_bucket_flag_followed_by_another_flag(tmp_path: object) -> None:
+    """--bucket --prefix should error, not store '--prefix' as the bucket name."""
+    console, buf = _capture()
+    assert dispatch_slash("/remote-sync setup --bucket --prefix team/", Session(), console) is True
+    out = buf.getvalue()
+    assert "requires a value" in out.lower() or "--bucket" in out
+
+
+def test_setup_rejects_region_flag_followed_by_another_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--region --profile must error and not write anything."""
+    from config.constants import paths as paths_mod
+
+    monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
+    console, buf = _capture()
+    assert (
+        dispatch_slash(
+            "/remote-sync setup --bucket real-bucket --region --profile prod",
+            Session(),
+            console,
+        )
+        is True
+    )
+    out = buf.getvalue()
+    assert "requires a value" in out.lower()
+    # Nothing written to config
+    config_file = tmp_path / "config.yml"
+    assert not config_file.exists()
+
+
+def test_setup_flag_equals_value_still_works(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--bucket=name form must keep working after the validation change."""
+    from config.constants import paths as paths_mod
+
+    monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
+    console, buf = _capture()
+    assert (
+        dispatch_slash(
+            "/remote-sync setup --bucket=my-bucket --provider=aws",
+            Session(),
+            console,
+        )
+        is True
+    )
+    assert "settings saved" in buf.getvalue()
