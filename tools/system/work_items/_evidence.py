@@ -30,6 +30,13 @@ def map_work_task_list(
     summary = f"{total} task(s)"
     if status:
         summary += f" with status '{status}'"
+    due_filter = output.get("due_filter") or {}
+    if due_filter.get("due_after"):
+        summary += f", due at or after {due_filter['due_after']}"
+    if due_filter.get("due_before"):
+        summary += f", due before {due_filter['due_before']}"
+    if due_filter.get("overdue_as_of"):
+        summary += f", unfinished and overdue as of {due_filter['overdue_as_of']}"
     if returned < total:
         summary += f" ({returned} shown)"
     record_evidence_entry(

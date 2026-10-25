@@ -70,6 +70,51 @@ changing task priorities between calls can move items between pages; restart
 from offset zero when you need a fresh complete listing. These paging values
 belong to the agent tool; terminal commands keep their existing options.
 
+## Filter tasks by due date
+
+Ask the agent to "show my overdue tasks" or "list the infra tasks due on Friday
+in Asia/Kolkata." The `work_task_list` agent tool accepts these optional filters:
+
+| Value | Default | Behavior |
+| --- | --- | --- |
+| `due_after` | Unset | Include tasks due at or after this ISO date/time. |
+| `due_before` | Unset | Include tasks due strictly before this ISO date/time. |
+| `overdue_only` | `false` | Include only unfinished tasks due strictly before the current instant. |
+| `timezone` | `UTC` | IANA timezone for date-only or offset-free bounds and stored due dates. Used when a due filter is active. |
+
+For example, this tool input selects tasks due on 30 October in Kolkata:
+
+```json
+{
+  "project": "infra",
+  "due_after": "2026-10-30",
+  "due_before": "2026-10-31",
+  "timezone": "Asia/Kolkata"
+}
+```
+
+A date without a time means midnight at the start of that date. Explicit UTC
+offsets such as `2026-10-30T09:00+05:30` identify an instant directly. A local
+time that does not exist during a daylight-saving transition is rejected;
+an ambiguous time requires an explicit offset. If both bounds are given,
+`due_after` must precede `due_before`.
+
+Due filters combine with the existing status, project, and owner filters before
+the offset and result limit; `total` counts all matching tasks, and paging
+works the same way as for unfiltered listings. The default status remains
+`open`. Use `status: "active"` to include blocked and deferred tasks too.
+Completed tasks are always excluded by `overdue_only`, even with `status: "all"`.
+
+Undated tasks are excluded when a due filter is active. Dates that cannot be
+resolved are excluded and counted in `invalid_due_dates` among the otherwise
+matching tasks. The response's `due_filter` records the resolved UTC bounds,
+timezone, and the cutoff used for overdue checks. Without a due filter, the
+existing listing behavior and response fields are unchanged. These options
+belong to the agent tool; terminal commands retain their existing options.
+
+With `overdue_only`, each call uses its own current instant as the cutoff, so a
+task that becomes overdue between paged calls can shift later pages.
+
 ## Reminders and check-ins
 
 One-off reminders:
