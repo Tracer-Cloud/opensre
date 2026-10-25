@@ -31,6 +31,7 @@ from infrastructure.scheduling.scheduler.storage import add_task as add_schedule
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
 from tools.system.work_items.delivery import delivery_targets, invalid_delivery_targets
+from tools.system.work_items.due_dates import filter_due_dates, parse_due_date_filter
 from tools.system.work_items.reminders import (
     disable_existing_item_reminders,
     schedule_item_reminder,
@@ -221,7 +222,8 @@ def work_task_add(
     source="knowledge",
     description=(
         "List durable human work items. Use when the user asks for all tasks still to do, "
-        "hackathon task overview, completed tasks, blocked tasks, or project-specific todos."
+        "hackathon task overview, completed tasks, blocked tasks, or project-specific todos. "
+        "Use due_after/due_before for date ranges and overdue_only for unfinished overdue tasks."
     ),
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
@@ -238,6 +240,24 @@ def work_task_add(
             "project": {"type": "string", "description": "Optional exact project filter."},
             "owner": {"type": "string", "description": "Optional exact owner filter."},
             "limit": {"type": "integer", "default": DEFAULT_WORK_ITEM_LIMIT},
+            "due_after": {
+                "type": "string",
+                "description": "Optional inclusive lower due-date bound, ISO date/time. Naive values use timezone.",
+            },
+            "due_before": {
+                "type": "string",
+                "description": "Optional exclusive upper due-date bound, ISO date/time. Naive values use timezone.",
+            },
+            "overdue_only": {
+                "type": "boolean",
+                "default": False,
+                "description": "Only unfinished tasks due strictly before the current instant.",
+            },
+            "timezone": {
+                "type": "string",
+                "default": "UTC",
+                "description": "IANA timezone for naive date bounds and task due dates; only used with due filters.",
+            },
         },
         "required": [],
         "additionalProperties": False,
@@ -249,7 +269,17 @@ def work_task_list(
     project: str = "",
     owner: str = "",
     limit: int = DEFAULT_WORK_ITEM_LIMIT,
+    due_after: str = "",
+    due_before: str = "",
+    overdue_only: bool = False,
+    timezone: str = "UTC",
 ) -> dict[str, Any]:
+    try:
+        due_filter = parse_due_date_filter(
+            due_after=due_after, due_before=due_before, overdue_only=overdue_only, timezone=timezone
+        )
+    except ValueError as exc:
+        return {"error": "invalid_due_filter", "detail": str(exc)}
     normalized_status = normalize_status_filter(status)
     if normalized_status == "invalid":
         return {"error": "invalid_status", "detail": valid_status_detail()}
@@ -258,8 +288,15 @@ def work_task_list(
         filtered = [item for item in all_items if item.is_active]
     else:
         filtered = list_work_items(status=normalized_status, project=project, owner=owner)
+    invalid_dates = 0
+    if due_filter is not None:
+        filtered, invalid_dates = filter_due_dates(filtered, due_filter)
     max_items = normalize_limit(limit)
-    return list_result(filtered[:max_items], total=len(filtered))
+    result = list_result(filtered[:max_items], total=len(filtered))
+    if due_filter is not None:
+        result["due_filter"] = due_filter.summary()
+        result["invalid_due_dates"] = invalid_dates
+    return result
 
 
 @tool(
