@@ -180,7 +180,7 @@ An OpenSRE Cloud managed gateway, an AWS EC2 path, and a general self-hosted opt
 
 - **OpenSRE Cloud managed gateway:** an organization admin provisions it in the web app; signed-in shell users can check, start, or stop it without handling infrastructure credentials locally.
 - **Gateway (AMI + systemd):** `make build-gateway-image` then `make deploy-gateway` — Telegram gateway only, no Docker; the gateway is installed into a server image that new servers start from.
-- **Self-hosted container (Railway / ECS / Vercel):** deploy the repo `Dockerfile`, select `MODE`, and set `LLM_PROVIDER` plus its API key. Use `DATABASE_URL` only when the gateway needs shared Postgres-backed state, such as Slack Events API replicas.
+- **Self-hosted container (Railway / ECS / Vercel):** deploy the repo `Dockerfile`, set `MODE` to `web` (HTTP API, the default), `gateway` (messaging gateway), or `scheduler` (dedicated scheduled-task service), and set `LLM_PROVIDER` plus its API key. Use `DATABASE_URL` only when the gateway needs shared Postgres-backed state, such as Slack Events API replicas.
 
 **[Full deployment steps and prerequisites → DEPLOYMENT.md](DEPLOYMENT.md)**
 
@@ -202,10 +202,10 @@ When you ask a question or an alert arrives, OpenSRE automatically:
 3. **Reasons** across your connected systems to test hypotheses in a tool-calling loop
 4. **Answers** with an evidence-linked response in the conversation
 5. **Suggests** next steps and, optionally, executes remediation actions
-6. **Posts** a summary directly to Slack, PagerDuty, or Telegram — no context switching needed
+6. **Delivers** the response through your chosen interface, such as the terminal, Slack, or Telegram
 
 For the current code-level agent architecture after removing the old graph and chain
-framework layers, see [AGENTS.md](AGENTS.md).
+framework layers, see the [architecture guide](docs/ARCHITECTURE.md).
 
 ---
 

@@ -181,7 +181,7 @@ opensre uninstall   # 卸载 opensre 并删除所有本地数据
 
 - **OpenSRE Cloud 托管网关：** 由组织管理员在 Web 应用中开通（provision）；已登录的 Shell 用户可以查看、启动或停止网关，无需在本地管理基础设施凭据。
 - **网关（AMI + systemd）：** 先运行 `make build-gateway-image`，再运行 `make deploy-gateway`。此方案仅适用于 Telegram 网关，不使用 Docker；网关会安装到服务器镜像中，新服务器从该镜像启动。
-- **自托管容器（Railway / ECS / Vercel）：** 使用仓库中的 `Dockerfile` 部署，选择 `MODE`，并设置 `LLM_PROVIDER` 及其 API 密钥。仅当网关需要由 Postgres 承载的共享状态时（例如运行 Slack Events API 多副本），才需配置 `DATABASE_URL`。
+- **自托管容器（Railway / ECS / Vercel）：** 使用仓库中的 `Dockerfile` 部署，将 `MODE` 设置为 `web`（HTTP API，默认值）、`gateway`（消息网关）或 `scheduler`（独立定时任务服务），并设置 `LLM_PROVIDER` 及其 API 密钥。仅当网关需要由 Postgres 承载的共享状态时（例如运行 Slack Events API 多副本），才需配置 `DATABASE_URL`。
 
 **[完整部署步骤与前提条件 → DEPLOYMENT.md](DEPLOYMENT.md)**
 
@@ -203,9 +203,9 @@ opensre uninstall   # 卸载 opensre 并删除所有本地数据
 3. 结合已连接系统的信息进行**推理**，在工具调用循环中验证假设
 4. 在对话中给出关联证据的**回答**
 5. **建议**后续步骤，并可按需执行修复操作
-6. 直接将摘要**发送**到 Slack、PagerDuty 或 Telegram，无需切换工具
+6. 通过所选界面**发送**回复，例如终端、Slack 或 Telegram
 
-移除旧的图与链框架层后，当前智能体在代码层面的架构请参阅 [AGENTS.md](AGENTS.md)。
+移除旧的图与链框架层后，当前智能体在代码层面的架构请参阅[架构指南](docs/ARCHITECTURE.md)。
 
 ---
 
