@@ -54,6 +54,7 @@ from tools.system.work_items.validation import (
     valid_priority_detail,
     valid_status_detail,
     validate_datetime_arg,
+    validate_offset,
 )
 
 
@@ -221,7 +222,8 @@ def work_task_add(
     source="knowledge",
     description=(
         "List durable human work items. Use when the user asks for all tasks still to do, "
-        "hackathon task overview, completed tasks, blocked tasks, or project-specific todos."
+        "hackathon task overview, completed tasks, blocked tasks, or project-specific todos. "
+        "Use a positive limit; when next_offset is not null, continue with it and the same filters."
     ),
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
@@ -237,7 +239,17 @@ def work_task_add(
             },
             "project": {"type": "string", "description": "Optional exact project filter."},
             "owner": {"type": "string", "description": "Optional exact owner filter."},
-            "limit": {"type": "integer", "default": DEFAULT_WORK_ITEM_LIMIT},
+            "limit": {
+                "type": "integer",
+                "default": DEFAULT_WORK_ITEM_LIMIT,
+                "description": "Page size, capped at 100. Zero returns only counts; use a positive size to page.",
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "default": 0,
+                "description": "Number of matching tasks to skip; use next_offset to continue with the same filters.",
+            },
         },
         "required": [],
         "additionalProperties": False,
@@ -249,7 +261,11 @@ def work_task_list(
     project: str = "",
     owner: str = "",
     limit: int = DEFAULT_WORK_ITEM_LIMIT,
+    offset: int = 0,
 ) -> dict[str, Any]:
+    error = validate_offset(offset)
+    if error is not None:
+        return error
     normalized_status = normalize_status_filter(status)
     if normalized_status == "invalid":
         return {"error": "invalid_status", "detail": valid_status_detail()}
@@ -259,7 +275,9 @@ def work_task_list(
     else:
         filtered = list_work_items(status=normalized_status, project=project, owner=owner)
     max_items = normalize_limit(limit)
-    return list_result(filtered[:max_items], total=len(filtered))
+    return list_result(
+        filtered[offset : offset + max_items], total=len(filtered), offset=offset, limit=max_items
+    )
 
 
 @tool(

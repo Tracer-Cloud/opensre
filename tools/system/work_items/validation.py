@@ -24,6 +24,13 @@ def normalize_limit(value: object, *, default: int = DEFAULT_WORK_ITEM_LIMIT) ->
     return min(max(int(value), 0), MAX_WORK_ITEM_LIMIT)
 
 
+def validate_offset(value: object) -> dict[str, str] | None:
+    """Reject offsets that cannot identify a position in the filtered task list."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return {"error": "invalid_offset", "detail": "offset must be a non-negative integer"}
+    return None
+
+
 def normalize_priority(value: object) -> WorkItemPriority | None:
     try:
         return parse_priority(value or WorkItemPriority.NORMAL.value)
@@ -91,5 +98,6 @@ __all__ = [
     "valid_priority_detail",
     "valid_status_detail",
     "validate_datetime_arg",
+    "validate_offset",
     "validate_provider",
 ]
