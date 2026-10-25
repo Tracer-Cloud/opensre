@@ -81,9 +81,10 @@ class UpdateWorkItemResult:
 def ensure_work_items_store(store_path: Path | None = None) -> Path:
     path = store_path or work_items_path()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if not path.exists():
-        write_text_atomically(path, "[]\n")
-    _import_legacy_slack_tasks_once(path)
+    with _store_lock(path):
+        if not path.exists():
+            write_text_atomically(path, "[]\n")
+        _import_legacy_slack_tasks_once(path)
     return path
 
 
