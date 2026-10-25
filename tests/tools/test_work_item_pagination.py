@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import NoReturn, cast
 
 import pytest
 
@@ -100,7 +100,13 @@ def test_empty_store_has_no_continuation(work_dir: Path) -> None:
 
 
 @pytest.mark.parametrize("offset", [-1, True, "2", 1.5, None])
-def test_invalid_offset_is_rejected_before_reading_store(work_dir: Path, offset: object) -> None:
+def test_invalid_offset_is_rejected_before_reading_store(
+    work_dir: Path, offset: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_read(**_kwargs: object) -> NoReturn:
+        raise AssertionError("Invalid offsets must be rejected before reading the store")
+
+    monkeypatch.setattr("tools.system.work_items.tool.list_work_items", unexpected_read)
     result = work_task_list(offset=cast(int, offset))
     assert result == {"error": "invalid_offset", "detail": "offset must be a non-negative integer"}
     assert not (work_dir / "work_items.json").exists()
