@@ -125,6 +125,7 @@ def build_input_form[Result](
     compact_confirmation: str = "",
     browse_only: bool = False,
     max_width: int = 96,
+    advanced_label: str = "More options",
     record_actions: Sequence[RecordAction[Result]] = (),
     load_records: Callable[[Callable[[], None]], Awaitable[None]] | None = None,
 ) -> Application[Result | None]:
@@ -239,7 +240,7 @@ def build_input_form[Result](
     def action_labels() -> tuple[str, ...]:
         if expanded:
             return ("Back to review",)
-        more = ("More options…",) if any(item.advanced for item in field_map.values()) else ()
+        more = (f"{advanced_label}…",) if any(item.advanced for item in field_map.values()) else ()
         return (*more, submit_label, "Cancel")
 
     def choices() -> list[InputChoice]:
@@ -638,7 +639,7 @@ def build_input_form[Result](
 
     def heading_text() -> StyleAndTextTuples:
         if mode == "summary":
-            return [("bold", "More options" if expanded else heading)]
+            return [("bold", advanced_label if expanded else heading)]
         item = active_field()
         if item.record_choices:
             count = f"{len(choices())} of {len(item.choices)} items"

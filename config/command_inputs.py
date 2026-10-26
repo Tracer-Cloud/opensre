@@ -199,7 +199,17 @@ MESSAGING_IDENTITY_INPUT = CommandInput(
     alternative_options=(frozenset({"--platform", "-p"}), frozenset({"--user-id", "-u"})),
     inline_values=True,
 )
+REMOTE_SYNC_SETUP_INPUT = CommandInput(
+    "/remote-sync",
+    ("setup",),
+    value_options=frozenset({"--provider", "--bucket", "--prefix", "--region", "--profile"}),
+    flag_options=frozenset({"--enabled", "--disabled"}),
+    empty_value_options=frozenset({"--prefix", "--region", "--profile"}),
+    alternative_options=(frozenset({"--bucket", "--disabled"}),),
+    inline_values=True,
+)
 COMMAND_INPUTS = (
+    REMOTE_SYNC_SETUP_INPUT,
     WORK_ADD_INPUT,
     GOAL_SET_INPUT,
     LOOPS_ADD_INPUT,

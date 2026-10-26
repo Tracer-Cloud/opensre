@@ -8,8 +8,8 @@ from rich.console import Console
 from rich.markup import escape
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskID, TextColumn
 
+from config.command_inputs import REMOTE_SYNC_SETUP_INPUT
 from config.constants.filestorage import (
-    DEFAULT_REMOTE_SYNC_PREFIX,
     DEFAULT_REMOTE_SYNC_PROVIDER,
 )
 from infrastructure.filestorage import OrgScopeNotSupportedError, RemoteSyncError
@@ -17,6 +17,7 @@ from infrastructure.filestorage.engine import SyncProgress
 from infrastructure.filestorage.enums import BucketExposure, RemoteSyncSubcommand, SyncDirection
 from infrastructure.filestorage.messages import (
     DISABLED_HELP,
+    SETUP_DISABLED_CONFIRM,
     direction_label,
     format_exclusion_lines,
     format_exposure_line,
@@ -27,10 +28,18 @@ from infrastructure.filestorage.messages import (
 )
 from infrastructure.filestorage.operations import get_sync_status, run_remote_sync
 from infrastructure.filestorage.providers.registry import builtin_providers
-from infrastructure.filestorage.setup import RemoteSyncSetupRequest, save_remote_sync_settings
+from infrastructure.filestorage.setup import (
+    RemoteSyncSetupError,
+    disable_remote_sync,
+    save_remote_sync_settings,
+)
+from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT
+from surfaces.shared.terminal.components.command_input import run_command_input
+from surfaces.shared.terminal.components.input_form import InputFormError
+from surfaces.shared.terminal.remote_sync_input import build_remote_sync_form, setup_request
 
 logger = logging.getLogger(__name__)
 
@@ -119,44 +128,69 @@ def _run_sync(console: Console, args: list[str]) -> bool:
     return True
 
 
-def _flag_value(args: list[str], name: str) -> str | None:
-    """Return ``--name value`` from ``args``, or None."""
-    token = f"--{name}"
-    for index, arg in enumerate(args):
-        if arg == token and index + 1 < len(args):
-            return args[index + 1]
-        if arg.startswith(f"{token}="):
-            return arg.split("=", 1)[1]
+def _parse_setup_args(args: list[str]) -> dict[str, str]:
+    """Reject malformed setup flags before collecting input or changing settings."""
+    values: dict[str, str] = {}
+    index = 0
+    while index < len(args):
+        option, separator, value = args[index].partition("=")
+        if option in {"--enabled", "--disabled"} and not separator:
+            values["enabled"] = "true" if option == "--enabled" else "false"
+        elif option in REMOTE_SYNC_SETUP_INPUT.value_options:
+            if not separator:
+                index += 1
+                if index >= len(args) or args[index].startswith("--"):
+                    raise ValueError(f"{option} requires a value")
+                value = args[index]
+            if value.startswith("--"):
+                raise ValueError(f"{option} requires a value")
+            values[option[2:]] = value
+        else:
+            raise ValueError(f"Unknown setup option: {option!r}")
+        index += 1
+    return values
+
+
+def _validate_setup_args(args: list[str]) -> str | None:
+    if args and args[0].lower() == "setup":
+        try:
+            _parse_setup_args(args[1:])
+        except ValueError as exc:
+            return escape(str(exc))
     return None
 
 
-def _run_setup(console: Console, args: list[str]) -> bool:
-    """Write stored settings from flags (gateway-safe: no interactive prompts)."""
-    provider = _flag_value(args, "provider") or DEFAULT_REMOTE_SYNC_PROVIDER
-    bucket = _flag_value(args, "bucket")
-    if not bucket or not bucket.strip():
+def _run_setup(session: Session, console: Console, args: list[str]) -> bool:
+    """Collect a terminal draft or save complete gateway-safe setup flags."""
+    values = _parse_setup_args(args)
+    if values.get("enabled") == "false" and not values.get("bucket", "").strip():
+        extras = [name for name in values if name != "enabled" and values[name].strip()]
+        if extras:
+            console.print(
+                "--disabled without --bucket only switches sync off; "
+                "pass --bucket to save new settings, or drop the extra flags."
+            )
+            return True
+        disable_remote_sync()
+        console.print(SETUP_DISABLED_CONFIRM)
+        return True
+    if can_collect_input(session, REMOTE_SYNC_SETUP_INPUT, ["setup", *args]):
+        request = run_command_input(build_remote_sync_form(values))
+        if request is None:
+            return True
+    elif not values.get("bucket", "").strip():
         console.print(
             f"[{ERROR}]setup needs --bucket[/]. "
             "Example: [bold]/remote-sync setup --provider vercel "
             "--bucket opensre-remote-sync[/]\n"
-            f"[{DIM}]Interactive prompts: opensre remote-sync setup[/]"
+            "In an interactive terminal, run /remote-sync setup to open the editable form."
         )
         return True
-    prefix = _flag_value(args, "prefix") or DEFAULT_REMOTE_SYNC_PREFIX
-    region = _flag_value(args, "region") or ""
-    profile = _flag_value(args, "profile") or ""
-    enabled = "--disabled" not in {a.lower() for a in args}
-    config = save_remote_sync_settings(
-        RemoteSyncSetupRequest(
-            bucket=bucket,
-            provider=provider,
-            prefix=prefix,
-            region=region,
-            profile=profile,
-            enabled=enabled,
-        )
-    )
-    _print_lines(console, format_setup_lines(config, enabled=enabled))
+    else:
+        request = setup_request(values)
+    config = save_remote_sync_settings(request)
+    for line in format_setup_lines(config, enabled=request.enabled):
+        console.print(escape(line))
     return True
 
 
@@ -176,7 +210,10 @@ def _cmd_remote_sync(_session: Session, console: Console, args: list[str]) -> bo
         if sub is RemoteSyncSubcommand.SYNC:
             return _run_sync(console, args[1:])
         if sub is RemoteSyncSubcommand.SETUP:
-            return _run_setup(console, args[1:])
+            return _run_setup(_session, console, args[1:])
+    except (RemoteSyncSetupError, InputFormError) as exc:
+        console.print(f"[{ERROR}]{escape(str(exc))}[/]")
+        return True
     except OrgScopeNotSupportedError as exc:
         # Safe to show: our own wording, no vendor or credential detail.
         console.print(f"[{DIM}]{exc}[/]")
@@ -203,12 +240,14 @@ COMMANDS: tuple[SlashCommand, ...] = (
         "Mirror your sessions and memory to your own object store.",
         _cmd_remote_sync,
         usage=(_USAGE,),
+        validate_args=_validate_setup_args,
         notes=(
             "Off until setup or OPENSRE_REMOTE_SYNC is set. "
             f"Subcommands: status, sync, setup. Default provider is "
             f"{DEFAULT_REMOTE_SYNC_PROVIDER} (built-in: {', '.join(builtin_providers())}). "
             "Credentials stay ambient; integration keys are never uploaded. "
-            "Same service as `opensre remote-sync`.",
+            "Setup opens an editable form in a terminal; gateways require --bucket. "
+            "Complete flags save without prompting. Same service as `opensre remote-sync`.",
         ),
         first_arg_completions=(
             (
@@ -218,7 +257,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
             (RemoteSyncSubcommand.SYNC.value, "pull remote changes, then push local ones"),
             (
                 RemoteSyncSubcommand.SETUP.value,
-                "save provider/bucket/prefix to ~/.opensre/config.yml",
+                "edit remote-sync settings, or save complete setup flags",
             ),
         ),
         use_cases=(

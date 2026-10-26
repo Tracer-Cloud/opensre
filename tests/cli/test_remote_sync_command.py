@@ -10,6 +10,9 @@ import click
 import pytest
 import yaml
 from click.testing import CliRunner
+from prompt_toolkit.application import Application
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import DummyOutput
 
 from config.constants.filestorage import REMOTE_SYNC_BUCKET_ENV, REMOTE_SYNC_ENV
 from infrastructure.filestorage.config import RemoteSyncConfig
@@ -334,16 +337,29 @@ def _set_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def _set_form_interactive(monkeypatch: pytest.MonkeyPatch, keys: str) -> None:
+    """Drive the actual editable form while CliRunner captures command output."""
+    monkeypatch.setattr("surfaces.cli.commands.remote_sync.repl_tty_interactive", lambda: True)
+
+    def run_form(app: Application[RemoteSyncSetupRequest | None]) -> RemoteSyncSetupRequest | None:
+        with create_pipe_input() as pipe:
+            app.input = pipe
+            app.output = DummyOutput()
+            return app.run(pre_run=lambda: pipe.send_text(keys))
+
+    monkeypatch.setattr("surfaces.cli.commands.remote_sync.run_command_input", run_form)
+
+
 def test_setup_interactive_skips_prompts_for_provider_without_extra_fields(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from config.constants import paths as paths_mod
 
     monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
-    _set_interactive(monkeypatch)
+    _set_form_interactive(monkeypatch, "vercel\r\x1b[B\rmy-bucket\r\x13")
 
-    # bucket, provider, prefix — no region/profile prompts for vercel.
-    result = runner.invoke(remote_sync_command, ["setup"], input="my-bucket\nvercel\nopensre\n")
+    # Provider selection and bucket editing; no region/profile fields for vercel.
+    result = runner.invoke(remote_sync_command, ["setup"])
     assert result.exit_code == 0, result.output
 
     on_disk = yaml.safe_load((tmp_path / "config.yml").read_text(encoding="utf-8"))
@@ -358,15 +374,13 @@ def test_setup_interactive_prompts_for_provider_extra_fields(
     from config.constants import paths as paths_mod
 
     monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
-    _set_interactive(monkeypatch)
+    _set_form_interactive(monkeypatch, "\r\x1b[B\rmy-bucket\r\x13")
 
-    # bucket, provider, prefix, region, profile — RemoteSyncSetupRequest's
-    # keyword order, which Python evaluates left to right regardless of the
-    # order EXTRA_FIELDS declares them in.
+    # Optional provider fields supplied as flags prefill the draft while the
+    # editable form collects the missing destination and confirms submission.
     result = runner.invoke(
         remote_sync_command,
-        ["setup"],
-        input="my-bucket\naws\nopensre\nus-east-1\nmy-profile\n",
+        ["setup", "--provider", "aws", "--region", "us-east-1", "--profile", "my-profile"],
     )
     assert result.exit_code == 0, result.output
 
@@ -423,15 +437,18 @@ def test_setup_unknown_provider_fails_with_known_list(runner: CliRunner) -> None
 
 
 def test_setup_prompts_for_missing_flags_on_a_tty(
-    runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    from config.constants import paths
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
     saved: dict[str, RemoteSyncSetupRequest] = {}
     monkeypatch.setattr(
         "surfaces.cli.commands.remote_sync.save_remote_sync_settings", _save_config(saved)
     )
-    _set_interactive(monkeypatch)
-    # gcs declares no extra fields, so the wizard stops after bucket/provider/prefix.
-    result = runner.invoke(remote_sync_command, ["setup"], input="my-bucket\ngcs\nopensre\n")
+    _set_form_interactive(monkeypatch, "gcs\r\x1b[B\rmy-bucket\r\x13")
+    # gcs declares no extra fields; save after selecting the provider and destination.
+    result = runner.invoke(remote_sync_command, ["setup"])
     assert result.exit_code == 0
     request = saved["request"]
     assert request.provider == "gcs"
@@ -498,3 +515,44 @@ def test_setup_help_lists_the_flags(runner: CliRunner) -> None:
     assert result.exit_code == 0
     assert "--provider" in result.output
     assert "--bucket" in result.output
+
+
+def test_setup_form_cancellation_leaves_existing_settings_unchanged(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.constants import paths
+    from config.local_settings import update_section
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
+    update_section("remote_sync", {"bucket": "stored", "provider": "gcs", "enabled": False})
+    before = (tmp_path / "config.yml").read_bytes()
+    _set_form_interactive(monkeypatch, "\x03")
+    result = runner.invoke(remote_sync_command, ["setup"])
+    assert result.exit_code == 0
+    assert "saved" not in result.output
+    assert (tmp_path / "config.yml").read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--provider", "vercel", "--bucket", "--prefix", "team/"],
+        ["--provider", "aws", "--bucket", "real-bucket", "--region", "--profile", "prod"],
+        ["--bucket", "--disabled"],
+    ],
+)
+def test_setup_malformed_flags_never_open_form_or_write(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flags: list[str]
+) -> None:
+    from config.constants import paths
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
+
+    def unexpected(_app: object) -> None:
+        raise AssertionError("Malformed flags must be rejected before opening a form")
+
+    monkeypatch.setattr("surfaces.cli.commands.remote_sync.run_command_input", unexpected)
+    result = runner.invoke(remote_sync_command, ["setup", *flags])
+    assert result.exit_code != 0
+    assert not isinstance(result.exception, AssertionError)
+    assert not (tmp_path / "config.yml").exists()

@@ -38,30 +38,52 @@ class RemoteSyncSetupRequest:
     enabled: bool = True
 
 
-def save_remote_sync_settings(request: RemoteSyncSetupRequest) -> RemoteSyncConfig:
-    """Merge ``request`` into ``remote_sync`` and return the stored config shape.
+class RemoteSyncSetupError(RemoteSyncConfigError):
+    """Side-effect-free setup validation failure safe to show on every surface."""
 
-    Environment overrides still win at load time. The provider is validated
-    against the registry so a typo fails here, not at the first sync.
-    """
+    def __init__(self, message: str, *, field: str) -> None:
+        super().__init__(message)
+        self.field = field
+
+
+def validate_remote_sync_settings(request: RemoteSyncSetupRequest) -> RemoteSyncSetupRequest:
+    """Normalize setup values without reading credentials or writing settings."""
     bucket = request.bucket.strip()
     if not bucket:
-        raise RemoteSyncConfigError("bucket (store name) is required")
+        raise RemoteSyncSetupError("bucket (store name) is required", field="bucket")
     provider = request.provider.strip().lower() or DEFAULT_REMOTE_SYNC_PROVIDER
     known = registered_providers()
     if provider not in known:
         listed = ", ".join(known) or "(none)"
-        raise RemoteSyncConfigError(f"unknown remote-sync provider {provider!r}; known: {listed}")
+        raise RemoteSyncSetupError(
+            f"unknown remote-sync provider {provider!r}; known: {listed}", field="provider"
+        )
     prefix = request.prefix.strip() or DEFAULT_REMOTE_SYNC_PREFIX
     region = request.region.strip()
     profile = request.profile.strip()
     declared = {extra.field for extra in provider_extra_fields(provider)}
     for field, value in ((RemoteSyncField.REGION, region), (RemoteSyncField.PROFILE, profile)):
         if value and field not in declared:
-            raise RemoteSyncConfigError(
+            raise RemoteSyncSetupError(
                 f"--{field.value} is not used by provider {provider!r}; "
-                "drop the flag or switch providers"
+                "drop the flag or switch providers",
+                field=field.value,
             )
+    return RemoteSyncSetupRequest(
+        bucket=bucket,
+        provider=provider,
+        prefix=prefix,
+        region=region,
+        profile=profile,
+        enabled=request.enabled,
+    )
+
+
+def save_remote_sync_settings(request: RemoteSyncSetupRequest) -> RemoteSyncConfig:
+    """Merge validated settings into ``remote_sync``; environment overrides still win."""
+    request = validate_remote_sync_settings(request)
+    bucket, provider, prefix = request.bucket, request.provider, request.prefix
+    region, profile = request.region, request.profile
     try:
         update_section(
             "remote_sync",
@@ -97,4 +119,10 @@ def disable_remote_sync() -> None:
         raise RemoteSyncConfigError(str(exc)) from exc
 
 
-__all__ = ["RemoteSyncSetupRequest", "disable_remote_sync", "save_remote_sync_settings"]
+__all__ = [
+    "RemoteSyncSetupError",
+    "RemoteSyncSetupRequest",
+    "disable_remote_sync",
+    "save_remote_sync_settings",
+    "validate_remote_sync_settings",
+]

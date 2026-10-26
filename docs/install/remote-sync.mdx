@@ -36,7 +36,31 @@ export BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 opensre remote-sync setup --provider azure --bucket my-container
 ```
 
-Same flags work as `/remote-sync setup` in the interactive shell. On chat gateways, pass flags (no interactive prompts) — or use the CLI.
+In the interactive shell, run `/remote-sync setup` to open the same editable
+form. Choose a provider and enter the **required** bucket, container, or store
+name. Provider defaults to `aws`. **Optional settings** contains the prefix (default
+`opensre`), provider-supported region/profile fields (optional, using ambient
+configuration when empty), and the enabled switch (default Yes for new setups).
+
+Existing stored settings and supplied flags prefill the form. Changing the
+provider updates its fields and credential guidance. **Save settings** writes
+`~/.opensre/config.yml`; Cancel, Esc from review, or Ctrl-C saves nothing.
+Validation errors keep your draft editable. Setup saves configuration only: it
+does not verify access, create a store, or transfer files. Use a private store.
+
+Complete flag commands save without opening a form. On chat gateways and in
+scripts, pass flags instead of relying on interactive input. For example:
+
+```bash
+/remote-sync setup --provider vercel --bucket opensre-remote-sync
+```
+
+A flag missing its value is rejected before the form opens or anything is saved.
+`--prefix=` uses the default prefix. `setup --disabled` only turns sync off,
+keeping the stored destination; to save new settings while disabled, also supply
+`--provider` and `--bucket`. Credentials stay in the provider's ambient environment,
+not in this form or config file. Environment variables still override saved
+settings for a run.
 
 Or set env vars yourself:
 

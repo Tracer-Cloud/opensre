@@ -230,3 +230,17 @@ def test_format_setup_lines_disabled_says_off_without_a_sync_suggestion() -> Non
     assert lines[0].startswith("Remote sync settings saved")
     assert "Remote sync is off" in lines[-1]
     assert "remote-sync sync" not in lines[-1]
+
+
+def test_setup_validation_normalizes_without_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from infrastructure.filestorage.setup import validate_remote_sync_settings
+
+    monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
+    draft = RemoteSyncSetupRequest(bucket=" demo ", provider=" GCS ", prefix=" ")
+    assert validate_remote_sync_settings(draft) == RemoteSyncSetupRequest(
+        bucket="demo", provider="gcs"
+    )
+    assert draft.bucket == " demo "
+    assert not (tmp_path / "config.yml").exists()
