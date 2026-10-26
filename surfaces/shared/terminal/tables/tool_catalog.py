@@ -46,6 +46,15 @@ _MAX_SCHEMA_SUMMARY_CHARS = 200
 
 
 @dataclass(frozen=True)
+class ToolParameter:
+    """A top-level parameter with its declared type and requiredness."""
+
+    name: str
+    type_label: str
+    required: bool
+
+
+@dataclass(frozen=True)
 class ToolCatalogEntry:
     """Display-shaped projection of a :class:`RegisteredTool`."""
 
@@ -53,7 +62,7 @@ class ToolCatalogEntry:
     """Registered tool name, e.g. ``"search_github_code"``."""
 
     surfaces: tuple[str, ...]
-    """Surfaces the tool is exposed on (``"investigation"`` and/or ``"chat"``)."""
+    """Surfaces the tool is exposed on (``"chat"`` and/or ``"action"``)."""
 
     description: str
     """One-line description from the tool's metadata, trimmed for display."""
@@ -69,6 +78,9 @@ class ToolCatalogEntry:
     """One-line render of top-level params, e.g.
     ``"query: string, limit?: integer"``. ``"(no params)"`` when the tool
     takes no inputs."""
+
+    parameters: tuple[ToolParameter, ...] = ()
+    """Unabridged parameters for the interactive detail view."""
 
 
 def _resolve_source_file(tool: RegisteredTool) -> str:
@@ -98,6 +110,19 @@ def _resolve_source_file(tool: RegisteredTool) -> str:
         return Path(file_attr).as_posix()
 
 
+def _schema_parameters(input_schema: dict[str, Any]) -> tuple[ToolParameter, ...]:
+    properties = input_schema.get("properties") or {}
+    required = set(input_schema.get("required") or ())
+    return tuple(
+        ToolParameter(
+            name,
+            str(info.get("type") or "any") if isinstance(info, dict) else "any",
+            name in required,
+        )
+        for name, info in properties.items()
+    )
+
+
 def _summarize_input_schema(input_schema: dict[str, Any]) -> str:
     """Render top-level params as a one-line ``name: type`` list.
 
@@ -106,17 +131,12 @@ def _summarize_input_schema(input_schema: dict[str, Any]) -> str:
     as ``any`` so the user can see the param exists. Returns
     ``"(no params)"`` for empty schemas.
     """
-    properties = input_schema.get("properties") or {}
-    if not properties:
+    parameters = _schema_parameters(input_schema)
+    if not parameters:
         return "(no params)"
-    required = set(input_schema.get("required") or ())
-    parts: list[str] = []
-    for name, info in properties.items():
-        info_dict = info if isinstance(info, dict) else {}
-        type_label = str(info_dict.get("type") or "any")
-        suffix = "" if name in required else "?"
-        parts.append(f"{name}{suffix}: {type_label}")
-    rendered = ", ".join(parts)
+    rendered = ", ".join(
+        f"{param.name}{'' if param.required else '?'}: {param.type_label}" for param in parameters
+    )
     if len(rendered) > _MAX_SCHEMA_SUMMARY_CHARS:
         return rendered[: _MAX_SCHEMA_SUMMARY_CHARS - 1].rstrip(", ") + "…"
     return rendered
@@ -129,6 +149,7 @@ def _entry_from_tool(tool: RegisteredTool) -> ToolCatalogEntry:
         description=(tool.description or "").strip(),
         source_file=_resolve_source_file(tool),
         input_schema_summary=_summarize_input_schema(tool.input_schema),
+        parameters=_schema_parameters(tool.input_schema),
     )
 
 
@@ -136,15 +157,15 @@ def build_tool_catalog(surface: ToolSurface | None = None) -> list[ToolCatalogEn
     """Return :class:`ToolCatalogEntry` records for tools registered on ``surface``.
 
     Pass ``surface=None`` (default) to get every registered tool, or
-    ``"investigation"`` / ``"chat"`` to filter. The order matches
+    ``"chat"`` / ``"action"`` to filter. The order matches
     :func:`get_registered_tools` (alphabetical by tool name).
     """
     return [_entry_from_tool(tool) for tool in get_registered_tools(surface)]
 
 
 def _surface_sort_key(surface: str) -> tuple[int, str]:
-    """Stable surface ordering — investigation first, chat second, others alphabetical."""
-    priority = {"investigation": 0, "chat": 1}
+    """Stable surface ordering — chat first, others alphabetical."""
+    priority = {"chat": 0}
     return (priority.get(surface, 99), surface)
 
 
@@ -152,8 +173,8 @@ def format_tool_catalog_text(entries: list[ToolCatalogEntry]) -> str:
     """Render entries as compact Markdown-ish text grouped by surface.
 
     Each tool may belong to multiple surfaces and will appear under each one
-    so the user can see at a glance which tools the chat agent versus the
-    investigation pipeline can reach. Returns ``""`` for an empty catalog.
+    so the user can see at a glance which tools each surface can reach.
+    Returns ``""`` for an empty catalog.
     """
     if not entries:
         return ""
@@ -179,6 +200,7 @@ def format_tool_catalog_text(entries: list[ToolCatalogEntry]) -> str:
 
 __all__ = [
     "ToolCatalogEntry",
+    "ToolParameter",
     "build_tool_catalog",
     "format_tool_catalog_text",
 ]

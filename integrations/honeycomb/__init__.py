@@ -7,8 +7,12 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.honeycomb.config import HoneycombIntegrationConfig
+from integrations.honeycomb.setup import HONEYCOMB_SETUP
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["HONEYCOMB_SETUP", "classify"]
 
 
 def classify(

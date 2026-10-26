@@ -16,15 +16,23 @@ headless construction are separate layers, not duplicated stacks.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-from bootstrap.adapters import install_harness_adapters, install_scheduler_runners
+from bootstrap.adapters import (
+    install_cli_auth_checker,
+    install_harness_adapters,
+    install_scheduled_delivery_adapters,
+)
+from bootstrap.frozen_ca_bundle import use_bundled_ca_certificates
 from config.local_env import bootstrap_opensre_env_once
 
 _LOG = logging.getLogger(__name__)
+_SKILLS_PULL_BOOT_DELAY_SECONDS = 3.0
 
 
 class ProcessName(StrEnum):
@@ -60,6 +68,7 @@ class BootStep(StrEnum):
     SCHEDULER_RUNNERS = "scheduler_runners"
     CAPABILITY_WARNINGS = "capability_warnings"
     PRELOAD_LLM = "preload_llm"
+    SKILLS_PULL = "skills_pull"
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +84,7 @@ class ProcessProfile:
 CLI_PROFILE: Final = ProcessProfile(
     name=ProcessName.CLI,
     # CLI owns Sentry (update tolerates a missing SDK) and Rich product adapters.
-    steps=frozenset({BootStep.ENV}),
+    steps=frozenset({BootStep.ENV, BootStep.SKILLS_PULL}),
 )
 GATEWAY_PROFILE: Final = ProcessProfile(
     name=ProcessName.GATEWAY,
@@ -86,6 +95,7 @@ GATEWAY_PROFILE: Final = ProcessProfile(
             BootStep.HARNESS_ADAPTERS,
             BootStep.CAPABILITY_WARNINGS,
             BootStep.PRELOAD_LLM,
+            BootStep.SKILLS_PULL,
         }
     ),
     sentry_entrypoint=SentryEntrypoint.GATEWAY,
@@ -107,6 +117,7 @@ SCHEDULER_WORKER_PROFILE: Final = ProcessProfile(
             BootStep.SENTRY,
             BootStep.HARNESS_ADAPTERS,
             BootStep.SCHEDULER_RUNNERS,
+            BootStep.SKILLS_PULL,
         }
     ),
     sentry_entrypoint=SentryEntrypoint.SCHEDULER,
@@ -122,14 +133,16 @@ SCHEDULED_COMMAND_PROFILE: Final = ProcessProfile(
 EMBEDDED_PROFILE: Final = ProcessProfile(
     name=ProcessName.EMBEDDED,
     # Driving the agent from Python inside someone else's process: register the
-    # adapters tools resolve through, and leave error reporting, scheduling and
-    # client preloading to the host.
+    # adapters tools resolve through, and leave error reporting, LLM tracing,
+    # scheduling and client preloading to the host.
     steps=frozenset({BootStep.ENV, BootStep.HARNESS_ADAPTERS}),
 )
 
 
 def _run_env(_profile: ProcessProfile, _log: logging.Logger) -> None:
     bootstrap_opensre_env_once(override=False)
+    # After the env files, so a CA bundle configured in one is kept.
+    use_bundled_ca_certificates()
 
 
 def _run_sentry(profile: ProcessProfile, _log: logging.Logger) -> None:
@@ -140,10 +153,13 @@ def _run_sentry(profile: ProcessProfile, _log: logging.Logger) -> None:
 
 def _run_harness_adapters(_profile: ProcessProfile, _log: logging.Logger) -> None:
     install_harness_adapters()
+    install_cli_auth_checker()
 
 
 def _run_scheduler_runners(_profile: ProcessProfile, _log: logging.Logger) -> None:
-    install_scheduler_runners()
+    # The agent runners are now built at the scheduler-start call
+    # site and passed in (no global); this step only installs delivery adapters.
+    install_scheduled_delivery_adapters()
 
 
 def _run_capability_warnings(profile: ProcessProfile, log: logging.Logger) -> None:
@@ -159,6 +175,27 @@ def _run_preload_llm(_profile: ProcessProfile, _log: logging.Logger) -> None:
     preload_llm_clients()
 
 
+def _run_skills_pull(_profile: ProcessProfile, _log: logging.Logger) -> None:
+    from config.skills_auto_update import skills_auto_update_enabled
+
+    if skills_auto_update_enabled():
+        threading.Thread(target=_start_skills_pull, name="opensre-skills-boot", daemon=True).start()
+
+
+def _start_skills_pull() -> None:
+    # Wait out startup before importing the catalog: short commands exit first,
+    # and the first turn never competes with the pull. A pulled release applies
+    # at the next turn, never mid-turn.
+    time.sleep(_SKILLS_PULL_BOOT_DELAY_SECONDS)
+    from infrastructure.skills_registry import (
+        install_skills_activation_telemetry,
+        start_skills_puller,
+    )
+
+    install_skills_activation_telemetry()
+    start_skills_puller()
+
+
 #: The one boot sequence. Membership in ``profile.steps`` selects; this tuple
 #: decides order, so no profile can run adapters before the environment loads.
 _STEP_ORDER: Final[
@@ -170,6 +207,7 @@ _STEP_ORDER: Final[
     (BootStep.SCHEDULER_RUNNERS, _run_scheduler_runners),
     (BootStep.CAPABILITY_WARNINGS, _run_capability_warnings),
     (BootStep.PRELOAD_LLM, _run_preload_llm),
+    (BootStep.SKILLS_PULL, _run_skills_pull),
 )
 
 _configured_profiles: set[ProcessName] = set()

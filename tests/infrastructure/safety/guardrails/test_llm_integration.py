@@ -8,7 +8,10 @@ from typing import Any
 import pytest
 import yaml
 
-from infrastructure.safety.guardrails.engine import GuardrailBlockedError, reset_guardrail_engine
+from infrastructure.safety.guardrails.evaluator import (
+    GuardrailBlockedError,
+    reset_guardrail_evaluator,
+)
 
 # ---------------------------------------------------------------------------
 # Shared LLM-client capture fixtures
@@ -97,9 +100,9 @@ def _write_rules(tmp_path: Path, rules: list[dict]) -> Path:
 @pytest.fixture(autouse=True)
 def _reset_engine() -> None:
     """Reset the guardrail singleton before and after each test."""
-    reset_guardrail_engine()
+    reset_guardrail_evaluator()
     yield  # type: ignore[misc]
-    reset_guardrail_engine()
+    reset_guardrail_evaluator()
 
 
 @pytest.fixture(autouse=True)
@@ -119,7 +122,7 @@ class TestLLMClientGuardrails:
             ],
         )
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path", lambda: config
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path", lambda: config
         )
         monkeypatch.setattr(
             "infrastructure.safety.guardrails.rules.get_default_rules_path", lambda: config
@@ -162,7 +165,7 @@ class TestLLMClientGuardrails:
             ],
         )
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path", lambda: config
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path", lambda: config
         )
         monkeypatch.setattr(
             "infrastructure.safety.guardrails.rules.get_default_rules_path", lambda: config
@@ -180,7 +183,7 @@ class TestLLMClientGuardrails:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path",
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path",
             lambda: tmp_path / "missing.yml",
         )
 
@@ -222,7 +225,7 @@ class TestOpenAIClientGuardrails:
             ],
         )
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path", lambda: config
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path", lambda: config
         )
         monkeypatch.setattr(
             "infrastructure.safety.guardrails.rules.get_default_rules_path", lambda: config
@@ -283,7 +286,7 @@ class TestChatNodeGuardrails:
             ],
         )
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path", lambda: config
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path", lambda: config
         )
         monkeypatch.setattr(
             "infrastructure.safety.guardrails.rules.get_default_rules_path", lambda: config
@@ -315,7 +318,7 @@ class TestChatNodeGuardrails:
             ],
         )
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path", lambda: config
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path", lambda: config
         )
         monkeypatch.setattr(
             "infrastructure.safety.guardrails.rules.get_default_rules_path", lambda: config
@@ -339,7 +342,7 @@ class TestChatNodeGuardrails:
             ],
         )
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path", lambda: config
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path", lambda: config
         )
         monkeypatch.setattr(
             "infrastructure.safety.guardrails.rules.get_default_rules_path", lambda: config
@@ -356,7 +359,7 @@ class TestChatNodeGuardrails:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path",
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path",
             lambda: tmp_path / "missing.yml",
         )
 
@@ -399,7 +402,7 @@ class TestOverlappingRedactionReachesDownstream:
     def _install_rules(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         config = _write_rules(tmp_path, _OVERLAPPING_RULES)
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_default_rules_path", lambda: config
+            "infrastructure.safety.guardrails.evaluator.get_default_rules_path", lambda: config
         )
         monkeypatch.setattr(
             "infrastructure.safety.guardrails.rules.get_default_rules_path", lambda: config

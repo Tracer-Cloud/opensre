@@ -14,7 +14,7 @@ import tempfile
 import time as _time
 from typing import Any
 
-from config.config import get_environment
+from config.environment import get_environment
 from config.runtime_metadata.build_info import detect_build_info
 from config.runtime_metadata.contract import RUNTIME_INPUTS_KEY
 from config.runtime_metadata.probes import (

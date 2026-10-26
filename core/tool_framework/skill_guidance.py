@@ -102,7 +102,7 @@ def load_tool_skill_guidance(
             content=parsed.body,
             file_path=str(path),
             tool_names=tool_names,
-            disable_model_invocation=frontmatter.get("disable-model-invocation") is True,
+            disable_model_invocation=_yaml_flag(frontmatter.get("disable-model-invocation")),
         ),
         diagnostics=diagnostics,
     )
@@ -111,21 +111,25 @@ def load_tool_skill_guidance(
 def _xml_attr(value: str) -> str:
     """Escape a string for safe use inside an XML double-quoted attribute value."""
     return (
-        value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+        value.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\r", "&#13;")
+        .replace("\n", "&#10;")
     )
 
 
 def format_tool_skill_guidance(skill: SkillGuidance) -> str:
     """Format skill guidance for inclusion in model-facing tool descriptions."""
 
-    skill_dir = str(Path(skill.file_path).parent)
     return (
-        f'<skill name="{_xml_attr(skill.name)}" description="{_xml_attr(skill.description)}" '
+        f'<tool_guidance name="{_xml_attr(skill.name)}" '
+        f'description="{_xml_attr(skill.description)}" '
         f'location="{_xml_attr(skill.file_path)}">\n'
-        f"Use this skill when the request matches the description above.\n"
-        f"References are relative to {skill_dir}.\n\n"
+        "Loaded; call the tool, not skill_view. References: this file's directory.\n\n"
         f"{skill.content.strip()}\n"
-        "</skill>"
+        "</tool_guidance>"
     )
 
 
@@ -143,7 +147,13 @@ def _parse_frontmatter(content: str, path: Path) -> _ParsedFrontmatter:
 
     end_index = normalized.find("\n---", 3)
     if end_index == -1:
-        return _ParsedFrontmatter(frontmatter={}, body=normalized.strip())
+        return _ParsedFrontmatter(
+            frontmatter={},
+            body="",
+            diagnostics=[
+                _diagnostic("parse_failed", "frontmatter is not closed with ---", path),
+            ],
+        )
 
     yaml_content = normalized[4:end_index]
     body = normalized[end_index + 4 :].strip()
@@ -246,6 +256,15 @@ def _tool_names(value: Any) -> tuple[str, ...]:
 
 def _string_value(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _yaml_flag(value: Any) -> bool:
+    """Treat YAML booleans and the common string spellings as true."""
+    if value is True or value == 1:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "on", "1"}
+    return False
 
 
 def _diagnostic(code: SkillDiagnosticCode, message: str, path: Path) -> SkillDiagnostic:

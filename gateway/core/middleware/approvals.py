@@ -22,6 +22,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from config.constants.tooling import ToolBlockedBy
 from core.tool import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
 from gateway.core.storage.security_audit import audit_security_action
 
@@ -50,6 +51,7 @@ class ApprovalBroker:
     def __init__(self) -> None:
         self._pending: dict[str, _PendingApproval] = {}
         self._lock = threading.Lock()
+        self._closed = False
 
     def create(
         self,
@@ -99,9 +101,14 @@ class ApprovalBroker:
         """Block for a decision; expiry counts as deny. Returns (approved, decided_by)."""
         with self._lock:
             pending = self._pending.get(approval_id)
+            closed = self._closed
         if pending is None:
             return (False, "")
-        decided = pending.event.wait(timeout)
+        # A closed broker can never receive a decision, so blocking would only
+        # hold this thread for the full timeout. Poll once instead: an approval
+        # ``close`` already denied reports that denial, and one created after it
+        # expires immediately.
+        decided = pending.event.wait(0 if closed else timeout)
         with self._lock:
             self._pending.pop(approval_id, None)
         if not decided:
@@ -115,6 +122,21 @@ class ApprovalBroker:
             )
             return (False, "")
         return (pending.approved, pending.decided_by)
+
+    def close(self) -> int:
+        """Deny every outstanding approval and refuse new ones; returns how many were pending.
+
+        Shutdown hook. Once a transport stops polling, no click or reply can
+        reach :meth:`resolve` any more, so a waiter would hold its executor
+        thread until ``MAX_APPROVAL_WAIT_SECONDS``. Denying returns those turns
+        to the loop at once, in time to post the outcome they owe the chat.
+        """
+        with self._lock:
+            self._closed = True
+            approval_ids = list(self._pending)
+        return sum(
+            self.resolve(approval_id, approved=False, decided_by="") for approval_id in approval_ids
+        )
 
 
 class ApprovalPrompter(Protocol):
@@ -154,6 +176,7 @@ def approval_tool_hooks(prompter: ApprovalPrompter) -> ToolExecutionHooks:
                 f"(decision by {who}). Do not retry; tell the user what you "
                 "wanted to do and why."
             ),
+            metadata={ToolBlockedBy.APPROVAL_DECLINED: True},
         )
 
     return ToolExecutionHooks(before_tool_call=before_tool_call)

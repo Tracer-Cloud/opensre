@@ -1,4 +1,4 @@
-"""Telegram delivery helper - posts investigation findings to Telegram Bot API."""
+"""Telegram delivery helper - posts messages to the Telegram Bot API."""
 
 from __future__ import annotations
 
@@ -136,9 +136,13 @@ def post_telegram_message(
     parse_mode: str = "",
     reply_to_message_id: str = "",
     reply_markup: dict[str, Any] | None = None,
+    *,
+    link_previews: bool = True,
 ) -> tuple[bool, str, str]:
     """Call Telegram Bot API sendMessage endpoint.
 
+    ``link_previews=False`` posts without the preview card Telegram adds for
+    the first link (a report lists many links; previews bury it).
     Returns (success, error, message_id).
     """
     logger.debug("[telegram] post message params chat_id: %s", chat_id)
@@ -147,6 +151,8 @@ def post_telegram_message(
         payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
+    if not link_previews:
+        payload["link_preview_options"] = {"is_disabled": True}
     if reply_to_message_id and reply_to_message_id != "0":
         with contextlib.suppress(ValueError, TypeError):
             payload["reply_to_message_id"] = int(reply_to_message_id)
@@ -166,8 +172,9 @@ def post_telegram_message(
             )
         else:
             error_message = response.text or f"HTTP {response.status_code}"
-        logger.warning("[telegram] post message failed: %s", error_message)
-        return False, error_message, ""
+        safe_error = redact_token(error_message, bot_token)
+        logger.warning("[telegram] post message failed: %s", safe_error)
+        return False, safe_error, ""
     result = response.data.get("result", {})
     message_id = str(result.get("message_id") or "") if isinstance(result, dict) else ""
     return True, "", message_id

@@ -1,9 +1,7 @@
-"""Task value types shared across opensre (REPL tasks, watchdog, suites).
+"""Task value types shared across opensre.
 
 ``TaskStatus`` / ``TaskKind`` / ``TaskRecord`` describe a single in-flight task
-(an investigation pipeline run, a subprocess-backed suite, or a watchdog loop).
-They live in ``infrastructure.scheduling`` so non-CLI packages (e.g. ``tools.system.watch_dog``)
-can depend on the task contract without importing the CLI package.
+(a subprocess-backed CLI run or a code-agent run).
 
 The persistent registry that stores and rehydrates these records lives in
 :mod:`infrastructure.scheduling.task_registry`.
@@ -31,16 +29,13 @@ class TaskStatus(StrEnum):
 
 
 class TaskKind(StrEnum):
-    INVESTIGATION = "investigation"
-    SYNTHETIC_TEST = "synthetic_test"
     CLI_COMMAND = "cli_command"
     CODE_AGENT = "code_agent"
-    WATCHDOG = "watchdog"
 
 
 @dataclass
 class TaskRecord:
-    """One shell task (investigation pipeline run or subprocess-backed suite)."""
+    """One shell task."""
 
     task_id: str
     kind: TaskKind

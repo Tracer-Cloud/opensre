@@ -58,7 +58,7 @@ def run_action_tool_turn(
     tool_hooks: ToolExecutionHooks | None = None,
 ) -> ToolCallingTurnResult:
     """Run one action turn with the shell's tools bound; nothing is kept between calls."""
-    sink = resolve_output_sink(console, output)
+    sink = resolve_output_sink(console, output, session)
     typo_result = _complete_literal_slash_typo_turn(message, session, sink)
     if typo_result is not None:
         return typo_result

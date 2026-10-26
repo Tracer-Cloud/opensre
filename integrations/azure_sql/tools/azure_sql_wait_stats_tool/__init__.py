@@ -3,7 +3,8 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.azure_sql import (
     azure_sql_extract_params,
     azure_sql_is_available,
@@ -16,7 +17,9 @@ from integrations.azure_sql import (
     name="get_azure_sql_wait_stats",
     description="Retrieve top wait statistics from Azure SQL Database to diagnose throttling, lock contention, IO bottlenecks, and network issues.",
     source="azure_sql",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Identifying the most impactful wait types during an incident",
         "Diagnosing lock contention or IO bottlenecks",

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.turns.action_driver import with_duplicate_action_call_guard
+from core.agent_harness.turns.action_dedup import with_duplicate_action_call_guard
 from core.llm.types import ToolCall
 from core.tool.execution import ToolExecutionResult
 
@@ -66,6 +66,19 @@ def test_a_call_that_failed_beside_a_success_may_retry_while_the_success_may_not
     assert executed == ["/health", "/integrations", "/integrations"]
 
 
+def test_two_identical_guarded_calls_in_one_response_run_once() -> None:
+    """The second identical call of the same provider batch is suppressed.
+
+    Guarded tools run sequentially, so the first call's success is visible to
+    the second call's ``before`` hook within the same response.
+    """
+    # Arrange / Act: one response carries /health twice.
+    executed = _drive([[HEALTH, HEALTH]])
+
+    # Assert: it ran once.
+    assert executed == ["/health"]
+
+
 def test_a_batch_of_unguarded_tools_does_not_clear_the_snapshot() -> None:
     """Only guarded calls form a batch, so an unguarded batch must not reset the guard."""
     # Arrange / Act: an unrelated tool runs between two identical /health batches.
@@ -95,12 +108,3 @@ def test_cli_payload_matches_across_surrounding_whitespace() -> None:
 
     # Assert.
     assert executed == ["integrations verify"]
-
-
-def test_identical_cli_exec_twice_in_one_batch_runs_once() -> None:
-    """Same-batch duplicates must not wait for the next batch boundary to suppress."""
-    first: _Call = ("cli_exec", {"payload": "integrations verify --dry-run"}, True)
-    second: _Call = ("cli_exec", {"payload": "integrations verify --dry-run"}, True)
-    executed = _drive([[first, second]])
-
-    assert executed == ["integrations verify --dry-run"]

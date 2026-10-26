@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.tracer import TracerTaskResult, get_tracer_client
 
 
@@ -27,7 +27,7 @@ from integrations.tracer import TracerTaskResult, get_tracer_client
         "required": ["run_id"],
     },
     is_available=lambda sources: bool(sources.get("tracer_web")),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
 )
 def get_tracer_tasks(run_id: str) -> TracerTaskResult:
     """Get tasks for a specific pipeline run from the Tracer API."""

@@ -1,0 +1,301 @@
+"""Rich login and status screens for the OpenSRE account command."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import questionary
+from rich.console import Console
+from rich.rule import Rule
+from rich.text import Text
+
+from config.account import AccountRecord
+from config.constants.paths import OPENSRE_HOME_DIR
+from infrastructure.terminal.prompt_support import (
+    QUESTIONARY_QMARK,
+    questionary_prompt_style,
+)
+from infrastructure.terminal.theme import (
+    BRAND,
+    DIM,
+    ERROR,
+    GLYPH_ERROR,
+    GLYPH_SUCCESS,
+    GLYPH_WARNING,
+    HIGHLIGHT,
+    SECONDARY,
+    TEXT,
+    WARNING,
+)
+from surfaces.cli.account_auth import AccountLoginResult, AccountLogoutResult
+from surfaces.shared.account_credits import AccountCredits, AccountCreditsStatus
+from surfaces.shared.account_session import AccountSessionState, AccountStatus
+
+_console = Console(
+    highlight=False, force_terminal=True, color_system="truecolor", legacy_windows=False
+)
+_KEY_COL = 14
+
+
+def _display_home() -> str:
+    path = Path(OPENSRE_HOME_DIR).expanduser()
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _print_kv(console: Console, key: str, value: str, value_style: str = TEXT) -> None:
+    row = Text()
+    row.append(f"    {key:<{_KEY_COL}}", style=SECONDARY)
+    row.append(value, style=value_style)
+    console.print(row)
+
+
+def _print_url(console: Console, url: str) -> None:
+    line = Text("     ")
+    link = Text(url, style=f"bold {HIGHLIGHT}")
+    link.stylize(f"link {url}")
+    line.append_text(link)
+    console.print(line)
+
+
+def _print_warning_banner(console: Console, title: str) -> None:
+    console.print()
+    console.print(Rule(style=DIM))
+    line = Text()
+    line.append(f"  {GLYPH_WARNING}  ", style=f"bold {WARNING}")
+    line.append(title, style=f"bold {TEXT}")
+    console.print(line)
+    console.print(Rule(style=DIM))
+    console.print()
+
+
+def _print_success_banner(console: Console, title: str) -> None:
+    console.print()
+    console.print(Rule(style=DIM))
+    done = Text()
+    done.append(f"  {GLYPH_SUCCESS}  ", style=f"bold {HIGHLIGHT}")
+    done.append(title, style=f"bold {TEXT}")
+    console.print(done)
+    console.print(Rule(style=DIM))
+    console.print()
+
+
+class AccountLoginPresenter:
+    """Factory-style numbered steps and themed success copy for account login."""
+
+    def __init__(self, console: Console | None = None) -> None:
+        self._console = console or _console
+
+    def prompt_sign_in(self, url: str, *, opened: bool) -> None:
+        console = self._console
+        console.print()
+        console.print(f"[bold {TEXT}]Sign in to OpenSRE[/]")
+        console.print()
+        if opened:
+            console.print("  1  Browser opened")
+        else:
+            console.print("  1  Open this link in your browser")
+        _print_url(console, url)
+        if opened:
+            console.print(f"     [{SECONDARY}]If it did not open, use the link above.[/]")
+        console.print("  2  Sign in or create your OpenSRE account")
+        console.print()
+        console.print(f"  [{SECONDARY}]Waiting for browser approval…[/]")
+
+    def authorization_received(self) -> None:
+        console = self._console
+        console.print()
+        line = Text()
+        line.append(f"  {GLYPH_SUCCESS} ", style=f"bold {HIGHLIGHT}")
+        line.append("Browser authorization received.", style=TEXT)
+        console.print(line)
+        console.print(f"  [{SECONDARY}]Finishing OpenSRE account setup…[/]")
+
+    def setup_complete(self) -> None:
+        console = self._console
+        account = Text()
+        account.append(f"  {GLYPH_SUCCESS} ", style=f"bold {HIGHLIGHT}")
+        account.append("OpenSRE account connected.", style=TEXT)
+        console.print(account)
+        hosted = Text()
+        hosted.append(f"  {GLYPH_SUCCESS} ", style=f"bold {HIGHLIGHT}")
+        hosted.append("Hosted model activated.", style=TEXT)
+        console.print(hosted)
+
+    def warn_active_session(self, status: AccountStatus) -> None:
+        who = _account_identity(status.record) if status.record else "this account"
+        _print_warning_banner(self._console, "A session is already active")
+        if status.record is not None:
+            _print_account_fields(self._console, status.record, credits=status.credits)
+        self._console.print()
+        note = Text()
+        note.append("  Signed in as ", style=SECONDARY)
+        note.append(who, style=f"bold {TEXT}")
+        note.append(". This session is valid. Signing in again replaces it.", style=SECONDARY)
+        self._console.print(note)
+        self._console.print()
+
+    def confirm_replace(self) -> bool:
+        """Ask whether to replace the active session. Default is keep it."""
+        if not sys.stdin.isatty():
+            return False
+        result = questionary.confirm(
+            "Replace this session and sign in again?",
+            default=False,
+            qmark=QUESTIONARY_QMARK,
+            style=questionary_prompt_style(),
+        ).ask()
+        return bool(result)
+
+    def session_kept(self) -> None:
+        console = self._console
+        line = Text()
+        line.append(f"  {GLYPH_SUCCESS}  ", style=f"bold {HIGHLIGHT}")
+        line.append("Keeping the current session.", style=TEXT)
+        console.print(line)
+        console.print(
+            f"  [{SECONDARY}]Run[/] [bold]opensre account logout[/bold] "
+            f"[{SECONDARY}]to sign out, or[/] [bold]opensre account login --force[/bold] "
+            f"[{SECONDARY}]to replace it.[/]"
+        )
+        console.print()
+
+    def replacing_session(self, status: AccountStatus) -> None:
+        who = _account_identity(status.record) if status.record else "this account"
+        console = self._console
+        console.print()
+        line = Text()
+        line.append(f"  {GLYPH_WARNING}  ", style=f"bold {WARNING}")
+        line.append(f"Replacing the active session for {who}.", style=TEXT)
+        console.print(line)
+
+    def success(
+        self,
+        result: AccountLoginResult,
+        credits: AccountCredits | None = None,
+    ) -> None:
+        record = result.record
+        _print_success_banner(self._console, f"Signed in as {_account_identity(record)}")
+        _print_account_fields(self._console, record, credits=credits)
+        if result.warning:
+            self._console.print()
+            warn = Text()
+            warn.append(f"  {GLYPH_WARNING}  ", style=f"bold {WARNING}")
+            warn.append(result.warning, style=WARNING)
+            self._console.print(warn)
+        self._console.print()
+
+
+def _account_identity(record: AccountRecord) -> str:
+    return record.email or record.user_id
+
+
+def _print_account_fields(
+    console: Console,
+    record: AccountRecord,
+    credits: AccountCredits | None = None,
+) -> None:
+    if record.email:
+        _print_kv(console, "email", record.email)
+    else:
+        _print_kv(console, "user", record.user_id)
+    _print_kv(console, "workspace", record.organization_id or "Personal")
+    _print_kv(
+        console,
+        "llm",
+        f"{record.llm_provider} · {record.llm_model}  (hosted by OpenSRE)",
+    )
+    if credits is not None:
+        _print_kv(console, "credits", f"{credits.total:,}")
+    _print_kv(console, "expires", record.token_expires_at, DIM)
+    _print_kv(console, "store", _display_home(), BRAND)
+
+
+def render_account_status(status: AccountStatus) -> None:
+    """Print local account status in the same theme as login success."""
+    console = _console
+    if status.authenticated and status.record is not None:
+        _print_success_banner(console, f"Signed in as {_account_identity(status.record)}")
+        _print_account_fields(console, status.record, credits=status.credits)
+        _print_kv(console, "detail", status.detail, SECONDARY)
+        console.print()
+        return
+
+    console.print()
+    console.print(Rule(style=DIM))
+    title = Text()
+    title.append(f"  {GLYPH_ERROR}  ", style=f"bold {ERROR}")
+    title.append("Not signed in", style=f"bold {TEXT}")
+    console.print(title)
+    console.print(Rule(style=DIM))
+    console.print()
+    if status.record is not None:
+        _print_account_fields(console, status.record)
+    _print_kv(console, "detail", status.detail, SECONDARY)
+    console.print()
+
+
+def render_account_credits(status: AccountCreditsStatus) -> None:
+    """Print hosted credits without treating a fetch failure as a zero balance."""
+    console = _console
+    credits = status.credits
+    if status.state is AccountSessionState.ACTIVE and credits is not None:
+        _print_success_banner(console, "OpenSRE hosted credits")
+        _print_credit_fields(console, credits)
+        console.print()
+        console.print(
+            f"  [{SECONDARY}]Top up:[/] [bold]opensre account usage[/bold] "
+            f"[{SECONDARY}]or[/] [bold]/account usage[/bold]"
+        )
+        console.print()
+        return
+
+    console.print()
+    console.print(Rule(style=DIM))
+    title = Text()
+    title.append(f"  {GLYPH_ERROR}  ", style=f"bold {ERROR}")
+    title.append("Credits unavailable", style=f"bold {TEXT}")
+    console.print(title)
+    console.print(Rule(style=DIM))
+    console.print()
+    _print_kv(console, "detail", status.detail, SECONDARY)
+    console.print()
+
+
+def _print_credit_fields(console: Console, credits: AccountCredits) -> None:
+    _print_kv(console, "available", f"{credits.total:,}")
+    if credits.monthly is not None:
+        limit = f" / {credits.monthly_limit:,}" if credits.monthly_limit is not None else ""
+        _print_kv(console, "monthly", f"{credits.monthly:,}{limit}")
+    if credits.top_up is not None:
+        _print_kv(console, "top-up", f"{credits.top_up:,}")
+    if credits.resets_at:
+        _print_kv(console, "resets", credits.resets_at, DIM)
+    if credits.plan_id:
+        _print_kv(console, "plan", credits.plan_id, SECONDARY)
+
+
+def render_account_logout(result: AccountLogoutResult) -> None:
+    """Print logout result with the shared success/warning glyphs."""
+    console = _console
+    console.print()
+    line = Text()
+    if result.remote_revoked:
+        line.append(f"  {GLYPH_SUCCESS}  ", style=f"bold {HIGHLIGHT}")
+        line.append(result.detail, style=TEXT)
+    else:
+        line.append(f"  {GLYPH_WARNING}  ", style=f"bold {WARNING}")
+        line.append(result.detail, style=WARNING)
+    console.print(line)
+    console.print()
+
+
+__all__ = [
+    "AccountLoginPresenter",
+    "render_account_credits",
+    "render_account_logout",
+    "render_account_status",
+]

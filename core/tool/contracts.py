@@ -15,11 +15,12 @@ from typing import Any, ClassVar, TypeAlias, Union, cast, get_args, get_origin, 
 
 from pydantic import BaseModel, Field, field_validator
 
-from config.constants.investigation import DEFAULT_APPROVAL_EXPIRY_SECONDS
+from config.constants.tool_params import config_only_params
+from config.constants.tooling import DEFAULT_APPROVAL_EXPIRY_SECONDS
 from config.strict_config import StrictConfigModel
-from core.domain.types.evidence import EvidenceSource
+from core.domain.types.evidence import EvidenceMapper, EvidenceSource
 from core.domain.types.retrieval import RetrievalControls
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool.registry import BaseToolRegistryMetadata, normalize_surfaces
 from infrastructure.observability.errors.boundary import report_exception
 
@@ -160,6 +161,92 @@ def _value_matches_schema(value: Any, schema: dict[str, Any]) -> bool:
     return True
 
 
+# Validation messages go back to the model and onto analytics; they name schema
+# facts and argument *names* only, never a value the model sent.
+_MAX_LISTED_NAMES = 12
+
+
+def _listed(names: Sequence[Any]) -> str:
+    shown = ", ".join(str(name) for name in names[:_MAX_LISTED_NAMES])
+    return f"{shown}, …" if len(names) > _MAX_LISTED_NAMES else shown
+
+
+def _json_type_name(value: Any) -> str:
+    if value is None:
+        return "null"
+    for schema_type in ("boolean", "integer", "number", "string", "array", "object"):
+        if _json_type_matches(value, schema_type):
+            return schema_type
+    return type(value).__name__
+
+
+def _invalid_value_hint(value: Any, schema: dict[str, Any]) -> str:
+    """Say what a rejected argument should have been, from the schema alone."""
+    enum = schema.get("enum")
+    if isinstance(enum, list) and enum and isinstance(value, str) and value not in enum:
+        words = value.split(maxsplit=1)
+        if len(words) == 2 and words[0] in enum:
+            return (
+                f"expected exactly one allowed value; {words[0]!r} is allowed, "
+                "so pass the words after it as separate arguments"
+            )
+        return f"expected one of: {_listed(enum)}"
+    expected = schema.get("type")
+    if not isinstance(expected, str) or _json_type_matches(value, expected):
+        return ""
+    hint = f"expected {expected}, got {_json_type_name(value)}"
+    if expected in {"array", "object"} and isinstance(value, str):
+        hint += f" (send a JSON {expected}, not a string)"
+    return hint
+
+
+def _public_input_error(name: str, schema: dict[str, Any], payload: Any) -> str | None:
+    """Return why ``payload`` does not fit tool ``name``'s public ``schema``, or ``None``."""
+    if schema.get("type") != "object":
+        return f"{name} exposes a non-object input schema."
+    if not isinstance(payload, dict):
+        return f"{name} expected object input."
+
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        properties = {}
+    required = schema.get("required")
+    if not isinstance(required, list):
+        required = []
+    known = list(properties)
+    unexpected = sorted(key for key in payload if key not in properties)
+
+    missing = [arg for arg in required if arg not in payload]
+    if missing:
+        message = f"{name} missing required args: {', '.join(sorted(missing))}."
+        if not payload:
+            return (
+                f"{message} The call carried no arguments (empty, or not a valid JSON "
+                "object); resend it with every required arg."
+            )
+        if unexpected:
+            return (
+                f"{message} Unknown args received: {_listed(unexpected)}; "
+                f"this tool's args are: {_listed(known)}."
+            )
+        return message
+
+    if schema.get("additionalProperties") is False and unexpected:
+        return (
+            f"{name} got unexpected args: {_listed(unexpected)}. "
+            f"This tool's args are: {_listed(known)}."
+        )
+
+    for key, value in payload.items():
+        prop_schema = properties.get(key)
+        if not isinstance(prop_schema, dict):
+            continue
+        if not _value_matches_schema(value, prop_schema):
+            hint = _invalid_value_hint(value, prop_schema)
+            return f"{name}.{key} has invalid type/value" + (f": {hint}." if hint else ".")
+    return None
+
+
 _TOOL_LOGGER = logging.getLogger("tools")
 
 
@@ -212,6 +299,7 @@ class ToolMetadata(StrictConfigModel):
 
     name: str
     description: str
+    compact_description: str | None = None
     display_name: str | None = None
     input_schema: dict[str, Any]
     source: EvidenceSource
@@ -230,7 +318,7 @@ class ToolMetadata(StrictConfigModel):
         description="Declares which structured retrieval controls this tool supports",
     )
 
-    @field_validator("name", "description", "display_name")
+    @field_validator("name", "description", "compact_description", "display_name")
     @classmethod
     def _require_non_empty_strings(cls, value: str | None) -> str | None:
         if value is None:
@@ -242,7 +330,7 @@ class ToolMetadata(StrictConfigModel):
 
 
 class BaseTool(ABC):
-    """Abstract base class for every investigation tool.
+    """Abstract base class for every registered tool.
 
     Subclass contract
     -----------------
@@ -258,13 +346,14 @@ class BaseTool(ABC):
       dict rather than propagating to the agent loop.
     * Override ``is_available`` and ``extract_params`` when the tool
       requires specific data-source checks or needs to pull kwargs from the
-      investigation sources dict.
+      resolved-integration sources dict.
     * Do **not** declare ``run`` with positional arguments — the call site
       always uses keyword arguments: ``tool_instance.run(**kwargs)``.
     """
 
     name: ClassVar[str]
     description: ClassVar[str]
+    compact_description: ClassVar[str | None] = None
     display_name: ClassVar[str | None] = None
     input_schema: ClassVar[dict[str, Any]]  # JSON Schema — consumed by LLM planner
     input_model: ClassVar[type[BaseModel] | None] = None
@@ -279,23 +368,27 @@ class BaseTool(ABC):
     outputs: ClassVar[dict[str, str]] = {}  # Output field -> description (optional, for prompting)
     output_schema: ClassVar[dict[str, Any] | None] = None
     output_model: ClassVar[type[BaseModel] | None] = None
+    #: Optional per-tool output→evidence mapper; assign a module-level function.
+    evidence_mapper: ClassVar[EvidenceMapper | None] = None
     injected_params: ClassVar[Sequence[str]] = ()
     retrieval_controls: ClassVar[RetrievalControls] = (
         RetrievalControls()
     )  # Declares supported controls
-    surfaces: ClassVar[tuple[ToolSurface | str, ...]] = (ToolSurface.INVESTIGATION,)
+    surfaces: ClassVar[tuple[ToolSurface | str, ...]] = (ToolSurface.CHAT,)
     tags: ClassVar[Sequence[str]] = ()
-    parallel_safe: ClassVar[bool] = True
+    role: ClassVar[ToolRole] = ToolRole.ACTION
     requires_approval: ClassVar[bool] = False  # Whether this tool needs approval from messaging
     approval_reason: ClassVar[str] = ""  # Human-readable reason for requiring approval
     approval_expiry_seconds: ClassVar[int] = DEFAULT_APPROVAL_EXPIRY_SECONDS
     accepts_runtime_context: ClassVar[bool] = False
+    concurrency_safe: ClassVar[bool] = False  # See ``RegisteredTool.concurrency_safe``
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         metadata = cls.metadata()
         cls.name = metadata.name
         cls.description = metadata.description
+        cls.compact_description = metadata.compact_description
         cls.display_name = metadata.display_name
         cls.input_schema = metadata.input_schema
         cls.source = metadata.source
@@ -313,7 +406,7 @@ class BaseTool(ABC):
         registry = cls.registry_metadata()
         cls.surfaces = registry.surfaces
         cls.tags = registry.tags
-        cls.parallel_safe = registry.parallel_safe
+        cls.role = registry.role
 
     @classmethod
     def metadata(cls) -> ToolMetadata:
@@ -322,6 +415,7 @@ class BaseTool(ABC):
             {
                 "name": getattr(cls, "name", ""),
                 "description": getattr(cls, "description", ""),
+                "compact_description": getattr(cls, "compact_description", None),
                 "display_name": getattr(cls, "display_name", None),
                 "input_schema": getattr(cls, "input_schema", {}),
                 "source_id": getattr(cls, "source_id", None),
@@ -344,9 +438,9 @@ class BaseTool(ABC):
         """Return validated registry/runtime metadata for this subclass."""
         return BaseToolRegistryMetadata.model_validate(
             {
-                "surfaces": getattr(cls, "surfaces", ("investigation",)),
+                "surfaces": getattr(cls, "surfaces", ("chat",)),
                 "tags": tuple(getattr(cls, "tags", ())),
-                "parallel_safe": getattr(cls, "parallel_safe", True),
+                "role": getattr(cls, "role", ToolRole.ACTION),
             }
         )
 
@@ -369,8 +463,15 @@ class BaseTool(ABC):
 
 
 REGISTERED_TOOL_ATTR = "__opensre_registered_tool__"
+#: ``error_kind`` of a result whose tool refused the request on its own rules.
+#: The integration behind such a tool is healthy; its credential needs no change.
+ERROR_KIND_REFUSED = "refused"
+#: Result ``details`` key a tool sets when one call did less than its declared
+#: ``side_effect_level`` (a read through a tool declared mutating); the value is
+#: a :class:`SideEffectLevel` value.
+CALL_SIDE_EFFECT_LEVEL_KEY = "side_effect_level"
 
-_DEFAULT_SURFACES: tuple[ToolSurface, ...] = (ToolSurface.INVESTIGATION,)
+_DEFAULT_SURFACES: tuple[ToolSurface, ...] = (ToolSurface.CHAT,)
 
 
 def _always_available(_sources: dict[str, dict]) -> bool:
@@ -386,6 +487,22 @@ def _normalize_surfaces(surfaces: Iterable[ToolSurface] | None) -> tuple[ToolSur
     return normalize_surfaces(surfaces)
 
 
+_CONCURRENT_SIDE_EFFECT_LEVELS = frozenset({SideEffectLevel.NONE, SideEffectLevel.READ_ONLY})
+
+
+def _concurrency_refusal(tool: RegisteredTool) -> str | None:
+    """Why ``tool`` may not declare ``concurrency_safe``, or ``None`` when it may."""
+    if tool.side_effect_level not in _CONCURRENT_SIDE_EFFECT_LEVELS:
+        return "it must declare side_effect_level none or read_only"
+    if tool.role != ToolRole.ACTION:
+        return f"a {tool.role} tool must run alone"
+    if tool.requires_approval:
+        return "a call that needs approval must run alone"
+    if tool.accepts_runtime_context:
+        return "runtime context reaches the session and console, which worker threads must not"
+    return None
+
+
 @dataclass
 class RegisteredTool:
     """Uniform runtime representation shared by all registered tools."""
@@ -395,6 +512,7 @@ class RegisteredTool:
     input_schema: dict[str, Any]
     source: EvidenceSource
     run: Callable[..., Any] = field(repr=False)
+    compact_description: str | None = None
     display_name: str | None = None
     source_id: str | None = None
     evidence_type: EvidenceType | None = None
@@ -406,6 +524,7 @@ class RegisteredTool:
     requires: list[str] = field(default_factory=list)
     outputs: dict[str, str] = field(default_factory=dict)
     output_schema: dict[str, Any] | None = None
+    evidence_mapper: EvidenceMapper | None = field(default=None, repr=False)
     injected_params: tuple[str, ...] = ()
     retrieval_controls: RetrievalControls = field(
         default_factory=RetrievalControls,
@@ -422,8 +541,13 @@ class RegisteredTool:
     requires_approval: bool = False
     approval_reason: str = ""
     approval_expiry_seconds: int = DEFAULT_APPROVAL_EXPIRY_SECONDS
-    parallel_safe: bool = True
+    role: ToolRole = ToolRole.ACTION
     accepts_runtime_context: bool = False
+    #: A pure read that may run on a worker thread beside the other
+    #: concurrency-safe calls of the same response. Requires a declared ``NONE``
+    #: or ``READ_ONLY`` side effect, the ``ACTION`` role, no approval and no
+    #: runtime context; a tool that breaks one of those fails at construction.
+    concurrency_safe: bool = False
     origin_module: str = ""
     origin_name: str = ""
     skill_guidance: str = ""
@@ -433,6 +557,7 @@ class RegisteredTool:
             {
                 "name": self.name,
                 "description": self.description,
+                "compact_description": self.compact_description,
                 "display_name": self.display_name,
                 "input_schema": self.input_schema,
                 "source": self.source,
@@ -451,6 +576,7 @@ class RegisteredTool:
         )
         self.name = metadata.name
         self.description = metadata.description
+        self.compact_description = metadata.compact_description
         self.display_name = metadata.display_name
         self.input_schema = metadata.input_schema
         self.source = metadata.source
@@ -473,6 +599,8 @@ class RegisteredTool:
             raise TypeError("is_available must be callable")
         if not callable(self.extract_params):
             raise TypeError("extract_params must be callable")
+        if self.concurrency_safe and (refusal := _concurrency_refusal(self)):
+            raise ValueError(f"{self.name} cannot be concurrency_safe: {refusal}")
 
     @property
     def inputs(self) -> dict[str, str]:
@@ -486,16 +614,17 @@ class RegisteredTool:
     def _public_input_schema(self) -> dict[str, Any]:
         """Deepcopy + prune injected params once; the shared cache behind
         ``public_input_schema``. ``input_schema`` / ``injected_params`` are fixed
-        at construction, so this is invariant."""
+        at construction, so this is invariant. Config-only names are hidden too."""
         schema = deepcopy(self.input_schema)
         properties = schema.get("properties")
         if not isinstance(properties, dict):
             return schema
-        for injected in self.injected_params:
-            properties.pop(injected, None)
+        hidden = config_only_params(self.name, self.injected_params)
+        for name in hidden:
+            properties.pop(name, None)
         required = schema.get("required")
         if isinstance(required, list):
-            schema["required"] = [name for name in required if name not in self.injected_params]
+            schema["required"] = [name for name in required if name not in hidden]
         return schema
 
     @property
@@ -510,35 +639,7 @@ class RegisteredTool:
 
     def validate_public_input(self, payload: dict[str, Any]) -> str | None:
         """Validate model-provided input against this tool's public schema."""
-        schema = self.public_input_schema
-        if schema.get("type") != "object":
-            return f"{self.name} exposes a non-object input schema."
-        if not isinstance(payload, dict):
-            return f"{self.name} expected object input."
-
-        properties = schema.get("properties")
-        if not isinstance(properties, dict):
-            properties = {}
-        required = schema.get("required")
-        if not isinstance(required, list):
-            required = []
-
-        missing = [name for name in required if name not in payload]
-        if missing:
-            return f"{self.name} missing required args: {', '.join(sorted(missing))}."
-
-        if schema.get("additionalProperties") is False:
-            extra = sorted(name for name in payload if name not in properties)
-            if extra:
-                return f"{self.name} got unexpected args: {', '.join(extra)}."
-
-        for key, value in payload.items():
-            prop_schema = properties.get(key)
-            if not isinstance(prop_schema, dict):
-                continue
-            if not _value_matches_schema(value, prop_schema):
-                return f"{self.name}.{key} has invalid type/value."
-        return None
+        return _public_input_error(self.name, self.public_input_schema, payload)
 
     def __call__(self, **kwargs: Any) -> Any:
         return _invoke_tool(self.run, name=self.name, source=str(self.source), kwargs=kwargs)
@@ -548,14 +649,17 @@ class RegisteredTool:
         cls,
         tool: BaseTool,
         *,
+        compact_description: str | None = None,
         surfaces: Iterable[ToolSurface] | None = None,
         retrieval_controls: RetrievalControls | None = None,
         tags: tuple[str, ...] | None = None,
         requires_approval: bool | None = None,
         approval_reason: str | None = None,
         approval_expiry_seconds: int | None = None,
-        parallel_safe: bool | None = None,
+        role: ToolRole | None = None,
         accepts_runtime_context: bool | None = None,
+        evidence_mapper: EvidenceMapper | None = None,
+        concurrency_safe: bool | None = None,
     ) -> RegisteredTool:
         metadata = tool.metadata()
         input_model = cast(type[BaseModel] | None, getattr(tool, "input_model", None))
@@ -574,6 +678,11 @@ class RegisteredTool:
         return cls(
             name=metadata.name,
             description=metadata.description,
+            compact_description=(
+                compact_description
+                if compact_description is not None
+                else metadata.compact_description
+            ),
             display_name=metadata.display_name,
             input_schema=resolved_input_schema,
             source=metadata.source,
@@ -590,6 +699,11 @@ class RegisteredTool:
             retrieval_controls=retrieval_controls or metadata.retrieval_controls,
             surfaces=resolved_surfaces,
             run=tool.run,  # type: ignore[attr-defined]
+            evidence_mapper=(
+                evidence_mapper
+                if evidence_mapper is not None
+                else getattr(tool.__class__, "evidence_mapper", None)
+            ),
             is_available=tool.is_available,
             extract_params=tool.extract_params,
             tags=resolved_tags,
@@ -606,13 +720,16 @@ class RegisteredTool:
                 if approval_expiry_seconds is not None
                 else tool.__class__.approval_expiry_seconds
             ),
-            parallel_safe=bool(
-                parallel_safe if parallel_safe is not None else tool.__class__.parallel_safe
-            ),
+            role=role if role is not None else tool.__class__.role,
             accepts_runtime_context=bool(
                 accepts_runtime_context
                 if accepts_runtime_context is not None
                 else tool.__class__.accepts_runtime_context
+            ),
+            concurrency_safe=bool(
+                concurrency_safe
+                if concurrency_safe is not None
+                else tool.__class__.concurrency_safe
             ),
             origin_module=tool.__class__.__module__,
             origin_name=tool.__class__.__name__,
@@ -625,6 +742,7 @@ class RegisteredTool:
         *,
         name: str | None = None,
         description: str | None = None,
+        compact_description: str | None = None,
         display_name: str | None = None,
         input_schema: dict[str, Any] | None = None,
         input_model: type[BaseModel] | None = None,
@@ -640,6 +758,7 @@ class RegisteredTool:
         outputs: dict[str, str] | None = None,
         output_schema: dict[str, Any] | None = None,
         output_model: type[BaseModel] | None = None,
+        evidence_mapper: EvidenceMapper | None = None,
         injected_params: tuple[str, ...] | None = None,
         retrieval_controls: RetrievalControls | None = None,
         is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -648,8 +767,9 @@ class RegisteredTool:
         requires_approval: bool | None = None,
         approval_reason: str | None = None,
         approval_expiry_seconds: int | None = None,
-        parallel_safe: bool | None = None,
+        role: ToolRole | None = None,
         accepts_runtime_context: bool | None = None,
+        concurrency_safe: bool | None = None,
     ) -> RegisteredTool:
         if source is None:
             raise ValueError("Function tools must declare a source.")
@@ -666,6 +786,7 @@ class RegisteredTool:
         return cls(
             name=name or func.__name__,
             description=description or inferred_description,
+            compact_description=compact_description,
             display_name=display_name,
             input_schema=resolved_input_schema,
             source=source,
@@ -679,6 +800,7 @@ class RegisteredTool:
             requires=list(requires or []),
             outputs=dict(outputs or {}),
             output_schema=resolved_output_schema,
+            evidence_mapper=evidence_mapper,
             injected_params=tuple(injected_params or ()),
             retrieval_controls=retrieval_controls or RetrievalControls(),
             run=func,
@@ -692,8 +814,9 @@ class RegisteredTool:
                 if approval_expiry_seconds is not None
                 else DEFAULT_APPROVAL_EXPIRY_SECONDS
             ),
-            parallel_safe=True if parallel_safe is None else bool(parallel_safe),
+            role=ToolRole.ACTION if role is None else role,
             accepts_runtime_context=bool(accepts_runtime_context),
+            concurrency_safe=bool(concurrency_safe),
             origin_module=func.__module__,
             origin_name=func.__name__,
         )
@@ -722,18 +845,6 @@ class AgentToolContext:
 AgentToolExecutor: TypeAlias = Callable[[dict[str, Any], AgentToolContext], Any]  # noqa: UP040
 
 
-class ToolParallelism(StrEnum):
-    """Whether a tool may run in parallel with others in the ReAct loop.
-
-    Distinct from ``tools.interactive_shell.shared.execution_policy.ToolExecutionMode``,
-    which tracks how a REPL action is launched (foreground/background/streaming),
-    not tool parallelism. Do not merge the two.
-    """
-
-    PARALLEL = "parallel"
-    SEQUENTIAL = "sequential"
-
-
 @dataclass(frozen=True)
 class AgentTool:
     """Tool contract executed directly by the shared agent runtime."""
@@ -743,53 +854,17 @@ class AgentTool:
     input_schema: dict[str, Any]
     execute: AgentToolExecutor
     source: str = "agent"
-    parallel_safe: bool = True
-    execution_mode: ToolParallelism | None = None
+    role: ToolRole = ToolRole.ACTION
     requires_approval: bool = False
     approval_reason: str = ""
     approval_expiry_seconds: int = DEFAULT_APPROVAL_EXPIRY_SECONDS
-
-    @property
-    def effective_execution_mode(self) -> ToolParallelism:
-        """Return the explicit execution policy, falling back to ``parallel_safe``."""
-        if self.execution_mode is not None:
-            return self.execution_mode
-        return ToolParallelism.PARALLEL if self.parallel_safe else ToolParallelism.SEQUENTIAL
 
     @property
     def public_input_schema(self) -> dict[str, Any]:
         return self.input_schema
 
     def validate_public_input(self, payload: dict[str, Any]) -> str | None:
-        schema = self.public_input_schema
-        if schema.get("type") != "object":
-            return f"{self.name} exposes a non-object input schema."
-        if not isinstance(payload, dict):
-            return f"{self.name} expected object input."
-
-        properties = schema.get("properties")
-        if not isinstance(properties, dict):
-            properties = {}
-        required = schema.get("required")
-        if not isinstance(required, list):
-            required = []
-
-        missing = [name for name in required if name not in payload]
-        if missing:
-            return f"{self.name} missing required args: {', '.join(sorted(missing))}."
-
-        if schema.get("additionalProperties") is False:
-            extra = sorted(name for name in payload if name not in properties)
-            if extra:
-                return f"{self.name} got unexpected args: {', '.join(extra)}."
-
-        for key, value in payload.items():
-            prop_schema = properties.get(key)
-            if not isinstance(prop_schema, dict):
-                continue
-            if not _value_matches_schema(value, prop_schema):
-                return f"{self.name}.{key} has invalid type/value."
-        return None
+        return _public_input_error(self.name, self.public_input_schema, payload)
 
 
 # Keep this as an assignment-style alias for the same CodeQL export check.
@@ -800,13 +875,15 @@ __all__ = [
     "AgentToolContext",
     "AgentToolExecutor",
     "BaseTool",
+    "CALL_SIDE_EFFECT_LEVEL_KEY",
+    "ERROR_KIND_REFUSED",
     "EvidenceType",
     "REGISTERED_TOOL_ATTR",
     "RegisteredTool",
     "RuntimeTool",
     "SideEffectLevel",
     "ToolMetadata",
-    "ToolParallelism",
+    "ToolRole",
     "infer_input_schema",
     "model_to_json_schema",
 ]

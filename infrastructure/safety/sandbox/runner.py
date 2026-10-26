@@ -5,32 +5,39 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import textwrap
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
-from config.constants import (
-    OPENSRE_TMP_DIR,
-    SANDBOX_BASE_ENV_KEYS,
-    SANDBOXED_TEMP_ENV_KEYS,
-    ensure_opensre_tmp_dir,
-)
+from config.constants import OPENSRE_TMP_DIR, ensure_opensre_tmp_dir
+from config.constants.paths import CONTEXT_ROOT_ENV, host_home, integrations_store_path
 
 DEFAULT_TIMEOUT: int = 30
 MAX_TIMEOUT: int = 60
 _SANDBOX_TMP_ROOT = os.path.realpath(os.fspath(OPENSRE_TMP_DIR))
-# An allowlist, not a passthrough: anything absent here is dropped.
-# Keys the OS itself requires: SYSTEMROOT/TEMP-family for Winsock and
-# shell-folder resolution (see #4937), PATHEXT/WINDIR/SYSTEMDRIVE for
-# consistent path expansion across Windows interpreters.
-# TEMP, TMP, TMPDIR and USERPROFILE are rewritten to the sandbox temp root
-# in _sandbox_env rather than forwarded: the injected guard below only
-# intercepts builtins.open, and tempfile's OS-level file creation bypasses it.
-# Deliberately excluded: COMSPEC (the preamble blocks subprocess spawning) and
-# APPDATA/LOCALAPPDATA (config homes, matching the omission of XDG_CONFIG_HOME).
+_BASE_ENV_KEYS = (
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "PATH",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_FILE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMPDIR",
+    "TMP",
+    "USERPROFILE",
+    "WINDIR",
+)
+_PYTHON_EXECUTABLE_NAMES = ("python3", "python")
+_PYTHON_PROBE = "import sys; raise SystemExit(sys.version_info[0] != 3)"
+_PYTHON_PROBE_TIMEOUT = 3
 
 # Preamble injected before user code when network access is disabled.
 _NETWORK_BLOCK_PREAMBLE = textwrap.dedent("""\
@@ -51,6 +58,148 @@ _NETWORK_BLOCK_PREAMBLE = textwrap.dedent("""\
     _socket_module.create_connection = _blocked_create_connection
     _socket_module.getaddrinfo = _blocked_getaddrinfo
 """)
+
+# Audit events that start another program or load native code. Denying them in
+# a runtime audit hook covers every Python-level entry point (``os``,
+# ``subprocess``, ``pty``, ``ctypes``), not only the names patched below.
+_DENIED_AUDIT_EVENTS = (
+    "os.exec",
+    "os.fork",
+    "os.forkpty",
+    "os.posix_spawn",
+    "os.spawn",
+    "os.startfile",
+    "os.system",
+    "subprocess.Popen",
+    "ctypes.dlopen",
+    "ctypes.dlsym",
+    "ctypes.cdata",
+)
+_NETWORK_AUDIT_EVENTS = (
+    "socket.bind",
+    "socket.connect",
+    "socket.getaddrinfo",
+    "socket.sendmsg",
+    "socket.sendto",
+)
+
+
+# Filesystem events whose path arguments must all stay inside the temp root.
+_WRITE_PATH_AUDIT_EVENTS = (
+    "os.chmod",
+    "os.chown",
+    "os.link",
+    "os.mkdir",
+    "os.remove",
+    "os.rename",
+    "os.rmdir",
+    "os.symlink",
+    "os.truncate",
+    "os.utime",
+)
+# Directory listings are refused under the private roots, like reads.
+_LIST_AUDIT_EVENTS = ("os.listdir", "os.scandir")
+# Home-relative locations holding account and cloud credentials.
+_PRIVATE_HOME_ENTRIES = (
+    ".aws",
+    ".azure",
+    ".config/gcloud",
+    ".config/gh",
+    ".docker",
+    ".git-credentials",
+    ".kube",
+    ".netrc",
+    ".ssh",
+)
+
+
+def _private_roots() -> tuple[str, ...]:
+    """Paths generated code may neither read nor list: OpenSRE and cloud credentials."""
+    home = os.path.expanduser("~")
+    roots = {os.path.realpath(os.fspath(host_home()))}
+    roots.update(os.path.realpath(os.path.join(home, entry)) for entry in _PRIVATE_HOME_ENTRIES)
+    # An organization's mounted context root holds every member's sessions, and a
+    # deployed silo may keep its integrations store outside the host home.
+    roots.add(os.path.realpath(os.fspath(integrations_store_path())))
+    if context_root := os.getenv(CONTEXT_ROOT_ENV, "").strip():
+        roots.add(os.path.realpath(os.path.expanduser(context_root)))
+    return tuple(sorted(roots))
+
+
+def _audit_hook_preamble(*, allow_network: bool) -> str:
+    """Install a runtime audit hook; code cannot remove one once installed.
+
+    Writes stay inside the temp root and credential locations stay unreadable.
+    Defense in depth only: CPython audit hooks are not an isolation boundary.
+    """
+    denied = _DENIED_AUDIT_EVENTS + (() if allow_network else _NETWORK_AUDIT_EVENTS)
+    return textwrap.dedent(f"""\
+        import os as _audit_os
+        import sys as _sys_module
+
+        _AUDIT_WRITE_ROOT = {_SANDBOX_TMP_ROOT!r}
+        _AUDIT_PRIVATE_ROOTS = {_private_roots()!r}
+        _AUDIT_WRITE_FLAGS = (
+            _audit_os.O_WRONLY | _audit_os.O_RDWR | _audit_os.O_APPEND
+            | _audit_os.O_CREAT | _audit_os.O_TRUNC
+        )
+
+        def _audit_path(value):
+            if isinstance(value, bytes):
+                value = value.decode(errors="replace")
+            if not isinstance(value, str):
+                return None
+            return _audit_os.path.realpath(value)
+
+        def _audit_within(path, root):
+            return path == root or path.startswith(root + _audit_os.sep)
+
+        def _audit_check_private(path):
+            if any(_audit_within(path, root) for root in _AUDIT_PRIVATE_ROOTS):
+                raise PermissionError("Credential locations are not readable in sandbox mode")
+            if path.startswith("/proc/") and path.rsplit("/", 1)[-1] in (
+                "environ", "mem", "maps", "cmdline"
+            ):
+                raise PermissionError("Reading process state is not permitted in sandbox mode")
+
+        def _audit_check_write(path):
+            if not _audit_within(path, _AUDIT_WRITE_ROOT):
+                raise PermissionError(
+                    f"Write access denied outside the OpenSRE temp directory: {{path}}"
+                )
+
+        def _opensre_sandbox_audit(event, args, _denied=frozenset({denied!r})):
+            if event in _denied:
+                raise PermissionError(f"{{event}} is not permitted in sandbox mode")
+            if event == "open" and args:
+                path = _audit_path(args[0])
+                if path is None:
+                    return
+                _audit_check_private(path)
+                mode = args[1] if len(args) > 1 else None
+                flags = args[2] if len(args) > 2 else 0
+                writes = (isinstance(mode, str) and any(c in mode for c in "wax+")) or (
+                    isinstance(flags, int) and flags & _AUDIT_WRITE_FLAGS
+                )
+                if writes:
+                    _audit_check_write(path)
+            elif event in {_WRITE_PATH_AUDIT_EVENTS!r}:
+                for value in args:
+                    path = _audit_path(value)
+                    if path is not None:
+                        _audit_check_private(path)
+                        _audit_check_write(path)
+            elif event in {_LIST_AUDIT_EVENTS!r} and args:
+                path = _audit_path(args[0] if args[0] is not None else ".")
+                if path is not None:
+                    _audit_check_private(path)
+            elif event == "import" and args and args[0] in ("_ctypes", "_posixsubprocess"):
+                raise PermissionError(f"Importing {{args[0]}} is not permitted in sandbox mode")
+
+        _sys_module.addaudithook(_opensre_sandbox_audit)
+        _sys_module.modules.pop("_posixsubprocess", None)
+    """)
+
 
 # Preamble always injected before user code: restricts filesystem writes and subprocesses.
 _SANDBOX_PREAMBLE = textwrap.dedent(f"""\
@@ -88,6 +237,8 @@ _SANDBOX_PREAMBLE = textwrap.dedent(f"""\
     _subprocess_module.check_call = _blocked_subprocess
     _subprocess_module.check_output = _blocked_subprocess
     _subprocess_module.run = _blocked_subprocess
+    # The C entry point Popen wraps; it raises no audit event of its own.
+    _subprocess_module._fork_exec = _blocked_subprocess
 
     _os_shell_module.system = _blocked_subprocess
     _os_shell_module.popen = _blocked_subprocess
@@ -111,6 +262,82 @@ class SandboxResult:
     @property
     def success(self) -> bool:
         return self.exit_code == 0 and not self.timed_out
+
+
+@lru_cache(maxsize=8)
+def _validated_frozen_python(frozen_executable: str, path: str) -> str | None:
+    """Resolve and validate an external Python for a frozen OpenSRE process."""
+    for name in _PYTHON_EXECUTABLE_NAMES:
+        for candidate in _explicit_path_candidates(name, path):
+            try:
+                is_frozen_executable = os.path.samefile(candidate, frozen_executable)
+            except OSError:
+                is_frozen_executable = os.path.normcase(
+                    os.path.realpath(candidate)
+                ) == os.path.normcase(os.path.realpath(frozen_executable))
+            if is_frozen_executable:
+                continue
+            try:
+                probe = subprocess.run(
+                    [candidate, "-I", "-c", _PYTHON_PROBE],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=_PYTHON_PROBE_TIMEOUT,
+                    env=_sandbox_env({"PATH": path}),
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if probe.returncode == 0:
+                return candidate
+    return None
+
+
+def _explicit_path_candidates(name: str, path: str) -> Iterator[str]:
+    """Yield executables found only inside absolute, explicit PATH entries."""
+    seen_directories: set[str] = set()
+    for entry in path.split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            continue
+        directory = os.path.abspath(entry)
+        normalized_directory = os.path.normcase(directory)
+        if normalized_directory in seen_directories:
+            continue
+        seen_directories.add(normalized_directory)
+
+        candidate = shutil.which(os.path.join(directory, name))
+        if candidate is None:
+            continue
+        candidate = os.path.abspath(candidate)
+        if os.path.normcase(os.path.dirname(candidate)) != normalized_directory:
+            continue
+        yield candidate
+
+
+def _python_executable() -> str:
+    """Return a real Python interpreter, never the frozen OpenSRE executable."""
+    if not sys.executable:
+        raise FileNotFoundError("Python 3 is not available")
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+
+    candidate = _validated_frozen_python(
+        os.path.abspath(sys.executable),
+        os.environ.get("PATH", ""),
+    )
+    if candidate is not None:
+        return candidate
+
+    raise FileNotFoundError("Python 3 is not available on PATH")
+
+
+def python_interpreter_available() -> bool:
+    """Return whether sandbox execution can resolve a Python interpreter."""
+    try:
+        _python_executable()
+    except OSError:
+        return False
+    return True
 
 
 def run_python_sandbox(
@@ -152,13 +379,25 @@ def run_python_sandbox(
         )
 
     network_preamble = "" if allow_network else _NETWORK_BLOCK_PREAMBLE
-    full_code = network_preamble + _SANDBOX_PREAMBLE + inputs_injection + code
+    full_code = (
+        network_preamble
+        + _SANDBOX_PREAMBLE
+        + inputs_injection
+        + _audit_hook_preamble(allow_network=allow_network)
+        + code
+    )
 
     tmp_path: str | None = None
     try:
+        python_executable = _python_executable()
         ensure_opensre_tmp_dir()
+        # Explicit UTF-8 for the script file and ``-X utf8`` for the child's
+        # stdio/open(): the platform default (cp1252 on Windows) cannot encode
+        # characters like "→". ``-I`` ignores PYTHONIOENCODING/PYTHONUTF8, so
+        # the interpreter flag is the only switch that reaches the child.
         with tempfile.NamedTemporaryFile(
             mode="w",
+            encoding="utf-8",
             suffix=".py",
             delete=False,
             dir=OPENSRE_TMP_DIR,
@@ -167,7 +406,7 @@ def run_python_sandbox(
             tmp_path = tmp.name
 
         result = subprocess.run(
-            [sys.executable, tmp_path],
+            [python_executable, "-I", "-B", "-X", "utf8", tmp_path],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -226,6 +465,9 @@ def _sandbox_env(extra_env: dict[str, str] | None) -> dict[str, str]:
         value = os.environ.get(key)
         if value:
             sandbox_env[key] = value
+    # ``tempfile`` must land where writes are allowed.
+    for key in ("TMPDIR", "TEMP", "TMP"):
+        sandbox_env[key] = _SANDBOX_TMP_ROOT
     if extra_env:
         sandbox_env.update({key: str(value) for key, value in extra_env.items() if value})
     return sandbox_env

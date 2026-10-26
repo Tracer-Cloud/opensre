@@ -1,9 +1,0 @@
-{
-  "session_id": "hermes-memory-030",
-  "pid": 7712,
-  "started_at": "2026-05-18T14:00:00Z",
-  "frozen_now_ts": "2026-05-18T14:12:44Z",
-  "interrupt_queue_depth": 0,
-  "last_progress_ts": "2026-05-18T14:12:11Z",
-  "is_blocked": false
-}

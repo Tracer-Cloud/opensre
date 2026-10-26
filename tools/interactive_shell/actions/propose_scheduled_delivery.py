@@ -4,16 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.github import GITHUB_CONNECTION_ID_PARAM
+from core.agent_harness import is_recurring_skill, normalize_skill_name, validate_skill_inputs
+from core.agent_harness.spi.integrations import resolve_and_cache_integrations
 from core.agent_harness.spi.session_state import (
     PendingScheduleOffer,
     clear_competing_pending_offers,
 )
-from core.agent_harness.tools import ActionToolContext, execute_with_action_context
+from core.agent_harness.tools import ActionToolScope, execute_with_action_context
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from tools.system.scheduled_loops.destination import conversation_destination
 
 # Match surfaces.cli.commands.cron: Sentry kinds use `opensre sentry`, not cron add.
 _KIND_VALUES = frozenset(
@@ -67,15 +71,59 @@ def _briefing_looks_real(text: str) -> bool:
     return any(marker in lowered for marker in _BRIEFING_MARKERS)
 
 
+def _briefing_precondition_error(
+    *,
+    label: str,
+    session: Any,
+    history_start: int,
+    briefing_text: str,
+) -> dict[str, Any] | None:
+    """Reject an offer that has no weather/news work behind it."""
+    if not _has_fetch_evidence(session, history_start):
+        return {
+            "ok": False,
+            "error": (
+                f"No weather/news fetch ran yet this session. For {label}, "
+                "run the delivering-morning-briefings shell_run fetches (wttr.in + headlines) "
+                "first, compose the briefing, optionally deliver it, THEN call "
+                "propose_scheduled_delivery with briefing_text set to that "
+                "composed briefing. Do not offer to schedule work that never ran."
+            ),
+        }
+    if not _briefing_looks_real(briefing_text):
+        return {
+            "ok": False,
+            "error": (
+                f"briefing_text is required for {label} and must contain the "
+                "composed weather + headlines briefing (not empty, not the closer "
+                "alone). Pass the same text you showed or delivered to the user."
+            ),
+        }
+    return None
+
+
 def execute_propose_scheduled_delivery_tool(
-    args: dict[str, Any], ctx: ActionToolContext
+    args: dict[str, Any], ctx: ActionToolScope
 ) -> dict[str, Any]:
     kind = str(args.get("kind", "")).strip().lower()
     cron = " ".join(str(args.get("cron", "")).split())
     timezone = str(args.get("timezone", "UTC")).strip() or "UTC"
     provider = str(args.get("provider", "")).strip().lower()
     chat_id = str(args.get("chat_id", "")).strip()
+    # A schedule asked for in a chat delivers back to that chat unless told otherwise.
+    origin_provider, origin_chat_id = conversation_destination(ctx.session)
+    if not provider:
+        provider = origin_provider or Provider.INTERACTIVE_SHELL.value
+    if not chat_id and provider == origin_provider:
+        chat_id = origin_chat_id
+    prompt = str(args.get("prompt", "") or "").strip()
     briefing_text = str(args.get("briefing_text", "") or "").strip()
+    skill_name = normalize_skill_name(str(args.get("skill_name", "") or ""))
+    owner = str(args.get("owner", "") or "").strip()
+    repo = str(args.get("repo", "") or "").strip()
+    branch = str(args.get("branch", "") or "").strip()
+    pr_number = str(args.get("pr_number", "") or "").strip()
+    city = str(args.get("city", "") or "").strip()
 
     if kind not in _KIND_VALUES:
         return {
@@ -94,6 +142,11 @@ def execute_propose_scheduled_delivery_tool(
             "ok": False,
             "error": "cron must have exactly 5 fields (minute hour day month day_of_week)",
         }
+    if kind == TaskKind.MANUAL_LOOP.value:
+        if not prompt:
+            return {"ok": False, "error": "prompt is required for manual_loop."}
+    elif prompt:
+        return {"ok": False, "error": "prompt is only valid for manual_loop."}
     # Slack is not unconditionally exempt: it can skip an explicit channel only
     # while a webhook supplies one. Asking the scheduler (same check as
     # `/cron add`) instead of hard-coding the provider keeps the offer from
@@ -112,28 +165,75 @@ def execute_propose_scheduled_delivery_tool(
         }
 
     # Refuse the failure mode where "give me a morning report" becomes ONLY a
-    # Want-me-to closer: no weather, no headlines, nothing delivered.
-    if kind == TaskKind.DAILY_SUMMARY.value:
-        if not _has_fetch_evidence(ctx.session, getattr(ctx, "history_start", 0)):
+    # Want-me-to closer: no weather, no headlines, nothing delivered. A prompt
+    # loop ("check my repos every morning") needs no briefing behind it.
+    briefing_label = ""
+    if kind == TaskKind.RECURRING_SKILL.value:
+        if not skill_name or not is_recurring_skill(skill_name):
             return {
                 "ok": False,
                 "error": (
-                    "No weather/news fetch ran yet this session. For daily_summary, "
-                    "run the morning-report shell_run fetches (wttr.in + headlines) "
-                    "first, compose the briefing, optionally deliver it, THEN call "
-                    "propose_scheduled_delivery with briefing_text set to that "
-                    "composed briefing. Do not offer to schedule work that never ran."
+                    "skill_name is required for recurring_skill and must name a "
+                    "skill marked recurring (e.g. 'delivering-morning-briefings')."
                 ),
             }
-        if not _briefing_looks_real(briefing_text):
+        if skill_name == "delivering-morning-briefings":
+            briefing_label = "delivering-morning-briefings"
+    if briefing_label:
+        blocked = _briefing_precondition_error(
+            label=briefing_label,
+            session=ctx.session,
+            history_start=getattr(ctx, "history_start", 0),
+            briefing_text=briefing_text,
+        )
+        if blocked is not None:
+            return blocked
+
+    scope_supplied = bool(owner or repo or branch or pr_number)
+    skill_inputs: dict[str, str] = {}
+    if skill_name == "delivering-morning-briefings":
+        if city:
+            skill_inputs["city"] = city
+    elif skill_name == "reporting-github-ci-failures":
+        if not owner or not repo:
             return {
                 "ok": False,
-                "error": (
-                    "briefing_text is required for daily_summary and must contain the "
-                    "composed weather + headlines briefing (not empty, not the closer "
-                    "alone). Pass the same text you showed or delivered to the user."
-                ),
+                "error": "owner and repo are required for reporting-github-ci-failures.",
             }
+        if branch and pr_number:
+            return {"ok": False, "error": "Use either branch or pr_number, not both."}
+        if pr_number:
+            try:
+                if int(pr_number) < 1:
+                    raise ValueError
+            except ValueError:
+                return {"ok": False, "error": "pr_number must be a positive integer."}
+        skill_inputs = {"owner": owner, "repo": repo}
+        resolved = resolve_and_cache_integrations(ctx.session)
+        connection_id = resolved.get("github", {}).get("connection_id") or getattr(
+            getattr(ctx.session, "integrations", None), "github_connection_id", None
+        )
+        if connection_id:
+            skill_inputs[GITHUB_CONNECTION_ID_PARAM] = connection_id
+        if branch:
+            skill_inputs["branch"] = branch
+        if pr_number:
+            skill_inputs["pr_number"] = pr_number
+    elif scope_supplied:
+        return {
+            "ok": False,
+            "error": "owner, repo, branch, and pr_number are only valid for reporting-github-ci-failures.",
+        }
+    elif city:
+        return {
+            "ok": False,
+            "error": "city is only valid for delivering-morning-briefings.",
+        }
+
+    try:
+        skill_inputs = validate_skill_inputs(skill_inputs)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
 
     offer = PendingScheduleOffer(
         kind=kind,
@@ -141,9 +241,11 @@ def execute_propose_scheduled_delivery_tool(
         timezone=timezone,
         provider=provider,
         chat_id=chat_id,
+        prompt=prompt if kind == TaskKind.MANUAL_LOOP.value else "",
+        skill_name=skill_name if kind == TaskKind.RECURRING_SKILL.value else "",
+        skill_inputs=skill_inputs,
     )
     ctx.session.pending_schedule_offer = offer
-    # One pending affirmative at a time — schedule wins over investigate.
     clear_competing_pending_offers(ctx.session, keep_attr="pending_schedule_offer")
     body = offer.want_me_to_body()
     closer = f"**Want me to:** {body}?"
@@ -169,10 +271,17 @@ def run_propose_scheduled_delivery(
     *,
     kind: str,
     cron: str,
-    provider: str,
+    provider: str = "",
     timezone: str = "UTC",
     chat_id: str = "",
+    prompt: str = "",
     briefing_text: str = "",
+    skill_name: str = "",
+    owner: str = "",
+    repo: str = "",
+    branch: str = "",
+    pr_number: str = "",
+    city: str = "",
     context: Any,
 ) -> dict[str, Any]:
     return execute_with_action_context(
@@ -182,7 +291,14 @@ def run_propose_scheduled_delivery(
             "timezone": timezone,
             "provider": provider,
             "chat_id": chat_id,
+            "prompt": prompt,
             "briefing_text": briefing_text,
+            "skill_name": skill_name,
+            "owner": owner,
+            "repo": repo,
+            "branch": branch,
+            "pr_number": pr_number,
+            "city": city,
         },
         context,
         execute_propose_scheduled_delivery_tool,
@@ -194,11 +310,13 @@ propose_scheduled_delivery_tool = RegisteredTool(
     description=(
         "Record a schedule offer the user has NOT yet accepted, and return the "
         "canonical Want me to: closer plus response_text (briefing + closer). "
-        "PRECONDITION for daily_summary: weather/news shell_run fetches must "
-        "already have succeeded in this session, and briefing_text must be the "
-        "composed briefing. This tool schedules nothing and produces no weather "
-        "— calling it alone leaves the user with an empty offer. Do NOT call "
-        "/cron add until the user confirms; their yes becomes the slash command."
+        "PRECONDITION for recurring_skill delivering-morning-briefings: "
+        "weather/news shell_run fetches must already have succeeded in this "
+        "session and briefing_text must be the composed briefing. A manual_loop "
+        "needs only its prompt. Without provider, the schedule delivers to the "
+        "chat this turn came from. When the user already asked outright for a "
+        "recurring prompt, use schedule_prompt_loop instead. Do NOT call /cron "
+        "add until the user confirms; their yes becomes the slash command."
     ),
     use_cases=[
         (
@@ -219,42 +337,75 @@ propose_scheduled_delivery_tool = RegisteredTool(
         properties={
             "kind": string_property(
                 description=(
-                    "Scheduled task kind, e.g. 'daily_summary'. Must be a "
-                    f"cron-add kind: {', '.join(sorted(_KIND_VALUES))}."
+                    "Scheduled task kind, e.g. 'recurring_skill' or 'manual_loop'. "
+                    f"Must be a cron-add kind: {', '.join(sorted(_KIND_VALUES))}."
                 ),
                 min_length=1,
             ),
             "cron": string_property(
-                description="5-field cron expression, e.g. '0 8 * * 1-5'.",
+                description="5-field cron expression, e.g. '0 8 * * mon-fri' for weekdays.",
                 min_length=9,
             ),
             "timezone": string_property(
                 description="IANA timezone (default UTC), e.g. 'Europe/Amsterdam'."
             ),
             "provider": string_property(
-                description="Delivery provider: slack, telegram, discord, or rocketchat.",
-                min_length=1,
+                description=(
+                    "Delivery provider: slack, telegram, discord, or rocketchat. "
+                    "Omit to deliver to the chat this turn came from."
+                ),
             ),
             "chat_id": string_property(
                 description=(
-                    "Target chat/channel. Optional for slack (webhook-bound). "
-                    "Required for telegram/discord/rocketchat."
+                    "Target chat/channel. Defaults to this conversation's chat when "
+                    "provider is omitted or matches it. Required for "
+                    "telegram/discord/rocketchat elsewhere."
+                ),
+            ),
+            "prompt": string_property(
+                description=(
+                    "Required for manual_loop: the instruction to execute on "
+                    "every scheduled run. Do not provide it for other task kinds."
                 ),
             ),
             "briefing_text": string_property(
                 description=(
-                    "Required for daily_summary: the composed weather + headlines "
-                    "briefing already produced for the user. Returned in "
-                    "response_text ahead of the Want me to: closer so the user "
-                    "never sees an offer without the report."
+                    "Required for recurring_skill delivering-morning-briefings: "
+                    "the composed weather + headlines briefing "
+                    "already produced for the user. Returned in response_text "
+                    "ahead of the Want me to: closer so the user never sees an "
+                    "offer without the report."
+                ),
+            ),
+            "skill_name": string_property(
+                description=(
+                    "Required for recurring_skill: the kebab-case action skill "
+                    "to repeat (e.g. 'delivering-morning-briefings')."
+                ),
+            ),
+            "owner": string_property(
+                description="Repository owner required by the reporting-github-ci-failures skill."
+            ),
+            "repo": string_property(
+                description="Repository name required by the reporting-github-ci-failures skill."
+            ),
+            "branch": string_property(
+                description="Optional reporting-github-ci-failures branch filter; mutually exclusive with pr_number."
+            ),
+            "pr_number": string_property(
+                description="Optional positive reporting-github-ci-failures PR number; mutually exclusive with branch."
+            ),
+            "city": string_property(
+                description=(
+                    "Optional city for the delivering-morning-briefings skill. Persisted so each "
+                    "scheduled tick fetches weather for the requested location."
                 ),
             ),
         },
-        required=("kind", "cron", "provider"),
+        required=("kind", "cron"),
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_propose_scheduled_delivery,
     tags=("safe", "fast", "no-credentials"),

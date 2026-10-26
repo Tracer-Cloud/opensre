@@ -15,7 +15,11 @@ from typing import Any
 
 import httpx
 
-from config.constants.slack import SLACK_BOT_TOKEN_ENV
+from config.constants.slack import (
+    SLACK_ACCESS_TOKEN_ENV,
+    SLACK_BOT_TOKEN_ENV,
+    SLACK_USER_TOKEN_PREFIXES,
+)
 from config.llm_credentials import resolve_env_credential
 
 _API_BASE = "https://slack.com/api"
@@ -108,6 +112,43 @@ def bot_token_configured(sources: dict[str, Any] | None = None) -> bool:
     return target is not None
 
 
+_SEARCH_NEEDS_USER_TOKEN = (
+    "Slack search needs a user token: search.messages rejects bot tokens "
+    f"(not_allowed_token_type). Set {SLACK_ACCESS_TOKEN_ENV} to a user token "
+    "(xoxp-…) holding search:read, or read a known channel with "
+    "slack_read_messages instead."
+)
+
+
+def is_user_token(token: str) -> bool:
+    """True when *token* is a Slack user token (``xoxp-``, or rotating ``xoxe.xoxp-``)."""
+    return token.strip().startswith(SLACK_USER_TOKEN_PREFIXES)
+
+
+def resolve_user_token() -> tuple[SlackBotTarget | None, str]:
+    """Resolve a Slack **user** token for ``search.messages``.
+
+    ``SLACK_ACCESS_TOKEN`` first, then the bot-token path when the value found
+    there is itself a user token (a workspace may have only ever configured one
+    Slack credential). A bot token is never returned: Slack refuses it for
+    search, so returning one would guarantee a failed call.
+    """
+    env_token = resolve_env_credential(SLACK_ACCESS_TOKEN_ENV).strip()
+    if is_user_token(env_token):
+        return SlackBotTarget(bot_token=env_token), ""
+
+    target, _error = resolve_bot_token()
+    if target is not None and is_user_token(target.bot_token):
+        return target, ""
+    return None, _SEARCH_NEEDS_USER_TOKEN
+
+
+def user_token_configured() -> bool:
+    """True when a Slack user token is available, so search can actually run."""
+    target, _error = resolve_user_token()
+    return target is not None
+
+
 def _bearer_headers(token: str) -> dict[str, str]:
     # Match delivery.py: Slack wants charset=utf-8 on JSON bodies.
     return {
@@ -152,6 +193,7 @@ def _api_error_hint(error: str, *, context: str) -> str:
             "The Slack app is missing a required OAuth scope. Reinstall after adding scopes.",
         ),
         "thread_not_found": "No thread with this parent ts was found in the channel.",
+        "not_allowed_token_type": _SEARCH_NEEDS_USER_TOKEN,
     }
     return hints.get(error, f"Slack API error: {error}")
 
@@ -393,12 +435,19 @@ def _fetch_thread_replies(
 
 def fetch_team_members(
     target: SlackBotTarget,
+    *,
+    max_pages: int = _MAX_MEMBER_PAGES,
+    include_deleted: bool = False,
 ) -> tuple[list[dict[str, Any]] | None, str, bool]:
-    """Fetch workspace members. Returns ``(members, error, truncated)``."""
+    """Fetch workspace members. Returns ``(members, error, truncated)``.
+
+    Deactivated accounts are left out unless ``include_deleted``, which lists
+    them with ``deleted`` set.
+    """
     members: list[dict[str, Any]] = []
     cursor = ""
     truncated = False
-    for page in range(_MAX_MEMBER_PAGES):
+    for page in range(max_pages):
         params: dict[str, Any] = {"limit": _PAGE_LIMIT}
         if cursor:
             params["cursor"] = cursor
@@ -410,7 +459,7 @@ def fetch_team_members(
             return None, _api_error_hint(error, context="users"), False
 
         for raw in payload.get("members") or []:
-            if not isinstance(raw, dict) or raw.get("deleted"):
+            if not isinstance(raw, dict) or (raw.get("deleted") and not include_deleted):
                 continue
             profile = raw.get("profile") or {}
             username = str(raw.get("name") or "")
@@ -424,16 +473,100 @@ def fetch_team_members(
                     "display_name": str(profile.get("display_name") or ""),
                     "title": str(profile.get("title") or ""),
                     "is_bot": bool(raw.get("is_bot")),
+                    # Single- and multi-channel guests see only the channels they
+                    # were invited to; workspace-wide views must leave them out.
+                    "is_guest": bool(raw.get("is_restricted") or raw.get("is_ultra_restricted")),
+                    **({"deleted": True} if raw.get("deleted") else {}),
                 }
             )
 
         cursor = str(((payload.get("response_metadata") or {}).get("next_cursor")) or "")
         if not cursor:
             break
-        if page == _MAX_MEMBER_PAGES - 1 and cursor:
+        if page == max_pages - 1 and cursor:
             truncated = True
 
     return members, "", truncated
+
+
+def fetch_workspace_identity(target: SlackBotTarget) -> tuple[dict[str, str] | None, str]:
+    """The workspace's ``id``, ``name``, ``domain`` and ``url``.
+
+    ``team.info`` needs ``team:read``; without it the bot's own ``auth.test``
+    still names the workspace and its URL.
+    """
+    payload, req_err = _request_json("GET", "team.info", target.bot_token)
+    if payload is not None and payload.get("ok"):
+        team = payload.get("team") or {}
+        domain = str(team.get("domain") or "")
+        return {
+            "id": str(team.get("id") or ""),
+            "name": str(team.get("name") or ""),
+            "domain": domain,
+            "url": f"https://{domain}.slack.com/" if domain else "",
+        }, ""
+    payload, req_err = _request_json("GET", "auth.test", target.bot_token)
+    if payload is None:
+        return None, req_err
+    if not payload.get("ok"):
+        return None, _api_error_hint(str(payload.get("error") or "unknown_error"), context="auth")
+    url = str(payload.get("url") or "")
+    domain = url.removeprefix("https://").split(".slack.com", 1)[0] if url else ""
+    return {
+        "id": str(payload.get("team_id") or ""),
+        "name": str(payload.get("team") or ""),
+        "domain": domain,
+        "url": url,
+    }, ""
+
+
+def list_public_channels(
+    target: SlackBotTarget,
+) -> tuple[list[dict[str, Any]] | None, str, bool]:
+    """Unarchived public channels with topic, purpose and size. Returns ``(channels, error, truncated)``.
+
+    Private channels, group DMs and DMs are never requested.
+    """
+    channels: list[dict[str, Any]] = []
+    cursor = ""
+    truncated = False
+    for page in range(_MAX_CHANNEL_LIST_PAGES):
+        params: dict[str, Any] = {
+            "limit": _PAGE_LIMIT,
+            "types": "public_channel",
+            "exclude_archived": True,
+        }
+        if cursor:
+            params["cursor"] = cursor
+        payload, req_err = _request_json(
+            "GET", "conversations.list", target.bot_token, params=params
+        )
+        if payload is None:
+            return None, req_err, False
+        if not payload.get("ok"):
+            error = str(payload.get("error") or "unknown_error")
+            return None, _api_error_hint(error, context="list"), False
+        for raw in payload.get("channels") or []:
+            if not isinstance(raw, dict) or raw.get("is_private") or raw.get("is_archived"):
+                continue
+            channels.append(
+                {
+                    "id": str(raw.get("id") or ""),
+                    "name": str(raw.get("name") or ""),
+                    "topic": str((raw.get("topic") or {}).get("value") or ""),
+                    "purpose": str((raw.get("purpose") or {}).get("value") or ""),
+                    "num_members": int(raw.get("num_members") or 0),
+                    "is_member": bool(raw.get("is_member")),
+                    # Slack Connect: shared with another organization.
+                    "is_ext_shared": bool(raw.get("is_ext_shared")),
+                }
+            )
+        cursor = str(((payload.get("response_metadata") or {}).get("next_cursor")) or "")
+        if not cursor:
+            break
+        if page == _MAX_CHANNEL_LIST_PAGES - 1:
+            truncated = True
+    return channels, "", truncated
 
 
 def post_channel_message(
@@ -681,11 +814,17 @@ def search_messages(
     *,
     query: str,
     count: int = 20,
-) -> tuple[list[dict[str, str]] | None, str]:
-    """Search workspace messages (``search.messages``)."""
+) -> tuple[list[dict[str, str]] | None, str, bool]:
+    """Search workspace messages. Returns ``(matches, error, truncated)``.
+
+    ``search.messages`` is fetched as a single page, so ``truncated`` is true
+    when the hit count reaches the requested cap and more matches may exist.
+    """
     q = str(query or "").strip()
     if not q:
-        return None, "query cannot be empty."
+        return None, "query cannot be empty.", False
+    if not is_user_token(target.bot_token):
+        return None, _SEARCH_NEEDS_USER_TOKEN, False
     limit = max(1, min(int(count), 100))
     payload, req_err = _request_json(
         "GET",
@@ -694,10 +833,10 @@ def search_messages(
         params={"query": q, "count": limit, "sort": "timestamp"},
     )
     if payload is None:
-        return None, req_err
+        return None, req_err, False
     if not payload.get("ok"):
         error = str(payload.get("error") or "unknown_error")
-        return None, _api_error_hint(error, context="search")
+        return None, _api_error_hint(error, context="search"), False
 
     matches = ((payload.get("messages") or {}).get("matches")) or []
     results: list[dict[str, str]] = []
@@ -720,7 +859,7 @@ def search_messages(
                 "permalink": str(raw.get("permalink") or ""),
             }
         )
-    return results, ""
+    return results, "", len(results) >= limit
 
 
 def add_reaction(

@@ -39,7 +39,9 @@ def test_run_with_backend() -> None:
 def test_run_no_client() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = False
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_service_names(grafana_endpoint="http://grafana")
     assert result["available"] is False
 
@@ -48,7 +50,9 @@ def test_run_happy_path() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = True
     mock_client.query_loki_label_values.return_value = ["svc-a", "svc-b"]
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_service_names(grafana_endpoint="http://grafana")
     assert result["available"] is True
     assert result["service_names"] == ["svc-a", "svc-b"]
@@ -72,7 +76,7 @@ def test_run_forwards_auth_to_client(
     mock_client = MagicMock()
     mock_client.is_configured = False
     with patch(
-        "integrations.grafana.tools._resolve_grafana_client", return_value=mock_client
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
     ) as resolve:
         query_grafana_service_names(
             grafana_endpoint="http://grafana",

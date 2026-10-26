@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+
 import httpx
 import pytest
 
@@ -22,6 +25,7 @@ def _config(**overrides: object) -> RemoteSyncConfig:
 class _FakeTransport(httpx.BaseTransport):
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.md5_overrides: dict[str, str | None] = {}
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -34,6 +38,15 @@ class _FakeTransport(httpx.BaseTransport):
             blobs_xml = []
             for k, v in self.objects.items():
                 if k.startswith(prefix):
+                    if k in self.md5_overrides:
+                        override = self.md5_overrides[k]
+                        md5_xml = (
+                            f"<Content-MD5>{override}</Content-MD5>" if override is not None else ""
+                        )
+                    else:
+                        md5_b64 = base64.b64encode(hashlib.md5(v).digest()).decode("ascii")
+                        md5_xml = f"<Content-MD5>{md5_b64}</Content-MD5>"
+
                     blobs_xml.append(f"""
                         <Blob>
                             <Name>{k}</Name>
@@ -41,6 +54,7 @@ class _FakeTransport(httpx.BaseTransport):
                                 <Content-Length>{len(v)}</Content-Length>
                                 <Last-Modified>Sun, 27 Sep 2009 18:41:57 GMT</Last-Modified>
                                 <Etag>"fake-etag"</Etag>
+                                {md5_xml}
                             </Properties>
                         </Blob>
                     """)
@@ -91,9 +105,43 @@ def test_put_list_get_round_trip() -> None:
     assert len(listing) == 1
     assert listing[0].key == "sessions/a.jsonl"
     assert listing[0].size == len(payload)
-    assert listing[0].etag == "fake-etag"
+    assert listing[0].etag == hashlib.md5(payload).hexdigest()
 
     assert store.get_object("sessions/a.jsonl") == payload
+
+
+def test_list_objects_degrades_to_empty_fingerprint_when_content_md5_is_missing() -> None:
+    transport = _FakeTransport()
+    store = AzureBlobObjectStore(_config(), token="fake", client=httpx.Client(transport=transport))
+
+    transport.objects["opensre/sessions/old.jsonl"] = b"data"
+    transport.md5_overrides["opensre/sessions/old.jsonl"] = None
+
+    listing = store.list_objects("")
+    assert len(listing) == 1
+    assert listing[0].key == "sessions/old.jsonl"
+    assert listing[0].etag == ""
+
+
+def test_list_objects_degrades_to_empty_fingerprint_when_content_md5_is_malformed() -> None:
+    transport = _FakeTransport()
+    store = AzureBlobObjectStore(_config(), token="fake", client=httpx.Client(transport=transport))
+
+    # Test invalid base64 padding/characters
+    transport.objects["opensre/sessions/bad1.jsonl"] = b"data"
+    transport.md5_overrides["opensre/sessions/bad1.jsonl"] = "not_valid_b64!!!"
+
+    # Test mathematically valid base64 but with wrong digest length
+    transport.objects["opensre/sessions/bad2.jsonl"] = b"data"
+    transport.md5_overrides["opensre/sessions/bad2.jsonl"] = base64.b64encode(b"short").decode(
+        "ascii"
+    )
+
+    listing = store.list_objects("")
+    assert len(listing) == 2
+    # Both invalid base64 and invalid length fall back to an empty fingerprint ("")
+    assert listing[0].etag == ""
+    assert listing[1].etag == ""
 
 
 def test_put_get_round_trip_with_key_needing_percent_encoding() -> None:

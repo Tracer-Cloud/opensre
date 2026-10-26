@@ -10,14 +10,11 @@ from __future__ import annotations
 
 SELF_RECORDING_ACTION_TOOL_NAMES: frozenset[str] = frozenset(
     {
-        "alert_sample",
         "cli_exec",
         "code_implement",
-        "investigation_start",
         "llm_set_provider",
         "shell_run",
         "slash_invoke",
-        "synthetic_run",
         "task_cancel",
     }
 )

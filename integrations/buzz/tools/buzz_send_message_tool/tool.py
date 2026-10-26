@@ -6,7 +6,7 @@ from typing import Any
 
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.buzz.tools.buzz_send_message_tool.constants import SOURCE
 from integrations.buzz.tools.buzz_send_message_tool.delivery import (
     dispatch_message,
@@ -25,20 +25,18 @@ class BuzzSendMessageTool(BaseTool):
     name = "buzz_send_message"
     source = SOURCE
     description = (
-        "Send a plain-text message via the configured Buzz integration. Use this "
-        "for explicit user-requested Buzz message actions and for incident "
-        "notifications. The tool resolves credentials internally and returns "
-        "structured delivery status without exposing secrets."
+        "Send a plain-text message via the configured Buzz integration. Use it only "
+        "when the user asks to send something to Buzz; do not send alerts or turn "
+        "results there on your own. The tool resolves credentials internally and "
+        "returns structured delivery status without exposing secrets."
     )
     use_cases = [
         "Sending a user-requested message to the configured Buzz default channel",
-        "Posting a concise incident notification to a Buzz channel",
-        "Following up after an investigation with a short status update",
+        "Posting an incident notification the user asked for to a Buzz channel",
+        "Sending a short status update the user asked for after an investigation",
     ]
     requires = ["buzz"]
     side_effect_level = SideEffectLevel.EXTERNAL
-    requires_approval = True
-    approval_reason = "Sends a message via Buzz on your behalf."
     input_schema = {
         "type": "object",
         "properties": {
@@ -118,5 +116,5 @@ class BuzzSendMessageTool(BaseTool):
 
 buzz_send_message = tool(
     BuzzSendMessageTool(),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+    surfaces=(ToolSurface.ACTION,),
 )

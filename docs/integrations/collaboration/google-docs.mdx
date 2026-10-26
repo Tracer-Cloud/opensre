@@ -1,0 +1,118 @@
+---
+title: "Google Docs"
+description: "Connect Google Docs so OpenSRE can write incident reports to your Google Drive"
+---
+
+## Overview
+
+Ask OpenSRE to write incident findings to Google Drive as formatted Google Docs — creating a persistent, shareable record of an incident linked to your team's existing Drive folder.
+
+## Environment recipe
+
+Google Docs is a hosted Google API. There is no local Docker stack. You need a Google Cloud project, a service account JSON key, and a Drive folder that account can edit.
+
+### Bring up
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create or pick a project.
+2. Enable the **Google Drive API** and the **Google Docs API**.
+3. Create a service account (for example `opensre-docs`). Skip role assignment.
+4. Add a JSON key and download it to a path **outside** this repository.
+5. In Google Drive, create a folder for OpenSRE reports (or pick an existing one).
+6. Share that folder with the service account email (`opensre-docs@<project>.iam.gserviceaccount.com`) as **Editor**.
+7. Copy the folder ID from the Drive URL: `https://drive.google.com/drive/folders/<folder-id>`.
+
+### Credentials
+
+| Variable | Required | What it is |
+| --- | --- | --- |
+| `GOOGLE_CREDENTIALS_FILE` | yes | Absolute path to the service account JSON key |
+| `GOOGLE_DRIVE_FOLDER_ID` | yes | Drive folder ID where reports are created |
+
+Auth uses a **service account** only (Docs + Drive API scopes) — not end-user OAuth.
+
+### Tear down
+
+```bash
+opensre integrations remove google_docs
+```
+
+Then:
+
+1. Unshare the Drive folder from the service account (or delete the folder if it was created only for OpenSRE).
+2. In Google Cloud Console, delete the service account key (and the service account if nothing else uses it).
+3. Delete the JSON file from disk.
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup google_docs
+```
+
+Provide the credentials file path and folder ID when prompted. Setup verifies Drive access before saving.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+GOOGLE_CREDENTIALS_FILE=/path/to/service-account.json
+GOOGLE_DRIVE_FOLDER_ID=your-google-drive-folder-id
+```
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "google-docs-prod",
+      "service": "google_docs",
+      "status": "active",
+      "credentials": {
+        "credentials_file": "/path/to/service-account.json",
+        "folder_id": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+      }
+    }
+  ]
+}
+```
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `create_google_docs_incident_report` | Creates a Google Doc in the configured Drive folder and inserts the incident / postmortem content. Can optionally share the doc (`reader` / `writer` / `owner`). |
+
+## Verify
+
+```bash
+opensre integrations verify google_docs
+```
+
+Expected output:
+
+```
+Service: google_docs
+Status: passed
+Detail: Connected to Drive folder 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms (3 items in folder)
+```
+
+Verification probes Drive access to the configured folder.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Credentials file not found** | Check the path in `GOOGLE_CREDENTIALS_FILE` — use an absolute path |
+| **403 Forbidden** | The service account hasn't been added to the Drive folder with Editor access |
+| **Drive API not enabled** | Enable the **Google Drive API** and **Google Docs API** in your Google Cloud project |
+| **Folder not found** | Confirm the folder ID and that the service account has access |
+
+## Security
+
+- Keep the service account JSON file outside of your repository — add it to `.gitignore`.
+- Grant the service account access **only** to the specific Drive folder it needs.
+- Rotate the service account key periodically via Google Cloud Console.

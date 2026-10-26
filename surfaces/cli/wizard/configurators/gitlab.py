@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from integrations.gitlab.setup import GITLAB_SETUP
+from integrations.gitlab import GITLAB_SETUP
 from surfaces.cli.wizard.configurators.spec_configurator import configure_from_spec
 
 

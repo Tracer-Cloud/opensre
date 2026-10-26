@@ -4,7 +4,7 @@ Extracted from ``surfaces/cli/wizard/flow.py`` so the wizard's top-level control
 flow (``run_wizard``) stays readable and this credential-specific logic lives in one
 place (#4055 review). ``run_wizard`` imports the public helpers from here — this
 module must never import ``flow`` (that would be a cycle); it depends only on the
-same lower-level sources ``flow`` uses: ``_ui``, ``validation``, ``env_sync``,
+same lower-level sources ``flow`` uses: ``components``, ``validation``, ``env_sync``,
 ``config``, and the shared theme.
 """
 
@@ -15,7 +15,6 @@ from typing import Final, Literal
 
 from rich.text import Text
 
-from config.llm_auth.auth_method import OAUTH_AUTH_METHOD, normalize_llm_auth_method
 from core.llm.providers.azure_openai import is_azure_openai_provider
 from infrastructure.terminal.theme import (
     BRAND,
@@ -29,17 +28,17 @@ from infrastructure.terminal.theme import (
     TEXT,
     WARNING,
 )
-from surfaces.cli.wizard._ui import (
-    Choice,
-    WizardBack,
-    _choose,
-    _console,
-    _persist_llm_api_key,
-    _prompt_value,
-    _step,
-)
 from surfaces.cli.wizard.azure_openai import (
     choose_provider_model,
+)
+from surfaces.cli.wizard.components import (
+    Choice,
+    WizardBack,
+    choose,
+    console,
+    persist_llm_api_key,
+    prompt_value,
+    step,
 )
 from surfaces.cli.wizard.endpoint_prompt import (
     ensure_endpoint_settings as ensure_provider_endpoint_settings,
@@ -59,9 +58,9 @@ CredentialState = Literal["ok", "unverified", "unsaved", "deferred"]
 CredentialOutcome = Literal["ok", "unverified", "unsaved", "deferred", "repick", "cancel"]
 
 # Recovery/outcome vocabulary. These are the byte-identical string values the wizard
-# menus, ``_choose`` defaults, and ``run_wizard`` branches all resolve against; named
+# menus, ``choose`` defaults, and ``run_wizard`` branches all resolve against; named
 # constants keep the vocabulary spelled in exactly one place (#4055 review). The string
-# values must never change — tests assert against them and ``_choose(default=...)``
+# values must never change — tests assert against them and ``choose(default=...)``
 # resolves ``default`` against ``Choice.value``.
 RETRY: Final = "retry"
 REPICK: Final = "repick"
@@ -90,8 +89,12 @@ _REPICK_CHOICE = Choice(
 
 
 def _provider_choice_label(provider: ProviderOption) -> str:
+    if provider.value == "claude-code":
+        return "Claude Code"
     if provider.value == "openai":
         return "OpenAI"
+    if provider.value == "openrouter":
+        return "OpenRouter"
     if provider.value == "anthropic":
         return "Anthropic"
     return provider.label
@@ -107,24 +110,21 @@ def _credential_prompt_label(provider: ProviderOption) -> str:
 
 def _credential_line_for_saved_summary(
     provider: ProviderOption,
-    auth_method: str | None = None,
     *,
     credential_state: CredentialState = OK,
 ) -> str:
     """One-line credential description for the post-wizard saved summary.
 
     ``credential_state`` keeps this line honest: the summary must not print
-    "system keychain" right after the wizard warned that the credential was never
-    saved, or that it was saved without being verified.
+    the credentials file right after the wizard warned that the credential was
+    never saved, or that it was saved without being verified.
     """
-    if normalize_llm_auth_method(auth_method) == OAUTH_AUTH_METHOD:
-        if provider.value == "openai":
-            return "OpenAI OAuth tokens (Codex CLI)"
-        return f"{_provider_choice_label(provider)} OAuth session"
+    if provider.credential_kind == WizardCredentialKind.SUBSCRIPTION:
+        return "subscription credentials"
     if provider.credential_kind == WizardCredentialKind.HOST:
         # A ``host`` credential (e.g. the Ollama host URL) is written to the project
-        # ``.env`` by ``_persist_llm_credential``, never the keyring — the summary must
-        # name .env, not the system keychain, in both the verified and unverified cases.
+        # ``.env`` by ``_persist_llm_credential``, never the credentials file — the
+        # summary must name .env in both the verified and unverified cases.
         if credential_state == UNVERIFIED:
             return "project .env (unverified)"
         return "project .env"
@@ -134,8 +134,8 @@ def _credential_line_for_saved_summary(
         if credential_state == UNSAVED:
             return "not saved — re-enter next run"
         if credential_state == UNVERIFIED:
-            return "system keychain (unverified)"
-        return "system keychain"
+            return "local credentials file (~/.opensre/credentials.json, unverified)"
+        return "local credentials file (~/.opensre/credentials.json)"
     if provider.adapter_factory is None:
         return f"{provider.label} (CLI)"
     cli_adapter = provider.adapter_factory()
@@ -148,7 +148,7 @@ def _persist_llm_credential(provider: ProviderOption, value: str) -> bool:
     ``credential_kind == WizardCredentialKind.HOST`` values (e.g. the Ollama host URL) are plain
     runtime configuration, not secrets: the runtime resolves them from the
     environment only, never the keyring, so they belong in the project ``.env``.
-    Everything else keeps the keyring path.
+    Everything else is written to the credentials file and mirrored to ``.env``.
 
     Returns ``False`` on a failed write so ``_persist_llm_credential_with_recovery``
     can offer the shared recovery menu. A host ``.env`` write that raises ``OSError``
@@ -162,14 +162,14 @@ def _persist_llm_credential(provider: ProviderOption, value: str) -> bool:
             # Same remediation style the keyring branch uses: a WARNING line naming the
             # target and the error, then return False so the caller shows the shared
             # recovery menu instead of letting the write error escape (#3591).
-            _console.print(
+            console.print(
                 f"[{WARNING}]  {GLYPH_WARNING}  "
                 f"Could not write {provider.api_key_env} to {PROJECT_ENV_PATH}: {exc}[/]"
             )
             return False
         os.environ[provider.api_key_env] = value
         return True
-    return _persist_llm_api_key(provider.api_key_env, value)
+    return persist_llm_api_key(provider.api_key_env, value)
 
 
 def _recovery_action(*, prompt: str, retry_label: str, retry_hint: str, escape: Choice) -> str:
@@ -179,15 +179,15 @@ def _recovery_action(*, prompt: str, retry_label: str, retry_hint: str, escape: 
     hatch, then repick. Returns ``"retry"``, ``escape.value``, ``"repick"`` or
     ``"cancel"``.
 
-    ``_choose`` is called without ``back_on_cancel``, so ESCAPE here raises a bare
+    ``choose`` is called without ``back_on_cancel``, so ESCAPE here raises a bare
     ``KeyboardInterrupt`` and never ``WizardBack`` — there is no back-navigation arm
     to catch.
     """
     try:
-        return _choose(
+        return choose(
             prompt,
             [
-                # ``RETRY`` must stay row 1's value: _choose resolves ``default`` against
+                # ``RETRY`` must stay row 1's value: choose resolves ``default`` against
                 # Choice.value and raises ValueError when it matches no row.
                 Choice(value=RETRY, label=retry_label, hint=retry_hint),
                 escape,
@@ -196,7 +196,7 @@ def _recovery_action(*, prompt: str, retry_label: str, retry_hint: str, escape: 
             default=RETRY,
         )
     except KeyboardInterrupt:
-        _console.print(f"\n[{WARNING}]Setup cancelled.[/]")
+        console.print(f"\n[{WARNING}]Setup cancelled.[/]")
         return CANCEL
 
 
@@ -217,7 +217,7 @@ def _render_credential_validation(label: str, model: str, result: ValidationResu
     status_line.append(model, style=BRAND)
     status_line.append("  ·  ", style=DIM)
     status_line.append("Connected" if ok else "Failed", style=TEXT)
-    _console.print(status_line)
+    console.print(status_line)
 
     # The validator's detail is rendered verbatim, never reworded and never branched
     # on: only its auth path says "rejected", so an offline user is never accused of
@@ -228,11 +228,11 @@ def _render_credential_validation(label: str, model: str, result: ValidationResu
             continue
         detail_text = Text()
         detail_text.append(f"     {line}", style=SECONDARY)
-        _console.print(detail_text)
+        console.print(detail_text)
     if result.sample_response:
         reply = Text()
         reply.append(f"     Test reply: {result.sample_response}", style=SECONDARY)
-        _console.print(reply)
+        console.print(reply)
 
 
 def _validate_llm_credential(
@@ -241,7 +241,7 @@ def _validate_llm_credential(
     """Run the live provider probe behind a spinner, converting any escape into a result."""
     label = _credential_prompt_label(provider)
     try:
-        with _console.status(f"Validating {label} {provider.credential_label}...", spinner="dots"):
+        with console.status(f"Validating {label} {provider.credential_label}...", spinner="dots"):
             return validate_provider_credentials(provider=provider, api_key=value, model=model)
     except Exception as err:  # mirror the validator's own catch-all conversion
         return ValidationResult(ok=False, detail=f"Validation request failed: {err}")
@@ -265,10 +265,9 @@ def _persist_llm_credential_with_recovery(
     host write returns ``True`` and never reaches this menu.
 
     ``session_env_sink`` records the ``continue_unsaved`` export ``{env_key: api_key}``
-    so ``run_wizard`` can re-apply it after ``sync_provider_env`` — which pops every
-    secret provider's api-key env — hands off to the in-process shell (#3591). This is
-    the single point where an unsaved secret is exported, so it is the only capture
-    site needed for all callers.
+    so ``run_wizard`` can re-apply it before the in-process shell handoff (#3591).
+    This is the single point where an unsaved secret is exported, so it is the
+    only capture site needed for all callers.
     """
     env_key = provider.api_key_env
     for _attempt in range(_LLM_CREDENTIAL_MAX_ATTEMPTS):
@@ -276,7 +275,7 @@ def _persist_llm_credential_with_recovery(
             return OK
         action = _recovery_action(
             prompt=f"{env_key} could not be saved. What next?",
-            retry_label="Retry saving to the system keychain",
+            retry_label="Retry saving to the local credentials file",
             retry_hint="Run the steps above first, then retry",
             escape=Choice(
                 value=CONTINUE_UNSAVED,
@@ -287,17 +286,17 @@ def _persist_llm_credential_with_recovery(
         if action == RETRY:
             continue
         if action == CONTINUE_UNSAVED:
-            # Process-local only. A secret must never reach .env: the keyring is the
-            # only place OpenSRE stores an API key. A ``host`` value is not a secret, but
-            # the same os.environ-only export is still correct for it.
+            # Process-local only. ``continue_unsaved`` must not write the secret to
+            # ``.env``. A ``host`` value is not a secret, but the same os.environ-only
+            # export is still correct for it.
             os.environ[env_key] = api_key
             if session_env_sink is not None:
                 session_env_sink[env_key] = api_key
-            _console.print(
+            console.print(
                 f"[{WARNING}]  {GLYPH_WARNING}  "
                 f"Using {env_key} for this session only — it was not saved.[/]"
             )
-            _console.print(
+            console.print(
                 f"[{SECONDARY}]     Re-enter it next run, "
                 f"or fix the keychain with the steps above.[/]"
             )
@@ -305,7 +304,7 @@ def _persist_llm_credential_with_recovery(
         if action == REPICK:
             return REPICK
         return CANCEL  # ESCAPE, or defensively: the menu offers no other values
-    _console.print(f"[{WARNING}]  {GLYPH_WARNING}  Too many retry attempts. Aborting setup.[/]")
+    console.print(f"[{WARNING}]  {GLYPH_WARNING}  Too many retry attempts. Aborting setup.[/]")
     return CANCEL
 
 
@@ -332,7 +331,6 @@ def _prompt_validated_llm_credential(
     provider: ProviderOption,
     *,
     model: str,
-    model_provider: ProviderOption,
     session_env_sink: dict[str, str] | None = None,
 ) -> tuple[CredentialOutcome, str]:
     """Prompt for, validate against ``model``, and persist one LLM credential.
@@ -347,9 +345,10 @@ def _prompt_validated_llm_credential(
     ``repick`` = pick a different LLM provider (mirrors ``_run_cli_llm_onboarding``).
 
     ``session_env_sink`` is forwarded to ``_persist_llm_credential_with_recovery`` so a
-    ``continue_unsaved`` export survives the post-wizard ``sync_provider_env`` (#3591).
+    ``continue_unsaved`` export is still in ``os.environ`` for the in-process shell
+    handoff (#3591).
     """
-    _step(provider.credential_label.title())
+    step(provider.credential_label.title())
     label = _credential_prompt_label(provider)
     credential_display = f"{label} {provider.credential_label}"
     env_key = provider.api_key_env
@@ -362,9 +361,9 @@ def _prompt_validated_llm_credential(
     needs_endpoint = is_azure or is_custom_provider(provider.value)
     for _attempt in range(_LLM_CREDENTIAL_MAX_ATTEMPTS):
         try:
-            value = _prompt_value(
+            value = prompt_value(
                 f"{credential_display} ({env_key}) — leave blank to set up later",
-                # Only a ``host`` credential may be pre-filled. _prompt_value returns the
+                # Only a ``host`` credential may be pre-filled. prompt_value returns the
                 # default on empty input, and a secret provider's credential_default is a
                 # placeholder (Azure's is an endpoint URL) — offering it would let a bare
                 # Enter persist a URL as the API key.
@@ -382,7 +381,7 @@ def _prompt_validated_llm_credential(
         except WizardBack:  # must precede KeyboardInterrupt: WizardBack subclasses it
             return REPICK, model
         except KeyboardInterrupt:
-            _console.print(f"\n[{WARNING}]Setup cancelled.[/]")
+            console.print(f"\n[{WARNING}]Setup cancelled.[/]")
             return CANCEL, model
 
         azure_env = ensure_provider_endpoint_settings(provider)
@@ -399,7 +398,6 @@ def _prompt_validated_llm_credential(
             try:
                 model = choose_provider_model(
                     provider,
-                    model_provider,
                     default=model,
                     back_on_cancel=True,
                 )
@@ -457,14 +455,14 @@ def _prompt_validated_llm_credential(
         if not validation.ok:
             # Printed only after the write succeeded, so it never claims a save that
             # did not happen.
-            _console.print(
+            console.print(
                 f"[{WARNING}]  {GLYPH_WARNING}  Saved {env_key} without validating it.[/]"
             )
-            _console.print(
+            console.print(
                 f"[{SECONDARY}]     If OpenSRE cannot reach {label}, "
                 f"rerun `opensre onboard` and re-enter it.[/]"
             )
             return UNVERIFIED, model
         return OK, model
-    _console.print(f"[{WARNING}]  {GLYPH_WARNING}  Too many retry attempts. Aborting setup.[/]")
+    console.print(f"[{WARNING}]  {GLYPH_WARNING}  Too many retry attempts. Aborting setup.[/]")
     return CANCEL, model

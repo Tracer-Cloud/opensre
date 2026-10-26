@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import importlib.machinery
+import json
 import sys
+import types
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import click
@@ -13,15 +15,18 @@ from config.constants.product import RELEASE_STAGE
 from config.repl_config import ReplConfig
 from infrastructure.analytics import provider
 from infrastructure.analytics.events import Event
+from infrastructure.process.runtime_flags import is_onboarding_enabled, reset_runtime_flags
 from surfaces.cli.app import cli
 from surfaces.cli.startup import sentry_entrypoint_for
 from surfaces.entrypoint import main
 
 
-class _EmptyCatalog:
-    def filter(self, *, category: str, search: str) -> list[object]:
-        _ = (category, search)
-        return []
+def _fake_sentry_sdk(*, flush: object) -> types.ModuleType:
+    """A ``sys.modules`` double that ``find_spec`` can tolerate."""
+    mod = types.ModuleType("sentry_sdk")
+    mod.__spec__ = importlib.machinery.ModuleSpec("sentry_sdk", loader=None)
+    mod.flush = flush  # type: ignore[attr-defined]
+    return mod
 
 
 def _stub_analytics_httpx(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
@@ -41,8 +46,14 @@ def _stub_analytics_httpx(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, obj
         def __exit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-        def post(self, url: str, json: dict[str, object]) -> _StubResponse:
-            posted_payloads.append({"url": url, "json": json})
+        def post(
+            self,
+            url: str,
+            *,
+            content: bytes,
+            headers: dict[str, str],
+        ) -> _StubResponse:
+            posted_payloads.append({"url": url, "json": json.loads(content), "headers": headers})
             return _StubResponse()
 
     monkeypatch.setattr(provider.httpx, "Client", _StubClient)
@@ -50,9 +61,21 @@ def _stub_analytics_httpx(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, obj
 
 
 def test_main_runs_health_command(monkeypatch) -> None:
+    from infrastructure.analytics import capture
+
+    captured: list[str] = []
+
+    class Analytics:
+        def set_persistent_property(self, _key: str, _value: object) -> None:
+            pass
+
+        def capture(self, event: str, _properties: object = None) -> None:
+            captured.append(event)
+
+    analytics = Analytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: analytics)
     monkeypatch.setattr("surfaces.cli.app.capture_first_run_if_needed", lambda: None)
     monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
-    monkeypatch.setattr("surfaces.cli.app.capture_cli_invoked", lambda *_args: None)
 
     with (
         patch("integrations.verify.verify_integrations") as mock_verify,
@@ -75,6 +98,7 @@ def test_main_runs_health_command(monkeypatch) -> None:
         exit_code = main(["health"])
 
     assert exit_code == 0
+    assert captured == ["cli_command_opensre_health"]
 
 
 def test_main_does_not_capture_expected_usage_errors_to_sentry(
@@ -230,6 +254,27 @@ def test_main_captures_analytics_once_for_accepted_command(monkeypatch, capsys) 
     assert captured == ["install", "cli"]
 
 
+def test_internal_install_record_captures_install_without_cli_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[str] = []
+    monkeypatch.setattr(
+        "surfaces.cli.app.record_install_marker_state", lambda: captured.append("marker")
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.app.capture_first_run_if_needed", lambda: captured.append("install")
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.app.capture_cli_invoked", lambda *_args: captured.append("cli")
+    )
+    monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
+
+    exit_code = main(["--record-install"])
+
+    assert exit_code == 0
+    assert captured == ["marker", "install"]
+
+
 def test_main_fast_version_command_skips_first_run_setup(monkeypatch, capsys) -> None:
     captured: list[dict[str, object] | None] = []
     monkeypatch.setattr(
@@ -238,7 +283,7 @@ def test_main_fast_version_command_skips_first_run_setup(monkeypatch, capsys) ->
     )
     monkeypatch.setattr(
         "surfaces.cli.app.capture_cli_invoked",
-        lambda properties=None: captured.append(properties),
+        lambda properties=None, _command_parts=(): captured.append(properties),
     )
     monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
 
@@ -247,26 +292,6 @@ def test_main_fast_version_command_skips_first_run_setup(monkeypatch, capsys) ->
     assert exit_code == 0
     assert "opensre" in capsys.readouterr().out
     assert captured == []
-
-
-def test_main_fast_print_template_skips_startup(monkeypatch, capsys) -> None:
-    """``investigate --print-template`` must not install harness adapters."""
-    boot_calls: list[str] = []
-
-    monkeypatch.setattr(
-        "surfaces.cli.app.startup.run",
-        lambda *_a, **_k: boot_calls.append("startup"),
-    )
-    monkeypatch.setattr("surfaces.cli.app.capture_first_run_if_needed", lambda: None)
-    monkeypatch.setattr("surfaces.cli.app.capture_cli_invoked", lambda *_a: None)
-    monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
-
-    exit_code = main(["investigate", "--print-template", "generic"])
-
-    assert exit_code == 0
-    assert boot_calls == []
-    payload = capsys.readouterr().out
-    assert '"alert_source": "generic"' in payload
 
 
 def test_main_debug_sentry_sends_synthetic_event(monkeypatch, capsys) -> None:
@@ -293,7 +318,7 @@ def test_main_debug_sentry_sends_synthetic_event(monkeypatch, capsys) -> None:
     monkeypatch.setitem(
         sys.modules,
         "sentry_sdk",
-        SimpleNamespace(flush=lambda timeout: flush_calls.append(timeout)),
+        _fake_sentry_sdk(flush=lambda timeout: flush_calls.append(timeout)),
     )
 
     exit_code = main(["debug", "sentry"])
@@ -346,11 +371,7 @@ def test_main_debug_sentry_exits_nonzero_when_flush_fails(monkeypatch, capsys) -
         assert timeout == 5
         return False
 
-    monkeypatch.setitem(
-        sys.modules,
-        "sentry_sdk",
-        SimpleNamespace(flush=flush_stub),
-    )
+    monkeypatch.setitem(sys.modules, "sentry_sdk", _fake_sentry_sdk(flush=flush_stub))
 
     exit_code = main(["debug", "sentry"])
 
@@ -374,6 +395,7 @@ def test_main_emits_first_run_install_before_cli_invoked(
     provider._cached_anonymous_id = None
     provider._cached_identity_persistence = "unknown"
     provider._first_run_marker_created_this_process = False
+    monkeypatch.setattr(provider, "_install_capture_state", provider._InstallCaptureState())
     provider._pending_user_id_load_failures.clear()
     monkeypatch.delenv("OPENSRE_NO_TELEMETRY", raising=False)
     monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
@@ -398,7 +420,7 @@ def test_main_emits_first_run_install_before_cli_invoked(
         analytics._worker.join(timeout=2.0)
     assert [payload["json"]["event"] for payload in posted_payloads] == [
         Event.INSTALL_DETECTED.value,
-        Event.CLI_INVOKED.value,
+        "cli_command_opensre",
     ]
     provider.shutdown_analytics(flush=False)
     provider._instance = None
@@ -416,11 +438,6 @@ def test_main_emits_first_run_install_before_cli_invoked(
             ["integrations", "list"],
             "integrations_listed",
             "integrations.cli.cmd_list",
-        ),
-        (
-            ["tests", "list"],
-            "tests_listed",
-            "surfaces.cli.tests.discover.load_test_catalog",
         ),
     ],
 )
@@ -448,26 +465,13 @@ def test_main_captures_cli_invoked_before_reported_subcommand_families(
             lambda: captured.append(subcommand_event),
         )
         monkeypatch.setattr(onboard_module, "capture_onboard_completed", lambda _cfg: None)
-    elif setup == "integrations.cli.cmd_list":
+    else:
         integrations_module = importlib.import_module("surfaces.cli.commands.integrations")
         monkeypatch.setattr(setup, lambda: None)
         monkeypatch.setattr(
             integrations_module,
             "capture_integrations_listed",
             lambda: captured.append(subcommand_event),
-        )
-    else:
-        tests_module = importlib.import_module("surfaces.cli.commands.tests")
-        monkeypatch.setattr(setup, _EmptyCatalog)
-
-        def _capture_tests_listed(_category: str, *, search: bool) -> None:
-            _ = (_category, search)
-            captured.append(subcommand_event)
-
-        monkeypatch.setattr(
-            tests_module,
-            "capture_tests_listed",
-            _capture_tests_listed,
         )
 
     exit_code = main(argv)
@@ -512,6 +516,38 @@ def test_no_interactive_falls_through_to_landing_page(monkeypatch) -> None:
 
     assert exit_code == 0
     assert landing_calls == [1], "render_landing should be called exactly once"
+
+
+def test_landing_page_runs_the_launch_work_the_shell_would_have_run(monkeypatch) -> None:
+    """With no shell to paint a banner, the deferred error-reporting start still runs."""
+    # Arrange: a bare launch whose startup hands back deferred work, on a TTY
+    # with the shell disabled so the landing page is served instead.
+    monkeypatch.setattr("surfaces.cli.app.capture_first_run_if_needed", lambda: None)
+    monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
+    monkeypatch.setattr("surfaces.cli.app.capture_cli_invoked", lambda *_args: None)
+    monkeypatch.setattr("surfaces.cli.app.sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("surfaces.cli.app.sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(
+        "config.repl_config.ReplConfig.load",
+        classmethod(lambda _cls, **_kw: ReplConfig(enabled=False, layout="classic")),
+    )
+    order: list[str] = []
+
+    def _start_error_reporting() -> None:
+        order.append("start")
+
+    def _hand_back_error_reporting_start(_group: object, _argv: object) -> object:
+        return _start_error_reporting
+
+    monkeypatch.setattr("surfaces.cli.app.startup.run", _hand_back_error_reporting_start)
+    monkeypatch.setattr("surfaces.cli.app.render_landing", lambda _group: order.append("landing"))
+
+    # Act
+    exit_code = main(["--no-interactive"])
+
+    # Assert: the deferred start ran once, before the page printed.
+    assert exit_code == 0
+    assert order == ["start", "landing"]
 
 
 def test_default_no_args_enters_repl(monkeypatch) -> None:
@@ -607,6 +643,36 @@ def test_env_disables_interactive_without_flag(monkeypatch) -> None:
         f"no flag must defer to env/config (cli_enabled=None), got {load_calls[-1]}"
     )
     assert landing_calls == [1], "landing page should render when the env var disables interactive"
+
+
+def test_skip_onboarding_flag_reaches_the_startup_demo_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The root Click option must suppress the picker when the shell starts."""
+    from surfaces.interactive_shell.runtime.startup import demo_picker
+
+    reset_runtime_flags()
+    monkeypatch.setattr("surfaces.cli.app.capture_first_run_if_needed", lambda: None)
+    monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
+    monkeypatch.setattr("surfaces.cli.app.capture_cli_invoked", lambda *_args: None)
+    monkeypatch.setattr("surfaces.cli.app.sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("surfaces.cli.app.sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(demo_picker, "is_test_run", lambda: False)
+    monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(demo_picker, "_merge_in_progress_here", lambda: False)
+    demo_offered: list[bool] = []
+
+    def run_repl(**_kwargs: object) -> int:
+        demo_offered.append(demo_picker.should_offer_demo())
+        return 0
+
+    monkeypatch.setattr("surfaces.interactive_shell.run_repl", run_repl)
+    try:
+        assert main(["--interactive", "--skip-onboarding"]) == 0
+        assert is_onboarding_enabled() is False
+        assert demo_offered == [False]
+    finally:
+        reset_runtime_flags()
 
 
 def test_resume_flag_enters_repl_with_session_id(monkeypatch) -> None:
@@ -732,7 +798,11 @@ def test_root_main_propagates_the_cli_exit_code(monkeypatch) -> None:
     main.py is the documented entry point, so a swallowed exit code silently
     breaks CI steps, shell `&&` chains, and anything that checks $?.
     """
-    # Arrange
+    # Arrange: repo-root main.py is not an installed module, so import it from
+    # the checkout explicitly rather than relying on sys.path containing cwd.
+    from config.constants.paths import REPO_ROOT
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT))
     import main as root_main
 
     monkeypatch.setattr("surfaces.cli.app.main", lambda *_a, **_k: 2)

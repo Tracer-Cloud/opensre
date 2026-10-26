@@ -9,8 +9,8 @@ body:
     id: problem
     attributes:
       label: Problem statement
-      description: Why is this needed? User pain, limitation, or gap today (not the solution yet).
-      placeholder: "Example: Users can't export agent logs to external systems without custom scripts."
+      description: Why is this needed? User pain, limitation, or gap today (not the solution yet). Proposals aligned with the current roadmap (scheduled tasks, CI/CD skills, parallelization) are prioritized.
+      placeholder: "Example: A scheduled skill can't run against two repositories without the runs serializing behind each other."
     validations:
       required: true
   - type: textarea

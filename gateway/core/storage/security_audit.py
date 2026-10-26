@@ -1,8 +1,8 @@
 """Append-only record of security-relevant gateway actions.
 
 One JSON object per line under ``~/.opensre/gateway/security-audit.jsonl``,
-covering approval create/resolve/expire and investigation create/cancel, so
-the record outlives the process that wrote it.
+covering approval create/resolve/expire, so the record outlives the process
+that wrote it.
 
 Scope is narrower than a typical audit log. The path is host-global, not
 per-org. The lock serializes writers in one process only: concurrent

@@ -24,12 +24,14 @@ from kubernetes.config.config_exception import ConfigException
 
 from infrastructure.observability.errors.service import capture_service_error
 from integrations.config_models import KubernetesIntegrationConfig
+from integrations.kubernetes.resources import RESOURCE_DISPATCH
 from integrations.probes import ProbeResult
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TAIL_LINES = 100
 _DEFAULT_LIMIT = 50
+
 
 # Resource types that carry env vars and require value redaction before returning to the LLM.
 _WORKLOAD_TYPES: frozenset[str] = frozenset(
@@ -46,32 +48,6 @@ _WORKLOAD_TYPES: frozenset[str] = frozenset(
         "replicasets",
     }
 )
-
-# Maps resource_type string -> (api_key, method_name, is_cluster_scoped)
-_RESOURCE_DISPATCH: dict[str, tuple[str, str, bool]] = {
-    "pod": ("core", "read_namespaced_pod", False),
-    "pods": ("core", "read_namespaced_pod", False),
-    "deployment": ("apps", "read_namespaced_deployment", False),
-    "deployments": ("apps", "read_namespaced_deployment", False),
-    "statefulset": ("apps", "read_namespaced_stateful_set", False),
-    "statefulsets": ("apps", "read_namespaced_stateful_set", False),
-    "daemonset": ("apps", "read_namespaced_daemon_set", False),
-    "daemonsets": ("apps", "read_namespaced_daemon_set", False),
-    "service": ("core", "read_namespaced_service", False),
-    "services": ("core", "read_namespaced_service", False),
-    "configmap": ("core", "read_namespaced_config_map", False),
-    "configmaps": ("core", "read_namespaced_config_map", False),
-    "ingress": ("networking", "read_namespaced_ingress", False),
-    "ingresses": ("networking", "read_namespaced_ingress", False),
-    "replicaset": ("apps", "read_namespaced_replica_set", False),
-    "replicasets": ("apps", "read_namespaced_replica_set", False),
-    "persistentvolumeclaim": ("core", "read_namespaced_persistent_volume_claim", False),
-    "persistentvolumeclaims": ("core", "read_namespaced_persistent_volume_claim", False),
-    "pvc": ("core", "read_namespaced_persistent_volume_claim", False),
-    "node": ("core", "read_node", True),
-    "nodes": ("core", "read_node", True),
-}
-
 
 # kubectl writes the full applied manifest -- including literal env var
 # values -- into this annotation on `kubectl apply`. It must be stripped
@@ -278,7 +254,17 @@ class KubernetesClient:
             kwargs: dict[str, Any] = {"tail_lines": tail_lines}
             if container:
                 kwargs["container"] = container
-            logs = core_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, **kwargs)
+            # kubernetes-client's generated deserializer declares this endpoint's
+            # response type as ``str``, but a plain-text log body is never valid
+            # JSON, so its fallback path calls ``str()`` directly on the raw response
+            # bytes instead of decoding them -- producing the literal text
+            # "b'...'" rather than the actual log content (confirmed against
+            # kubernetes-client 36.0.3). ``_preload_content=False`` returns the raw
+            # urllib3 response so we can decode it correctly ourselves.
+            raw = core_v1.read_namespaced_pod_log(
+                name=pod_name, namespace=namespace, _preload_content=False, **kwargs
+            )
+            logs = raw.data.decode("utf-8", errors="replace")
             lines = logs.splitlines() if logs else []
             return {
                 "success": True,
@@ -409,6 +395,8 @@ class KubernetesClient:
                 return {
                     "name": c.name,
                     "image": c.image,
+                    "command": list(c.command) if c.command else [],
+                    "args": list(c.args) if c.args else [],
                     "ports": [
                         {"container_port": p.container_port, "protocol": p.protocol}
                         for p in (c.ports or [])
@@ -813,13 +801,13 @@ class KubernetesClient:
         """Fetch a single named Kubernetes resource by type and name."""
         rt = (
             resource_type.lower().rstrip("s")
-            if resource_type.lower() not in _RESOURCE_DISPATCH
+            if resource_type.lower() not in RESOURCE_DISPATCH
             else resource_type.lower()
         )
         # normalize plural/singular
-        entry = _RESOURCE_DISPATCH.get(rt) or _RESOURCE_DISPATCH.get(resource_type.lower())
+        entry = RESOURCE_DISPATCH.get(rt) or RESOURCE_DISPATCH.get(resource_type.lower())
         if entry is None:
-            supported = sorted({k.rstrip("s") for k in _RESOURCE_DISPATCH})
+            supported = sorted({k.rstrip("s") for k in RESOURCE_DISPATCH})
             return {
                 "success": False,
                 "error": (

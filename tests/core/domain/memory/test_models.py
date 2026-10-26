@@ -9,6 +9,7 @@ from core.domain.memory.models import MEMORY_TYPES, MemoryRecord, MemoryType
 def test_members_pin_expected_values() -> None:
     assert MemoryType.USER == "user"
     assert MemoryType.INFRASTRUCTURE == "infrastructure"
+    assert MemoryType.REPOSITORY == "repository"
     assert MemoryType.PREFERENCE == "preference"
     assert MemoryType.INVESTIGATION_LEARNING == "investigation_learning"
 
@@ -16,6 +17,7 @@ def test_members_pin_expected_values() -> None:
 def test_round_trip_from_string() -> None:
     assert MemoryType("user") is MemoryType.USER
     assert MemoryType("infrastructure") is MemoryType.INFRASTRUCTURE
+    assert MemoryType("repository") is MemoryType.REPOSITORY
     assert MemoryType("preference") is MemoryType.PREFERENCE
     assert MemoryType("investigation_learning") is MemoryType.INVESTIGATION_LEARNING
 
@@ -24,6 +26,7 @@ def test_memory_types_are_plain_string_values() -> None:
     assert MEMORY_TYPES == (
         "user",
         "infrastructure",
+        "repository",
         "preference",
         "investigation_learning",
     )

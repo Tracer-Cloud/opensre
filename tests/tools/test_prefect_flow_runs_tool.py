@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-from integrations.prefect.tools import PrefectFlowRunsTool
+from integrations.prefect.tools import PrefectFlowRunsTool, _map_prefect_flow_runs
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -93,3 +94,105 @@ def test_run_api_error() -> None:
     with patch("integrations.prefect.tools.make_prefect_client", return_value=mock_client):
         result = tool.run(api_url="http://localhost:4200/api")
     assert result["available"] is False
+
+
+class TestMapPrefectFlowRuns:
+    def test_records_entry_with_failed_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_flow_runs(
+            evidence,
+            {
+                "available": True,
+                "total": 2,
+                "total_failed": 1,
+                "flow_runs": [{"id": "run-1"}, {"id": "run-2"}],
+            },
+            {"limit": 20},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "prefect_flow_runs"
+        assert entries[0]["summary"] == "2 flow run(s), 1 failed"
+
+    def test_records_zero_failed_as_a_genuine_finding(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_flow_runs(
+            evidence,
+            {"available": True, "total": 2, "total_failed": 0, "flow_runs": [{"id": "run-1"}]},
+            {"limit": 20},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "2 flow run(s), 0 failed"
+
+    def test_includes_error_log_line_count_when_logs_fetched(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_flow_runs(
+            evidence,
+            {
+                "available": True,
+                "total": 1,
+                "total_failed": 1,
+                "flow_runs": [{"id": "run-1"}],
+                "fetched_logs_for_run_id": "run-1",
+                "error_log_lines": [{"message": "error: job failed"}],
+            },
+            {"limit": 20},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"]
+            == "1 flow run(s), 1 failed, 1 error log line(s)"
+        )
+
+    def test_qualifies_counts_when_page_is_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_flow_runs(
+            evidence,
+            {
+                "available": True,
+                "total": 20,
+                "total_failed": 5,
+                "flow_runs": [{"id": "run-1"}],
+            },
+            {"limit": 20},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "20+ flow run(s), 5+ failed"
+
+    def test_qualifies_zero_failed_when_page_is_saturated(self) -> None:
+        """Regression: a saturated page with zero failed runs visible must
+        not claim '0 failed' as an exact total -- there could be more beyond
+        the returned page."""
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_flow_runs(
+            evidence,
+            {
+                "available": True,
+                "total": 20,
+                "total_failed": 0,
+                "flow_runs": [{"id": "run-1"}],
+            },
+            {"limit": 20},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "20+ flow run(s), 0+ failed"
+
+    def test_records_nothing_when_no_flow_runs(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_flow_runs(evidence, {"available": True, "total": 0, "flow_runs": []}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_flow_runs(evidence, {"available": False, "error": "Unauthorized"}, {})
+
+        assert "catalog_entries" not in evidence

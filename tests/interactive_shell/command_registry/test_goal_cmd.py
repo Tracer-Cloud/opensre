@@ -16,6 +16,14 @@ def _console() -> tuple[Console, StringIO]:
     return Console(file=buf, force_terminal=False, width=120), buf
 
 
+def test_goal_set_is_unbounded_unless_max_turns_is_set() -> None:
+    session = Session()
+    console, _buf = _console()
+    assert _cmd_goal(session, console, ["set", "count the open PRs"])
+    assert session.session_goal is not None
+    assert session.session_goal.max_outer_turns == 0
+
+
 def test_goal_set_show_and_clear() -> None:
     session = Session()
     console, buf = _console()
@@ -34,6 +42,8 @@ def test_goal_set_show_and_clear() -> None:
 
     assert _cmd_goal(session, console, ["clear"])
     assert not session_goal_is_active(session)
+    assert session.terminal.pending_prompt_default is None
+    assert session.terminal.pending_prompt_autosubmit is False
 
 
 def test_goal_set_queues_condition_as_immediate_turn() -> None:
@@ -46,7 +56,11 @@ def test_goal_set_queues_condition_as_immediate_turn() -> None:
     assert session.terminal.pending_prompt_autosubmit is True
     assert session.session_goal is not None
     assert session.session_goal.host_owned is True
+    # A condition without numbered steps gets no checklist: one item would only echo it.
+    assert session.session_goal.checklist == ()
     assert session.session_goal.max_outer_turns == 3
+    # The block printed here is remembered, so the loop's first paint is one line.
+    assert session.terminal.goal_paint_signature is not None
     assert session.session_goal.started_at is not None
     out = buf.getvalue()
     assert "◎ /goal active" in out
@@ -125,6 +139,106 @@ def test_goal_pause_resume_and_edit() -> None:
     assert "◎ /goal active" in buf.getvalue()
     assert session.terminal.pending_prompt_default == "ship the fix and tests"
     assert session.terminal.pending_prompt_autosubmit is True
+
+
+def test_inflight_goal_pause_does_not_render_the_paused_state_twice() -> None:
+    from core.agent_harness.session_goal.goal import (
+        SessionGoalReason,
+        SessionGoalStatus,
+        attach_session_goal,
+    )
+    from core.agent_harness.spi.cancel import HostCancelReason
+    from surfaces.interactive_shell.runtime.goal_controls import mark_inflight_goal_control
+    from surfaces.interactive_shell.runtime.shell_turn_execution import goal_paint_text
+    from surfaces.shared.terminal.components.rendering import print_repl_text
+
+    session = Session()
+    console, buf = _console()
+    assert _cmd_goal(session, console, ["set", "ship the fix"])
+    assert session.session_goal is not None
+    mark_inflight_goal_control(session, HostCancelReason.GOAL_PAUSE)
+    paused = attach_session_goal(
+        session,
+        session.session_goal.with_status(SessionGoalStatus.PAUSED).with_reason(
+            SessionGoalReason.PAUSED_BY_USER
+        ),
+    )
+
+    buf.truncate(0)
+    buf.seek(0)
+    print_repl_text(console, goal_paint_text(paused, session), markup=False)
+    assert _cmd_goal(session, console, ["pause"])
+
+    out = buf.getvalue()
+    assert out.count("◎ /goal paused") == 1
+    assert "already paused" not in out
+
+
+def test_inflight_goal_clear_acknowledges_without_clearing_a_new_goal() -> None:
+    from core.agent_harness.session_goal.goal import SessionGoal, attach_session_goal
+    from core.agent_harness.spi.cancel import HostCancelReason
+    from core.agent_harness.spi.session_goal import apply_session_goal_control
+    from surfaces.interactive_shell.runtime.goal_controls import (
+        mark_inflight_goal_control,
+    )
+
+    session = Session()
+    console, buf = _console()
+    assert _cmd_goal(session, console, ["set", "ship the fix"])
+    mark_inflight_goal_control(session, HostCancelReason.GOAL_CLEAR)
+    assert apply_session_goal_control(session, HostCancelReason.GOAL_CLEAR)
+    replacement = attach_session_goal(
+        session,
+        SessionGoal(condition="review the result", max_outer_turns=2),
+    )
+
+    buf.truncate(0)
+    buf.seek(0)
+    assert _cmd_goal(session, console, ["clear"])
+
+    out = buf.getvalue()
+    assert out.count("goal cleared.") == 1
+    assert "no goal to clear" not in out
+    assert session.session_goal is replacement
+
+
+def test_inflight_goal_pause_acknowledges_without_pausing_a_new_goal() -> None:
+    from core.agent_harness.session_goal.goal import SessionGoal, attach_session_goal
+    from core.agent_harness.spi.cancel import HostCancelReason
+    from core.agent_harness.spi.session_goal import apply_session_goal_control
+    from surfaces.interactive_shell.runtime.goal_controls import (
+        mark_inflight_goal_control,
+    )
+
+    session = Session()
+    console, _buf = _console()
+    assert _cmd_goal(session, console, ["set", "ship the fix"])
+    mark_inflight_goal_control(session, HostCancelReason.GOAL_PAUSE)
+    assert apply_session_goal_control(session, HostCancelReason.GOAL_PAUSE)
+    replacement = attach_session_goal(
+        session,
+        SessionGoal(condition="review the result", max_outer_turns=2),
+    )
+
+    assert _cmd_goal(session, console, ["pause"])
+
+    assert session.session_goal is replacement
+    assert session_goal_is_active(session)
+
+
+def test_repeated_idle_goal_pause_still_reports_the_current_state() -> None:
+    session = Session()
+    console, buf = _console()
+    assert _cmd_goal(session, console, ["set", "ship the fix"])
+    assert _cmd_goal(session, console, ["pause"])
+
+    buf.truncate(0)
+    buf.seek(0)
+    assert _cmd_goal(session, console, ["pause"])
+
+    out = buf.getvalue()
+    assert out.count("◎ /goal paused") == 1
+    assert "already paused" in out
 
 
 def test_goal_edit_while_active_queues_new_condition() -> None:

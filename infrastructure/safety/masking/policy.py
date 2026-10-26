@@ -2,7 +2,7 @@
 
 A ``MaskingPolicy`` decides which kinds of sensitive infrastructure
 identifiers are masked and what extra regex patterns apply. It is built
-fresh per investigation, so env-var changes between investigations are
+fresh per run, so env-var changes between runs are
 picked up. No module-level singleton.
 """
 
@@ -128,8 +128,8 @@ def _parse_bool(value: str | None) -> bool:
 def compile_extra_patterns(policy: MaskingPolicy) -> dict[str, re.Pattern[str]]:
     """Compile a policy's extra regex patterns into a label→Pattern dict.
 
-    Public helper so callers (e.g. MaskingContext) can compile once per
-    investigation rather than on every mask call.
+    Public helper so callers (e.g. MaskingRules) can compile once per
+    run rather than on every mask call.
     """
     compiled: dict[str, re.Pattern[str]] = {}
     for label, pattern in policy.extra_patterns.items():

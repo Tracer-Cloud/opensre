@@ -1,19 +1,21 @@
 """Session goal — cross-turn continuation (distinct from ReAct Goal).
 
-Attach via an explicit host call (:func:`attach_session_goal`) or from a
-structured action-agent handoff tag ``session_goal:…``. Do not detect goals by
-scanning user prose (no keyword / regex intent routing).
+Attach via an explicit host call (:func:`attach_session_goal`) or the structured
+``session_goal_set`` action tool. Do not detect goals by scanning user prose.
 
-Checklist success criteria use ``session_goal_item:…`` handoffs; progress uses
-``session_goal:done=<indices>`` in the assistant reply.
+Checklist ticks come from the ``session_goal_complete`` tool; a cheap-model
+judge decides met / not yet / impossible. Reply prose never ticks or closes.
 
 The host loop (:mod:`core.agent_harness.session_goal.run_until`) calls ``chat``
-until the goal is achieved, cleared, cancelled, or hits ``max_outer_turns``.
+until the goal is achieved, impossible, cleared, cancelled, or hits a
+caller-set ``max_outer_turns`` (default: no host cap; two idle turns still
+stall).
 
 Related leaf modules (import them directly — this module must not import them):
 
-* :mod:`core.agent_harness.session_goal.evaluate` — structured completion
-* :mod:`core.agent_harness.session_goal.confirm` — optional LLM confirm
+* :mod:`core.agent_harness.session_goal.evaluate` — host completion + evidence gate
+* :mod:`core.agent_harness.session_goal.judge` — cheap-model transcript verdict
+* :mod:`core.agent_harness.session_goal.validate` — cheap-model check of new ticks
 * :mod:`core.agent_harness.session_goal.progress` — progress / status-line formatting only
 * :mod:`core.agent_harness.session_goal.continuation` — session-goal continuation prompts
 * :mod:`core.agent_harness.session_goal.persist` — flush / restore
@@ -27,13 +29,10 @@ import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from core.agent_harness.turns.handoff_tag_parse import find_tag_suffix, handoff_has_tag
+from core.agent_harness.task_plan.discard import discard_task_plan
 from infrastructure.evidence.evidence_compaction import truncate_message
-
-if TYPE_CHECKING:
-    from core.agent_harness.turns.assistant_handoff import AssistantHandoff
 
 
 class SessionGoalStatus:
@@ -42,40 +41,56 @@ class SessionGoalStatus:
     ACTIVE = "active"
     PAUSED = "paused"
     ACHIEVED = "achieved"
+    IMPOSSIBLE = "impossible"
     CLEARED = "cleared"
     BUDGET_EXHAUSTED = "budget_exhausted"
     CANCELLED = "cancelled"
 
 
 class SessionGoalReason:
-    """Stable host reason strings for evaluate, paint, and LLM confirm.
+    """Stable host reason strings for evaluate and the judge.
 
     Call sites compare with ``==`` / helpers — do not invent parallel phrases.
-    Never embed ``session_goal:…`` tag grammar here: painted reasons can land in
+    Never embed ``session_goal:…`` tag grammar here: progress reasons can land in
     captured reply text and must not look like progress claims.
     """
 
     WORKING_PREFIX = "working"
     ACHIEVED_TOOL_EVIDENCE = "achieved with tool evidence"
-    ACHIEVED_HOST_SET = "achieved (host-set goal)"
     ACHIEVED_GENERIC = "goal achieved"
     CHECKLIST_COMPLETE = "checklist complete"
-    # Short checklist + tools + reply in one turn, but the model forgot done= tags.
-    CHECKLIST_COMPLETE_SAME_TURN = "checklist complete (same-turn answer)"
+    IMPOSSIBLE = "impossible"
+    NEED_TOOL_EVIDENCE = "not yet: need successful tool work"
     WAITING_HOST_SIGNAL = "waiting for an achieved signal"
     WAITING_TOOL_EVIDENCE = "waiting for an achieved signal with tool evidence"
     WAITING_USER_CHOICE = "waiting for user choice"
     PAUSED_USER_CHOICE = "paused — waiting for your choice"
+    PAUSED_NO_PROGRESS = "paused — no progress after 2 turns"
+    PAUSED_SAME_VERDICT = "paused — the judge returned the same verdict twice"
+    #: Headless stall: this invocation stops, the goal stays active so the next
+    #: inbound message continues (no ``/choose`` picker on Slack/Telegram/ask).
+    WAITING_AFTER_STALL = "no progress after 2 turns — waiting for your next message"
+    WAITING_AFTER_SAME_VERDICT = "same verdict twice — waiting for your next message"
+    #: A goal with no turn budget stops for a decision every N turns so it
+    #: cannot run on unattended while tools keep succeeding.
+    PAUSED_CHECKPOINT_PREFIX = "paused — "
+    PAUSED_CHECKPOINT_SUFFIX = " turns without an achieved signal; keep going or stop"
+    WAITING_AFTER_CHECKPOINT = "checkpoint reached — waiting for your next message"
+    # A goal turn raised (model call rejected, provider down): the loop must not
+    # spend the next turn on the same failure.
+    PAUSED_TURN_FAILED = "paused — the last turn failed; fix the cause, then /goal resume"
     # Distinct from PAUSED_USER_CHOICE: user ran ``/goal pause`` (status=paused).
     PAUSED_BY_USER = "paused by you"
     BUDGET_EXHAUSTED = "session-goal turn budget exhausted"
     CANCELLED = "goal cancelled"
     CLEARED = "goal cleared"
-    LLM_CONFIRM_NOT_REACHED = "LLM confirm: not reached"
-    LLM_CONFIRM_UNAVAILABLE = "LLM confirm unavailable; staying active"
-    NO_TOOL_EVIDENCE = "achieved tag ignored; no tool evidence yet"
-    INVESTIGATION_RUNNING = "investigation running — continue after results"
-    ACHIEVED_IGNORED_INVESTIGATION = "achieved tag ignored; investigation still running"
+    JUDGE_UNAVAILABLE = "judge unavailable; staying active"
+    JUDGE_UNSUPPORTED_PREFIX = "not yet — the judge could not point at the data: "
+    AGREES_WITH_READING = (
+        "the reply agrees with an independent reading of the observations, which cover every item"
+    )
+    TOOL_FAILED = "a tool failed this turn; staying active"
+    UNVERIFIED_OVERFLOW = "tool evidence overflowed; staying unverified"
 
     @staticmethod
     def is_working(reason: str) -> bool:
@@ -83,7 +98,26 @@ class SessionGoalReason:
 
     @staticmethod
     def working_session_turn(turn: int, max_turns: int) -> str:
+        if not session_goal_has_turn_budget(max_turns):
+            return f"working — starting session-goal turn {turn}"
         return f"working — starting session-goal turn {turn}/{max_turns}"
+
+    @staticmethod
+    def judge_unsupported(reason: str) -> str:
+        return f"{SessionGoalReason.JUDGE_UNSUPPORTED_PREFIX}{reason}"
+
+    @staticmethod
+    def checkpoint(turns_used: int) -> str:
+        return (
+            f"{SessionGoalReason.PAUSED_CHECKPOINT_PREFIX}{turns_used}"
+            f"{SessionGoalReason.PAUSED_CHECKPOINT_SUFFIX}"
+        )
+
+    @staticmethod
+    def is_checkpoint(reason: str) -> bool:
+        return reason.startswith(SessionGoalReason.PAUSED_CHECKPOINT_PREFIX) and reason.endswith(
+            SessionGoalReason.PAUSED_CHECKPOINT_SUFFIX
+        )
 
     @staticmethod
     def budget_exhausted(turns_used: int, max_outer_turns: int) -> str:
@@ -94,11 +128,6 @@ class SessionGoalReason:
         if next_item is None:
             return f"checklist {done}/{total} done"
         return f"checklist {done}/{total} done — next: {next_item}"
-
-    @staticmethod
-    def achieved_ignored_incomplete(done: int, total: int, next_item: str | None) -> str:
-        next_bit = f" — next: {next_item}" if next_item else ""
-        return f"achieved tag ignored; checklist {done}/{total} incomplete{next_bit}"
 
 
 # Character budgets for goal text. The ellipsis arithmetic lives in
@@ -112,19 +141,29 @@ MAX_GOAL_REASON_CHARS = 240
 MAX_GOAL_FINDINGS = 4
 MAX_GOAL_CONDITION_CHARS = 400
 
-# Session-goal turns a goal may run before the host stops on budget.
-_DEFAULT_MAX_OUTER_TURNS = 5
+# 0 = no host turn budget (Claude / Cursor). Two idle turns still stall.
+# ``/goal set --max-turns N`` or ``max_turns`` on the attach tool sets a bound.
+SESSION_GOAL_UNBOUNDED_TURNS = 0
+# A goal without a budget pauses for a decision every this many turns.
+SESSION_GOAL_CHECKPOINT_TURNS = 10
 
-_DONE_TAG = re.compile(r"session_goal:done=([0-9,\s]+)")
-# Progress tokens removed before the user sees the reply. Match the bare token
-# (not only whitespace-bounded forms) so ``done=1,session_goal:achieved`` and
-# leading/trailing comma-joined tags never leak through a display path.
-_PROGRESS_TAG = re.compile(
-    r"session_goal:(?:achieved|done=[0-9]+(?:\s*,\s*[0-9]+)*)",
-)
+
+def session_goal_has_turn_budget(max_outer_turns: int) -> bool:
+    """True when the host should stop after ``max_outer_turns`` session-goal turns."""
+    return max_outer_turns > 0
+
+
 # Accidental paste of the interactive-shell prompt line into user text /
 # goal conditions (``[1] ❯ question`` → ``question``).
 _SHELL_PROMPT_CHROME = re.compile(r"^(?:\[\d+\]\s*)?❯\s+")
+# Bulleted steps on their own lines: ``- item`` / ``* item``.
+_BULLET_STEPS = re.compile(r"(?:^|\n)\s*[-*]\s+(\S.+)")
+# A step number: ``1. ``, ``2) ``, ``(3) `` — at a line start, after a space,
+# or straight after a colon or semicolon. ``group(1)`` is the opening
+# parenthesis when the marker is ``(n)``.
+_STEP_NUMBER = re.compile(r"(?:^|(?<=[\s:;]))(\()?(\d+)[.)]\s+")
+# Where an inline enumeration may begin: after these, ``1. …`` is a list, not prose.
+_LIST_LEAD_PUNCTUATION = (":", ";")
 
 
 @dataclass(slots=True)
@@ -132,13 +171,13 @@ class SessionGoal:
     """Host-scoped completion condition spanning multiple ``chat`` turns."""
 
     condition: str
-    max_outer_turns: int = 5
+    max_outer_turns: int = SESSION_GOAL_UNBOUNDED_TURNS
     status: str = SessionGoalStatus.ACTIVE
     turns_used: int = 0
     step_count: int | None = None
     checklist: tuple[str, ...] = ()
     completed: frozenset[int] = frozenset()
-    # Last host/evaluator reason shown in progress paint and continuation nudges.
+    # Last host/evaluator reason shown in progress output and continuation nudges.
     last_reason: str = ""
     # What earlier turns established, oldest first. Continuations are fresh
     # ``chat`` calls and history carries prose only, so without this a later
@@ -151,16 +190,35 @@ class SessionGoal:
     # the number by another route and reported a different one with no mention
     # of the first.
     last_answer: str = ""
-    # Wall-clock start for ``/goal`` duration paint (``time.time()``).
+    # Wall-clock start for ``/goal`` duration progress (``time.time()``).
     started_at: float | None = None
     # Session token totals when the goal was attached — delta is goal spend.
     token_baseline_input: int = 0
     token_baseline_output: int = 0
-    # True when attached via ``/goal set``. While ACTIVE or PAUSED, handoff
-    # must not replace it. Host-owned condition-only goals may achieve on the
-    # ``session_goal:achieved`` tag without tool evidence (product rule for the
-    # slash path — handoff goals still require tools).
+    token_baseline_cached: int = 0
+    # True when attached via ``/goal set``. While ACTIVE or PAUSED, a new goal
+    # must not replace it. ``GOAL_REACHED`` still requires successful tool work.
     host_owned: bool = False
+    # ``turns_used`` when ``completed`` last grew. Stall detection compares
+    # against this so a later plateau still pauses after two idle turns.
+    last_progress_turns_used: int = 0
+    # The judge's previous verdict reason, shown to the judge next time so it
+    # can say whether its new verdict repeats the same blocking problem.
+    last_verdict: str = ""
+    # The judge said this turn's verdict repeats the previous one. Ephemeral.
+    verdict_repeated: bool = False
+    # Checklist indices added since the last evaluate. Ephemeral — not persisted.
+    new_ticks: frozenset[int] = frozenset()
+    # Successful calls this turn to the goal's own tools (``session_goal_set``,
+    # ``session_goal_complete``). Bookkeeping, not evidence — subtracted before
+    # the evidence gate so a tick cannot vouch for itself. Ephemeral.
+    bookkeeping_calls: int = 0
+    # Earlier raw observations for reviewers; None means the evidence exceeded
+    # the review budget and must not be treated as complete after restore.
+    tool_evidence: tuple[str, ...] | None = ()
+    tool_success_seen: bool = False
+    # Explicit tool-supplied items survive edits that only change the condition prose.
+    checklist_explicit: bool = False
 
     def with_status(self, status: str) -> SessionGoal:
         return replace(self, status=status)
@@ -169,7 +227,33 @@ class SessionGoal:
         return replace(self, turns_used=self.turns_used + 1)
 
     def with_completed(self, completed: frozenset[int]) -> SessionGoal:
-        return replace(self, completed=completed)
+        if completed == self.completed:
+            return self
+        added = completed - self.completed
+        if added:
+            return replace(
+                self,
+                completed=completed,
+                last_progress_turns_used=self.turns_used,
+                new_ticks=added,
+            )
+        return replace(self, completed=completed, new_ticks=frozenset())
+
+    def with_bookkeeping_call(self) -> SessionGoal:
+        """Count one goal-tool call so it does not pass as tool evidence."""
+        return replace(self, bookkeeping_calls=self.bookkeeping_calls + 1)
+
+    def with_verdict(self, reason: str, *, repeated: bool) -> SessionGoal:
+        """Remember the judge's reason for next time, and whether it repeated the last one."""
+        return replace(
+            self,
+            last_verdict=truncate_message(reason.strip(), MAX_GOAL_REASON_CHARS),
+            verdict_repeated=repeated,
+        )
+
+    def with_tool_progress(self) -> SessionGoal:
+        """Mark this turn as progress so a later no-tool plateau can still stall."""
+        return replace(self, last_progress_turns_used=self.turns_used)
 
     def with_finding(self, finding: str) -> SessionGoal:
         """Append one turn's answer to what later turns are told."""
@@ -207,135 +291,82 @@ class SessionGoal:
         return unfinished[0] if unfinished else None
 
 
-def _checklist_from_handoffs(handoff_contents: Sequence[str]) -> tuple[str, ...]:
-    items: list[str] = []
-    for raw in handoff_contents:
-        item = find_tag_suffix(raw, "session_goal_item")
-        if item:
-            items.append(item)
-    return tuple(items)
+def _starts_a_list(condition: str, first: re.Match[str]) -> bool:
+    """True when the first marker sits where an enumeration can begin.
 
-
-def session_goal_from_handoffs(
-    handoff_contents: Sequence[str],
-    *,
-    condition: str = "",
-) -> SessionGoal | None:
-    """Build a :class:`SessionGoal` from action ``session_goal`` handoff tags.
-
-    Accepted forms (structured; not fuzzy user-text matching). ``:`` and ``=``
-    separators are both accepted (schema docs use ``=``; content tags often use
-    ``:``):
-
-    - ``session_goal:continue`` — attach an session goal
-    - ``session_goal_max_turns:<n>`` — session-goal turn cap (typed on the tool schema)
-    - ``session_goal_item:<text>`` / ``session_goal_item=<text>``
-    - ``session_goal:achieved`` / ``session_goal:done=…`` — progress tags, not
-      attach tags.
+    ``(1)`` is unambiguous anywhere. ``1.`` / ``1)`` count only at the start of
+    the condition, at a line start, or after a colon or semicolon — a ``1.``
+    in the middle of a sentence is prose.
     """
-    checklist = _checklist_from_handoffs(handoff_contents)
-    attach_tag: str | None = None
-    for raw in handoff_contents:
-        body = find_tag_suffix(raw, "session_goal")
-        if body is None:
-            continue
-        # Progress tags use the same key; never treat them as attach.
-        if body == "achieved" or body.startswith("done="):
-            continue
-        attach_tag = body
-        break
+    if first.group(1):
+        return True
+    lead = condition[: first.start()].rstrip(" \t")
+    return not lead or lead.endswith("\n") or lead.endswith(_LIST_LEAD_PUNCTUATION)
 
-    if attach_tag is None and not checklist:
-        return None
 
-    max_turns = _DEFAULT_MAX_OUTER_TURNS
-    explicit_cap = False
-    step_count: int | None = None
-    body = attach_tag or "continue"
-    for raw in handoff_contents:
-        cap = find_tag_suffix(raw, "session_goal_max_turns")
-        if cap is None:
-            continue
-        try:
-            max_turns = max(1, int(cap.strip()))
-            explicit_cap = True
-        except ValueError:
-            continue
-        break
+def _numbered_steps(condition: str) -> tuple[str, ...]:
+    """Steps numbered 1, 2, 3… in order, on one line or several; else nothing."""
+    marks = list(_STEP_NUMBER.finditer(condition))
+    if len(marks) < 2 or not _starts_a_list(condition, marks[0]):
+        return ()
+    if [int(mark.group(2)) for mark in marks] != list(range(1, len(marks) + 1)):
+        return ()
+    items: list[str] = []
+    for position, mark in enumerate(marks):
+        end = marks[position + 1].start() if position + 1 < len(marks) else len(condition)
+        items.append(condition[mark.end() : end].strip().rstrip(",;").strip())
+    return tuple(item for item in items if item)
 
-    if checklist and step_count is None:
-        step_count = len(checklist)
-        # Default budget may stretch to fit a checklist; an explicit typed cap
-        # is a hard ceiling (budget_exhausted if items remain).
-        if not explicit_cap:
-            max_turns = max(max_turns, step_count)
 
-    goal_condition = strip_shell_prompt_chrome(condition) or body
-    goal_condition = truncate_message(goal_condition, MAX_GOAL_CONDITION_CHARS)
+def derive_session_goal_checklist(
+    condition: str,
+    items: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Checklist for a new goal: caller items, else two or more steps written into ``condition``.
+
+    Steps are ``1. … 2. …`` (also ``1)`` / ``(1)``, inline or one per line) or
+    bulleted lines. An inline ``1.`` counts only where a list can begin: the
+    start of the condition, a line start, or after a colon or semicolon;
+    ``(1)`` counts anywhere. A single-item checklist would only echo the
+    condition, so a condition without enumerated steps gets no checklist and
+    the host accepts on tool evidence (the judge may only veto).
+    """
+    provided = tuple(str(item).strip() for item in items if str(item).strip())
+    if provided:
+        return provided
+    numbered = _numbered_steps(condition)
+    if len(numbered) >= 2:
+        return numbered
+    bullets = tuple(match.group(1).strip() for match in _BULLET_STEPS.finditer(condition))
+    return bullets if len(bullets) >= 2 else ()
+
+
+def build_session_goal(
+    condition: str,
+    *,
+    checklist: tuple[str, ...] = (),
+    max_outer_turns: int | None = None,
+) -> SessionGoal:
+    """Build an active agent-attached goal from structured tool input."""
+    goal_condition = truncate_message(
+        strip_shell_prompt_chrome(condition),
+        MAX_GOAL_CONDITION_CHARS,
+    )
+    clean_items = derive_session_goal_checklist(goal_condition, checklist)
+    if max_outer_turns is None or max_outer_turns <= 0:
+        max_turns = SESSION_GOAL_UNBOUNDED_TURNS
+    else:
+        max_turns = max(1, max_outer_turns)
+        if clean_items:
+            max_turns = max(max_turns, len(clean_items))
     return SessionGoal(
         condition=goal_condition,
         max_outer_turns=max_turns,
         status=SessionGoalStatus.ACTIVE,
-        step_count=step_count,
-        checklist=checklist,
+        step_count=len(clean_items) or None,
+        checklist=clean_items,
+        checklist_explicit=any(item.strip() for item in checklist),
     )
-
-
-def session_goal_from_assistant_handoffs(
-    handoffs: Sequence[AssistantHandoff],
-    *,
-    condition: str = "",
-) -> SessionGoal | None:
-    """Build a :class:`SessionGoal` from typed :class:`AssistantHandoff` fields.
-
-    ``database_query:*`` handoffs never attach a host loop — missing DB
-    connectivity is explained in one reply (connect/setup guidance). A planner
-    that still sets ``session_goal=true`` on those handoffs is ignored here.
-    """
-    # Reuse the tag body parser by projecting fields to clean content tags —
-    # ontology fields are already validated at decode time.
-    projected: list[str] = []
-    for handoff in handoffs:
-        if handoff_has_tag(handoff.content, "database_query"):
-            continue
-        if handoff.session_goal:
-            projected.append("session_goal:continue")
-            if handoff.session_goal_max_turns is not None:
-                projected.append(f"session_goal_max_turns:{handoff.session_goal_max_turns}")
-        for item in handoff.session_goal_items:
-            projected.append(f"session_goal_item:{item}")
-    if not projected:
-        return None
-    return session_goal_from_handoffs(projected, condition=condition)
-
-
-def attach_session_goal_from_handoffs(
-    session: Any,
-    handoff_contents: Sequence[str],
-    *,
-    condition: str = "",
-    handoffs: Sequence[AssistantHandoff] = (),
-) -> SessionGoal | None:
-    """Attach a goal from typed handoffs (preferred) or legacy tag strings.
-
-    An **attached** goal (``active`` or ``paused``, including host-owned
-    ``/goal set``) stays authoritative — handoff must not replace it
-    mid-flight. Terminal goals (achieved / cleared / …) may be replaced so a
-    later handoff can start fresh work.
-    """
-    existing = getattr(session, "session_goal", None)
-    if session_goal_is_attached(session):
-        return existing if isinstance(existing, SessionGoal) else None
-    detected = None
-    if handoffs:
-        detected = session_goal_from_assistant_handoffs(handoffs, condition=condition)
-    if detected is None and not any(
-        handoff_has_tag(content, "database_query") for content in handoff_contents
-    ):
-        detected = session_goal_from_handoffs(handoff_contents, condition=condition)
-    if detected is None:
-        return None
-    return attach_session_goal(session, detected)
 
 
 def _session_token_totals(session: Any | None) -> tuple[int, int]:
@@ -359,6 +390,22 @@ def _session_token_totals(session: Any | None) -> tuple[int, int]:
         return 0, 0
 
 
+def _session_cached_total(session: Any | None) -> int:
+    tokens = getattr(session, "tokens", None) if session is not None else None
+    cached_total = getattr(tokens, "cached_total", None)
+    if not callable(cached_total):
+        return 0
+    try:
+        return max(0, int(cached_total()))
+    except (TypeError, ValueError):
+        return 0
+
+
+def session_goal_cached_tokens(goal: SessionGoal, *, session: Any | None = None) -> int:
+    """Input tokens served from the provider's prompt cache since attach."""
+    return max(0, _session_cached_total(session) - int(goal.token_baseline_cached))
+
+
 def mark_session_goal_started(
     goal: SessionGoal,
     *,
@@ -379,6 +426,7 @@ def mark_session_goal_started(
         started_at=float(time.time() if now is None else now),
         token_baseline_input=max(0, int(input_tokens)),
         token_baseline_output=max(0, int(output_tokens)),
+        token_baseline_cached=_session_cached_total(session),
     )
 
 
@@ -388,19 +436,27 @@ def attach_session_goal(session: Any, goal: SessionGoal) -> SessionGoal:
     Fresh active goals get a start stamp (duration / token delta) unless the
     caller already set ``started_at`` (e.g. restore from payload). Leading
     shell prompt chrome in ``condition`` is stripped so a pasted ``[n] ❯``
-    line never becomes the durable goal text.
+    line never becomes the durable goal text. A new goal identity drops the
+    session task plan so completed steps from earlier work cannot credit it.
     """
+    previous = getattr(session, "session_goal", None)
+    new_identity = goal.started_at is None or (
+        isinstance(previous, SessionGoal) and previous.started_at != goal.started_at
+    )
     cleaned = strip_shell_prompt_chrome(goal.condition)
     if cleaned != goal.condition:
         goal = replace(goal, condition=cleaned)
     if goal.started_at is None and goal.status == SessionGoalStatus.ACTIVE:
         goal = mark_session_goal_started(goal, session=session)
     session.session_goal = goal
+    if new_identity:
+        discard_task_plan(session)
     return goal
 
 
 def clear_session_goal(session: Any) -> None:
     session.session_goal = None
+    discard_task_plan(session)
 
 
 def session_goal_elapsed_seconds(
@@ -460,48 +516,6 @@ def session_goal_is_attached(session: Any) -> bool:
     return bool(goal.status in (SessionGoalStatus.ACTIVE, SessionGoalStatus.PAUSED))
 
 
-def _done_indices_from_text(text: str) -> frozenset[int]:
-    found: set[int] = set()
-    for match in _DONE_TAG.finditer(text):
-        for piece in match.group(1).split(","):
-            piece = piece.strip()
-            if not piece:
-                continue
-            try:
-                found.add(int(piece))
-            except ValueError:
-                continue
-    return frozenset(found)
-
-
-def apply_session_goal_progress(goal: SessionGoal, text: str) -> SessionGoal:
-    """Merge ``session_goal:done=…`` indices from ``text`` into ``goal.completed``."""
-    if not text:
-        return goal
-    newly = _done_indices_from_text(text)
-    if not newly:
-        return goal
-    if goal.checklist:
-        newly = frozenset(i for i in newly if 0 <= i < len(goal.checklist))
-    if not newly:
-        return goal
-    return goal.with_completed(goal.completed | newly)
-
-
-def strip_session_goal_progress_tags(text: str) -> str:
-    """Remove harness progress tags from user-visible assistant text."""
-    if not text:
-        return text
-    cleaned = _PROGRESS_TAG.sub("", text)
-    cleaned = re.sub(r"[ \t]*,[ \t]*", ", ", cleaned)
-    cleaned = re.sub(r"^[,\s]+", "", cleaned)
-    cleaned = re.sub(r"[,\s]+$", "", cleaned)
-    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
-
-
 def strip_shell_prompt_chrome(text: str) -> str:
     """Strip leading ``[n] ❯`` prompt chrome pasted into user/goal text."""
     if not text:
@@ -518,11 +532,13 @@ def strip_shell_prompt_chrome(text: str) -> str:
 def derive_session_goal_reason(goal: SessionGoal) -> str:
     """Structured reason from goal state (no LLM).
 
-    Used by evaluate/paint/nudge so hosts stay honest and cheap. Returns a
+    Used by evaluate/progress/nudge so hosts stay honest and cheap. Returns a
     :class:`SessionGoalReason` string — never tag grammar.
     """
     if goal.status == SessionGoalStatus.ACHIEVED:
         return SessionGoalReason.ACHIEVED_GENERIC
+    if goal.status == SessionGoalStatus.IMPOSSIBLE:
+        return goal.last_reason.strip() or SessionGoalReason.IMPOSSIBLE
     if goal.status == SessionGoalStatus.PAUSED:
         return SessionGoalReason.PAUSED_BY_USER
     if goal.status == SessionGoalStatus.BUDGET_EXHAUSTED:
@@ -551,24 +567,23 @@ def refresh_session_goal_reason(goal: SessionGoal) -> SessionGoal:
 
 __all__ = [
     "MAX_GOAL_CONDITION_CHARS",
+    "SESSION_GOAL_CHECKPOINT_TURNS",
     "MAX_GOAL_REASON_CHARS",
     "SessionGoal",
     "SessionGoalReason",
     "SessionGoalStatus",
-    "apply_session_goal_progress",
     "attach_session_goal",
-    "attach_session_goal_from_handoffs",
+    "build_session_goal",
     "clear_session_goal",
+    "derive_session_goal_checklist",
     "derive_session_goal_reason",
     "mark_session_goal_started",
     "refresh_session_goal_reason",
     "session_goal_elapsed_seconds",
-    "session_goal_from_assistant_handoffs",
-    "session_goal_from_handoffs",
     "session_goal_is_active",
     "session_goal_is_attached",
     "session_goal_is_paused",
+    "session_goal_cached_tokens",
     "session_goal_token_delta",
-    "strip_session_goal_progress_tags",
     "strip_shell_prompt_chrome",
 ]

@@ -1,0 +1,240 @@
+---
+title: "SigNoz"
+description: "Connect SigNoz so OpenSRE can query logs, metrics, and traces"
+---
+
+## Overview
+
+Query logs, metrics, and traces from [SigNoz](https://signoz.io) via the Query Range API.
+
+OpenSRE uses `POST /api/v5/query_range` for `query_signoz_logs`, `query_signoz_metrics`, and `query_signoz_traces`. Configure **`SIGNOZ_URL`** and **`SIGNOZ_API_KEY`** (service account key).
+
+## Prerequisites
+
+- A running SigNoz instance (Cloud, self-hosted, or [local Docker](#local-docker-quick-start))
+- A SigNoz **service account API key** (see [Credentials](#credentials))
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup signoz
+```
+
+Setup prompts for SigNoz URL and API key only.
+
+### Option 2: Environment variables
+
+```bash
+export SIGNOZ_URL="http://localhost:8080"
+export SIGNOZ_API_KEY="<service-account-api-key>"
+```
+
+| Variable | Description |
+| --- | --- |
+| `SIGNOZ_URL` | SigNoz base URL (local Docker: `http://localhost:8080`) |
+| `SIGNOZ_API_KEY` | Service account API key |
+
+### Local Docker quick start
+
+If you already run SigNoz, skip to credentials and env setup above.
+
+<Warning>
+SigNoz has deprecated its `docker-compose.yaml` / `install.sh` install path entirely in
+favor of a new installer called **Foundry** -- a checked-out `signoz` repo no longer has
+a `signoz/docker/docker-compose.yaml` file at all. Confirmed live against the current
+`SigNoz/signoz` repo: `deploy/install.sh` now just prints a deprecation notice and exits,
+pointing to [signoz.io/docs/install/docker](https://signoz.io/docs/install/docker/).
+</Warning>
+
+```bash
+curl -fsSL https://signoz.io/foundry.sh | bash
+```
+
+Piping a remote script into `bash` runs whatever that URL currently serves, with your
+shell's privileges. If that's a concern for your environment, download and verify a
+pinned release instead (`SigNoz/foundry` on GitHub publishes a checksums file with every
+release):
+
+```bash
+VERSION=v0.2.17
+curl -fsSLO "https://github.com/SigNoz/foundry/releases/download/${VERSION}/foundry_darwin_arm64.tar.gz"
+curl -fsSLO "https://github.com/SigNoz/foundry/releases/download/${VERSION}/foundry_${VERSION#v}_checksums.txt"
+shasum -a 256 -c <(grep darwin_arm64 "foundry_${VERSION#v}_checksums.txt") && \
+  tar -xzf foundry_darwin_arm64.tar.gz && \
+  sudo mv foundryctl /usr/local/bin/
+```
+
+Swap `darwin_arm64` for your platform (`linux_amd64`, `linux_arm64`, etc.) and use
+`sha256sum` in place of `shasum -a 256` on Linux.
+
+```bash
+cat > casting.yaml << 'EOF'
+apiVersion: v1alpha1
+kind: Installation
+metadata:
+  name: signoz
+spec:
+  deployment:
+    flavor: compose
+    mode: docker
+EOF
+foundryctl cast -f casting.yaml
+```
+
+`foundryctl cast` validates the environment, generates the Docker Compose files under
+`pours/`, and starts every container in one step. Serves the UI and API on
+**http://localhost:8080** (not 3301).
+
+```bash
+# ... later, teardown:
+docker compose -f pours/deployment/compose.yaml down
+```
+
+## Credentials
+
+In SigNoz: **Settings → Service Accounts** → create a service account → **Keys** → **Add Key**.
+Copy the key (shown once).
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `query_signoz_logs` | Search logs by service, severity, and time window |
+| `query_signoz_metrics` | Query CPU, memory, and request-rate signals |
+| `query_signoz_traces` | Query error spans, latency percentiles, and dependencies |
+
+### Supported metrics (V1)
+
+| Alias | Actual SigNoz metric |
+|-------|---------------------|
+| `cpu_usage` | `system_cpu_usage` |
+| `memory_usage` | `system_memory_usage` |
+| `request_rate` | `signoz_calls_total` |
+
+You can also pass any raw metric name known to SigNoz.
+For latency percentiles (p95/p99), prefer `query_signoz_traces`.
+
+## Verify
+
+```bash
+opensre integrations verify signoz
+```
+
+Expected verify output mentions the SigNoz Query API (`/api/v2/metrics`, `/api/v5/query_range`).
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `SigNoz configuration is incomplete` | Set both `SIGNOZ_URL` and `SIGNOZ_API_KEY`. |
+| `HTTP 401` on verify | Regenerate the service account key; check URL (local Docker: port **8080**). |
+| `No logs returned` | Confirm telemetry exists in SigNoz and filter fields match (`service.name` for logs). |
+| `No metrics returned` | Verify the metric name in SigNoz Metrics Explorer; empty results return a warning for unknown metrics. |
+
+## Security
+
+- Use a dedicated SigNoz service-account key with the minimum permissions needed for query access.
+- Store `SIGNOZ_API_KEY` in `.env` or your secret manager — not in source control.
+
+## Extras
+
+### API reference
+
+- Endpoint: `POST {SIGNOZ_URL}/api/v5/query_range`
+- Auth header: `SigNoz-Api-Key: <YOUR_API_KEY>`
+- Validation probe: `GET {SIGNOZ_URL}/api/v2/metrics`
+
+### Local verification recipe
+
+Verified live against a real local SigNoz stack (via Foundry, above). Send some real
+telemetry first -- an empty stack proves connectivity, not that the tools return data:
+
+```bash
+python3 -m venv /tmp/signoz-otel-venv && source /tmp/signoz-otel-venv/bin/activate
+pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+
+python3 - << 'PY'
+import logging, time
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+resource = Resource.create({"service.name": "payment-service-verify"})
+trace_provider = TracerProvider(resource=resource)
+trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")))
+trace.set_tracer_provider(trace_provider)
+tracer = trace.get_tracer(__name__)
+
+meter_provider = MeterProvider(resource=resource, metric_readers=[
+    PeriodicExportingMetricReader(OTLPMetricExporter(endpoint="http://localhost:4318/v1/metrics"), export_interval_millis=2000)
+])
+metrics.set_meter_provider(meter_provider)
+error_counter = metrics.get_meter(__name__).create_counter("payment_errors_total")
+
+log_provider = LoggerProvider(resource=resource)
+log_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint="http://localhost:4318/v1/logs")))
+logger = logging.getLogger("payment-service-verify")
+logger.setLevel(logging.ERROR)
+logger.addHandler(LoggingHandler(level=logging.ERROR, logger_provider=log_provider))
+
+with tracer.start_as_current_span("process_payment"):
+    logger.error("Payment gateway timeout: connection refused to billing-api")
+    error_counter.add(1, {"error.type": "gateway_timeout"})
+
+time.sleep(4)
+trace_provider.shutdown(); meter_provider.shutdown(); log_provider.shutdown()
+PY
+```
+
+`opensre integrations verify` checks a saved store record before env vars, and
+chat sessions only fall through to env vars when the store has no records at
+all -- any existing record, for any service, blocks env-var resolution entirely. Point
+`OPENSRE_INTEGRATIONS_STORE_PATH` at a path inside a fresh empty directory before
+verifying, so a real saved record can't shadow the `SIGNOZ_*` vars above, and your
+real config is never read or written:
+
+```bash
+export OPENSRE_DEMO_STORE_DIR="$(mktemp -d /tmp/opensre-signoz-demo.XXXXXX)"
+export OPENSRE_INTEGRATIONS_STORE_PATH="$OPENSRE_DEMO_STORE_DIR/integrations.json"
+```
+
+Verify, then ask the agent:
+
+```bash
+opensre integrations verify signoz
+```
+
+```
+SERVICE │ SOURCE    │ STATUS   │ DETAIL
+signoz  │ local env │ ✓ passed │ Connected to SigNoz Query API (/api/v2/metrics,
+        │           │          │ /api/v5/query_range for logs/metrics/traces).
+```
+
+```bash
+opensre
+```
+
+Ask: *Why is payment-service-verify erroring? Check SigNoz logs, traces, and metrics.*
+
+The agent calls `query_signoz_logs`, `query_signoz_traces`, and `query_signoz_metrics`
+against this exact local stack and finds the seeded failure: a single ERROR log from
+`payment-service-verify` reporting `connection refused to billing-api`, with zero
+`billing-api` telemetry across the window — the service is not running.
+
+Teardown:
+
+```bash
+docker compose -f pours/deployment/compose.yaml down
+rm -rf "$OPENSRE_DEMO_STORE_DIR" /tmp/signoz-otel-venv
+unset OPENSRE_DEMO_STORE_DIR OPENSRE_INTEGRATIONS_STORE_PATH SIGNOZ_URL SIGNOZ_API_KEY
+```

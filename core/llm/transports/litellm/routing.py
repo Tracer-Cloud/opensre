@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
 from core.llm.providers.azure_openai import (
     is_azure_openai_provider,
     resolve_azure_openai_request_kwargs,
@@ -24,8 +25,9 @@ from core.llm.providers.vertex_ai import (
     is_vertex_ai_provider,
     resolve_vertex_ai_request_kwargs,
 )
+from core.llm.subscriptions.registry import subscription_adapter
 from core.llm.transports.litellm.clients import LiteLLMAgentClient, LiteLLMLLMClient
-from core.llm.types import ModelType
+from core.llm.types import AgentLLMClient, CliLLMClient, ModelType
 
 
 def _guard_sdk_only_provider(provider: str) -> None:
@@ -44,8 +46,14 @@ def _litellm_model_for_compat(model: str) -> str:
     return model if model.startswith("openai/") else f"openai/{model}"
 
 
-def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClient:
+def build_litellm_agent_client(settings: Any, provider: str) -> AgentLLMClient:
     """Build a :class:`LiteLLMAgentClient` for the given provider and settings."""
+    if provider in SUBSCRIPTION_BY_VALUE:
+        from core.llm.provider_models import resolve_provider_models
+
+        return subscription_adapter(provider).clients.agent_client(
+            resolve_provider_models(settings, provider)[0]
+        )
     _guard_sdk_only_provider(provider)
     from core.llm.providers.provider_registry import FIRST_PARTY_PROVIDERS
 
@@ -59,7 +67,7 @@ def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClie
         )
 
     if is_azure_openai_provider(provider):
-        from config.config import AZURE_OPENAI_LLM_CONFIG
+        from config.llm_models import AZURE_OPENAI_LLM_CONFIG
 
         azure = resolve_azure_openai_request_kwargs(settings, model_type=ModelType.REASONING)
         return LiteLLMAgentClient(
@@ -71,7 +79,7 @@ def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClie
         )
 
     if is_openai_compat_provider(provider):
-        from config.config import PROVIDER_OLLAMA
+        from config.llm_settings import PROVIDER_OLLAMA
 
         resolved = resolve_openai_compat_provider(settings, provider, ModelType.REASONING)
         max_tokens = 1024 if provider == PROVIDER_OLLAMA else resolved.config.max_tokens
@@ -85,7 +93,7 @@ def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClie
         )
 
     if is_vertex_ai_provider(provider):
-        from config.config import VERTEX_AI_LLM_CONFIG
+        from config.llm_models import VERTEX_AI_LLM_CONFIG
 
         vertex = resolve_vertex_ai_request_kwargs(settings, model_type=ModelType.REASONING)
         return LiteLLMAgentClient(
@@ -108,8 +116,15 @@ def build_litellm_llm_client(
     model_type: ModelType,
     *,
     usage_callback: Any = None,
-) -> LiteLLMLLMClient:
+) -> CliLLMClient:
     """Build a :class:`LiteLLMLLMClient` for the given provider, model tier, and settings."""
+    if provider in SUBSCRIPTION_BY_VALUE:
+        from core.llm.provider_models import resolve_provider_models
+
+        return subscription_adapter(provider).clients.llm_client(
+            resolve_provider_models(settings, provider)[0],
+            usage_callback=usage_callback,
+        )
     _guard_sdk_only_provider(provider)
 
     from core.llm.providers.provider_registry import FIRST_PARTY_PROVIDERS
@@ -133,7 +148,7 @@ def build_litellm_llm_client(
         )
 
     if is_azure_openai_provider(provider):
-        from config.config import AZURE_OPENAI_LLM_CONFIG
+        from config.llm_models import AZURE_OPENAI_LLM_CONFIG
 
         azure = resolve_azure_openai_request_kwargs(settings, model_type=model_type)
         raw_fallback = _fallback("azure_openai")
@@ -174,7 +189,7 @@ def build_litellm_llm_client(
         )
 
     if is_vertex_ai_provider(provider):
-        from config.config import VERTEX_AI_LLM_CONFIG
+        from config.llm_models import VERTEX_AI_LLM_CONFIG
 
         vertex = resolve_vertex_ai_request_kwargs(settings, model_type=model_type)
         raw_fallback = _fallback("vertex_ai")

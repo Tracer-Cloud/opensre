@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from integrations.gitlab.tools.gitlab_commits_tool import _resolve_config, list_gitlab_commits
+from integrations.gitlab.tools.gitlab_commits_tool import (
+    _map_list_gitlab_commits,
+    _resolve_config,
+    list_gitlab_commits,
+)
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -199,3 +204,44 @@ def test_run_error_path_returns_empty_commits_when_integration_returns_empty() -
         result = list_gitlab_commits(project_id="42")
     assert result["available"] is True
     assert result["commits"] == []
+
+
+class TestMapListGitlabCommits:
+    def test_records_plain_count_when_under_page_size(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_gitlab_commits(
+            evidence,
+            {"available": True, "commits": [{"id": "abc"}, {"id": "def"}]},
+            {"per_page": 10},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "list_gitlab_commits"
+        assert entries[0]["summary"] == "2 commit(s)"
+
+    def test_qualifies_count_when_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_gitlab_commits(
+            evidence,
+            {"available": True, "commits": [{"id": str(i)} for i in range(10)]},
+            {"per_page": 10},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "10+ commit(s)"
+
+    def test_records_nothing_when_no_commits(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_gitlab_commits(evidence, {"available": True, "commits": []}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_gitlab_commits(evidence, {"available": False, "error": "not configured"}, {})
+
+        assert "catalog_entries" not in evidence

@@ -18,15 +18,11 @@ dependencies = [
     "anthropic>=0.77.1",
     "mcp>=1.28.1",
     "openai>=2.0.0",
-    # Held at 1.90.x: 1.93.0 ships a Rust extension with no cp314 wheel (breaks
-    # uv builds on Python 3.14) and changes the model price table (breaks the
-    # gpt-5.6 alias pricing). 1.90.0 is the last version verified green here.
-    # Lift once the wheel + pricing are resolved upstream.
-    "litellm>=1.90.0,<1.96.0",
+    "litellm>=1.106.2,<1.107.0",
     # Data validation
     "pydantic>=2.12.5,<3",
     "pydantic-settings>=2.12.0,<3",
-    "kubernetes>=28.1.0",
+    "kubernetes>=28.1.0,<37.0.0",
     # HTTP and async
     "httpx[socks]>=0.27.0",
     "aiohttp>=3.9.0",
@@ -40,7 +36,6 @@ dependencies = [
     # OpenSSL >= 3.2 (SSL_get0_group_name). release.yml pins Homebrew openssl@3
     # and re-copies those dylibs into the PyInstaller onedir bundle.
     "cryptography>=50.0.0,<51",
-    "keyring>=23.0.1",
     # AWS
     "boto3>=1.42.88",
     # Slack (Socket Mode gateway + Web API)
@@ -54,7 +49,6 @@ dependencies = [
     "questionary>=2.1.1",
     "prompt_toolkit>=3.0.0",
     "PyYAML>=6.0",
-    "numpy>=1.26.0",
     "tzdata>=2026.1",
     # OpenTelemetry
     "opentelemetry-api>=1.41.0",
@@ -78,6 +72,7 @@ dependencies = [
     "pymysql>=1.1.0,<2.0.0",
     # ClickHouse (used by first-class SigNoz + ClickHouse integrations)
     "clickhouse-connect>=0.15.1,<1.0.0",
+    "urllib3>=2.0,<3",
     "sentry-sdk>=2.59.0",
     # File locking for atomic store operations
     "filelock>=3.29.0",
@@ -101,6 +96,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.3.0",
     "pytest-xdist>=3.5.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
@@ -145,12 +141,6 @@ postgresql = [
 azure_sql = [
     "pyodbc>=5.1.0,<6.0.0",
 ]
-# Cloud Logging is the one Yandex Cloud read that has no REST endpoint; the
-# entry reader is gRPC-only. Everything else in the integration is REST, so the
-# stubs stay optional and only `read_yc_logs` needs them.
-yandex_cloud_logs = [
-    "yandexcloud>=0.300.0",
-]
 
 [tool.setuptools.packages.find]
 include = [
@@ -166,9 +156,13 @@ include = [
 ]
 
 [tool.setuptools.package-data]
-"surfaces.shared" = ["sample_alerts/*.json"]
-"core.agent_harness.prompts" = ["skills/**/*.md"]
-"integrations" = ["**/SKILL.md", "yandex_cloud/api_index.json"]
+"core.agent_harness.prompts" = [
+  "opensre_system_prompt.md",
+  "loop_templates/*.md",
+  "skills/**/*.md",
+  "skills/**/scripts/*.py",
+]
+"integrations" = ["**/SKILL.md"]
 "tools" = ["**/SKILL.md"]
 
 # With pytest-xdist (-n auto), each worker writes a fragment; put them under
@@ -230,10 +224,9 @@ ignore_names = [
   "_accept_*", "_tab_*", "_shift_*", "_next_*", "_previous_*", "_on_*",
   "_quit", "_ctrl_c", "_bulk_*", "_handle_*", "_toggle", "_escape", "_submit",
   "_escape_checkbox", "_get_choice_tokens",
-  "parse_chunk", "from_tokens",                    # fleet_monitoring meter protocol
   "steer", "emit_update", "on_update",             # agent runtime protocol surface
   "tool_description",                              # slash adapter protocol
-  "reset_guardrail_engine", "reset_runtime_flags", "reset_cli_session_id",
+  "reset_guardrail_evaluator", "reset_runtime_flags", "reset_cli_session_id",
   "register_external_tool_package", "get_tool_descriptors", "load_tool",
   "signoz_is_available",
   "load_remote_url", "save_named_remote", "delete_named_remote", "save_remote_ops_config",
@@ -250,8 +243,22 @@ dev = [
     "pre-commit>=4.0.0",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
+    # pytest.ini sets ``timeout``; without the plugin that key is silently
+    # inert and pytest warns "Unknown config option". Keep it in every install
+    # path, not just the ``dev`` extra that ``make install`` uses.
+    "pytest-timeout>=2.3.0",
     "types-psutil>=7.2.2.20260408",
     "types-PyYAML>=6.0.12",
     "import-linter>=2.0",
     "vulture>=2.14",
+]
+
+# Security floors for transitive dependencies. A re-lock or a Dependabot
+# lockfile edit must never resolve below a published advisory's fix.
+[tool.uv]
+constraint-dependencies = [
+    # GHSA-6q48-6c7w-9gw2: bundled emSign root chains to compromised intermediates.
+    "certifi>=2026.10.19",
+    # CVE-2026-113725/-113726/-113732/-113776 (dev only, via pre-commit).
+    "virtualenv>=21.14.12",
 ]

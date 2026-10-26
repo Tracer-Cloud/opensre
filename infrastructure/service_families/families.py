@@ -1,9 +1,9 @@
 """Service-family key normalization for the tool-availability layer.
 
-The investigation pipeline groups tools by "family" (multi-instance service
+Tool resolution groups tools by "family" (multi-instance service
 buckets, e.g. all Datadog log ingest variants collapse into the ``datadog``
 family). Historically the mapping lived only in
-:mod:`integrations.registry`, and :mod:`tools.investigation.stages.gather_evidence.tools`
+:mod:`integrations.registry`, and tool-resolution code under ``tools/``
 imported it directly — an illegal ``tools -> integrations`` edge (T-4 layering
 audit, issue #3352, item 27).
 

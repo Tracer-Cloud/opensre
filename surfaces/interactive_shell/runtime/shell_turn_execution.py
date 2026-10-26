@@ -1,8 +1,6 @@
 """One interactive-shell turn: build (or reuse) the shell agent, then ``handle``.
 
-The shell's ports are supplied by ``shell_agent``; the agent's own stages run.
-A test that injects a whole stage (``execute_actions`` / ``gather_evidence`` /
-``answer_agent``) goes through the seams in ``turn_seams``.
+The shell's ports are supplied by ``shell_agent``; the agent's own ReAct stage runs.
 """
 
 from __future__ import annotations
@@ -16,18 +14,44 @@ from core.agent_harness import (
     ToolCallingTurnResult,
     TurnResult,
 )
+from core.agent_harness.spi.cancel import host_cancel_requested
 from core.agent_harness.spi.session_goal import (
     SessionGoal,
+    SessionGoalReason,
     format_session_goal_progress,
+    format_session_goal_status_line,
+    goal_paint_signature,
+    same_goal_identity,
 )
 from core.tool import ToolExecutionHooks
-from infrastructure.turn_host.turn_handler import TurnHandler
 from infrastructure.turn_host.turn_output import TurnOutput
+from infrastructure.turn_host.turn_runner import TurnRunner
 from surfaces.interactive_shell.runtime.agent_harness_adapters import ShellOutputSink
+from surfaces.interactive_shell.runtime.approval_hooks import with_shell_approval
 from surfaces.interactive_shell.runtime.core.turn_accounting import ShellTurnAccounting
 from surfaces.interactive_shell.runtime.shell_agent import shell_agent_build_config
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.utils.telemetry import PromptRecorder
+from surfaces.shared.terminal.components.rendering import print_repl_text
+
+
+def goal_paint_text(goal: SessionGoal, session: Session) -> str:
+    """One status line per turn; the full block only when the goal itself changed.
+
+    The block (condition, reason, checklist) prints when a goal is first seen
+    and whenever its status, ticks, or checklist change. A repaint of a goal
+    already shown drops the condition, so it prints once per goal.
+    """
+    terminal = session.terminal
+    signature = goal_paint_signature(goal)
+    previous = terminal.goal_paint_signature
+    if goal.status == "active" and (
+        previous == signature or SessionGoalReason.is_working(goal.last_reason)
+    ):
+        return format_session_goal_status_line(goal, session=session)
+    terminal.goal_paint_signature = signature
+    return format_session_goal_progress(
+        goal, session=session, include_condition=not same_goal_identity(previous, signature)
+    )
 
 
 def execute_shell_turn(
@@ -35,40 +59,44 @@ def execute_shell_turn(
     session: Session,
     console: Console,
     *,
-    recorder: PromptRecorder | None,
     confirm_fn: Callable[[str], str] | None = None,
     is_tty: bool | None = None,
     request_exit: Callable[[], None] | None = None,
-    handler: TurnHandler | None = None,
+    handler: TurnRunner | None = None,
     output: TurnOutput | None = None,
     tool_hooks: ToolExecutionHooks | None = None,
 ) -> TurnResult:
     """Run one submitted shell turn through the shared turn host.
 
-    The same :class:`TurnHandler` the chat transports use, built with the
+    The same :class:`TurnRunner` the chat transports use, built with the
     shell's own :func:`shell_agent_build_config` so the REPL keeps its tools,
-    prompts and gather phase. Pass a long-lived ``handler`` (the REPL builds one
+    prompts. Pass a long-lived ``handler`` (the REPL builds one
     at startup) so the tool stack is not rebuilt every turn.
     """
-    resolved_output: TurnOutput = output if output is not None else ShellOutputSink(console)
+    resolved_output: TurnOutput = (
+        output if output is not None else ShellOutputSink(console, session)
+    )
     # The host reads per-turn tool hooks off the output, the same way a chat
     # transport supplies them.
-    resolved_output.tool_hooks = tool_hooks  # type: ignore[attr-defined]
+    resolved_output.tool_hooks = with_shell_approval(  # type: ignore[attr-defined]
+        tool_hooks, session=session, console=console, confirm_fn=confirm_fn, is_tty=is_tty
+    )
     if handler is None:
-        handler = TurnHandler(
+        handler = TurnRunner(
             console=console,
             agent_build=shell_agent_build_config(request_exit=request_exit),
             retain_only_current_session=True,
         )
 
     def _on_progress(goal: SessionGoal) -> None:
-        rendered = format_session_goal_progress(goal, session=session)
+        rendered = goal_paint_text(goal, session)
         if rendered:
             # Checklist uses ``[x]`` / ``[ ]`` — Rich markup must stay off.
-            console.print(rendered, markup=False)
+            # CRLF under patch_stdout(raw=True) so rows do not staircase.
+            print_repl_text(console, rendered, markup=False)
 
     def _accounting(message: str) -> ShellTurnAccounting:
-        return ShellTurnAccounting(session=session, text=message, recorder=recorder)
+        return ShellTurnAccounting(session=session, text=message)
 
     result = handler.run(
         text,
@@ -82,16 +110,17 @@ def execute_shell_turn(
         on_progress=_on_progress,
     )
     if result is None:
-        # The process gate refused the turn; the host already said so on the
-        # output. Report a turn that ran nothing rather than inventing an answer.
+        # Admission stopped before agent work, at capacity or cancellation.
+        cancelled = host_cancel_requested(resolved_output)
         return TurnResult(
-            final_intent="cli_agent_at_capacity",
+            final_intent="cli_agent_cancelled" if cancelled else "cli_agent_at_capacity",
             action_result=ToolCallingTurnResult(
                 planned_count=0,
                 executed_count=0,
                 executed_success_count=0,
                 has_unhandled_clause=False,
                 handled=False,
+                cancelled=cancelled,
             ),
         )
     return result

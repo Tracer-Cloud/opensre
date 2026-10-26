@@ -1,0 +1,56 @@
+---
+title: "Structured file reads"
+description: "Ask how many jobs a workflow defines or what a config section contains, and get the answer from a parser"
+---
+
+## Overview
+
+Questions like "how many jobs does this workflow define" have an exact answer,
+and it is easy to get wrong from the shell: a search for indented keys also
+matches `steps`, `env` and `permissions`, and reading the first 200 lines of a
+long file misses everything after them. OpenSRE reads YAML, JSON and TOML files
+with a parser instead, so the count is the count.
+
+Ask in the interactive shell (`opensre`):
+
+```
+How many top-level jobs does .github/workflows/ci.yml define?
+What triggers .github/workflows/codeql.yml?
+How many dependencies are declared in pyproject.toml?
+```
+
+## What you get back
+
+One sentence naming the count and the entry names:
+
+```
+7 entries under `jobs` in .github/workflows/ci.yml: quality-static,
+quality-typecheck, test, coverage-report, session-store-locked,
+package-preflight, ci-gate
+```
+
+Point at part of a file with a dotted path, such as `project.dependencies` or
+`jobs.test`. Leave it out for the top level of the file.
+
+## What it does not do
+
+It reports names and counts, never a value. A configuration file may hold a
+token, so nothing from inside the file is echoed into the transcript. When you
+need a value, read it with a shell command.
+
+It reads `.yml`, `.yaml`, `.json` and `.toml`. Anything else, including prose
+and code, is a job for a shell command.
+
+## Workflow files and the word `on`
+
+YAML treats a bare `on`, `off`, `yes` and `no` as true or false. A GitHub
+workflow's triggers live under `on:`, so a naive read reports the key as `True`
+and can merge two differently spelled keys into one. OpenSRE keeps keys as the
+file spells them, so `on` is both listed and reachable by name.
+
+## When the answer is not there
+
+- A path that does not parse says which format failed, without the parser's
+  internals.
+- A key that is not in the file says so rather than guessing a number.
+- Counting files in a directory is not this: use a shell command.

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import enum
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from core.agent_harness.spi.cancel import HostCancelReason
 from core.agent_harness.spi.prompt_chrome import strip_shell_prompt_chrome
 from surfaces.interactive_shell.runtime.core.turn_detection import (
     looks_like_cancel_request,
@@ -16,13 +18,42 @@ from surfaces.interactive_shell.runtime.input.events import (
     InputEvent,
     InputSubmitted,
 )
-from surfaces.interactive_shell.ui.input_prompt.rendering import (
-    DEFAULT_PLACEHOLDER_TEXT,
-)
 
 QUEUE_DURING_CONFIRMATION_WARNING = (
     "[dim](type y/N to confirm the pending action; your input has been queued for after)[/]"
 )
+
+
+class InflightControl(enum.StrEnum):
+    """Exact literal controls that may act while a dispatch owns the worker."""
+
+    CANCEL_TURN = "cancel_turn"
+    PAUSE_GOAL = "pause_goal"
+    CLEAR_GOAL = "clear_goal"
+    EXIT_SHELL = "exit_shell"
+
+
+def goal_control_reason(control: InflightControl) -> HostCancelReason | None:
+    """Return the host reason for an in-flight goal control, if any."""
+    if control is InflightControl.PAUSE_GOAL:
+        return HostCancelReason.GOAL_PAUSE
+    if control is InflightControl.CLEAR_GOAL:
+        return HostCancelReason.GOAL_CLEAR
+    return None
+
+
+def _inflight_control(text: str) -> InflightControl | None:
+    """Resolve an exact literal control without inferring natural-language intent."""
+    if looks_like_cancel_request(text):
+        return InflightControl.CANCEL_TURN
+    parts = text.lower().split()
+    if parts == ["/goal", "pause"]:
+        return InflightControl.PAUSE_GOAL
+    if parts in (["/goal", "clear"], ["/goal", "unset"]):
+        return InflightControl.CLEAR_GOAL
+    if parts in (["/exit"], ["/quit"]):
+        return InflightControl.EXIT_SHELL
+    return None
 
 
 @dataclass(frozen=True)
@@ -30,6 +61,7 @@ class ShellInputSnapshot:
     exit_requested: bool
     dispatch_running: bool
     awaiting_confirmation: bool
+    worker_running: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,8 +75,9 @@ class CloseShell:
 
 
 @dataclass(frozen=True)
-class CancelTurn:
-    submitted_text: str | None = None
+class RunInflightControl:
+    control: InflightControl
+    submitted_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -59,7 +92,7 @@ class SubmitTurn:
     warning: str | None = None
 
 
-InputAction = IgnoreInput | CloseShell | CancelTurn | DeliverConfirmation | SubmitTurn
+InputAction = IgnoreInput | CloseShell | RunInflightControl | DeliverConfirmation | SubmitTurn
 
 
 def decide_input_action(
@@ -73,7 +106,7 @@ def decide_input_action(
         case InputClosed():
             return CloseShell()
         case InputCancelled():
-            return CancelTurn()
+            return RunInflightControl(control=InflightControl.CANCEL_TURN)
         case InputSubmitted(text):
             if snapshot.exit_requested or not text:
                 return IgnoreInput()
@@ -83,13 +116,10 @@ def decide_input_action(
             stripped = strip_shell_prompt_chrome(text)
             if not stripped:
                 return IgnoreInput()
-            # Placeholder text stuck in the buffer (not dim placeholder styling)
-            # must not submit as a real turn.
-            if stripped == DEFAULT_PLACEHOLDER_TEXT:
-                return IgnoreInput()
 
-            if snapshot.dispatch_running and looks_like_cancel_request(stripped):
-                return CancelTurn(submitted_text=stripped)
+            control = _inflight_control(stripped)
+            if control is not None and (snapshot.dispatch_running or snapshot.worker_running):
+                return RunInflightControl(control=control, submitted_text=stripped)
 
             if snapshot.awaiting_confirmation:
                 if looks_like_confirmation_answer(stripped):
@@ -107,13 +137,15 @@ def decide_input_action(
 
 
 __all__ = [
-    "CancelTurn",
     "CloseShell",
     "DeliverConfirmation",
     "IgnoreInput",
+    "InflightControl",
     "InputAction",
     "QUEUE_DURING_CONFIRMATION_WARNING",
+    "RunInflightControl",
     "ShellInputSnapshot",
     "SubmitTurn",
     "decide_input_action",
+    "goal_control_reason",
 ]

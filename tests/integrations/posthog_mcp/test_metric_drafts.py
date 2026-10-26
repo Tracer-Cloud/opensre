@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from core.agent_harness.turns.gather_observation import GatheredEvidence
-from infrastructure.harness_ports import (
+from infrastructure.harness_providers import (
     clear_metric_query_drafts,
     metric_query_draft_for,
 )

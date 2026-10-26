@@ -60,7 +60,7 @@ def open_pull_request(
     if not token:
         raise GitHubPullRequestError(
             ERR_GITHUB_TOKEN,
-            "A GitHub token is required to open a PR. Set GITHUB_TOKEN or GH_TOKEN.",
+            "A GitHub token is required to open a PR. Connect or reconnect GitHub in the OpenSRE app.",
         )
 
     owner, repo = resolve_repo_scope(workspace)

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from surfaces.cli.wizard import _ui, azure_openai
+from surfaces.cli.wizard import azure_openai, components
 
 
 def test_choose_azure_deployment_lists_resource_deployments(
@@ -27,13 +27,13 @@ def test_choose_azure_deployment_lists_resource_deployments(
         m.ask.return_value = "gpt-4.1"
         return m
 
-    monkeypatch.setattr(_ui, "select_prompt", _mock_select)
+    monkeypatch.setattr(components, "select_prompt", _mock_select)
 
     deployment = azure_openai.choose_azure_deployment(default="")
 
     assert deployment == "gpt-4.1"
     assert captured["values"][:2] == ["gpt-4.1", "my-custom-deployment"]
-    assert captured["values"][-1] == _ui._CUSTOM_MODEL_SENTINEL
+    assert captured["values"][-1] == components.CUSTOM_MODEL_SENTINEL
 
 
 def test_choose_azure_deployment_prompts_manual_entry_when_discovery_fails(
@@ -42,7 +42,7 @@ def test_choose_azure_deployment_prompts_manual_entry_when_discovery_fails(
     monkeypatch.setattr(azure_openai, "discover_azure_openai_deployments_from_env", lambda: [])
     monkeypatch.setattr(
         azure_openai,
-        "_prompt_value",
+        "prompt_value",
         lambda *_args, **_kwargs: "manual-deployment",
     )
 

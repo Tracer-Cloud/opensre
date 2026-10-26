@@ -14,15 +14,21 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shlex
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
-from core.agent import Agent
+from config.constants.skills import ONBOARDING_SKILL_NAME
+from config.llm_reasoning_effort import apply_reasoning_effort
+from core.agent import Agent, AgentRunResult
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
+from core.agent.run_io import ReplyStreamPolicy
 from core.agent_harness.accounting.self_recording_tools import SELF_RECORDING_ACTION_TOOL_NAMES
+from core.agent_harness.accounting.token_accounting import tap_provider_usage
 from core.agent_harness.agent_builder import AgentConfig, build_agent
 from core.agent_harness.ports import (
     ConfirmFn,
@@ -33,190 +39,105 @@ from core.agent_harness.ports import (
     ToolProvider,
 )
 from core.agent_harness.prompts import (
+    action_prompt_skill_and_context,
     build_action_system_prompt_envelope,
     build_action_user_message,
 )
 from core.agent_harness.session.integration_resolution import resolve_and_cache_integrations
-from core.agent_harness.session_goal.goal import strip_session_goal_progress_tags
-from core.agent_harness.turns.assistant_handoff import (
-    AssistantHandoff,
-    assistant_handoffs_from_tool_inputs,
+from core.agent_harness.session.pending_choice import parse_ask_user_answers
+from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
+from core.agent_harness.session_goal.review_input import collect_tool_evidence
+from core.agent_harness.task_plan.conclusion import (
+    blocked_steps_await_the_user,
+    demo_entered_from_menu,
+    demo_pick_stalled_on_skill_load,
+    task_plan_awaits_reply,
+    task_plan_blocks_conclusion,
 )
+from core.agent_harness.task_plan.evidence import (
+    plan_advanced_this_turn,
+    record_deliverable_shown,
+)
+from core.agent_harness.task_plan.ownership import session_answer_continues_plan
+from core.agent_harness.turns.action_dedup import (
+    coerce_fingerprint_quiet,
+    with_duplicate_action_call_guard,
+)
+from core.agent_harness.turns.action_menu_end import with_menu_turn_end
 from core.agent_harness.turns.conversation_recording import record_conversation_turn
-from core.agent_harness.turns.goal_review import build_goal_reviewer, tap_executed_tool_names
+from core.agent_harness.turns.display_text import (
+    already_on_screen,
+    cap_for_display,
+    format_generic_tool_payload,
+    host_rendered,
+    is_outcome_report,
+    looks_like_json,
+    preferred_tool_response_text,
+    split_output_truncation_markers,
+)
+from core.agent_harness.turns.goal_review import (
+    build_goal_reviewer,
+    last_goal_rejection_reason,
+    tap_executed_tool_names,
+)
+from core.agent_harness.turns.literal_command import (
+    bang_shell_command,
+    is_literal_command,
+    literal_slash_text,
+)
+from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
+from core.agent_harness.turns.prompt_size import PromptSize, measure_history, measure_prompt
+from core.agent_harness.turns.skill_activation import prepare_active_skill
+from core.agent_harness.turns.skill_value import record_skill_value
+from core.agent_harness.turns.structured_history import (
+    context_digest,
+    history_messages,
+    session_context_to_send,
+    tool_items_from_run,
+)
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from core.agent_harness.turns.turn_trace import turn_trace_state
 from core.agent_harness.turns.wal_recorder import with_wal_recording
-from core.events import runtime_event_callback_from_observer
-from core.llm.failure_classification import is_context_length_overflow
-from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
-from core.llm_invoke_errors import remediate_missing_llm_credentials
-from core.tool.execution import (
-    BeforeToolCallResult,
-    ToolExecutionHooks,
-    ToolExecutionPatch,
-    ToolExecutionRequest,
-    ToolExecutionResult,
-    public_tool_input,
+from core.agent_harness.turns.work_outcome import (
+    ExecutedToolOutcome,
+    tap_executed_tool_outcomes,
 )
-from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
+from core.events import runtime_event_callback_from_observer
+from core.llm.types import (
+    AgentLLMResponse,
+    CancelProbe,
+    SchemaDescribedTool,
+    TextDeltaCallback,
+    ToolCall,
+)
+from core.state.history_settings import structured_history_enabled
+from core.tool import SideEffectLevel
+from core.tool.execution import (
+    ToolExecutionHooks,
+    public_tool_input,
+    summarize_tool_failures,
+)
+from infrastructure.analytics.prompt_log.model_prompt import (
+    record_action_model_prompt,
+    record_model_blocks,
+)
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
+from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
 from infrastructure.observability.trace.spans import component_span
+from infrastructure.text import is_data_blob
+from infrastructure.text.plan_snapshots import strip_plan_snapshots
 
 log = logging.getLogger(__name__)
 
-# Local REPL tools covered by consecutive identical-batch suppress (oracle 202 /
-# 203): slash_invoke, shell_run, cli_exec. One rule — no per-tool carve-outs.
-_DEDUPE_ACTION_TOOL_NAMES: frozenset[str] = frozenset({"slash_invoke", "shell_run", "cli_exec"})
-
-# Hashable identity for one guarded call (no hot-path json.dumps).
-_ActionCallFingerprint = tuple[Any, ...]
-
-
-def _coerce_fingerprint_quiet(value: Any) -> bool:
-    """Match ``shell_run`` quiet coercion so retries compare equal."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _action_call_fingerprint(name: str, args: Any) -> _ActionCallFingerprint:
-    """Stable identity for one guarded action call (schema fields only)."""
-    if not isinstance(args, dict):
-        args = {}
-
-    if name == "slash_invoke":
-        command = str(args.get("command", ""))
-        raw = args.get("args")
-        argv = tuple(str(item) for item in raw) if isinstance(raw, (list, tuple)) else ()
-        return (name, command, argv)
-
-    if name == "cli_exec":
-        return (name, str(args.get("payload", "")).strip())
-
-    # shell_run
-    return (
-        name,
-        str(args.get("command", "")),
-        _coerce_fingerprint_quiet(args.get("quiet", False)),
-    )
-
-
-def with_duplicate_action_call_guard(
-    base: ToolExecutionHooks | None = None,
-) -> ToolExecutionHooks:
-    """Block replaying guarded action calls already covered by the success snapshot.
-
-    Suppress ``slash_invoke`` / ``shell_run`` / ``cli_exec`` when the call's
-    fingerprint is in ``last_fully_succeeded_batch`` *or* already succeeded
-    earlier in the current provider batch (same-batch duplicates). Guarded
-    tools are sequential, so ``batch_succeeded`` is visible to the next
-    ``before()`` in the batch.
-
-    Snapshot updates at the next batch boundary:
-
-    - Fully successful batch → replace snapshot with that batch (so A → B → A
-      still allows the second A after B replaces the snapshot).
-    - Mixed batch (suppressed replay + new success) → replace snapshot with
-      *only* the newly succeeded fingerprints. That blocks an immediate re-emit
-      of the new action without retaining suppressed members (which would block
-      a later intentional standalone replay of A after {A suppressed, C ran}).
-    - Pure suppress or total failure → leave the snapshot alone (a third
-      identical replay stays blocked; failed calls may still retry).
-
-    Limitation (intentional): the same batch twice in one turn — lone or
-    multi — is also suppressed; accidental replay and “run that again” are
-    indistinguishable without parsing the user message. Ask again next turn.
-    """
-    last_fully_succeeded_batch: frozenset[_ActionCallFingerprint] = frozenset()
-    current_batch: frozenset[_ActionCallFingerprint] = frozenset()
-    batch_succeeded: set[_ActionCallFingerprint] = set()
-    has_open_batch = False
-    base_before = base.before_tool_call if base is not None else None
-    base_after = base.after_tool_call if base is not None else None
-    base_update = base.on_tool_update if base is not None else None
-    base_batch = base.before_tool_batch if base is not None else None
-
-    def before_batch(tool_calls: Sequence[ToolCall]) -> None:
-        nonlocal last_fully_succeeded_batch, current_batch, batch_succeeded, has_open_batch
-        if base_batch is not None:
-            base_batch(tool_calls)
-        if has_open_batch and current_batch:
-            succeeded = frozenset(batch_succeeded)
-            if succeeded == current_batch:
-                last_fully_succeeded_batch = current_batch
-            elif succeeded:
-                # Mixed suppress/success: snapshot is only what newly ran.
-                # Do not retain suppressed members — that would block a later
-                # intentional standalone A after {A suppressed, C succeeded}.
-                last_fully_succeeded_batch = succeeded
-            # else: pure suppress or all-error — leave snapshot intact.
-        keys: list[_ActionCallFingerprint] = []
-        for tool_call in tool_calls:
-            if tool_call.name not in _DEDUPE_ACTION_TOOL_NAMES:
-                continue
-            keys.append(
-                _action_call_fingerprint(tool_call.name, public_tool_input(tool_call.input))
-            )
-        current_batch = frozenset(keys)
-        batch_succeeded = set()
-        has_open_batch = True
-
-    def before(request: ToolExecutionRequest) -> BeforeToolCallResult | None:
-        name = request.tool_call.name
-        # Membership across the prior success snapshot *and* earlier successes
-        # in this batch. Interleaved A -> B -> A still runs, because a fully
-        # successful {B} replaces the snapshot. Same-batch duplicates (two
-        # identical cli_exec in one provider response) hit batch_succeeded.
-        if name in _DEDUPE_ACTION_TOOL_NAMES:
-            key = _action_call_fingerprint(name, public_tool_input(request.arguments))
-            if key in last_fully_succeeded_batch or key in batch_succeeded:
-                return BeforeToolCallResult(
-                    blocked=True,
-                    reason=(
-                        f"Already ran {name} with identical arguments "
-                        "this turn. Do not repeat it; finish with no further tool calls."
-                    ),
-                    metadata={"suppressed_duplicate": True},
-                )
-        if base_before is not None:
-            return base_before(request)
-        return None
-
-    def after(
-        request: ToolExecutionRequest,
-        result: ToolExecutionResult,
-    ) -> ToolExecutionPatch | None:
-        if request.tool_call.name in _DEDUPE_ACTION_TOOL_NAMES and not result.is_error:
-            batch_succeeded.add(
-                _action_call_fingerprint(
-                    request.tool_call.name, public_tool_input(request.arguments)
-                )
-            )
-        if base_after is not None:
-            return base_after(request, result)
-        return None
-
-    return ToolExecutionHooks(
-        before_tool_call=before,
-        after_tool_call=after,
-        on_tool_update=base_update,
-        before_tool_batch=before_batch,
-    )
-
-
-# Some hosted tool-calling models emit one tool call per assistant turn even when
-# parallel tool calls are enabled. Keep the tool-calling loop bounded, but leave
-# enough headroom for a *data-dependent* compound request that must run
-# sequentially: each step waits for the previous tool's result before the next
-# call can be emitted (e.g. "look up the weather and then send it to Slack" =
-# Architecture audit needs headroom for clone + ≤3 agent-scan probes +
-# 4 heuristic shells + cleanup + save observations (then a no-tool report).
-_MAX_TOOL_CALLING_ITERATIONS = 13
+# This is an emergency ceiling, not the normal workflow budget. Productive
+# action turns may need many sequential calls; repeated observations are stopped
+# independently by the stagnation guard below.
+_MAX_TOOL_CALLING_ITERATIONS = 64
+_MAX_STAGNANT_TOOL_ITERATIONS = 3
 _EXECUTED_HISTORY_TYPES = {
     "slash",
     "shell",
@@ -225,22 +146,70 @@ _EXECUTED_HISTORY_TYPES = {
     "implementation",
     "cli_command",
 }
-INVESTIGATION_DISPATCH_TOOL_NAMES: frozenset[str] = frozenset(
-    {"investigation_start", "alert_sample"}
-)
-# Tools whose user-facing event is rendered live by the surface's tool-event
-# observer (``tool_start``/``tool_end``), so the end-of-turn generic formatter
-# must stay silent for them: repeating their summary would double-print, and
-# their payload (e.g. the full skill body) is for the model only.
-_OBSERVER_RENDERED_TOOL_NAMES: frozenset[str] = frozenset({"skill_view"})
 
 
+# Tools whose user-facing event is owned by the host UI, so the end-of-turn
+# generic formatter must stay silent: repeating their summary would double-print,
+# and their payload (e.g. the full skill body) is for the model only. update_plan
+# renders as the pinned plan overlay, so its summary must not also print as text.
 @dataclass(frozen=True)
 class ActionTurnPlan:
     agent: Agent[Any]
     user_message: str
     llm: Any
     max_iterations: int
+    # Replies the plan gate deferred and the sink already painted mid-turn.
+    # They join ``response_text`` for history but are never streamed again.
+    deferred_replies: list[str] = field(default_factory=list)
+    # Active skill body and the other ephemeral context sent with the user message.
+    prompt_skill: str = ""
+    prompt_context: str = ""
+    # Earlier turns replayed as typed messages ahead of ``user_message``
+    # (``turns.structured_history``); empty for explicit ``!``/``/`` commands.
+    history: tuple[Any, ...] = ()
+    # Fingerprint of the session-context section ``user_message`` carries; ""
+    # when the replayed history already holds it (or no model is called).
+    context_digest: str = ""
+    # Size of each prompt block, the replayed history, and the tool schemas the
+    # model receives; ``None`` for explicit commands, which call no model.
+    prompt_size: PromptSize | None = None
+    value_insights: set[str] = field(default_factory=set)
+    # The reviewed goal of an LLM-selected turn; it remembers why it refused stop.
+    goal: Goal | None = None
+
+
+def _deferred_reply_presenter(
+    output: OutputSink,
+    deferred_replies: list[str],
+    on_displayed: Callable[[str], None] | None = None,
+) -> Callable[[str], bool]:
+    """Paint a plan-deferred reply now (same gutter as a final reply); keep it once shown.
+
+    Returns whether the reply reached the sink. A failed stream leaves it out of
+    ``deferred_replies`` so the turn is not marked as streamed and the host's
+    normal finalization still delivers the response text.
+    """
+
+    def present(text: str) -> bool:
+        try:
+            displayed_text = output.stream(label="OpenSRE", chunks=iter([text]))
+        except Exception:  # noqa: BLE001 - presentation must never break the loop
+            log.debug("deferred reply render failed; not marking it shown", exc_info=True)
+            return False
+        if not displayed_text:
+            return False
+        deferred_replies.append(text)
+        if on_displayed is not None:
+            on_displayed(displayed_text)
+        return True
+
+    return present
+
+
+def _deliverable_shown(session: SessionState, text: str, value_insights: set[str]) -> None:
+    """A plan ``deliverable`` reply reached the user: it earns that step, and may carry value."""
+    record_deliverable_shown(session)
+    record_skill_value(session, text, value_insights)
 
 
 class _StaticToolCallLLM:
@@ -259,9 +228,13 @@ class _StaticToolCallLLM:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
         _ = system
         _ = tools
+        _ = on_text_delta
+        _ = should_stop
         if self._used:
             return AgentLLMResponse(content="", tool_calls=[], raw_content=None)
         self._used = True
@@ -325,99 +298,265 @@ def _pop_turn_outcome_hint(session: SessionState) -> str:
     return hint.strip() if isinstance(hint, str) else ""
 
 
-def _content_to_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return json.dumps(content, default=str)
-    return str(content)
-
-
 def _generic_tool_results(result: Any) -> list[tuple[ToolCall, Any]]:
     return [
         (tool_call, tool_result)
         for tool_call, tool_result in getattr(result, "tool_results", [])
         if tool_call.name not in SELF_RECORDING_ACTION_TOOL_NAMES
-        and tool_call.name != "assistant_handoff"
+        and not getattr(tool_result, "model_only", False)
     ]
 
 
-def _format_generic_tool_payload(tool_call: ToolCall, tool_result: Any) -> str:
-    """Build a user-visible summary for one non-self-recording tool result."""
-    if tool_call.name in _OBSERVER_RENDERED_TOOL_NAMES:
-        return ""
-    preferred_response = _preferred_tool_response_text(tool_result)
-    if preferred_response:
-        return preferred_response
+#: Tools whose repeat call only observes state, so a later identical call replaces the earlier one.
+_OBSERVING_LEVELS = frozenset({SideEffectLevel.NONE, SideEffectLevel.READ_ONLY})
+
+
+def _call_identity(tool_call: ToolCall) -> tuple[str, str]:
+    """The tool and its public input, so a poll or a retry compares equal."""
+    raw = tool_call.input if isinstance(tool_call.input, dict) else {}
+    return tool_call.name, json.dumps(public_tool_input(raw), sort_keys=True, default=str)
+
+
+def _tool_failed(tool_result: Any) -> bool:
     details = getattr(tool_result, "details", None)
-    if isinstance(details, dict):
-        summary = details.get("summary")
-        if isinstance(summary, str) and summary.strip():
-            return summary.strip()
-        stdout = details.get("stdout")
-        if details.get("ok") and isinstance(stdout, str) and stdout.strip():
-            return stdout.strip()
-        error = details.get("error")
-        if error:
-            return str(error).strip()
-    if getattr(tool_result, "is_error", False):
-        return ""
-    content = _content_to_text(getattr(tool_result, "content", "")).strip()
-    if not content:
-        return ""
-    # Prefer a nested summary when the tool returned a JSON object payload.
-    try:
-        parsed = json.loads(content)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        parsed = None
-    if isinstance(parsed, dict):
-        response_text = parsed.get("response_text")
-        if isinstance(response_text, str) and response_text.strip():
-            return response_text.strip()
-        summary = parsed.get("summary")
-        if isinstance(summary, str) and summary.strip():
-            return summary.strip()
-        if parsed.get("ok") and isinstance(parsed.get("stdout"), str) and parsed["stdout"].strip():
-            return str(parsed["stdout"]).strip()
-        if parsed.get("error"):
-            return str(parsed["error"]).strip()
-    args = public_tool_input(tool_call.input)
-    if args:
-        return (
-            f"{tool_call.name} input: {json.dumps(args, ensure_ascii=False, default=str)}"
-            f"\n{tool_call.name} result: {content}"
-        )
-    return f"{tool_call.name} result: {content}"
+    if isinstance(details, dict) and details.get("ok") is False:
+        return True
+    return bool(getattr(tool_result, "is_error", False))
 
 
-def _preferred_tool_response_text(tool_result: Any) -> str:
-    details = getattr(tool_result, "details", None)
-    if isinstance(details, dict):
-        response_text = details.get("response_text")
-        if isinstance(response_text, str) and response_text.strip():
-            return response_text.strip()
-    content = _content_to_text(getattr(tool_result, "content", "")).strip()
-    if not content:
-        return ""
-    try:
-        parsed = json.loads(content)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return ""
-    if not isinstance(parsed, dict):
-        return ""
-    response_text = parsed.get("response_text")
-    return response_text.strip() if isinstance(response_text, str) else ""
+def _reports_another_record(earlier: Any, later: Any) -> bool:
+    """True when *earlier* names a record (a ``*_id`` field) that *later* does not.
 
-
-def _has_preferred_tool_response_text(result: Any) -> bool:
+    A read with no id in its input ("the most recent run") can reach a new
+    record between two calls, and a failed ``ask_hosted_gateway`` can carry
+    the ``prompt_id`` that recovers work the gateway already took. Either one
+    is its own report, so the later call does not replace it.
+    """
+    earlier_details = getattr(earlier, "details", None)
+    if not isinstance(earlier_details, dict):
+        return False
+    later_details = getattr(later, "details", None)
+    if not isinstance(later_details, dict):
+        later_details = {}
     return any(
-        bool(_preferred_tool_response_text(tool_result))
-        for _tool_call, tool_result in _generic_tool_results(result)
+        key.endswith("_id") and isinstance(value, str) and value and later_details.get(key) != value
+        for key, value in earlier_details.items()
     )
 
 
+def _current_generic_results(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> list[tuple[ToolCall, Any]]:
+    """Generic results minus the ones a later identical call replaced.
+
+    A status poll (``check_hosted_gateway`` while a gateway starts) and a failed
+    call that was sent again report a state that no longer holds. The closing
+    shows the latest. A mutating call that succeeded twice did two things, and
+    a result that names a record the later one does not reported something
+    else, so both stay.
+    """
+    results = _generic_tool_results(result)
+    tools = tools_by_name or {}
+    identities = [_call_identity(tool_call) for tool_call, _tool_result in results]
+    latest = {identity: index for index, identity in enumerate(identities)}
+    current: list[tuple[ToolCall, Any]] = []
+    for index, (tool_call, tool_result) in enumerate(results):
+        last = latest[identities[index]]
+        if last != index and not _reports_another_record(tool_result, results[last][1]):
+            level = getattr(tools.get(tool_call.name), "side_effect_level", None)
+            if level in _OBSERVING_LEVELS or _tool_failed(tool_result):
+                continue
+        current.append((tool_call, tool_result))
+    return current
+
+
+def _stash_collapsed_tool_output(session: SessionState, text: str | None) -> None:
+    """Remember a capped peek so Ctrl+O can expand it; no-op without a terminal.
+
+    ``None`` never clears earlier peeks (same semantics as
+    ``TerminalSession.stash_collapsed_tool_output``).
+    """
+    terminal = getattr(session, "terminal", None)
+    if terminal is None:
+        return
+    stash = getattr(terminal, "stash_collapsed_tool_output", None)
+    if callable(stash):
+        stash(text)
+        return
+    # Minimal test doubles without the ring API: only record a non-None peek.
+    if text is not None:
+        terminal.collapsed_tool_output = text
+
+
+def _preferred_tool_chunks(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> list[str]:
+    """User-facing ``response_text`` values not already painted by the tool."""
+    return [
+        text
+        for text in (
+            preferred_tool_response_text(tool_result)
+            for tool_call, tool_result in _current_generic_results(result, tools_by_name)
+            if not already_on_screen(tool_call, tool_result)
+        )
+        if text
+    ]
+
+
+def _message_text(message: Any) -> tuple[str, str]:
+    """Role and stripped content of one runtime message."""
+    if isinstance(message, dict):
+        return str(message.get("role", "")), str(message.get("content", "") or "").strip()
+    return str(getattr(message, "role", "")), str(getattr(message, "content", "") or "").strip()
+
+
+def _latest_unshown_outcome_report(
+    result: Any,
+    final_text: str,
+    deferred_replies: Sequence[str],
+    *,
+    history_count: int = 0,
+    already_shown: Sequence[str] = (),
+) -> str:
+    """The model's outcome report, when it is not already the closing reply.
+
+    A report written beside a tool call is not ``final_text``. The shell used
+    to print that prose as a working note and then append every tool snapshot.
+    Only this turn's messages count: the first ``history_count`` are earlier
+    turns replayed as context, whose reports were already delivered.
+    ``already_shown`` holds replies a surface printed while they streamed.
+    """
+    shown = {
+        final_text.strip(),
+        *(text.strip() for text in (*deferred_replies, *already_shown) if text.strip()),
+    }
+    latest = ""
+    messages = list(getattr(result, "messages", ()) or ())
+    for message in messages[history_count:]:
+        role, content = _message_text(message)
+        if role != "assistant" or not content or content in shown:
+            continue
+        if is_outcome_report(content):
+            latest = content
+    return latest
+
+
+def _closing_tool_chunks(chunks: Sequence[str], *, include_outcome: bool) -> list[str]:
+    """Drop outcome reports the closing must not repeat.
+
+    An earlier queued snapshot loses to a later one. When the model or a
+    deferred reply already delivered the report, every snapshot is dropped
+    and a trailing confirmation (cleanup, a short status) stays.
+    """
+    outcome_at = [index for index, chunk in enumerate(chunks) if is_outcome_report(chunk)]
+    if not include_outcome:
+        drop = set(outcome_at)
+    elif len(outcome_at) > 1:
+        drop = set(outcome_at[:-1])
+    else:
+        drop = set()
+    return [chunk for index, chunk in enumerate(chunks) if index not in drop]
+
+
+#: A trailing confirmation of this many lines is kept after the shared cap.
+_BRIEF_RESULT_MAX_LINES = 2
+
+
+def _is_brief_result(text: str) -> bool:
+    """True when *text* is a short confirmation rather than a log preview."""
+    return text.count("\n") + 1 <= _BRIEF_RESULT_MAX_LINES
+
+
+def _visible_closing_text(chunks: Sequence[str]) -> str:
+    """One capped preview that still keeps a short trailing confirmation.
+
+    The report leads. Other results share one cap so several logs cannot stack.
+    A one- or two-line result at the end, such as the cleanup line, is placed
+    after that cap so earlier lines cannot cut it off. One expand marker stays
+    at the end.
+    """
+    outcome = ""
+    others: list[str] = []
+    for chunk in chunks:
+        if is_outcome_report(chunk):
+            outcome = chunk
+        elif chunk:
+            others.append(chunk)
+    tail = ""
+    if others and _is_brief_result(others[-1]):
+        tail = others[-1]
+        others = others[:-1]
+    short: list[str] = []
+    bulky: list[str] = []
+    for chunk in others:
+        if cap_for_display(chunk) == chunk:
+            short.append(chunk)
+        else:
+            bulky.append(chunk)
+    ordered = [part for part in (outcome, *short, *bulky) if part]
+    preview = cap_for_display("\n".join(ordered)) if ordered else ""
+    if not tail:
+        return preview
+    # A one-line result can still be thousands of characters. Cap it too, and
+    # keep a single trailing marker when either part was folded.
+    body, marker = split_output_truncation_markers(preview)
+    tail_body, tail_marker = split_output_truncation_markers(cap_for_display(tail))
+    text = "\n".join(part for part in (body, tail_body) if part)
+    marker = tail_marker or marker
+    if marker:
+        return f"{text}\n{marker}" if text else marker
+    return text
+
+
+def _painted_results_only(result: Any) -> bool:
+    """True when the turn's content came from tools that painted it themselves.
+
+    ``update_plan`` and the menu tools carry no content of their own — the host
+    draws them — so a turn that also updates its plan still counts.
+    """
+    painted = 0
+    for tool_call, tool_result in getattr(result, "tool_results", []):
+        details = getattr(tool_result, "details", None)
+        if isinstance(details, dict) and details.get("rendered_in_shell") is True:
+            painted += 1
+        elif not host_rendered(tool_call, tool_result):
+            return False
+    return painted > 0
+
+
+#: How many of the painted figures a closing must repeat to count as a restatement.
+_RESTATED_FIGURE_COUNT = 3
+_FIGURE_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _painted_figures(result: Any) -> set[str]:
+    """Numbers the painted report already put on screen, from its key results."""
+    figures: set[str] = set()
+    for _tool_call, tool_result in getattr(result, "tool_results", []):
+        details = getattr(tool_result, "details", None)
+        if not isinstance(details, dict) or details.get("rendered_in_shell") is not True:
+            continue
+        for row in details.get("key_results") or []:
+            if isinstance(row, dict):
+                figures.update(_FIGURE_RE.findall(str(row.get("value", ""))))
+    return figures
+
+
+def _restates_painted_figures(result: Any, final_text: str) -> bool:
+    """True when the closing repeats figures the painted report already showed.
+
+    Only the duplicate is dropped. A closing that interprets the report, warns
+    about something, or offers a next step carries information the table does
+    not, so it survives.
+    """
+    painted = _painted_figures(result)
+    if not painted:
+        return False
+    return len(painted & set(_FIGURE_RE.findall(final_text))) >= _RESTATED_FIGURE_COUNT
+
+
 def _self_recording_tools_only(result: Any) -> bool:
-    """True when every executed tool (except handoff) already printed to the console.
+    """True when every executed tool already printed to the console.
 
     Those tools return a bare success flag to the model; any closing prose is
     invented without the command's on-screen output (e.g. claiming ``/health``
@@ -425,39 +564,88 @@ def _self_recording_tools_only(result: Any) -> bool:
     """
     names = [
         tool_call.name
-        for tool_call, _tool_result in getattr(result, "tool_results", [])
-        if tool_call.name != "assistant_handoff"
+        for tool_call, tool_result in getattr(result, "tool_results", [])
+        if not getattr(tool_result, "model_only", False)
     ]
     return bool(names) and all(name in SELF_RECORDING_ACTION_TOOL_NAMES for name in names)
 
 
 # Self-recording tools whose result payload carries the real command output
 # back to the model (shell: stdout/stderr/exit_code; slash: the captured
-# console output read back from the history row). A closing summary after a
-# chain of these is grounded in observed output, unlike the bare success flags
-# most self-recording tools return.
-_GROUNDED_CHAIN_TOOL_NAMES: frozenset[str] = frozenset({"shell_run", "slash_invoke"})
+# console output read back from the history row). A closing summary after these
+# is grounded in observed output, unlike the bare success flags most
+# self-recording tools return.
+_GROUNDED_OUTPUT_TOOL_NAMES: frozenset[str] = frozenset({"shell_run", "slash_invoke"})
 
 
-def _multi_step_grounded_chain(result: Any) -> bool:
-    """True when the turn chained two or more output-carrying tool steps.
+def _grounded_output_tools_only(result: Any) -> bool:
+    """True when every tool this turn carried its real output back to the model.
 
     ``_self_recording_tools_only`` suppresses model closings because most
     self-recording tools hand the model a bare success flag, so closing prose
     would be invented. ``shell_run`` and ``slash_invoke`` are the exceptions —
-    their tool results carry the real output back to the model — so after a
-    multi-step chain the completion summary is grounded in output the model
-    actually observed, and dropping it left workflow turns ending on raw step
-    output with no wrap-up. Single commands keep the suppression: their one
-    output block is already on screen, and a paraphrase only adds
-    contradiction risk.
+    their tool results carry the real stdout/exit (or captured console output)
+    back to the model — so their closing summary is grounded in output the model
+    actually observed. That holds whether the turn ran one command or a chain:
+    keeping the closing lets the agent report what a command did (result, exit,
+    any skipped step) instead of ending on raw output, matching how a teammate
+    would confirm the outcome.
     """
     names = [
         tool_call.name
-        for tool_call, _tool_result in getattr(result, "tool_results", [])
-        if tool_call.name != "assistant_handoff"
+        for tool_call, tool_result in getattr(result, "tool_results", [])
+        if not getattr(tool_result, "model_only", False)
     ]
-    return len(names) >= 2 and all(name in _GROUNDED_CHAIN_TOOL_NAMES for name in names)
+    return bool(names) and all(name in _GROUNDED_OUTPUT_TOOL_NAMES for name in names)
+
+
+def _closing_may_be_invented(result: Any) -> bool:
+    """True when only self-recording tools ran and none carried its output back.
+
+    The model then wrote its closing without seeing what the user saw, so the
+    composer drops it unless it asks the user something.
+    """
+    return (
+        _self_recording_tools_only(result)
+        and not _grounded_output_tools_only(result)
+        and not _has_quiet_shell_run(result)
+    )
+
+
+def _streamed_replies(session: SessionState) -> tuple[str, ...]:
+    """Replies of this turn a surface already printed while they streamed."""
+    terminal = getattr(session, "terminal", None)
+    return tuple(getattr(terminal, "streamed_replies", None) or ())
+
+
+def _reply_shows_as_written(
+    progress: Any,
+    session: SessionState,
+    deferred_replies: Sequence[str],
+    *,
+    history_count: int,
+) -> bool:
+    """Whether the closing the model writes next will be shown exactly as written.
+
+    :func:`_compose_response`'s rules, judged before the closing exists, so a
+    closing the composer could still drop, or put an earlier report ahead of,
+    never shows while it streams: a menu answer's bare acknowledgement, a recap
+    of figures a tool already painted, a closing written after self-recording
+    tools without their output, and a reply led by an unshown outcome report.
+    """
+    terminal = getattr(session, "terminal", None)
+    selected_choice = getattr(terminal, "pending_choice_response", None)
+    if isinstance(selected_choice, str) and selected_choice.strip():
+        return False
+    if _painted_results_only(progress) or _closing_may_be_invented(progress):
+        return False
+    return not _latest_unshown_outcome_report(
+        progress,
+        "",
+        deferred_replies,
+        history_count=history_count,
+        already_shown=_streamed_replies(session),
+    )
 
 
 def _asks_the_user(final_text: str) -> bool:
@@ -485,28 +673,46 @@ def _has_quiet_shell_run(result: Any) -> bool:
         raw = getattr(tool_call, "input", None)
         if not isinstance(raw, dict):
             continue
-        if _coerce_fingerprint_quiet(public_tool_input(raw).get("quiet", False)):
+        if coerce_fingerprint_quiet(public_tool_input(raw).get("quiet", False)):
             return True
     return False
 
 
-def _response_text_from_generic_results(result: Any) -> str:
+def _generic_chunks(result: Any, tools_by_name: Mapping[str, Any] | None = None) -> list[str]:
+    """User-facing text for each current generic tool result, in call order.
+
+    A verify step that re-reads the same record (the same ``prompt_id``) and
+    gets the same text back is shown once; independent results always show.
+    """
     chunks: list[str] = []
-    for tool_call, tool_result in _generic_tool_results(result):
-        formatted = _format_generic_tool_payload(tool_call, tool_result)
-        if formatted:
-            chunks.append(formatted)
-    return "\n".join(chunks)
+    records_shown: set[tuple[str, str, str]] = set()
+    for tool_call, tool_result in _current_generic_results(result, tools_by_name):
+        formatted = format_generic_tool_payload(tool_call, tool_result)
+        if not formatted:
+            continue
+        record = _record_id(tool_result)
+        if record:
+            key = (tool_call.name, record, formatted.strip())
+            if key in records_shown:
+                continue
+            records_shown.add(key)
+        chunks.append(formatted)
+    return chunks
 
 
-def _is_user_facing_final_text(text: str) -> bool:
-    """True when post-tool model text should replace tool dumps and be streamed."""
-    stripped = text.strip()
-    if not stripped:
-        return False
-    if "\n" in stripped or stripped.startswith("#"):
-        return True
-    return len(stripped) > 60
+def _record_id(tool_result: Any) -> str:
+    """The id of the record a tool result reports on, when it names one."""
+    details = getattr(tool_result, "details", None)
+    if not isinstance(details, dict):
+        return ""
+    value = details.get("prompt_id")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _response_text_from_generic_results(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> str:
+    return "\n".join(_generic_chunks(result, tools_by_name))
 
 
 def _generic_tool_result_counts(result: Any) -> tuple[int, int]:
@@ -518,22 +724,6 @@ def _generic_tool_result_counts(result: Any) -> tuple[int, int]:
         if not getattr(tool_result, "is_error", False)
     )
     return executed_count, success_count
-
-
-def _should_stash_observation(
-    result: Any,
-    *,
-    tools_by_name: dict[str, Any],
-) -> bool:
-    """True when a successful tool opted into observation summary via its tags."""
-    for tool_call, tool_result in _generic_tool_results(result):
-        if getattr(tool_result, "is_error", False):
-            continue
-        tool = tools_by_name.get(tool_call.name)
-        tags = getattr(tool, "tags", ()) if tool is not None else ()
-        if SUMMARIZE_OBSERVATION_TAG in tags:
-            return True
-    return False
 
 
 def _turn_resolved_integrations(
@@ -577,26 +767,13 @@ def _stage_action_llm_failure(
     route, so the turn must be reported as a failed LLM call — not a terminal
     turn tagged ``no_conversational_agent``.
     """
-    if _bang_shell_command(message) is not None or message.strip().startswith("/"):
+    if is_literal_command(message):
         return
     from core.agent_harness.turns.orchestrator import stage_turn_error, stage_turn_llm_failure
+    from core.llm_invoke_errors import ACTION_AGENT_ERROR
 
-    stage_turn_error(session, "action_agent_error", error_text)
+    stage_turn_error(session, ACTION_AGENT_ERROR, error_text)
     stage_turn_llm_failure(session, client=client)
-
-
-def _bang_shell_command(message: str) -> str | None:
-    # Explicit `!cmd` shell escape: a deterministic bypass for input the user
-    # typed verbatim as a shell command. This is NOT natural-language intent
-    # inference — do NOT copy this pattern for bare aliases, regex/keyword
-    # matches, or "obvious" natural-language intents. Those must go through the
-    # action-agent LLM selecting first-class AgentTools. Engineers have been
-    # fired before for reintroducing regex/keyword intent shortcuts here.
-    stripped = message.strip()
-    if not stripped.startswith("!") or len(stripped) <= 1:
-        return None
-    cmd = " ".join(stripped[1:].split())
-    return f"!{cmd}" if cmd else None
 
 
 def _slash_tokens(stripped: str) -> tuple[str, list[str]]:
@@ -626,20 +803,17 @@ def _literal_slash_tool_call(message: str, agent_tools: list[Any]) -> ToolCall |
     LLM is unavailable — e.g. a provider with no credit — so users can still run
     ``/login``, ``/onboard``, ``/model``, etc. to recover instead of deadlocking.
 
-    Also accepts schedule / investigation affirmatives that
-    ``expand_affirmative_follow_up`` rewrote into a leading ``/cron add …`` or
-    ``/investigate alert:…`` (after stripping a vendor context prefix). Those
-    expands are themselves literal slash text — not a separate static tool-call
-    bypass — so they stay inside the repository-mandated action-selection path.
+    Also accepts schedule affirmatives that ``expand_affirmative_follow_up``
+    rewrote into a leading ``/cron add …`` (after stripping a vendor context
+    prefix). Those expands are themselves literal slash text — not a separate
+    static tool-call bypass — so they stay inside the repository-mandated
+    action-selection path.
 
     Returns ``None`` (so the normal LLM path runs) when the input is not literal
     slash text or when ``slash_invoke`` is not an available tool this turn.
     """
-    from infrastructure.harness_ports import strip_message_context_prefix
-
-    _, remainder = strip_message_context_prefix(message)
-    stripped = remainder.strip()
-    if not stripped.startswith("/"):
+    stripped = literal_slash_text(message)
+    if stripped is None:
         return None
     if not any(getattr(tool, "name", None) == "slash_invoke" for tool in agent_tools):
         return None
@@ -665,16 +839,17 @@ def _build_action_agent(
     tool_hooks: ToolExecutionHooks | None,
     tool_resources: dict[str, Any],
     observer: Any,
+    output: OutputSink,
 ) -> ActionTurnPlan:
     """Build the Agent for one action turn; return an ``ActionTurnPlan``.
 
     Detects the three branches — verbatim ``!shell``, literal ``/slash``
-    (including Want-me-to yes expanded to ``/cron`` / ``/investigate``), or
+    (including Want-me-to yes expanded to ``/cron``), or
     LLM-selected — and picks a matching LLM (deterministic tool-call or hosted
     factory), system prompt, and user-message envelope. The caller only has to
     invoke ``.run()`` and shape the result.
     """
-    bang_command = _bang_shell_command(message)
+    bang_command = bang_shell_command(message)
     slash_call = (
         None if bang_command is not None else _literal_slash_tool_call(message, agent_tools)
     )
@@ -682,7 +857,16 @@ def _build_action_agent(
     # literal `/slash` paths execute exactly one explicit command by design,
     # so "did the agent reach the goal" is not a meaningful question there.
     goal: Goal | None = None
+    reply_stream_policy: ReplyStreamPolicy | None = None
     executed_tool_names: list[str] = []
+    executed_outcomes: list[ExecutedToolOutcome] = []
+    deferred_replies: list[str] = []
+    value_insights: set[str] = set()
+    prompt_skill = ""
+    prompt_context = ""
+    history: tuple[Any, ...] = ()
+    prompt_size: PromptSize | None = None
+    sent_context_digest = ""
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -706,24 +890,91 @@ def _build_action_agent(
         user_message = message
     else:
         llm = llm_factory()
-        envelope = build_action_system_prompt_envelope(
-            # No turn plan means no surface is known here; setup facts are
-            # omitted rather than guessed (see _setup_state_for_surface).
-            turn_snapshot or TurnSnapshot.from_session(message, session, surface=None)
+        # No turn plan means no surface is known here; setup facts are omitted
+        # rather than guessed (see _setup_state_for_surface).
+        snapshot = turn_snapshot or TurnSnapshot.from_session(message, session, surface=None)
+        envelope = build_action_system_prompt_envelope(snapshot)
+        # Earlier turns go ahead of the new message as typed messages, oldest
+        # first, each exactly as it was sent, so their tool calls and results
+        # reach the model verbatim and the prefix (system, tools, history) the
+        # provider cached stays the same from turn to turn.
+        if structured_history_enabled():
+            history = tuple(
+                history_messages(snapshot.conversation_messages, snapshot.turn_evidence)
+            )
+        # The system prompt is only the stable layer, byte-identical for the
+        # session. The session context (integrations, repositories, memory)
+        # rides in the user message, and only when the replayed history does not
+        # already carry it; the ephemeral layer (plan, turn facts) rides every turn.
+        layers = envelope.render_split()
+        system = layers.cached
+        session_context = session_context_to_send(
+            layers.context, snapshot.conversation_messages, snapshot.turn_evidence
         )
-        # Cached half stays byte-identical across turns; ephemeral (conversation,
-        # prior-action-facts) rides with the user message so Anthropic's system
-        # cache_control breakpoint is not invalidated every turn.
-        system = envelope.render_cached()
-        user_message = build_action_user_message(message, prefix=envelope.render_ephemeral())
-        # Reviewed goal: when the agent concludes after tool work, one LLM
-        # check confirms the user's request was carried out; a NOT_REACHED
-        # verdict nudges the loop to continue instead of stopping short
-        # (e.g. "remove the cron loops" ending after only listing them).
-        # The reviewer reads executed tool names from the shared list the
-        # event tap below fills, so it can stand down on handoff/dispatch
-        # turns whose outcome is not reviewable at conclusion time.
-        goal = build_goal_reviewer(llm, message, executed_tool_names)
+        if session_context:
+            sent_context_digest = context_digest(session_context)
+        prompt_skill, prompt_context = action_prompt_skill_and_context(
+            envelope, session_context=session_context
+        )
+        user_message = build_action_user_message(
+            message, context=session_context, prefix=layers.ephemeral
+        )
+        prompt_size = measure_prompt(
+            envelope,
+            history=measure_history(
+                history, snapshot.conversation_messages, snapshot.turn_evidence
+            ),
+            tool_schema_count=len(agent_tools),
+            request_chars=len(user_message) - len(layers.ephemeral) - len(session_context),
+            session_context_sent=bool(session_context),
+        )
+        # ReAct goal: host gates (unfinished plan) reject stop. Same-LLM
+        # review is opt-in. The verifier reads executed tool names from the
+        # shared list the event tap below fills, so it can stand down on
+        # handoff/dispatch turns whose outcome is not reviewable at
+        # conclusion time.
+        # The skill active as the turn starts: the onboarding master when the
+        # message answers its menu, so a child that loads and stops is caught.
+        starting_skill = getattr(session, "active_skill", None)
+        goal = build_goal_reviewer(
+            llm,
+            _goal_review_user_request(message, turn_snapshot),
+            executed_tool_names,
+            plan_incomplete=lambda: task_plan_blocks_conclusion(
+                task_plan=getattr(session, "task_plan", None),
+                plan_only=bool(getattr(session, "plan_only_until_authorized", False)),
+            ),
+            plan_awaits_reply=lambda: task_plan_awaits_reply(
+                task_plan=getattr(session, "task_plan", None)
+            ),
+            plan_advanced=lambda: plan_advanced_this_turn(session),
+            on_plan_deferred_reply=_deferred_reply_presenter(
+                output,
+                deferred_replies,
+                lambda text: _deliverable_shown(session, text, value_insights),
+            ),
+            blocked_needs_user=lambda: blocked_steps_await_the_user(
+                session,
+                user_answered=bool(parse_ask_user_answers(message)),
+                menu_available=snapshot.interactive_choice_available,
+            ),
+            skill_load_only=lambda: demo_pick_stalled_on_skill_load(
+                session,
+                user_answered=bool(parse_ask_user_answers(message)),
+                from_onboarding_menu=starting_skill == ONBOARDING_SKILL_NAME,
+                entered_from_menu=demo_entered_from_menu(starting_skill, message),
+            ),
+            executed_outcomes=executed_outcomes,
+            trace_context=lambda: turn_trace_state(session),
+        )
+        # A closing shows while it streams only when the composer will show
+        # it exactly as written; otherwise it waits for the composed reply.
+        reply_stream_policy = partial(
+            _reply_shows_as_written,
+            session=session,
+            deferred_replies=deferred_replies,
+            history_count=len(history),
+        )
 
     # WAL first, observer second: the tool intent must be on disk before
     # any surface side effect reacts to the same event.
@@ -732,8 +983,12 @@ def _build_action_agent(
         session=session,
         user_text=message,
     )
+    # Every finished model call lands on ``session.tokens`` as it happens, so
+    # ``/cost`` and ``/goal`` count the spend even when a later call raises.
+    on_runtime_event = tap_provider_usage(on_runtime_event, session)
     if goal is not None:
         on_runtime_event = tap_executed_tool_names(on_runtime_event, executed_tool_names)
+        on_runtime_event = tap_executed_tool_outcomes(on_runtime_event, executed_outcomes)
 
     config = AgentConfig(
         llm=llm,
@@ -741,17 +996,40 @@ def _build_action_agent(
         tools=tuple(agent_tools),
         resolved_integrations=resolved_integrations,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
+        max_stagnant_iterations=_MAX_STAGNANT_TOOL_ITERATIONS,
         tool_resources=tool_resources,
         tool_hooks=tool_hooks,
         on_runtime_event=on_runtime_event,
         goal=goal,
+        reply_stream_policy=reply_stream_policy,
     )
     return ActionTurnPlan(
         agent=build_agent(config),
         user_message=user_message,
+        history=history,
+        context_digest=sent_context_digest,
+        prompt_size=prompt_size,
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
+        deferred_replies=deferred_replies,
+        value_insights=value_insights,
+        prompt_skill=prompt_skill,
+        prompt_context=prompt_context,
+        goal=goal,
     )
+
+
+def _goal_review_user_request(message: str, turn_snapshot: TurnSnapshot | None) -> str:
+    """Recover the original user request when this turn contains Ask User answers."""
+    if turn_snapshot is None or not parse_ask_user_answers(message):
+        return message
+    for role, content in reversed(turn_snapshot.conversation_messages):
+        if role.casefold() != "user" or not content.strip():
+            continue
+        if parse_ask_user_answers(content):
+            continue
+        return content
+    return message
 
 
 @dataclass(frozen=True)
@@ -836,19 +1114,23 @@ class _TurnCounts:
     executed_entries: list[dict[str, Any]]
     executed_count: int
     executed_success_count: int
-    generic_success_count: int
     planned_count: int
     handled: bool
-    investigation_dispatched: bool
-    handoff_contents: tuple[str, ...]
-    assistant_handoffs: tuple[AssistantHandoff, ...] = ()
-    handoff_requires_gather: bool = True
+
+
+#: Closes a reply the provider kept cutting off (``stop_reason`` ``reply_interrupted``).
+_REPLY_CUT_OFF_NOTE = (
+    '_The model provider cut this reply off before it finished. Say "continue" for the rest._'
+)
 
 
 def _compose_response(
     result: Any,
     session: SessionState,
     counts: _TurnCounts,
+    deferred_replies: Sequence[str] = (),
+    tools_by_name: Mapping[str, Any] | None = None,
+    history_count: int = 0,
 ) -> tuple[str, list[str], bool]:
     """Build the turn's response text and what to show on screen.
 
@@ -856,63 +1138,214 @@ def _compose_response(
     on purpose: self-recording tools (shell, slash) already printed their own
     output, so the console shows only the closing text, generic tool results and
     any hint. ``response_text`` keeps the history as well, because persistence
-    and non-TTY surfaces have nothing else to read.
+    and non-TTY surfaces have nothing else to read. ``deferred_replies`` were
+    painted mid-turn by the plan gate, so they join the history, not the screen.
+    ``tools_by_name`` tells a repeated read-only poll from a repeated action.
 
     Consumes the session's pending outcome hint.
     """
     final_text = str(getattr(result, "final_text", "") or "").strip()
-    generic_text = _response_text_from_generic_results(result)
+    waiting_for_choice = getattr(session, "pending_user_choice", None) is not None
+    generic_text = _response_text_from_generic_results(result, tools_by_name)
     hint = _pop_turn_outcome_hint(session)
-    prefer_tool_response_text = _has_preferred_tool_response_text(result)
+    if getattr(result, "stop_reason", "") == "reply_interrupted":
+        # The reply still broke off after every continuation: say so, or it
+        # reads as finished mid-sentence.
+        hint = "\n".join(part for part in (_REPLY_CUT_OFF_NOTE, hint) if part)
+    terminal = getattr(session, "terminal", None)
+    pending_choice_response = getattr(terminal, "pending_choice_response", None)
+    selected_choice = (
+        pending_choice_response.strip() if isinstance(pending_choice_response, str) else ""
+    )
+    if selected_choice and terminal is not None:
+        terminal.pending_choice_response = None
     # Self-recording tools (slash/shell/…) already rendered the real output.
     # Drop model closings so they cannot contradict what the user just saw
     # (classic failure: inventing "health check passed" after a failed /health).
-    # Exceptions: a multi-step shell/slash chain, whose closing summary is
-    # grounded in the output the model observed between steps; a closing
-    # question, which seeks direction instead of restating output; and any
-    # quiet ``shell_run``, which withheld live stdout so the closing *is*
-    # the turn's display.
-    # A handoff means the assistant answers this turn, so the action's closing
-    # prose would be a second reply to one message ("good morning" twice).
-    suppress_final = (
-        prefer_tool_response_text
-        or (
-            _self_recording_tools_only(result)
-            and not _multi_step_grounded_chain(result)
-            and not _asks_the_user(final_text)
-            and not _has_quiet_shell_run(result)
-        )
-        or bool(counts.handoff_contents)
-    )
-    final_text_chunk = "" if suppress_final else final_text
-    # Unhandled turns fall through to ``gather_and_answer`` / ``stream_answer``.
-    # Painting the closing here produced two ``● assistant`` bubbles (e.g. a
-    # wrong weekday from the action agent, then the grounded day from live
-    # runtime facts). Keep ``response_text``; blank only the console chunk.
-    display_final = "" if (suppress_final or not counts.handled) else final_text
+    # Exceptions: a shell/slash command, whose closing summary is grounded in the
+    # output the model observed (so the agent can confirm the outcome, one command
+    # or a chain); a closing question, which seeks direction instead of restating
+    # output; and any quiet ``shell_run``, which withheld live stdout so the
+    # closing *is* the turn's display.
+    suppression_reason = None
+    if waiting_for_choice and _is_redundant_choice_invitation(result, final_text):
+        suppression_reason = "redundant_choice_invitation"
+    elif _is_choice_acknowledgement(final_text, selected_choice):
+        suppression_reason = "choice_acknowledgement"
+    elif (
+        _painted_results_only(result)
+        and _restates_painted_figures(result, final_text)
+        and not _asks_the_user(final_text)
+    ):
+        suppression_reason = "painted_figures_recap"
+    elif _closing_may_be_invented(result) and not _asks_the_user(final_text):
+        suppression_reason = "self_recording_tools"
+    final_text_chunk = "" if suppression_reason else final_text
+    # The model sometimes restates the plan (or every historical snapshot) in its
+    # reply; the pinned overlay already shows it, so strip snapshots from display.
+    display_final = strip_plan_snapshots(final_text_chunk)
     # History entries are already rendered by self-recording tools (shell/slash/…).
     # Console display uses final_text + generic results + hints only so users see
     # github_cli / other registry tools without double-printing shell output.
     # response_text still includes history for persistence / non-TTY surfaces.
-    display_chunks = [chunk for chunk in (display_final, generic_text, hint) if chunk]
+    assistant_report = _latest_unshown_outcome_report(
+        result,
+        final_text_chunk,
+        deferred_replies,
+        history_count=history_count,
+        already_shown=_streamed_replies(session),
+    )
+    closing_already_has_report = is_outcome_report(final_text_chunk) or any(
+        is_outcome_report(text) for text in deferred_replies
+    )
+    outcome_already_delivered = bool(assistant_report) or closing_already_has_report
+    generic_chunks = _generic_chunks(result, tools_by_name)
+    closing_chunks = _closing_tool_chunks(
+        generic_chunks, include_outcome=not outcome_already_delivered
+    )
+    if final_text_chunk and terminal is None:
+        # Chat surfaces (Slack, Telegram, Discord) have no terminal: no tool
+        # transcript and no Ctrl+O to expand a preview. The model's closing is
+        # the answer there, so raw tool previews (gh errors, truncated reads)
+        # are not appended to it. Only a tool's outcome report stays.
+        closing_chunks = [chunk for chunk in closing_chunks if is_outcome_report(chunk)]
+    # A queued repair snapshot and the later succeeded snapshot are one report.
+    # The report stays ahead of the cap: a long result before it must not hide
+    # the outcome, whether or not an earlier snapshot was dropped.
+    display_generic = _visible_closing_text(closing_chunks)
+    # Defense: never fence a data blob into the transcript (summary/stdout leaks
+    # used to pretty-print truncated JSON behind a text fence).
+    if is_data_blob(generic_text):
+        display_generic = ""
+    # The shell observer already nested user-facing results under each ``⏺``
+    # call (Droid / Claude Code / Cursor). Repeating them in the closing
+    # would float a second copy after the reply. Leave the Ctrl+O stash the
+    # observer wrote; do not clear it with an empty preview.
+    already_inline = bool(getattr(terminal, "inline_tool_results", False))
+    if already_inline and terminal is not None:
+        terminal.inline_tool_results = False
+        display_generic = ""
+    if (
+        assistant_report
+        and not closing_already_has_report
+        and assistant_report not in display_final
+    ):
+        # The shell withholds this prose from the working-note gutter so it
+        # is not shown twice. A closing that is itself the report wins.
+        display_final = (
+            f"{assistant_report}\n\n{display_final}" if display_final else assistant_report
+        )
+    if not final_text and not display_generic and not display_final:
+        # Tool reply text is a fallback only when the model has no closing.
+        # One outcome report: a later snapshot replaces the queued one.
+        # Cap it here: this path is the visible reply, and the generic-output
+        # path's cap does not apply once inline results cleared that preview.
+        display_final = _visible_closing_text(
+            _preferred_tool_chunks(result, tools_by_name)
+            if closing_chunks == generic_chunks
+            else closing_chunks
+        )
+    is_json = looks_like_json(generic_text)
+    body, markers = split_output_truncation_markers(display_generic)
+    truncated = bool(markers)
+    if not already_inline:
+        _stash_collapsed_tool_output(session, generic_text if truncated else None)
+    bulky = display_generic.count("\n") >= 4 or truncated
+    if display_generic and (is_json or bulky):
+        # Truncated JSON is invalid — fencing it as ``json`` makes Rich/Pygments
+        # paint error tokens (red blocks) on the cut. Use a text fence instead
+        # and keep truncation markers outside the block.
+        if truncated:
+            if body:
+                display_generic = f"\n```text\n{body}\n```\n{markers}"
+            else:
+                display_generic = f"\n```text\n{display_generic}\n```"
+        else:
+            lang = "json" if is_json else "text"
+            display_generic = f"\n```{lang}\n{display_generic}\n```"
+    display_chunks = [chunk for chunk in (display_final, display_generic, hint) if chunk]
+    history_generic = (
+        "\n".join(
+            _closing_tool_chunks(generic_chunks, include_outcome=not outcome_already_delivered)
+        )
+        if closing_chunks != generic_chunks
+        else generic_text
+    )
     response_chunks = [
         chunk
         for chunk in (
             _response_text_from_history_entries(counts.executed_entries),
+            *deferred_replies,
+            "" if closing_already_has_report else assistant_report,
             final_text_chunk,
-            generic_text,
+            history_generic,
             hint,
         )
         if chunk
     ]
-    # Prefer the agent's closing prose when it looks like a real reply (report /
-    # multi-line Markdown). Short one-liners like "done" are common after a
-    # single tool call and must not replace tool-derived response_text or get
-    # streamed on action-only turns (gateway finalize / cross-surface parity).
-    # A tool's explicit ``response_text`` also wins over chatty model closings.
-    use_final_text = _is_user_facing_final_text(final_text) and not suppress_final
-    response_text = final_text if use_final_text else "\n".join(response_chunks)
+    # Promoting the withheld report marks the reply streamed, so a host does
+    # not finalize the unfiltered tool snapshots afterwards.
+    use_final_text = bool(final_text_chunk) or (
+        bool(assistant_report) and not closing_already_has_report
+    )
+    response_text = "\n".join(response_chunks)
+    record_decision(
+        "response_composition",
+        attributes={
+            "final_text": final_text,
+            "suppression_reason": suppression_reason,
+            "display_text": "\n".join(display_chunks),
+            "response_text": response_text,
+            "inline_tool_results": already_inline,
+            "plan_snapshots_removed": display_final != final_text_chunk and bool(final_text_chunk),
+        },
+        context=lambda: turn_trace_state(session),
+    )
     return response_text, display_chunks, use_final_text
+
+
+def _is_redundant_choice_invitation(result: Any, final_text: str) -> bool:
+    """True when a single-choice closing repeats the title or tool summary."""
+    final_tokens = _choice_invitation_tokens(final_text)
+    if not final_tokens:
+        return True
+    for tool_call, tool_result in getattr(result, "tool_results", []):
+        if tool_call.name != "ask_user_choice":
+            continue
+        args = public_tool_input(tool_call.input)
+        if args.get("questions"):
+            return False
+        picker_copy = {_choice_invitation_tokens(str(args.get("title", "")))}
+        details = getattr(tool_result, "details", None)
+        if isinstance(details, dict):
+            picker_copy.add(_choice_invitation_tokens(str(details.get("summary", ""))))
+        picker_copy.discard(())
+        return final_tokens in picker_copy
+    return False
+
+
+def _choice_invitation_tokens(text: str) -> tuple[str, ...]:
+    """Normalize picker copy while allowing an optional polite prefix."""
+    tokens = tuple(re.findall(r"[a-z0-9]+", text.casefold()))
+    if tokens[:1] == ("please",):
+        return tokens[1:]
+    return tokens
+
+
+def _is_choice_acknowledgement(text: str, selected_choice: str) -> bool:
+    """True only for a bare restatement of the selected picker label."""
+    if not text or not selected_choice:
+        return False
+    choice = " ".join(selected_choice.casefold().split())
+    response = " ".join(text.casefold().strip().rstrip(".!?").split())
+    return response in {
+        choice,
+        f"{choice} selected",
+        f"{choice} was selected",
+        f"selected {choice}",
+        f"selected: {choice}",
+        f"you selected {choice}",
+    }
 
 
 def _show_response(
@@ -921,35 +1354,75 @@ def _show_response(
     handled: bool,
     final_text: str,
     display_chunks: list[str],
-) -> None:
+) -> str:
     """Show the turn's answer, or leave a blank line after silent tool work.
 
     ``final_text`` arrives empty unless the closing message reads like a real
-    reply; only then is it streamed as the assistant speaking. Progress tags
-    are scrubbed for display only — ``response_text`` keeps them for evaluate.
+    reply; only then is it preferred over joined ``display_chunks``. Either way
+    visible prose streams through the sink (``Ω`` gutter on the shell).
     """
-    if handled and final_text:
-        visible = strip_session_goal_progress_tags(final_text)
-        if visible.strip():
-            output.stream(label="OpenSRE", chunks=iter([visible]))
-        return
-    if display_chunks:
-        visible = strip_session_goal_progress_tags("\n".join(display_chunks))
-        if not visible.strip():
-            if handled:
-                _end_silent_tool_turn(output)
-            return
-        output.render_response_header("assistant")
-        # Literal text: the sink decides how to render it safely. The harness
-        # must not reach for terminal-markup helpers.
-        output.print(visible)
-        return
+    # Both branches stream through the sink so the shell paints the ``Ω`` gutter
+    # (Droid / Claude Code rhythm). Bare ``print`` after a lone header left
+    # agent prose unmarked and flush against Thinking chrome.
+    body = final_text or ("\n".join(display_chunks) if display_chunks else "")
+    if body:
+        if body.strip():
+            return output.stream(label="OpenSRE", chunks=_display_parts(body, display_chunks))
+        if handled:
+            _end_silent_tool_turn(output)
+        return ""
     if handled:
         _end_silent_tool_turn(output)
+    return ""
+
+
+def _display_parts(body: str, display_chunks: Sequence[str]) -> Iterator[str]:
+    """``body`` as one chunk per display part (closing, tool results, hint).
+
+    The chunks join back to ``body`` exactly. A surface that printed the
+    closing while it streamed recognises it as the first chunk and prints only
+    the rest; every other surface reads the same text it always did.
+    """
+    if not display_chunks or "\n".join(display_chunks) != body:
+        yield body
+        return
+    yield display_chunks[0]
+    for chunk in display_chunks[1:]:
+        yield f"\n{chunk}"
 
 
 def _end_silent_tool_turn(output: OutputSink) -> None:
     """After silent tool work with nothing to show: leave a blank line."""
+    output.print()
+
+
+def _show_completed_plan_breakdown(output: OutputSink, session: SessionState) -> None:
+    """Print the one-shot per-step work breakdown when the plan is complete.
+
+    Not while a question to the user is queued or its answer is on its way:
+    a plan ending on blocked steps is still being resolved with them.
+    """
+    from core.agent_harness.session.terminal_access import session_terminal
+    from core.agent_harness.task_plan.work_log import take_completed_plan_breakdown
+
+    if getattr(session, "pending_user_choice", None) is not None:
+        return
+    terminal = session_terminal(session)
+    if terminal is not None and getattr(terminal, "awaiting_handoff_answer", False):
+        return
+    breakdown = take_completed_plan_breakdown(session)
+    if not breakdown:
+        return
+    output.print()
+    # Shell paints ✓ steps vs ↳ work notes in different theme colors; other
+    # sinks (headless / chat) keep the plain-text checklist.
+    render = getattr(output, "render_plan_breakdown", None)
+    if callable(render):
+        render(breakdown)
+    else:
+        output.print(breakdown)
+    # The breakdown is the last thing a completed turn prints, so it needs the
+    # same blank row below as above — otherwise it butts against the prompt.
     output.print()
 
 
@@ -961,37 +1434,42 @@ def _count_turn(result: Any, session: SessionState, history_start: int) -> _Turn
         if item.get("type") in _EXECUTED_HISTORY_TYPES
     ]
     generic_executed_count, generic_success_count = _generic_tool_result_counts(result)
-    # ``assistant_handoff`` runs like a tool but hands back to conversation, so
-    # it must not make the turn look like it did something for the user.
-    planned_count = sum(1 for tc, _output in result.executed if tc.name != "assistant_handoff")
-    handoff_inputs = [
-        public_tool_input(tc.input)
-        for tc, _output in result.executed
-        if tc.name == "assistant_handoff"
-    ]
-    assistant_handoffs = assistant_handoffs_from_tool_inputs(handoff_inputs)
+    planned_count = len(result.executed)
     return _TurnCounts(
         executed_entries=executed_entries,
         executed_count=len(executed_entries) + generic_executed_count,
         executed_success_count=(
             sum(1 for item in executed_entries if item.get("ok", True)) + generic_success_count
         ),
-        generic_success_count=generic_success_count,
         planned_count=planned_count,
         handled=planned_count > 0,
-        investigation_dispatched=any(
-            tc.name in INVESTIGATION_DISPATCH_TOOL_NAMES for tc, _output in result.executed
-        ),
-        handoff_contents=tuple(
-            tag for handoff in assistant_handoffs for tag in handoff.to_handoff_contents()
-        ),
-        assistant_handoffs=assistant_handoffs,
-        # Gather stays required unless every handoff this turn opted out; a
-        # single gather-needing handoff must not be starved by another's opt-out.
-        handoff_requires_gather=(
-            not assistant_handoffs or any(handoff.requires_gather for handoff in assistant_handoffs)
-        ),
     )
+
+
+def _record_loop_outcome(
+    recorder: PromptRecorder,
+    result: AgentRunResult,
+    *,
+    goal: Goal | None,
+    stopped_short: bool,
+) -> None:
+    """Tell the turn's ``$ai_generation`` why the loop stopped and what failed last.
+
+    A loop that stopped short records its real stop reason, the goal review's
+    last refusal, and the last failed tool with its sanitized error in the
+    recorded error, not only the generic text the user sees.
+    """
+    failures = summarize_tool_failures(result.tool_results)
+    recorder.set_loop_outcome(
+        stop_reason=result.stop_reason,
+        goal_review_reason=last_goal_rejection_reason(goal),
+        last_failed_tool=failures.last_failed_tool,
+        last_tool_error=failures.last_tool_error,
+        blocked_tool_calls=failures.blocked_tool_calls,
+        tool_error_count=failures.tool_error_count,
+    )
+    if stopped_short:
+        recorder.set_stopped_short()
 
 
 def _run_action_turn(
@@ -1005,11 +1483,20 @@ def _run_action_turn(
     # AgentConfig are built from the same view (single source, no re-resolve).
     resolved_integrations = _turn_resolved_integrations(session, turn_plan)
     history_start = len(session.history)
+    # Once per turn, before any tool runs: does this answer continue the
+    # open plan's own workflow (host advances it, the prompt says so)?
+    plan_answer_continues = (
+        turn_snapshot.plan_answer_continues
+        if turn_snapshot is not None
+        else session_answer_continues_plan(session, message)
+    )
 
+    prepare_active_skill(session, message)
     agent_tools = args.tools.action_tools(
         confirm_fn=args.confirm_fn,
         is_tty=args.is_tty,
         resolved_integrations=resolved_integrations,
+        turn_user_message=message,
     )
     tool_resources_provider = getattr(args.tools, "tool_resources", None)
     tool_resources = tool_resources_provider() if callable(tool_resources_provider) else {}
@@ -1033,28 +1520,51 @@ def _run_action_turn(
             turn_snapshot=turn_snapshot,
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
-            tool_hooks=with_duplicate_action_call_guard(args.tool_hooks),
+            tool_hooks=with_menu_turn_end(
+                with_task_plan_hooks(
+                    with_duplicate_action_call_guard(args.tool_hooks),
+                    session,
+                    turn_user_message=message,
+                    answer_continues=plan_answer_continues,
+                ),
+                session,
+            ),
             tool_resources=tool_resources,
             observer=observer,
+            output=args.output,
         )
-        result = run_react_agent_with_telemetry(
-            built.agent,
-            [{"role": "user", "content": built.user_message}],
-            phase="action",
-            iteration_cap=built.max_iterations,
-            llm=built.llm,
-            session=session,
-        )
+        # Recorded before the run so a call the provider refuses (a prompt
+        # over the context window) still shows which block grew.
+        if built.prompt_size is not None:
+            record_model_blocks(built.prompt_size.as_record())
+        # ``/effort`` lives on the session; the model clients read it from context.
+        with apply_reasoning_effort(
+            turn_snapshot.reasoning_effort
+            if turn_snapshot is not None
+            else getattr(session, "reasoning_effort", None)
+        ):
+            result = run_react_agent_with_telemetry(
+                built.agent,
+                [*built.history, {"role": "user", "content": built.user_message}],
+                phase="action",
+                iteration_cap=built.max_iterations,
+                llm=None if isinstance(built.llm, _StaticToolCallLLM) else built.llm,
+                session=session,
+            )
         persist_turn_system_prompt(
             session,
             phase="action_agent",
             system_prompt=result.final_system_prompt,
         )
+        record_action_model_prompt(result, skill=built.prompt_skill, context=built.prompt_context)
     except Exception as exc:
-        if is_context_length_overflow(str(exc)):
-            log.debug("shell action prompt overflow; falling through to assistant", exc_info=True)
-            return ToolCallingTurnResult(0, 0, 0, False, False, accounting_status="not_run")
+        from core.llm.shared.llm_retry import LLMCreditExhaustedError
 
+        # Billing exhaustion is a terminal control-flow condition. Rendering it
+        # as an ordinary assistant response makes one-shot callers report a
+        # successful turn and exit zero even though no model work completed.
+        if isinstance(exc, LLMCreditExhaustedError):
+            raise
         error_text = str(exc)
         if args.error_reporter is not None:
             args.error_reporter.report(
@@ -1069,13 +1579,13 @@ def _run_action_turn(
             client=llm_client,
             error_text=error_text,
         )
-        from config.config import get_configured_llm_provider
-        from core.agent_harness.accounting.token_accounting import resolve_provider_name
+        from config.llm_settings import get_configured_llm_provider
+        from core.agent_harness.accounting.token_accounting import resolve_provider_id
 
-        provider = resolve_provider_name(llm_client) if llm_client is not None else None
+        provider = resolve_provider_id(llm_client) if llm_client is not None else None
         display_text = (
-            remediate_missing_llm_credentials(
-                error_text, provider=provider or get_configured_llm_provider()
+            execute_cli_onboard_on_missing_key(
+                session, error_text, provider=provider or get_configured_llm_provider()
             )
             or error_text
         )
@@ -1083,47 +1593,75 @@ def _run_action_turn(
         _persist_tool_calling_error(session, message, display_text)
         session.record("cli_agent", message, ok=False)
         return ToolCallingTurnResult(
-            0, 0, 0, True, True, response_text=display_text, accounting_status="not_run"
+            0,
+            0,
+            0,
+            True,
+            True,
+            response_text=display_text,
+            accounting_status="not_run",
+            stop_reason="error",
         )
 
     counts = _count_turn(result, session, history_start)
-    response_text, display_chunks, use_final_text = _compose_response(result, session, counts)
+    tools_by_name = {getattr(t, "name", ""): t for t in agent_tools}
+    history_count = len(built.history)
+    response_text, display_chunks, use_final_text = _compose_response(
+        result, session, counts, built.deferred_replies, tools_by_name, history_count
+    )
+    # Bounded tool batches recorded with the transcript for later turns.
+    history_items = (
+        tool_items_from_run(
+            list(getattr(result, "messages", ()) or ()), history_count=history_count
+        )
+        if structured_history_enabled()
+        else ()
+    )
     cancelled = tool_resources_cancel_requested(tool_resources) or bool(
         getattr(result, "cancelled", False)
     )
-    # Cancelled turns must not fall through to gather/answer: the host already
-    # owns the terminal UX (timeout message / stop). Drop handoffs; the
-    # orchestrator short-circuits on ``cancelled`` before routing.
-    handoff_contents = () if cancelled else counts.handoff_contents
-    # Discovery tools that opt into ``summarize_observation`` (via tool tags)
-    # return structured JSON users should not see raw. Stash only those results.
-    if (
-        not cancelled
-        and response_text.strip()
-        and counts.generic_success_count > 0
-        and not session.last_command_observation
-        and _should_stash_observation(
-            result,
-            tools_by_name={getattr(t, "name", ""): t for t in agent_tools},
-        )
-    ):
-        session.last_command_observation = response_text
+    # A deferred reply already went through the sink, so the turn host must not
+    # finalize ``response_text`` a second time (it would repost the report).
+    response_streamed = bool((use_final_text or built.deferred_replies) and not cancelled)
+    # Cancelled turns stop before the host records or finalizes the response.
     if not cancelled:
-        _show_response(
+        displayed_text = _show_response(
             args.output,
             handled=counts.handled,
-            # use_final_text means the composed text *is* the closing message.
-            final_text=response_text if use_final_text else "",
+            # Stream only terminal-visible chunks. ``response_text`` may also
+            # contain self-recording history for persistence/headless surfaces.
+            final_text="\n".join(display_chunks) if use_final_text else "",
             display_chunks=display_chunks,
         )
+        record_skill_value(session, displayed_text, built.value_insights)
+        _show_completed_plan_breakdown(args.output, session)
+    record_decision(
+        "response_displayed",
+        attributes={
+            "display_text": "" if cancelled else "\n".join(display_chunks),
+            "cancelled": cancelled,
+        },
+    )
 
     log.debug(
-        "action_turn done planned=%s executed=%s handled=%s cancelled=%s investigation=%s",
+        "action_turn done planned=%s executed=%s handled=%s cancelled=%s",
         counts.planned_count,
         counts.executed_count,
         counts.handled,
         cancelled,
-        counts.investigation_dispatched,
+    )
+    recorder = PromptRecorder.current()
+    if recorder is not None:
+        _record_loop_outcome(
+            recorder,
+            result,
+            goal=built.goal,
+            stopped_short=bool(result.hit_iteration_cap and not cancelled),
+        )
+    tool_evidence, evidence_success_count = (
+        collect_tool_evidence(getattr(result, "tool_results", ()))
+        if getattr(session, "session_goal", None) is not None
+        else ("", None)
     )
     return ToolCallingTurnResult(
         counts.planned_count,
@@ -1132,11 +1670,17 @@ def _run_action_turn(
         False,
         False if cancelled else counts.handled,
         response_text="" if cancelled else response_text,
-        handoff_contents=() if cancelled else handoff_contents,
-        assistant_handoffs=() if cancelled else counts.assistant_handoffs,
-        handoff_requires_gather=(False if cancelled else counts.handoff_requires_gather),
-        investigation_dispatched=(False if cancelled else counts.investigation_dispatched),
+        response_streamed=response_streamed,
+        hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
+        stop_reason=result.stop_reason,
         cancelled=cancelled,
+        input_tokens=getattr(result, "input_tokens", None),
+        output_tokens=getattr(result, "output_tokens", None),
+        tool_evidence=tool_evidence,
+        evidence_success_count=evidence_success_count,
+        history_items=history_items,
+        sent_text=built.user_message,
+        context_digest=built.context_digest,
     )
 
 
@@ -1144,5 +1688,4 @@ __all__ = [
     "ActionTurnPlan",
     "ActionTurnRunner",
     "SELF_RECORDING_ACTION_TOOL_NAMES",
-    "with_duplicate_action_call_guard",
 ]

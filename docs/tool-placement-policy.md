@@ -3,7 +3,7 @@
 Where a piece of agent-callable capability lives is decided by **how many
 vendor integrations its domain logic touches**, not by convenience or file
 size. This is the decision rule referenced from
-[ARCHITECTURE.md](ARCHITECTURE.md#tier-2--tools-and-integrations).
+[ARCHITECTURE.md](ARCHITECTURE.md#tier-3--tools-and-integrations).
 
 ## Decision rule
 
@@ -35,8 +35,8 @@ SaaS backend (an `integrations/<vendor>/` package)?
    an agent-callable tool's business logic lives.
 
 `tools/` also holds framework subsystems that aren't individual tools —
-`tools/investigation` (the investigation pipeline), `tools/interactive_shell`
-(REPL action tools), `tools/registry.py` (the tool registry itself). These
+`tools/interactive_shell` (REPL action tools), `tools/registry.py` (the tool
+registry itself). These
 stay at the top level of `tools/`; the `system` / `cross_vendor` split only
 applies to individual tool packages.
 
@@ -46,11 +46,10 @@ Applied to the pre-existing top-level `tools/` packages:
 
 | Package | Placement | Why |
 | --- | --- | --- |
-| `tools/system/fleet_monitoring/` | system | Local AI-agent fleet monitoring; no vendor. |
 | `tools/system/python_execution_tool/` | system | Generic sandboxed Python execution; the GitHub token import is one of several optional credential sources, not the tool's purpose. |
 | `tools/system/sre_guidance_tool/` | system | Local knowledge-base retrieval; no vendor. |
-| `tools/system/watch_dog/` | system | CLI/REPL process monitoring; Telegram is only the alarm-delivery channel, not the tool's domain. |
 | `tools/cross_vendor/fix_sentry_issue/` | cross_vendor | Reads a Sentry issue and hands the fix to the Pi coding agent — two `integrations/` packages in one tool's logic. |
+| `tools/cross_vendor/resolve_merge_conflicts/` | cross_vendor | Reads the conflicts of a local git merge and hands them to the coding agent, then commits the merge — `integrations/git` and `integrations/coding_agent` in one tool's logic. |
 
 **Migrated to their vendor packages** — every single-vendor tool now lives
 under `integrations/<vendor>/tools/`, so rule 1 has no exceptions left:

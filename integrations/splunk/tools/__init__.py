@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool
 from infrastructure.evidence.evidence_compaction import compact_logs, summarize_counts
@@ -24,11 +25,25 @@ _ERROR_KEYWORDS = (
 )
 
 
+def _map_query_splunk_logs(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    logs = output.get("logs", [])
+    if logs:
+        record_evidence_entry(
+            evidence,
+            source="query_splunk_logs",
+            label="Splunk Logs",
+            summary=f"{len(logs)} logs",
+        )
+
+
 class SplunkSearchTool(BaseTool):
     """Search Splunk logs using SPL for errors, exceptions, and application events."""
 
     name = "query_splunk_logs"
     source = "splunk"
+    evidence_mapper = _map_query_splunk_logs
     description = (
         "Search Splunk using SPL (Search Processing Language) for application errors, "
         "exceptions, and operational events. Returns time-bounded log evidence."
@@ -39,7 +54,7 @@ class SplunkSearchTool(BaseTool):
         "Fetching recent error logs for a service identified in an alert",
         "Correlating trace IDs with Splunk log entries",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []  # connection_verified check is in is_available()
     outputs = {
         "splunk_logs": "All log events returned from Splunk search",

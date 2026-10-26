@@ -10,8 +10,8 @@ or ``logger.debug(..., exc_info=True)`` with no Sentry trace:
      centrally wraps ``pydantic.ValidationError`` so no vendor classifier has
      to duplicate that guard itself).
   B. ``load_env_integrations`` argocd + helm ``except Exception: pass``.
-  C. ``load_env_integrations`` debug-only env loaders (incident_io,
-     openclaw, mariadb, rabbitmq, rds, betterstack, alertmanager,
+  C. ``load_env_integrations`` debug-only env loaders (incident_io, mariadb,
+     rabbitmq, rds, betterstack, alertmanager,
      victoria_logs, supabase).
 
 After the fix every site routes through ``report_classify_failure`` (in
@@ -101,18 +101,16 @@ _CLASSIFY_PATCH_TARGETS: list[tuple[str, str, str]] = [
     ("new_relic", "integrations.new_relic", "NewRelicIntegrationConfig"),
     ("github", "integrations.github.mcp", "build_github_mcp_config"),
     ("sentry", "integrations.sentry", "build_sentry_config"),
-    ("gitlab", "integrations.gitlab", "build_gitlab_config"),
+    ("gitlab", "integrations.gitlab.client", "build_gitlab_config"),
     ("mongodb", "integrations.mongodb", "build_mongodb_config"),
     ("postgresql", "integrations.postgresql", "build_postgresql_config"),
     ("mongodb_atlas", "integrations.mongodb_atlas", "build_mongodb_atlas_config"),
     ("mariadb", "integrations.mariadb", "build_mariadb_config"),
     ("vercel", "integrations.vercel", "VercelConfig"),
-    ("opsgenie", "integrations.opsgenie", "OpsGenieIntegrationConfig"),
     ("incident_io", "integrations.incident_io", "IncidentIoIntegrationConfig"),
     ("jira", "integrations.jira", "JiraIntegrationConfig"),
     ("discord", "integrations.discord", "DiscordBotConfig"),
     ("telegram", "integrations.telegram", "TelegramBotConfig"),
-    ("openclaw", "integrations.openclaw", "build_openclaw_config"),
     ("mysql", "integrations.mysql", "build_mysql_config"),
     ("rabbitmq", "integrations.rabbitmq", "build_rabbitmq_config"),
     ("rds", "integrations.rds", "build_rds_config"),
@@ -258,11 +256,6 @@ _ENV_LOADER_CASES: list[tuple[str, dict[str, str], str]] = [
         "build_supabase_config",
     ),
     (
-        "openclaw",
-        {"OPENCLAW_MCP_URL": "https://oc.example"},
-        "build_openclaw_config",
-    ),
-    (
         "rds",
         {},
         "rds_config_from_env",
@@ -272,11 +265,6 @@ _ENV_LOADER_CASES: list[tuple[str, dict[str, str], str]] = [
         "vercel",
         {"VERCEL_API_TOKEN": "t"},
         "VercelConfig",
-    ),
-    (
-        "opsgenie",
-        {"OPSGENIE_API_KEY": "k"},
-        "OpsGenieIntegrationConfig",
     ),
     (
         "jira",

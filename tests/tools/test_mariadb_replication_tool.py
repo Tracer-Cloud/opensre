@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.mariadb.tools.mariadb_replication_tool import get_mariadb_replication_status
+from integrations.mariadb.tools.mariadb_replication_tool import (
+    _map_get_mariadb_replication_status,
+    get_mariadb_replication_status,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -43,3 +47,75 @@ def test_run_error_propagated() -> None:
     ):
         result = get_mariadb_replication_status(host="invalid", database="test", username="user")
     assert "error" in result
+
+
+class TestMapGetMariadbReplicationStatus:
+    def test_records_entry_with_stalled_thread_and_lag(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mariadb_replication_status(
+            evidence,
+            {
+                "available": True,
+                "channels": [
+                    {
+                        "Slave_IO_Running": "No",
+                        "Slave_SQL_Running": "Yes",
+                        "Seconds_Behind_Master": 90,
+                    }
+                ],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_mariadb_replication_status"
+        assert entries[0]["summary"] == "1 channel(s), 1 with a stopped IO/SQL thread, max lag 90s"
+
+    def test_records_entry_healthy_channel_without_clauses(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mariadb_replication_status(
+            evidence,
+            {
+                "available": True,
+                "channels": [
+                    {
+                        "Slave_IO_Running": "Yes",
+                        "Slave_SQL_Running": "Yes",
+                        "Seconds_Behind_Master": 0,
+                    }
+                ],
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "1 channel(s), max lag 0s"
+
+    def test_records_note_when_not_a_replica(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mariadb_replication_status(
+            evidence,
+            {
+                "available": True,
+                "note": "This server is not configured as a replica.",
+                "channels": [],
+            },
+            {},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"]
+            == "This server is not configured as a replica."
+        )
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mariadb_replication_status(
+            evidence, {"available": False, "error": "connection timeout"}, {}
+        )
+
+        assert "catalog_entries" not in evidence

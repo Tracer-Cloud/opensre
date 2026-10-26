@@ -6,14 +6,17 @@ from typing import Any
 
 import httpx
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel, report_run_error
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.sentry import (
     DEFAULT_SENTRY_ISSUE_LIMIT,
     SentryConfig,
+    _clamp_issue_limit,
     _resolve_stats_period,
+    _sanitize_sentry_query,
     build_sentry_config,
     describe_sentry_api_error,
     list_sentry_issues,
@@ -67,6 +70,42 @@ def _sentry_creds(sentry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _map_search_sentry_issues(
+    evidence: dict[str, Any], output: dict[str, Any], tool_input: dict[str, Any]
+) -> None:
+    """Cite the issue count for the query.
+
+    ``limit`` is sent to the Sentry API as its own page-size param, so
+    ``issues_total`` is a capped page of matches, not necessarily the true
+    count of every issue matching the query. Mirrors the "N+" convention
+    ``validate_sentry_config`` already uses for the same page-cap ambiguity:
+    show the plain count when it's under the effective limit (Sentry
+    returned everything that matched), and "N+" only when the count
+    saturates the limit (there may be more).
+
+    ``output["query"]`` is the caller's raw, unsanitized query string (the
+    sanitized/candidate form is only used internally by ``list_sentry_issues``
+    when calling the API) -- run it through the same
+    ``_sanitize_sentry_query`` collapse-and-truncate the client already
+    applies before embedding it in the report summary.
+    """
+    if not output.get("available"):
+        return
+    issues = output.get("issues") or []
+    if not issues:
+        return
+    issues_total = output.get("issues_total", len(issues))
+    effective_limit = _clamp_issue_limit(tool_input.get("limit", DEFAULT_SENTRY_ISSUE_LIMIT))
+    count_label = f"{issues_total}+" if issues_total >= effective_limit else str(issues_total)
+    query = _sanitize_sentry_query(str(output.get("query") or "")) or "*"
+    record_evidence_entry(
+        evidence,
+        source="search_sentry_issues",
+        label="Sentry Issue Search",
+        summary=f"{count_label} issue(s) for query '{query}'",
+    )
+
+
 def _search_issues_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     sentry = sources["sentry"]
     return {
@@ -80,6 +119,8 @@ def _search_issues_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 @tool(
     name="search_sentry_issues",
     source="sentry",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Search Sentry issues related to an incident or failure signature.",
     use_cases=[
         "Checking whether an alert maps to a known Sentry issue",
@@ -103,7 +144,8 @@ def _search_issues_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     injected_params=("organization_slug", "sentry_token", "sentry_url", "project_slug"),
     is_available=_sentry_available,
     extract_params=_search_issues_extract_params,
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
+    evidence_mapper=_map_search_sentry_issues,
 )
 def search_sentry_issues(
     organization_slug: str,

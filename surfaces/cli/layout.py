@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 import click
+from rich.cells import cell_len
 from rich.console import Console
 from rich.text import Text
 
 from infrastructure.terminal.theme import BRAND, DIM, TEXT
-from surfaces.shared.terminal.banner import build_ready_panel
 
 #: First-run actions only. Everything else is discoverable via ``opensre --help``;
 #: a landing page that lists every command reads as "here is everything" rather
 #: than "start here".
 _LANDING_EXAMPLES: tuple[tuple[str, str], ...] = (
-    ("opensre onboard", "Configure your LLM provider and integrations (start here)"),
+    ("opensre setup", "Sign in to OpenSRE, activate the hosted model, then open the shell"),
     ('opensre ask "why is checkout-api slow?"', "Ask the agent a question directly"),
-    ("opensre investigate -i alert.json", "Run a root-cause investigation on an alert"),
     ("opensre doctor", "Check this machine is set up correctly"),
     ("opensre --help", "See every command"),
 )
@@ -25,7 +25,13 @@ _LANDING_EXAMPLES: tuple[tuple[str, str], ...] = (
 
 #: Commands a new user needs, in the order they need them. Anything not listed
 #: falls through to "More commands", so a newly added command is never hidden.
-_GETTING_STARTED: tuple[str, ...] = ("onboard", "ask", "doctor", "health", "investigate")
+_GETTING_STARTED: tuple[str, ...] = (
+    "setup",
+    "onboard",
+    "ask",
+    "doctor",
+    "health",
+)
 
 #: Day-to-day operation once configured.
 _EVERYDAY: tuple[str, ...] = (
@@ -51,6 +57,9 @@ def _partition_commands(
 
 
 def _commands_from_group(group: click.Group) -> tuple[tuple[str, str], ...]:
+    help_rows = getattr(group, "help_command_rows", None)
+    if callable(help_rows):
+        return cast("tuple[tuple[str, str], ...]", help_rows())
     ctx = click.Context(group)
     rows = []
     for name in group.list_commands(ctx):
@@ -74,20 +83,44 @@ def _options_from_command(command: click.Command) -> tuple[tuple[str, str], ...]
     return tuple(rows)
 
 
+#: Cells before a row's label.
+_ROW_INDENT = 4
+#: Extra cells a stacked description sits under its label.
+_STACKED_DESCRIPTION_INDENT = 4
+#: Narrowest description column worth keeping beside the labels; below it the
+#: rows stack, label above description, like Click's own help.
+_MIN_DESCRIPTION_WIDTH = 24
+
+
+def _print_wrapped(console: Console, text: Text, *, indent: int, first_prefix: Text) -> None:
+    """Print ``text`` wrapped at the console width, every line ``indent`` cells in.
+
+    ``first_prefix`` replaces the indent on the first line, so a label can sit
+    there while continuation lines keep the hanging indent.
+    """
+    lines = text.wrap(console, max(console.width - indent, 1))
+    for index, line in enumerate(lines):
+        line.rstrip()
+        prefix = first_prefix if index == 0 else Text(" " * indent)
+        console.print(Text.assemble(prefix, line), soft_wrap=True)
+
+
 def _render_usage(console: Console) -> None:
-    console.print(
-        Text.assemble(
-            ("  Usage: "),
-            ("opensre", f"bold {TEXT}"),
-            (" [OPTIONS] [COMMAND] [ARGS]..."),
-        )
+    indent = Text("  ")
+    _print_wrapped(
+        console,
+        Text.assemble("Usage: ", ("opensre", f"bold {TEXT}"), " [OPTIONS] [COMMAND] [ARGS]..."),
+        indent=2,
+        first_prefix=indent,
     )
-    console.print(
+    _print_wrapped(
+        console,
         Text.assemble(
-            ("  ", ""),
             ("No COMMAND", DIM),
             (": start the interactive shell when stdin/stdout are TTYs.", DIM),
-        )
+        ),
+        indent=2,
+        first_prefix=indent,
     )
 
 
@@ -98,23 +131,41 @@ def _render_rows(
     rows: Sequence[tuple[str, str]],
     width: int | None = None,
 ) -> None:
-    # ``width`` is the preferred column, not a cap: a label longer than it would
-    # otherwise print unpadded and run straight into its description.
-    longest_label = max((len(label) for label, _ in rows), default=0)
-    effective_width = max(width + 2 if width is not None else 0, longest_label + 2)
+    """Print a titled label/description list that wraps under its own column.
+
+    ``width`` is the preferred label column, not a cap: a longer label widens
+    the column so it never runs into its description. When the terminal is too
+    narrow for the labels plus a readable description column, each row stacks
+    with the description indented under its label.
+    """
+    longest_label = max((cell_len(label) for label, _ in rows), default=0)
+    label_column = max(width + 2 if width is not None else 0, longest_label + 2)
+    description_indent = _ROW_INDENT + label_column
+    side_by_side = console.width - description_indent >= _MIN_DESCRIPTION_WIDTH
     console.print(Text.assemble((f"  {title}:", f"bold {TEXT}")))
     for label, description in rows:
-        console.print(
-            Text.assemble(
-                ("    ", ""),
-                (f"{label:<{effective_width}}", f"bold {BRAND}"),
-                description,
+        styled_label = Text(label, style=f"bold {BRAND}")
+        if side_by_side:
+            padding = " " * (label_column - cell_len(label))
+            prefix = Text.assemble(" " * _ROW_INDENT, styled_label, padding)
+            _print_wrapped(
+                console, Text(description), indent=description_indent, first_prefix=prefix
             )
+            continue
+        _print_wrapped(
+            console, styled_label, indent=_ROW_INDENT, first_prefix=Text(" " * _ROW_INDENT)
+        )
+        stacked_indent = _ROW_INDENT + _STACKED_DESCRIPTION_INDENT
+        _print_wrapped(
+            console,
+            Text(description),
+            indent=stacked_indent,
+            first_prefix=Text(" " * stacked_indent),
         )
 
 
 def render_help(group: click.Group) -> None:
-    """Render the root help view, deriving the command list from the live Click group."""
+    """Render the root help view from the command spec table (no command imports)."""
     console = Console(highlight=False)
     commands = _commands_from_group(group)
     options = _options_from_command(group)
@@ -134,14 +185,16 @@ def render_help(group: click.Group) -> None:
 
 def render_landing(group: click.Group) -> None:
     """Render the root landing page shown with no subcommand."""
+    from surfaces.shared.terminal.banner import build_launch_banner
+
     console = Console(highlight=False)
     options = _options_from_command(group)
     console.print()
-    console.print(build_ready_panel(console))
+    console.print(build_launch_banner(console))
     console.print(
         Text.assemble(
             ("  ", ""),
-            "open-source SRE agent for automated incident investigation and root cause analysis",
+            "open-source SRE agent",
         )
     )
     console.print()

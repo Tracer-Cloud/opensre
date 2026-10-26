@@ -13,11 +13,17 @@ from __future__ import annotations
 
 TOOL_MODULES = (
     "agent_memory.tool",
-    "fleet_monitoring",
+    "file_count.tool",
+    "local_repo_insights.tool",
     "python_execution_tool",
+    "repository_preferences.tool",
+    "runbook_guidance_tool.tool",
+    "scheduled_loops.manage",
+    "scheduled_loops.tool",
     "sre_guidance_tool",
-    "watch_dog",
+    "structured_file.tool",
     "work_items.tool",
+    "workspace_git_scan.tool",
 )
 
 __all__ = ["TOOL_MODULES"]

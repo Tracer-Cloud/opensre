@@ -2,29 +2,40 @@
 
 from __future__ import annotations
 
+import functools
+import shlex
 from collections.abc import Callable
 from typing import Any, Protocol
 
 from rich.console import Console
 
+from config.command_inputs import needs_command_input
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry.slash_catalog import (
     slash_invoke_input_schema,
     slash_invoke_tool_description,
 )
+from surfaces.interactive_shell.runtime.exclusive_output import with_exclusive_output
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.ui import repl_tty_interactive
-from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
-from surfaces.interactive_shell.utils.telemetry.turn_outcome import (
+from surfaces.interactive_shell.telemetry.turn_outcome import (
     format_terminal_turn_outcome,
 )
+from surfaces.interactive_shell.ui import repl_tty_interactive
+from surfaces.interactive_shell.ui.cron_input.arguments import cron_add_needs_input
+from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
 from tools.interactive_shell.shared.execution_policy import ExecutionPolicyResult
-from tools.interactive_shell.shared.host_ports import ExecutionGate
+from tools.interactive_shell.shared.host_contracts import ExecutionGate
 
 
 class SlashPorts(ExecutionGate, Protocol):
+    def command_needs_input(self, name: str, args: list[str]) -> bool:
+        """Whether an incomplete command requires an exclusively owned input surface."""
+
     def command_exists(self, name: str) -> bool:
         raise NotImplementedError
+
+    def command_is_mutating(self, name: str) -> bool:
+        """Whether running command ``name`` can change state (control commands cannot)."""
 
     def tool_description(self) -> str:
         raise NotImplementedError
@@ -57,8 +68,15 @@ class SlashPorts(ExecutionGate, Protocol):
 
 
 class ReplSlashPorts:
+    def command_needs_input(self, name: str, args: list[str]) -> bool:
+        return needs_command_input(name, args) or (name == "/cron" and cron_add_needs_input(args))
+
     def command_exists(self, name: str) -> bool:
         return name in SLASH_COMMANDS
+
+    def command_is_mutating(self, name: str) -> bool:
+        command = SLASH_COMMANDS.get(name)
+        return command.mutating if command is not None else True
 
     def tool_description(self) -> str:
         return slash_invoke_tool_description()
@@ -112,7 +130,8 @@ class ReplSlashPorts:
         is_tty: bool | None,
         policy_precleared: bool = False,
     ) -> bool:
-        return dispatch_slash(
+        dispatch = functools.partial(
+            dispatch_slash,
             command,
             session,
             console,
@@ -120,6 +139,16 @@ class ReplSlashPorts:
             is_tty=is_tty,
             policy_precleared=policy_precleared,
         )
+        # A list observation can feed the next action in the same agent turn.
+        # Suspend the prompt for rendering instead of ending that turn with a
+        # queued command that loses the remaining work (e.g. remove by task ID).
+        try:
+            is_cron_list = shlex.split(command)[:2] == ["/cron", "list"]
+        except ValueError:
+            is_cron_list = False
+        if is_tty is not False and self.tty_interactive() and is_cron_list:
+            return with_exclusive_output(session, dispatch)
+        return dispatch()
 
 
 class HeadlessSlashPorts(ReplSlashPorts):

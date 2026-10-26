@@ -34,6 +34,7 @@ import integrations.coralogix.setup as coralogix_setup
 import integrations.dagster.setup as dagster_setup
 import integrations.datadog.setup as datadog_setup
 import integrations.gitlab.setup as gitlab_setup
+import integrations.google_docs as google_docs_setup
 import integrations.grafana.setup as grafana_setup
 import integrations.groundcover.setup as groundcover_setup
 import integrations.helm.setup as helm_setup
@@ -45,7 +46,6 @@ import integrations.mongodb.setup as mongodb_setup
 import integrations.mongodb_atlas.setup as mongodb_atlas_setup
 import integrations.mysql.setup as mysql_setup
 import integrations.new_relic.setup as new_relic_setup
-import integrations.openclaw.setup as openclaw_setup
 import integrations.opensearch.setup as opensearch_setup
 import integrations.pagerduty.setup as pagerduty_setup
 import integrations.postgresql.setup as postgresql_setup
@@ -65,7 +65,6 @@ import integrations.temporal.setup as temporal_setup
 import integrations.tracer.setup as tracer_setup
 import integrations.vercel.setup as vercel_setup
 import integrations.whatsapp.setup as whatsapp_setup
-import integrations.x_mcp.setup as x_mcp_setup
 
 # Answers for *prompted* fields only. Constant fields are injected by the flow.
 _ANSWERS: dict[str, dict[str, str]] = {
@@ -92,6 +91,10 @@ _ANSWERS: dict[str, dict[str, str]] = {
         "base_url": "https://gitlab.example.com/api/v4",
         "auth_token": "glpat-gitlab-token",
     },
+    "google_docs": {
+        "credentials_file": "/opt/opensre/google-docs-sa.json",
+        "folder_id": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
+    },
     "sentry": {
         "base_url": "https://sentry.example.com",
         "organization_slug": "checkout-org",
@@ -99,7 +102,7 @@ _ANSWERS: dict[str, dict[str, str]] = {
         "project_slug": "checkout-api",
     },
     "posthog": {
-        "base_url": "https://eu.i.posthog.com",
+        "base_url": "https://eu.posthog.com",
         "project_id": "40182",
         "personal_api_key": "phx-posthog-key",
     },
@@ -168,17 +171,12 @@ _ANSWERS: dict[str, dict[str, str]] = {
         "auth_token": "sentry-user-auth-token",
         "host": "sentry.checkout.internal",
     },
-    "x_mcp": {
-        "url": "https://x-mcp.checkout.internal/mcp",
-        "auth_token": "x-mcp-tunnel-token",
-    },
     "betterstack": {
         "query_endpoint": "https://eu-nbg-2-connect.betterstackdata.com",
         "username": "bs-user",
         "password": "bs-password",
         "sources": "t1_checkout,t2_api",
     },
-    "openclaw": {"command": "openclaw", "args": "mcp serve"},
     "servicenow": {
         "instance_url": "https://dev12345.service-now.com",
         "username": "opensre",
@@ -277,6 +275,7 @@ _CASES = [
     pytest.param(coralogix_setup, "CORALOGIX_SETUP", cli._setup_coralogix, id="coralogix"),
     pytest.param(groundcover_setup, "GROUNDCOVER_SETUP", cli._setup_groundcover, id="groundcover"),
     pytest.param(gitlab_setup, "GITLAB_SETUP", cli._setup_gitlab, id="gitlab"),
+    pytest.param(google_docs_setup, "GOOGLE_DOCS_SETUP", cli._setup_google_docs, id="google_docs"),
     pytest.param(sentry_setup, "SENTRY_SETUP", cli._setup_sentry, id="sentry"),
     pytest.param(posthog_setup, "POSTHOG_SETUP", cli._setup_posthog, id="posthog"),
     pytest.param(vercel_setup, "VERCEL_SETUP", cli._setup_vercel, id="vercel"),
@@ -296,9 +295,7 @@ _CASES = [
     pytest.param(tempo_setup, "TEMPO_SETUP", cli._setup_tempo, id="tempo"),
     pytest.param(posthog_mcp_setup, "POSTHOG_MCP_SETUP", cli._setup_posthog_mcp, id="posthog_mcp"),
     pytest.param(sentry_mcp_setup, "SENTRY_MCP_SETUP", cli._setup_sentry_mcp, id="sentry_mcp"),
-    pytest.param(x_mcp_setup, "X_MCP_SETUP", cli._setup_x_mcp, id="x_mcp"),
     pytest.param(betterstack_setup, "BETTERSTACK_SETUP", cli._setup_betterstack, id="betterstack"),
-    pytest.param(openclaw_setup, "OPENCLAW_SETUP", cli._setup_openclaw, id="openclaw"),
     pytest.param(servicenow_setup, "SERVICENOW_SETUP", cli._setup_servicenow, id="servicenow"),
     pytest.param(postgresql_setup, "POSTGRESQL_SETUP", cli._setup_postgresql, id="postgresql"),
     pytest.param(mysql_setup, "MYSQL_SETUP", cli._setup_mysql, id="mysql"),
@@ -378,7 +375,7 @@ def _install(
         state.verified.append(dict(config))
         return {"status": state.verify_status, "detail": state.verify_detail}
 
-    spec = dataclasses.replace(getattr(module, attr), verify=_fake_verify)
+    spec = dataclasses.replace(getattr(module, attr), guide=None, verify=_fake_verify)
     monkeypatch.setattr(module, attr, spec)
 
     answers = _ANSWERS[spec.service]
@@ -485,7 +482,7 @@ def test_blank_required_field_is_asked_again_not_fatal(
         run.verified.append(dict(config))
         return {"status": "passed", "detail": "ok"}
 
-    monkeypatch.setattr(module, attr, dataclasses.replace(spec, verify=_fake_verify))
+    monkeypatch.setattr(module, attr, dataclasses.replace(spec, guide=None, verify=_fake_verify))
     answers = _ANSWERS[spec.service]
     queue: list[str] = []
     for field in prompted:
@@ -539,7 +536,7 @@ def _drive_picker(
         run.verified.append(dict(config))
         return {"status": run.verify_status, "detail": run.verify_detail}
 
-    spec = dataclasses.replace(getattr(module, attr), verify=_fake_verify)
+    spec = dataclasses.replace(getattr(module, attr), guide=None, verify=_fake_verify)
     monkeypatch.setattr(module, attr, spec)
     if stored is not None:
         monkeypatch.setattr(

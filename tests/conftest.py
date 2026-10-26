@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 
 import pytest
 
 import config.constants.paths as paths
 from config.constants import (
+    OPENSRE_KNOWLEDGE_DIR_ENV,
     OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     OPENSRE_MEMORY_DIR_ENV,
 )
 from config.grafana_cloud import load_env
-from config.secrets.os_keyring import reset_keyring_state
 
 _ENV_PATH = paths.PROJECT_ROOT / ".env"
 
@@ -45,15 +46,39 @@ _disable_sentry()
 _mark_tests_for_analytics()
 
 
-@pytest.fixture(autouse=True)
-def _harness_ports_per_test() -> Iterator[None]:
-    """Wire harness ports before each test; reset after to avoid session leakage."""
-    from infrastructure.harness_ports import reset_harness_ports
-    from surfaces.shared.terminal.output.boundary import install_harness_ports
+# Harness provider wiring lives in ``tests/harness_providers_plugin.py`` (loaded
+# via ``pytest.ini``) so colocated skill tests outside ``tests/`` get it too.
 
-    install_harness_ports()
+
+@pytest.fixture(autouse=True)
+def _isolate_session_trace_store() -> Iterator[None]:
+    """Restore the process-global session trace store after every test.
+
+    ``create_repl_runtime`` installs a JSONL-backed store for the shell and never
+    removes it; under xdist that leaked store made later tests on the same worker
+    emit ``trace_span`` sidecars into session files they were asserting on.
+    """
+    from infrastructure.observability.trace.spans import (
+        get_session_trace_store,
+        set_session_trace_store,
+    )
+
+    previous = get_session_trace_store()
     yield
-    reset_harness_ports()
+    set_session_trace_store(previous)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_observation_sink() -> Iterator[None]:
+    """Restore the process-global LLM observation sink after every test."""
+    from infrastructure.observability.trace.observations import (
+        get_observation_sink,
+        set_observation_sink,
+    )
+
+    previous = get_observation_sink()
+    yield
+    set_observation_sink(previous)
 
 
 @pytest.fixture(autouse=True)
@@ -87,12 +112,10 @@ def _restore_os_environ():
 def _disable_system_keyring(request, monkeypatch) -> None:
     """Keep tests isolated from any real developer keychain entries.
 
-    The sticky "keyring unavailable" flag is process-global by design (one probe
-    decides for a whole run), so a test that deliberately provokes a backend
-    failure would otherwise leak that state into every later test on the same
-    xdist worker.
+    Local persistence still honours ``OPENSRE_DISABLE_KEYRING`` (env-only
+    mode). Setting it here keeps unit tests from writing
+    ``~/.opensre/credentials.json`` unless they opt back in.
     """
-    reset_keyring_state()
     if request.node.get_closest_marker("live_llm") is not None:
         return
     monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
@@ -114,7 +137,8 @@ def _isolate_opensre_home_files(request, monkeypatch, tmp_path) -> None:
     ``monkeypatch`` or by passing an explicit ``path=`` argument.
 
     Memory storage is also redirected for every test so deterministic prompt
-    snapshots never read the developer's real ``~/.opensre/memory`` directory.
+    snapshots never read the developer's real ``~/.opensre/memory`` directory
+    (or the workspace ``knowledge`` directory beside it).
     Background memory extraction is disabled by default because most tests use
     tiny fake LLM clients and assert the exact prompt/stream call shape; the
     memory-specific tests remove this env var in their own fixture.
@@ -126,16 +150,81 @@ def _isolate_opensre_home_files(request, monkeypatch, tmp_path) -> None:
     env var.
     """
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
+    monkeypatch.setenv(OPENSRE_KNOWLEDGE_DIR_ENV, str(tmp_path / "knowledge"))
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     if request.node.get_closest_marker("live_llm") is not None:
         return
     monkeypatch.setenv("OPENSRE_WIZARD_STORE_PATH", str(tmp_path / "opensre.json"))
     monkeypatch.setenv("OPENSRE_LLM_AUTH_METADATA_PATH", str(tmp_path / "llm-auth.json"))
-    # Same reasoning for the fallback credential store, which ``host_home()``
-    # resolves from this module global at call time: a test that provokes a
-    # keyring failure would otherwise write real secrets into the developer's
-    # ~/.opensre/credentials.json and leave them there.
+    # Same reasoning for the local credentials file, which ``host_home()``
+    # resolves from this module global at call time: a test that writes a
+    # secret would otherwise land it in the developer's
+    # ~/.opensre/credentials.json.
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path / "opensre-home")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ci_fix_counters() -> Iterator[None]:
+    """Release counter caches and listeners without importing unused GitHub modules."""
+
+    def reset() -> None:
+        ledger = sys.modules.get("integrations.github.tools.ci_fix.ledger")
+        if ledger is not None:
+            ledger.reset_ci_fix_counters()
+
+    reset()
+    try:
+        yield
+    finally:
+        reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_account_integrations_cache() -> Iterator[None]:
+    """Forget the remote-integrations snapshot without importing the module eagerly.
+
+    The cache is process-global with a TTL, so a test that fakes the webapp
+    response would otherwise serve its snapshot to every later test on the
+    same xdist worker.
+    """
+
+    def reset() -> None:
+        module = sys.modules.get("integrations.account_integrations")
+        if module is not None:
+            module.reset_account_integrations_cache()
+        vault = sys.modules.get("integrations.webapp_vault")
+        if vault is not None:
+            vault.reset_webapp_vault_cache()
+
+    reset()
+    try:
+        yield
+    finally:
+        reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_tool_prefetches() -> Iterator[None]:
+    """Forget prefetched scans and analyses without importing their tools eagerly.
+
+    The registries are process-global, so a prefetch one test started would
+    otherwise answer a later test's tool call on the same xdist worker.
+    """
+
+    def reset() -> None:
+        for name, reset_name in (
+            ("tools.system.workspace_git_scan.prefetch", "reset_scan_prefetch"),
+            ("integrations.github.tools.ci_analytics.prefetch", "reset_analysis_prefetch"),
+        ):
+            module = sys.modules.get(name)
+            if module is not None:
+                getattr(module, reset_name)()
+
+    reset()
+    try:
+        yield
+    finally:
+        reset()
 
 
 @pytest.fixture(autouse=True)

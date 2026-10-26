@@ -1,209 +1,125 @@
 """Per-kind message builders for scheduled tasks.
 
 Each task kind maps to a function that produces a formatted report string
-suitable for delivery to messaging providers.
-
-The daily_summary, weekly_audit, and synthetic_run kinds query the real
-investigation pipeline through the runner registered in
-:mod:`infrastructure.scheduling.scheduler.investigation_runner`. When the pipeline returns no
-findings, a clear quiet-period message is delivered. Pipeline failures raise
+suitable for delivery to messaging providers. Builders dispatch through the
+agent runner registered on :class:`SchedulerRunners`; failures raise
 RuntimeError so the executor records FAILED in cron logs without masking
 outages as success.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from datetime import UTC, datetime, timedelta
+from contextlib import AbstractContextManager
 
-from infrastructure.scheduling.scheduler.agent_runner import invoke_agent_runner
-from infrastructure.scheduling.scheduler.investigation_runner import invoke_investigation_runner
-from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from config.constants.scheduler import SCHEDULED_TASK_TRACE_KEY
+from config.credit_attribution import bound_credit_actor, credit_actor_id
+from config.scope_context import bound_storage_scope, current_scope
+from core.agent_harness import (
+    is_legacy_skill_name,
+    normalize_skill_name,
+    pin_recurring_skill,
+    resolve_scheduled_skill,
+)
+from infrastructure.observability.trace.trace_session import inherit_trace_session
+from infrastructure.scheduling.scheduler.loop_constants import LOOP_CREATED_BY_PARAM
+from infrastructure.scheduling.scheduler.loop_owner import unattended_scope
+from infrastructure.scheduling.scheduler.loop_prompt import current_loop_prompt
+from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
+from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.sources import (
+    SCHEDULED_GITHUB_PR_SWEEP,
+    SCHEDULED_MANUAL_LOOP,
+    SCHEDULED_POSTHOG_METRIC_REPORT,
+    SCHEDULED_RECURRING_SKILL,
+    SCHEDULED_SENTRY_MORNING_DIGEST,
+    SCHEDULED_SENTRY_UPTIME_WATCH,
+)
+from infrastructure.scheduling.scheduler.storage import patch_scheduler_skill_pin
 from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
 logger = logging.getLogger(__name__)
 
-# Keys that should never be forwarded to the investigation pipeline
+# Keys that should never be forwarded to the agent runner
 _CREDENTIAL_KEYS = frozenset({"bot_token", "access_token", "api_key", "webhook_url", "secret"})
 
+#: Trace tag on every turn a scheduled tick runs, so unattended work is filterable.
+SCHEDULED_TRACE_TAG = "scheduled"
 
-def build_message(task: ScheduledTask) -> str:
+
+def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Build the report message for a scheduled task based on its kind.
 
     Returns the formatted message string. Raises RuntimeError on unrecoverable
-    pipeline failures for kinds that invoke the investigation graph.
+    runner failures. Every turn the tick runs is traced under the hosting
+    session when there is one (the shell that started this scheduler), else
+    under the task id, so ticks of one loop share one trace session. A tick
+    fired from inside a turn (``/loops run``) inherits that turn's session and
+    still gains the scheduled tag and task metadata. Its credits are spent for
+    the loop's creator, unless the tick runs inside a member's turn. Outside a
+    turn, a private loop's tick acts as its owner, with their own accounts.
     """
+    with (
+        _acting_as_owner(task),
+        inherit_trace_session(
+            runners.host_session_id() or task.id,
+            tags=(SCHEDULED_TRACE_TAG,),
+            metadata={
+                SCHEDULED_TASK_TRACE_KEY: task.id,
+                "task_name": task.name,
+                "task_kind": task.kind.value,
+            },
+        ),
+        bound_credit_actor(_unattended_credit_actor(task)),
+    ):
+        return _build_message(task, runners)
+
+
+def _acting_as_owner(task: ScheduledTask) -> AbstractContextManager[object]:
+    """Bind a private loop's owner for a tick no member's turn is running; else nothing."""
+    if current_scope() is not None:
+        return contextlib.nullcontext()
+    scope = unattended_scope(task)
+    return bound_storage_scope(scope) if scope is not None else contextlib.nullcontext()
+
+
+def _unattended_credit_actor(task: ScheduledTask) -> str | None:
+    """The loop's creator when no member's turn is running this tick, else ``None``."""
+    if credit_actor_id() is not None:
+        return None
+    return str(task.params.get(LOOP_CREATED_BY_PARAM) or "").strip() or None
+
+
+def _build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     builders = {
-        TaskKind.DAILY_SUMMARY: _build_daily_summary,
-        TaskKind.WEEKLY_AUDIT: _build_weekly_audit,
-        TaskKind.INCIDENT_WINDOW_REPLAY: _build_incident_window_replay,
-        TaskKind.SYNTHETIC_RUN: _build_synthetic_run,
-        TaskKind.CUSTOM_INVESTIGATION: _build_custom_investigation,
+        TaskKind.MANUAL_LOOP: _build_manual_loop,
         TaskKind.SENTRY_MORNING_DIGEST: _build_sentry_morning_digest,
         TaskKind.SENTRY_UPTIME_WATCH: _build_sentry_uptime_watch,
         TaskKind.GITHUB_PR_SWEEP: _build_github_pr_sweep,
         TaskKind.POSTHOG_METRIC_REPORT: _build_posthog_metric_report,
         TaskKind.WORK_ITEM_REMINDER: _build_work_item_reminder,
         TaskKind.WORK_ITEM_CHECKIN: _build_work_item_checkin,
+        TaskKind.RECURRING_SKILL: _build_recurring_skill,
     }
     builder = builders.get(task.kind)
     if builder is None:
         return f"⚠️ Unknown task kind: {task.kind}"
-    return builder(task)
+    return builder(task, runners)
 
 
-def _build_daily_summary(task: ScheduledTask) -> str:
-    """Build a daily reliability digest by running the investigation pipeline.
-
-    Queries the pipeline with a 'daily_summary' source over the configured
-    window. Returns the pipeline report if available. Distinguishes between
-    'pipeline ran but found nothing' vs 'pipeline failed' in the fallback.
-    """
-    now = datetime.now(UTC)
-    window_start = now - timedelta(hours=task.window_hours)
-
-    try:
-        alert_payload = {
-            "source": "scheduled_daily_summary",
-            "task_id": task.id,
-            "window_hours": task.window_hours,
-            "kind": task.kind.value,
-            "window_start": window_start.isoformat(),
-            "window_end": now.isoformat(),
-        }
-        result = invoke_investigation_runner(alert_payload)
-        if result and result.get("report"):
-            return str(result["report"])
-        # Pipeline ran successfully but returned no report — genuinely quiet
-    except Exception as exc:
-        logger.error("Daily summary pipeline query failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"Daily summary failed for task {task.id}. Check logs for details."
-        ) from exc
-
-    return (
-        f"📊 <b>Daily Reliability Summary</b>\n\n"
-        f"Period: {window_start.strftime('%Y-%m-%d %H:%M')} → "
-        f"{now.strftime('%Y-%m-%d %H:%M')} UTC\n"
-        f"Window: {task.window_hours}h\n\n"
-        f"✅ No active incidents detected in the monitoring window.\n\n"
-        f"<i>Generated by OpenSRE scheduled delivery</i>"
-    )
-
-
-def _build_weekly_audit(task: ScheduledTask) -> str:
-    """Build a weekly noisy-alert audit by running the investigation pipeline.
-
-    Queries the pipeline with a 'weekly_audit' source over the configured
-    window. Returns the pipeline report if available. Distinguishes between
-    'pipeline ran but found nothing' vs 'pipeline failed' in the fallback.
-    """
-    now = datetime.now(UTC)
-    window_start = now - timedelta(hours=task.window_hours)
-
-    try:
-        alert_payload = {
-            "source": "scheduled_weekly_audit",
-            "task_id": task.id,
-            "window_hours": task.window_hours,
-            "kind": task.kind.value,
-            "window_start": window_start.isoformat(),
-            "window_end": now.isoformat(),
-        }
-        result = invoke_investigation_runner(alert_payload)
-        if result and result.get("report"):
-            return str(result["report"])
-    except Exception as exc:
-        logger.error("Weekly audit pipeline query failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"Weekly audit failed for task {task.id}. Check logs for details."
-        ) from exc
-
-    return (
-        f"📋 <b>Weekly Alert Audit</b>\n\n"
-        f"Period: {window_start.strftime('%Y-%m-%d')} → "
-        f"{now.strftime('%Y-%m-%d')} UTC\n\n"
-        f"✅ No noisy or actionable alerts found for the past {task.window_hours}h.\n\n"
-        f"<i>Generated by OpenSRE scheduled delivery</i>"
-    )
-
-
-def _build_incident_window_replay(task: ScheduledTask) -> str:
-    """Build an incident window replay report.
-
-    Attempts to run the investigation pipeline over the configured window.
-    On failure, raises RuntimeError so the executor records the failure
-    without leaking exception details to the chat.
-    """
-    try:
-        alert_payload = {
-            "source": "scheduled_replay",
-            "task_id": task.id,
-            "window_hours": task.window_hours,
-            "kind": task.kind.value,
-        }
-        result = invoke_investigation_runner(alert_payload)
-        if result and result.get("report"):
-            return str(result["report"])
-        return (
-            f"🔄 <b>Incident Window Replay</b>\n\n"
-            f"Window: {task.window_hours}h\n"
-            f"No incidents found in replay window.\n\n"
-            f"<i>Generated by OpenSRE scheduled delivery</i>"
-        )
-    except Exception as exc:
-        logger.error("Incident window replay failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"Incident window replay failed for task {task.id}. Check logs for details."
-        ) from exc
-
-
-def _build_synthetic_run(task: ScheduledTask) -> str:
-    """Build a synthetic test run summary by executing the synthetic suite.
-
-    Runs the synthetic test suite and reports results. On failure, raises
-    RuntimeError so the executor records the failure without leaking
-    exception details to the chat.
-    """
-    now = datetime.now(UTC)
-
-    try:
-        alert_payload = {
-            "source": "scheduled_synthetic",
-            "task_id": task.id,
-            "kind": task.kind.value,
-            "window_hours": task.window_hours,
-        }
-        result = invoke_investigation_runner(alert_payload)
-        if result and result.get("report"):
-            return str(result["report"])
-    except Exception as exc:
-        logger.error("Synthetic run failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"Synthetic run failed for task {task.id}. Check logs for details."
-        ) from exc
-
-    return (
-        f"🧪 <b>Synthetic Test Summary</b>\n\n"
-        f"Run time: {now.strftime('%Y-%m-%d %H:%M')} UTC\n\n"
-        f"No synthetic test results available.\n"
-        f"Configure synthetic probes to see results here.\n\n"
-        f"<i>Generated by OpenSRE scheduled delivery</i>"
-    )
-
-
-def _build_sentry_morning_digest(task: ScheduledTask) -> str:
-    """Build a Sentry morning digest via the headless sentry-summary skill path."""
+def _build_sentry_morning_digest(task: ScheduledTask, runners: SchedulerRunners) -> str:
+    """Build a Sentry morning digest via the headless summarizing-sentry-issues skill path."""
     try:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
             "stats_period": "24h",
             "query": "is:unresolved",
             **safe_params,
-            "source": "scheduled_sentry_morning_digest",
+            "source": SCHEDULED_SENTRY_MORNING_DIGEST,
             "task_id": task.id,
         }
-        return invoke_agent_runner(payload)
+        return runners.agent(payload)
     except Exception as exc:
         logger.error("Sentry morning digest failed for task %s: %s", task.id, exc)
         raise RuntimeError(
@@ -211,7 +127,7 @@ def _build_sentry_morning_digest(task: ScheduledTask) -> str:
         ) from exc
 
 
-def _build_sentry_uptime_watch(task: ScheduledTask) -> str:
+def _build_sentry_uptime_watch(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Poll Sentry uptime monitors; return a notify body only on transitions.
 
     Quiet ticks return an empty string so the executor skips delivery (#4032 v1).
@@ -222,10 +138,10 @@ def _build_sentry_uptime_watch(task: ScheduledTask) -> str:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
             **safe_params,
-            "source": "scheduled_sentry_uptime_watch",
+            "source": SCHEDULED_SENTRY_UPTIME_WATCH,
             "task_id": task.id,
         }
-        return invoke_agent_runner(payload)
+        return runners.agent(payload)
     except Exception as exc:
         logger.error("Sentry uptime watch failed for task %s: %s", task.id, exc)
         raise RuntimeError(
@@ -233,16 +149,16 @@ def _build_sentry_uptime_watch(task: ScheduledTask) -> str:
         ) from exc
 
 
-def _build_github_pr_sweep(task: ScheduledTask) -> str:
+def _build_github_pr_sweep(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Build a GitHub PR sweep digest via the headless agent path."""
     try:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
             **safe_params,
-            "source": "scheduled_github_pr_sweep",
+            "source": SCHEDULED_GITHUB_PR_SWEEP,
             "task_id": task.id,
         }
-        return invoke_agent_runner(payload)
+        return runners.agent(payload)
     except Exception as exc:
         logger.error("GitHub PR sweep failed for task %s: %s", task.id, exc)
         raise RuntimeError(
@@ -250,17 +166,17 @@ def _build_github_pr_sweep(task: ScheduledTask) -> str:
         ) from exc
 
 
-def _build_posthog_metric_report(task: ScheduledTask) -> str:
-    """Build a PostHog per-metric report via the headless posthog-summary skill path."""
+def _build_posthog_metric_report(task: ScheduledTask, runners: SchedulerRunners) -> str:
+    """Build a PostHog per-metric report via the headless summarizing-posthog-analytics skill path."""
     try:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
             "stats_period": "7d",
             **safe_params,
-            "source": "scheduled_posthog_metric_report",
+            "source": SCHEDULED_POSTHOG_METRIC_REPORT,
             "task_id": task.id,
         }
-        return invoke_agent_runner(payload)
+        return runners.agent(payload)
     except Exception as exc:
         logger.error("PostHog metric report failed for task %s: %s", task.id, exc)
         raise RuntimeError(
@@ -268,7 +184,7 @@ def _build_posthog_metric_report(task: ScheduledTask) -> str:
         ) from exc
 
 
-def _build_work_item_reminder(task: ScheduledTask) -> str:
+def _build_work_item_reminder(task: ScheduledTask, _runners: SchedulerRunners) -> str:
     """Build a one-shot reminder for a durable work item.
 
     Missing or already-completed work items produce a quiet tick so stale
@@ -294,7 +210,7 @@ def _build_work_item_reminder(task: ScheduledTask) -> str:
     return build_work_item_reminder_message(item)
 
 
-def _build_work_item_checkin(task: ScheduledTask) -> str:
+def _build_work_item_checkin(task: ScheduledTask, _runners: SchedulerRunners) -> str:
     """Build a recurring prioritization check-in for durable work items."""
     from pathlib import Path
 
@@ -312,60 +228,116 @@ def _build_work_item_checkin(task: ScheduledTask) -> str:
     return build_work_item_checkin_message(active_items, project=project, limit=limit)
 
 
-def _build_custom_investigation(task: ScheduledTask) -> str:
-    """Run a custom investigation and return the report.
+def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
+    """Build a manual prompt-loop report via the headless assistant path.
 
     On failure, raises RuntimeError so the executor records the failure
     without leaking exception details to the chat.
     """
     try:
-        # Strip credential keys before passing params to the pipeline
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        prompt = safe_params.get(LOOP_PROMPT_PARAM, "").strip()
-        if prompt:
-            return _build_manual_prompt_loop(task, safe_params, prompt)
-        alert_payload = {
-            "source": "scheduled_custom",
-            "task_id": task.id,
-            "alert_name": task.name or "Manual loop",
-            "window_hours": task.window_hours,
-            "kind": task.kind.value,
+        prompt = current_loop_prompt(safe_params)
+        if not prompt:
+            return f"⚠️ Manual loop task {task.id} has no prompt configured."
+        payload = {
             **safe_params,
+            "source": SCHEDULED_MANUAL_LOOP,
+            "task_id": task.id,
+            "name": task.name,
+            "task_name": task.name,
+            "loop_prompt": prompt,
+            "window_hours": task.window_hours,
+            "timezone": task.timezone,
         }
-        result = invoke_investigation_runner(alert_payload)
-        if result and result.get("report"):
-            return str(result["report"])
-        title = task.name or "Custom Investigation"
-        prompt_line = f"Prompt: {prompt}\n" if prompt else f"Task: {task.id}\n"
-        return (
-            f"🔍 <b>{title}</b>\n\n"
-            f"{prompt_line}"
-            f"No findings from custom investigation.\n\n"
-            f"<i>Generated by OpenSRE scheduled delivery</i>"
-        )
+        return runners.agent(payload)
     except Exception as exc:
-        logger.error("Custom investigation failed for task %s: %s", task.id, exc)
+        logger.error("Manual loop failed for task %s: %s", task.id, exc)
         raise RuntimeError(
-            f"Custom investigation failed for task {task.id}. Check logs for details."
+            f"Manual loop failed for task {task.id}. Check logs for details."
         ) from exc
 
 
-def _build_manual_prompt_loop(
-    task: ScheduledTask,
-    safe_params: dict[str, str],
-    prompt: str,
-) -> str:
-    """Build a manual loop report via the headless assistant path, not RCA."""
-    payload = {
-        **safe_params,
-        "source": "scheduled_manual_loop",
-        "task_id": task.id,
-        "name": task.name,
-        "task_name": task.name,
-        "loop_prompt": prompt,
-        "window_hours": task.window_hours,
-    }
-    return invoke_agent_runner(payload)
+def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> str:
+    """Run a pinned recurring action skill via the headless agent path."""
+    skill_name = task.skill_name.strip()
+    if not skill_name:
+        raise RuntimeError(f"Recurring skill task {task.id} is missing skill_name.")
+    if is_legacy_skill_name(skill_name):
+        _migrate_renamed_skill(task)
+    resolved = resolve_scheduled_skill(task.skill_name, task.skill_revision)
+    if resolved.repinned:
+        _record_followed_revision(task, resolved.revision)
+    return runners.agent(
+        {
+            "source": SCHEDULED_RECURRING_SKILL,
+            "task_id": task.id,
+            "skill_name": task.skill_name,
+            "skill_revision": task.skill_revision,
+            "skill_inputs": dict(task.skill_inputs),
+        }
+    )
 
 
-__all__ = ["build_message"]
+def _record_followed_revision(task: ScheduledTask, revision: str) -> None:
+    """Store the pin of a skill edit the schedule followed, and report the change."""
+    previous = task.skill_revision
+    task.skill_revision = revision
+    stored = patch_scheduler_skill_pin(
+        task.id,
+        previous_name=task.skill_name,
+        previous_revision=previous,
+        skill_name=task.skill_name,
+        skill_revision=revision,
+    )
+    if stored is None:
+        logger.warning(
+            "Recurring skill task %s is not in the task store; running with an unsaved pin.",
+            task.id,
+        )
+        return
+    if stored.skill_name != task.skill_name or stored.skill_revision != revision:
+        return
+    record_scheduler_task_operation(
+        "scheduled_skill_revision_changed",
+        stored,
+        extra={"from_revision": previous[:24], "to_revision": revision[:24]},
+    )
+
+
+def _migrate_renamed_skill(task: ScheduledTask) -> None:
+    """Move a persisted schedule from a retired skill slug to its successor.
+
+    The revision pin is recomputed because a rename rewrites the body's own
+    name references; only slugs listed in ``LEGACY_SKILL_NAMES`` qualify, so
+    this never accepts an arbitrary recipe change unattended.
+    """
+    previous = task.skill_name
+    previous_revision = task.skill_revision
+    skill_name, skill_revision = pin_recurring_skill(normalize_skill_name(previous))
+    task.skill_name = skill_name
+    task.skill_revision = skill_revision
+    stored = patch_scheduler_skill_pin(
+        task.id,
+        previous_name=previous,
+        previous_revision=previous_revision,
+        skill_name=skill_name,
+        skill_revision=skill_revision,
+    )
+    if stored is None:
+        logger.warning(
+            "Recurring skill task %s (%s -> %s) is not in the task store; running unmigrated.",
+            task.id,
+            previous,
+            skill_name,
+        )
+        return
+    if stored.skill_name != skill_name or stored.skill_revision != skill_revision:
+        return
+    record_scheduler_task_operation(
+        "scheduled_skill_renamed",
+        stored,
+        extra={"from_skill_name": previous},
+    )
+
+
+__all__ = ["SCHEDULED_TRACE_TAG", "build_message"]

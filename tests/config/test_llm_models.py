@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from config.config import LLMSettings
 from config.llm_auth.provider_catalog import PROVIDER_SPECS
 from config.llm_models import PROVIDER_MODEL_DEFAULTS, model_config_for
+from config.llm_settings import LLMSettings
 
 
 def test_provider_model_defaults_cover_tiered_provider_specs() -> None:

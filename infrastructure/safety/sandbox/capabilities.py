@@ -39,7 +39,10 @@ def _python_available() -> bool:
     from infrastructure.safety.sandbox.runner import run_python_sandbox
 
     result = run_python_sandbox("print(1 + 1)")
-    return "2" in str(getattr(result, "stdout", ""))
+    return (
+        bool(getattr(result, "success", False))
+        and str(getattr(result, "stdout", "")).strip() == "2"
+    )
 
 
 def _shell_available() -> bool:
@@ -75,7 +78,7 @@ def _network_available() -> bool:
     from infrastructure.safety.sandbox.runner import run_python_sandbox
 
     result = run_python_sandbox("import socket; socket.socket()")
-    return "Network access is not permitted" not in str(getattr(result, "stderr", ""))
+    return bool(getattr(result, "success", False))
 
 
 #: Probes are held by name, not by reference, so they resolve through the module

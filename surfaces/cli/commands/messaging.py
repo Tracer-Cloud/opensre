@@ -9,52 +9,13 @@ from rich.console import Console
 
 from integrations.messaging_security import (
     MessagingIdentityPolicy,
-    MessagingPlatform,
     generate_pairing_code,
     hash_pairing_code,
 )
 from integrations.store import get_integration, upsert_instance
+from surfaces.shared.messaging_options import messaging_parameters, validate_allow_user_id
 
 _console = Console(highlight=False)
-
-_PLATFORM_CHOICES = [p.value for p in MessagingPlatform]
-
-
-def _validate_allow_user_id(platform: str, user_id: str) -> str:
-    """Normalize + validate a user id for ``allow``; raise on non-native values.
-
-    Inbound authorization matches the platform-native user id (Telegram
-    ``from.id``, Slack ``user_id``, Discord member id) — never a ``@username``.
-    Accepting a handle silently produces an allow-list entry that can never
-    match a real sender, which is exactly the "user X is not allowed" trap.
-    """
-    uid = user_id.strip()
-    if not uid:
-        raise click.BadParameter("user id must not be empty.", param_hint="--user-id")
-    if uid.startswith("@"):
-        raise click.BadParameter(
-            f"'{uid}' is a @username, not a platform user id. Inbound auth matches the "
-            "numeric platform user id, not the handle — get it from @userinfobot or the "
-            "bot's getUpdates response.",
-            param_hint="--user-id",
-        )
-    if platform == MessagingPlatform.TELEGRAM.value and not uid.isdigit():
-        raise click.BadParameter(
-            f"Telegram user ids are numeric (e.g. 6514715683); got '{uid}'. Use the numeric "
-            "from.id, not a username or display name.",
-            param_hint="--user-id",
-        )
-    if platform == MessagingPlatform.BUZZ.value and not _is_hex_pubkey(uid):
-        raise click.BadParameter(
-            f"Buzz user ids are 64-char hex Nostr pubkeys; got '{uid}'. Use the sender's "
-            "hex pubkey (from `buzz messages get` output), not an npub or display name.",
-            param_hint="--user-id",
-        )
-    return uid
-
-
-def _is_hex_pubkey(value: str) -> bool:
-    return len(value) == 64 and all(c in "0123456789abcdefABCDEF" for c in value)
 
 
 def _load_identity_policy(service: str) -> tuple[dict | None, MessagingIdentityPolicy]:
@@ -124,14 +85,7 @@ def messaging(ctx: click.Context) -> None:
         click.echo(ctx.get_help())
 
 
-@messaging.command("pair")
-@click.option(
-    "--platform",
-    "-p",
-    type=click.Choice(_PLATFORM_CHOICES, case_sensitive=False),
-    required=True,
-    help="Messaging platform to pair with.",
-)
+@messaging.command("pair", params=messaging_parameters("pair"))
 def pair_command(platform: str) -> None:
     """Generate a one-time pairing code for DM authentication.
 
@@ -169,24 +123,11 @@ def pair_command(platform: str) -> None:
     _console.print("[dim]The code is single-use and will expire in 15 minutes.[/dim]\n")
 
 
-@messaging.command("allow")
-@click.option(
-    "--platform",
-    "-p",
-    type=click.Choice(_PLATFORM_CHOICES, case_sensitive=False),
-    required=True,
-    help="Messaging platform.",
-)
-@click.option(
-    "--user-id",
-    "-u",
-    required=True,
-    help="Platform-native user ID to add to the allowed list.",
-)
+@messaging.command("allow", params=messaging_parameters("allow"))
 def allow_command(platform: str, user_id: str) -> None:
     """Manually add a user to the allowed-users list (bypasses DM pairing)."""
     service = platform.lower()
-    user_id = _validate_allow_user_id(service, user_id)
+    user_id = validate_allow_user_id(service, user_id)
     record, policy = _load_identity_policy(service)
 
     if user_id in policy.allowed_user_ids:
@@ -206,20 +147,7 @@ def allow_command(platform: str, user_id: str) -> None:
     _console.print(f"[green]Added user {user_id} to {platform} allowed list.[/green]")
 
 
-@messaging.command("revoke")
-@click.option(
-    "--platform",
-    "-p",
-    type=click.Choice(_PLATFORM_CHOICES, case_sensitive=False),
-    required=True,
-    help="Messaging platform.",
-)
-@click.option(
-    "--user-id",
-    "-u",
-    required=True,
-    help="Platform-native user ID to remove from the allowed list.",
-)
+@messaging.command("revoke", params=messaging_parameters("revoke"))
 def revoke_command(platform: str, user_id: str) -> None:
     """Remove a user from the allowed-users list."""
     service = platform.lower()
@@ -242,14 +170,7 @@ def revoke_command(platform: str, user_id: str) -> None:
     _console.print(f"[green]Removed user {user_id} from {platform} allowed list.[/green]")
 
 
-@messaging.command("status")
-@click.option(
-    "--platform",
-    "-p",
-    type=click.Choice(_PLATFORM_CHOICES, case_sensitive=False),
-    required=True,
-    help="Messaging platform.",
-)
+@messaging.command("status", params=messaging_parameters("status"))
 def status_command(platform: str) -> None:
     """Show the current messaging security status for a platform."""
     service = platform.lower()

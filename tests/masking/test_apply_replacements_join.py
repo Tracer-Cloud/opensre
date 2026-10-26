@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from infrastructure.safety.masking.context import MaskingContext
 from infrastructure.safety.masking.detectors import DetectedIdentifier
 from infrastructure.safety.masking.policy import MaskingPolicy
+from infrastructure.safety.masking.rules import MaskingRules
 
 
 def test_apply_replacements_preserves_gaps_and_order() -> None:
     # Arrange
-    ctx = MaskingContext(policy=MaskingPolicy.model_validate({"enabled": True, "kinds": ()}))
+    ctx = MaskingRules(policy=MaskingPolicy.model_validate({"enabled": True, "kinds": ()}))
     text = "aaa BBB ccc DDD eee"
     matches = [
         DetectedIdentifier(kind="x", start=4, end=7, value="BBB"),
@@ -26,7 +26,7 @@ def test_apply_replacements_preserves_gaps_and_order() -> None:
 
 def test_apply_replacements_skips_overlapping_later_span() -> None:
     # Arrange — second span overlaps first; forward pass must keep the first.
-    ctx = MaskingContext(policy=MaskingPolicy.model_validate({"enabled": True, "kinds": ()}))
+    ctx = MaskingRules(policy=MaskingPolicy.model_validate({"enabled": True, "kinds": ()}))
     text = "abcdefghij"
     matches = [
         DetectedIdentifier(kind="long", start=0, end=6, value="abcdef"),
@@ -50,7 +50,7 @@ def test_mask_end_to_end_with_many_non_overlapping_hits() -> None:
             "extra_patterns": {"tok": r"\b(T\d+)\b"},
         }
     )
-    ctx = MaskingContext(policy=policy)
+    ctx = MaskingRules(policy=policy)
     original = "start T1 mid T2 end T3"
     masked = ctx.mask(original)
     assert masked.count("<TOK_") == 3

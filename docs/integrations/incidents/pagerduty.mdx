@@ -1,0 +1,111 @@
+---
+title: "PagerDuty"
+description: "Connect PagerDuty so OpenSRE can read incidents, on-call schedules, and service topology"
+---
+
+## Overview
+
+OpenSRE queries PagerDuty for active incidents, timelines, on-call responders, and
+service / escalation-policy configuration so the agent can correlate incident
+management data with infrastructure events.
+
+## Prerequisites
+
+- PagerDuty account
+- REST API key with read access
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup pagerduty
+```
+
+Provide your API key when prompted.
+
+### Option 2: Environment variables
+
+```bash
+PAGERDUTY_API_KEY=your-api-key
+PAGERDUTY_BASE_URL=https://api.pagerduty.com   # optional
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PAGERDUTY_API_KEY` | — | **Required.** PagerDuty REST API v2 key |
+| `PAGERDUTY_BASE_URL` | `https://api.pagerduty.com` | Override only for EU or custom instances |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "pagerduty-prod",
+      "service": "pagerduty",
+      "status": "active",
+      "credentials": {
+        "api_key": "your-api-key"
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+1. In PagerDuty, go to **Integrations** → **Developer Tools** → **API Access Keys**
+2. Click **Create New API Key**
+3. Add a description (for example `opensre read-only`)
+4. Copy the key immediately — it is shown only once
+
+<Info>
+PagerDuty API keys are account-level. Use a read-only key for least privilege.
+</Info>
+
+## Tools
+
+| Tool | Description |
+| --- | --- |
+| `pagerduty_incidents` | List and search incidents (status, urgency, service, time range) |
+| `pagerduty_incident_detail` | Full incident details and activity timeline (log entries) |
+| `pagerduty_oncall` | Current on-call responders by escalation policy |
+| `pagerduty_services` | Services with escalation policies, integrations, and alert routing |
+
+When investigating an incident, OpenSRE may use these tools to:
+
+- Find incidents around the alert time window
+- Identify who was on-call and how quickly incidents were acknowledged
+- Map services and escalation policies involved
+- Correlate PagerDuty timelines with Grafana / Datadog metrics
+
+## Verify
+
+```bash
+opensre integrations verify pagerduty
+```
+
+Expected output:
+
+```
+Service: pagerduty
+Status: passed
+Detail: Connected to PagerDuty; API key accepted.
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check the API key — use a valid REST API v2 key |
+| **403 Forbidden** | The key may lack required permissions; recreate with full read access |
+| **429 Rate Limited** | PagerDuty limits apply (about 960 requests/min); reduce query frequency |
+| **No incidents returned** | Check time-range filters — default returns recent incidents only |
+
+## Security
+
+- Use a **read-only API key** — OpenSRE does not need to modify PagerDuty resources.
+- Store the API key in `.env` or your secret manager — not in source control.
+- Rotate API keys periodically via PagerDuty Developer Tools.

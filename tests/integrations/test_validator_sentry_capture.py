@@ -126,13 +126,6 @@ CASES: tuple[MigrationCase, ...] = (
     ),
     MigrationCase("integrations/azure_sql.py", "get_slow_queries", "azure_sql", "get_slow_queries"),
     MigrationCase("integrations/azure_sql.py", "get_wait_stats", "azure_sql", "get_wait_stats"),
-    # openclaw
-    MigrationCase(
-        "integrations/openclaw.py",
-        "validate_openclaw_config",
-        "openclaw",
-        "validate_openclaw_config",
-    ),
     # betterstack
     MigrationCase(
         "integrations/betterstack.py",
@@ -143,7 +136,10 @@ CASES: tuple[MigrationCase, ...] = (
     MigrationCase("integrations/betterstack.py", "query_logs", "betterstack", "query_logs"),
     # gitlab
     MigrationCase(
-        "integrations/gitlab.py", "validate_gitlab_config", "gitlab", "validate_gitlab_config"
+        "integrations/gitlab/client.py",
+        "validate_gitlab_config",
+        "gitlab",
+        "validate_gitlab_config",
     ),
     # bitbucket
     MigrationCase(

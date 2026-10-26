@@ -222,7 +222,7 @@ def test_cli_backed_client_invoke_forwards_kimi_env(mock_run: MagicMock) -> None
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
     with (
-        patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr,
+        patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr,
         patch.dict(
             os.environ,
             {
@@ -277,7 +277,7 @@ def test_cli_backed_client_retries_on_ex_tempfail(
     success = MagicMock(returncode=0, stdout="answer\n", stderr="")
     mock_run.side_effect = [tempfail, success]
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model="kimi-k2.5", max_tokens=256)
         resp = client.invoke("hello")
@@ -320,7 +320,7 @@ def test_cli_backed_client_raises_after_all_tempfail_retries(
     tempfail = MagicMock(returncode=75, stdout="To resume this session: kimi -r abc", stderr="")
     mock_run.side_effect = [tempfail] * (_TEMPFAIL_MAX_RETRIES + 1)
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model="kimi-k2.5", max_tokens=256)
         with pytest.raises(RuntimeError):
@@ -385,7 +385,7 @@ def test_cli_backed_client_exit_75_raises_cli_timeout_error(mock_run: MagicMock)
     )
     mock_run.return_value = MagicMock(returncode=75, stdout="", stderr="rate limit")
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model="kimi-k2.5", max_tokens=256)
         with pytest.raises(CLITimeoutError, match="exit 75"):

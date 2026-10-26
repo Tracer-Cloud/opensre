@@ -14,6 +14,13 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
+from config.constants.kafka import (
+    KAFKA_BOOTSTRAP_SERVERS_ENV,
+    KAFKA_SASL_MECHANISM_ENV,
+    KAFKA_SASL_PASSWORD_ENV,
+    KAFKA_SASL_USERNAME_ENV,
+    KAFKA_SECURITY_PROTOCOL_ENV,
+)
 from config.strict_config import StrictConfigModel
 from core.tool_framework.utils import tool_unavailable
 from integrations._validation_helpers import report_validation_failure
@@ -91,18 +98,18 @@ def build_kafka_config(raw: dict[str, Any] | None) -> KafkaConfig:
 
 def kafka_config_from_env() -> KafkaConfig | None:
     """Load a Kafka config from env vars."""
-    bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip()
+    bootstrap_servers = os.getenv(KAFKA_BOOTSTRAP_SERVERS_ENV, "").strip()
     if not bootstrap_servers:
         return None
     return build_kafka_config(
         {
             "bootstrap_servers": bootstrap_servers,
             "security_protocol": os.getenv(
-                "KAFKA_SECURITY_PROTOCOL", DEFAULT_KAFKA_SECURITY_PROTOCOL
+                KAFKA_SECURITY_PROTOCOL_ENV, DEFAULT_KAFKA_SECURITY_PROTOCOL
             ).strip(),
-            "sasl_mechanism": os.getenv("KAFKA_SASL_MECHANISM", "").strip(),
-            "sasl_username": os.getenv("KAFKA_SASL_USERNAME", "").strip(),
-            "sasl_password": os.getenv("KAFKA_SASL_PASSWORD", "").strip(),
+            "sasl_mechanism": os.getenv(KAFKA_SASL_MECHANISM_ENV, "").strip(),
+            "sasl_username": os.getenv(KAFKA_SASL_USERNAME_ENV, "").strip(),
+            "sasl_password": os.getenv(KAFKA_SASL_PASSWORD_ENV, "").strip(),
         }
     )
 

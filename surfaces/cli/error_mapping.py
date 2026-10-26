@@ -7,10 +7,20 @@ from typing import NoReturn
 
 def reraise_cli_runtime_error(exc: BaseException) -> NoReturn:
     """Convert CLI auth/setup failures to structured CLI UX errors."""
-    from core.llm.shared.llm_retry import LLMCreditExhaustedError
+    from core.llm.shared.llm_retry import (
+        LLMCreditExhaustedError,
+        OpenSRECreditsExhaustedError,
+    )
     from core.llm_invoke_errors import classify_llm_invoke_failure
-    from integrations.llm_cli.errors import CLIAuthenticationRequired
+    from integrations.llm_cli import CLIAuthenticationRequired
     from surfaces.shared.error_handling.errors import OpenSREError
+
+    if isinstance(exc, OpenSRECreditsExhaustedError):
+        destination = exc.upgrade_url or "the OpenSRE Usage page"
+        raise OpenSREError(
+            str(exc),
+            suggestion=f"Upgrade your plan or buy a credit top-up at {destination}.",
+        ) from exc
 
     if isinstance(exc, LLMCreditExhaustedError):
         raise OpenSREError(

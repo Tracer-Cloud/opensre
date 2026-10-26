@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-import surfaces.cli.wizard._ui as ui
+import surfaces.cli.wizard.components as ui
 from surfaces.cli.wizard.custom_endpoints import (
     CUSTOM_ENDPOINT_SELECTION,
     ensure_endpoint_settings,
@@ -34,7 +34,7 @@ def test_configured_custom_anthropic_strips_trailing_v1(monkeypatch: Any) -> Non
 def test_unset_endpoint_prompts(monkeypatch: Any) -> None:
     # When the endpoint env is unset the module prompts; stub the prompt to a value.
     monkeypatch.delenv("CUSTOM_OPENAI_BASE_URL", raising=False)
-    monkeypatch.setattr(ui, "_prompt_value", lambda *_a, **_k: "http://gw.internal:8000/v1")
+    monkeypatch.setattr(ui, "prompt_value", lambda *_a, **_k: "http://gw.internal:8000/v1")
     result = ensure_endpoint_settings(PROVIDER_BY_VALUE["custom-openai"])
     assert result == {"CUSTOM_OPENAI_BASE_URL": "http://gw.internal:8000/v1"}
 
@@ -43,7 +43,7 @@ def test_unset_endpoint_prompts(monkeypatch: Any) -> None:
 def test_blank_prompt_is_rejected(monkeypatch: Any, slug: str) -> None:
     endpoint_env = PROVIDER_BY_VALUE[slug].endpoint_env
     monkeypatch.delenv(endpoint_env, raising=False)
-    monkeypatch.setattr(ui, "_prompt_value", lambda *_a, **_k: "")
+    monkeypatch.setattr(ui, "prompt_value", lambda *_a, **_k: "")
     assert ensure_endpoint_settings(PROVIDER_BY_VALUE[slug]) is None
 
 
@@ -78,7 +78,7 @@ def test_custom_choice_opens_compatibility_dropdown(monkeypatch: Any) -> None:
         captured["default"] = kwargs["default"]
         return "custom-anthropic"
 
-    monkeypatch.setattr("surfaces.cli.wizard._ui._choose", _choose_compatibility)
+    monkeypatch.setattr("surfaces.cli.wizard.components.choose", _choose_compatibility)
 
     result = resolve_onboarding_provider(
         CUSTOM_ENDPOINT_SELECTION,

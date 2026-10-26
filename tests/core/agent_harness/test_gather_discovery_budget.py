@@ -13,6 +13,8 @@ This guard caps discovery-style MCP bridge calls (``list_*_tools`` /
 
 from __future__ import annotations
 
+from typing import Any
+
 from core.agent_harness.turns.gather_discovery_budget import (
     DEFAULT_MAX_DISCOVERY_CALLS,
     is_gather_discovery_call,
@@ -22,7 +24,12 @@ from core.agent_harness.turns.gather_discovery_budget import (
     with_gather_discovery_budget,
 )
 from core.llm.types import ToolCall
+from core.tool.contracts import AgentTool, AgentToolContext
 from core.tool.execution import ToolExecutionRequest, ToolExecutionResult
+
+
+def _execute_tool(_arguments: dict[str, Any], _context: AgentToolContext) -> None:
+    """Provide the execution contract for request metadata used by hook tests."""
 
 
 def _request(
@@ -31,9 +38,16 @@ def _request(
     *,
     source: str = "posthog_mcp",
 ) -> ToolExecutionRequest:
+    runtime_tool = AgentTool(
+        name=tool,
+        description="Test tool",
+        input_schema={"type": "object"},
+        execute=_execute_tool,
+        source=source,
+    )
     return ToolExecutionRequest(
         tool_call=ToolCall(id="tc", name=tool, input=arguments),
-        tool=type("T", (), {"source": source})(),  # type: ignore[arg-type]
+        tool=runtime_tool,
         arguments=arguments,
         source=source,
         resolved_integrations={},
@@ -264,8 +278,8 @@ def test_data_fetching_targets_are_not_discovery() -> None:
     """A bridge target that fetches evidence must not spend the discovery budget.
 
     Only ``execute-sql`` and ``query-*`` were treated as real queries, so every
-    other vendor's fetch — Sentry ``issue_get``, X ``search_tweets``, OpenClaw
-    ``conversations_get`` — counted as discovery. That exhausts the allowance
+    other vendor's fetch — Sentry ``issue_get`` or X ``search_tweets`` — counted
+    as discovery. That exhausts the allowance
     and lets the goal reviewer reject a gather that already fetched what was
     asked for.
     """

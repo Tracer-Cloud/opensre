@@ -27,6 +27,7 @@ from config.constants.rocketchat import (
     ROCKETCHAT_USER_ID_ENV,
 )
 from config.constants.slack import (
+    SLACK_ACCESS_TOKEN_ENV,
     SLACK_BOT_TOKEN_ENV,
     SLACK_DEFAULT_CHAT_ID_ENV,
     SLACK_WEBHOOK_URL_ENV,
@@ -130,7 +131,7 @@ def _resolve_slack_with_source(task_params: dict[str, str]) -> tuple[dict[str, s
     if store_token:
         return {"access_token": store_token}, "store"
 
-    for env_var in (SLACK_BOT_TOKEN_ENV, "SLACK_ACCESS_TOKEN"):
+    for env_var in (SLACK_BOT_TOKEN_ENV, SLACK_ACCESS_TOKEN_ENV):
         value = resolve_env_credential(env_var).strip()
         if value:
             return {"access_token": value}, "env"

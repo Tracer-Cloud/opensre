@@ -7,7 +7,11 @@ from typing import Any
 
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
-from core.agent_harness.turns.host_cancel import host_cancel_requested
+from core.agent_harness.turns.host_cancel import (
+    HostCancelEvent,
+    HostCancelReason,
+    host_cancel_requested,
+)
 from core.agent_harness.turns.orchestrator import run_turn
 from core.agent_harness.turns.turn_results import (
     FINAL_INTENT_CANCELLED,
@@ -59,10 +63,37 @@ def test_host_cancel_requested_reads_sink_event() -> None:
     assert host_cancel_requested(None) is False
 
 
-def test_run_turn_cancelled_action_skips_gather_and_answer() -> None:
-    answer_calls: list[str] = []
-    gather_calls: list[str] = []
+def test_goal_pause_reason_can_be_retained_without_interrupting() -> None:
+    cancel = HostCancelEvent()
 
+    cancel.request(HostCancelReason.GOAL_PAUSE, interrupt=False)
+
+    assert cancel.reason is HostCancelReason.GOAL_PAUSE
+    assert cancel.is_set() is False
+
+
+def test_goal_pause_reason_survives_a_later_generic_stop() -> None:
+    cancel = HostCancelEvent()
+
+    cancel.request(HostCancelReason.GOAL_PAUSE)
+    cancel.set()
+
+    assert cancel.reason is HostCancelReason.GOAL_PAUSE
+    assert cancel.is_set() is True
+
+
+def test_goal_clear_reason_overrides_pause_and_survives_a_later_stop() -> None:
+    cancel = HostCancelEvent()
+
+    cancel.request(HostCancelReason.GOAL_PAUSE)
+    cancel.request(HostCancelReason.GOAL_CLEAR)
+    cancel.set()
+
+    assert cancel.reason is HostCancelReason.GOAL_CLEAR
+    assert cancel.is_set() is True
+
+
+def test_run_turn_cancelled_action_stops_turn() -> None:
     def execute_actions(_text: str, **_kwargs: object) -> ToolCallingTurnResult:
         return ToolCallingTurnResult(
             0,
@@ -73,56 +104,33 @@ def test_run_turn_cancelled_action_skips_gather_and_answer() -> None:
             cancelled=True,
         )
 
-    def answer(text: str, _request: object = None, **_kwargs: object) -> object:
-        answer_calls.append(text)
-        return type("Run", (), {"response_text": "should-not-run"})()
-
-    def gather(text: str, **_kwargs: object) -> None:
-        gather_calls.append(text)
-        return None
-
     result = run_turn(
         "question?",
         SessionCore(store=InMemorySessionStore()),
         execute_actions=execute_actions,
-        answer=answer,
-        gather=gather,
         accounting=_Accounting(),
         output=_CancelSink(),
     )
     assert result.final_intent == FINAL_INTENT_CANCELLED
     assert result.cancelled is True
     assert result.answered is False
-    assert answer_calls == []
-    assert gather_calls == []
 
 
-def test_run_turn_cancel_during_gather_skips_answer() -> None:
+def test_run_turn_cancel_after_action_stops_turn() -> None:
     sink = _CancelSink()
-    answer_calls: list[str] = []
 
     def execute_actions(_text: str, **_kwargs: object) -> ToolCallingTurnResult:
-        return ToolCallingTurnResult(0, 0, 0, False, False)
-
-    def gather(_text: str, **_kwargs: object) -> str:
         sink.turn_cancel.set()
-        return "evidence"
-
-    def answer(text: str, _request: object = None, **_kwargs: object) -> object:
-        answer_calls.append(text)
-        return type("Run", (), {"response_text": "should-not-run"})()
+        return ToolCallingTurnResult(0, 0, 0, False, False)
 
     result = run_turn(
         "question?",
         SessionCore(store=InMemorySessionStore()),
         execute_actions=execute_actions,
-        answer=answer,
-        gather=gather,
         accounting=_Accounting(),
         output=sink,
     )
     assert result.final_intent == FINAL_INTENT_CANCELLED
-    assert answer_calls == []
 
 
 def test_bindable_output_stream_stops_when_turn_cancel_set() -> None:
@@ -163,3 +171,43 @@ def test_bindable_output_stream_stops_when_turn_cancel_set() -> None:
     text = bindable.stream(label="assistant", chunks=_chunks())
     assert text == "a"
     assert inner.seen == ["a"]
+
+
+def test_bindable_output_drops_reply_previews_once_turn_cancel_set() -> None:
+    """A stop or timeout message owns the placeholder; a late piece must not reopen it."""
+    from infrastructure.turn_host.bindable_output import BindableOutput
+
+    class _Inner:
+        def __init__(self) -> None:
+            self.turn_cancel = threading.Event()
+            self.previews: list[str] = []
+
+        def preview_reply(self, text: str) -> None:
+            self.previews.append(text)
+
+    inner = _Inner()
+    bindable = BindableOutput()
+    bindable.bind(inner)  # type: ignore[arg-type]
+
+    bindable.preview_reply("Checking ")
+    inner.turn_cancel.set()
+    bindable.preview_reply("Checking the pods")
+
+    assert inner.previews == ["Checking "]
+
+
+def test_predicate_cancel_writes_the_host_event() -> None:
+    from core.agent_harness.turns.host_cancel import bind_cancel_predicate
+
+    sink = _CancelSink()
+    cancelled = False
+
+    def _is_cancelled() -> bool:
+        return cancelled
+
+    console = bind_cancel_predicate(sink, _is_cancelled)
+    assert console.cancel_requested is False
+    assert host_cancel_requested(sink) is False
+    cancelled = True
+    assert console.cancel_requested is True
+    assert host_cancel_requested(sink) is True

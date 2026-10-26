@@ -7,7 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
-from integrations.bitbucket.tools.bitbucket_file_contents_tool import get_bitbucket_file_contents
+from integrations.bitbucket.tools.bitbucket_file_contents_tool import (
+    get_bitbucket_file_contents,
+)
+from integrations.bitbucket.tools.bitbucket_file_contents_tool._evidence import (
+    map_get_bitbucket_file_contents as _map_get_bitbucket_file_contents,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -153,3 +158,76 @@ def test_run_returns_unavailable_without_credentials() -> None:
     assert result["available"] is False
     assert result["file"] == {}
     assert result["error"] == "Bitbucket integration is not configured."
+
+
+class TestMapGetBitbucketFileContents:
+    def test_records_entry_with_path_and_ref(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_bitbucket_file_contents(
+            evidence,
+            {
+                "available": True,
+                "path": "src/main.py",
+                "ref": "main",
+                "content": "print('hello')",
+                "truncated": False,
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_bitbucket_file_contents"
+        assert entries[0]["summary"] == "14 char(s), from 'src/main.py', at 'main'"
+
+    def test_qualifies_length_when_truncated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_bitbucket_file_contents(
+            evidence,
+            {
+                "available": True,
+                "path": "src/main.py",
+                "content": "x" * 10000,
+                "truncated": True,
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"].startswith("10000+ char(s)")
+
+    def test_strips_carriage_returns_from_path_and_ref(self) -> None:
+        """Regression: a path/ref with bare \\r or \\r\\n line endings must not
+        leave a literal carriage return in the report summary."""
+        evidence: dict[str, Any] = {}
+
+        _map_get_bitbucket_file_contents(
+            evidence,
+            {
+                "available": True,
+                "path": "src\r\nmain.py",
+                "ref": "feature\rbranch",
+                "content": "x",
+                "truncated": False,
+            },
+            {},
+        )
+
+        assert "\r" not in evidence["catalog_entries"][0]["summary"]
+
+    def test_records_nothing_when_content_missing(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_bitbucket_file_contents(evidence, {"available": True}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_bitbucket_file_contents(
+            evidence, {"available": False, "error": "not configured"}, {}
+        )
+
+        assert "catalog_entries" not in evidence

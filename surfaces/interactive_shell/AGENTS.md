@@ -7,8 +7,8 @@ subdirectories. The repo-root `AGENTS.md` still applies.
 
 `interactive_shell/` owns the interactive OpenSRE terminal surface: the REPL
 loop, slash-command surface, local alert ingestion, shell execution, and Rich /
-prompt-toolkit UI. Reusable agent session state, prompt history, grounding, and
-prompt construction live under `core.agent_harness`.
+prompt-toolkit UI. Reusable agent session state, prompt history, and prompt
+construction live under `core.agent_harness`.
 
 Design for a terminal user who may be in the middle of an incident: behavior
 should be predictable, interruptible, explainable, and safe by default.
@@ -19,11 +19,10 @@ should be predictable, interruptible, explainable, and safe by default.
 | --- | --- | --- |
 | `main.py` | process/bootstrap boundary for starting the REPL | per-turn dispatch/runtime logic |
 | `controller.py` | top-level REPL wiring, alert listener lifecycle, prompt loop, background workers, and shutdown | feature-specific business logic or compatibility-only forwarding |
-| `runtime/core/turn_accounting.py` | shell turn accounting (`ShellTurnAccounting`) for analytics, telemetry, recorder flush, turn persistence, and intent stamps | turn-flow control (owned by `core.agent_harness`) or tool-calling turn execution |
+| `runtime/core/turn_accounting.py` | shell turn accounting (`ShellTurnAccounting`) for analytics, recorder enrichment, history, and intent stamps | turn-flow control (owned by `core.agent_harness`) or tool-calling turn execution |
 | `command_registry/` | slash-command definitions, argument validation, command dispatch | long-running implementation details better placed in services/runtime modules |
 | `runtime/` | background task workers, lifecycle/`ReplState`, runtime context assembly, semantic shell-turn execution, and core harness adapters | prompt text, reusable session persistence, or compatibility shims |
-| `tools/interactive_shell/shell/` | shell command parsing, shell execution policy, subprocess execution, and the `run_shell_command`/`run_cd`/`run_pwd` runner (next to the `shell_run` tool in `tools/interactive_shell/actions/shell.py`) | slash-command execution |
-| `references/` | CLI/docs/source/AGENTS reference loading and caching | generated model prose |
+| `tools/interactive_shell/shell/` | shell command normalization, shell execution policy, subprocess execution, and the `run_shell_command` runner (next to the `shell_run` tool in `tools/interactive_shell/actions/shell.py`) | slash-command execution |
 | `config/` | interactive-shell config loading and tool catalog metadata | global app config unrelated to the REPL |
 | `ui/` | Rich/prompt-toolkit rendering, theme, menus, streaming output, and domain views such as `incoming_alerts.py` (receiver/queue/listener lifecycle lives in `core.domain.alerts.inbox`) | business logic or network calls |
 
@@ -67,24 +66,22 @@ owning area rather than adding more logic to the caller.
   trigger confirmations or side effects.
 - Send command execution through the central dispatch and execution-policy
   helpers. Do not bypass `execution_policy.py` for new commands.
-- **Alpha allow-all execution policy (current behavior):** the REPL runs with
-  **no command guardrails**. `execution_policy.py` resolves every action to
-  `allow` with **no confirmation prompt** — all slash/`opensre` commands,
-  investigations, synthetic tests, code-agent launches, LLM runtime switches, and
-  **all** shell commands run immediately, in any context (TTY or not, trust mode
-  or not). There is **no shell-command safety policy**: the
+- **Alpha allow-all execution policy (current behavior):** the REPL defaults to
+  **`/auto high`** — no tool confirmation. `execution_policy.py` resolves every
+  action to `allow`; `apply_auto_level` promotes to `ask` only when `/auto` is
+  below High. There is **no shell-command safety policy**: the
   read-only/mutating/restricted classification and the `deny` floor were removed
   (`shell_policy.py` deleted; parsing/policy/execution live under
   `tools/shell/`). Mutating commands (`rm`/`mv`/`docker`), `restricted` commands
   (`sudo`, `systemctl`, `kill`, `dd`, …), shell operators (`| && ; > <`), and
-  command substitution all run; the `!` prefix is honored but optional. The only
-  shell input still rejected is genuinely empty input (a bare `!` or whitespace).
-  Do **not** re-add a shell allowlist or deny floor while in alpha — see
-  `docs/interactive-shell-action-policy.md`. The former `ExecutionTier`
-  classification was removed because it gated nothing under default-allow; if an
-  opt-in stricter policy is reintroduced after alpha, gate it in
-  `execution_policy.py` (the `ask` verdict, confirmation UX, and `trust_mode` are
-  retained as the hook), not via a planner-stage denial.
+  command substitution all run once approved (or immediately at High). The `!`
+  prefix is honored but optional. The only shell input still rejected is
+  genuinely empty input (a bare `!` or whitespace). Document levels and
+  `/trust` interaction in `docs/getting-started/interactive-shell-commands.mdx` (`/auto`) and
+  `docs/interactive-shell-action-policy.md`. Do **not** re-add a shell allowlist
+  or deny floor while in alpha — gate stricter policy in `execution_policy.py`
+  (the `ask` verdict, confirmation UX, `trust_mode`, and `/auto` are the hooks),
+  not via a planner-stage denial.
 - Non-TTY behavior under default-allow: actions no longer fail closed on
   non-interactive stdin (there is nothing to confirm). The fail-closed path only
   applies if a verdict is explicitly `ask`, which the default policy does not
@@ -97,7 +94,7 @@ owning area rather than adding more logic to the caller.
   prompt buffer, causing garbage like `^[[60;1R` to appear.
   **Any command that calls `print_repl_table` (directly or via `render_table` /
   `render_integrations_table` / `render_models_table` / etc.) must be added to
-  `_EXCLUSIVE_STDIN_MENU_COMMANDS` in `runtime/utils/input_policy.py`.** That makes the main
+  `_EXCLUSIVE_STDIN_MENU_COMMANDS` in `runtime/input_policy.py`.** That makes the main
   loop call `await state.queue.join()`, blocking the next prompt until dispatch
   completes and both drain cycles clean up stale CPR bytes before the next
   `prompt_async()` starts.
@@ -111,12 +108,25 @@ owning area rather than adding more logic to the caller.
     command (`/integrations remove`, `/integrations setup`, `/mcp connect`,
     `/mcp disconnect`, or a bare `/integrations` / `/mcp` menu), the loop has not
     reserved stdin, so `tools/interactive_shell/actions/slash.py` must NOT run the picker inline. It defers
-    via `session.queue_auto_command(...)`, which re-submits the command as
-    literal command text so the loop can reserve exclusive stdin before the
-    agent path runs it. New raw-stdin picker/wizard commands the action agent can emit
+    via `set_auto_command(session, ...)` (`core.agent_harness.spi.session_state`),
+    which re-submits the command as literal command text so the loop can
+    reserve exclusive stdin before the agent path runs it. The tool result
+    names the command under `QUEUED_COMMAND_KEY`, which ends the action turn
+    so the model cannot retry before the command runs. New raw-stdin picker/wizard commands the action agent can emit
     must be added to
     `_INTERACTIVE_PICKER_MENUS` / `_INTERACTIVE_PICKER_SUBCOMMANDS` in
     `tools/interactive_shell/actions/slash.py`.
+  - **Agent-selected listings:** use `runtime/exclusive_output.with_exclusive_output`
+    through the REPL adapter to suspend the prompt while rendering, keep
+    blocking reads off its event loop, and return IDs to the same agent turn.
+    Queuing a listing as a picker ends that turn and loses follow-up actions.
+  - **Resume after setup:** a deferred `/integrations setup <service>` inside
+    a skill parks the turn's message, as does a skill's prerequisite gate.
+    `command_registry/setup_resume.py` (called when the wizard ends and by
+    the setup menu's "continue" row) re-runs the prerequisite's check —
+    `run_cli_command` reports success for every interactive run, so never
+    trust it — and replays the parked message once; it never replaces a
+    queued autosubmit.
 
 ## Action Selection And Execution
 
@@ -132,10 +142,8 @@ owning area rather than adding more logic to the caller.
        `docs/interactive-shell-action-policy.md` ("Deterministic literal-`/slash`
        dispatch").
     2. Structured Want-me-to *accept* after a pending offer armed this session —
-       schedule yes expands to `/cron …`; investigation yes expands to
-       `/investigate alert:…`. Both are literal slash text and use path 1 only
-       (no separate static `investigation_start` bypass). Surfaces that disable
-       the investigation capability (gateway) must not arm the pending offer.
+       schedule yes expands to `/cron …`. That is literal slash text and uses
+       path 1 only.
 - **No planning-stage fail-closed safeguard (v0.1 decision).** The second-phase
   action agent never denies a turn. Because every terminal action is read-only,
   an unmatched/ambiguous/chatty clause is not a safety risk — the agent executes
@@ -189,12 +197,17 @@ owning area rather than adding more logic to the caller.
 
 ## Shell, subprocesses, and local system effects
 
-- Shell execution changes belong under `shell/` and must preserve parsing,
-  quoting, timeout, redaction, and policy behavior.
+- Shell execution changes belong under `tools/interactive_shell/shell/`. Pass
+  command grammar to the host shell rather than duplicating its parser, and
+  preserve input normalization, timeout, redaction, and policy behavior.
 - Treat subprocess output as untrusted display text; escape it before Rich
   markup and cap what is retained or sent to prompts.
 - Use explicit timeouts and clear cancellation behavior for subprocesses. Avoid
   waits that can hang the REPL indefinitely.
+- Kept CLI children must survive interactive host exit without blocking it or
+  losing writable output pipes. Use independent draining with capped foreground
+  capture and post-timeout discard; preserve headless waiting. Verify actual
+  host exit while a child waits, then writes beyond pipe capacity and finishes.
 
 ## State, history, config, and background work
 

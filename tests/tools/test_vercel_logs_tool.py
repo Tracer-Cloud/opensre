@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from integrations.vercel.tools import VercelLogsTool
+from integrations.vercel.tools._evidence import (
+    map_vercel_deployment_logs as _map_vercel_deployment_logs,
+)
 
 
 @pytest.fixture()
@@ -150,3 +154,80 @@ def test_metadata_requires_deployment_id(tool: VercelLogsTool) -> None:
     assert meta.source == "vercel"
     assert "deployment_id" in meta.input_schema["required"]
     assert "api_token" in meta.input_schema["required"]
+
+
+class TestMapVercelDeploymentLogs:
+    def test_records_entry_with_events_and_runtime_logs(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence,
+            {
+                "available": True,
+                "total_events": 4,
+                "error_events": [{"text": "Error: x"}, {"text": "exception"}],
+                "total_runtime_logs": 2,
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "vercel_deployment_logs"
+        assert entries[0]["summary"] == (
+            "4 event(s), 2 matching an error keyword, 2 runtime log(s)"
+        )
+
+    def test_records_entry_without_runtime_logs_clause(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence,
+            {"available": True, "total_events": 1, "error_events": [], "total_runtime_logs": 0},
+            {},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"] == "1 event(s), 0 matching an error keyword"
+        )
+
+    def test_qualifies_counts_when_saturated_including_zero_errors(self) -> None:
+        """Regression: a saturated events page with zero keyword matches must
+        not claim '0 matching an error keyword' as an exact total, and a
+        saturated runtime-log page must qualify its count too."""
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence,
+            {
+                "available": True,
+                "total_events": 100,
+                "error_events": [],
+                "total_runtime_logs": 100,
+            },
+            {"limit": 100},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == (
+            "100+ event(s), 0+ matching an error keyword, 100+ runtime log(s)"
+        )
+
+    def test_records_nothing_when_no_events_or_logs(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence,
+            {"available": True, "total_events": 0, "total_runtime_logs": 0},
+            {},
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence, {"available": False, "error": "deployment_id is required."}, {}
+        )
+
+        assert "catalog_entries" not in evidence

@@ -1,6 +1,6 @@
 """PostHog conversational-assistant prompt fragment.
 
-Registered with :func:`infrastructure.harness_ports.register_assistant_prompt_fragment`
+Registered with :func:`infrastructure.harness_providers.register_assistant_prompt_fragment`
 from ``integrations/harness_adapters.py``.
 """
 

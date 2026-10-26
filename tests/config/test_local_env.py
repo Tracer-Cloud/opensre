@@ -15,7 +15,6 @@ def _write_store(path: Path, *, provider: str = "openai", model: str = "gpt-5.5"
                 "targets": {
                     "local": {
                         "provider": provider,
-                        "auth_method": "oauth",
                         "model": model,
                         "model_env": "CODEX_MODEL",
                     }
@@ -44,7 +43,7 @@ def test_frozen_bootstrap_uses_installed_env_and_wizard_store(tmp_path: Path, mo
     assert loaded == env_path
     assert local_env.get_project_env_path() == env_path
     assert local_env.os.environ["LLM_PROVIDER"] == "openai"
-    assert local_env.os.environ["LLM_AUTH_METHOD"] == "oauth"
+    assert "LLM_AUTH_METHOD" not in local_env.os.environ
     assert local_env.os.environ["CODEX_MODEL"] == "gpt-5.5"
 
 
@@ -153,3 +152,17 @@ def test_blank_env_provider_blocks_env_and_store_defaults(tmp_path: Path, monkey
     assert local_env.os.environ["LLM_PROVIDER"] == ""
     assert "LLM_AUTH_METHOD" not in local_env.os.environ
     assert "CODEX_MODEL" not in local_env.os.environ
+
+
+def test_bootstrap_loads_export_prefixed_assignments(tmp_path: Path, monkeypatch) -> None:
+    """Shell-sourced env files use ``export KEY=value``; that must populate KEY."""
+    env_path = tmp_path / "project.env"
+    env_path.write_text("export LLM_PROVIDER=anthropic\n", encoding="utf-8")
+
+    monkeypatch.setenv(local_env.OPENSRE_PROJECT_ENV_PATH_ENV, str(env_path))
+    monkeypatch.delenv("GRAFANA_CONFIG_SKIP_ENV_FILE", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+
+    local_env.bootstrap_opensre_env()
+
+    assert local_env.os.environ["LLM_PROVIDER"] == "anthropic"

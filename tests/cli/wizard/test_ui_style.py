@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from infrastructure.terminal.theme import BG, HIGHLIGHT, set_active_theme
-from surfaces.cli.wizard import _ui as wizard_ui
+from surfaces.cli.wizard import components as wizard_ui
 
 
 def test_questionary_highlighted_style_uses_dark_text_on_highlight_background() -> None:

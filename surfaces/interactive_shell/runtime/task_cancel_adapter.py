@@ -11,7 +11,7 @@ from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
 from tools.interactive_shell.shared.execution_policy import ExecutionPolicyResult
-from tools.interactive_shell.shared.host_ports import ExecutionGate
+from tools.interactive_shell.shared.host_contracts import ExecutionGate
 
 
 class TaskCancelPorts(ExecutionGate, Protocol):

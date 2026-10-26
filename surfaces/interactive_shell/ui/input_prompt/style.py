@@ -13,20 +13,34 @@ from surfaces.interactive_shell.runtime import Session
 def _build_prompt_style() -> Style:
     theme = ui_theme.get_active_theme()
     text_fg = f"fg:{theme.TEXT}"
+    # Distinct composer plate — same role as Claude/Cursor/Droid's input surface.
+    surface = f"bg:{theme.INPUT_SURFACE}"
+    selection = f"bg:{ui_theme.menu_selection_hex()}"
     return Style.from_dict(
         {
             "prompt-frame-line": f"bold {theme.HIGHLIGHT}",
-            "": text_fg,
+            # Keep prompt-toolkit's transparent filler truly unstyled so the
+            # user's terminal background shows through the full-screen view.
+            # Painting it repaints the whole screen in a palette colour the
+            # terminal may render far lighter than its own background; giving
+            # it a foreground makes blank cells visible to the renderer, which
+            # then writes every row to the edge and reflows on a width shrink.
+            "": "",
             "default": text_fg,
-            "repl-slash-command": f"bold {theme.HIGHLIGHT} bg:{theme.BG}",
-            "completion-menu": f"bg:{theme.BG}",
-            "completion-menu.completion": f"{theme.TEXT} bg:{theme.BG}",
-            "completion-menu.completion.current": f"bold {theme.HIGHLIGHT} bg:{theme.BG}",
-            "completion-menu.meta.completion": f"{theme.DIM} bg:{theme.BG}",
-            "completion-menu.meta.completion.current": f"{theme.HIGHLIGHT} bg:{theme.BG}",
-            "completion-menu.border": theme.DIM,
-            "scrollbar.background": f"bg:{theme.BG}",
-            "scrollbar.button": f"bg:{theme.DIM}",
+            "composer-cursor": "reverse",
+            "placeholder": f"{theme.DIM} {surface}",
+            "repl-slash-command": f"bold {theme.HIGHLIGHT} {surface}",
+            "frame": surface,
+            "frame.border": f"{theme.SECONDARY} {surface}",
+            "composer": f"{theme.TEXT} {surface}",
+            "composer-body": f"{theme.TEXT} {surface}",
+            "command-tray": f"{theme.TEXT} {surface}",
+            "command-tray.description": f"{theme.SECONDARY} {surface}",
+            "command-tray.hint": f"{theme.SECONDARY} {surface}",
+            "command-tray.current": f"bold {theme.HIGHLIGHT} {selection}",
+            "command-tray.current.description": f"nobold {theme.TEXT} {selection}",
+            # Footer sits under the plate on terminal bg (hint chrome, not input).
+            "composer-footer": theme.DIM,
             # prompt_toolkit defaults the ``bottom-toolbar`` style to
             # ``reverse:noinherit``, which paints the toolbar as a dark
             # highlighted band across the terminal. Clear the reverse

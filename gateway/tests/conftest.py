@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV
+from config.constants.billing import MACHINE_SECRET_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from gateway.core.process import component_status, supervision
 
 
@@ -21,12 +23,15 @@ def _isolate_opensre_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     credential lookup miss ``integrations.json`` and fall through to the OS
     keychain, which blocks on a GUI prompt, so the pair must move together the
     way ``tests/conftest.py`` keeps them.
+
+    Session-end memory extraction stays off too: a recorded turn would start a
+    daemon thread that calls the real LLM with the CI key from inside the test
+    worker, outliving the test that recorded it.
     """
     from config.constants import paths
-    from config.secrets.os_keyring import reset_keyring_state
 
-    reset_keyring_state()
     monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
+    monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path / "opensre-home")
 
 
@@ -53,18 +58,33 @@ def _isolate_gateway_runtime_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 
 
 @pytest.fixture(autouse=True)
-def _harness_ports_per_test() -> Iterator[None]:
+def _metering_makes_no_real_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep credit metering off the real ledger for every gateway test.
+
+    Transport turns now consume credits, so a developer whose shell exports the
+    metering env would have the test suite POST charges to a live ledger.
+    Clearing these leaves every outcome ``DISABLED`` (self-hosted, no HTTP),
+    and a test wanting another outcome still sets its own env or patches
+    ``consume_credits``. The machine secret is cleared too so credential tests
+    cannot accidentally reach Clerk through another code path.
+    """
+    for name in (WEBAPP_URL_ENV, USAGE_SECRET_ENV, MACHINE_SECRET_ENV):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _harness_providers_per_test() -> Iterator[None]:
     """Register harness ports before each test; reset after to avoid session leakage.
 
     Registers the tools and integrations adapters directly (the same pair
-    ``install_harness_ports`` registers) so the gateway package stays below
+    ``install_harness_providers`` registers) so the gateway package stays below
     ``surfaces`` in the import layering.
     """
-    from infrastructure.harness_ports import reset_harness_ports
+    from infrastructure.harness_providers import reset_harness_providers
     from integrations.harness_adapters import register_harness_adapters as register_integrations
     from tools.harness_adapters import register_harness_adapters as register_tools
 
     register_integrations()
     register_tools()
     yield
-    reset_harness_ports()
+    reset_harness_providers()

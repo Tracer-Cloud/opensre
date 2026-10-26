@@ -4,17 +4,39 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
 from integrations.gitlab import (
     get_gitlab_pipelines,
 )
 from integrations.gitlab.tools.gitlab_commits_tool import (
     _gitlab_available,
+    _gitlab_count_label,
     _gl_creds,
     _resolve_config,
 )
+
+
+def _map_list_gitlab_pipelines(
+    evidence: dict[str, Any], output: dict[str, Any], tool_input: dict[str, Any]
+) -> None:
+    """Cite the number of pipelines retrieved and the status filter used."""
+    if not output.get("available"):
+        return
+    pipelines = output.get("pipelines") or []
+    if not pipelines:
+        return
+    label = _gitlab_count_label(len(pipelines), tool_input.get("per_page", 10))
+    status = tool_input.get("status", "failed")
+    record_evidence_entry(
+        evidence,
+        source="list_gitlab_pipelines",
+        label="GitLab Pipelines",
+        summary=f"{label} pipeline(s) with status '{status}'",
+    )
 
 
 def _list_gitlab_pipelines_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -37,6 +59,8 @@ def _list_gitlab_pipelines_available(sources: dict[str, dict]) -> bool:
 @tool(
     name="list_gitlab_pipelines",
     source="gitlab",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List recent CI/CD pipelines for a GitLab project.",
     use_cases=[
         "Checking whether a failed pipeline caused or coincided with the incident",
@@ -44,7 +68,7 @@ def _list_gitlab_pipelines_available(sources: dict[str, dict]) -> bool:
         "Identifying which CI job failed and on which branch",
     ],
     requires=["project_id"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -58,6 +82,7 @@ def _list_gitlab_pipelines_available(sources: dict[str, dict]) -> bool:
     },
     is_available=_list_gitlab_pipelines_available,
     extract_params=_list_gitlab_pipelines_extract_params,
+    evidence_mapper=_map_list_gitlab_pipelines,
 )
 def list_gitlab_pipelines(
     project_id: str,

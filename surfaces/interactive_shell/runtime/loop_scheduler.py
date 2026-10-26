@@ -4,19 +4,22 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from typing import Any
 
 from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_service_operation
 from infrastructure.scheduling.scheduler.runner import start_background_scheduler
-from infrastructure.scheduling.scheduler.types import ScheduledTask
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskRun
 
 log = logging.getLogger(__name__)
 
 _scheduler_lock = threading.Lock()
 _scheduler: Any | None = None
 _task_count = 0
+#: Names the shell session hosting this scheduler; ticks are traced under it.
+_host_session: Callable[[], str | None] | None = None
 
 
 def _is_prompt_loop_task(task: ScheduledTask) -> bool:
@@ -24,9 +27,23 @@ def _is_prompt_loop_task(task: ScheduledTask) -> bool:
     return bool(task.params.get(LOOP_PROMPT_PARAM, "").strip())
 
 
-def start_loop_scheduler() -> int:
-    """Start the shell-local prompt-loop scheduler if it is not already running."""
+def _host_session_id() -> str | None:
+    """Resolved at tick time so a restarted scheduler or rotated session is picked up."""
+    resolve = _host_session
+    return resolve() if resolve is not None else None
+
+
+def start_loop_scheduler(host_session: Callable[[], str | None] | None = None) -> int:
+    """Start the shell-local prompt-loop scheduler if it is not already running.
+
+    ``host_session`` returns the shell session id ticks should be traced under;
+    it is recorded even when the scheduler is already running (a startup demo
+    may have started it before the controller).
+    """
+    global _host_session
     with _scheduler_lock:
+        if host_session is not None:
+            _host_session = host_session
         if _scheduler is not None:
             return _task_count
         return _start_locked()
@@ -50,6 +67,17 @@ def reload_loop_scheduler() -> int:
         return _start_locked()
 
 
+def run_loop_now(task_id: str, *, on_result: Callable[[TaskRun], None] | None = None) -> bool:
+    """Fire one loop task immediately in this process; False when the run failed."""
+    from bootstrap.adapters import scheduler_runners
+    from infrastructure.scheduling.scheduler.runner import run_task_now
+
+    configure_process(SCHEDULED_COMMAND_PROFILE)
+    return run_task_now(
+        task_id, scheduler_runners().hosted_by(_host_session_id), on_result=on_result
+    )
+
+
 def shutdown_loop_scheduler() -> None:
     """Stop the shell-local prompt-loop scheduler."""
     with _scheduler_lock:
@@ -59,8 +87,12 @@ def shutdown_loop_scheduler() -> None:
 def _start_locked() -> int:
     global _scheduler, _task_count
 
+    from bootstrap.adapters import scheduler_runners
+
     configure_process(SCHEDULED_COMMAND_PROFILE)
-    scheduler, task_count = start_background_scheduler(task_filter=_is_prompt_loop_task)
+    scheduler, task_count = start_background_scheduler(
+        scheduler_runners().hosted_by(_host_session_id), task_filter=_is_prompt_loop_task
+    )
     _scheduler = scheduler
     _task_count = task_count
     if scheduler is None:
@@ -102,6 +134,7 @@ def _shutdown_locked() -> None:
 
 __all__ = [
     "reload_loop_scheduler",
+    "run_loop_now",
     "shutdown_loop_scheduler",
     "start_loop_scheduler",
 ]

@@ -200,7 +200,7 @@ class JiraClient:
         try:
             with self._get_client() as client:
                 resp = client.post(
-                    f"{self.config.api_base}/issue/search",
+                    f"{self.config.api_base}/search/jql",
                     json=payload,
                 )
                 resp.raise_for_status()
@@ -223,10 +223,19 @@ class JiraClient:
                         }
                     )
 
+                # Enhanced search pages with isLast/nextPageToken and omits the
+                # total, so the page length is the match count only on the last page.
+                next_page_token = str(data.get("nextPageToken") or "")
+                truncated = data.get("isLast") is False or bool(next_page_token)
+                total = data.get("total")
+                if total is None and not truncated:
+                    total = len(issues)
                 return {
                     "success": True,
                     "issues": issues,
-                    "total": data.get("total", len(issues)),
+                    "total": total,
+                    "truncated": truncated,
+                    "next_page_token": next_page_token,
                 }
         except httpx.HTTPStatusError as exc:
             capture_service_error(exc, logger=logger, integration="jira", method="search_issues")

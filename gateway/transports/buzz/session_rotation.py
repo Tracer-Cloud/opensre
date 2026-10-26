@@ -8,7 +8,7 @@ from gateway.core.middleware.inbound_decision import apply_inbound_decision
 from gateway.core.storage import SessionResolver
 from gateway.transports.buzz.inbound_security import InboundDecision
 from gateway.transports.buzz.settings import BuzzInboundMessage
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
 from integrations.messaging_security import MessagingPlatform
 
 

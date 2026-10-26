@@ -1,8 +1,8 @@
 """Execute planned opensre CLI actions.
 
-Pure subprocess execution, planning, and orchestration for shell / synthetic /
+Pure subprocess execution, planning, and orchestration for shell /
 Claude Code / opensre CLI action tools live under ``tools.interactive_shell``
-(``subprocess/``, ``shell/``, ``synthetic/``, ``implementation/``, ``cli/``).
+(``subprocess/``, ``shell/``, ``implementation/``, ``cli/``).
 This package keeps Rich relay helpers in ``task_streaming``, the REPL presenter
 in ``repl_presenter``, and the surface adapter ``opensre_cli_runner`` for slash
 parity. Tests and callers import canonical names from
@@ -10,16 +10,11 @@ parity. Tests and callers import canonical names from
 
 Shell command execution lives in ``tools.interactive_shell.shell`` (parsing,
 policy, ``execute_shell_command``, and the ``run_shell_command`` / ``run_cd`` /
-``run_pwd`` runner); it is intentionally not re-exported here. Synthetic test
-execution lives in ``tools.interactive_shell.synthetic`` (the
-``run_synthetic_test`` / ``watch_synthetic_subprocess`` runner), Claude Code
+``run_pwd`` runner); it is intentionally not re-exported here. Claude Code
 implementation execution lives in ``tools.interactive_shell.implementation.claude_code_executor``
-(``run_claude_code_implementation``), and sample-alert / free-text investigation
-execution lives in ``tools.interactive_shell.actions.sample_alert`` /
-``tools.interactive_shell.actions.investigation`` (``run_sample_alert`` /
-``run_text_investigation``); none are re-exported here. Shared stdlib subprocess
-primitives live in ``tools.interactive_shell.subprocess``; Rich stream relay
-remains in ``task_streaming``.
+(``run_claude_code_implementation``); it is not re-exported here. Shared stdlib
+subprocess primitives live in ``tools.interactive_shell.subprocess``; Rich
+stream relay remains in ``task_streaming``.
 
 Public API is stable: all names exported below are importable directly from
 ``subprocess_runner`` and will remain so regardless of internal submodule changes.
@@ -58,13 +53,12 @@ from .opensre_cli_runner import (
 from .task_streaming import (
     _MAX_COMMAND_OUTPUT_CHARS,
     _MIN_SUBPROCESS_TERMINAL_WIDTH,
-    _SYNTHETIC_DIAG_CHARS,
-    _SYNTHETIC_POLL_SECONDS,
+    _TASK_DIAG_CHARS,
     _TASK_OUTPUT_JOIN_TIMEOUT_SECONDS,
     _TASK_OUTPUT_PREFIX_WIDTH,
+    _TASK_POLL_SECONDS,
     CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS,
     SHELL_COMMAND_TIMEOUT_SECONDS,
-    SYNTHETIC_TEST_TIMEOUT_SECONDS,
     _console_file_is_tty,
     _join_task_output_streams,
     _print_task_output_line,
@@ -81,7 +75,6 @@ from .task_streaming import (
 __all__ = [
     "CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS",
     "SHELL_COMMAND_TIMEOUT_SECONDS",
-    "SYNTHETIC_TEST_TIMEOUT_SECONDS",
     "OpensreCommandClass",
     "OpensreExecutionMode",
     "OpensreExecutionPlan",
@@ -90,8 +83,8 @@ __all__ = [
     "Path",
     "_MAX_COMMAND_OUTPUT_CHARS",
     "_MIN_SUBPROCESS_TERMINAL_WIDTH",
-    "_SYNTHETIC_DIAG_CHARS",
-    "_SYNTHETIC_POLL_SECONDS",
+    "_TASK_DIAG_CHARS",
+    "_TASK_POLL_SECONDS",
     "_TASK_OUTPUT_JOIN_TIMEOUT_SECONDS",
     "_TASK_OUTPUT_PREFIX_WIDTH",
     "_console_file_is_tty",

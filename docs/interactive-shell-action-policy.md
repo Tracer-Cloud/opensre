@@ -35,7 +35,7 @@ recurring source of precedence drift.
    literal-`/slash` dispatch" addendum below). This is an explicit-command
    bypass, not natural-language intent inference: free-form text is still
    selected entirely by the action agent. The runtime's literal-`/slash`
-   detection in `runtime/utils/input_policy._literal_slash_command_text` remains
+   detection in `runtime/input_policy._literal_slash_command_text` remains
    terminal-UI policy (spinner suppression and exclusive-stdin gating); the
    execution-side deterministic dispatch lives in
    `core/agent_harness/turns/action_driver.py`.
@@ -70,11 +70,10 @@ answered without adding keyword/regex rules. Two complementary mechanisms:
    (`surfaces/interactive_shell/main.py`) hydrates
    `session.configured_integrations` from the shared
    `configured_integration_services()` helper in `integrations/catalog.py`
-   (the same source the welcome banner uses, so they never diverge). The chat
-   assistant prompt (`build_environment_block` in
-   `core/agent_harness/prompts/assistant.py`) lists the configured set as
-   facts, letting the model answer directly when state is already known.
-2. LLM-driven discovery. The action-agent system prompt
+   (the same source the welcome banner uses, so they never diverge). The agent
+   prompt lists the configured set as facts, letting the model answer directly
+   when state is already known.
+2. LLM-driven discovery. The agent system prompt
    (`core/agent_harness/prompts/action/assemble.py`) lets the model, at its own
    discretion, emit a read-only discovery action (for example
    `slash_invoke("/integrations", ["list"])` or `["verify"]`) to discover the
@@ -83,32 +82,15 @@ answered without adding keyword/regex rules. Two complementary mechanisms:
    confirmation (`execution_policy.allow_tool("slash")` returns `allow`); the
    former `ExecutionTier`/`resolve_slash_execution_tier` classification was
    removed because it gated nothing. No fail-closed regex rule is involved; the
-   action agent decides whether to emit a discovery action.
+   agent decides whether to emit a discovery action.
 
 ### Observe→answer summary loop
 
 Addendum — Jun 18, 2026.
 
-When the action agent runs a read-only discovery command to answer a question (e.g.
-the user asks "is sentry installed?" and the model runs `/integrations`), the
-raw command output (a verification table) is not a direct answer on its own.
-The pipeline now follows up with a short assistant pass that summarizes that
-output:
-
-1. Read-only discovery slash commands stash a compact text view of what they
-   found on `session.agent.last_observation`
-   (`_record_integrations_observation` in
-   `surfaces/interactive_shell/command_registry/integrations.py`).
-2. `run_agent_prompt` resets that field at the start of every action-agent
-   turn and, when a discovery command produced an observation and succeeded,
-   calls the conversational assistant with `tool_observation=...`
-   (inside the handled-turn observation branch in `pipeline.py`). The assistant
-   summarizes the output into a direct answer and is instructed not to emit
-   further actions.
-
-This only fires when the action-agent tool path executes a read-only discovery command
-and records an observation. The pipeline no longer has a pre-agent deterministic
-dispatch branch.
+When the agent runs a read-only discovery command, the tool result is appended
+to the same ReAct conversation. The same model then writes the user-facing
+answer. There is no second assistant pass or deterministic pre-agent dispatch.
 
 Discovery commands also no longer dump validator stack traces into the REPL: a
 vendor/config failure during verification (for example a GitHub MCP `401`) is
@@ -171,40 +153,60 @@ If write/mutating actions are introduced later, gate them with the
 execution-stage confirmation policy (`tools/interactive_shell/shared/execution_policy.py`), **not**
 an action-selection denial.
 
-### Removal of the shell-command safety policy (alpha)
+### Shell commands during alpha
 
 Addendum — Jun 27, 2026.
 
-**Decision:** while OpenSRE is in **alpha**, the interactive REPL runs **every**
-shell command with **no guardrails**. The shell-command safety policy — the
-read-only / mutating / restricted classification, the command allowlist, and the
-hard `deny` floor — has been removed. This is a deliberate trade-off: alpha
-prioritizes developer velocity over command sandboxing, and the REPL already
-runs on the developer's own machine with their own privileges.
+**Behavior:** while OpenSRE is in **alpha**, the interactive REPL accepts every
+nonempty shell command. There is no command allowlist or hard deny floor. This
+is a deliberate trade-off: alpha prioritizes developer velocity over command
+sandboxing, and commands run on the developer's machine with their privileges.
 
-What changed:
-
-- `shell_policy.py` (classification, allowlists, `classify_command`,
-  `evaluate_policy`, `PolicyDecision`) was deleted. The pure parsing helpers it
-  also contained moved to `tools/shell/parsing.py` (`parse_shell_command`,
-  `argv_for_repl_builtin_detection`, `ParsedShellCommand`), alongside the shell
-  execution policy in `tools/shell/policy.py`.
-- `tools.shell.policy.evaluate_shell_from_parsed` now returns `allow` for every
-  command — read-only, mutating, `restricted` (`sudo`, `systemctl`, `kill`,
-  `dd`, …), shell operators (`| && ; > <`), and command substitution
-  (`` ` ``/`$(...)`). Commands that need a shell run through one automatically;
-  the `!` prefix is still honored but no longer required to escape the old
-  operator block.
+- Read-only and mutating commands, shell operators (`| && ; > <`), command
+  substitution (`` ` ``/`$(...)`), redirects, and heredocs are all supported.
+  Compact forms such as `cat README.md;echo done` work without spaces around
+  the operator. The optional `!` prefix is still accepted.
 - The **only** remaining non-execution outcome is genuinely empty input (a bare
   `!` or whitespace), which is rejected as input validation, not as a guardrail.
 
-The `ask`/confirmation machinery (`trust_mode` plus the confirmation UX) is
-retained as an unused hook, split across two layers: the pure decision lives in
-`tools/interactive_shell/shared/execution_policy.py` (`resolve_confirmation`), and the terminal
-interaction (`execution_allowed` — console output, the `Proceed? [Y/n]` prompt,
-analytics) lives in `surfaces/interactive_shell/ui/execution_confirm.py`. If command
-guardrails are reintroduced after alpha, gate them here at the execution stage —
-never with an action-selection denial in the planner.
+Each command starts a new shell in OpenSRE's working directory. A directory
+change therefore applies only within the same command; prefix each command
+that needs another directory with `cd path && command`. On POSIX, commands
+use non-interactive `/bin/sh` syntax rather than loading the configured
+interactive shell, its aliases, or its startup files.
+
+The existing confirmation flow remains available to **`/auto`** (Off/Low/Med)
+and `/trust`. At those stricter `/auto` levels, every shell command asks for
+approval, including commands that appear read-only. Plan-only also asks before
+running a shell command; its confirmation distinguishes allowing just that
+command from authorizing the rest of the plan. The shell interprets expansions
+after the approval decision, so OpenSRE does not exempt shell text based on a
+partial parser.
+
+### `/auto` autonomy (tool-type confirmations)
+
+Addendum — Aug 2026.
+
+**Decision:** the REPL exposes `/auto off|low|med|high` as session-scoped
+tool-approval autonomy. Default is **high** (alpha: no confirmation). Lower
+levels promote a default-`allow` policy result to `ask` based on `tool_type`
+(`config/constants/repl_autonomy.py`), not a shell-command allowlist.
+
+| Level | Asks before |
+| --- | --- |
+| `high` | Nothing |
+| `med` | Mutating agent tools (`shell`, `code_agent`, `slash`, `cli_command`, `opensre_cli`, `switch_llm_provider`, `synthetic_test`, `sentry_issue_fix`, …) |
+| `low` | Same as `med` |
+| `off` | Every tool type |
+
+**Interaction with `/trust`:** `trust_mode` still short-circuits `ask` to allow
+(skip the prompt). Non-TTY `ask` remains fail-closed.
+
+**Still true:** there is no shell argv allowlist/deny floor under alpha. `/auto`
+only gates whether the existing confirmation UX runs before a tool launch.
+
+If a shell-command allowlist is reintroduced after alpha, gate it here at the
+execution stage — never with an action-selection denial in the planner.
 
 ### Deterministic literal-`/slash` dispatch (no LLM)
 
@@ -256,3 +258,31 @@ not an available tool that turn.
 post-hoc rewriting of LLM-selected tool calls, and any deterministic mapping from
 non-`/`-prefixed text to an action. Those compete with the LLM and were removed
 for good reason.
+
+### Plan guards (host-enforced)
+
+The live plan (`update_plan`) is checked by the host, not trusted from the
+model:
+
+- A step is `completed` only when a non-bookkeeping tool returned while it
+  was `in_progress`; a plan cannot be born or bulk-ticked complete
+  (`core/agent_harness/task_plan/completion.py`).
+- The step marked `verifies: true` is the only one labelled `(verify)`. It is
+  never exempt from that rule, and a text-only closing step closes for free
+  only after such a step completed. Without one the closing step is reset and
+  the tool result says so; the model adds a check or marks the step
+  `blocked`, and the result is reported as unverified.
+- A step newly marked `blocked` does not end the turn: the conclusion is
+  rejected until the model has asked the user how to resolve it
+  (`core/agent_harness/task_plan/conclusion.py`), and the "Plan ended"
+  breakdown is not printed while that question is queued.
+- The onboarding menu's answer turn that loads the chosen demo skill and
+  does nothing else is rejected once, with a nudge to write the plan and run
+  the first step; the first demo stalled that way live.
+- The second work tool of a turn is refused while no plan with open work is
+  stored (`core/agent_harness/task_plan/required.py`). The refusal
+  names the fix: re-send the tool in one response with the plan write listed
+  before it.
+
+These are before/after tool hooks on the execution path, the same seam as the
+duplicate-call guard; they never route intent or rewrite a tool call.

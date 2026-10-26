@@ -6,6 +6,7 @@ import atexit
 import contextlib
 import hashlib
 import json
+import math
 import os
 import platform
 import queue
@@ -15,22 +16,41 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path
 from typing import Final
 
 import httpx
 
+from config.account import account_metadata_path
 from config.constants import get_store_path
-from config.constants.posthog import POSTHOG_CAPTURE_API_KEY, POSTHOG_HOST
+from config.constants.analytics import (
+    ANALYTICS_DISABLED_ENV,
+    ANALYTICS_EVENT_SCHEMA_VERSION,
+    ANALYTICS_LOG_EVENTS_ENV,
+    ANALYTICS_MAX_PAYLOAD_BYTES,
+    ANALYTICS_PROPERTIES_VERSION,
+    ANALYTICS_SOURCE,
+)
 from config.version import get_opensre_version
-from infrastructure.analytics.events import Event
-from infrastructure.analytics.runtime_context import (
+from infrastructure.analytics.analytics_runtime import (
+    detect_analytics_runtime,
     detect_container_runtime,
-    detect_runtime_context,
+    has_cicd_marker,
     is_ci_environment,
 )
+from infrastructure.analytics.destination import (
+    AnalyticsDestination,
+    resolve_analytics_destination,
+)
+from infrastructure.analytics.distribution import detect_distribution
+from infrastructure.analytics.events import Event
+from infrastructure.analytics.install_delivery import persist_observation
+from infrastructure.analytics.install_state import read_install_marker_state
+from infrastructure.analytics.runner_provenance import execution_evidence
+from infrastructure.analytics.source import is_test_run
 from infrastructure.analytics.usage_context import (
     ORGANIZATION_GROUP_TYPE,
     merge_usage_enrichment,
@@ -40,14 +60,26 @@ _CONFIG_DIR = get_store_path().parent
 _ANONYMOUS_ID_PATH = _CONFIG_DIR / "anonymous_id"
 _FIRST_RUN_PATH = _CONFIG_DIR / "installed"
 
+
+def _account_record_revision() -> tuple[object, ...]:
+    """Track atomic account-record replacements without reading credentials per event."""
+    path = account_metadata_path()
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return (path, "absent")
+    except OSError:
+        return (path, "unreadable")
+    return (path, stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+
+
 _QUEUE_SIZE = 128
 _SEND_TIMEOUT = 2.0
 # Bound how long an explicit flush=True shutdown may block the process.
 # Interactive /quit drains under a spinner with this budget; atexit stays non-blocking.
 _SHUTDOWN_WAIT = 0.5
 
-_EVENT_LOG_ENV_VAR: Final[str] = "OPENSRE_ANALYTICS_LOG_EVENTS"
-_EVENT_LOG_FILENAME: Final[str] = "posthog_events.txt"
+_EVENT_LOG_FILENAME: Final[str] = "analytics_events.txt"
 _EVENT_LOG_MAX_LINES: Final[int] = 1000
 _ANONYMOUS_ID_LOCK_WAIT_SECONDS: Final[float] = 5.0
 _ANONYMOUS_ID_LOCK_RETRY_SECONDS: Final[float] = 0.01
@@ -57,6 +89,18 @@ _FAILURE_LOG_MAX_BYTES: Final[int] = 64 * 1024
 _FALLBACK_FAILURE_LOG_PATH: Path = Path(tempfile.gettempdir()) / _FAILURE_LOG_FILENAME
 _HOME_PATH_RE: Final[re.Pattern[str]] = re.compile(r"/(?:Users|home)/[^/\s]+")
 _FAILURE_MESSAGE_MAX_LEN: Final[int] = 240
+_RESPONSE_DIAGNOSTIC_MAX_BYTES: Final[int] = 4096
+_SAFE_RESPONSE_ERRORS = frozenset(
+    {
+        "unsupported_media_type",
+        "payload_too_large",
+        "rate_limited",
+        "temporarily_unavailable",
+        "invalid_request",
+        "invalid_payload",
+        "unauthorized",
+    }
+)
 _COMPOSITE_FINGERPRINT_VERSION: Final[str] = "hashed-local-v1"
 _COMPOSITE_FINGERPRINT_NAMESPACE: Final[str] = "opensre-cli-analytics-fingerprint"
 _CI_FINGERPRINT_ENV_KEYS: Final[tuple[str, ...]] = (
@@ -79,10 +123,22 @@ type PropertyValue = JsonValue
 type Properties = dict[str, JsonValue]
 
 
+def _new_event_id() -> str:
+    return str(uuid.uuid4())
+
+
+def _event_timestamp() -> str:
+    return datetime.now(UTC).isoformat()
+
+
 @dataclass(frozen=True, slots=True)
 class _Envelope:
     event: str
     properties: Properties
+    destination: AnalyticsDestination | None = field(repr=False)
+    event_id: str = field(default_factory=_new_event_id)
+    occurred_at: str = field(default_factory=_event_timestamp)
+    body: bytes | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,20 +153,39 @@ class _CompositeFingerprint:
     components: str
 
 
+@dataclass
+class _InstallCaptureState:
+    attempted: bool = False
+
+
 _anonymous_id_lock = threading.Lock()
 _cached_anonymous_id: str | None = None
 _cached_identity_persistence = "unknown"
 _first_run_marker_created_this_process = False
+_install_capture_lock = threading.Lock()
+_install_capture_state = _InstallCaptureState()
 _pending_user_id_load_failures: list[Properties] = []
 _ONE_TIME_EVENTS: Final[frozenset[str]] = frozenset({Event.INSTALL_DETECTED.value})
 
 
-def _is_opted_out() -> bool:
+def analytics_opted_out() -> bool:
+    """Whether this process has explicitly disabled product telemetry."""
     return (
         os.getenv("OPENSRE_NO_TELEMETRY", "0") == "1"
-        or os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1"
+        or os.getenv(ANALYTICS_DISABLED_ENV, "0") == "1"
         or os.getenv("DO_NOT_TRACK", "0") == "1"
     )
+
+
+def analytics_delivery_unavailable() -> bool:
+    """True when telemetry should flow but no destination resolves.
+
+    ``resolve_analytics_destination`` fails closed on explicit misconfiguration
+    (for example a silo URL without ``AGENT_USAGE_SECRET``), which silently
+    drops every product event this process emits. An explicit opt-out is a
+    decision, not a failure, so it never counts as unavailable.
+    """
+    return not analytics_opted_out() and resolve_analytics_destination() is None
 
 
 def _path_exists(path: Path) -> bool:
@@ -319,31 +394,65 @@ def _get_or_create_anonymous_id() -> str:
         return _cached_anonymous_id
 
 
+def installation_id() -> str:
+    """The stable per-install id every analytics event posts as ``anonymous_id``.
+
+    Public so other telemetry can name the same installation
+    the analytics backend already knows, and later join it to a signed-in user.
+    """
+    return _get_or_create_anonymous_id()
+
+
 def _identity_persistence() -> str:
     return _cached_identity_persistence
 
 
-def _event_insert_id(event: str, distinct_id: str) -> str | None:
+def _event_insert_id(event: str, distinct_id: str, *, install_recovery: bool = False) -> str | None:
     if event not in _ONE_TIME_EVENTS:
         return None
+    if install_recovery:
+        # A legacy event may already exist. Preserve its occurrence time and
+        # properties instead of replacing it with this later observation.
+        return f"{event}:{distinct_id}:delivery-v1"
     return f"{event}:{distinct_id}"
+
+
+def _install_delivery_path(anonymous_id: str, destination: AnalyticsDestination) -> Path:
+    scope = f"{anonymous_id}\n{destination.endpoint_url}"
+    receipt_key = hashlib.sha256(scope.encode("utf-8")).hexdigest()
+    return _CONFIG_DIR / "install-deliveries-v1" / receipt_key
+
+
+def _create_marker(path: Path) -> bool:
+    """Create ``path`` exclusively; ``False`` when it already exists, ``OSError`` otherwise."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x", encoding="utf-8") as fh:
+            fh.flush()
+            os.fsync(fh.fileno())
+    except FileExistsError:
+        return False
+    _fsync_parent_dir(path)
+    return True
 
 
 def _touch_once(path: Path) -> bool:
     global _first_run_marker_created_this_process
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("x", encoding="utf-8") as fh:
-            fh.flush()
-            os.fsync(fh.fileno())
-        _fsync_parent_dir(path)
-        if path == _FIRST_RUN_PATH:
-            _first_run_marker_created_this_process = True
-        return True
-    except FileExistsError:
-        return False
+        created = _create_marker(path)
     except OSError:
         return False
+    if created and path == _FIRST_RUN_PATH:
+        _first_run_marker_created_this_process = True
+    return created
+
+
+def _record_install_delivery(path: Path) -> None:
+    """Persist the server's acknowledgement; a lost receipt resends an accepted install."""
+    try:
+        _create_marker(path)
+    except OSError as exc:
+        _log_failure("install_receipt", exc, path=str(path))
 
 
 def _cli_version() -> str:
@@ -427,7 +536,7 @@ def _event_logging_enabled() -> bool:
     Set ``OPENSRE_ANALYTICS_LOG_EVENTS=0`` to disable. Any value other than
     ``"0"`` (including unset, ``"1"``, ``"true"``, etc.) leaves it on.
     """
-    return os.getenv(_EVENT_LOG_ENV_VAR, "1") != "0"
+    return os.getenv(ANALYTICS_LOG_EVENTS_ENV, "1") != "0"
 
 
 def _format_property(key: str, value: JsonValue) -> str:
@@ -454,7 +563,7 @@ def _event_log_path() -> Path:
     The log lives next to ``anonymous_id`` and ``analytics_errors.log`` under
     ``~/.opensre/`` (or the equivalent on other platforms) rather than
     in the user's current working directory. This prevents a stray
-    ``posthog_events.txt`` from showing up in every shell where the user runs
+    ``analytics_events.txt`` from showing up in every shell where the user runs
     ``opensre``, and keeps related telemetry artifacts in one place.
     """
     return _CONFIG_DIR / _EVENT_LOG_FILENAME
@@ -528,9 +637,8 @@ def _log_event_line(event: str, properties: Properties) -> None:
 def _log_debug_line(message: str) -> None:
     """Append a non-event diagnostic line (e.g. send retries before exhaustion).
 
-    Only emitted when ``OPENSRE_ANALYTICS_LOG_EVENTS=1`` so the cost is opt-in.
-    Use ``_log_failure`` instead for terminal failures that must always be
-    recorded.
+    Emitted unless ``OPENSRE_ANALYTICS_LOG_EVENTS=0``. Use ``_log_failure``
+    instead for terminal failures that must always be recorded.
     """
     if not _event_logging_enabled():
         return
@@ -544,6 +652,26 @@ def _scrub_error_message(message: str) -> str:
     if len(scrubbed) > _FAILURE_MESSAGE_MAX_LEN:
         scrubbed = scrubbed[:_FAILURE_MESSAGE_MAX_LEN] + "..."
     return scrubbed
+
+
+def _sanitized_response_json(response: httpx.Response) -> str:
+    """Keep only bounded, known response metadata; never retain echoed user content."""
+    safe: dict[str, str | bool] = {}
+    if len(response.content) > _RESPONSE_DIAGNOSTIC_MAX_BYTES:
+        return "{}"
+    try:
+        body = response.json()
+    except (ValueError, RecursionError):
+        return "{}"
+    if isinstance(body, dict):
+        if "error" in body:
+            error = body["error"]
+            safe["error"] = (
+                error if isinstance(error, str) and error in _SAFE_RESPONSE_ERRORS else "<redacted>"
+            )
+        if isinstance(body.get("accepted"), bool):
+            safe["accepted"] = body["accepted"]
+    return json.dumps(safe, separators=(",", ":"))
 
 
 def _format_failure_extra(value: object) -> JsonValue:
@@ -589,8 +717,8 @@ def _log_failure(stage: str, error: BaseException, **extra: object) -> None:
     swallowed — the telemetry layer must never crash the CLI, even when its
     own diagnostics are broken.
 
-    Mirrored to the opt-in debug log so developers running with
-    ``OPENSRE_ANALYTICS_LOG_EVENTS=1`` see failures inline with events.
+    Mirrored to the local event log unless it is disabled so developers see
+    failures inline with events.
     """
     line = _failure_breadcrumb_line(stage, error, extra)
 
@@ -632,17 +760,20 @@ class _InvalidPropertyValue(TypeError):
     """Raised internally when a caller submits a property value we cannot serialize."""
 
 
+class _PayloadTooLarge(ValueError):
+    """Raised internally when an event exceeds the ingest contract's body limit."""
+
+
 def _coerce_properties(
     event: str,
     properties: Properties | None,
 ) -> Properties:
-    """Return a sanitized copy of ``properties`` enforcing the ``str | bool`` contract.
+    """Return a sanitized, JSON-compatible copy of ``properties``.
 
-    PostHog event values are typed as ``str | bool``; a buggy caller could still
-    pass a number, ``None``, or an arbitrary object. We accept ``str | bool``
-    as-is, drop ``None`` silently, coerce ``int`` and ``float`` to ``str``, and
-    drop anything else with a ``_log_failure`` breadcrumb so the misuse stays
-    observable without crashing capture.
+    Existing analytics queries expect scalar numerics as strings, so preserve
+    that contract while allowing nested JSON arrays and objects used by AI
+    events. Drop unsupported values with a failure breadcrumb rather than
+    crashing the product path.
     """
     if not properties:
         return {}
@@ -671,7 +802,9 @@ def _coerce_properties(
 
 
 def _is_json_value(value: object) -> bool:
-    if isinstance(value, bool | str | int | float):
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, bool | str | int):
         return True
     if isinstance(value, list):
         return all(_is_json_value(item) for item in value)
@@ -681,9 +814,10 @@ def _is_json_value(value: object) -> bool:
 
 
 _COMPOSITE_FINGERPRINT = _build_composite_fingerprint()
-_RUNTIME_CONTEXT = detect_runtime_context()
+_ANALYTICS_RUNTIME = detect_analytics_runtime()
 
 _BASE_PROPERTIES: Final[Properties] = {
+    "analytics_properties_version": ANALYTICS_PROPERTIES_VERSION,
     "cli_version": _cli_version(),
     "python_version": platform.python_version(),
     "os_family": platform.system().lower(),
@@ -691,17 +825,25 @@ _BASE_PROPERTIES: Final[Properties] = {
     "composite_fingerprint": _COMPOSITE_FINGERPRINT.value,
     "composite_fingerprint_version": _COMPOSITE_FINGERPRINT_VERSION,
     "composite_fingerprint_components": _COMPOSITE_FINGERPRINT.components,
-    "execution_environment": _RUNTIME_CONTEXT.execution_environment,
-    "is_ci": _RUNTIME_CONTEXT.is_ci,
-    "is_container": _RUNTIME_CONTEXT.is_container,
-    "container_runtime": _RUNTIME_CONTEXT.container_runtime,
+    "execution_environment": _ANALYTICS_RUNTIME.execution_environment,
+    "is_ci": _ANALYTICS_RUNTIME.is_ci,
+    "is_test": is_test_run(),
+    **(
+        {"is_container": _ANALYTICS_RUNTIME.is_container}
+        if _ANALYTICS_RUNTIME.is_container is not None
+        else {}
+    ),
+    "container_runtime": _ANALYTICS_RUNTIME.container_runtime,
+    "distribution": detect_distribution(),
+    "ci_detection_status": _ANALYTICS_RUNTIME.ci_detection_status,
+    "container_detection_status": _ANALYTICS_RUNTIME.container_detection_status,
     "$process_person_profile": False,
 }
 
 
 class Analytics:
     def __init__(self) -> None:
-        self._disabled = _is_opted_out()
+        self._disabled = analytics_opted_out()
         self._anonymous_id = _get_or_create_anonymous_id()
         self._identity_persistence = _identity_persistence()
         self._queue: queue.Queue[_Envelope | None] = queue.Queue(maxsize=_QUEUE_SIZE)
@@ -713,11 +855,20 @@ class Analytics:
         self._shutdown = False
         self._worker_alive = not self._disabled
         self._persistent_properties: Properties = {}
-        self._identified_organization_groups: set[str] = set()
+        if (install_marker_state := read_install_marker_state(_CONFIG_DIR)) is not None:
+            self._persistent_properties["install_marker_state_before_install"] = (
+                install_marker_state
+            )
+        self._identified_organization_groups: set[tuple[str, AnalyticsDestination | None]] = set()
         self._org_group_lock = threading.Lock()
+        self._destination_lock = threading.Lock()
+        self._account_revision = _account_record_revision() if not self._disabled else None
+        self._destination: AnalyticsDestination | None = None
 
         if not self._disabled:
-            # Never block interpreter exit on PostHog; callers that need a
+            self._destination = resolve_analytics_destination()
+
+            # Never block interpreter exit on analytics; callers that need a
             # best-effort drain (e.g. install) pass flush=True explicitly.
             def _atexit_shutdown() -> None:
                 self.shutdown(flush=False)
@@ -726,16 +877,65 @@ class Analytics:
             for properties in _pop_user_id_load_failures():
                 self.capture(Event.USER_ID_LOAD_FAILED, properties)
 
-    def capture(self, event: Event, properties: Properties | None = None) -> None:
+    def _install_delivery_confirmed(self) -> bool:
+        return self._destination is not None and _path_exists(
+            _install_delivery_path(self._anonymous_id, self._destination)
+        )
+
+    def capture(
+        self,
+        event: str,
+        properties: Properties | None = None,
+        *,
+        event_id: str | None = None,
+        occurred_at: str | None = None,
+    ) -> None:
+        """Queue ``event``; a fixed ``event_id`` and ``occurred_at`` make a resend idempotent."""
         if self._disabled or self._shutdown:
             return
+        destination = self._current_destination()
         merged = merge_usage_enrichment(
-            _BASE_PROPERTIES
-            | self._persistent_properties
-            | _coerce_properties(event.value, properties)
+            _coerce_properties(event, properties),
+            defaults=_BASE_PROPERTIES | self._persistent_properties,
         )
-        self._ensure_organization_group(merged)
-        envelope = _Envelope(event=event.value, properties=merged)
+        # Startup may load a project environment after this module was imported.
+        # Recheck cheap CI signals without repeating container filesystem probes.
+        # A failed container probe stays unknown; it must not become local.
+        is_ci = is_ci_environment()
+        cicd_marker = has_cicd_marker()
+        merged["is_ci"] = is_ci
+        merged["cicd_marker"] = cicd_marker
+        merged["ci_detection_status"] = "detected" if is_ci else "not_detected"
+        container = _ANALYTICS_RUNTIME.is_container
+        if container is True:
+            merged["execution_environment"] = "ci_container" if is_ci else "container"
+        elif container is False:
+            merged["execution_environment"] = "ci" if is_ci else "local"
+        else:
+            merged["execution_environment"] = "ci" if is_ci else "unknown"
+        # Loaded distribution and test traffic are process facts. Event payloads
+        # cannot relabel them.
+        merged["distribution"] = _BASE_PROPERTIES["distribution"]
+        merged["is_test"] = is_test_run()
+        if event == Event.INSTALL_DETECTED and cicd_marker and not merged.get("install_origin"):
+            merged["install_origin"] = "cicd"
+        self._ensure_organization_group(merged, destination)
+        envelope = _Envelope(
+            event=event,
+            properties=merged,
+            destination=destination,
+        )
+        if event_id is not None:
+            envelope = replace(envelope, event_id=event_id)
+        if occurred_at is not None:
+            envelope = replace(envelope, occurred_at=occurred_at)
+        if event == Event.INSTALL_DETECTED:
+            body = self._serialize(self._payload(envelope))
+            try:
+                body = persist_observation(_CONFIG_DIR, self._anonymous_id, body)
+            except (OSError, ValueError) as exc:
+                _log_failure("install_observation", exc)
+            envelope = replace(envelope, body=body)
         self._enqueue(envelope)
 
     def set_persistent_property(self, key: str, value: JsonScalar) -> None:
@@ -751,18 +951,37 @@ class Analytics:
             return
         self._persistent_properties[key] = value
 
-    def identify(self, set_properties: Properties) -> None:
-        """Attach person properties to the anonymous distinct id via a ``$identify`` event.
+    def refresh_destination(self) -> None:
+        """Reload endpoint credentials after account state changes in-process."""
+        if self._disabled or self._shutdown:
+            return
+        with self._destination_lock:
+            revision = _account_record_revision()
+            destination = resolve_analytics_destination()
+            self._destination = destination
+            self._account_revision = revision
 
-        Overrides the project-wide ``$process_person_profile: False`` default for this
-        single event so PostHog creates/updates the person profile. No-ops when telemetry
-        is disabled, exactly like :meth:`capture`.
+    def _current_destination(self) -> AnalyticsDestination | None:
+        with self._destination_lock:
+            revision = _account_record_revision()
+            if revision != self._account_revision:
+                self._destination = resolve_analytics_destination()
+                self._account_revision = revision
+            return self._destination
+
+    def identify(self, set_properties: Properties) -> None:
+        """Emit a ``$identify`` control event for downstream identity handling.
+
+        Overrides the project-wide ``$process_person_profile: False`` default for
+        this event. No-ops when telemetry is disabled, exactly like
+        :meth:`capture`.
         """
         if self._disabled or self._shutdown:
             return
         coerced = _coerce_properties("$identify", set_properties)
         if not coerced:
             return
+        destination = self._current_destination()
         properties = merge_usage_enrichment(
             {
                 **_BASE_PROPERTIES,
@@ -770,8 +989,14 @@ class Analytics:
                 "$set": coerced,
             }
         )
-        self._ensure_organization_group(properties)
-        self._enqueue(_Envelope(event="$identify", properties=properties))
+        self._ensure_organization_group(properties, destination)
+        self._enqueue(
+            _Envelope(
+                event="$identify",
+                properties=properties,
+                destination=destination,
+            )
+        )
 
     def group_identify(
         self,
@@ -779,27 +1004,44 @@ class Analytics:
         group_key: str,
         set_properties: Properties | None = None,
     ) -> None:
-        """Create/update a PostHog group via a ``$groupidentify`` event.
+        """Emit a ``$groupidentify`` control event for downstream group handling.
 
-        Used so CLI/gateway events that stamp ``$groups.organization`` attach to
-        the same org group the webapp uses for integration inventory.
+        Used alongside CLI/gateway events that stamp ``$groups.organization``
+        with the same organization key as the webapp integration inventory.
         """
         if self._disabled or self._shutdown:
             return
         key = group_key.strip()
         if not group_type.strip() or not key:
             return
+        self._enqueue_group_identify(group_type, key, set_properties, self._current_destination())
+
+    def _enqueue_group_identify(
+        self,
+        group_type: str,
+        group_key: str,
+        set_properties: Properties | None,
+        destination: AnalyticsDestination | None,
+    ) -> None:
         coerced = _coerce_properties("$groupidentify", set_properties)
         properties: Properties = {
             **_BASE_PROPERTIES,
             "$group_type": group_type,
-            "$group_key": key,
+            "$group_key": group_key,
             "$group_set": coerced,
         }
-        self._enqueue(_Envelope(event="$groupidentify", properties=properties))
+        self._enqueue(
+            _Envelope(
+                event="$groupidentify",
+                properties=properties,
+                destination=destination,
+            )
+        )
 
-    def _ensure_organization_group(self, properties: Properties) -> None:
-        """Emit ``$groupidentify`` once per process for each organization id seen."""
+    def _ensure_organization_group(
+        self, properties: Properties, destination: AnalyticsDestination | None
+    ) -> None:
+        """Identify each organization for the destination of its source event."""
         org = properties.get("organization_id")
         if not isinstance(org, str):
             return
@@ -807,13 +1049,15 @@ class Analytics:
         if not org_id:
             return
         with self._org_group_lock:
-            if org_id in self._identified_organization_groups:
+            group = (org_id, destination)
+            if group in self._identified_organization_groups:
                 return
-            self._identified_organization_groups.add(org_id)
-        self.group_identify(
+            self._identified_organization_groups.add(group)
+        self._enqueue_group_identify(
             ORGANIZATION_GROUP_TYPE,
             org_id,
             {"organization_id": org_id},
+            destination,
         )
 
     def _enqueue(self, envelope: _Envelope) -> None:
@@ -873,7 +1117,11 @@ class Analytics:
 
     def _worker_loop(self) -> None:
         try:
-            with httpx.Client(timeout=_SEND_TIMEOUT, trust_env=False) as client:
+            with httpx.Client(
+                timeout=_SEND_TIMEOUT,
+                trust_env=False,
+                follow_redirects=False,
+            ) as client:
                 while True:
                     item = self._queue.get()
                     if item is None:
@@ -900,35 +1148,111 @@ class Analytics:
             # thread exits cleanly without surfacing infrastructure noise to Sentry.
             _log_failure("worker_loop_fatal", exc)
 
-    def _send(self, client: httpx.Client, item: _Envelope) -> None:
+    def _payload(self, item: _Envelope) -> Properties:
         properties: Properties = {
             **item.properties,
             "distinct_id": self._anonymous_id,
             "$lib": "opensre-cli",
             "identity_persistence": self._identity_persistence,
         }
-        insert_id = _event_insert_id(item.event, self._anonymous_id)
+        endpoint_url = item.destination.endpoint_url if item.destination is not None else ""
+        execution_properties, _execution_headers = execution_evidence(
+            self._anonymous_id,
+            endpoint_url=endpoint_url,
+            is_ci=properties.get("is_ci") is True,
+            is_container=properties.get("is_container") is True,
+        )
+        properties.update(execution_properties)
+        insert_id = _event_insert_id(
+            item.event,
+            self._anonymous_id,
+            install_recovery=properties.get("install_detection_reason") == "unverified_marker",
+        )
         if insert_id is not None:
             properties["$insert_id"] = insert_id
-        _log_event_line(item.event, properties)
-        payload = {
-            "api_key": POSTHOG_CAPTURE_API_KEY,
+        return {
+            "schema_version": ANALYTICS_EVENT_SCHEMA_VERSION,
+            "event_id": insert_id or item.event_id,
+            "occurred_at": item.occurred_at,
+            "source": ANALYTICS_SOURCE,
+            "anonymous_id": self._anonymous_id,
             "event": item.event,
             "properties": properties,
         }
+
+    @staticmethod
+    def _serialize(payload: Properties) -> bytes:
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+
+    def _send(self, client: httpx.Client, item: _Envelope) -> None:
+        destination = item.destination
+        if destination is None:
+            return
+        if item.body is None:
+            payload = self._payload(item)
+            body = self._serialize(payload)
+        else:
+            body = item.body
+            payload = json.loads(body)
+        properties = payload["properties"]
+        if isinstance(properties, dict):
+            _log_event_line(item.event, properties)
+        else:
+            properties = {}
+        _, execution_headers = execution_evidence(
+            self._anonymous_id,
+            endpoint_url=destination.endpoint_url,
+            is_ci=properties.get("is_ci") is True,
+            is_container=properties.get("is_container") is True,
+        )
+        if len(body) > ANALYTICS_MAX_PAYLOAD_BYTES:
+            _log_failure(
+                "analytics_send",
+                _PayloadTooLarge(
+                    f"payload has {len(body)} bytes; limit is {ANALYTICS_MAX_PAYLOAD_BYTES}"
+                ),
+                event=item.event,
+            )
+            return
         try:
-            client.post(f"{POSTHOG_HOST}/capture/", json=payload).raise_for_status()
+            response = client.post(
+                destination.endpoint_url,
+                content=body,
+                headers=destination.headers(body) | execution_headers,
+            )
+            if response.status_code != HTTPStatus.ACCEPTED:
+                raise httpx.HTTPStatusError(
+                    "Analytics endpoint did not accept event",
+                    request=response.request,
+                    response=response,
+                )
         except httpx.TransportError as exc:
             # Network/TLS failures (ConnectTimeout, ConnectError, ReadTimeout, …) are
             # transient infrastructure issues, not application bugs — log only.
-            _log_failure("posthog_send", exc, event=item.event)
+            _log_failure("analytics_send", exc, event=item.event)
         except httpx.HTTPStatusError as exc:
-            # PostHog HTTP errors (4xx config issues, 5xx transient infra failures)
+            # Webapp HTTP errors (4xx contract/auth issues, 5xx storage failures)
             # are not application bugs — log only, do not surface to Sentry.
-            _log_failure("posthog_send", exc, event=item.event)
+            _log_failure(
+                "analytics_send",
+                exc,
+                event=item.event,
+                event_id=payload["event_id"],
+                status_code=exc.response.status_code,
+                response_json=_sanitized_response_json(exc.response),
+            )
         except Exception as exc:
-            _log_failure("posthog_send", exc, event=item.event)
+            _log_failure("analytics_send", exc, event=item.event)
             _capture_sentry_failure(exc)
+        else:
+            if item.event == Event.INSTALL_DETECTED.value:
+                _record_install_delivery(_install_delivery_path(self._anonymous_id, destination))
+                _touch_once(_FIRST_RUN_PATH)
 
     def _mark_done(self) -> None:
         with self._pending_lock:
@@ -938,16 +1262,6 @@ class Analytics:
 
 
 _instance: Analytics | None = None
-
-
-def get_anonymous_id() -> str:
-    """Return the stable install-scoped analytics distinct id.
-
-    Used for offline experiment bucketing (no PostHog ``/decide`` call) so
-    variants stay sticky per install without a blocking network round-trip at
-    startup.
-    """
-    return _get_or_create_anonymous_id()
 
 
 def get_analytics() -> Analytics:
@@ -975,15 +1289,23 @@ def analytics_needs_flush() -> bool:
 
 
 def capture_install_detected_if_needed(properties: Properties | None = None) -> bool:
-    """Capture ``install_detected`` once per persisted OpenSRE home."""
-    if _path_exists(_FIRST_RUN_PATH):
-        return False
-    analytics = get_analytics()
-    if not _touch_once(_FIRST_RUN_PATH):
-        return False
-    analytics.capture(Event.INSTALL_DETECTED, properties)
-    return True
+    """Attempt install capture once per process until delivery is persisted."""
+    with _install_capture_lock:
+        if _install_capture_state.attempted:
+            return False
+        analytics = get_analytics()
+        if analytics._install_delivery_confirmed():
+            return False
+        if _path_exists(_FIRST_RUN_PATH):
+            # A later tagged command must not invent the original installation origin.
+            properties = {
+                key: value for key, value in (properties or {}).items() if key != "install_origin"
+            }
+            properties["install_detection_reason"] = "unverified_marker"
+        analytics.capture(Event.INSTALL_DETECTED, properties)
+        _install_capture_state.attempted = True
+        return True
 
 
-def capture_first_run_if_needed() -> None:
-    capture_install_detected_if_needed()
+def capture_first_run_if_needed(properties: Properties | None = None) -> None:
+    capture_install_detected_if_needed(properties)

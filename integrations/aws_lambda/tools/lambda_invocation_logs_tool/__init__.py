@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from infrastructure.evidence.evidence_compaction import (
     compact_invocations,
     compact_logs,
@@ -23,6 +24,8 @@ def _extract_lambda_invocation_logs_params(sources: dict[str, dict]) -> dict:
     name="get_lambda_invocation_logs",
     display_name="Lambda logs",
     source="cloudwatch",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Get Lambda invocation logs from CloudWatch.",
     use_cases=[
         "Finding error messages and stack traces from Lambda executions",

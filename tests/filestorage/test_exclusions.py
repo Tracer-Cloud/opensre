@@ -20,11 +20,11 @@ from config.constants.filestorage import (
     REMOTE_SYNC_EXCLUDE_OFF_ENV,
 )
 from infrastructure.filestorage.config import load_remote_sync_config
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.engine import pull, push, run_sync
 from infrastructure.filestorage.enums import SyncDirection, SyncRootName
 from infrastructure.filestorage.errors import RemoteSyncConfigError, UnsyncablePathError
 from infrastructure.filestorage.exclusions import NO_EXCLUSIONS, ExclusionRules, parse_exclusions
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.syncable import SyncRoot
 from tests.filestorage.test_remote_sync import LEAKED_SECRET, FakeObjectStore
 

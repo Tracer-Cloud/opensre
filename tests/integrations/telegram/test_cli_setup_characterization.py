@@ -74,7 +74,7 @@ def telegram(monkeypatch: pytest.MonkeyPatch) -> _Telegram:
         telegram_setup,
         "TELEGRAM_SETUP",
         dataclasses.replace(
-            telegram_setup.TELEGRAM_SETUP, verify=_fake_verify, resolve=_fake_resolve
+            telegram_setup.TELEGRAM_SETUP, guide=None, verify=_fake_verify, resolve=_fake_resolve
         ),
     )
     monkeypatch.setattr(

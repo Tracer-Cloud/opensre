@@ -134,7 +134,7 @@ def test_sample_resource_snapshot_skips_rss_without_backends(
 
 def test_emit_span_and_thread_boundary_are_free_when_noop() -> None:
     assert not is_session_trace_active()
-    assert emit_span(span_kind="route", name="gather_and_answer", session_id="s") == ""
+    assert emit_span(span_kind="route", name="answer", session_id="s") == ""
     assert emit_thread_boundary("s", name="turn_boundary", phase="turn_start") == ""
     with timed_span(span_kind="component", name="x", session_id="s") as attrs:
         attrs["ok"] = True
@@ -191,14 +191,14 @@ def test_emit_span_writes_route_when_sink_active(
     with bind_session_trace(session_id):
         emit_span(
             span_kind="route",
-            name="gather_and_answer",
+            name="answer",
             attributes={"handled": False},
         )
         with timed_span(span_kind="stage", name="extract_alert") as attrs:
             attrs["fields_updated"] = ["alert"]
             time.sleep(0.001)
     kinds = {(rec["span_kind"], rec["name"]) for rec in _trace_spans(path)}
-    assert ("route", "gather_and_answer") in kinds
+    assert ("route", "answer") in kinds
     assert ("stage", "extract_alert") in kinds
     stage = next(r for r in _trace_spans(path) if r.get("name") == "extract_alert")
     assert stage["duration_ms"] >= 0
@@ -350,7 +350,7 @@ def test_semantic_helpers_match_span_kinds(tmp_path: Path, monkeypatch: pytest.M
     path = _activate_jsonl_sink(tmp_path, session_id, monkeypatch)
     with traced_session(session_id, component="gateway_turn") as attrs:
         mark_span_outcome(attrs, "ok")
-        emit_route("gather_and_answer", attributes={"handled": False})
+        emit_route("answer", attributes={"handled": False})
         with component_span("action_turn"):
             pass
         with stage_span("intake"):
@@ -366,7 +366,7 @@ def test_semantic_helpers_match_span_kinds(tmp_path: Path, monkeypatch: pytest.M
     spans = _trace_spans(path)
     kinds = {(rec["span_kind"], rec["name"]) for rec in spans}
     assert ("component", "gateway_turn") in kinds
-    assert ("route", "gather_and_answer") in kinds
+    assert ("route", "answer") in kinds
     assert ("component", "action_turn") in kinds
     assert ("stage", "intake") in kinds
     assert ("tool", "echo") in kinds

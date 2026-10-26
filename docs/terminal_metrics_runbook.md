@@ -5,10 +5,11 @@ by the CLI.
 
 ## Event Groups
 
-- Test execution lifecycle: `test_run_started`, `test_run_completed`, `test_run_failed`,
-  `test_synthetic_started`, `test_synthetic_completed`, `test_synthetic_failed`
-- Interactive terminal behavior: `terminal_actions_planned`, `terminal_actions_executed`,
-  `terminal_turn_summarized`
+- Interactive terminal behavior: `terminal_actions_planned`,
+  `terminal_actions_executed`, `terminal_turn_summarized`
+- Agent-loop reliability: `react_turn_completed`, `$ai_generation`
+- Gateway reliability: `gateway_turn_started`, `gateway_turn_completed`,
+  `gateway_turn_failed`
 
 ## Core KPIs
 
@@ -25,5 +26,6 @@ by the CLI.
 ## Data Contract Source of Truth
 
 - Event enum: `infrastructure/analytics/events.py`
-- Capture helpers and KPI query specs: `infrastructure/analytics/cli.py`
+- Capture helpers and KPI query specs: `infrastructure/analytics/capture.py`
+- Event property builders: `infrastructure/analytics/event_properties.py`
 - Provider type constraints and coercion: `infrastructure/analytics/provider.py`

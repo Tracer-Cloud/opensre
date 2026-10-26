@@ -1,11 +1,79 @@
-"""Wire integrations-layer helpers into :mod:`infrastructure.harness_ports`."""
+"""Wire integrations-layer helpers into :mod:`infrastructure.harness_providers`."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
+
+def _setupable_services() -> tuple[str, ...]:
+    """Services with a setup wizard; imported on first use.
+
+    ``integrations.cli`` pulls every vendor's setup flow (~2,000 modules).
+    Registration must stay cheap at process boot, so the import waits until
+    the port is actually read (``/integrations setup``).
+    """
+    from integrations.cli import setup_services
+
+    return tuple(setup_services())
+
+
+def _fetch_webapp_vault() -> list[dict[str, Any]] | None:
+    """Webapp integrations for this turn; the vault client imports on first use."""
+    import integrations.member_integrations as member_integrations
+
+    return member_integrations.turn_vault_records()
+
+
+def _fleet_vault_configured() -> bool:
+    """Whether this process is a silo with a fleet vault, not a signed-in laptop."""
+    import integrations.webapp_vault as webapp_vault
+
+    return webapp_vault.webapp_vault_configured()
+
+
+def _fetch_account_integrations() -> list[dict[str, Any]]:
+    """The signed-in account's org integrations; the client imports on first use."""
+    import integrations.account_integrations as account_integrations
+
+    return account_integrations.load_account_integrations()
+
+
+def _account_integrations_generation() -> int:
+    import integrations.account_integrations as account_integrations
+    import integrations.member_integrations as member_integrations
+    import integrations.webapp_vault as webapp_vault
+
+    generation = account_integrations.account_integrations_generation()
+    if webapp_vault.webapp_vault_configured():
+        # A connection added or removed in the app changes the workspace set,
+        # so every session re-resolves on its next turn: no restart needed.
+        generation = hash((generation, webapp_vault.webapp_vault_generation()))
+    member = member_integrations.member_view_stamp()
+    # Members of one Slack thread share a session; its resolved cache must not
+    # carry one member's grants into another member's turn.
+    return generation if not member else hash((generation, member))
+
+
+def _github_rest_token_resolves(resolved_integrations: Mapping[str, Any]) -> bool:
+    """The analyzer's own token predicate; the GitHub client imports on first use."""
+    from integrations.github import has_github_rest_token
+
+    return has_github_rest_token(resolved_integrations)
+
+
+def _slack_connection_resolves(resolved_integrations: Mapping[str, Any]) -> bool:
+    """Slack resolves with a bot token or a webhook, as the Slack tools read it."""
+    from core.tool import availability_view
+
+    slack = availability_view(dict(resolved_integrations)).get("slack")
+    if not isinstance(slack, Mapping):
+        return False
+    return any(str(slack.get(field) or "").strip() for field in ("bot_token", "webhook_url"))
+
 
 def register_harness_adapters() -> None:
-    import integrations.webapp_vault as webapp_vault
-    from infrastructure.harness_ports import set_integration_resolution_adapters
+    from infrastructure.harness_providers import IntegrationResolutionAdapters
     from integrations.catalog import (
         classify_integrations,
         configured_integration_services,
@@ -13,40 +81,60 @@ def register_harness_adapters() -> None:
         merge_integrations_by_service,
         merge_local_integrations,
     )
-    from integrations.store import STORE_PATH, load_integrations
+    from integrations.github import github_setup_url
+    from integrations.github.connections import select_github_connection
+    from integrations.store import load_integrations, resolve_store_path
 
-    set_integration_resolution_adapters(
+    IntegrationResolutionAdapters(
+        select_github_connection=select_github_connection,
         load_integrations=load_integrations,
-        integration_store_path=lambda: str(STORE_PATH),
+        integration_store_path=lambda: str(resolve_store_path()),
         load_env_integrations=load_env_integrations,
         classify_integrations=classify_integrations,
         merge_local_integrations=merge_local_integrations,
         merge_integrations_by_service=merge_integrations_by_service,
         configured_services=lambda: tuple(configured_integration_services()),
-        fetch_webapp_vault=lambda: webapp_vault.fetch_webapp_org_integrations(),
-    )
-
-    from infrastructure.harness_ports import set_setupable_integration_services
-    from integrations.cli import setup_services
-
-    set_setupable_integration_services(lambda: tuple(setup_services()))
+        setupable_services=_setupable_services,
+        setup_url=github_setup_url,
+        fetch_webapp_vault=_fetch_webapp_vault,
+        fleet_vault_configured=_fleet_vault_configured,
+        fetch_account_integrations=_fetch_account_integrations,
+        account_integrations_generation=_account_integrations_generation,
+    ).install()
 
     _register_vcs_repo_scope_providers()
+    _register_runbook_source_providers()
     _register_cli_llm_adapters()
     _register_alert_source_detectors()
     _register_alert_source_routing()
     _register_incident_anchor_parsers()
     _register_prompt_fragments()
-    _register_taxonomy_profiles()
     _register_message_context_strippers()
     _register_alert_detail_fields()
     _register_secondary_tool_sources()
     _register_gateway_persona()
     _register_preferred_evidence_sources()
+    _register_skill_prerequisite_checks()
+
+
+def _register_skill_prerequisite_checks() -> None:
+    """Answer the skill prerequisite checks the host gate looks up by id."""
+    from config.constants.skill_prerequisites import (
+        GITHUB_REST_TOKEN_CHECK,
+        SLACK_CONNECTED_CHECK,
+    )
+    from infrastructure.harness_providers import (
+        clear_skill_prerequisite_checks,
+        register_skill_prerequisite_check,
+    )
+
+    clear_skill_prerequisite_checks()
+    register_skill_prerequisite_check(GITHUB_REST_TOKEN_CHECK, _github_rest_token_resolves)
+    register_skill_prerequisite_check(SLACK_CONNECTED_CHECK, _slack_connection_resolves)
 
 
 def _register_vcs_repo_scope_providers() -> None:
-    from infrastructure.harness_ports import (
+    from infrastructure.harness_providers import (
         clear_vcs_repo_scope_providers,
         register_vcs_repo_scope_provider,
     )
@@ -56,6 +144,17 @@ def _register_vcs_repo_scope_providers() -> None:
     clear_vcs_repo_scope_providers()
     register_vcs_repo_scope_provider(GITHUB_VCS_REPO_SCOPE_PROVIDER)
     register_vcs_repo_scope_provider(GITLAB_VCS_REPO_SCOPE_PROVIDER)
+
+
+def _register_runbook_source_providers() -> None:
+    from infrastructure.harness_providers import (
+        clear_runbook_source_providers,
+        register_runbook_source_provider,
+    )
+    from integrations.github.runbooks import build_github_runbook_source
+
+    clear_runbook_source_providers()
+    register_runbook_source_provider("github", build_github_runbook_source)
 
 
 def _register_alert_source_detectors() -> None:
@@ -98,39 +197,21 @@ def _register_incident_anchor_parsers() -> None:
 
 
 def _register_prompt_fragments() -> None:
-    from infrastructure.harness_ports import (
+    from infrastructure.harness_providers import (
         clear_action_prompt_fragments,
         clear_assistant_prompt_fragments,
-        clear_gather_prompt_fragments,
         register_action_prompt_fragment,
         register_assistant_prompt_fragment,
-        register_gather_prompt_fragment,
     )
-    from integrations.buzz.action_prompt import buzz_action_prompt_fragment
     from integrations.github.action_prompt import github_action_prompt_fragment
-    from integrations.github.gather_prompt import github_gather_prompt_fragment
+    from integrations.messaging_prompt import messaging_action_prompt_fragment
     from integrations.posthog.assistant_prompt import posthog_assistant_prompt_fragment
-    from integrations.posthog.gather_prompt import posthog_gather_prompt_fragment
-    from integrations.rocketchat.action_prompt import rocketchat_action_prompt_fragment
     from integrations.sentry.assistant_prompt import sentry_assistant_prompt_fragment
-    from integrations.sentry.gather_prompt import sentry_gather_prompt_fragment
-    from integrations.slack.action_prompt import slack_action_prompt_fragment
     from integrations.slack.assistant_prompt import slack_assistant_prompt_fragment
-    from integrations.slack.gather_prompt import slack_gather_prompt_fragment
-    from integrations.telegram.action_prompt import telegram_action_prompt_fragment
-
-    clear_gather_prompt_fragments()
-    register_gather_prompt_fragment(github_gather_prompt_fragment)
-    register_gather_prompt_fragment(posthog_gather_prompt_fragment)
-    register_gather_prompt_fragment(sentry_gather_prompt_fragment)
-    register_gather_prompt_fragment(slack_gather_prompt_fragment)
 
     clear_action_prompt_fragments()
-    register_action_prompt_fragment(slack_action_prompt_fragment)
     register_action_prompt_fragment(github_action_prompt_fragment)
-    register_action_prompt_fragment(telegram_action_prompt_fragment)
-    register_action_prompt_fragment(rocketchat_action_prompt_fragment)
-    register_action_prompt_fragment(buzz_action_prompt_fragment)
+    register_action_prompt_fragment(messaging_action_prompt_fragment)
 
     clear_assistant_prompt_fragments()
     register_assistant_prompt_fragment(sentry_assistant_prompt_fragment)
@@ -138,19 +219,8 @@ def _register_prompt_fragments() -> None:
     register_assistant_prompt_fragment(slack_assistant_prompt_fragment)
 
 
-def _register_taxonomy_profiles() -> None:
-    from core.domain.diagnosis.taxonomy_registry import (
-        clear_taxonomy_profiles,
-        register_taxonomy_profile,
-    )
-    from integrations.hermes.taxonomy import HERMES_TAXONOMY_PROFILE
-
-    clear_taxonomy_profiles()
-    register_taxonomy_profile(HERMES_TAXONOMY_PROFILE)
-
-
 def _register_message_context_strippers() -> None:
-    from infrastructure.harness_ports import (
+    from infrastructure.harness_providers import (
         clear_message_context_prefix_strippers,
         register_message_context_prefix_stripper,
     )
@@ -182,12 +252,12 @@ def _register_secondary_tool_sources() -> None:
     # integrations match. Each is owned by its own integration package;
     # registered here (rather than from each package's own module-import time)
     # so the set is explicit and easy to audit in one place.
-    for source in ("knowledge", "openclaw", "google_docs"):
+    for source in ("knowledge", "google_docs"):
         register_secondary_tool_source(source)
 
 
 def _register_gateway_persona() -> None:
-    from infrastructure.harness_ports import (
+    from infrastructure.harness_providers import (
         clear_gateway_persona_fragments,
         register_gateway_persona_fragment,
     )
@@ -204,7 +274,7 @@ def _register_preferred_evidence_sources() -> None:
     vendor's ``register_*`` call to stop treating it as preferred (no L0 CTA /
     no dialect draft for that id).
     """
-    from infrastructure.harness_ports import (
+    from infrastructure.harness_providers import (
         clear_metric_query_drafts,
         clear_preferred_evidence_sources,
     )
@@ -222,9 +292,8 @@ def _register_preferred_evidence_sources() -> None:
 
 
 def _register_cli_llm_adapters() -> None:
-    from typing import Any
-
-    from infrastructure.harness_ports import set_cli_llm_adapters
+    from core.llm.types import CliLLMClient, ModelType
+    from infrastructure.harness_providers import CliLlmAdapters
     from integrations.llm_cli.registry import get_cli_provider_registration
     from integrations.llm_cli.runner import CLIBackedLLMClient
     from integrations.llm_cli.text import flatten_messages_to_prompt
@@ -234,8 +303,8 @@ def _register_cli_llm_adapters() -> None:
         *,
         model: str | None = None,
         max_tokens: int | None = None,
-        model_type: Any = None,
-    ) -> Any:
+        model_type: ModelType | None = None,
+    ) -> CliLLMClient:
         kwargs: dict[str, Any] = {"model": model}
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
@@ -243,8 +312,8 @@ def _register_cli_llm_adapters() -> None:
             kwargs["model_type"] = model_type
         return CLIBackedLLMClient(adapter, **kwargs)
 
-    set_cli_llm_adapters(
+    CliLlmAdapters(
         cli_provider_registration=get_cli_provider_registration,
         build_cli_client=_build_cli_client,
         flatten_cli_messages=flatten_messages_to_prompt,
-    )
+    ).install()

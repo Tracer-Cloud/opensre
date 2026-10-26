@@ -3,7 +3,7 @@
 Two unrelated things share the vendor name. The values below configure the
 Sentry SDK that reports *OpenSRE's* crashes to the project's own account; the
 ``*_ENV`` names further down identify the credentials a *user* supplies to let
-investigations query *their* Sentry. Nothing is shared between them.
+agent tools query *their* Sentry. Nothing is shared between them.
 """
 
 from __future__ import annotations

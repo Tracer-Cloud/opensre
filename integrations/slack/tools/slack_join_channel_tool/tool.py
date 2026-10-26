@@ -6,7 +6,7 @@ from typing import Any
 
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.slack.tools.slack_read_messages_tool.constants import SOURCE
 from integrations.slack.tools.slack_read_messages_tool.validation import validate_channel_id
@@ -38,8 +38,6 @@ class SlackJoinChannelTool(BaseTool):
     ]
     requires = ["slack"]
     side_effect_level = SideEffectLevel.EXTERNAL
-    requires_approval = True
-    approval_reason = "Joins a Slack channel as the OpenSRE bot."
     input_schema = {
         "type": "object",
         "properties": {
@@ -114,5 +112,5 @@ class SlackJoinChannelTool(BaseTool):
 
 slack_join_channel = tool(
     SlackJoinChannelTool(),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+    surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
 )

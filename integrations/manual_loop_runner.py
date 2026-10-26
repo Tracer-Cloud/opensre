@@ -2,15 +2,67 @@
 
 from __future__ import annotations
 
+import importlib
+import json
 import logging
+import re
+from collections.abc import Callable, Iterable, Mapping
 
-from core.agent_harness import AgentSession
-from core.agent_harness.runtime import GatherPhase
+from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
+from config.constants.scheduler import STATELESS_LOOP_IDLE_REPLY
+from core.agent_harness import AgentSession, SessionCore
+from core.tool import ToolExecutionHooks
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CHANNELS_PARAM,
+    LOOP_MODE_AGENT,
+    LOOP_MODE_PARAM,
+    LOOP_REPORT_ARGS_PARAM,
+    LOOP_REPORT_PARAM,
+    LOOP_SKILL_PARAM,
+    LOOP_STATELESS_PARAM,
+)
+from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_recipe
+from infrastructure.scheduling.scheduler.previous_runs import previous_runs_block
+from infrastructure.scheduling.scheduler.report_style import report_style_block
+from infrastructure.scheduling.scheduler.run_activity import (
+    CARRY_NOTE_MAX_CHARS,
+    compact_text,
+    keep_carry_note,
+)
+from infrastructure.scheduling.scheduler.schedule_cancel import cancel_requested_for_payload
+from infrastructure.scheduling.scheduler.types import TaskReport
+from integrations.scheduled_outcomes import ScheduledOutcomes
 
 logger = logging.getLogger(__name__)
 
-_MANUAL_LOOP_INSTRUCTIONS = """Scheduled report loop.
+#: Report builder name -> "module:function" producing the report text from string args.
+REPORT_BUILDERS: dict[str, str] = {
+    "github_ci_reliability": "integrations.github.tools.ci_analytics.loop:build_report",
+    CI_REPAIR_REPORT_BUILDER: "integrations.github.tools.ci_repair_loop.supervisor:build_report",
+}
+
+#: Stored params that bind a loop to one repair target (``cron add --pr`` / ``--branch``).
+_TARGET_PARAMS = ("pr_number", "branch")
+#: Stored params that name the repository an agent loop works on, and any one target in it.
+_REPOSITORY_PARAMS = ("owner", "repo", *_TARGET_PARAMS)
+
+#: A loop's reply may end with this line to leave a note for the loop's next run.
+CARRY_NOTE_MARKER = "NOTE FOR NEXT RUN:"
+#: A line starting with the marker in any case, allowing Markdown emphasis or list marks.
+#: A block quote (``>``) is quoted text, never the loop's own note.
+_CARRY_NOTE_LINE = re.compile(
+    rf"^[ \t*_`#-]*{re.escape(CARRY_NOTE_MARKER.rstrip(':'))}[ \t*_`]*:[ \t*_`]*(?P<note>.*)$",
+    re.IGNORECASE,
+)
+
+_CARRY_NOTE_INSTRUCTION = (
+    "To leave yourself a note for this loop's next run, end your reply with one line "
+    f"`{CARRY_NOTE_MARKER} <text>` (at most {CARRY_NOTE_MAX_CHARS} characters); the "
+    "scheduler stores it with this run and removes it from the delivered reply."
+)
+
+_MANUAL_LOOP_INSTRUCTIONS = f"""Scheduled report loop.
 
 Produce only the report body requested below.
 Do not start an RCA, incident investigation, alert triage, diagnosis, or remediation workflow.
@@ -20,11 +72,64 @@ Do not send, post, notify, or message any channel from inside this turn; the sch
 will deliver the final report body to the configured channels after this runner returns.
 Use read-only tools when data is required. For GitHub star history, call
 get_github_star_history and compute "Stars Gained" from the returned daily rows.
+Earlier runs, when listed, are context only: still report everything the request asks for.
+{_CARRY_NOTE_INSTRUCTION}
+"""
+
+_AGENT_LOOP_INSTRUCTIONS = f"""Scheduled agent loop.
+
+Do the work the task below names, using the tools it names.
+Do not load skill_view or follow a report-only skill; the task text below is the complete instruction.
+Reply only with the result in the shape the task specifies; every figure and
+identifier must come from a tool result.
+Write the result yourself. Never paste a policy, state, ledger, queue, or any
+other file's contents as the reply, even when the task tells you to read such
+a file first: read it with tools and report only what this tick did and
+verified.
+A tick that finds nothing eligible to act on delivers nothing: reply with only
+the note line described below, or one short sentence when there is no note.
+The one exception is a task that asks for a summary or report: deliver it on
+every tick, including one with nothing to act on.
+Do not send, post, notify, or message any channel from inside this turn; the
+scheduler will deliver your reply to the configured channels after this
+runner returns.
+{_CARRY_NOTE_INSTRUCTION}
+"""
+
+_STATELESS_AGENT_LOOP_INSTRUCTIONS = f"""Scheduled agent loop.
+
+This run is stateless: it sees no earlier runs, notes or memories, so take
+every fact from a tool result.
+Do the work the task below names, following any skill recipe it includes.
+Do not load skill_view or follow a report-only skill.
+Reply only with the result in the shape the task specifies; every figure and
+identifier must come from a tool result.
+Write the result yourself. Never paste a policy, state, ledger, queue, or any
+other file's contents as the reply.
+When nothing is eligible to act on, reply with exactly {STATELESS_LOOP_IDLE_REPLY} and
+nothing else; that reply delivers nothing.
+Do not send, post, notify, or message any channel from inside this turn; the
+scheduler will deliver your reply to the configured channels after this
+runner returns.
 """
 
 
-def build_manual_loop_prompt(payload: AgentPayload) -> str:
-    """Build the headless report prompt for a manual loop payload."""
+def loop_is_stateless(payload: AgentPayload) -> bool:
+    """Whether an agent loop starts each tick without earlier runs, notes or memory."""
+    return (
+        str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
+        and str(payload.get(LOOP_STATELESS_PARAM) or "").strip().lower() == "true"
+    )
+
+
+def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") -> str:
+    """Build the headless prompt for a manual loop payload.
+
+    ``previous_runs`` is the loop's PREVIOUS RUNS block; it goes right before the
+    stored task so the tick reads its history before the work. A stateless loop
+    never shows it. Every tick carries the reply format guide
+    (:mod:`infrastructure.scheduling.scheduler.report_style`) for where it is delivered.
+    """
     prompt = str(
         payload.get("loop_prompt") or payload.get("prompt") or payload.get("description") or ""
     ).strip()
@@ -32,22 +137,205 @@ def build_manual_loop_prompt(payload: AgentPayload) -> str:
         raise RuntimeError("Manual loop prompt is empty.")
 
     name = str(payload.get("name") or payload.get("task_name") or "manual loop").strip()
-    return f"{_MANUAL_LOOP_INSTRUCTIONS}\nLoop name: {name}\n\nReport request:\n{prompt}"
+    stateless = loop_is_stateless(payload)
+    history = f"\n\n{previous_runs}" if previous_runs and not stateless else ""
+    if str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT:
+        scope = {key: payload[key] for key in _REPOSITORY_PARAMS if payload.get(key)}
+        binding = f"\nStored repository target: {json.dumps(scope)}\n" if scope else ""
+        recipe = _skill_recipe(payload)
+        instructions = _STATELESS_AGENT_LOOP_INSTRUCTIONS if stateless else _AGENT_LOOP_INSTRUCTIONS
+        style = f"\nWhen this tick has a result to deliver, format it as below.\n{_style(payload)}"
+        return (
+            f"{instructions}{style}\nLoop name: {name}{binding}{history}\n\nTask:\n{prompt}{recipe}"
+        )
+    return (
+        f"{_MANUAL_LOOP_INSTRUCTIONS}\n{_style(payload)}\nLoop name: {name}{history}\n\n"
+        f"Report request:\n{prompt}"
+    )
 
 
-def run_manual_prompt_loop(payload: AgentPayload) -> str:
-    """Run one headless turn that produces only the requested report body."""
-    message = build_manual_loop_prompt(payload)
+def _style(payload: AgentPayload) -> str:
+    channels = str(payload.get(LOOP_CHANNELS_PARAM) or "").split(",")
+    return report_style_block(channels, timezone=str(payload.get("timezone") or ""))
+
+
+def _skill_recipe(payload: AgentPayload) -> str:
+    """The bound workflow card as part of the task, or "" for a loop without one.
+
+    The host adds it because agent ticks cannot discover skills themselves; a
+    card that is no longer installed fails the tick instead of running without it.
+    """
+    name = str(payload.get(LOOP_SKILL_PARAM) or "").strip()
+    if not name:
+        return ""
+    skill, body = loop_skill_recipe(name)
+    return f"\n\nSkill recipe ({skill}):\n{body}"
+
+
+def split_carry_note(reply: str) -> tuple[str, str]:
+    """Split a loop's reply into the text to deliver and its note for the next run.
+
+    The note is the marker line and every line below it, when no blank line
+    separates them from the end of the reply. A marker anywhere else (in a block
+    quote, or followed by more of the report) is report content: the reply is
+    delivered unchanged and the note is empty.
+    """
+    lines = reply.rstrip().splitlines()
+    start = len(lines)
+    while start > 0 and lines[start - 1].strip():
+        start -= 1
+        if _CARRY_NOTE_LINE.match(lines[start]):
+            break
+    else:
+        return reply, ""
+    match = _CARRY_NOTE_LINE.match(lines[start])
+    first = match.group("note") if match is not None else ""
+    note = compact_text(" ".join([first, *lines[start + 1 :]]), CARRY_NOTE_MAX_CHARS)
+    return "\n".join(lines[:start]).strip(), note.strip(" *_`")
+
+
+def report_builder(payload: AgentPayload) -> Callable[[Mapping[str, str]], str] | None:
+    """The deterministic builder a loop names, or None when it runs as a model turn."""
+    name = str(payload.get(LOOP_REPORT_PARAM) or "").strip()
+    target = REPORT_BUILDERS.get(name)
+    if target is None:
+        return None
+    module_path, _, attribute = target.partition(":")
+    builder = getattr(importlib.import_module(module_path), attribute)
+    return builder  # type: ignore[no-any-return]
+
+
+def _report_args(payload: AgentPayload) -> dict[str, str]:
+    raw = payload.get(LOOP_REPORT_ARGS_PARAM) or "{}"
+    parsed = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Manual loop report arguments must be a JSON object.")
+    return {str(key): str(value) for key, value in parsed.items()}
+
+
+def _prepare_agent_session(session: SessionCore) -> None:
+    """Run the supplied task without discovering a replacement workflow."""
+    session.skill_discovery_enabled = False
+
+
+def _prepare_stateless_agent_session(session: SessionCore) -> None:
+    """Run the supplied task without a replacement workflow or long-term memory."""
+    _prepare_agent_session(session)
+    session.long_term_memory_enabled = False
+
+
+def _bound_to_one_target(payload: AgentPayload) -> bool:
+    """Whether the loop repairs one stored PR or branch rather than sweeping a repository."""
+    return any(str(payload.get(key) or "").strip() for key in _TARGET_PARAMS)
+
+
+def _free_form_task(payload: AgentPayload) -> bool:
+    """Whether an agent loop runs only its own task text: no repository target, skill or reset.
+
+    Such a tick has no tools that report work outcomes, so its reply is its result.
+    """
+    return (
+        str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
+        and not loop_is_stateless(payload)
+        and not str(payload.get(LOOP_SKILL_PARAM) or "").strip()
+        and not any(str(payload.get(key) or "").strip() for key in _REPOSITORY_PARAMS)
+    )
+
+
+class ShownReply:
+    """An output sink that keeps only what a chat would show as the turn's reply.
+
+    The turn's response text also keeps every raw tool output for the session
+    history (gh usage dumps, "API call succeeded" lines). A scheduled report
+    delivers the model's answer and outcome reports, as a chat reply does.
+    """
+
+    def __init__(self) -> None:
+        self._parts: list[str] = []
+
+    def print(self, message: str = "") -> None:
+        _ = message
+
+    def render_response_header(self, label: str) -> None:
+        _ = label
+
+    def render_error(self, message: str) -> None:
+        _ = message
+
+    def stream(
+        self,
+        *,
+        label: str,
+        chunks: Iterable[str],
+        suppress_if_starts_with: str | None = None,
+        defer_want_me_to_closer: bool = False,
+    ) -> str:
+        _ = (label, suppress_if_starts_with, defer_want_me_to_closer)
+        text = "".join(str(chunk) for chunk in chunks)
+        if text.strip():
+            self._parts.append(text.strip())
+        return text
+
+    def text_or(self, fallback: str) -> str:
+        """The shown reply, or ``fallback`` when the turn streamed nothing."""
+        return "\n\n".join(self._parts) or fallback.strip()
+
+
+def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
+    """Run the deterministic report builder or one model turn in the stored mode.
+
+    A model turn reads the loop's previous runs first; the note its reply leaves
+    for the next run is kept with this attempt instead of being delivered. A
+    stateless agent loop gets neither, and no long-term memory.
+    """
+    builder = report_builder(payload)
+    if builder is not None:
+        built = builder(_report_args(payload))
+        return built if isinstance(built, TaskReport) else TaskReport(built)
+    agent_mode = str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
+    stateless = loop_is_stateless(payload)
+    history = "" if stateless else previous_runs_block(str(payload.get("task_id") or ""))
+    message = build_manual_loop_prompt(payload, previous_runs=history)
+    outcomes = ScheduledOutcomes(
+        bound_target=_bound_to_one_target(payload),
+        stateless=stateless,
+        free_form=_free_form_task(payload),
+    )
+    prepare = (
+        _prepare_stateless_agent_session
+        if stateless
+        else _prepare_agent_session
+        if agent_mode
+        else None
+    )
+    shown = ShownReply()
     result = AgentSession.run_headless_turn(
         message,
+        output=shown,
+        prepare_session=prepare,
         logger=logger,
-        gather=GatherPhase(),
         is_tty=False,
+        tool_hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
+        cancel_requested=cancel_requested_for_payload(payload),
     )
-    report = result.primary_response_text
+    report = shown.text_or(result.primary_response_text)
     if not result.answered or not report:
         raise RuntimeError("Manual loop failed: the reasoning client did not produce a report.")
-    return report
+    if stateless:
+        return outcomes.report(result, agent_mode=agent_mode, text=report)
+    body, note = split_carry_note(report)
+    if note:
+        keep_carry_note(note)
+    return outcomes.report(result, agent_mode=agent_mode, text=body)
 
 
-__all__ = ["build_manual_loop_prompt", "run_manual_prompt_loop"]
+__all__ = [
+    "CARRY_NOTE_MARKER",
+    "REPORT_BUILDERS",
+    "build_manual_loop_prompt",
+    "ShownReply",
+    "loop_is_stateless",
+    "report_builder",
+    "run_manual_prompt_loop",
+    "split_carry_note",
+]

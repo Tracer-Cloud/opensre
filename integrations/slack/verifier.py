@@ -8,7 +8,9 @@ config.
 
 Accepts either an incoming webhook (outbound delivery) or Socket Mode
 tokens (``bot_token`` + ``app_token`` for the two-way gateway), matching
-Telegram's "configured credentials verify" shape.
+Telegram's "configured credentials verify" shape. A Slack workspace
+connected in the OpenSRE app arrives as a ``remote`` bot token alone: its
+events reach the hosted gateway over HTTP, so it has no app token.
 """
 
 from __future__ import annotations
@@ -17,10 +19,13 @@ from typing import Any
 
 import httpx
 
+from infrastructure.delivery.notifications.redaction import redact_slack_token, redact_token
 from integrations.config_models import SlackWebhookConfig
 from integrations.verification import register_verifier, result
 
 RUNTIME_SEND_TEST_KEY = "_send_slack_test"
+#: Effective-integration source of a credential served by the OpenSRE app.
+APP_SOURCE = "remote"
 
 
 def _verify_socket_mode_tokens(config: dict[str, Any], source: str) -> dict[str, str] | None:
@@ -28,17 +33,21 @@ def _verify_socket_mode_tokens(config: dict[str, Any], source: str) -> dict[str,
     app_token = str(config.get("app_token") or "").strip()
     if not bot_token and not app_token:
         return None
-    if not bot_token or not app_token:
-        return result(
-            "slack",
-            source,
-            "missing",
-            "Socket Mode needs both bot_token (xoxb-…) and app_token (xapp-…).",
-        )
-    if not bot_token.startswith("xoxb-"):
-        return result("slack", source, "failed", "bot_token must start with xoxb-")
-    if not app_token.startswith("xapp-"):
-        return result("slack", source, "failed", "app_token must start with xapp-")
+    # Slack issued this token to the app's OAuth install (rotated ones start
+    # ``xoxe.xoxb-``), so auth.test alone judges it.
+    app_install = source == APP_SOURCE and bool(bot_token) and not app_token
+    if not app_install:
+        if not bot_token or not app_token:
+            return result(
+                "slack",
+                source,
+                "missing",
+                "Socket Mode needs both bot_token (xoxb-…) and app_token (xapp-…).",
+            )
+        if not bot_token.startswith("xoxb-"):
+            return result("slack", source, "failed", "bot_token must start with xoxb-")
+        if not app_token.startswith("xapp-"):
+            return result("slack", source, "failed", "app_token must start with xapp-")
     try:
         response = httpx.get(
             "https://slack.com/api/auth.test",
@@ -48,7 +57,8 @@ def _verify_socket_mode_tokens(config: dict[str, Any], source: str) -> dict[str,
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:
-        return result("slack", source, "failed", f"auth.test failed: {exc}")
+        safe_error = redact_slack_token(str(exc), bot_token)
+        return result("slack", source, "failed", f"auth.test failed: {safe_error}")
     if not payload.get("ok"):
         return result(
             "slack",
@@ -57,6 +67,13 @@ def _verify_socket_mode_tokens(config: dict[str, Any], source: str) -> dict[str,
             f"auth.test rejected token: {payload.get('error', 'unknown')}",
         )
     team = payload.get("team") or payload.get("url") or "workspace"
+    if app_install:
+        return result(
+            "slack",
+            source,
+            "passed",
+            f"Connected in the OpenSRE app (auth.test ok for {team}).",
+        )
     return result(
         "slack",
         source,
@@ -103,5 +120,6 @@ def verify_slack(source: str, config: dict[str, Any]) -> dict[str, str]:
         response = httpx.post(webhook_url, json=payload, timeout=10.0)
         response.raise_for_status()
     except Exception as exc:
-        return result("slack", source, "failed", f"Webhook delivery failed: {exc}")
+        safe_error = redact_token(str(exc), webhook_url)
+        return result("slack", source, "failed", f"Webhook delivery failed: {safe_error}")
     return result("slack", source, "passed", "Webhook delivered test message successfully.")

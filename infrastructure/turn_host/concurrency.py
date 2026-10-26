@@ -1,8 +1,8 @@
 """Process-wide turn concurrency shared by every Gateway ingress.
 
-Production chat turns take the gate via :class:`TurnHandler` (``gate=``).
-``POST /investigate`` and :class:`InvestigationWorker` use the same process
-gate (:func:`process_turn_gate`) so HTTP investigate cannot starve chat or
+Production chat turns take the gate via :class:`TurnRunner` (``gate=``).
+All turn hosts use the same process
+gate (:func:`process_turn_gate`) so one surface cannot starve chat or
 the reverse. Scheduled runs take the same instance: the controller builds
 ``SchedulerRunners`` and calls ``.gated(turn_gate)`` before installing them.
 
@@ -12,10 +12,17 @@ A callback wrapper for arbitrary handlers is tests-only, not production
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 
+from config.constants.turn_concurrency import (
+    OPENSRE_MAX_CONCURRENT_TURNS_ENV,
+    OPENSRE_SIZE_PROFILE_ENV,
+)
 from infrastructure.deployment.contracts.models import SizeProfile
+
+logger = logging.getLogger(__name__)
 
 _PROFILE_LIMITS = {
     SizeProfile.SMALL: 1,
@@ -34,12 +41,36 @@ def turn_limit_for_profile(profile: SizeProfile | str | None = None) -> int:
     :class:`TurnConcurrencyGate` and as the default for per-transport
     ``max_concurrent_turns`` when the transport-specific env is unset.
     """
-    raw = profile if profile is not None else os.getenv("OPENSRE_SIZE_PROFILE", "SMALL")
+    raw = profile if profile is not None else os.getenv(OPENSRE_SIZE_PROFILE_ENV, "SMALL")
     return _PROFILE_LIMITS[SizeProfile(str(raw).strip().upper())]
 
 
+def configured_turn_limit() -> int:
+    """The process turn-concurrency limit: an explicit override, else the profile.
+
+    ``OPENSRE_MAX_CONCURRENT_TURNS`` lets a deployment raise concurrency without
+    moving to a larger size profile (turns are I/O-bound, so a small task can run
+    several); a missing value keeps the profile default, and a non-positive or
+    unparseable one is ignored with a warning so a typo cannot drop the gate.
+    """
+    override = os.getenv(OPENSRE_MAX_CONCURRENT_TURNS_ENV)
+    if override is not None:
+        try:
+            limit = int(override)
+        except ValueError:
+            limit = 0
+        if limit >= 1:
+            return limit
+        logger.warning(
+            "Ignoring %s=%r: not a positive integer; using the size-profile limit.",
+            OPENSRE_MAX_CONCURRENT_TURNS_ENV,
+            override,
+        )
+    return turn_limit_for_profile()
+
+
 class TurnConcurrencyGate:
-    """A process-wide capacity gate for chat, investigate, and scheduled turns."""
+    """A process-wide capacity gate for chat and scheduled turns."""
 
     def __init__(self, limit: int) -> None:
         if limit < 1:
@@ -53,11 +84,11 @@ class TurnConcurrencyGate:
         return cls(turn_limit_for_profile(profile))
 
     def try_acquire(self) -> bool:
-        """Take one slot without waiting (chat / sync HTTP investigate)."""
+        """Take one slot without waiting (chat / sync HTTP)."""
         return self._semaphore.acquire(blocking=False)
 
     def acquire(self, *, timeout: float | None = None) -> bool:
-        """Wait for capacity (scheduler / InvestigationWorker — already claimed)."""
+        """Wait for capacity (scheduler — already claimed)."""
         if timeout is None:
             return self._semaphore.acquire()
         return self._semaphore.acquire(timeout=timeout)
@@ -74,17 +105,18 @@ AT_CAPACITY_MESSAGE = "OpenSRE is at capacity. Please try again shortly."
 
 
 def process_turn_gate() -> TurnConcurrencyGate:
-    """Return the process-wide gate (lazy from ``OPENSRE_SIZE_PROFILE``).
+    """Return the process-wide gate (lazy from the configured turn limit).
 
-    :class:`GatewayController` installs its gate here so chat and investigate share one
+    The limit is :func:`configured_turn_limit` — an ``OPENSRE_MAX_CONCURRENT_TURNS``
+    override if set, else the ``OPENSRE_SIZE_PROFILE`` default.
+    :class:`GatewayController` installs its gate here so all turn hosts share one
     semaphore in a full gateway process. Standalone ``WEB_PROFILE`` web creates
-    the gate on first investigate/worker use.
+    the gate on first use.
     """
     global _process_gate
     with _process_gate_lock:
         if _process_gate is None:
-            profile = os.getenv("OPENSRE_SIZE_PROFILE", "SMALL").strip().upper()
-            _process_gate = TurnConcurrencyGate.for_profile(profile)
+            _process_gate = TurnConcurrencyGate(configured_turn_limit())
         return _process_gate
 
 
@@ -105,6 +137,7 @@ def reset_process_turn_gate_for_tests() -> None:
 __all__ = [
     "AT_CAPACITY_MESSAGE",
     "TurnConcurrencyGate",
+    "configured_turn_limit",
     "process_turn_gate",
     "reset_process_turn_gate_for_tests",
     "set_process_turn_gate",

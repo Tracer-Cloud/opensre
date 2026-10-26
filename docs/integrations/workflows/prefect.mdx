@@ -1,0 +1,112 @@
+---
+title: "Prefect"
+description: "Connect Prefect so OpenSRE can inspect flow runs, workers, and deployments during incidents"
+---
+
+## Overview
+
+OpenSRE queries Prefect to retrieve recent flow runs (including logs for failed runs) and worker health — helping diagnose pipeline failures and identify stalled or crashed orchestration jobs.
+
+## Prerequisites
+
+- Prefect Cloud account or self-hosted Prefect Server
+- API key (Prefect Cloud) or accessible API URL (self-hosted)
+
+## Setup
+
+There is no dedicated `opensre integrations setup prefect` wizard today. Configure via the persistent store (OpenSRE does not define product `PREFECT_*` env vars), then verify.
+
+### Option 1: Persistent store
+
+Add to `~/.opensre/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "prefect-prod",
+      "service": "prefect",
+      "status": "active",
+      "credentials": {
+        "api_url": "https://api.prefect.cloud/api",
+        "api_key": "your-prefect-api-key",
+        "account_id": "your-account-id",
+        "workspace_id": "your-workspace-id"
+      }
+    }
+  ]
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `api_url` | `https://api.prefect.cloud/api` | Prefect API URL (override for self-hosted) |
+| `api_key` | — | Prefect Cloud API key |
+| `account_id` | — | Prefect Cloud account ID |
+| `workspace_id` | — | Prefect Cloud workspace ID |
+
+## Credentials
+
+### Prefect Cloud
+
+1. In Prefect Cloud, go to your **profile icon** → **API Keys**
+2. Click **Create API Key**
+3. Copy the key, account ID, and workspace ID from the URL: `https://app.prefect.cloud/account/<account-id>/workspace/<workspace-id>/`
+
+### Self-hosted Prefect Server
+
+Set `api_url` to your server's API endpoint (no API key required if unauthenticated):
+
+```json
+{
+  "api_url": "http://prefect-server:4200/api",
+  "api_key": ""
+}
+```
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `prefect_flow_runs` | Lists recent flow runs filtered by state (FAILED, CRASHED, etc.); can fetch logs for a specific run via `fetch_logs_for_run_id` |
+| `prefect_worker_health` | Worker health and heartbeat status across work pools |
+
+## Verify
+
+```bash
+opensre integrations verify prefect
+```
+
+Expected output on success (self-hosted, `api_url` set):
+
+```
+Service: prefect
+Status:  passed
+Detail:  Configured for Prefect at http://prefect-server:4200/api.
+```
+
+For Prefect Cloud (only `api_key` set, no `api_url`):
+
+```
+Service: prefect
+Status:  passed
+Detail:  Configured for Prefect at cloud.
+```
+
+This is a **configuration-presence** check (`api_url` or `api_key` is set) — it does not call the Prefect API.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check your API key and account/workspace IDs |
+| **Connection refused** | Verify `api_url` is reachable — check firewall rules for self-hosted |
+| **No flow runs returned** | Flow runs may have been purged — check retention settings |
+| **Verify passed but tools fail** | Expected if credentials are present but wrong — confirm Cloud vs self-hosted fields |
+
+## Security
+
+- Use a **service account API key** rather than a personal key.
+- For self-hosted, restrict network access to the Prefect API to trusted IPs.
+- Store credentials in `~/.opensre/integrations.json`, not in source code.

@@ -1,0 +1,152 @@
+---
+title: "groundcover"
+description: "Connect groundcover so OpenSRE can query logs and traces with gcQL"
+---
+
+## Overview
+
+Investigate incidents with [groundcover](https://groundcover.com) logs and traces, queried
+with **gcQL** (groundcover Query Language) over groundcover’s public, read-only **MCP**
+endpoint.
+
+OpenSRE supports configuration, verification, and three read-only tools (logs, traces, and
+the gcQL reference). More signals (metrics, APM, Kubernetes events/entities, monitors,
+monitor issues) and alert-source routing land in follow-up releases. The integration is
+read-only — no monitor creation, silencing, or other mutating actions.
+
+## Prerequisites
+
+- A groundcover account with access to create a service-account API key
+- A **read-only** service-account token (see [Credentials](#credentials))
+- For multi-workspace / multi-backend accounts: tenant UUID and/or backend ID (verification
+  tells you which values to set)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup groundcover
+```
+
+### Option 2: Environment variables
+
+```bash
+export GROUNDCOVER_API_KEY="<service-account-token>"   # alias: GROUNDCOVER_MCP_TOKEN
+# Optional — defaults shown:
+export GROUNDCOVER_MCP_URL="https://mcp.groundcover.com/api/mcp"
+export GROUNDCOVER_TIMEZONE="UTC"
+# Only for multi-workspace / multi-backend accounts:
+export GROUNDCOVER_TENANT_UUID="<tenant-uuid>"
+export GROUNDCOVER_BACKEND_ID="<backend-id>"
+```
+
+| Variable | Alias / notes | Description |
+| --- | --- | --- |
+| `GROUNDCOVER_API_KEY` | Alias: `GROUNDCOVER_MCP_TOKEN` | **Required.** Service-account token (setup writes `GROUNDCOVER_API_KEY`) |
+| `GROUNDCOVER_MCP_URL` | Default `https://mcp.groundcover.com/api/mcp` | MCP endpoint |
+| `GROUNDCOVER_TIMEZONE` | Default `UTC` | Timezone for query windows |
+| `GROUNDCOVER_TENANT_UUID` | Multi-workspace only | Workspace / tenant to route to |
+| `GROUNDCOVER_BACKEND_ID` | Multi-backend only | Backend to select when several exist |
+| `GROUNDCOVER_INSTANCES` | Multi-instance JSON | Prod/staging (or other) instances — see below |
+
+Single-workspace accounts need only the token. If your account has multiple workspaces or
+backends, verification tells you which value to set.
+
+Multiple instances:
+
+```bash
+export GROUNDCOVER_INSTANCES='[
+  {"name":"prod","api_key":"...","tenant_uuid":"...","backend_id":"prod"},
+  {"name":"staging","api_key":"...","tenant_uuid":"...","backend_id":"staging"}
+]'
+```
+
+`opensre integrations list` shows integrations saved to the local store (via `setup`).
+Environment-variable configuration is still picked up by `verify` and at runtime.
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `opensre integrations setup groundcover` | Store a groundcover service-account token and routing settings |
+| `opensre integrations verify groundcover` | Connect to the MCP endpoint, list tools, and check workspace routing |
+
+## Credentials
+
+In groundcover: **Settings → Access → Service Accounts** → create a service account with a
+**read-only** policy → create an **API key** and copy it (shown once). OpenSRE never
+performs write actions.
+
+## Tools
+
+| Tool | Use it for |
+| --- | --- |
+| `get_groundcover_query_reference` | gcQL syntax reference — call once before writing queries |
+| `query_groundcover_logs` | Application errors, exceptions, and log events |
+| `query_groundcover_traces` | Slow/failing spans and request correlations |
+
+## Verify
+
+```bash
+opensre integrations verify groundcover
+```
+
+Verification connects to the MCP endpoint, confirms the expected read-only tool surface is
+present, and lists your workspaces. It returns `passed`, `missing` (token not configured),
+or `failed` with an actionable message — for example, naming the missing or mistyped
+`GROUNDCOVER_TENANT_UUID` / `GROUNDCOVER_BACKEND_ID` when the account is ambiguous. Tokens
+are never printed.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `missing` on verify | Set `GROUNDCOVER_API_KEY` (or `GROUNDCOVER_MCP_TOKEN`). |
+| `401 Unauthorized` | Regenerate the service-account token; ensure it has read access. |
+| `Account has N workspaces…` | Set `GROUNDCOVER_TENANT_UUID` to the listed tenant. |
+| `…has N backends…` | Set `GROUNDCOVER_BACKEND_ID` to the listed backend. |
+| `failed to query …` | Project with `| fields …` or aggregate with `| stats …`; narrow the time window; avoid a bare raw select-all. |
+| Empty results | Run `* | field_names` to find real field names; avoid leading-wildcard globs. |
+| Not shown in `integrations list` | `list` shows the local store — run `opensre integrations setup groundcover` (env vars still work for `verify`/runtime). |
+
+## Security
+
+- Use a **read-only** service-account token. OpenSRE never performs write actions.
+- Store the token in `.env` or the local integrations store — not in source control.
+- Verification never prints tokens.
+
+## Extras
+
+### Writing efficient gcQL
+
+gcQL is pipe-based: a query starts with a filter (or `*`) and pipes through operators.
+These rules keep queries fast and valid:
+
+- **Lead with the filter** — `level:error | …`, not `* | filter level:error`. The `| filter`
+  pipe is for post-aggregation conditions on computed aliases.
+- **Project or aggregate** — use `| fields a, b, …` or `| stats …`. A bare select-all
+  (`<filter> | limit N`) can be rejected by the backend.
+- **Keep the time window narrow.** Default is the last 1 hour; widen only after an empty or
+  inconclusive result.
+- **Always include `| limit N`** — it caps rows returned (not data scanned). For wide ranges,
+  prefer `stats` / aggregations.
+- **Discover fields** with `* | field_names` (or `get_groundcover_query_reference`).
+
+Examples:
+
+```text
+# Recent error logs for a workload (projected)
+level:error workload:checkout | fields _time, instance, content | limit 50
+
+# Error count per workload in one query
+level:error | stats by (env, cluster, namespace, workload) count() as errors
+  | sort by (errors desc) | limit 20
+
+# Slowest spans for a service (projected)
+duration_seconds>0.5 workload:checkout
+  | fields _time, span_name, duration_seconds, status_code | limit 50
+
+# 5xx rate per workload (HTTP spans use status_code; status:error is universal)
+status_code>=500 | stats by (workload) count() as errors | sort by (errors desc) | limit 20
+```

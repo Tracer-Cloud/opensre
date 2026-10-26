@@ -32,7 +32,7 @@ def gateway_memory_enabled() -> bool:
 def memory_available_here() -> bool:
     """Return whether memory tools/prompt injection may run in the current surface.
 
-    CLI and investigation stay on when memory is enabled. Slack/Telegram gateway
+    The CLI stays on when memory is enabled. Slack/Telegram gateway
     turns require an explicit ``OPENSRE_MEMORY_GATEWAY_ENABLED`` opt-in: Slack
     memory is now per-user scoped (``<org root>/users/<id>/memory``), but Telegram
     stays host-global, so the whole feature is off by default on shared gateway

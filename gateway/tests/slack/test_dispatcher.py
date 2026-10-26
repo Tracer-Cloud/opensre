@@ -9,14 +9,20 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from slack_sdk.errors import SlackApiError
 
 from config.constants.billing import ORGANIZATION_ID_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
+from config.constants.gateway import TURN_ERROR_MESSAGE
 from config.principal import Principal, StorageScope
+from gateway.core.billing import turn_metering
 from gateway.core.billing.credits_client import CreditsOutcome
+from gateway.tests.billing.turn_metering_harness import metered_callback
+from gateway.transports.slack.client import SlackWebApiClient
 from gateway.transports.slack.processing.dispatcher import SlackTurnDispatcher
 from gateway.transports.slack.processing.events import SlackInboundMessage
 from gateway.transports.slack.processing.principal import slack_scope
 from gateway.transports.slack.settings import SlackGatewaySettings
+from infrastructure.turn_host.status_messages import user_facing_error_message
 
 
 @pytest.fixture(autouse=True)
@@ -39,12 +45,11 @@ def _test_scope() -> StorageScope:
 
 @pytest.fixture(autouse=True)
 def _metering_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Resolve an owning org, but leave metering unable to make real HTTP calls.
+    """Resolve an owning org, but deliberately disable remote metering.
 
-    ``consume_credits`` needs a URL and a token as well as an org, so setting
-    only the org keeps every outcome UNCONFIGURED while giving principal
-    resolution a silo organization to land on. Install lookup is stubbed so
-    tests do not touch the developer's gateway SQLite catalog.
+    With no webapp URL, setting only the org keeps every outcome ``DISABLED``
+    while giving principal resolution a silo organization to land on. Install
+    lookup is stubbed so tests do not touch the gateway SQLite catalog.
     """
     for name in (WEBAPP_URL_ENV, USAGE_SECRET_ENV):
         monkeypatch.delenv(name, raising=False)
@@ -84,6 +89,33 @@ class _FakeMessagingClient:
         self.reactions.append(
             {"op": "remove", "channel": channel, "timestamp": timestamp, "emoji": emoji}
         )
+        return True
+
+    def delete_message(self, *, channel: str, ts: str) -> bool:
+        _ = (channel, ts)
+        return True
+
+    def start_stream(self, *, channel: str, thread_ts: str) -> str | None:
+        _ = (channel, thread_ts)
+        return None
+
+    def append_stream(self, *, channel: str, ts: str, chunks: Any) -> bool:
+        _ = (channel, ts, chunks)
+        return True
+
+    def stop_stream(self, *, channel: str, ts: str, blocks: Any = None) -> bool:
+        _ = (channel, ts, blocks)
+        return True
+
+    def set_thread_status(
+        self,
+        *,
+        channel: str,
+        thread_ts: str,
+        status: str,
+        loading_messages: Any = None,
+    ) -> bool:
+        _ = (channel, thread_ts, status, loading_messages)
         return True
 
 
@@ -145,11 +177,17 @@ def _settings(
     )
 
 
-def _inbound(*, text: str = "check the api", ts: str = "100.1") -> SlackInboundMessage:
+def _inbound(
+    *,
+    text: str = "check the api",
+    ts: str = "100.1",
+    team_id: str = "T1",
+    channel_id: str = "C1",
+) -> SlackInboundMessage:
     return SlackInboundMessage(
-        team_id="T1",
+        team_id=team_id,
         user_id="U1",
-        channel_id="C1",
+        channel_id=channel_id,
         ts=ts,
         thread_ts="100.1",
         text=text,
@@ -181,6 +219,7 @@ def test_authorized_message_reaches_handler_with_thread_sink() -> None:
 
     def handler(text: str, session: Any, sink: Any, _logger: logging.Logger) -> None:
         turns.append((text, session))
+        assert sink.tool_hooks is None
         sink.finalize("done")
 
     _dispatcher(
@@ -195,9 +234,11 @@ def test_authorized_message_reaches_handler_with_thread_sink() -> None:
     assert agent_text.endswith("check the api")
     assert session is turns[0][1]
     assert resolver.calls == [{"user_id": "T1:C1:100.1", "chat_id": "C1"}]
-    # Placeholder posted into the thread, then edited with the final answer.
+    # One reply, and only after the answer is ready. Loading stays on the mention.
+    assert len(messaging.posts) == 1
+    assert messaging.posts[0]["text"] == "done"
     assert messaging.posts[0]["thread_ts"] == "100.1"
-    assert messaging.updates[-1]["text"] == "done"
+    assert messaging.updates == []
     # Coworker UX: eyes while working, then checkmark.
     emoji_ops = [(r["op"], r["emoji"]) for r in messaging.reactions]
     assert ("add", "eyes") in emoji_ops
@@ -236,34 +277,67 @@ def test_out_of_credits_blocks_turn_with_short_reply(monkeypatch: pytest.MonkeyP
         reasons.append(kwargs["reason"])
         return CreditsOutcome.DENIED
 
-    monkeypatch.setattr("gateway.transports.slack.processing.dispatcher.consume_credits", deny)
+    monkeypatch.setattr(turn_metering, "consume_credits", deny)
 
     _dispatcher(
         settings=_settings(["U1"]),
         messaging=messaging,
         resolver=resolver,
-        handler=lambda text, *_args: turns.append(text),
+        handler=metered_callback(lambda text, *_args: turns.append(text)),
     ).dispatch(_inbound())
 
     assert turns == []
     assert reasons == ["slack_turn"]
     # Short thread reply; no balances or env details leak to the channel.
-    assert messaging.posts[0]["text"] == "Out of credits — top up in the OpenSRE console."
-    assert messaging.posts[0]["thread_ts"] == "100.1"
+    assert messaging.posts[-1]["text"] == "Out of credits — top up in the OpenSRE console."
+    assert messaging.posts[-1]["thread_ts"] == "100.1"
+    emoji_ops = [(reaction["op"], reaction["emoji"]) for reaction in messaging.reactions]
+    assert ("remove", "eyes") in emoji_ops
+    assert ("add", "x") in emoji_ops
+    assert ("add", "white_check_mark") not in emoji_ops
 
 
-@pytest.mark.parametrize(
-    "outcome", [CreditsOutcome.ALLOWED, CreditsOutcome.UNCONFIGURED, CreditsOutcome.UNAVAILABLE]
-)
-def test_non_denied_credit_outcomes_run_the_turn(
+def test_same_ts_in_two_channels_bills_under_two_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Slack ``ts`` is unique per channel, not per workspace, and one org can own
+    # several teams and channels. Keying on ts alone would let the ledger treat
+    # the second, unrelated delivery as a replay of the first and skip its debit.
+    keys: list[str] = []
+
+    def capture(*_args: Any, **kwargs: Any) -> CreditsOutcome:
+        keys.append(kwargs["idempotency_key"])
+        return CreditsOutcome.ALLOWED
+
+    monkeypatch.setattr(turn_metering, "consume_credits", capture)
+
+    def handler(_text: str, _session: Any, sink: Any, _logger: logging.Logger) -> None:
+        sink.finalize("done")
+
+    for channel_id in ("C1", "C2"):
+        _dispatcher(
+            settings=_settings(["U1"]),
+            messaging=_FakeMessagingClient(),
+            resolver=_FakeSessionResolver(),
+            handler=metered_callback(handler),
+        ).dispatch(_inbound(ts="100.1", channel_id=channel_id))
+
+    first, second = keys
+    assert first != second
+    assert first == "slack:T1:C1:100.1"
+    assert second == "slack:T1:C2:100.1"
+
+
+@pytest.mark.parametrize("outcome", [CreditsOutcome.ALLOWED, CreditsOutcome.DISABLED])
+def test_allowed_or_deliberately_disabled_metering_runs_the_turn(
     monkeypatch: pytest.MonkeyPatch, outcome: CreditsOutcome
 ) -> None:
-    """Fail-open: metering off or a webapp outage must never block a turn."""
     messaging = _FakeMessagingClient()
     resolver = _FakeSessionResolver()
     turns: list[str] = []
     monkeypatch.setattr(
-        "gateway.transports.slack.processing.dispatcher.consume_credits",
+        turn_metering,
+        "consume_credits",
         lambda *_args, **_kw: outcome,
     )
 
@@ -272,10 +346,36 @@ def test_non_denied_credit_outcomes_run_the_turn(
         sink.finalize("done")
 
     _dispatcher(
-        settings=_settings(["U1"]), messaging=messaging, resolver=resolver, handler=handler
+        settings=_settings(["U1"]),
+        messaging=messaging,
+        resolver=resolver,
+        handler=metered_callback(handler),
     ).dispatch(_inbound())
 
     assert len(turns) == 1
+
+
+@pytest.mark.parametrize("outcome", [CreditsOutcome.UNCONFIGURED, CreditsOutcome.UNAVAILABLE])
+def test_untrustworthy_credit_outcomes_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, outcome: CreditsOutcome
+) -> None:
+    messaging = _FakeMessagingClient()
+    turns: list[str] = []
+    monkeypatch.setattr(
+        turn_metering,
+        "consume_credits",
+        lambda *_args, **_kw: outcome,
+    )
+
+    _dispatcher(
+        settings=_settings(["U1"]),
+        messaging=messaging,
+        resolver=_FakeSessionResolver(),
+        handler=metered_callback(lambda text, *_args: turns.append(text)),
+    ).dispatch(_inbound())
+
+    assert turns == []
+    assert messaging.posts[-1]["text"] == user_facing_error_message(TURN_ERROR_MESSAGE)
 
 
 def test_handler_exception_is_contained() -> None:
@@ -292,9 +392,8 @@ def test_handler_exception_is_contained() -> None:
     ).dispatch(_inbound())
 
 
-def test_errored_turn_replaces_placeholder_with_error() -> None:
-    """A raising handler must leave a visible error in the thread, not a frozen
-    'Digging in…' placeholder (only the reaction changing)."""
+def test_errored_turn_posts_the_error() -> None:
+    """A raising handler must leave a visible error in the thread."""
     messaging = _FakeMessagingClient()
 
     def handler(_text: str, _session: Any, _sink: Any, _logger: logging.Logger) -> None:
@@ -308,9 +407,8 @@ def test_errored_turn_replaces_placeholder_with_error() -> None:
             handler=handler,
         )._run_turn(_inbound(), _test_scope())
 
-    # The placeholder message was edited to an error, and the message shows ✗.
-    assert messaging.updates, "placeholder was never updated on error"
-    assert "went wrong" in messaging.updates[-1]["text"].lower()
+    assert messaging.posts, "error was never posted"
+    assert "went wrong" in messaging.posts[-1]["text"].lower()
     assert ("add", "x") in [(r["op"], r["emoji"]) for r in messaging.reactions]
 
 
@@ -382,7 +480,7 @@ def test_stop_cancels_in_flight_turn() -> None:
     try:
         deadline = time.monotonic() + 3.0
         while time.monotonic() < deadline and not any(
-            update["text"] == "Stopped." for update in messaging.updates
+            post["text"] == "Stopped." for post in messaging.posts
         ):
             time.sleep(0.02)
     finally:
@@ -390,12 +488,11 @@ def test_stop_cancels_in_flight_turn() -> None:
         worker.join(5.0)
 
     assert seen_cancel and seen_cancel[0].is_set()
-    assert any(update["text"] == "Stopped." for update in messaging.updates)
+    assert any(post["text"] == "Stopped." for post in messaging.posts)
 
 
-def test_turn_timeout_finalizes_placeholder_when_handler_hangs() -> None:
-    """A turn that outruns the timeout gets a visible message + ✗ instead of a
-    frozen placeholder, even though the blocking handler cannot be cancelled."""
+def test_turn_timeout_marks_the_mention_without_a_thread_reply() -> None:
+    """A turn that outruns the timeout fails the mention and posts nothing."""
     messaging = _FakeMessagingClient()
     release = threading.Event()
 
@@ -412,17 +509,15 @@ def test_turn_timeout_finalizes_placeholder_when_handler_hangs() -> None:
     worker.start()
     try:
         deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline and not any(
-            "taking longer" in update["text"].lower() for update in messaging.updates
-        ):
+        while time.monotonic() < deadline and ("add", "x") not in [
+            (r["op"], r["emoji"]) for r in messaging.reactions
+        ]:
             time.sleep(0.02)
     finally:
         release.set()
         worker.join(5.0)
 
-    assert any("taking longer" in update["text"].lower() for update in messaging.updates), (
-        "timeout did not replace the placeholder"
-    )
+    assert messaging.posts == []
     ops = [(r["op"], r["emoji"]) for r in messaging.reactions]
     assert ("add", "x") in ops
     # The timeout owns the outcome, so a late normal completion must not stack a
@@ -482,12 +577,12 @@ def test_untagged_reply_ignored_when_bot_not_in_thread() -> None:
     # (bot never joined it) is never engaged.
     dispatcher.dispatch(_inbound())
     turns.clear()
-    messaging.updates.clear()
+    posted = len(messaging.posts)
     dispatcher.dispatch(_untagged_reply())
 
-    # No turn ran and nothing was posted — the bot stays out of threads it hasn't joined.
+    # No turn ran and nothing new was posted — the bot stays out of threads it hasn't joined.
     assert turns == []
-    assert messaging.updates == []
+    assert len(messaging.posts) == posted
 
 
 def test_untagged_reply_answered_inside_attention_window() -> None:
@@ -608,3 +703,51 @@ def test_turn_is_refused_when_the_owning_principal_cannot_be_resolved(
     # Assert: the handler never ran and nothing was posted back to the channel.
     assert turns == []
     assert messaging.posts == []
+
+
+class _TokenCannotSeeChannel:
+    """A Slack Web client whose token belongs to a different app than the events."""
+
+    def __init__(self) -> None:
+        self.posts: list[dict[str, Any]] = []
+
+    def reactions_add(self, **_kwargs: Any) -> None:
+        raise SlackApiError(
+            message="channel_not_found", response={"ok": False, "error": "channel_not_found"}
+        )
+
+    def reactions_remove(self, **_kwargs: Any) -> None:
+        raise SlackApiError(
+            message="channel_not_found", response={"ok": False, "error": "channel_not_found"}
+        )
+
+    def chat_postMessage(self, **kwargs: Any) -> dict[str, Any]:
+        self.posts.append(kwargs)
+        raise SlackApiError(
+            message="channel_not_found", response={"ok": False, "error": "channel_not_found"}
+        )
+
+
+def test_a_turn_whose_reply_cannot_be_delivered_never_runs() -> None:
+    """DMs to the workspace's other OpenSRE app ran full turns whose replies all failed.
+
+    A 633-second turn billed the organization and posted nothing.
+    """
+    # Arrange
+    web = _TokenCannotSeeChannel()
+    resolver = _FakeSessionResolver()
+    turns: list[str] = []
+
+    # Act
+    SlackTurnDispatcher(
+        settings=_settings(["U1"]),
+        messaging=SlackWebApiClient(web),  # type: ignore[arg-type]
+        session_resolver=resolver,  # type: ignore[arg-type]
+        handler=lambda text, *_args: turns.append(text),
+        logger=logging.getLogger("test"),
+    ).dispatch(_inbound(channel_id="D0915KH"))
+
+    # Assert: no session load, no agent turn, nothing posted.
+    assert turns == []
+    assert resolver.calls == []
+    assert web.posts == []

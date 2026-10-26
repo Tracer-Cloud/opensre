@@ -8,12 +8,16 @@ from config.constants.new_relic import (
     NEW_RELIC_DEFAULT_INCIDENT_LIMIT,
     NEW_RELIC_DEFAULT_WINDOW_MINUTES,
 )
+from core.domain.types.evidence import record_evidence_entry
 from core.tool import BaseTool, EvidenceType, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.new_relic.client import NewRelicClient
 from integrations.new_relic.config import NewRelicIntegrationConfig
-from integrations.new_relic.tools.new_relic_alerts_tool.results import parse_incident_rows
+from integrations.new_relic.tools.new_relic_alerts_tool.results import (
+    STATUS_OPEN,
+    parse_incident_rows,
+)
 
 _SOURCE = "new_relic"
 
@@ -49,11 +53,40 @@ def _extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _map_query_new_relic_alerts(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the incident count, how many are still open, and whether the fetch was truncated."""
+    if not output.get("available"):
+        return
+    incidents = output.get("incidents") or []
+    if not incidents:
+        return
+    open_count = sum(
+        1
+        for incident in incidents
+        if isinstance(incident, dict) and incident.get("status") == STATUS_OPEN
+    )
+    # Always state the open count, even at 0 — an all-closed result is a real,
+    # distinct finding ("nothing is still firing") from an ambiguous summary
+    # that just omits the clause when there happens to be nothing open.
+    summary = f"{len(incidents)} incident(s), {open_count} open"
+    if output.get("truncated"):
+        summary += " (truncated)"
+    record_evidence_entry(
+        evidence,
+        source="query_new_relic_alerts",
+        label="New Relic Alert Incidents",
+        summary=summary,
+    )
+
+
 class NewRelicAlertsTool(BaseTool):
     """Fetch New Relic alert incidents, paired by ``incidentId`` (Decision 2)."""
 
     name = "query_new_relic_alerts"
     source = _SOURCE
+    evidence_mapper = _map_query_new_relic_alerts
     description = (
         "Query New Relic alert incidents (NrAiIncident) for the configured account. "
         "Open and close transition rows for the same incidentId are paired into one "
@@ -67,6 +100,7 @@ class NewRelicAlertsTool(BaseTool):
     requires = ["new_relic"]
     evidence_type = EvidenceType.EVENTS
     side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     injected_params = ("api_key", "account_id", "base_url")
     input_schema = {
         "type": "object",

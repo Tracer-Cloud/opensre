@@ -33,7 +33,7 @@ _SHIPPED_ROOTS = (
 )
 
 #: Directories that hold data files rather than importable modules.
-_NOT_PACKAGES = frozenset({"__pycache__", "skills", "sample_alerts"})
+_NOT_PACKAGES = frozenset({"__pycache__", "skills"})
 
 
 def _directories_needing_a_marker(root: Path) -> list[Path]:

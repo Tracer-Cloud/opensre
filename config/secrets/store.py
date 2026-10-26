@@ -7,11 +7,9 @@ tier order is stated once instead of being re-derived at each call site:
     write  owner-only local file
     delete owner-only local file
 
-The OS keychain is never opened. Reading it raised an approval dialog on macOS
-for every secret lookup, and the wizard stripped keys out of ``.env`` on the
-assumption the keychain owned them — together that made a working setup ask for
-permission on every launch. Secrets written by earlier versions are moved across
-once by :mod:`config.secrets.keychain_import`.
+The OS keychain is never used: secrets live in ``~/.opensre/credentials.json``,
+and ``OPENSRE_DISABLE_KEYRING`` keeps working as the switch that turns local
+persistence off entirely (env vars become the only source).
 """
 
 from __future__ import annotations
@@ -21,16 +19,15 @@ from dataclasses import dataclass
 
 from filelock import Timeout as FileLockTimeout
 
-from config.secrets import local_file, os_keyring
+from config.constants.secrets import OPENSRE_DISABLE_KEYRING_ENV
+from config.secrets import local_file
 from config.secrets.backend import (
     KeyringUnavailableError,
     KeyringUnavailableReason,
     SecretTier,
 )
-from config.secrets.keychain_import import (
-    import_keychain_secrets_once,
-    import_named_keychain_secret,
-)
+
+_DISABLED_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
 @dataclass(frozen=True)
@@ -53,6 +50,14 @@ class SecretSaveResult:
         return self.tier == SecretTier.FALLBACK
 
 
+def keyring_is_disabled() -> bool:
+    """Whether ``OPENSRE_DISABLE_KEYRING`` takes this machine out of local storage.
+
+    Env vars stay the only source when set; nothing is written to disk.
+    """
+    return os.getenv(OPENSRE_DISABLE_KEYRING_ENV, "").strip().lower() in _DISABLED_VALUES
+
+
 def lookup(env_var: str, *, default: str = "") -> SecretLookup:
     """Resolve a secret from the environment, then the local file."""
     env_value = os.getenv(env_var, default).strip()
@@ -61,31 +66,32 @@ def lookup(env_var: str, *, default: str = "") -> SecretLookup:
 
     # The disable switch takes the machine out of local persistence entirely,
     # so the file is not consulted and env vars are the only source.
-    if os_keyring.keyring_is_disabled():
+    if keyring_is_disabled():
         return SecretLookup("", SecretTier.NONE)
 
     try:
-        import_keychain_secrets_once()
         stored_value = local_file.get(env_var)
     except local_file.LOCAL_STORE_ERRORS:
         # Contended credential file — miss this call; do not abort startup.
         return SecretLookup("", SecretTier.NONE)
     if stored_value:
         return SecretLookup(stored_value, SecretTier.FALLBACK)
-    # Non-enumerable platforms never write the permanent import marker; a
-    # dynamic keychain-only name becomes visible the first time it is looked up.
-    try:
-        migrated = import_named_keychain_secret(env_var)
-    except local_file.LOCAL_STORE_ERRORS:
-        return SecretLookup("", SecretTier.NONE)
-    if migrated:
-        return SecretLookup(migrated, SecretTier.FALLBACK)
     return SecretLookup("", SecretTier.NONE)
 
 
 def resolve_secret(env_var: str, *, default: str = "") -> str:
     """Resolve a secret, or ``""`` when no tier has it."""
     return lookup(env_var, default=default).value
+
+
+def resolve_stored_secret(env_var: str) -> str:
+    """Return the file-stored secret, ignoring any environment override."""
+    if keyring_is_disabled():
+        return ""
+    try:
+        return local_file.get(env_var)
+    except local_file.LOCAL_STORE_ERRORS:
+        return ""
 
 
 def secret_source(env_var: str) -> SecretTier:
@@ -104,7 +110,7 @@ def save_secret(env_var: str, value: str) -> SecretSaveResult:
         delete_secret(env_var)
         return SecretSaveResult(SecretTier.NONE, f"{env_var} cleared.")
 
-    if os_keyring.keyring_is_disabled():
+    if keyring_is_disabled():
         raise KeyringUnavailableError(
             f"{env_var} not saved: local credential storage is disabled. "
             "Export the secret in the process environment instead.",
@@ -124,51 +130,22 @@ def save_secret(env_var: str, value: str) -> SecretSaveResult:
 
 
 def delete_secret(env_var: str) -> None:
-    """Remove a stored secret from the local file and any legacy keychain copy.
+    """Remove a stored secret from the local file.
 
-    Absent entries are fine. A machine with no keychain backend has nothing to
-    scrub. Failure to clear either tier raises :class:`KeyringUnavailableError`
-    — logout must not report success while a copy remains resolvable (local
-    file lock timeout) or recoverable (OS keychain).
+    Absent entries are fine. Failure to clear raises
+    :class:`KeyringUnavailableError` — logout must not report success while a
+    copy remains resolvable (local file lock timeout).
     """
-    local_error: BaseException | None = None
     try:
         local_file.delete(env_var)
     except (local_file.LocalStoreError, FileLockTimeout, OSError) as exc:
         # Do not suppress: a contended store would leave the credential
         # resolvable after a "successful" logout.
-        local_error = exc
-
-    try:
-        os_keyring.delete(env_var)
-    except KeyringUnavailableError as exc:
-        if exc.reason != KeyringUnavailableReason.NO_BACKEND:
-            raise KeyringUnavailableError(
-                f"Could not delete the OS keychain copy of {env_var}. "
-                "Unlock the keychain and retry logout.",
-                reason=exc.reason,
-            ) from exc
-    except (OSError, RuntimeError) as exc:
-        raise KeyringUnavailableError(
-            f"Could not delete the OS keychain copy of {env_var}. "
-            "Unlock the keychain and retry logout.",
-            reason=KeyringUnavailableReason.BACKEND_ERROR,
-        ) from exc
-
-    if local_error is not None:
         raise KeyringUnavailableError(
             f"Could not remove the local copy of {env_var}. "
             "Retry logout when the credential store is available.",
             reason=KeyringUnavailableReason.BACKEND_ERROR,
-        ) from local_error
-
-
-def keyring_is_disabled() -> bool:
-    """Whether ``OPENSRE_DISABLE_KEYRING`` takes this machine out of local storage.
-
-    Env vars stay the only source when set; nothing is written to disk.
-    """
-    return os_keyring.keyring_is_disabled()
+        ) from exc
 
 
 __all__ = [
@@ -178,6 +155,7 @@ __all__ = [
     "keyring_is_disabled",
     "lookup",
     "resolve_secret",
+    "resolve_stored_secret",
     "save_secret",
     "secret_source",
 ]

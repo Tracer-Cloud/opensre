@@ -1,9 +1,0 @@
-2026-05-11 09:00:00,000 INFO agent.run_agent: conversation turn: model=deepseek-v4-pro provider=opencode-go platform=api_server history=1 msg='[1 image] <recent_messages> ... </recent_messages> <cur...'
-2026-05-11 09:00:00,100 ERROR agent.run_agent: Streaming failed before delivery: Error code: 400 - {'error': {'message': "Error from provider (DeepSeek): Failed to deserialize the JSON body into the target type: messages[2]: unknown variant `image_url`, expected `text` at line 1 column 7586"}}
-2026-05-11 09:00:00,200 ERROR agent.run_agent: Traceback (most recent call last):
-  File "/opt/hermes/agent/run_agent.py", line 8971, in _build_chat_kwargs
-    return _ct.build_kwargs(model=self.model, messages=api_messages, provider_profile=_profile)
-  File "/opt/hermes/agent/transports/chat_completions.py", line 402, in _build_kwargs_from_profile
-    sanitized = profile.prepare_messages(sanitized)
-openai.BadRequestError: 400 Bad Request: unknown variant `image_url`, expected `text`
-2026-05-11 09:00:00,300 INFO aiohttp.access: 127.0.0.1 - - [11/May/2026:09:00:00 +0000] "POST /v1/chat/completions HTTP/1.1" 502 802

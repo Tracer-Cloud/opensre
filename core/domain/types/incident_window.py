@@ -1,4 +1,4 @@
-"""Shared incident time window for the investigation pipeline.
+"""Shared incident time window for time-scoped tool queries.
 
 The agent runs many time-aware tools (log queries, metrics, deploy commit
 listings, etc.). Today each tool independently picks a default time range
@@ -13,7 +13,7 @@ follow.
    the same incident answer questions about different windows.
 
 This module introduces a single ``IncidentWindow`` value object owned by
-investigation state and populated from the alert's own timestamps in the
+run state and populated from the alert's own timestamps in the
 ``extract_alert`` orchestration step. Once tools start reading from it (deferred to a
 follow-up PR) every time-aware tool will agree on the same window.
 
@@ -69,7 +69,7 @@ SOURCE_DEFAULT = "default"
 
 @dataclass(frozen=True)
 class IncidentWindow:
-    """A resolved ``[since, until)`` window for the current investigation.
+    """A resolved ``[since, until)`` window for the current incident.
 
     The interval is **half-open**: timestamps equal to ``since`` are
     inside the window; timestamps equal to ``until`` are outside.
@@ -243,7 +243,7 @@ def resolve_incident_window(
     forward_buffer_minutes: int = DEFAULT_FORWARD_BUFFER_MINUTES,
     now: datetime | None = None,
 ) -> IncidentWindow:
-    """Resolve the incident time window for the current investigation.
+    """Resolve the incident time window for the current turn.
 
     Precedence:
       1. ``override`` always wins. Operators can pin the window and the

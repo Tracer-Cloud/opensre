@@ -1,7 +1,7 @@
 """Session-goal continuation prompts for an attached SessionGoal.
 
-Leaf module: imports :mod:`core.agent_harness.session_goal.goal` only —
-do not import this from ``goal`` (avoids ``py/cyclic-import``). Distinct from
+Leaf module: imports goal + the contradiction helper. Do not import this
+from ``goal`` (avoids ``py/cyclic-import``). Distinct from
 :mod:`core.agent_harness.session_goal.progress` (presentation).
 """
 
@@ -11,9 +11,35 @@ from core.agent_harness.session_goal.goal import (
     SessionGoal,
     derive_session_goal_reason,
 )
+from core.agent_harness.session_goal.judge import judge_reason_is_contradiction
+
+_SESSION_GOAL_MARK = "[session_goal]"
+_USE_A_TOOL = (
+    "Use a tool that can satisfy the condition now. "
+    "Do not answer from memory or claim the work is already done."
+)
+_NEW_GOAL = "Earlier goals in this conversation are finished; do not continue their steps."
 
 
-def continuation_nudge(goal: SessionGoal) -> str:
+def start_goal_prompt(goal: SessionGoal, message: str) -> str:
+    """First or resumed goal turn: keep the user text, require a tool.
+
+    When the user text is the condition itself, it appears once, in the header.
+    A goal on its first turn also says earlier goals are over, so their
+    continuation prompts still in the conversation are not followed.
+    """
+    text = message.strip()
+    if text.startswith(_SESSION_GOAL_MARK):
+        return message
+    header = f"{_SESSION_GOAL_MARK} Goal: {goal.condition}\n{_USE_A_TOOL}"
+    if goal.turns_used == 0:
+        header = f"{header}\nThis is a new goal. {_NEW_GOAL}"
+    if text == goal.condition.strip():
+        return header
+    return f"{header}\n\n{text}"
+
+
+def continuation_prompt(goal: SessionGoal) -> str:
     """User-visible follow-up message for the next session-goal turn."""
     reason = goal.last_reason.strip() or derive_session_goal_reason(goal)
     reason_block = f"Last progress: {reason}\n\n"
@@ -25,13 +51,25 @@ def continuation_nudge(goal: SessionGoal) -> str:
             f"{established}\n\n"
         )
     if goal.last_answer:
-        reason_block += (
-            "The previous turn of this goal already told the user:\n"
-            f"  {goal.last_answer}\n"
-            "Re-derive it if you must, but if your answer differs, say why — do "
-            "not replace it with a different number silently.\n\n"
-        )
+        if judge_reason_is_contradiction(goal.last_reason):
+            reason_block += (
+                "The previous turn told the user something the judge flagged "
+                "as a contradiction. Do not repeat that answer. Re-query with a "
+                "tool and correct it:\n"
+                f"  {goal.last_answer}\n\n"
+            )
+        else:
+            reason_block += (
+                "The previous turn of this goal already told the user:\n"
+                f"  {goal.last_answer}\n"
+                "Re-derive it if you must, but if your answer differs, say why — do "
+                "not replace it with a different number silently.\n\n"
+            )
     unfinished = goal.unfinished_items
+    follow_reason = (
+        f"{_USE_A_TOOL} Follow the last progress reason. Do not claim the goal "
+        f"is met in prose — the host judge decides. {_NEW_GOAL}"
+    )
     if unfinished:
         pending = "\n".join(f"  - [{index}] {item}" for index, item in unfinished)
         return (
@@ -40,29 +78,18 @@ def continuation_nudge(goal: SessionGoal) -> str:
             f"{reason_block}"
             "Unfinished checklist items (0-based indices):\n"
             f"{pending}\n\n"
-            "Take the next unfinished item now. When you complete an item, include "
-            "`session_goal:done=<index>` (comma-separate multiple). When every "
-            "item is done, you may also include `session_goal:achieved`."
-        )
-    if goal.host_owned:
-        return (
-            "[session_goal] Continue the active goal without asking whether to "
-            f"continue. Goal: {goal.condition}\n\n"
-            f"{reason_block}"
-            "Answer the condition directly. Do not run `/goal` as a tool. When the "
-            "condition is met, include the exact tag `session_goal:achieved` in "
-            "your reply (no further tool work required for a host-set goal)."
+            "Take the next unfinished item now. When you complete an item, call "
+            f"session_goal_complete with that index. {follow_reason}"
         )
     return (
         "[session_goal] Continue the active goal without asking whether to "
         f"continue. Goal: {goal.condition}\n\n"
         f"{reason_block}"
-        "Take the next unfinished step now. When the goal is met after real tool "
-        "work, include the exact tag `session_goal:achieved` in your reply. "
-        "Do not emit that tag with no tool evidence — the host will ignore it."
+        f"Take the next unfinished step now. {follow_reason}"
     )
 
 
 __all__ = [
-    "continuation_nudge",
+    "continuation_prompt",
+    "start_goal_prompt",
 ]

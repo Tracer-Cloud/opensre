@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from config.config import PROVIDER_ANTHROPIC, PROVIDER_BEDROCK, PROVIDER_OPENAI
 from config.llm_models import ANTHROPIC_LLM_CONFIG, BEDROCK_LLM_CONFIG, OPENAI_LLM_CONFIG
+from config.llm_settings import PROVIDER_ANTHROPIC, PROVIDER_BEDROCK, PROVIDER_OPENAI
 
 
 @dataclass(frozen=True)

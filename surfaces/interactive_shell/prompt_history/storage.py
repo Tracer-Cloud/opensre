@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prompt_toolkit.history import FileHistory, History, InMemoryHistory
+from prompt_toolkit.history import History, InMemoryHistory
 
 from surfaces.interactive_shell.prompt_history.policy import (
     HistoryPolicy,
     RedactingFileHistory,
+    RefreshingFileHistory,
+    history_file_lock,
 )
 
 _HISTORY_FILENAME = "interactive_history"
@@ -37,7 +39,7 @@ def load_prompt_history(policy: HistoryPolicy | None = None) -> History:
         path.parent.mkdir(parents=True, exist_ok=True)
         if settings.redact:
             return RedactingFileHistory(str(path), max_entries=settings.max_entries)
-        return FileHistory(str(path))
+        return RefreshingFileHistory(str(path))
     except OSError:
         return InMemoryHistory()
 
@@ -47,7 +49,7 @@ def load_command_history_entries() -> list[str]:
     try:
         path = prompt_history_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        history = FileHistory(str(path))
+        history = RefreshingFileHistory(str(path))
         raw = list(reversed(list(history.load_history_strings())))
         return [line.rstrip("\r\n") for line in raw]
     except OSError:
@@ -58,8 +60,9 @@ def clear_persisted_history() -> bool:
     """Truncate the on-disk history file. Returns True if the file is gone or empty."""
     path = prompt_history_path()
     try:
-        if path.exists():
-            path.write_text("", encoding="utf-8")
+        with history_file_lock(path):
+            if path.exists():
+                path.write_text("", encoding="utf-8")
         return True
     except OSError:
         return False

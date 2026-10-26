@@ -10,13 +10,12 @@ during an interactive-shell turn — the concrete `run` bodies behind the action
 tools listed in `core/agent_harness/tools/action_tools.py`:
 
 - `actions/` — the action tools themselves (`shell_run`, `cli_exec`,
-  `slash_invoke`, `code_implement`, `investigation_start`, `alert_sample`,
-  `assistant_handoff`, `llm_set_provider`, `synthetic_run`, `task_cancel`).
-- `shell/` — shell command parsing, execution policy, and the
-  `run_shell_command`/`run_cd`/`run_pwd` runner behind `actions/shell.py`.
-- `synthetic/` — the synthetic-test runner behind `actions/synthetic.py`.
+  `slash_invoke`, `code_implement`, `session_goal_set`, `session_goal_complete`,
+  `llm_set_provider`,
+  `task_cancel`, and friends; see `action_names.py` for the closed set).
+- `shell/` — shell command normalization, execution policy, and the
+  `run_shell_command` runner behind `actions/shell.py`.
 - `implementation/` — the `/implement` (Claude Code) launcher.
-- `core/` — cross-tool helpers (e.g. investigation launch, `allow_tool`).
 - `contracts` — imported by `command_registry.slash_catalog` during early import
   wiring; see the `__init__.py` docstring for why tool submodules must be
   imported explicitly rather than eagerly here (circular-import avoidance).
@@ -34,7 +33,7 @@ Subprocess runners must stay split into two layers:
    no `execution_confirm`.
 2. **REPL presentation** under `surfaces/interactive_shell/runtime/subprocess_runner/`
    — `ReplSubprocessPresenter` implements `SubprocessPresenter` and is injected
-   through `ActionToolContext.subprocess_presenter` from `action_turn.py`.
+   through `ActionToolScope.subprocess_presenter` from `action_turn.py`.
 
 Shared stdlib-only helpers live in `tools/interactive_shell/subprocess.py`.
 Rich stream relay stays in `surfaces/.../subprocess_runner/task_streaming.py`.
@@ -43,7 +42,6 @@ Rich stream relay stays in `surfaces/.../subprocess_runner/task_streaming.py`.
 `surfaces.interactive_shell.runtime.subprocess_runner` imports in:
 
 - `shell/runner.py`
-- `synthetic/runner.py`
 - `implementation/claude_code_executor.py`
 - `actions/cli_command.py`
 
@@ -68,7 +66,7 @@ It must **not**:
 
 - Be imported by `core/agent_harness/` (enforced by import-boundary tests).
 - Import `surfaces.interactive_shell.*` from subprocess runners (see T-03 list
-  above). Other action tools (`slash`, `investigation`, etc.) may still reach
+  above). Other action tools (`slash`, etc.) may still reach
   into the surface temporarily — that is separate T-4 debt.
 - Grow eager submodule imports in `__init__.py` (keep the explicit-import
   discipline documented there; several tool modules import back into
@@ -77,6 +75,6 @@ It must **not**:
 ## Remaining surface coupling (T-4 debt, out of T-03 scope)
 
 Several non-subprocess action tools still import `surfaces.interactive_shell.ui`
-or `command_registry` directly (`slash.py`, `investigation.py`, etc.). Do not
+or `command_registry` directly (`slash.py`, etc.). Do not
 add new surface imports there without a port; subprocess runners are the
 reference pattern going forward.

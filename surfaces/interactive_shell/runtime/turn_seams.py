@@ -1,25 +1,17 @@
-"""Test-injection seams for the interactive-shell turn.
-
-The three protocols are the shell-shaped callables a test may inject to replace
-a whole stage; the adapters bind one over the agent's ``ExecuteActions`` /
-``StreamAnswerFn`` / ``EvidenceGatherer`` protocols. In production nothing is
-injected and the agent's own stages run.
-"""
+"""Test-injection seam for the interactive-shell agent turn."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 from rich.console import Console
 
 from core.agent_harness import OutputSink, ToolCallingTurnResult
-from core.agent_harness.ports import AnswerRequest, GatheredEvidence
 from core.agent_harness.runtime import HeadlessAgent, TurnPlan
 from core.tool import ToolExecutionHooks
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.utils.telemetry import LlmRunInfo
 
 
 class RunActionToolTurn(Protocol):
@@ -43,35 +35,6 @@ class RunActionToolTurn(Protocol):
         tool_hooks: ToolExecutionHooks | None = None,
     ) -> ToolCallingTurnResult:
         """Run one action turn and return its facts."""
-
-
-class GatherEvidence(Protocol):
-    """Gather seam: collect read-only integration evidence, or None."""
-
-    def __call__(
-        self,
-        message: str,
-        session: Session,
-        console: Console,
-        *,
-        resolved_integrations: dict[str, Any] | None = None,
-    ) -> str | GatheredEvidence | None:
-        """Gather evidence for the message, or return None when nothing applies."""
-
-
-class AnswerShellQuestion(Protocol):
-    """Answer seam: respond via the grounded conversational assistant."""
-
-    def __call__(
-        self,
-        message: str,
-        session: Session,
-        console: Console,
-        *,
-        request: AnswerRequest,
-        output: OutputSink | None = None,
-    ) -> LlmRunInfo | None:
-        """Answer the question, returning the LLM run info or None."""
 
 
 @dataclass(frozen=True)
@@ -106,34 +69,6 @@ class _InjectedActionStage:
         )
 
 
-@dataclass(frozen=True)
-class _InjectedAnswerStage:
-    """Adapts an injected ``AnswerShellQuestion`` seam to the ``StreamAnswerFn`` protocol."""
-
-    seam: AnswerShellQuestion
-    session: Session
-    console: Console
-    output: OutputSink
-
-    def answer(self, text: str, request: AnswerRequest) -> LlmRunInfo | None:
-        return self.seam(text, self.session, self.console, output=self.output, request=request)
-
-
-@dataclass(frozen=True)
-class _InjectedGatherStage:
-    """Adapts an injected ``GatherEvidence`` seam to the ``EvidenceGatherer`` protocol."""
-
-    seam: GatherEvidence
-    session: Session
-    console: Console
-
-    def gather_evidence(
-        self, text: str, *, turn_plan: TurnPlan | None = None
-    ) -> str | GatheredEvidence | None:
-        resolved = turn_plan.resolved_integrations if turn_plan is not None else None
-        return self.seam(text, self.session, self.console, resolved_integrations=resolved)
-
-
 def bind_injected_stages(
     agent: HeadlessAgent,
     session: Session,
@@ -141,8 +76,6 @@ def bind_injected_stages(
     output: OutputSink,
     *,
     execute_actions: RunActionToolTurn | None,
-    answer_agent: AnswerShellQuestion | None,
-    gather_evidence: GatherEvidence | None,
     request_exit: Callable[[], None] | None,
     tool_hooks: ToolExecutionHooks | None,
 ) -> None:
@@ -161,22 +94,10 @@ def bind_injected_stages(
             if execute_actions is not None
             else None
         ),
-        answer=(
-            _InjectedAnswerStage(answer_agent, session, console, output).answer
-            if answer_agent is not None
-            else None
-        ),
-        gather_evidence=(
-            _InjectedGatherStage(gather_evidence, session, console).gather_evidence
-            if gather_evidence is not None
-            else None
-        ),
     )
 
 
 __all__ = [
-    "AnswerShellQuestion",
-    "GatherEvidence",
     "RunActionToolTurn",
     "bind_injected_stages",
 ]

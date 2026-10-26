@@ -1,4 +1,4 @@
-"""GitHub Copilot CLI adapter (``copilot -p``, non-interactive / programmatic mode).
+"""GitHub Copilot CLI adapter (piped input, non-interactive / programmatic mode).
 
 Env vars
 --------
@@ -66,6 +66,7 @@ from integrations.llm_cli.env_overrides import (
     COPILOT_CLI_ENV_KEYS,
     nonempty_env_values,
 )
+from integrations.llm_cli.output import require_nonempty_output
 from integrations.llm_cli.probe_utils import run_version_probe
 from integrations.llm_cli.semver_utils import parse_semver_three_part
 
@@ -206,7 +207,7 @@ def _fallback_copilot_paths() -> list[str]:
 
 
 class CopilotAdapter:
-    """Non-interactive GitHub Copilot CLI (``copilot -p``, programmatic mode)."""
+    """Non-interactive GitHub Copilot CLI with prompts delivered over stdin."""
 
     name = "copilot"
     streams_plain_stdout = True
@@ -283,17 +284,14 @@ class CopilotAdapter:
         ws = (workspace or "").strip()
         cwd = str(Path(ws).expanduser()) if ws else os.getcwd()
 
-        # Each flag is required for a non-interactive run; do not drop these
-        # without checking `copilot --help`:
-        #   -p PROMPT       enters one-shot mode (without it, copilot opens a TUI).
+        # Piped input enters one-shot mode without placing the expanded prompt
+        # on the command line, which can exceed Windows' command-line limit.
+        # Do not drop these flags without checking `copilot --help`:
         #   --no-color      strips ANSI so stdout is parseable.
-        #   --no-ask-user   disables the agent's `ask_user` tool, otherwise the
-        #                   agent can pause waiting for input even with -p.
+        #   --no-ask-user   disables the agent's `ask_user` tool.
         #   --silent        emits only the agent response, not stats / banner.
         argv: list[str] = [
             binary,
-            "-p",
-            prompt,
             "--no-color",
             "--no-ask-user",
             "--silent",
@@ -313,20 +311,14 @@ class CopilotAdapter:
         }
         return CLIInvocation(
             argv=tuple(argv),
-            stdin=None,
+            stdin=prompt,
             cwd=cwd,
             env=env or None,
             timeout_sec=self.default_exec_timeout_sec,
         )
 
     def parse(self, *, stdout: str, stderr: str, returncode: int) -> str:
-        result = (stdout or "").strip()
-        if not result:
-            raise RuntimeError(
-                self.explain_failure(stdout=stdout, stderr=stderr, returncode=returncode)
-                + " (empty output)"
-            )
-        return result
+        return require_nonempty_output(stdout, stderr, returncode, self.explain_failure)
 
     def explain_failure(self, *, stdout: str, stderr: str, returncode: int) -> str:
         from integrations.llm_cli.failure_explain import explain_cli_failure
@@ -344,7 +336,7 @@ class CopilotAdapter:
         )
         extra = (_AUTH_HINT,) if any(marker in text for marker in auth_markers) else ()
         return explain_cli_failure(
-            exit_label="copilot -p",
+            exit_label="copilot",
             stdout=stdout,
             stderr=stderr,
             returncode=returncode,

@@ -29,11 +29,12 @@ def verify_telegram(source: str, config: dict[str, Any]) -> dict[str, str]:
         return result("telegram", source, "failed", f"Telegram API check failed: {safe_error}")
 
     if not payload.get("ok"):
+        description = redact_token(str(payload.get("description", "unknown error")), bot_token)
         return result(
             "telegram",
             source,
             "failed",
-            f"Telegram API check failed: {payload.get('description', 'unknown error')}",
+            f"Telegram API check failed: {description}",
         )
 
     user = payload.get("result", {})

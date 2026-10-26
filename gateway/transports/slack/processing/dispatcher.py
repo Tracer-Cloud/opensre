@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -10,28 +11,29 @@ from config.constants.gateway import (
     CREDITS_DENIED_MESSAGE,
     NO_ACTIVE_TURN_MESSAGE,
     TURN_ERROR_MESSAGE,
-    TURN_TIMEOUT_MESSAGE,
     UNAUTHORIZED_MESSAGE,
     USER_STOP_MESSAGE,
 )
 from config.principal import StorageScope
 from config.scope_context import bound_storage_scope
 from core.agent_harness import SessionCore
-from gateway.core.billing.credits_client import CreditsOutcome, consume_credits
+from gateway.core.billing.turn_metering import bound_turn_metering
 from gateway.core.middleware.active_turns import ActiveTurnRegistry, is_stop_command
-from gateway.core.middleware.approvals import ApprovalBroker, approval_tool_hooks
+from gateway.core.middleware.approvals import ApprovalBroker
 from gateway.core.middleware.attention import GateDecision, ThreadAttentionGate
 from gateway.core.middleware.conversation_locks import ConversationLockRegistry
 from gateway.core.middleware.inbound_decision import apply_inbound_decision
 from gateway.core.middleware.terminal_outcome import TerminalOutcomeArbiter
 from gateway.core.storage import SessionResolver
 from gateway.transports.slack.client import (
+    SlackChannelNotFound,
     SlackMessagingClient,
+    clear_turn_working,
     mark_turn_done,
     mark_turn_failed,
     mark_turn_working,
 )
-from gateway.transports.slack.delivery.approvals import ThreadApprovalPrompter
+from gateway.transports.slack.delivery.integration_links import configured_service_ids
 from gateway.transports.slack.delivery.turn_output import SlackTurnOutput
 from gateway.transports.slack.processing.events import SlackInboundFile, SlackInboundMessage
 from gateway.transports.slack.processing.principal import (
@@ -42,6 +44,7 @@ from gateway.transports.slack.processing.security import (
     SlackInboundDecision,
     enforce_inbound_slack_message_security,
 )
+from gateway.transports.slack.processing.stop_requests import SlackStopRequest
 from gateway.transports.slack.processing.thread_history import (
     seed_session_from_slack_thread,
     session_needs_thread_seed,
@@ -75,11 +78,43 @@ class SlackTurnDispatcher:
         self._handler = handler
         self._logger = logger
         self._bot_user_id = bot_user_id
+        # Shared with the interactivity listener. Turns do not prompt, but a
+        # click on an older approval message still resolves through this broker.
         self._approvals = approvals if approvals is not None else ApprovalBroker()
         self._active_cancels = ActiveTurnRegistry()
         self._attention = ThreadAttentionGate()
         self._conversation_locks = ConversationLockRegistry()
         self._resolver_lock = threading.Lock()
+
+    def stop(self, request: SlackStopRequest) -> None:
+        """Stop the turn running in the conversation a stop button was pressed in.
+
+        Call it off the turn executor, like the ``stop`` command: every worker
+        may be busy, and the turn itself holds the conversation lock. The
+        stopped turn clears its loading status, which is what ends Slack's
+        "processing" agent session; with nothing running, clear it here.
+        """
+        try:
+            if self._active_cancels.request_stop(request.conversation_key):
+                self._logger.info(
+                    "[slack-gateway] turn stopped from Slack user=%s channel=%s",
+                    request.user_id,
+                    request.channel_id,
+                )
+                return
+            self._messaging.set_thread_status(
+                channel=request.channel_id,
+                thread_ts=request.thread_ts or request.message_ts,
+                status="",
+            )
+            self._messaging.post_ephemeral(
+                channel=request.channel_id,
+                user=request.user_id,
+                text=NO_ACTIVE_TURN_MESSAGE,
+                thread_ts=request.thread_ts or None,
+            )
+        except Exception:
+            self._logger.error("[slack-gateway] stop failed", exc_info=True)
 
     def dispatch(self, inbound: SlackInboundMessage) -> None:
         # /stop must not wait on the per-conversation turn lock.
@@ -98,13 +133,39 @@ class SlackTurnDispatcher:
                 exc_info=True,
             )
             return
+        acknowledged = False
         try:
             with bound_storage_scope(scope):
                 if not self._admit(inbound, scope):
                     return
+                # Acknowledge before the conversation lock and the session load:
+                # a reply in a busy thread, or a session read from the shared
+                # volume, would otherwise leave the user with no sign of life.
+                try:
+                    mark_turn_working(
+                        self._messaging,
+                        channel=inbound.channel_id,
+                        timestamp=inbound.ts,
+                    )
+                except SlackChannelNotFound:
+                    # No reply could reach this conversation, so running the
+                    # turn would only spend the organization's credits.
+                    self._logger.error(
+                        "[slack-gateway] turn skipped: the bot token cannot see channel=%s; "
+                        "check that the installed Slack app matches this workspace's token",
+                        inbound.channel_id,
+                    )
+                    return
+                acknowledged = True
                 self._run_turn(inbound, scope)
         except Exception:
             self._logger.error("[slack-gateway] turn failed", exc_info=True)
+            if acknowledged:
+                mark_turn_failed(
+                    self._messaging,
+                    channel=inbound.channel_id,
+                    timestamp=inbound.ts,
+                )
 
     def _admit(self, inbound: SlackInboundMessage, scope: StorageScope) -> bool:
         """Layered gate: decide whether this inbound message runs a turn at all.
@@ -145,9 +206,10 @@ class SlackTurnDispatcher:
         )
         if decision is GateDecision.RATE_LIMITED:
             # Heard, but over the unprompted budget: acknowledge, don't reply.
-            self._messaging.add_reaction(
-                channel=inbound.channel_id, timestamp=inbound.ts, emoji="eyes"
-            )
+            with contextlib.suppress(SlackChannelNotFound):
+                self._messaging.add_reaction(
+                    channel=inbound.channel_id, timestamp=inbound.ts, emoji="eyes"
+                )
             self._logger.info(
                 "[slack-gateway] unprompted reply rate-limited channel=%s thread_ts=%s",
                 inbound.channel_id,
@@ -210,19 +272,11 @@ class SlackTurnDispatcher:
             )
             session = self._apply_inbound_decision(inbound, decision, scope)
             if session is None:
-                return
-
-            # Metering: only an explicit webapp denial (402) blocks the turn,
-            # so a config error can never masquerade to users as "out of
-            # credits". UNCONFIGURED (dev setups without metering env) and
-            # UNAVAILABLE (webapp outage) proceed — fail-open is the intended
-            # policy so a billing outage never silences the Slack coworker.
-            if consume_credits(scope.principal.id, reason="slack_turn") is CreditsOutcome.DENIED:
-                self._logger.info(
-                    "[slack-gateway] turn denied: out of credits channel=%s",
-                    inbound.channel_id,
+                clear_turn_working(
+                    self._messaging,
+                    channel=inbound.channel_id,
+                    timestamp=inbound.ts,
                 )
-                self._post(inbound, CREDITS_DENIED_MESSAGE)
                 return
 
             # Never log message bodies — audit hashes live in messaging_security.
@@ -250,25 +304,16 @@ class SlackTurnDispatcher:
                 "slack" in resolved,
             )
             turn_started = time.monotonic()
-            mark_turn_working(
-                self._messaging,
-                channel=inbound.channel_id,
-                timestamp=inbound.ts,
-            )
-            # Write tools declaring requires_approval get an Approve/Deny
-            # button prompt in this thread before they run (fail-closed).
-            prompter = ThreadApprovalPrompter(
-                client=self._messaging,
-                broker=self._approvals,
-                channel_id=inbound.channel_id,
-                thread_ts=inbound.thread_ts,
-            )
+            # No approval prompts in Slack for now. Button waits stalled the
+            # turn until the timeout and posted extra replies in the thread.
             output = SlackTurnOutput(
                 client=self._messaging,
                 channel_id=inbound.channel_id,
                 thread_ts=inbound.thread_ts,
                 update_interval_seconds=self._settings.status_update_interval_seconds,
-                tool_hooks=approval_tool_hooks(prompter),
+                tool_hooks=None,
+                user_text=inbound.text,
+                configured_services=lambda: configured_service_ids(session),
             )
             terminal = TerminalOutcomeArbiter()
             output.turn_cancel = terminal.cancel_event
@@ -280,10 +325,12 @@ class SlackTurnDispatcher:
                     inbound.channel_id,
                     session.session_id[:8],
                 )
+                # A timeout is not an answer. Posting it under the mention
+                # looks like the result and blocks the real reply.
                 try:
-                    output.finalize(TURN_TIMEOUT_MESSAGE)
+                    output.abandon()
                 except Exception:
-                    self._logger.debug("[slack-gateway] timeout finalize failed", exc_info=True)
+                    self._logger.debug("[slack-gateway] timeout abandon failed", exc_info=True)
                 mark_turn_failed(
                     self._messaging,
                     channel=inbound.channel_id,
@@ -303,11 +350,37 @@ class SlackTurnDispatcher:
                     timestamp=inbound.ts,
                 )
 
+            def _on_credit_denied() -> None:
+                self._logger.info(
+                    "[slack-gateway] turn denied: out of credits channel=%s",
+                    inbound.channel_id,
+                )
+                if not terminal.claim():
+                    return
+                try:
+                    output.finalize(CREDITS_DENIED_MESSAGE)
+                except Exception:
+                    self._logger.debug(
+                        "[slack-gateway] credits-denied finalize failed", exc_info=True
+                    )
+                mark_turn_failed(
+                    self._messaging,
+                    channel=inbound.channel_id,
+                    timestamp=inbound.ts,
+                )
+
             with terminal.timeout_after(self._settings.turn_timeout_seconds, _on_turn_timeout):
                 try:
-                    # Slack thread is the continuity source when the
-                    # gateway session file is empty (redeploy / ephemeral disk).
-                    if session_needs_thread_seed(inbound.text, is_reply=is_reply):
+                    # Slack thread is the continuity source only when the
+                    # gateway session is empty (redeploy / ephemeral disk).
+                    # If prior turns already live in-session, skip the fetch —
+                    # re-scanning the whole thread on every reply re-invokes
+                    # the agent against rebuilt history for no benefit.
+                    if session_needs_thread_seed(
+                        inbound.text,
+                        is_reply=is_reply,
+                        has_session_history=prior_msgs > 0,
+                    ):
                         seeded = seed_session_from_slack_thread(
                             session,
                             channel_id=inbound.channel_id,
@@ -335,6 +408,18 @@ class SlackTurnDispatcher:
                             surface=UsageSurface.SLACK,
                             session_id=session.session_id,
                             user_id=inbound.user_id or None,
+                            organization_id=scope.principal.id,
+                            slack_user_id=inbound.user_id or None,
+                            slack_team_id=inbound.team_id or None,
+                        ),
+                        bound_turn_metering(
+                            organization_id=scope.principal.id,
+                            reason="slack_turn",
+                            idempotency_key=(
+                                f"{UsageSurface.SLACK.value}:{inbound.team_id}"
+                                f":{inbound.channel_id}:{inbound.ts}"
+                            ),
+                            on_denied=_on_credit_denied,
                         ),
                     ):
                         self._handler(agent_text, session, output, self._logger)
@@ -383,7 +468,7 @@ def _slack_files_context(files: tuple[SlackInboundFile, ...], logger: logging.Lo
     fail-safe — a missing token drops attachments rather than failing the turn).
     """
     from gateway.transports.slack.processing.attachments import build_files_context
-    from integrations.slack.web_client import resolve_bot_token
+    from integrations.slack import resolve_bot_token
 
     target, detail = resolve_bot_token()
     if target is None:

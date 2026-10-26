@@ -1,22 +1,24 @@
-"""One-shot configured agent command."""
+"""One-shot configured agent command.
+
+This module is the Click adapter: options, prompt, and exit codes.
+The agent harness lives in :mod:`surfaces.cli.ask.service` and loads
+when the command runs, not when ``opensre ask --help`` prints usage.
+"""
 
 from __future__ import annotations
 
 import json
+import shlex
 import sys
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from infrastructure.process.runtime_flags import is_json_output
-from surfaces.cli.ask.approval import unknown_allowed_tools
-from surfaces.cli.ask.service import (
-    AskOutcome,
-    AskSignal,
-    AskStatus,
-    ask_signal_scope,
-    cancelled_outcome,
-    run_ask,
-)
+
+if TYPE_CHECKING:
+    from surfaces.cli.ask.service import AskOutcome
 
 
 def _resolve_prompt(value: str) -> str:
@@ -27,12 +29,56 @@ def _resolve_prompt(value: str) -> str:
     return prompt
 
 
+def _echo_answer(text: str) -> None:
+    """Print the answer as Markdown on a TTY, plain when piped or redirected.
+
+    A terminal reader gets the same rendered prose as the interactive shell
+    (bold, lists, fenced code); a script consuming ``opensre ask`` still gets
+    clean, ANSI-free text it can parse.
+    """
+    if not sys.stdout.isatty():
+        click.echo(text)
+        return
+    from rich.console import Console
+
+    from infrastructure.safety.terminal_output import strip_terminal_controls
+    from infrastructure.terminal.markdown import ReplyMarkdown
+    from infrastructure.terminal.theme import MARKDOWN_CODE_THEME, MARKDOWN_THEME
+
+    console = Console()
+    safe = strip_terminal_controls(text, keep_whitespace=True)
+    with console.use_theme(MARKDOWN_THEME):
+        console.print(ReplyMarkdown(safe, code_theme=MARKDOWN_CODE_THEME))
+
+
 def _render_outcome(outcome: AskOutcome) -> None:
+    from surfaces.cli.ask.service import AskStatus
+
     if is_json_output():
         click.echo(json.dumps(outcome.as_dict(), ensure_ascii=False))
         return
-    if outcome.status is AskStatus.SUCCESS:
-        click.echo(outcome.response)
+    if outcome.status in {AskStatus.SUCCESS, AskStatus.NEEDS_INPUT}:
+        _echo_answer(outcome.response)
+        if outcome.session_id is not None and (
+            outcome.status is AskStatus.NEEDS_INPUT or sys.stderr.isatty()
+        ):
+            click.echo(f"Session: {outcome.session_id}", err=True)
+        if outcome.session_id is not None and sys.stderr.isatty():
+            reply = '"<follow-up>"'
+            if len(outcome.questions) == 1:
+                reply = '"1"'
+            elif outcome.questions:
+                labels = [question.label for question in outcome.questions]
+                use_labels = all(labels) and len(set(labels)) == len(labels)
+                sample = {
+                    question.label if use_labels else str(index): "1"
+                    for index, question in enumerate(outcome.questions, start=1)
+                }
+                reply = shlex.quote(json.dumps(sample, ensure_ascii=False))
+            click.echo(
+                f"Continue: opensre ask --resume {outcome.session_id} {reply}",
+                err=True,
+            )
         return
     if outcome.response:
         click.echo(outcome.response, err=True)
@@ -40,6 +86,11 @@ def _render_outcome(outcome: AskOutcome) -> None:
         click.echo(outcome.error.message, err=True)
         if outcome.error.suggestion:
             click.echo(f"Suggestion: {outcome.error.suggestion}", err=True)
+
+
+def _show_live_progress() -> bool:
+    """Show activity only when it cannot alter a machine-readable result."""
+    return not is_json_output() and sys.stdout.isatty() and sys.stderr.isatty()
 
 
 @click.command(name="ask")
@@ -56,31 +107,86 @@ def _render_outcome(outcome: AskOutcome) -> None:
     is_flag=True,
     help="Authorize every approval-gated tool for this invocation.",
 )
+@click.option(
+    "--context-file",
+    "-i",
+    "context_paths",
+    multiple=True,
+    metavar="PATH",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+    help="Attach a UTF-8 text file as untrusted context. Repeat as needed.",
+)
+@click.option(
+    "--resume",
+    "resume_session_id",
+    metavar="SESSION",
+    help="Continue a previous ask session by ID or unambiguous prefix.",
+)
+@click.option(
+    "--ephemeral",
+    is_flag=True,
+    help="Do not persist this invocation or print a resumable session ID.",
+)
 def ask_command(
     prompt: str,
     allowed_tools: tuple[str, ...],
     dangerously_bypass_approvals: bool,
+    context_paths: tuple[Path, ...],
+    resume_session_id: str | None,
+    ephemeral: bool,
 ) -> None:
     """Run one configured OpenSRE agent request and exit."""
     if allowed_tools and dangerously_bypass_approvals:
         raise click.UsageError(
             "--allowed-tool cannot be combined with --dangerously-bypass-approvals."
         )
-    unknown = unknown_allowed_tools(allowed_tools)
-    if unknown:
-        names = ", ".join(unknown)
-        raise click.BadParameter(
-            f"unknown registered tool name(s): {names}",
-            param_hint="--allowed-tool",
-        )
+    if resume_session_id and ephemeral:
+        raise click.UsageError("--resume cannot be combined with --ephemeral.")
+
+    if allowed_tools:
+        from surfaces.cli.ask import approval as ask_approval
+
+        unknown = ask_approval.unknown_allowed_tools(allowed_tools)
+        if unknown:
+            names = ", ".join(unknown)
+            raise click.BadParameter(
+                f"unknown registered tool name(s): {names}",
+                param_hint="--allowed-tool",
+            )
+
+    from surfaces.cli.ask.progress import ask_progress_scope
+    from surfaces.cli.ask.signals import AskSignal, ask_signal_scope
+
     try:
         with ask_signal_scope():
-            outcome = run_ask(
-                _resolve_prompt(prompt),
-                allowed_tools=allowed_tools,
-                bypass_approvals=dangerously_bypass_approvals,
-            )
+            resolved_prompt = _resolve_prompt(prompt)
+            from surfaces.cli.ask.file_input import AskFileInputError, load_context_files
+
+            try:
+                context_files = load_context_files(context_paths)
+            except AskFileInputError as exc:
+                raise click.BadParameter(str(exc), param_hint="--context-file") from exc
+            with ask_progress_scope(enabled=_show_live_progress()) as tool_event_observer:
+                from surfaces.cli.ask import service as ask_service
+
+                outcome = ask_service.run_ask(
+                    resolved_prompt,
+                    allowed_tools=allowed_tools,
+                    bypass_approvals=dangerously_bypass_approvals,
+                    tool_event_observer=tool_event_observer,
+                    resume_session_id=resume_session_id,
+                    ephemeral=ephemeral,
+                    context_files=context_files,
+                )
     except AskSignal as exc:
+        from surfaces.cli.ask.service import cancelled_outcome
+
         outcome = cancelled_outcome(exc.signum)
     _render_outcome(outcome)
     if outcome.exit_code:

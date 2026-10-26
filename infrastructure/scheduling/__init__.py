@@ -3,6 +3,5 @@
 ``scheduler`` owns cron and agentic loop tasks and is hosted by the gateway
 process; ``task_types`` / ``task_registry`` hold the in-flight task contract
 and persistent registry (kept as leaf modules — a ``tasks/`` directory is
-gitignored repo-wide); ``background_investigations`` tracks investigations
-started from a surface and finished after the turn returns.
+gitignored repo-wide).
 """

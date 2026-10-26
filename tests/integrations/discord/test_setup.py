@@ -1,11 +1,4 @@
-"""The Discord setup spec — its finalize step and field persistence.
-
-Registering the ``/investigate`` slash command can only happen once the app
-exists, so the spec runs it as a ``finalize`` step after persistence. What
-matters is that a completed setup triggers it, an incomplete one skips it
-without erroring, and the outcome is reported rather than allowed to unwind the
-save.
-"""
+"""The Discord setup spec — required fields and tier persistence."""
 
 from __future__ import annotations
 
@@ -42,42 +35,12 @@ def writes(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return captured
 
 
-def test_slash_command_is_registered_when_an_application_id_is_given(
-    monkeypatch: pytest.MonkeyPatch, writes: dict[str, Any]
-) -> None:
-    calls: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        "integrations.discord.setup.register_investigate_command",
-        lambda application_id, bot_token: (
-            calls.append((application_id, bot_token)) or "/investigate slash command registered."
-        ),
-    )
-
+def test_completed_setup_reports_verification_detail(writes: dict[str, Any]) -> None:
     outcome = setup_flow.apply_setup(
         DISCORD_SETUP, {"bot_token": "tok", "application_id": "app-123"}
     )
 
     assert outcome.ok is True
-    assert calls == [("app-123", "tok")]
-    assert "/investigate slash command registered." in outcome.detail
-
-
-def test_slash_command_is_skipped_without_an_application_id(
-    monkeypatch: pytest.MonkeyPatch, writes: dict[str, Any]
-) -> None:
-    called = False
-
-    def _register(_application_id: str, _bot_token: str) -> str:
-        nonlocal called
-        called = True
-        return "should not run"
-
-    monkeypatch.setattr("integrations.discord.setup.register_investigate_command", _register)
-
-    outcome = setup_flow.apply_setup(DISCORD_SETUP, {"bot_token": "tok"})
-
-    assert outcome.ok is True
-    assert called is False
     assert outcome.detail == "Discord authenticated."
 
 
@@ -89,11 +52,7 @@ def test_bot_token_is_the_only_required_field(writes: dict[str, Any]) -> None:
     assert writes["store"] == []
 
 
-def test_bot_token_goes_to_the_keyring_and_the_rest_to_env(
-    monkeypatch: pytest.MonkeyPatch, writes: dict[str, Any]
-) -> None:
-    monkeypatch.setattr("integrations.discord.setup.register_investigate_command", lambda *_a: "")
-
+def test_bot_token_goes_to_the_keyring_and_the_rest_to_env(writes: dict[str, Any]) -> None:
     setup_flow.apply_setup(
         DISCORD_SETUP,
         {

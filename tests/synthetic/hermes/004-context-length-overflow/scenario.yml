@@ -1,4 +1,0 @@
-scenario_id: "004-context-length-overflow"
-title: "Prompt too long after lower-context model switch + compression bloats prompt (#23767)"
-source: "https://github.com/NousResearch/hermes-agent/issues/23767"
-log_file: "errors.log"

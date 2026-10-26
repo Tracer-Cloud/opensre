@@ -1,4 +1,4 @@
-"""Rocket.Chat credential resolution for alarm dispatch (watchdog, Hermes).
+"""Rocket.Chat credential resolution for message delivery.
 
 ``server_url``/``auth_token``/``user_id``/``webhook_url`` reuse the
 scheduler's resolver (:func:`infrastructure.scheduling.scheduler.credentials.resolve_rocketchat_credentials`)
@@ -86,7 +86,7 @@ def load_credentials_from_env(
     *,
     channel_override: str | None = None,
 ) -> RocketChatCredentials:
-    """Resolve Rocket.Chat credentials for alarm dispatch.
+    """Resolve Rocket.Chat credentials for message delivery.
 
     Raises :class:`OpenSREError` with a setup-friendly suggestion when
     neither a usable token+channel combination nor a webhook is configured.

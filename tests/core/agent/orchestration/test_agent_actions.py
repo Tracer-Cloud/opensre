@@ -4,26 +4,20 @@ from __future__ import annotations
 
 import io
 import subprocess
-import sys
-import time
-from pathlib import Path, PurePosixPath
-from typing import NoReturn
-from unittest.mock import MagicMock
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
 from rich.console import Console
 
-import config.constants.platform as platform_module
 import surfaces.interactive_shell.runtime.action_turn as action_turn
 import surfaces.interactive_shell.runtime.llm_provider_adapter as llm_provider_adapter
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
-import surfaces.interactive_shell.runtime.subprocess_runner as subprocess_runner
 import tests.shared.harness_turn_driver as harness_turn_driver
 import tools.interactive_shell.shell.execution as shell_execution
-from core.agent_harness.accounting.token_accounting import LlmRunInfo
-from core.agent_harness.ports import AnswerRequest, OutputSink
+from config.constants.terminal_host import BASH_EXPORTED_FUNCTION_ENV_PREFIX
 from core.llm.types import AgentLLMResponse, ToolCall
-from infrastructure.scheduling.task_types import TaskKind, TaskStatus
 from surfaces.interactive_shell.session import Session
 from tests.core.agent._planned_action import (
     PlannedAction,
@@ -36,6 +30,8 @@ from tools.interactive_shell.action_names import (
     TOOL_KIND_TO_NAME,
     ToolKind,
 )
+from tools.interactive_shell.implementation.claude_code_executor import ImplementationLaunch
+from tools.interactive_shell.subprocess import SubprocessWatchResult
 
 _ACTION_LLM_FACTORY_PATCHES = (
     "core.agent_harness.turns.headless_build.default_llm_factory",
@@ -62,17 +58,6 @@ run_harness_turn = harness_turn_driver.run_harness_turn
 def _capture() -> tuple[Console, io.StringIO]:
     buf = io.StringIO()
     return Console(file=buf, force_terminal=False, highlight=False), buf
-
-
-def _no_answer_agent(
-    message: str,
-    session: Session,
-    console: Console,
-    *,
-    request: AnswerRequest,
-    output: OutputSink | None = None,
-) -> LlmRunInfo | None:
-    return None
 
 
 def _action(
@@ -107,13 +92,6 @@ def _tool_args_for_action(action: PlannedAction) -> dict[str, object]:
         return {"target": content}
     if action.kind == "shell":
         return {"command": content}
-    if action.kind == "sample_alert":
-        return {"template": content}
-    if action.kind == "investigation":
-        return {"alert_text": content}
-    if action.kind == "synthetic_test":
-        suite, _sep, scenario = content.partition(":")
-        return {"suite": suite, "scenario": scenario}
     if action.kind == "task_cancel":
         return {"target": content}
     if action.kind == "cli_command":
@@ -147,28 +125,131 @@ def _message_from_agent_prompt(messages: list[dict[str, object]]) -> str:
     part an over-budget turn drops first. Read between the delimiters rather
     than assuming the envelope spans the string.
     """
-    raw = str(messages[-1].get("content", "")) if messages else ""
     prefix = "USER MESSAGE (literal): <<<"
     suffix = ">>>"
-    start = raw.find(prefix)
-    if start == -1:
-        return raw
-    body_at = start + len(prefix)
-    end = raw.find(suffix, body_at)
-    return raw[body_at:end] if end != -1 else raw
+    # Later iterations of one turn end with tool results; the user message is
+    # the last one carrying the literal envelope.
+    for message in reversed(messages):
+        raw = str(message.get("content", ""))
+        start = raw.find(prefix)
+        if start == -1:
+            continue
+        body_at = start + len(prefix)
+        end = raw.find(suffix, body_at)
+        return raw[body_at:end] if end != -1 else raw
+    return str(messages[-1].get("content", "")) if messages else ""
 
 
-def _expected_shell_argv(command: str) -> list[str]:
+# Both shell launchers expose a process so ESC can cancel it; tests fake the
+# process object and normalize their captured pipe/text options below.
+_EXPECTED_POPEN_KWARGS: dict[str, object] = {
+    "stdout": subprocess.PIPE,
+    "stderr": subprocess.PIPE,
+    "text": True,
+    "encoding": "utf-8",
+    "errors": "replace",
+    "start_new_session": True,
+}
+
+
+class _FakeProcess:
+    """Minimal ``Popen`` stand-in: piped output, exit code, optional hang until terminated."""
+
+    def __init__(self, *, stdout: str, stderr: str, returncode: int, hang: bool) -> None:
+        self.stdout = io.StringIO(stdout)
+        self.stderr = io.StringIO(stderr)
+        # ``None`` so group signalling cannot target a real pid and falls
+        # back to ``terminate()``.
+        self.pid = None
+        self.returncode: int | None = None if hang else returncode
+        self.terminated = False
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:  # noqa: ARG002
+        if self.returncode is None:
+            self.returncode = -15
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self.returncode = -15
+
+    def kill(self) -> None:
+        self.terminated = True
+        self.returncode = -9
+
+    def is_alive(self) -> bool:
+        return self.returncode is None
+
+    def terminate_tree(self) -> None:
+        self.terminate()
+
+
+def _install_fake_popen(
+    monkeypatch: object,
+    *,
+    stdout: str = "",
+    stderr: str = "",
+    returncode: int = 0,
+    hang: bool = False,
+) -> list[tuple[str | list[str], dict[str, object]]]:
+    """Replace both shell launchers and return equivalent ``(argv, kwargs)`` calls."""
+    calls: list[tuple[str | list[str], dict[str, object]]] = []
+
+    def _fake_popen(command: str | list[str], **kwargs: object) -> _FakeProcess:
+        child_env = kwargs.pop("env")
+        assert isinstance(child_env, dict)
+        assert not any(
+            str(name).startswith(BASH_EXPORTED_FUNCTION_ENV_PREFIX) for name in child_env
+        )
+        calls.append((command, kwargs))
+        return _FakeProcess(stdout=stdout, stderr=stderr, returncode=returncode, hang=hang)
+
+    @contextmanager
+    def _fake_windows_job(
+        command: str, *, environment: Mapping[str, str]
+    ) -> Iterator[_FakeProcess]:
+        proc = _fake_popen(command, env=dict(environment), **_EXPECTED_POPEN_KWARGS)
+        try:
+            yield proc
+        finally:
+            if proc.is_alive():
+                proc.terminate_tree()
+
+    monkeypatch.setattr(shell_execution.subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
+    monkeypatch.setattr(shell_execution, "spawn_windows_job", _fake_windows_job)  # type: ignore[attr-defined]
+    return calls
+
+
+def _force_watch_timeout(proc: object, **_kwargs: object) -> SubprocessWatchResult:
+    """Watcher stand-in: treat the child as timed out and stop it."""
+    terminate = getattr(proc, "terminate", None)
+    if callable(terminate):
+        terminate()
+    return SubprocessWatchResult(
+        timed_out=True,
+        cancelled=False,
+        exit_code=getattr(proc, "returncode", -15),
+        terminated_by_watcher=True,
+    )
+
+
+def _expected_shell_argv(command: str) -> str | list[str]:
     if shell_execution.os.name == "nt":
         shell = shell_execution.os.environ.get("COMSPEC") or "cmd.exe"
-        return [shell, "/d", "/s", "/c", command]
-    shell = shell_execution.os.environ.get("SHELL") or "/bin/sh"
-    return [shell, "-lc", command]
+        shell_command = "cd" if command.strip().lower() == "pwd" else command
+        return f'"{shell}" /d /v:off /s /c "{shell_command}"'
+    return ["/bin/sh", "-c", command]
 
 
 class _MessageMappedActionLLM(FakeActionLLM):
+    """Issue the planned actions for a message one per response, as the runtime requires."""
+
     def __init__(self) -> None:
         super().__init__([])
+        self._issued: dict[str, int] = {}
 
     def invoke(
         self,
@@ -180,13 +261,13 @@ class _MessageMappedActionLLM(FakeActionLLM):
         self.invocations += 1
         message = _message_from_agent_prompt(messages)
         actions, _has_unhandled = _FAKE_PLANS.get(message, ([], False))
-        return _response_from_actions(list(actions))
-
-
-_NITRO_PROMPT = (
-    "I want to deploy OpenSRE on a remote EC2 Nitro instance, and then I want to send\n"
-    'it an investigation. Can you please deploy the instance and send it "hello world"?'
-)
+        index = self._issued.get(message, 0)
+        response = _response_from_actions(list(actions[index : index + 1]))
+        discovery = self.discovery_response(response, tools)
+        if discovery is not None:
+            return discovery
+        self._issued[message] = index + 1
+        return response
 
 
 # Deterministic phrase -> (planned actions, has_unhandled_clause) mapping used by the
@@ -226,10 +307,6 @@ _FAKE_PLANS: dict[str, tuple[list[PlannedAction], bool]] = {
         [_action("slash", "/integrations list"), _action("slash", "/remote")],
         True,
     ),
-    _NITRO_PROMPT: (
-        [_action("slash", "/remote"), _action("investigation", "hello world")],
-        False,
-    ),
     (
         "tell me which services are connected AND then tell me the current CLI version "
         "AND then deploy to EC2 within 90 seconds"
@@ -239,25 +316,6 @@ _FAKE_PLANS: dict[str, tuple[list[PlannedAction], bool]] = {
             _action("slash", "/version"),
             _action("slash", "/remote"),
         ],
-        False,
-    ),
-    "okay launch a simple alert": (
-        [_action("sample_alert", "generic")],
-        False,
-    ),
-    "show me which services are connected and after that run a synthetic test RDS database": (
-        [
-            _action("slash", "/integrations list"),
-            _action("synthetic_test", "rds_postgres:001-replication-lag"),
-        ],
-        False,
-    ),
-    "run synthetic test 005-failover": (
-        [_action("synthetic_test", "rds_postgres:005-failover")],
-        False,
-    ),
-    "kill the syntehtic_test because it is runnign way too long": (
-        [_action("task_cancel", "synthetic_test")],
         False,
     ),
     "show me connected services and sing a song": (
@@ -348,9 +406,9 @@ def test_execute_cli_actions_skips_remaining_actions_when_cancelled(
 ) -> None:
     """Multi-action plan: if the user pressed Esc / typed ``/cancel``
     between actions, the per-dispatch cancel event is set on the
-    ``StreamingConsole``. The action loop checks ``cancel_requested``
-    at the top of each iteration and breaks, so the remaining actions
-    in the plan are NOT dispatched.
+    ``StreamingConsole``. Each action is its own model response, and the
+    loop checks ``cancel_requested`` before taking the next step, so the
+    remaining actions in the plan are NOT dispatched.
 
     Pre-fix, the loop ran every action regardless of cancel state, so
     cancelling a "do A then B" plan still ran B even after the user
@@ -410,7 +468,6 @@ def test_execute_cli_actions_skips_remaining_actions_when_cancelled(
     output = buf.getvalue()
     assert "ran /health" in output
     assert "ran /integrations list" not in output
-    assert "remaining actions cancelled" in output
 
 
 def test_execute_cli_actions_falls_through_for_local_llama_request(monkeypatch: object) -> None:
@@ -542,10 +599,13 @@ def test_execute_cli_actions_sets_bare_model_for_active_provider(
 def test_execute_cli_actions_runs_implementation_action(monkeypatch: object) -> None:
     calls: list[str] = []
 
-    def _fake_run_implementation(request: str, presenter: object) -> None:
+    def _fake_run_implementation(
+        request: str, presenter: object, **_kwargs: object
+    ) -> ImplementationLaunch:
         calls.append(request)
         presenter.session.record("implementation", request, ok=True)  # type: ignore[attr-defined]
         presenter.console.print(f"implemented {request}")  # type: ignore[attr-defined]
+        return ImplementationLaunch(started=True, task_id="task-1")
 
     monkeypatch.setattr(
         "tools.interactive_shell.actions.implementation.run_claude_code_implementation",
@@ -648,55 +708,6 @@ def test_compound_prompt_executes_all_supported_tasks(monkeypatch: object) -> No
     assert "couldn't safely decide actions" not in output.lower()
 
 
-def test_nitro_prompt_executes_remote_then_investigation(monkeypatch: object) -> None:
-    dispatched: list[str] = []
-    investigation_payloads: list[str] = []
-
-    def _fake_dispatch(
-        command: str,
-        session: Session,
-        console: Console,
-        **_kwargs: object,
-    ) -> bool:
-        dispatched.append(command)
-        session.record("slash", command, ok=True)
-        console.print(f"ran {command}")
-        return True
-
-    def _fake_run_investigation_for_session(
-        *,
-        alert_text: str,
-        context_overrides: dict[str, object] | None = None,
-        cancel_requested: object | None = None,
-        console: Console | None = None,
-    ) -> dict[str, object]:
-        _ = (context_overrides, cancel_requested, console)
-        investigation_payloads.append(alert_text)
-        return {"root_cause": "hello world handled"}
-
-    monkeypatch.setattr(slash_adapter, "dispatch_slash", _fake_dispatch)
-    import surfaces.interactive_shell.runtime.investigation_adapter as investigation_adapter
-
-    monkeypatch.setattr(
-        investigation_adapter,
-        "run_investigation_for_session",
-        _fake_run_investigation_for_session,
-    )
-
-    session = Session()
-    console, buf = _capture()
-    handled = action_turn.run_action_tool_turn(_NITRO_PROMPT, session, console)
-
-    assert handled.handled is True
-    assert dispatched == ["/remote"]
-    assert investigation_payloads == ["hello world"]
-    output = buf.getvalue()
-    assert "EC2 deployment creates AWS" not in output
-    assert "ran /remote" in output
-    assert "investigation: hello world" in output
-    assert output.index("ran /remote") < output.index("investigation: hello world")
-
-
 def test_services_version_deploy_prompt_executes_in_order(monkeypatch: object) -> None:
     dispatched: list[str] = []
 
@@ -729,227 +740,6 @@ def test_services_version_deploy_prompt_executes_in_order(monkeypatch: object) -
     output = buf.getvalue()
     assert output.index("ran /integrations list") < output.index("ran /version")
     assert "EC2 deployment creates AWS" not in output
-
-
-def test_execute_cli_actions_runs_sample_alert(monkeypatch: object) -> None:
-    calls: list[str] = []
-    session = Session()
-    console, buf = _capture()
-
-    def _fake_run_sample_alert_for_session(
-        *,
-        template_name: str = "generic",
-        context_overrides: dict[str, object] | None = None,
-        cancel_requested: object | None = None,
-        console: Console | None = None,
-    ) -> dict[str, object]:
-        calls.append(template_name)
-        assert context_overrides is None
-        assert console is turn_console
-        return {
-            "root_cause": "sample failure",
-            "problem_md": "sample",
-            "is_noise": False,
-        }
-
-    import surfaces.interactive_shell.runtime.investigation_adapter as investigation_adapter
-
-    turn_console = console
-    monkeypatch.setattr(
-        investigation_adapter,
-        "run_sample_alert_for_session",
-        _fake_run_sample_alert_for_session,
-    )
-
-    assert (
-        action_turn.run_action_tool_turn("okay launch a simple alert", session, console).handled
-        is True
-    )
-    assert calls == ["generic"]
-    assert session.last_state == {
-        "root_cause": "sample failure",
-        "problem_md": "sample",
-        "is_noise": False,
-    }
-    assert session.history[-1] == {"type": "alert", "text": "sample:generic", "ok": True}
-    inv_tasks = [
-        t for t in session.task_registry.list_recent(10) if t.kind == TaskKind.INVESTIGATION
-    ]
-    assert len(inv_tasks) == 1
-    assert inv_tasks[0].status == TaskStatus.COMPLETED
-    assert inv_tasks[0].result == "sample failure"
-    output = buf.getvalue()
-    assert "sample alert" in output
-    assert "generic" in output
-
-
-def test_execute_cli_actions_sample_alert_opensre_error_marks_task_failed(
-    monkeypatch: object,
-) -> None:
-    from surfaces.shared.error_handling.errors import OpenSREError
-
-    def _raise(
-        *,
-        template_name: str = "generic",
-        context_overrides: dict[str, object] | None = None,
-        cancel_requested: object | None = None,
-        console: Console | None = None,
-    ) -> dict[str, object]:
-        _ = console
-        raise OpenSREError("sample pipeline blocked")
-
-    import surfaces.interactive_shell.runtime.investigation_adapter as investigation_adapter
-
-    monkeypatch.setattr(investigation_adapter, "run_sample_alert_for_session", _raise)
-
-    session = Session()
-    console, _ = _capture()
-    assert (
-        action_turn.run_action_tool_turn("okay launch a simple alert", session, console).handled
-        is True
-    )
-    inv_tasks = [
-        t for t in session.task_registry.list_recent(10) if t.kind == TaskKind.INVESTIGATION
-    ]
-    assert len(inv_tasks) == 1
-    assert inv_tasks[0].status == TaskStatus.FAILED
-    assert inv_tasks[0].error == "sample pipeline blocked"
-
-
-def test_execute_cli_actions_lists_all_actions_before_synthetic_rds(monkeypatch: object) -> None:
-    dispatched: list[str] = []
-    popen_calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_dispatch(
-        command: str,
-        session: Session,
-        console: Console,
-        **_kwargs: object,
-    ) -> bool:
-        dispatched.append(command)
-        session.record("slash", command, ok=True)
-        console.print(f"ran {command}")
-        return True
-
-    def _fake_popen(command: list[str], **kwargs: object) -> MagicMock:
-        popen_calls.append((command, kwargs))
-        proc = MagicMock()
-        proc.poll.return_value = 0
-        proc.returncode = 0
-        return proc
-
-    monkeypatch.setattr(slash_adapter, "dispatch_slash", _fake_dispatch)
-    monkeypatch.setattr(
-        "tools.interactive_shell.synthetic.runner.subprocess.Popen",
-        _fake_popen,
-    )
-
-    session = Session()
-    console, buf = _capture()
-    handled = action_turn.run_action_tool_turn(
-        "show me which services are connected and after that run a synthetic test RDS database",
-        session,
-        console,
-    )
-
-    assert handled.handled is True
-    assert dispatched == ["/integrations list"]
-    assert len(popen_calls) == 1
-    assert popen_calls[0][0] == [
-        sys.executable,
-        "-u",
-        "-m",
-        "surfaces.cli",
-        "tests",
-        "synthetic",
-        "--scenario",
-        "001-replication-lag",
-    ]
-
-    assert session.history[0] == {
-        "type": "slash",
-        "text": "/integrations list",
-        "ok": True,
-    }
-
-    for _ in range(100):
-        recent = session.task_registry.list_recent(1)
-        if recent and recent[0].status != TaskStatus.RUNNING:
-            break
-        time.sleep(0.01)
-    finished = session.task_registry.list_recent(1)[0]
-    assert finished.status == TaskStatus.COMPLETED
-
-    synthetic_entry = session.history[-1]
-    assert synthetic_entry["type"] == "synthetic_test"
-    assert synthetic_entry["ok"] is True
-    assert "rds_postgres" in synthetic_entry["text"]
-    assert "task:" in synthetic_entry["text"]
-
-    output = buf.getvalue()
-    assert "Requested actions" not in output
-    assert "synthetic test started" in output
-    assert output.index("$ /integrations list") < output.index("$ opensre tests synthetic")
-    assert output.index("$ opensre tests synthetic") < output.index("synthetic test started")
-
-
-def test_execute_cli_actions_runs_requested_synthetic_scenario(monkeypatch: object) -> None:
-    popen_calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_popen(command: list[str], **kwargs: object) -> MagicMock:
-        popen_calls.append((command, kwargs))
-        proc = MagicMock()
-        proc.poll.return_value = 0
-        proc.returncode = 0
-        return proc
-
-    monkeypatch.setattr(
-        "tools.interactive_shell.synthetic.runner.subprocess.Popen",
-        _fake_popen,
-    )
-
-    session = Session()
-    console, buf = _capture()
-    handled = action_turn.run_action_tool_turn("run synthetic test 005-failover", session, console)
-
-    assert handled.handled is True
-    assert popen_calls[0][0][-2:] == ["--scenario", "005-failover"]
-    assert "$ opensre tests synthetic --scenario 005-failover" in buf.getvalue()
-
-
-def test_execute_cli_actions_cancels_single_running_synthetic_task() -> None:
-    session = Session()
-    session.terminal.trust_mode = True
-    task = session.task_registry.create(TaskKind.SYNTHETIC_TEST)
-    task.mark_running()
-    proc = MagicMock()
-    proc.poll.return_value = None
-    task.attach_process(proc)
-
-    console, buf = _capture()
-    handled = action_turn.run_action_tool_turn(
-        "kill the syntehtic_test because it is runnign way too long",
-        session,
-        console,
-    )
-
-    assert handled.handled is True
-    assert task.cancel_requested.is_set()
-    proc.terminate.assert_called_once()
-    slash_entry = session.history[0]
-    assert slash_entry == {
-        "type": "slash",
-        "text": f"/cancel {task.task_id}",
-        "ok": True,
-        "response_text": (
-            f"slash /cancel {task.task_id} (succeeded)\n"
-            f"stop requested for synthetic_test {task.task_id}. use /tasks to confirm status."
-        ),
-    }
-    output = buf.getvalue()
-    assert "Requested actions" not in output
-    assert f"$ /cancel {task.task_id}" in output
-    assert "stop requested" in output
 
 
 def test_partial_match_executes_matched_clause_and_drops_unhandled(monkeypatch: object) -> None:
@@ -991,144 +781,56 @@ def test_execute_cli_actions_falls_through_for_chat() -> None:
 
 
 def test_execute_cli_actions_runs_shell_command(monkeypatch: object) -> None:
-    def _fake_cwd(_: type[Path]) -> PurePosixPath:
-        return PurePosixPath("/tmp/project")
-
-    def _fail_run(*_args: object, **_kwargs: object) -> None:  # pragma: no cover
-        raise AssertionError("subprocess.run should not be used for pwd")
-
-    monkeypatch.setattr(subprocess_runner.Path, "cwd", classmethod(_fake_cwd))
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fail_run)
+    calls = _install_fake_popen(monkeypatch, stdout="/tmp/project\n")
 
     session = Session()
     console, buf = _capture()
 
     assert action_turn.run_action_tool_turn("run `pwd`", session, console).handled is True
     assert session.history == [
-        {"type": "shell", "text": "pwd", "ok": True},
+        {"type": "shell", "text": "pwd", "ok": True, "response_text": "/tmp/project"},
     ]
+    assert calls == [(_expected_shell_argv("pwd"), _EXPECTED_POPEN_KWARGS)]
     output = buf.getvalue()
     assert "$ pwd" in output
     assert "/tmp/project" in output
 
 
-def test_execute_cli_actions_cd_preserves_windows_paths(monkeypatch: object) -> None:
-    changed_directories: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        changed_directories.append(target)
-
-    monkeypatch.setattr(platform_module, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-
-    session = Session()
-    console, _ = _capture()
-
-    message = r"run `cd C:\Users\Alice`"
-    assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert changed_directories == [Path(r"C:\Users\Alice")]
-    assert session.history == [
-        {"type": "shell", "text": r"cd C:\Users\Alice", "ok": True},
-    ]
-
-
-def test_execute_cli_actions_cd_dispatches_case_insensitively(monkeypatch: object) -> None:
-    changed_directories: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        changed_directories.append(target)
-
-    def _fail_run(*_args: object, **_kwargs: object) -> None:  # pragma: no cover
-        raise AssertionError("subprocess.run should not be used for CD")
-
-    monkeypatch.setattr(platform_module, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fail_run)
+def test_execute_cli_actions_preserves_windows_shell_syntax(monkeypatch: object) -> None:
+    windows_shell = SimpleNamespace(
+        name="nt",
+        environ={"COMSPEC": r"C:\Windows\System32\cmd.exe"},
+    )
+    monkeypatch.setattr(shell_execution, "os", windows_shell)
+    monkeypatch.setattr(
+        shell_execution,
+        "_windows_command_shell",
+        lambda: r"C:\Windows\System32\cmd.exe",
+    )
+    calls = _install_fake_popen(monkeypatch)
+    command = r"CD C:\Users\Alice"
 
     session = Session()
     console, _ = _capture()
 
-    message = r"run `CD C:\Users\Alice`"
-    assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert changed_directories == [Path(r"C:\Users\Alice")]
-    assert session.history == [
-        {"type": "shell", "text": r"CD C:\Users\Alice", "ok": True},
+    assert action_turn.run_action_tool_turn(f"run `{command}`", session, console).handled
+    assert calls == [
+        (
+            r'"C:\Windows\System32\cmd.exe" /d /v:off /s /c "CD C:\Users\Alice"',
+            _EXPECTED_POPEN_KWARGS,
+        )
     ]
-
-
-def test_execute_cli_actions_cd_handles_trailing_backslash_on_windows(monkeypatch: object) -> None:
-    changed_directories: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        changed_directories.append(target)
-
-    monkeypatch.setattr(platform_module, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-
-    session = Session()
-    console, _ = _capture()
-
-    message = r"run `cd C:\`"
-    assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert changed_directories == [Path("C:\\")]
-    assert session.history == [
-        {"type": "shell", "text": "cd C:\\", "ok": True},
-    ]
-
-
-def test_execute_cli_actions_cd_strips_quotes_on_windows(monkeypatch: object) -> None:
-    changed_directories: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        changed_directories.append(target)
-
-    monkeypatch.setattr(platform_module, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-
-    session = Session()
-    console, _ = _capture()
-
-    message = r'run `cd "C:\Users\Alice"`'
-    assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert changed_directories == [Path(r"C:\Users\Alice")]
-    assert session.history == [
-        {"type": "shell", "text": r'cd "C:\Users\Alice"', "ok": True},
-    ]
+    assert session.history == [{"type": "shell", "text": command, "ok": True}]
 
 
 def test_execute_cli_actions_records_shell_failure(monkeypatch: object) -> None:
-    completed = subprocess.CompletedProcess(
-        args=["false"],
-        returncode=2,
-        stdout="",
-        stderr="nope\n",
-    )
-    calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append((command, kwargs))
-        return completed
-
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fake_run)
+    calls = _install_fake_popen(monkeypatch, stderr="nope\n", returncode=2)
 
     session = Session()
     console, buf = _capture()
 
     assert action_turn.run_action_tool_turn("execute false", session, console).handled is True
-    assert calls == [
-        (
-            ["false"],
-            {
-                "shell": False,
-                "capture_output": True,
-                "text": True,
-                "encoding": "utf-8",
-                "errors": "replace",
-                "timeout": subprocess_runner.SHELL_COMMAND_TIMEOUT_SECONDS,
-                "check": False,
-            },
-        )
-    ]
+    assert calls == [(_expected_shell_argv("false"), _EXPECTED_POPEN_KWARGS)]
     assert session.history[-1] == {
         "type": "shell",
         "text": "false",
@@ -1141,15 +843,11 @@ def test_execute_cli_actions_records_shell_failure(monkeypatch: object) -> None:
 
 
 def test_execute_cli_actions_shell_command_times_out(monkeypatch: object) -> None:
-    def _timeout(cmd: object, **kwargs: object) -> NoReturn:  # pragma: no cover
-        raise subprocess.TimeoutExpired(
-            cmd=cmd,
-            timeout=1,
-            output="partial out\n",
-            stderr="partial err\n",
-        )
-
-    monkeypatch.setattr(shell_execution.subprocess, "run", _timeout)
+    _install_fake_popen(monkeypatch, stdout="partial out\n", stderr="partial err\n", hang=True)
+    monkeypatch.setattr(
+        "tools.interactive_shell.shell.execution.watch_subprocess_until_exit",
+        _force_watch_timeout,
+    )
 
     session = Session()
     console, buf = _capture()
@@ -1159,7 +857,7 @@ def test_execute_cli_actions_shell_command_times_out(monkeypatch: object) -> Non
         "type": "shell",
         "text": "true",
         "ok": False,
-        "response_text": "command timed out after 120 seconds",
+        "response_text": "command timed out after 240 seconds",
     }
     output = buf.getvalue().lower()
     assert "timed out" in output
@@ -1168,37 +866,13 @@ def test_execute_cli_actions_shell_command_times_out(monkeypatch: object) -> Non
 
 
 def test_execute_cli_actions_runs_passthrough_with_shell_true(monkeypatch: object) -> None:
-    calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout="ok\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fake_run)
+    calls = _install_fake_popen(monkeypatch, stdout="ok\n")
 
     session = Session()
     console, buf = _capture()
 
     assert action_turn.run_action_tool_turn("run `!echo hello`", session, console).handled is True
-    assert calls == [
-        (
-            _expected_shell_argv("echo hello"),
-            {
-                "shell": False,
-                "capture_output": True,
-                "text": True,
-                "encoding": "utf-8",
-                "errors": "replace",
-                "timeout": subprocess_runner.SHELL_COMMAND_TIMEOUT_SECONDS,
-                "check": False,
-            },
-        )
-    ]
+    assert calls == [(_expected_shell_argv("echo hello"), _EXPECTED_POPEN_KWARGS)]
     assert session.history[-1] == {
         "type": "shell",
         "text": "!echo hello",
@@ -1210,47 +884,37 @@ def test_execute_cli_actions_runs_passthrough_with_shell_true(monkeypatch: objec
     assert "ok" in output
 
 
-def test_execute_cli_actions_dispatches_bang_cd_through_builtin(monkeypatch: object) -> None:
-    dirs: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        dirs.append(target)
-
-    def _boom(*_args: object, **_kwargs: object) -> None:  # pragma: no cover
-        raise AssertionError("subprocess.run should not be used for !cd builtin execution")
-
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-    monkeypatch.setattr(shell_execution.subprocess, "run", _boom)
+def test_execute_cli_actions_runs_bang_cd_in_child_shell(monkeypatch: object) -> None:
+    calls = _install_fake_popen(monkeypatch)
 
     session = Session()
     console, buf = _capture()
 
     message = "run `!cd /tmp`"
     assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert dirs == [Path("/tmp")]
-    assert session.history[-1] == {"type": "shell", "text": "cd /tmp", "ok": True}
+    assert calls == [(_expected_shell_argv("cd /tmp"), _EXPECTED_POPEN_KWARGS)]
+    assert session.history[-1] == {"type": "shell", "text": "!cd /tmp", "ok": True}
     captured = buf.getvalue()
-    assert "explicit shell passthrough enabled" not in captured
+    assert "explicit shell passthrough enabled" in captured
 
 
-def test_execute_cli_actions_dispatches_bang_pwd_through_builtin(monkeypatch: object) -> None:
-    def _fake_cwd(_: type[Path]) -> PurePosixPath:
-        return PurePosixPath("/shown")
-
-    def _boom(*_args: object, **_kwargs: object) -> None:  # pragma: no cover
-        raise AssertionError("subprocess.run should not be used for !pwd builtin execution")
-
-    monkeypatch.setattr(subprocess_runner.Path, "cwd", classmethod(_fake_cwd))
-    monkeypatch.setattr(shell_execution.subprocess, "run", _boom)
+def test_execute_cli_actions_runs_bang_pwd_in_child_shell(monkeypatch: object) -> None:
+    calls = _install_fake_popen(monkeypatch, stdout="/shown\n")
 
     session = Session()
     console, buf = _capture()
 
     assert action_turn.run_action_tool_turn("run `!pwd`", session, console).handled is True
-    assert session.history[-1] == {"type": "shell", "text": "pwd", "ok": True}
+    assert calls == [(_expected_shell_argv("pwd"), _EXPECTED_POPEN_KWARGS)]
+    assert session.history[-1] == {
+        "type": "shell",
+        "text": "!pwd",
+        "ok": True,
+        "response_text": "/shown",
+    }
     captured = buf.getvalue()
     assert "/shown" in captured
-    assert "explicit shell passthrough enabled" not in captured
+    assert "explicit shell passthrough enabled" in captured
 
 
 def test_execute_cli_actions_handles_path_with_spaces_run_phrase() -> None:
@@ -1266,18 +930,7 @@ def test_execute_cli_actions_handles_path_with_spaces_run_phrase() -> None:
 
 
 def test_execute_cli_actions_backtick_shell_preserves_space_path_token(monkeypatch: object) -> None:
-    calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout="done\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fake_run)
+    calls = _install_fake_popen(monkeypatch, stdout="done\n")
 
     session = Session()
     console, _ = _capture()
@@ -1288,11 +941,8 @@ def test_execute_cli_actions_backtick_shell_preserves_space_path_token(monkeypat
         ).handled
         is True
     )
-    # On Windows, shlex with posix=False preserves quotes for tokens with spaces.
-    # Both Windows and Posix parsers correctly strip outer quotes from tokens
-    # following the policy.py _strip_outer_quotes logic.
-    expected_path = "/tmp/file with spaces.txt"
-    assert calls[0][0] == ["cat", expected_path]
+    command = 'cat "/tmp/file with spaces.txt"'
+    assert calls[0][0] == _expected_shell_argv(command)
 
 
 def test_execute_cli_actions_counts_planned_and_executed(monkeypatch: object) -> None:
@@ -1300,13 +950,13 @@ def test_execute_cli_actions_counts_planned_and_executed(monkeypatch: object) ->
     captured_executed: list[tuple[int, int, int]] = []
 
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.capture_terminal_actions_planned",
+        "infrastructure.analytics.capture.capture_terminal_actions_planned",
         lambda *, planned_count, has_unhandled_clause: captured_planned.append(
             (planned_count, has_unhandled_clause)
         ),
     )
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.capture_terminal_actions_executed",
+        "infrastructure.analytics.capture.capture_terminal_actions_executed",
         lambda *, planned_count, executed_count, executed_success_count: captured_executed.append(
             (planned_count, executed_count, executed_success_count)
         ),
@@ -1321,8 +971,6 @@ def test_execute_cli_actions_counts_planned_and_executed(monkeypatch: object) ->
         "run `pwd`",
         session,
         console,
-        recorder=None,
-        answer_agent=_no_answer_agent,
     )
 
     action_result = result.action_result
@@ -1355,6 +1003,29 @@ def test_execute_cli_actions_persists_action_agent_llm_unavailable(
     assert "action agent unavailable" in output
 
 
+def test_execute_cli_actions_propagates_credit_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
+
+    exhausted = OpenSRECreditsExhaustedError(
+        "OpenSRE hosted credits are exhausted.",
+        upgrade_url="https://app.opensre.test/usage",
+    )
+
+    def _raise() -> object:
+        raise exhausted
+
+    _patch_action_llm_factory(monkeypatch, _raise)
+
+    session = Session()
+    console, _ = _capture()
+    with pytest.raises(OpenSRECreditsExhaustedError) as exc_info:
+        action_turn.run_action_tool_turn("check health", session, console)
+
+    assert exc_info.value is exhausted
+
+
 def test_execute_cli_actions_executes_matched_clause_ignoring_unhandled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1378,13 +1049,13 @@ def test_execute_cli_actions_executes_matched_clause_ignoring_unhandled(
     captured_planned: list[tuple[int, bool]] = []
     captured_executed: list[tuple[int, int, int]] = []
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.capture_terminal_actions_planned",
+        "infrastructure.analytics.capture.capture_terminal_actions_planned",
         lambda *, planned_count, has_unhandled_clause: captured_planned.append(
             (planned_count, has_unhandled_clause)
         ),
     )
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.capture_terminal_actions_executed",
+        "infrastructure.analytics.capture.capture_terminal_actions_executed",
         lambda *, planned_count, executed_count, executed_success_count: captured_executed.append(
             (planned_count, executed_count, executed_success_count)
         ),
@@ -1397,8 +1068,6 @@ def test_execute_cli_actions_executes_matched_clause_ignoring_unhandled(
         "check health",
         session,
         console,
-        recorder=None,
-        answer_agent=_no_answer_agent,
     )
 
     # The unhandled flag no longer denies the turn: the matched /health runs.
@@ -1424,13 +1093,7 @@ def test_execute_cli_actions_bang_prefix_uses_only_explicit_shell_escape(
 
     _patch_action_llm_factory(monkeypatch, _fail_if_called)
 
-    calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(args=command, returncode=0, stdout="ok\n", stderr="")
-
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fake_run)
+    calls = _install_fake_popen(monkeypatch, stdout="ok\n")
 
     session = Session()
     console, buf = _capture()
@@ -1446,9 +1109,9 @@ def test_execute_cli_actions_bang_prefix_uses_only_explicit_shell_escape(
         "ok": True,
         "response_text": "ok",
     }
-    # The executor strips `!` and invokes the user's shell as argv with shell=False.
+    # The executor strips `!` and invokes the user's shell as argv, never shell=True.
     assert calls[0][0] == _expected_shell_argv("curl wttr.in/London")
-    assert calls[0][1]["shell"] is False
+    assert "shell" not in calls[0][1]
     assert "explicit shell passthrough enabled" in buf.getvalue()
 
 
@@ -1464,13 +1127,7 @@ def test_execute_cli_actions_bang_prefix_single_line_dispatches_to_shell(
 
     _patch_action_llm_factory(monkeypatch, _fail_if_called)
 
-    calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(args=command, returncode=0, stdout="out\n", stderr="")
-
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fake_run)
+    calls = _install_fake_popen(monkeypatch, stdout="out\n")
 
     session = Session()
     console, _ = _capture()
@@ -1486,44 +1143,4 @@ def test_execute_cli_actions_bang_prefix_single_line_dispatches_to_shell(
         "response_text": "out",
     }
     assert calls[0][0] == _expected_shell_argv("echo hello world")
-    assert calls[0][1]["shell"] is False
-
-
-def test_execute_cli_actions_handoff_only_plan_falls_through_silently(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A pure assistant_handoff LLM plan must not print a 'Requested actions' header.
-
-    Regression: when the planner returned only assistant_handoff, action execution
-    was called and printed '● assistant / Requested actions: 1. assistant handoff [reason]'
-    before the real LLM reply ran.  The user saw two assistant headers and internal
-    planner reasoning that should have been invisible.
-    """
-    _patch_action_llm_factory(
-        monkeypatch,
-        lambda: FakeActionLLM(
-            [
-                _llm_response(
-                    [
-                        PlannedAction(
-                            kind="assistant_handoff",
-                            content="informational question about current model",
-                            position=0,
-                        )
-                    ]
-                )
-            ]
-        ),
-    )
-
-    session = Session()
-    console, buf = _capture()
-    result = action_turn.run_action_tool_turn("what is our current model?", session, console)
-
-    # Must fall through (not handled) so the caller invokes the LLM for the real reply.
-    assert result.handled is False
-    assert result.executed_count == 0
-    # No "Requested actions" block should appear — the handoff plan is internal state.
-    output = buf.getvalue()
-    assert "Requested actions" not in output
-    assert "assistant handoff" not in output.lower()
+    assert "shell" not in calls[0][1]

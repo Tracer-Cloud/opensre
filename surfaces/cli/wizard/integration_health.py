@@ -5,13 +5,11 @@ from __future__ import annotations
 from surfaces.cli.wizard.integration_validators.alerting import (
     validate_alertmanager_integration,
     validate_betterstack_integration,
-    validate_opsgenie_integration,
 )
 from surfaces.cli.wizard.integration_validators.aws import validate_aws_integration
 from surfaces.cli.wizard.integration_validators.http_probe_validators import (
     validate_discord_bot,
     validate_jira_integration,
-    validate_notion_integration,
     validate_rocketchat,
     validate_rocketchat_webhook,
     validate_servicenow_integration,
@@ -19,7 +17,6 @@ from surfaces.cli.wizard.integration_validators.http_probe_validators import (
 )
 from surfaces.cli.wizard.integration_validators.mcp_validators import (
     validate_github_mcp_integration,
-    validate_openclaw_integration,
     validate_posthog_mcp_integration,
     validate_sentry_mcp_integration,
 )
@@ -43,10 +40,7 @@ __all__ = [
     "validate_google_docs_integration",
     "validate_grafana_integration",
     "validate_jira_integration",
-    "validate_notion_integration",
-    "validate_openclaw_integration",
     "validate_opensearch_integration",
-    "validate_opsgenie_integration",
     "validate_posthog_mcp_integration",
     "validate_rocketchat",
     "validate_rocketchat_webhook",

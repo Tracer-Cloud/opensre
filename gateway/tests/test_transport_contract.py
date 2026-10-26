@@ -19,6 +19,7 @@ red.
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -39,7 +40,7 @@ def _discover_transport_packages() -> tuple[str, ...]:
 _TRANSPORTS = _discover_transport_packages()
 
 #: Concern → the source marker that proves the transport implements it.
-_REQUIRED_CONCERNS: dict[str, str] = {
+_REQUIRED_CONCERNS: dict[str, str | tuple[str, ...]] = {
     # Identity: who owns this turn's data, bound before any storage access.
     "principal scope resolver": "def resolve_",
     "storage scope bound around the turn": "bound_storage_scope",
@@ -49,24 +50,26 @@ _REQUIRED_CONCERNS: dict[str, str] = {
     "turn timeout setting": "turn_timeout_seconds",
     # A user can stop a running turn.
     "stop command handling": "is_stop_command",
-    # Turns are metered.
-    "credit metering": "consume_credits",
+    # Turns bind their charge for the shared runner to apply after capacity.
+    "credit metering": "bound_turn_metering",
     # Turn output cooperates with host-side cancellation instead of relying
-    # on the harness patching the attribute on.
-    "turn output declares turn_cancel": "self.turn_cancel",
+    # on the harness patching the attribute on — declared directly, or inherited
+    # from the shared ``SingleMessageTurnOutput`` base.
+    "turn output declares turn_cancel": ("self.turn_cancel", "SingleMessageTurnOutput"),
 }
 
 #: Concerns each existing transport is known to lack. Ledger, not allowlist:
 #: the assertion below is exact equality, so closing a gap requires deleting
 #: its entry here, and nothing can be added for a new transport unnoticed.
-_KNOWN_GAPS: dict[str, frozenset[str]] = {
-    "buzz": frozenset({"credit metering"}),
-    "telegram": frozenset({"credit metering"}),
-}
+#: Empty: every transport implements every concern. Scoped to transports —
+#: scheduled runs reach the agent through ``scheduler_runners`` rather than a
+#: transport, and this file says nothing about them.
+_KNOWN_GAPS: dict[str, frozenset[str]] = {}
 
 #: Local reimplementations of concerns that were hoisted to ``gateway.core``.
 _FORBIDDEN_LOCAL_COPIES: dict[str, str] = {
     "identity-policy store copy": "def _load_policy",
+    "pre-capacity credit consumption": "consume_credits",
     "rotate-session sentinel literal": '"__ROTATE_SESSION__"',
 }
 
@@ -91,7 +94,9 @@ def test_transport_implements_the_shared_concerns(transport: str) -> None:
     source = _package_source(transport)
 
     missing = frozenset(
-        concern for concern, marker in _REQUIRED_CONCERNS.items() if marker not in source
+        concern
+        for concern, marker in _REQUIRED_CONCERNS.items()
+        if not any(m in source for m in ((marker,) if isinstance(marker, str) else marker))
     )
 
     expected_missing = _KNOWN_GAPS.get(transport, frozenset())
@@ -114,6 +119,53 @@ def test_transport_keeps_no_local_copy_of_hoisted_concerns(transport: str) -> No
     copies = sorted(name for name, marker in _FORBIDDEN_LOCAL_COPIES.items() if marker in source)
 
     assert copies == [], (
-        f"transport {transport!r} reintroduced {copies}; use "
-        "gateway.core.identity_policy / config.constants.gateway."
+        f"transport {transport!r} reintroduced {copies}; use the shared "
+        "gateway.core implementation instead."
     )
+
+
+def _metering_calls(transport: str) -> list[ast.Call]:
+    """Every ``bound_turn_metering(...)`` call in one transport package.
+
+    Parsed, not imported: importing a transport pulls in its platform SDK.
+    """
+    root = REPO_ROOT / "gateway" / "transports" / transport
+    calls: list[ast.Call] = []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name == "bound_turn_metering":
+                calls.append(node)
+    return calls
+
+
+@pytest.mark.parametrize("transport", _TRANSPORTS)
+def test_metered_turns_bind_an_interpolated_per_delivery_key(transport: str) -> None:
+    """Each metered turn names the delivery it charges, with a real value.
+
+    A substring marker is not enough here: ``idempotency_key=""`` makes the
+    client omit the header entirely, so a constant or empty key would pass a
+    textual check while reintroducing the double debit it exists to stop.
+    Requiring an f-string with at least one interpolation is what pins the key
+    to *this* delivery rather than to the transport.
+    """
+    calls = _metering_calls(transport)
+    assert calls, f"transport '{transport}' never binds turn metering"
+
+    for call in calls:
+        keywords = {kw.arg: kw.value for kw in call.keywords}
+        assert "idempotency_key" in keywords, (
+            f"transport '{transport}' meters a turn without naming its delivery"
+        )
+        value = keywords["idempotency_key"]
+        assert isinstance(value, ast.JoinedStr), (
+            f"transport '{transport}' uses a constant idempotency key; it must be "
+            "derived from the delivery id"
+        )
+        assert any(isinstance(part, ast.FormattedValue) for part in value.values), (
+            f"transport '{transport}' interpolates nothing into its idempotency key"
+        )

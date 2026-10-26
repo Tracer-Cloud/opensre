@@ -15,6 +15,7 @@ from config.constants.filestorage import (
     REMOTE_SYNC_PROVIDER_ENV,
 )
 from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.engine import SyncReport, content_tag
 from infrastructure.filestorage.enums import RemoteSyncField, SyncDirection, SyncRootName
 from infrastructure.filestorage.errors import RemoteSyncConfigError
@@ -26,7 +27,6 @@ from infrastructure.filestorage.messages import (
     sanitize_terminal_text,
 )
 from infrastructure.filestorage.operations import get_sync_status, run_remote_sync
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.providers import build_object_store as surface_build
 from infrastructure.filestorage.providers.registry import (
     SetupExtraField,
@@ -73,6 +73,11 @@ def _restore_registry() -> Iterator[None]:
     from infrastructure.filestorage.providers import registry as reg
 
     with reg._REGISTRY_LOCK:
+        # Import every built-in before snapshotting. Restoring an empty
+        # registry after a lazy import leaves the module cached but its
+        # import-time registration missing for later tests.
+        for provider in reg._BUILTIN_MODULES:
+            reg._load_builtin(provider)
         snap = dict(reg._REGISTRY)
         # Restored alongside the factories: a declared upload cap outliving its
         # registration would silently re-tune a later test's push.

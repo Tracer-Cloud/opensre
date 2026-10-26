@@ -1,0 +1,614 @@
+"""JSON-backed task definition CRUD with file locking."""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import logging
+import os
+import sqlite3
+import tempfile
+import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from filelock import FileLock
+
+from config.constants import OPENSRE_HOME_DIR
+from config.constants.organization import organization_id
+from config.constants.scheduler import SCHEDULER_SCHEDULE_CHANGED_AT_PARAM
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
+from config.scope_handoff import acting_scope
+from infrastructure.scheduling.scheduler import reload_signal
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CREATED_BY_PARAM,
+    LOOP_DESCRIPTION_PARAM,
+    LOOP_GROUP_ID_PARAM,
+    LOOP_PRIVATE_PARAM,
+    LOOP_PROMPT_PARAM,
+    LOOP_TEMPLATE_PARAM,
+)
+from infrastructure.scheduling.scheduler.storage.database import run_database_path
+from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
+    migrate_legacy_task_entries,
+)
+from infrastructure.scheduling.scheduler.storage.run_store import (
+    retire_pending_runs,
+    skip_queued_runs,
+)
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
+
+logger = logging.getLogger(__name__)
+
+_STORE_FILENAME = "scheduler_tasks.json"
+
+
+@dataclass(frozen=True, slots=True)
+class TaskStoreSnapshot:
+    """Validated tasks plus read completeness and known source absence."""
+
+    tasks: tuple[ScheduledTask, ...]
+    complete: bool
+    missing: bool = False
+
+
+def default_task_store_path() -> Path:
+    """Return the scheduler task-store path under the OpenSRE home."""
+    return OPENSRE_HOME_DIR / _STORE_FILENAME
+
+
+def _run_database_for_store(store_path: Path) -> Path:
+    """Run database paired with ``store_path``: ``<store dir>/scheduler.db``."""
+    return run_database_path(store_path.parent)
+
+
+def _lock_path(store_path: Path) -> Path:
+    return store_path.with_suffix(".lock")
+
+
+def _read_raw(store_path: Path) -> tuple[list[dict[str, object]], bool, bool]:
+    """Load raw tasks, reporting read completeness and known file absence.
+
+    A missing store is readable and empty, but remains distinguishable from an
+    explicitly stored empty list. A store that will not parse is incomplete --
+    callers about to write must not treat that as "no tasks" and silently
+    overwrite it.
+    """
+    try:
+        data = json.loads(store_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [], True, True
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+        logger.warning("Failed to read scheduler store: %s", exc)
+        return [], False, False
+    if not isinstance(data, list):
+        logger.warning("Scheduler store is not a JSON list; treating it as unreadable")
+        return [], False, False
+    return data, True, False  # type: ignore[return-value]
+
+
+def _load_raw(store_path: Path) -> list[dict[str, object]]:
+    """Load the raw task list, treating an unreadable store as empty."""
+    return _read_raw(store_path)[0]
+
+
+def _fsync_parent_dir(path: Path) -> None:
+    """Best-effort directory fsync so an ``os.replace`` survives a power loss on Unix.
+
+    ``os.replace`` is atomic, but the directory entry change it makes is only
+    guaranteed durable once the directory itself is fsynced -- without this, a
+    crash immediately after replace can leave the directory pointing at the
+    old inode again, even though the new file's own contents were fsynced.
+    Windows has no equivalent operation, so this is a no-op there.
+    """
+    if os.name == "nt":
+        return
+    with contextlib.suppress(OSError):
+        dir_fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+
+
+def _quarantine_unreadable(store_path: Path) -> None:
+    """Move an unparseable store aside so a write cannot destroy it.
+
+    The name carries a timestamp for the operator and a unique suffix for
+    correctness: ``mkstemp`` reserves the destination atomically, so two
+    corruptions inside the same second cannot land on one name and have the
+    second ``os.replace`` erase the first casualty.
+    """
+    fd, aside_str = tempfile.mkstemp(
+        dir=store_path.parent,
+        prefix=f"{store_path.name}.corrupt-{int(time.time())}-",
+    )
+    os.close(fd)
+    aside = Path(aside_str)
+    try:
+        os.replace(store_path, aside)
+    except OSError:
+        # mkstemp already created the (empty) aside file; a failed replace
+        # would otherwise leave it behind as a misleading empty "recovery"
+        # artifact that isn't actually the quarantined data.
+        with contextlib.suppress(OSError):
+            aside.unlink()
+        raise
+    _fsync_parent_dir(aside)
+    logger.error(
+        "Scheduler store at %s was unreadable and has been preserved at %s. "
+        "Scheduled tasks in it are recoverable from that file.",
+        store_path,
+        aside,
+    )
+
+
+def _load_for_write(store_path: Path) -> list[dict[str, object]]:
+    """Load the task list for a call about to write it back.
+
+    An unreadable store is moved aside first, so the write lands on a fresh
+    file and the damaged one stays on disk for recovery.
+    """
+    raw, readable, _missing = _read_raw(store_path)
+    if not readable:
+        _quarantine_unreadable(store_path)
+    return raw
+
+
+def _save_raw(store_path: Path, data: list[dict[str, object]]) -> None:
+    """Persist the task list by atomic rename.
+
+    ``Path.write_text`` truncates before rewriting, so a crash inside that
+    window leaves a half-written file that no longer parses. Every other
+    local store in the repo writes through a temp file in the destination
+    directory, fsyncs, then ``os.replace``; see
+    ``integrations/store.py::_atomic_write``. The directory fsync afterward
+    (``_fsync_parent_dir``) mirrors
+    ``infrastructure/analytics/provider.py::_write_text_atomic``, so the
+    rename itself survives a power loss, not just the file's own contents.
+    """
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    serialized = json.dumps(data, indent=2, default=str) + "\n"
+    tmp_path: str | None = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=store_path.parent, prefix=store_path.name + ".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, store_path)
+        _fsync_parent_dir(store_path)
+    except Exception:
+        if tmp_path:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_path)
+        raise
+
+
+def get_task_store_snapshot(
+    store_path: Path | None = None,
+    *,
+    lock_timeout_seconds: float | None = None,
+    read_only: bool = False,
+) -> TaskStoreSnapshot:
+    """Return validated tasks, optionally bounding the task-store lock wait."""
+    path = store_path or default_task_store_path()
+    if read_only and not path.exists():
+        return TaskStoreSnapshot(tasks=(), complete=True, missing=True)
+    lock_timeout = -1 if lock_timeout_seconds is None else lock_timeout_seconds
+    lock = FileLock(_lock_path(path), timeout=lock_timeout)
+    with lock:
+        raw, complete, missing = _read_raw(path)
+        migrated = complete and (
+            migrate_legacy_task_entries(raw, read_only=True)
+            if read_only
+            else migrate_legacy_task_entries(raw)
+        )
+        if migrated and not read_only:
+            try:
+                _save_raw(path, raw)
+            except OSError:
+                logger.warning(
+                    "Could not persist migrated legacy scheduler tasks at %s; "
+                    "using the migrated definitions for this process",
+                    path,
+                    exc_info=True,
+                )
+    tasks: list[ScheduledTask] = []
+    for entry in raw:
+        try:
+            tasks.append(ScheduledTask.model_validate(entry))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Skipping invalid task entry: %s", exc)
+            complete = False
+    return TaskStoreSnapshot(tasks=tuple(tasks), complete=complete, missing=missing)
+
+
+def list_tasks(store_path: Path | None = None, *, read_only: bool = False) -> list[ScheduledTask]:
+    """Return all valid persisted scheduled tasks, skipping unreadable content."""
+    return list(get_task_store_snapshot(store_path, read_only=read_only).tasks)
+
+
+def get_task(task_id: str, store_path: Path | None = None) -> ScheduledTask | None:
+    """Return a single task by ID, or None if not found."""
+    for task in list_tasks(store_path):
+        if task.id == task_id:
+            return task
+    return None
+
+
+#: Text a template loop takes from its latest add instead of from its schedule identity.
+_TEMPLATE_LOOP_TEXT = (LOOP_PROMPT_PARAM, LOOP_DESCRIPTION_PARAM)
+
+
+def _refresh_template_copies(existing: dict[str, Any], task: ScheduledTask) -> bool:
+    """Take the prompt copy and any description a re-add supplies; return whether one changed."""
+    params = existing.get("params") or {}
+    if not params.get(LOOP_TEMPLATE_PARAM):
+        return False
+    changes = {
+        key: task.params[key]
+        for key in _TEMPLATE_LOOP_TEXT
+        if key in task.params and params.get(key) != task.params[key]
+    }
+    existing["params"] = {**params, **changes}
+    return bool(changes)
+
+
+def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
+    """What makes two rows the same schedule.
+
+    Full configuration, not just the slot: two rows differing in destination or
+    params are separate reports, and merging them would drop one the user asked
+    for. Identity deliberately excludes ``id``, ``name``, skill revision, who
+    created it, and the run bookkeeping (``created_at``, ``last_run``,
+    ``next_run``), which differ between two confirmations of the same schedule.
+    The owning organization is part of it: two organizations with the same
+    schedule hold two rows, and so do two members' private loops, each run as
+    its own owner. A template loop is identified by its template name, not by
+    the prompt and description copied from it.
+    """
+    raw_params = entry.get("params") or {}
+    ignored = {LOOP_CREATED_BY_PARAM, SCHEDULER_SCHEDULE_CHANGED_AT_PARAM}
+    if str(raw_params.get(LOOP_PRIVATE_PARAM) or "").strip().lower() == "true":
+        ignored.discard(LOOP_CREATED_BY_PARAM)
+    if raw_params.get(LOOP_TEMPLATE_PARAM):
+        ignored.update(_TEMPLATE_LOOP_TEXT)
+    params = {key: value for key, value in raw_params.items() if key not in ignored}
+    return (
+        _owner_of(entry),
+        entry.get("kind"),
+        entry.get("cron"),
+        entry.get("timezone"),
+        entry.get("provider"),
+        entry.get("chat_id"),
+        entry.get("window_hours"),
+        entry.get("skill_name") or "",
+        tuple(sorted((entry.get("skill_inputs") or {}).items())),
+        tuple(sorted(params.items())),
+    )
+
+
+def _owner_of(entry: Mapping[str, Any]) -> str:
+    """The organization a row belongs to: its stamp, else the deployment's organization.
+
+    Rows written before stamps existed carry none; on a deployment that declares
+    its organization they are that organization's.
+    """
+    stamped = str(entry.get("organization") or "")
+    if stamped:
+        return stamped
+    return organization_id()
+
+
+def _owned_by_acting_scope(task: ScheduledTask) -> ScheduledTask:
+    """Stamp the organization and member of the turn that created ``task``.
+
+    The store is process-wide; the organization stamp is what lets a reader show
+    one organization only its own loops. A CLI child of a turn acts in the scope
+    its parent handed it. A task that already names its owner or creator keeps it.
+    """
+    scope = acting_scope()
+    if scope is None:
+        return task
+    update: dict[str, Any] = {}
+    if not task.organization:
+        update["organization"] = scope.principal.id
+    if not task.params.get(LOOP_CREATED_BY_PARAM):
+        update["params"] = {**task.params, LOOP_CREATED_BY_PARAM: scope.actor.id}
+    return task.model_copy(update=update) if update else task
+
+
+def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
+    """Persist a scheduled task, or update the matching schedule's skill revision.
+
+    Confirming the same schedule twice is one schedule. Without this, every
+    confirmation appended a row — a real install reached 37 byte-identical
+    ``daily_summary`` entries, none of which could deliver.
+    """
+    path = store_path or default_task_store_path()
+    task = _owned_by_acting_scope(task)
+    lock = FileLock(_lock_path(path))
+    with lock:
+        raw = _load_for_write(path)
+        wanted = _schedule_identity(task.model_dump(mode="json"))
+        existing_index = next(
+            (index for index, entry in enumerate(raw) if _schedule_identity(entry) == wanted),
+            None,
+        )
+        if existing_index is not None:
+            existing = raw[existing_index]
+            refreshed = _refresh_template_copies(existing, task)
+            if existing.get("skill_revision", "") == task.skill_revision and not refreshed:
+                return ScheduledTask.model_validate(existing)
+            existing["skill_revision"] = task.skill_revision
+            stored_task = ScheduledTask.model_validate(existing)
+        else:
+            raw.append(task.model_dump(mode="json"))
+            stored_task = task
+        _save_raw(path, raw)
+    # A new task or pinned revision changed the schedule: wake the scheduler to resync.
+    reload_signal.request_scheduler_reload()
+    return stored_task
+
+
+def remove_task(task_id: str, store_path: Path | None = None) -> bool:
+    """Remove a schedule while retaining its execution history for diagnosis."""
+    path = store_path or default_task_store_path()
+    lock = FileLock(_lock_path(path))
+    with lock:
+        raw = _load_raw(path)
+        original_len = len(raw)
+        raw = [entry for entry in raw if entry.get("id") != task_id]
+        if len(raw) == original_len:
+            return False
+        _save_raw(path, raw)
+
+    # The schedule changed: wake any running scheduler so it stops firing this.
+    reload_signal.request_scheduler_reload()
+    skip_queued_runs(task_id, reason="missing_task", db_path=_run_database_for_store(path))
+
+    return True
+
+
+def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
+    """Update an existing task in the store. Returns True if found and updated."""
+    path = store_path or default_task_store_path()
+    lock = FileLock(_lock_path(path))
+    should_reload = False
+    with lock:
+        raw = _load_raw(path)
+        for i, entry in enumerate(raw):
+            if entry.get("id") == task.id:
+                updated = task.model_dump(mode="json")
+                should_reload = _job_registration_changed(entry, updated)
+                raw[i] = updated
+                _save_raw(path, raw)
+                break
+        else:
+            return False
+    if should_reload:
+        # Enable/disable/schedule edits must drop or replace the live APScheduler job.
+        reload_signal.request_scheduler_reload()
+    if not task.enabled:
+        skip_queued_runs(task.id, reason="disabled", db_path=_run_database_for_store(path))
+    return True
+
+
+def _stored_loop_group_id(entry: Mapping[str, object]) -> str:
+    params = entry.get("params")
+    group = str(params.get(LOOP_GROUP_ID_PARAM, "")).strip() if isinstance(params, dict) else ""
+    return group or str(entry.get("id", ""))
+
+
+def patch_task_definitions(
+    task_ids: Sequence[str],
+    patch: Callable[[ScheduledTask], Mapping[str, object]],
+    store_path: Path | None = None,
+    *,
+    group_id: str | None = None,
+) -> tuple[ScheduledTask, ...] | None:
+    """Atomically patch existing tasks using their latest locked definitions."""
+    return _patch_task_definitions(task_ids, patch, store_path, group_id=group_id, check_scope=True)
+
+
+def patch_scheduler_task(
+    task_id: str,
+    patch: Callable[[ScheduledTask], Mapping[str, object]],
+    store_path: Path | None = None,
+) -> ScheduledTask | None:
+    """Patch service-owned cron, next-run, or enabled state on the latest locked row."""
+
+    def _scheduler_patch(current: ScheduledTask) -> Mapping[str, object]:
+        changes = patch(current)
+        if changes.keys() - {"cron", "next_run", "enabled"}:
+            raise ValueError("scheduler progress patches cannot change task configuration")
+        return changes
+
+    updated = _patch_task_definitions((task_id,), _scheduler_patch, store_path, check_scope=False)
+    return updated[0] if updated is not None else None
+
+
+def patch_scheduler_skill_pin(
+    task_id: str,
+    *,
+    previous_name: str,
+    previous_revision: str,
+    skill_name: str,
+    skill_revision: str,
+    store_path: Path | None = None,
+) -> ScheduledTask | None:
+    """Advance a matching recurring-skill pin without replacing current task configuration."""
+
+    def _skill_patch(current: ScheduledTask) -> Mapping[str, object]:
+        if (
+            current.kind is not TaskKind.RECURRING_SKILL
+            or current.skill_name != previous_name
+            or current.skill_revision != previous_revision
+        ):
+            return {}
+        return {"skill_name": skill_name, "skill_revision": skill_revision}
+
+    updated = _patch_task_definitions((task_id,), _skill_patch, store_path, check_scope=False)
+    return updated[0] if updated is not None else None
+
+
+def patch_scheduler_skill_definition(
+    task_id: str,
+    patch: Callable[[ScheduledTask], Mapping[str, object]],
+    store_path: Path | None = None,
+) -> ScheduledTask | None:
+    """Patch skill migration fields on the latest service-owned task definition."""
+
+    def _skill_patch(current: ScheduledTask) -> Mapping[str, object]:
+        changes = patch(current)
+        if changes.keys() - {"kind", "skill_name", "skill_revision", "skill_inputs", "params"}:
+            raise ValueError("skill migrations cannot change other task configuration")
+        return changes
+
+    updated = _patch_task_definitions((task_id,), _skill_patch, store_path, check_scope=False)
+    return updated[0] if updated is not None else None
+
+
+def _patch_task_definitions(
+    task_ids: Sequence[str],
+    patch: Callable[[ScheduledTask], Mapping[str, object]],
+    store_path: Path | None = None,
+    *,
+    group_id: str | None = None,
+    check_scope: bool,
+) -> tuple[ScheduledTask, ...] | None:
+    if not task_ids:
+        return None
+    path = store_path or default_task_store_path()
+    if not path.exists():
+        return None
+    should_reload = False
+    updated_tasks: list[ScheduledTask] = []
+    changed_schedules: list[str] = []
+    disabled_tasks: list[str] = []
+    with FileLock(_lock_path(path)):
+        raw, complete, _missing = _read_raw(path)
+        if not complete:
+            raise ValueError("the scheduler task store could not be read safely")
+        indices = {str(entry.get("id", "")): index for index, entry in enumerate(raw)}
+        if any(task_id not in indices for task_id in task_ids):
+            return None
+        if group_id is not None:
+            current_members = {
+                str(entry.get("id", ""))
+                for entry in raw
+                if _stored_loop_group_id(entry) == group_id
+            }
+            if current_members != set(task_ids):
+                raise ValueError("the loop group changed while editing; open /loops edit again")
+        scope = acting_scope()
+        if (
+            check_scope
+            and scope is not None
+            and any(_owner_of(raw[indices[task_id]]) != scope.principal.id for task_id in task_ids)
+        ):
+            raise ValueError("the loop is not available in this organization")
+        selected_entries = [raw[indices[task_id]] for task_id in dict.fromkeys(task_ids)]
+        changed = migrate_legacy_task_entries(selected_entries, read_only=True)
+        cutover = datetime.now(UTC)
+        for task_id in dict.fromkeys(task_ids):
+            index = indices[task_id]
+            entry = raw[index]
+            current = ScheduledTask.model_validate(entry)
+            changes = patch(current)
+            updated = {**entry, **changes}
+            validated = ScheduledTask.model_validate(updated)
+            if entry.get("cron") != updated.get("cron") or entry.get("timezone") != updated.get(
+                "timezone"
+            ):
+                params = dict(validated.params)
+                params[SCHEDULER_SCHEDULE_CHANGED_AT_PARAM] = cutover.isoformat()
+                updated["params"] = params
+                changed_schedules.append(task_id)
+                validated = ScheduledTask.model_validate(updated)
+            if validated.id != task_id:
+                raise ValueError("a task definition patch cannot change its ID")
+            if "enabled" in changes and not validated.enabled:
+                disabled_tasks.append(task_id)
+            should_reload = should_reload or _job_registration_changed(entry, updated)
+            changed = changed or entry != updated
+            raw[index] = updated
+            updated_tasks.append(validated)
+        if changed:
+            _save_raw(path, raw)
+        if changed_schedules:
+            try:
+                retire_pending_runs(
+                    changed_schedules,
+                    reason="schedule_changed",
+                    before_started_at=cutover,
+                    db_path=_run_database_for_store(path),
+                )
+            except (OSError, sqlite3.Error):
+                # The persisted cutoff still fences late admission and recovery.
+                logger.warning("Could not retire pending ticks after schedule edit", exc_info=True)
+    if should_reload:
+        reload_signal.request_scheduler_reload()
+    for task_id in disabled_tasks:
+        skip_queued_runs(task_id, reason="disabled", db_path=_run_database_for_store(path))
+    return tuple(updated_tasks)
+
+
+def _job_registration_changed(previous: dict[str, object], updated: dict[str, object]) -> bool:
+    """True when APScheduler must drop or replace the job for this row."""
+    previous_params = previous.get("params")
+    updated_params = updated.get("params")
+    previous_run_at = (
+        previous_params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM)
+        if isinstance(previous_params, dict)
+        else None
+    )
+    updated_run_at = (
+        updated_params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM)
+        if isinstance(updated_params, dict)
+        else None
+    )
+    return (
+        previous.get("enabled") != updated.get("enabled")
+        or previous.get("cron") != updated.get("cron")
+        or previous.get("timezone") != updated.get("timezone")
+        or previous.get("kind") != updated.get("kind")
+        or previous_run_at != updated_run_at
+    )
+
+
+def record_task_success(task_id: str, store_path: Path | None = None) -> bool:
+    """Update completion fields on the latest task while preserving user edits."""
+    path = store_path or default_task_store_path()
+    with FileLock(_lock_path(path)):
+        raw = _load_raw(path)
+        for entry in raw:
+            if entry.get("id") == task_id:
+                task = ScheduledTask.model_validate(entry)
+                entry["last_run"] = datetime.now(UTC).isoformat()
+                if task.params.get("disable_after_success", "").strip().lower() == "true":
+                    entry["enabled"] = False
+                _save_raw(path, raw)
+                return True
+    return False
+
+
+__all__ = [
+    "TaskStoreSnapshot",
+    "add_task",
+    "default_task_store_path",
+    "get_task",
+    "get_task_store_snapshot",
+    "list_tasks",
+    "patch_scheduler_skill_definition",
+    "patch_scheduler_skill_pin",
+    "patch_scheduler_task",
+    "patch_task_definitions",
+    "record_task_success",
+    "remove_task",
+    "update_task",
+]

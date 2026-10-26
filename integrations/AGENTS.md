@@ -6,6 +6,21 @@ verifier, clients, helpers, catalog/store wiring, and the vendor's tools
 [docs/adding-tools-and-integrations.md](../docs/adding-tools-and-integrations.md)
 for the full definition of done before adding one.
 
+## Tool-usage SKILL.md cards are human-owned
+
+`integrations/<vendor>/tools/**/SKILL.md` cards are **never** to be created,
+edited, renamed, moved, or deleted by an agent — no exceptions for frontmatter
+bumps, test fixes, or direct requests. An agent may only **suggest** a change
+(current text → proposed text) in its reply or PR description and leave the
+file untouched for a human to apply. Same rule as the root `AGENTS.md`.
+
+Skills are natural-language cards, not deterministic tools. Deterministic
+vendor behavior — API calls, parsing, retries, decision logic — belongs in a
+real tool under `integrations/<vendor>/tools/`, which a skill then describes
+how to use. Do not push that logic into a skill's supporting scripts; a skill
+may carry only a few small helpers, and none that replace the model's
+reasoning. Full contract: `core/agent_harness/prompts/skills/AGENTS.md`.
+
 ## Setup flow — how a vendor becomes "configured"
 
 Setup runs on three surfaces — `opensre onboard` (wizard),

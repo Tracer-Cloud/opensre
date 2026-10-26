@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from rich.console import Console
 
 from core.agent_harness.ports import LlmFactory
-from core.llm.types import AgentLLMResponse, ToolCall
+from core.llm.types import (
+    AgentLLMResponse,
+    CancelProbe,
+    SchemaDescribedTool,
+    TextDeltaCallback,
+    ToolCall,
+)
 
 
 @dataclass
@@ -19,7 +26,7 @@ class FakeActionLLM:
     tool_schema_names: list[str] = field(default_factory=list)
     model_id: str | None = None
 
-    def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         self.tool_schema_names = [str(tool.name) for tool in tools]
         return [{"name": tool.name} for tool in tools]
 
@@ -29,11 +36,33 @@ class FakeActionLLM:
         *,
         system: str | None = None,  # noqa: ARG002
         tools: list[dict[str, Any]] | None = None,  # noqa: ARG002
+        on_text_delta: TextDeltaCallback | None = None,  # noqa: ARG002
+        should_stop: CancelProbe | None = None,  # noqa: ARG002
     ) -> AgentLLMResponse:
         self.invocations += 1
         if not self.responses:
             return AgentLLMResponse(content="", tool_calls=[], raw_content=None)
-        return self.responses.pop(0)
+        response = self.responses[0]
+        discovery = self.discovery_response(response, tools)
+        return discovery if discovery is not None else self.responses.pop(0)
+
+    @staticmethod
+    def discovery_response(
+        response: AgentLLMResponse,
+        tools: list[dict[str, Any]] | None,
+    ) -> AgentLLMResponse | None:
+        """Let scripted tests discover a planned hidden tool through the real loop."""
+        visible = {str(spec.get("name")) for spec in tools or ()}
+        hidden = [call.name for call in response.tool_calls if call.name not in visible]
+        if not hidden or "tool_search" not in visible:
+            return None
+        return AgentLLMResponse(
+            content="",
+            tool_calls=[
+                ToolCall(id="call_tool_search", name="tool_search", input={"names": hidden})
+            ],
+            raw_content=None,
+        )
 
     @staticmethod
     def build_assistant_message(content: str, tool_calls: list[ToolCall]) -> dict[str, Any]:
@@ -55,6 +84,44 @@ class FakeActionLLM:
                 for tc, output in zip(tool_calls, results)
             ],
         }
+
+
+@dataclass
+class FakeSlashPorts:
+    """Slash runtime of an interactive terminal: every command exists and dispatch is recorded.
+
+    ``allowed`` is the execution-policy verdict for a mutating command.
+    """
+
+    tty: bool = True
+    dispatch_result: bool = True
+    allowed: bool = True
+    dispatched: list[str] = field(default_factory=list)
+
+    def command_needs_input(self, name: str, args: list[str]) -> bool:
+        from config.command_inputs import needs_command_input
+
+        return needs_command_input(name, args)
+
+    def command_exists(self, _name: str) -> bool:
+        return True
+
+    def command_is_mutating(self, _name: str) -> bool:
+        return True
+
+    def tty_interactive(self) -> bool:
+        return self.tty
+
+    def format_turn_outcome(self, command: str, *, ok: bool) -> str:
+        status = "succeeded" if ok else "failed"
+        return f"slash {command} ({status})"
+
+    def execution_allowed(self, **_kwargs: Any) -> bool:
+        return self.allowed
+
+    def dispatch(self, command: str, **_kwargs: Any) -> bool:
+        self.dispatched.append(command)
+        return self.dispatch_result
 
 
 @dataclass

@@ -46,7 +46,7 @@ def test_bot_join_posts_intro_to_the_channel() -> None:
     # trial and error, using the real mention token.
     assert "<@UBOT>" in post["text"]
     assert "follow the conversation" in post["text"]
-    assert "approval" in post["text"]
+    assert "High-impact actions" in post["text"]
 
 
 def test_rejoining_the_same_channel_greets_once() -> None:

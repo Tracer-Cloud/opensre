@@ -2,7 +2,7 @@
 
 The provider/transport decision (CLI-backed vs LiteLLM vs native SDK, and which
 vendor) is resolved once in :func:`resolve_llm_route` and reused by every role, so
-an Azure/LiteLLM routing fix cannot drift between the investigation agent and the
+an Azure/LiteLLM routing fix cannot drift between the tool-calling agent and the
 reasoning/classification/toolcall clients.
 
 Roles differ only in the *client family* they build: :data:`LLMRole.AGENT` builds
@@ -25,7 +25,6 @@ in :mod:`core.llm.internal.client_cache`.
 
 from __future__ import annotations
 
-import re
 from enum import StrEnum
 from typing import Any, Literal, overload
 
@@ -39,7 +38,7 @@ from core.llm.types import AgentLLMClient, LLMRoute, ModelType
 class LLMRole(StrEnum):
     """The model tier a caller needs, independent of provider/transport."""
 
-    AGENT = "agent"  # tool-calling ReAct (action, gather, investigation)
+    AGENT = "agent"  # tool-calling ReAct (action, gather)
     REASONING = "reasoning"  # streamed assistant answer / complex reasoning
     CLASSIFICATION = "classification"  # mid-tier classifier
     TOOLCALL = "toolcall"  # lightweight tool selection / action planning
@@ -55,15 +54,22 @@ _MODEL_TYPE_BY_ROLE: dict[LLMRole, ModelType] = {
 
 def resolve_llm_route() -> LLMRoute:
     """Resolve settings + runtime provider + transport once (the single routing decision)."""
-    settings = _resolve_settings_or_raise()
+    from config.account import account_llm_route
+    from config.llm_settings import PROVIDER_OPENAI
 
-    from config.llm_auth.auth_method import (
-        effective_llm_provider,
-        get_configured_llm_auth_method,
+    account_route = account_llm_route()
+    settings = _resolve_settings_or_raise(
+        provider_override=PROVIDER_OPENAI if account_route is not None else None
     )
+    if account_route is not None:
+        return LLMRoute(
+            settings=settings,
+            provider=PROVIDER_OPENAI,
+            cli_provider_registration=None,
+            use_litellm=False,
+        )
 
-    provider = settings.provider
-    runtime_provider = effective_llm_provider(provider, get_configured_llm_auth_method(provider))
+    runtime_provider = settings.provider
     return LLMRoute(
         settings=settings,
         provider=runtime_provider,
@@ -72,24 +78,22 @@ def resolve_llm_route() -> LLMRoute:
     )
 
 
-def _resolve_settings_or_raise() -> Any:
+def _resolve_settings_or_raise(*, provider_override: str | None = None) -> Any:
     from pydantic import ValidationError
 
-    from config.config import resolve_llm_settings
+    from config.llm_settings import llm_settings_error_message, resolve_llm_settings
 
     try:
+        if provider_override is not None:
+            return resolve_llm_settings(provider_override=provider_override)
         return resolve_llm_settings()
     except ValidationError as exc:
-        errors = exc.errors()
-        if len(errors) == 1:
-            msg = re.sub(r"^[Vv]alue error,\s*", "", errors[0].get("msg", "")).strip()
-            raise RuntimeError(msg or str(exc)) from exc
-        raise RuntimeError(str(exc)) from exc
+        raise RuntimeError(llm_settings_error_message(exc)) from exc
 
 
 def _cli_provider_registration(provider: str) -> Any:
     """CLI registry entry for *provider*, or None."""
-    from infrastructure.harness_ports import cli_provider_registration
+    from infrastructure.harness_providers import cli_provider_registration
 
     return cli_provider_registration(provider)
 
@@ -114,7 +118,8 @@ def get_llm(role: LLMRole) -> Any:
 
 def get_llm(role: LLMRole) -> Any:
     """Return the cached LLM client for *role*, building it once per config."""
-    cached = _cache.get(role, current_llm_client_cache_key())
+    config_key = current_llm_client_cache_key()
+    cached = _cache.get(role, config_key)
     if cached is not None:
         return cached
 
@@ -123,7 +128,7 @@ def get_llm(role: LLMRole) -> Any:
         client = client_builders.build_agent_client(route)
     else:
         client = client_builders.build_reasoning_client(route, _MODEL_TYPE_BY_ROLE[role])
-    _cache.store(role, client)
+    _cache.store(role, client, config_key)
     return client
 
 

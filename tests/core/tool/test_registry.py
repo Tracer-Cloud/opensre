@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from core.domain.types.tools import ToolRole
 from core.tool.registry import (
     BaseToolRegistryMetadata,
     normalize_surfaces,
@@ -14,14 +15,14 @@ from core.tool.registry import (
 
 def test_registry_metadata_defaults() -> None:
     meta = BaseToolRegistryMetadata.model_validate({})
-    assert meta.surfaces == ("investigation",)
+    assert meta.surfaces == ("chat",)
     assert meta.tags == ()
-    assert meta.parallel_safe is True
+    assert meta.role is ToolRole.ACTION
 
 
 def test_registry_metadata_normalizes_surfaces() -> None:
-    meta = BaseToolRegistryMetadata.model_validate({"surfaces": ("chat", "investigation")})
-    assert meta.surfaces == ("chat", "investigation")
+    meta = BaseToolRegistryMetadata.model_validate({"surfaces": ("chat", "action")})
+    assert meta.surfaces == ("chat", "action")
 
 
 def test_registry_metadata_rejects_invalid_surface() -> None:
@@ -35,7 +36,7 @@ def test_registry_metadata_normalizes_tags() -> None:
 
 
 def test_normalize_surfaces_none_returns_default() -> None:
-    assert normalize_surfaces(None) == ("investigation",)
+    assert normalize_surfaces(None) == ("chat",)
 
 
 def test_normalize_tags_deduplicates_and_strips() -> None:

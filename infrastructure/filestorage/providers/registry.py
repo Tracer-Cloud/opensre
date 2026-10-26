@@ -1,6 +1,6 @@
 """Register object-store backends without changing the sync engine.
 
-The engine talks only to :class:`~infrastructure.filestorage.ports.ObjectStore`.
+The engine talks only to :class:`~infrastructure.filestorage.contracts.ObjectStore`.
 Each cloud vendor ships a factory here; surfaces call
 :func:`build_object_store` and never import a vendor module directly.
 Adding GCS, Azure, or another backend is a new module plus one
@@ -15,6 +15,7 @@ the shared sync service stay safe. Factories run **outside** the lock.
 from __future__ import annotations
 
 import importlib
+import sys
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,7 +28,7 @@ from infrastructure.filestorage.exposure import PublicAccessChecker, PublicAcces
 
 if TYPE_CHECKING:
     from infrastructure.filestorage.config import RemoteSyncConfig
-    from infrastructure.filestorage.ports import ObjectStore
+    from infrastructure.filestorage.contracts import ObjectStore
 
 ObjectStoreFactory = Callable[["RemoteSyncConfig"], "ObjectStore"]
 
@@ -74,10 +75,20 @@ _BUILTIN_MODULES = {
 
 
 def _load_builtin(key: str) -> None:
-    """Import a built-in module under the registry lock (caller holds it)."""
-    module = _BUILTIN_MODULES.get(key)
-    if module is not None and key not in _REGISTRY:
-        importlib.import_module(module)
+    """Import a built-in module under the registry lock (caller holds it).
+
+    ``importlib.import_module`` is a no-op when the module is already in
+    ``sys.modules``. Tests (and only tests) may clear the registry while
+    leaving those modules imported; reload so the builtin registers again.
+    """
+    module_name = _BUILTIN_MODULES.get(key)
+    if module_name is None or key in _REGISTRY:
+        return
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        importlib.reload(existing)
+        return
+    importlib.import_module(module_name)
 
 
 def register_object_store(

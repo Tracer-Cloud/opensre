@@ -16,10 +16,13 @@ def failed_result(*, available: bool, error: str, error_type: str) -> dict[str, 
         "error_type": error_type,
         "messages": [],
         "message_count": 0,
+        "truncated": False,
     }
 
 
-def read_result(*, channel_id: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+def read_result(
+    *, channel_id: str, messages: list[dict[str, str]], truncated: bool
+) -> dict[str, Any]:
     # A success result must NOT carry an "error" key: the shared tool runtime
     # flags any dict containing "error" as a failed tool call regardless of value.
     return {
@@ -29,4 +32,5 @@ def read_result(*, channel_id: str, messages: list[dict[str, str]]) -> dict[str,
         "channel_id": channel_id,
         "messages": messages,
         "message_count": len(messages),
+        "truncated": truncated,
     }

@@ -2,8 +2,10 @@
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.clickhouse import (
     ClickHouseConfig,
     clickhouse_extract_params,
@@ -12,11 +14,38 @@ from integrations.clickhouse import (
 )
 
 
+def _map_get_clickhouse_query_activity(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite recent query activity, noting how many of the returned queries failed."""
+    if not output.get("available"):
+        return
+    queries = output.get("queries") or []
+    if not queries:
+        return
+    failed = sum(
+        1
+        for query in queries
+        if isinstance(query, dict) and "Exception" in str(query.get("type", ""))
+    )
+    summary = f"{len(queries)} quer{'y' if len(queries) == 1 else 'ies'}"
+    if failed:
+        summary += f", {failed} failed"
+    record_evidence_entry(
+        evidence,
+        source="get_clickhouse_query_activity",
+        label="ClickHouse Query Activity",
+        summary=summary,
+    )
+
+
 @tool(
     name="get_clickhouse_query_activity",
     description="Retrieve recent query activity (including failed queries) from a ClickHouse instance, with query duration, rows read, and memory usage.",
     source="clickhouse",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Identifying slow or resource-heavy queries during an incident",
         "Checking recent query patterns that may correlate with performance issues",
@@ -25,6 +54,7 @@ from integrations.clickhouse import (
     is_available=clickhouse_is_available,
     injected_params=("host",),
     extract_params=clickhouse_extract_params,
+    evidence_mapper=_map_get_clickhouse_query_activity,
 )
 def get_clickhouse_query_activity(
     host: str,

@@ -40,7 +40,7 @@ class ProviderModelDefaults:
     requires_explicit_models: bool = False
 
 
-DEFAULT_MAX_TOKENS = 4096
+DEFAULT_MAX_TOKENS = 25_000
 DEFAULT_AZURE_OPENAI_API_VERSION = "2024-10-21"
 DEFAULT_VERTEX_AI_LOCATION = "us-central1"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"

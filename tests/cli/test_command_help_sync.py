@@ -1,33 +1,38 @@
-"""Regression test: CLI command registration must stay in sync with help copy.
+"""Regression test: CLI command specs must match live Click objects and help.
 
-The root help view derives its command list from the live Click group at runtime.
-This test ensures that every command registered in `_COMMANDS` is represented in
-that derived help command list (and vice versa).
+Root ``opensre --help`` reads :data:`COMMAND_SPECS` without importing command
+modules. These tests load each implementation so a drifted help string or a
+missing command fails before a user sees it.
 """
 
 from __future__ import annotations
 
 from surfaces.cli.app import cli
-from surfaces.cli.commands import _COMMANDS
+from surfaces.cli.commands.command_specs import COMMAND_SPECS, load_command
 from surfaces.cli.layout import _commands_from_group
 
 
 def test_registered_commands_match_help_table() -> None:
-    registered = {cmd.name for cmd in _COMMANDS if not cmd.hidden}
-    assert None not in registered, (
-        "A command in _COMMANDS has no name set. "
-        "Ensure every click.Command is decorated with an explicit name."
-    )
+    specified = {spec.name for spec in COMMAND_SPECS if not spec.hidden}
     documented = {name for name, _ in _commands_from_group(cli)}
 
-    missing_from_help = registered - documented
-    missing_from_registry = documented - registered
+    missing_from_help = specified - documented
+    missing_from_registry = documented - specified
 
     assert not missing_from_help, (
-        f"Commands registered in _COMMANDS but missing from the rendered help list: {missing_from_help}. "
-        "Ensure the root CLI group is registering all commands."
+        f"Commands in COMMAND_SPECS but missing from the rendered help list: {missing_from_help}."
     )
     assert not missing_from_registry, (
-        f"Commands shown in the rendered help list but not registered in _COMMANDS: {missing_from_registry}. "
-        "Add the command to _COMMANDS in surfaces/cli/commands/__init__.py."
+        f"Commands shown in help but not in COMMAND_SPECS: {missing_from_registry}."
     )
+
+
+def test_command_spec_help_matches_implementation() -> None:
+    """Each spec's name, hidden flag, and short help match the live Click command."""
+    for spec in COMMAND_SPECS:
+        command = load_command(spec)
+        assert command.name == spec.name, spec.import_path
+        assert bool(command.hidden) is spec.hidden, spec.name
+        if spec.hidden:
+            continue
+        assert command.get_short_help_str(limit=200) == spec.short_help, spec.name

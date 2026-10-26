@@ -14,7 +14,7 @@ def _is_silent_output() -> bool:
 
 
 def _repl_progress_active() -> bool:
-    """True when investigation progress must not use Rich Live."""
+    """True when progress must not use Rich Live."""
     if repl_safe_progress_requested():
         return True
     try:

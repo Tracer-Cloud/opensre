@@ -11,6 +11,6 @@ cross_vendor vs. vendor-integration placement rules.
 
 from __future__ import annotations
 
-TOOL_MODULES = ("fix_sentry_issue",)
+TOOL_MODULES = ("fix_sentry_issue", "resolve_merge_conflicts.tool")
 
 __all__ = ["TOOL_MODULES"]

@@ -132,6 +132,30 @@ def test_context_reads_incident_and_updates(client: IncidentIoClient, monkeypatc
     )
 
 
+def test_context_forwards_pagination_meta_from_updates(
+    client: IncidentIoClient, monkeypatch
+) -> None:
+    """Regression: get_incident_context must forward list_incident_updates's
+    pagination_meta so callers can tell total_updates is a page, not a total."""
+
+    def fake_request(method: str, path: str, **kwargs):
+        if path == "/v2/incidents/inc-123":
+            return _response({"incident": {"id": "inc-123", "name": "Checkout degraded"}})
+        return _response(
+            {
+                "incident_updates": [{"id": "upd-1"}],
+                "pagination_meta": {"after": "upd-1", "page_size": 1},
+            }
+        )
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = client.get_incident_context("inc-123", update_limit=1)
+
+    assert result["success"] is True
+    assert result["pagination_meta"] == {"after": "upd-1", "page_size": 1}
+
+
 def test_append_summary_update_uses_supported_edit_endpoint(
     client: IncidentIoClient,
     monkeypatch,

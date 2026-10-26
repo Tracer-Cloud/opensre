@@ -14,9 +14,12 @@ those the existing way. ``tests/tools/test_registry_index.py`` pins that gap.
 from __future__ import annotations
 
 import ast
+import json
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from config.constants.paths import REPO_ROOT
 from core.domain.types.tools import ToolSurface
@@ -45,13 +48,6 @@ class ToolDescriptor:
 def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
     return (
         ToolDescriptor(
-            "alert_sample",
-            (ToolSurface.ACTION,),
-            "interactive_shell",
-            None,
-            "tools.interactive_shell.actions.sample_alert",
-        ),
-        ToolDescriptor(
             "ask_user_choice",
             (ToolSurface.ACTION,),
             "interactive_shell",
@@ -59,11 +55,11 @@ def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
             "tools.interactive_shell.actions.ask_choice",
         ),
         ToolDescriptor(
-            "assistant_handoff",
+            "update_plan",
             (ToolSurface.ACTION,),
             "interactive_shell",
             None,
-            "tools.interactive_shell.actions.assistant_handoff",
+            "tools.interactive_shell.actions.update_plan",
         ),
         ToolDescriptor(
             "cli_exec",
@@ -87,13 +83,6 @@ def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
             "tools.interactive_shell.actions.sentry_fix",
         ),
         ToolDescriptor(
-            "investigation_start",
-            (ToolSurface.ACTION,),
-            "interactive_shell",
-            None,
-            "tools.interactive_shell.actions.investigation",
-        ),
-        ToolDescriptor(
             "llm_set_provider",
             (ToolSurface.ACTION,),
             "interactive_shell",
@@ -115,6 +104,20 @@ def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
             "tools.interactive_shell.actions.propose_scheduled_delivery",
         ),
         ToolDescriptor(
+            "session_goal_complete",
+            (ToolSurface.ACTION,),
+            "interactive_shell",
+            None,
+            "tools.interactive_shell.actions.session_goal",
+        ),
+        ToolDescriptor(
+            "session_goal_set",
+            (ToolSurface.ACTION,),
+            "interactive_shell",
+            None,
+            "tools.interactive_shell.actions.session_goal",
+        ),
+        ToolDescriptor(
             "skill_view",
             (ToolSurface.ACTION,),
             "interactive_shell",
@@ -123,56 +126,56 @@ def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
         ),
         ToolDescriptor(
             "slack_add_reaction",
-            (ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+            (ToolSurface.CHAT, ToolSurface.ACTION),
             "slack",
             None,
             "integrations.slack.tools.slack_add_reaction_tool.tool",
         ),
         ToolDescriptor(
             "slack_join_channel",
-            (ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+            (ToolSurface.CHAT, ToolSurface.ACTION),
             "slack",
             None,
             "integrations.slack.tools.slack_join_channel_tool.tool",
         ),
         ToolDescriptor(
             "slack_list_team_members",
-            (ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+            (ToolSurface.CHAT, ToolSurface.ACTION),
             "slack",
             None,
             "integrations.slack.tools.slack_list_members_tool.tool",
         ),
         ToolDescriptor(
             "slack_read_list",
-            (ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+            (ToolSurface.CHAT, ToolSurface.ACTION),
             "slack",
             None,
             "integrations.slack.tools.slack_read_list_tool.tool",
         ),
         ToolDescriptor(
             "slack_read_messages",
-            (ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+            (ToolSurface.CHAT, ToolSurface.ACTION),
             "slack",
             None,
             "integrations.slack.tools.slack_read_messages_tool.tool",
         ),
         ToolDescriptor(
             "slack_reply_message",
-            (ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+            (ToolSurface.ACTION,),
             "slack",
             None,
             "integrations.slack.tools.slack_reply_message_tool.tool",
         ),
         ToolDescriptor(
             "slack_search_messages",
-            (ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+            (ToolSurface.CHAT, ToolSurface.ACTION),
             "slack",
             None,
             "integrations.slack.tools.slack_search_messages_tool.tool",
         ),
         ToolDescriptor(
             "slack_send_message",
-            (ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+            (ToolSurface.ACTION,),
             "slack",
             None,
             "integrations.slack.tools.slack_send_message_tool.tool",
@@ -185,13 +188,6 @@ def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
             "tools.interactive_shell.actions.slash",
         ),
         ToolDescriptor(
-            "synthetic_run",
-            (ToolSurface.ACTION,),
-            "interactive_shell",
-            None,
-            "tools.interactive_shell.actions.synthetic",
-        ),
-        ToolDescriptor(
             "task_cancel",
             (ToolSurface.ACTION,),
             "interactive_shell",
@@ -200,21 +196,21 @@ def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
         ),
         ToolDescriptor(
             "rocketchat_send_message",
-            (ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+            (ToolSurface.ACTION,),
             "rocketchat",
             None,
             "integrations.rocketchat.tools.rocketchat_send_message_tool.tool",
         ),
         ToolDescriptor(
             "buzz_send_message",
-            (ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+            (ToolSurface.ACTION,),
             "buzz",
             None,
             "integrations.buzz.tools.buzz_send_message_tool.tool",
         ),
         ToolDescriptor(
             "telegram_send_message",
-            (ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+            (ToolSurface.ACTION,),
             "telegram",
             None,
             "integrations.telegram.tools.telegram_send_message_tool.tool",
@@ -342,9 +338,73 @@ def _scan_roots() -> list[Path]:
     return roots
 
 
+#: Where a frozen build ships the index, relative to the bundle root
+#: (``sys._MEIPASS``). ``opensre.spec`` writes it at build time.
+BAKED_INDEX_RELATIVE_PATH = Path("tools") / "descriptor_index.json"
+
+
+def _baked_index_path() -> Path | None:
+    """Path of the build-time index inside a frozen bundle, else ``None``."""
+    if not getattr(sys, "frozen", False):
+        return None
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root is None:
+        return None
+    return Path(bundle_root) / BAKED_INDEX_RELATIVE_PATH
+
+
+def baked_index_available() -> bool:
+    """True when this frozen build shipped a descriptor index."""
+    path = _baked_index_path()
+    return path is not None and path.is_file()
+
+
+def _descriptor_to_json(descriptor: ToolDescriptor) -> dict[str, Any]:
+    return {
+        "name": descriptor.name,
+        "surfaces": [surface.value for surface in descriptor.surfaces],
+        "source": descriptor.source,
+        "display_name": descriptor.display_name,
+        "module": descriptor.module,
+    }
+
+
+def _descriptor_from_json(raw: dict[str, Any]) -> ToolDescriptor:
+    return ToolDescriptor(
+        name=str(raw["name"]),
+        surfaces=tuple(ToolSurface(surface) for surface in raw["surfaces"]),
+        source=raw.get("source"),
+        display_name=raw.get("display_name"),
+        module=str(raw["module"]),
+    )
+
+
+def dump_descriptor_index(path: Path) -> None:
+    """Write the source-scanned index as JSON for a frozen build to load.
+
+    A PyInstaller bundle carries bytecode only, so the AST scan finds nothing
+    there; the build runs this against the checkout and ships the result.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [_descriptor_to_json(d) for d in build_descriptor_index().values()]
+    path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+
+def _load_baked_index(path: Path) -> dict[str, ToolDescriptor]:
+    entries = json.loads(path.read_text(encoding="utf-8"))
+    return {d.name: d for d in (_descriptor_from_json(entry) for entry in entries)}
+
+
 @lru_cache(maxsize=1)
 def build_descriptor_index() -> dict[str, ToolDescriptor]:
-    """Map tool name -> descriptor, first definition wins (registry order)."""
+    """Map tool name -> descriptor, first definition wins (registry order).
+
+    A frozen build loads the index baked at build time instead of scanning
+    source (which it does not carry).
+    """
+    baked = _baked_index_path()
+    if baked is not None and baked.is_file():
+        return _load_baked_index(baked)
     index: dict[str, ToolDescriptor] = {}
     for root in _scan_roots():
         for path in sorted(root.rglob("*.py")):
@@ -363,7 +423,10 @@ def clear_descriptor_index_cache() -> None:
 
 
 __all__ = [
+    "BAKED_INDEX_RELATIVE_PATH",
     "ToolDescriptor",
+    "baked_index_available",
     "build_descriptor_index",
     "clear_descriptor_index_cache",
+    "dump_descriptor_index",
 ]

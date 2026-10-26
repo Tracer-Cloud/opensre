@@ -39,13 +39,13 @@ def test_first_string_coerces_values_to_string() -> None:
 
 
 def test_first_list_returns_first_non_empty_list_in_order() -> None:
-    source = {"args": [], "openclaw_args": ["mcp", "serve"]}
-    assert first_list(source, "args", "openclaw_args") == ["mcp", "serve"]
+    source = {"args": [], "sentry_args": ["mcp", "serve"]}
+    assert first_list(source, "args", "sentry_args") == ["mcp", "serve"]
 
 
 def test_first_list_skips_invalid_or_empty_lists() -> None:
-    source = {"args": "not-a-list", "openclaw_args": ["  ", ""]}
-    assert first_list(source, "args", "openclaw_args") == []
+    source = {"args": "not-a-list", "sentry_args": ["  ", ""]}
+    assert first_list(source, "args", "sentry_args") == []
 
 
 def test_first_list_normalizes_entries() -> None:

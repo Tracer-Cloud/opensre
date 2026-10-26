@@ -1,10 +1,50 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from config.constants import get_store_path
+
+
+def test_importing_a_leaf_does_not_load_unrelated_vendor_modules() -> None:
+    """``from config.constants.product import …`` must not import every vendor leaf.
+
+    The package used to re-export all names at import time, so any
+    ``config.constants.*`` load paid for kubernetes/aws/datadog constants
+    (and ``paths`` filesystem setup) before the CLI could print ``--help``.
+    """
+    probe = (
+        "from config.constants.product import RELEASE_STAGE_BANNER; "
+        "import sys; "
+        "leaves = sorted("
+        "n.rsplit('.', 1)[-1] for n in sys.modules "
+        "if n.startswith('config.constants.') and n != 'config.constants' "
+        "and n != 'config.constants.exports'"
+        "); "
+        "print('LEAVES', ','.join(leaves)); "
+        "print('BANNER', bool(RELEASE_STAGE_BANNER))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "BANNER True" in result.stdout, result.stdout + result.stderr
+    loaded = result.stdout.split("LEAVES ", 1)[1].splitlines()[0].split(",")
+    assert loaded == ["product"], result.stdout
+
+
+def test_package_root_still_re_exports_and_submodules() -> None:
+    from config import constants
+
+    assert constants.RELEASE_STAGE_BANNER.startswith("🚧 OpenSRE is in ")
+    assert constants.billing.ORGANIZATION_ID_ENV == "ORGANIZATION_ID"
+    with pytest.raises(AttributeError, match="has no attribute"):
+        _ = constants.not_a_real_constant
 
 
 def test_billing_env_var_names_are_the_infra_contract() -> None:
@@ -19,6 +59,20 @@ def test_billing_env_var_names_are_the_infra_contract() -> None:
     assert billing.USAGE_SECRET_ENV == "AGENT_USAGE_SECRET"
     assert billing.ORGANIZATION_ID_ENV == "ORGANIZATION_ID"
     assert billing.CREDITS_HTTP_TIMEOUT_SECONDS == 5.0
+
+
+def test_gateway_stop_slices_fit_inside_the_process_budget() -> None:
+    """Web, reload-watcher, and Slack heartbeat joins must stay smaller than
+    DEFAULT_STOP_TIMEOUT_SECONDS or SIGTERM overruns the chat drain."""
+    from config.constants import gateway, slack
+
+    assert gateway.DEFAULT_STOP_TIMEOUT_SECONDS == 8.0
+    assert gateway.WEB_STOP_TIMEOUT_SECONDS == 5.0
+    assert gateway.SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS == 2.0
+    assert slack.SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS == 2.0
+    assert gateway.WEB_STOP_TIMEOUT_SECONDS < gateway.DEFAULT_STOP_TIMEOUT_SECONDS
+    assert gateway.SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS < gateway.DEFAULT_STOP_TIMEOUT_SECONDS
+    assert slack.SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS < gateway.DEFAULT_STOP_TIMEOUT_SECONDS
 
 
 def test_tenancy_env_var_names_are_the_infra_contract() -> None:
@@ -49,6 +103,23 @@ def test_the_organization_id_is_re_exported() -> None:
         assert name in constants.__all__
 
 
+def test_repl_sound_constants_are_re_exported() -> None:
+    """Callers may import the shell-sound names from the package root."""
+    from config import constants
+
+    assert constants.SOUND_NOTIFICATIONS_ENV == "OPENSRE_SOUND"
+    assert constants.SOUND_MIN_TURN_SECONDS == 8.0
+    assert "SOUND_NOTIFICATIONS_ENV" in constants.__all__
+    assert "SOUND_MIN_TURN_SECONDS" in constants.__all__
+
+
+def test_webapp_vault_ttl_is_public() -> None:
+    from config.constants import account
+
+    assert account.OPENSRE_WEBAPP_VAULT_TTL_SECONDS == 10.0
+    assert "OPENSRE_WEBAPP_VAULT_TTL_SECONDS" in account.__all__
+
+
 def test_remote_sync_endpoint_url_env_is_re_exported() -> None:
     """Verify REMOTE_SYNC_ENDPOINT_URL_ENV is re-exported from config.constants."""
     # Arrange / Act
@@ -57,6 +128,23 @@ def test_remote_sync_endpoint_url_env_is_re_exported() -> None:
     # Assert
     assert constants.REMOTE_SYNC_ENDPOINT_URL_ENV == "OPENSRE_REMOTE_SYNC_ENDPOINT_URL"
     assert "REMOTE_SYNC_ENDPOINT_URL_ENV" in constants.__all__
+
+
+def test_split_config_constants_are_re_exported() -> None:
+    """The constants facade remains the canonical import path after the split."""
+    from config import constants
+
+    expected = {
+        "CLERK_ISSUER_ENV": "CLERK_ISSUER",
+        "CLERK_JWKS_URL_ENV": "CLERK_JWKS_URL",
+        "DEPLOYMENT_ENV_ENV": "ENV",
+        "TRACER_BASE_URL_DEV": "https://staging.tracer.cloud",
+        "TRACER_BASE_URL_PROD": "https://app.tracer.cloud",
+    }
+
+    for name, value in expected.items():
+        assert getattr(constants, name) == value
+        assert name in constants.__all__
 
 
 @pytest.mark.parametrize("module", ["billing", "tenancy"])

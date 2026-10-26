@@ -6,13 +6,11 @@ Owns two pieces of OpenSRE domain knowledge:
   named OpenSRE pipeline stages (``extract_data``, ``validate_data``,
   ``transform_data``, ``load_data``).
 * :func:`extract_pipeline_spans` — projects those spans into the
-  ``{span_name, execution_run_id, record_count}`` shape every
-  downstream investigation node consumes.
+  ``{span_name, execution_run_id, record_count}`` shape downstream
+  consumers use.
 
-Both ``integrations.grafana.tools`` (live Grafana / Tempo queries) and
-``integrations.opensre.seed_evidence`` (offline OpenRCA / HuggingFace
-fixtures) need this projection. Lives in ``core.domain`` so neither
-side has to import the other, and so the OpenSRE-specific span-name
+``integrations.grafana.tools`` (live Grafana / Tempo queries) needs this
+projection. Lives in ``core.domain`` so the OpenSRE-specific span-name
 vocabulary stays out of the ``infrastructure`` layer.
 """
 

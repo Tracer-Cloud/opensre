@@ -1,4 +1,4 @@
-"""Tests for the registered-tool catalog used by the ``/tools list`` slash command."""
+"""Tests for the registered-tool catalog used by the ``/tools`` slash command."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from rich.console import Console
 from core.domain.types.tools import ToolSurface
 from core.tool.contracts import RegisteredTool
 from surfaces.interactive_shell.command_registry import dispatch_slash
-from surfaces.interactive_shell.command_registry.tools_cmds import _TOOLS_FIRST_ARGS, _cmd_tools
+from surfaces.interactive_shell.command_registry.tools_cmds import COMMANDS, _cmd_tools
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.terminal.tables import tool_catalog
 from surfaces.shared.terminal.tables.tool_catalog import (
@@ -30,7 +30,7 @@ def _make_tool(
     name: str,
     *,
     description: str = "Tool description.",
-    surfaces: tuple[ToolSurface, ...] = (ToolSurface.INVESTIGATION,),
+    surfaces: tuple[ToolSurface, ...] = (ToolSurface.CHAT,),
     input_schema: dict[str, Any] | None = None,
     origin_module: str = "tools.registry",
 ) -> RegisteredTool:
@@ -109,6 +109,29 @@ class TestSummarizeInputSchema:
 
 
 class TestBuildToolCatalog:
+    def test_keeps_all_parameters_for_details_without_growing_the_summary(
+        self, fake_registry: list[RegisteredTool]
+    ) -> None:
+        fake_registry.append(
+            _make_tool(
+                "many_inputs",
+                input_schema={
+                    "properties": {f"param_{i}": {"type": "string"} for i in range(40)},
+                    "required": ["param_0"],
+                },
+            )
+        )
+
+        entry = build_tool_catalog()[0]
+
+        assert len(entry.input_schema_summary) <= 200
+        assert entry.input_schema_summary.endswith("…")
+        assert len(entry.parameters) == 40
+        assert entry.parameters[0].required is True
+        assert entry.parameters[-1].name == "param_39"
+        assert entry.parameters[-1].type_label == "string"
+        assert entry.parameters[-1].required is False
+
     def test_returns_empty_list_when_no_tools(self, fake_registry: list[RegisteredTool]) -> None:
         del fake_registry  # unused — registry is empty by default
         assert build_tool_catalog() == []
@@ -120,7 +143,7 @@ class TestBuildToolCatalog:
             _make_tool(
                 "search_github",
                 description="Search GitHub code.",
-                surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+                surfaces=(ToolSurface.CHAT,),
                 input_schema={
                     "type": "object",
                     "properties": {"query": {"type": "string"}},
@@ -132,7 +155,7 @@ class TestBuildToolCatalog:
         assert len(entries) == 1
         entry = entries[0]
         assert entry.name == "search_github"
-        assert entry.surfaces == ("investigation", "chat")
+        assert entry.surfaces == ("chat",)
         assert entry.description == "Search GitHub code."
         assert entry.input_schema_summary == "query: string"
         # Source file for the registry module resolves to its repo-relative path.
@@ -141,9 +164,9 @@ class TestBuildToolCatalog:
     def test_filters_by_surface_when_provided(self, fake_registry: list[RegisteredTool]) -> None:
         fake_registry.extend(
             [
-                _make_tool("inv_only", surfaces=(ToolSurface.INVESTIGATION,)),
+                _make_tool("action_only", surfaces=(ToolSurface.ACTION,)),
                 _make_tool("chat_only", surfaces=(ToolSurface.CHAT,)),
-                _make_tool("both", surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT)),
+                _make_tool("both", surfaces=(ToolSurface.CHAT, ToolSurface.ACTION)),
             ]
         )
         chat_entries = build_tool_catalog(surface=ToolSurface.CHAT)
@@ -177,11 +200,11 @@ class TestFormatToolCatalogText:
     def test_returns_empty_string_for_empty_catalog(self) -> None:
         assert format_tool_catalog_text([]) == ""
 
-    def test_groups_by_surface_with_investigation_first(self) -> None:
+    def test_groups_by_surface_with_chat_first(self) -> None:
         entries = [
             ToolCatalogEntry(
                 name="alpha",
-                surfaces=("investigation",),
+                surfaces=("action",),
                 description="alpha desc",
                 source_file="tools/alpha.py",
                 input_schema_summary="(no params)",
@@ -195,18 +218,18 @@ class TestFormatToolCatalogText:
             ),
         ]
         text = format_tool_catalog_text(entries)
-        # Investigation header must precede chat header (canonical ordering).
-        inv_pos = text.find("## investigation")
+        # Chat header must precede action header (canonical ordering).
         chat_pos = text.find("## chat")
-        assert inv_pos != -1 and chat_pos != -1
-        assert inv_pos < chat_pos
+        action_pos = text.find("## action")
+        assert chat_pos != -1 and action_pos != -1
+        assert chat_pos < action_pos
         assert "alpha" in text and "beta" in text
 
     def test_dual_surface_tool_appears_under_each_surface(self) -> None:
         entries = [
             ToolCatalogEntry(
                 name="dual",
-                surfaces=("investigation", "chat"),
+                surfaces=("chat", "action"),
                 description="dual desc",
                 source_file="tools/dual.py",
                 input_schema_summary="(no params)",
@@ -214,16 +237,16 @@ class TestFormatToolCatalogText:
         ]
         text = format_tool_catalog_text(entries)
         # Dual-surface tools surface in BOTH groups so the user can tell which
-        # tools the chat agent vs the investigation pipeline can reach.
+        # tools each surface can reach.
         assert text.count("**dual**") == 2
-        assert "## investigation (1 tool)" in text
         assert "## chat (1 tool)" in text
+        assert "## action (1 tool)" in text
 
     def test_omits_source_line_when_source_file_unknown(self) -> None:
         entries = [
             ToolCatalogEntry(
                 name="orphan",
-                surfaces=("investigation",),
+                surfaces=("chat",),
                 description="orphan desc",
                 source_file="",
                 input_schema_summary="(no params)",
@@ -235,7 +258,7 @@ class TestFormatToolCatalogText:
 
 
 class TestListToolsSlashCommand:
-    """``/tools list`` reaches the catalog and prints non-empty output."""
+    """``/tools`` reaches the catalog and prints non-empty output."""
 
     def _capture(self) -> tuple[Console, io.StringIO]:
         buf = io.StringIO()
@@ -248,7 +271,7 @@ class TestListToolsSlashCommand:
         fake = [
             ToolCatalogEntry(
                 name="search_github",
-                surfaces=("investigation", "chat"),
+                surfaces=("chat", "action"),
                 description="Search GitHub code.",
                 source_file="tools/search_github.py",
                 input_schema_summary="query: string",
@@ -258,10 +281,10 @@ class TestListToolsSlashCommand:
             "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog",
             return_value=fake,
         ):
-            assert _cmd_tools(session, console, ["list"]) is True
+            assert _cmd_tools(session, console, []) is True
         out = buf.getvalue()
         assert "search_github" in out
-        assert "investigation" in out
+        assert "action" in out
         assert "chat" in out
         assert "Search GitHub code." in out
 
@@ -271,7 +294,7 @@ class TestListToolsSlashCommand:
         fake = [
             ToolCatalogEntry(
                 name="telegram_send_message",
-                surfaces=("investigation", "chat"),
+                surfaces=("chat", "action"),
                 description="Send a Telegram message.",
                 source_file="tools/telegram_send_message_tool/tool.py",
                 input_schema_summary="message: string",
@@ -285,7 +308,7 @@ class TestListToolsSlashCommand:
         catalog.assert_called_once_with()
         out = buf.getvalue()
         assert "telegram_send_message" in out
-        assert "investigation" in out
+        assert "action" in out
         assert "chat" in out
 
     def test_live_catalog_includes_telegram_send_message(self) -> None:
@@ -298,7 +321,7 @@ class TestListToolsSlashCommand:
         fake = [
             ToolCatalogEntry(
                 name="risky_tool",
-                surfaces=("investigation",),
+                surfaces=("chat",),
                 description="Payload [bold]injection[/bold] attempt",
                 source_file="tools/risky.py",
                 input_schema_summary="x: string",
@@ -308,7 +331,7 @@ class TestListToolsSlashCommand:
             "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog",
             return_value=fake,
         ):
-            assert _cmd_tools(session, console, ["list"]) is True
+            assert _cmd_tools(session, console, []) is True
         out = buf.getvalue()
         assert "[bold]injection[/bold]" in out
 
@@ -319,9 +342,20 @@ class TestListToolsSlashCommand:
             "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog",
             return_value=[],
         ):
-            assert _cmd_tools(session, console, ["list"]) is True
+            assert _cmd_tools(session, console, []) is True
         assert "no tools registered" in buf.getvalue()
 
-    def test_tools_first_args_advertise_list_for_tab_completion(self) -> None:
-        names = {arg for arg, _hint in _TOOLS_FIRST_ARGS}
-        assert "list" in names
+    def test_tools_has_no_submenu_or_argument_completions(self) -> None:
+        assert COMMANDS[0].first_arg_completions == ()
+        assert COMMANDS[0].usage == ("/tools",)
+
+    @pytest.mark.parametrize("alias", ["list", "ls", "tool", "tools"])
+    def test_removed_aliases_show_usage_without_opening_the_catalog(self, alias: str) -> None:
+        console, buf = self._capture()
+        with patch(
+            "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog"
+        ) as catalog:
+            assert dispatch_slash(f"/tools {alias}", Session(), console) is True
+
+        catalog.assert_not_called()
+        assert "Use /tools without arguments" in buf.getvalue()

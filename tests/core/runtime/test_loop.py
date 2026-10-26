@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import builtins
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from typing import Any, cast
 
 import pytest
 
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
 from core.agent import Agent, AgentRunResult
 from core.agent_harness.runtime import TurnBinding
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
@@ -40,6 +41,7 @@ class FakeLLM:
         self.invocations = 0
         self.schema_tool_names: list[list[str]] = []
         self.seen_messages: list[list[dict[str, Any]]] = []
+        self.seen_tools: list[list[dict[str, Any]] | None] = []
         self.model_id: str | None = None
 
     def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
@@ -55,6 +57,7 @@ class FakeLLM:
     ) -> AgentLLMResponse:
         self.invocations += 1
         self.seen_messages.append(messages)
+        self.seen_tools.append(tools)
         return next(self._responses)
 
     def build_assistant_message(
@@ -104,10 +107,14 @@ def _text_response(content: str) -> AgentLLMResponse:
     return AgentLLMResponse(content=content, tool_calls=[], raw_content=None)
 
 
-def _tool_call_response(call_id: str, name: str) -> AgentLLMResponse:
+def _tool_call_response(
+    call_id: str,
+    name: str,
+    tool_input: dict[str, Any] | None = None,
+) -> AgentLLMResponse:
     return AgentLLMResponse(
         content="",
-        tool_calls=[ToolCall(id=call_id, name=name, input={})],
+        tool_calls=[ToolCall(id=call_id, name=name, input=dict(tool_input or {}))],
         raw_content=None,
     )
 
@@ -116,6 +123,7 @@ def _agent(
     llm: FakeLLM,
     tools: list[Any],
     max_iterations: int = 5,
+    max_stagnant_iterations: int | None = None,
     on_event: Any = None,
     on_runtime_event: Any = None,
 ) -> Agent:
@@ -125,58 +133,40 @@ def _agent(
         tools=tools,
         resolved_integrations={},
         max_iterations=max_iterations,
+        max_stagnant_iterations=max_stagnant_iterations,
         on_event=on_event,
         on_runtime_event=on_runtime_event,
     )
 
 
-def test_agent_exposes_headless_agent_entrypoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    class EchoReasoningClient:
-        def invoke_stream(self, _prompt: str) -> Iterator[str]:
-            yield "hello from headless"
+def test_agent_exposes_headless_agent_entrypoint() -> None:
+    from core.agent_harness.turns.headless_adapters import NullToolProvider
 
-    monkeypatch.setattr(
-        "core.agent_harness.turns.headless_build.default_llm_factory",
-        lambda: FakeLLM(iter([AgentLLMResponse(content="", tool_calls=[], raw_content=None)])),
+    llm = FakeLLM(iter([_text_response("hello from headless")]))
+    agent = InMemoryHeadlessBuild().agent(
+        tools=NullToolProvider(),
+        llm_factory=lambda: llm,
     )
-
-    from core.agent_harness.turns.headless_adapters import (
-        NullToolProvider,
-        StaticReasoningClientProvider,
-    )
-
-    agent = InMemoryHeadlessBuild(
-        reasoning=StaticReasoningClientProvider(client=EchoReasoningClient())
-    ).agent(tools=NullToolProvider())
     result = agent.dispatch("hello")
 
     assert result.assistant_response_text == "hello from headless"
 
 
-def test_one_headless_agent_dispatches_multiple_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_one_headless_agent_dispatches_multiple_messages() -> None:
     """Configure once, dispatch many: both turns run on the same agent and session."""
 
-    class EchoReasoningClient:
-        def invoke_stream(self, _prompt: str) -> Iterator[str]:
-            yield "hello from headless"
+    from core.agent_harness.turns.headless_adapters import NullToolProvider
 
-    monkeypatch.setattr(
-        "core.agent_harness.turns.headless_build.default_llm_factory",
-        lambda: FakeLLM(iter([AgentLLMResponse(content="", tool_calls=[], raw_content=None)])),
+    llm = FakeLLM(iter([_text_response("hello from headless"), _text_response("hello again")]))
+    agent = InMemoryHeadlessBuild().agent(
+        tools=NullToolProvider(),
+        llm_factory=lambda: llm,
     )
-    from core.agent_harness.turns.headless_adapters import (
-        NullToolProvider,
-        StaticReasoningClientProvider,
-    )
-
-    agent = InMemoryHeadlessBuild(
-        reasoning=StaticReasoningClientProvider(client=EchoReasoningClient())
-    ).agent(tools=NullToolProvider())
     first = agent.dispatch("one")
     second = agent.dispatch("two")
 
     assert first.assistant_response_text == "hello from headless"
-    assert second.assistant_response_text == "hello from headless"
+    assert second.assistant_response_text == "hello again"
     # Both turns landed on the same shared session — reuse, not a fresh store per call.
     assert len(agent._session.cli_agent_messages) == 4
 
@@ -444,6 +434,44 @@ def test_runtime_events_emit_typed_lifecycle_and_streaming_order() -> None:
     assert [event.delta for event in message_updates] == ["final"]
 
 
+class StreamingFakeLLM(FakeLLM):
+    """Streams each scripted reply's text in two pieces before returning it."""
+
+    def invoke(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> AgentLLMResponse:
+        response = super().invoke(messages, system=system, tools=tools)
+        if on_text_delta is not None and response.content:
+            middle = len(response.content) // 2
+            on_text_delta(response.content[:middle])
+            on_text_delta(response.content[middle:])
+        return response
+
+
+def test_streamed_text_reaches_observers_as_partial_updates_before_the_message() -> None:
+    llm = StreamingFakeLLM(iter([_text_response("final answer")]))
+    events: list[RuntimeEvent] = []
+
+    _agent(llm, _tools(FakeTool("query_logs")), on_runtime_event=events.append).run(
+        [{"role": "user", "content": "hello"}]
+    )
+
+    updates = [event for event in events if isinstance(event, MessageUpdateEvent)]
+    assert [(event.delta, bool(event.data.get(PARTIAL_MESSAGE_KEY))) for event in updates] == [
+        ("final ", True),
+        ("answer", True),
+        ("final answer", False),
+    ]
+    kinds = [event.type for event in events]
+    # The pieces arrive while the request is still open.
+    assert kinds.index("message_update") < kinds.index("provider_request_end")
+
+
 def test_message_update_flags_tool_call_iterations() -> None:
     """Intermediate commentary carries has_tool_calls=True; the final answer False."""
     llm = FakeLLM(
@@ -572,30 +600,6 @@ def test_agent_tool_context_update_emits_tool_execution_update() -> None:
     assert updates[0].partial_result == {"status": "halfway"}
 
 
-def test_rejecting_conclusion_without_nudge_raises() -> None:
-    class RejectingAgent(Agent[RegisteredTool]):
-        def _should_accept_conclusion(
-            self,
-            *,
-            evidence_count: int,  # noqa: ARG002
-            iteration: int,  # noqa: ARG002
-            final_text: str = "",  # noqa: ARG002
-        ) -> tuple[bool, str | None]:
-            return False, None
-
-    llm = FakeLLM(iter([_text_response("not enough")]))
-    agent = RejectingAgent(
-        llm=llm,
-        system="sys",
-        tools=_tools(FakeTool("query_logs")),
-        resolved_integrations={},
-        max_iterations=3,
-    )
-
-    with pytest.raises(ValueError, match="_should_accept_conclusion returned"):
-        agent.run([{"role": "user", "content": "hello"}])
-
-
 def test_tool_filtering_runs_after_subclass_initialization() -> None:
     class LateStateFilteringAgent(Agent[RegisteredTool]):
         def __init__(self, **kwargs: Any) -> None:
@@ -628,15 +632,17 @@ def test_tool_filtering_runs_after_subclass_initialization() -> None:
     assert [(tc.name, tool_output) for tc, tool_output in result.executed] == [("keep", output)]
 
 
-def test_always_tool_call_hits_iteration_cap() -> None:
-    def always_tool_calls() -> Iterator[AgentLLMResponse]:
-        counter = 0
-        while True:
-            counter += 1
-            yield _tool_call_response(f"c{counter}", "query_logs")
-
+def test_iteration_cap_gets_one_tool_disabled_final_handoff() -> None:
     max_iterations = 3
-    llm = FakeLLM(always_tool_calls())
+    llm = FakeLLM(
+        iter(
+            [
+                _tool_call_response(f"c{step}", "query_logs", {"step": step})
+                for step in range(max_iterations)
+            ]
+            + [_text_response("I completed two checks; the remaining work is blocked.")]
+        )
+    )
 
     result = _agent(llm, _tools(FakeTool("query_logs")), max_iterations=max_iterations).run(
         [{"role": "user", "content": "hello"}]
@@ -645,8 +651,74 @@ def test_always_tool_call_hits_iteration_cap() -> None:
     assert result.hit_iteration_cap is True
     assert result.llm_iterations_used == max_iterations
     assert len(result.executed) == max_iterations
-    assert result.final_text == ""
-    assert llm.invocations == max_iterations
+    assert result.final_text == "I completed two checks; the remaining work is blocked."
+    assert llm.invocations == max_iterations + 1
+    assert llm.seen_tools[-1] == []
+
+
+def test_productive_tool_run_can_continue_past_thirteen_iterations() -> None:
+    tool_iterations = 14
+    llm = FakeLLM(
+        iter(
+            [
+                _tool_call_response(f"c{step}", "query_logs", {"step": step})
+                for step in range(tool_iterations)
+            ]
+            + [_text_response("all steps completed")]
+        )
+    )
+
+    result = _agent(
+        llm,
+        _tools(FakeTool("query_logs")),
+        max_iterations=20,
+        max_stagnant_iterations=3,
+    ).run([{"role": "user", "content": "run every step"}])
+
+    assert result.hit_iteration_cap is False
+    assert result.llm_iterations_used == tool_iterations + 1
+    assert len(result.executed) == tool_iterations
+    assert result.final_text == "all steps completed"
+
+
+def test_repeated_observations_stop_early_with_one_tool_disabled_handoff() -> None:
+    llm = FakeLLM(
+        iter(
+            [_tool_call_response(f"c{step}", "query_logs") for step in range(4)]
+            + [_text_response("The same query failed repeatedly; use a narrower time range.")]
+        )
+    )
+
+    result = _agent(
+        llm,
+        _tools(FakeTool("query_logs", {"error": "unavailable"})),
+        max_iterations=20,
+        max_stagnant_iterations=3,
+    ).run([{"role": "user", "content": "keep trying"}])
+
+    assert result.hit_iteration_cap is True
+    assert result.llm_iterations_used == 4
+    assert len(result.executed) == 4
+    assert result.final_text == "The same query failed repeatedly; use a narrower time range."
+    assert llm.invocations == 5
+    assert llm.seen_tools[-1] == []
+
+
+def test_failed_safety_handoff_uses_deterministic_final_text() -> None:
+    def responses() -> Iterator[AgentLLMResponse]:
+        yield _tool_call_response("c1", "query_logs")
+        raise RuntimeError("final sampling unavailable")
+
+    llm = FakeLLM(responses())
+
+    result = _agent(llm, _tools(FakeTool("query_logs")), max_iterations=1).run(
+        [{"role": "user", "content": "finish this"}]
+    )
+
+    assert result.hit_iteration_cap is True
+    assert "emergency tool-iteration ceiling" in result.final_text
+    assert llm.invocations == 2
+    assert llm.seen_tools[-1] == []
 
 
 def test_react_loop_records_partial_iterations_when_llm_raises() -> None:
@@ -662,3 +734,18 @@ def test_react_loop_records_partial_iterations_when_llm_raises() -> None:
         agent.run([{"role": "user", "content": "hello"}])
 
     assert agent._react_iterations_used == 3
+
+
+def test_run_sums_provider_reported_usage_across_model_calls() -> None:
+    # Arrange: two model calls, each reporting exact usage.
+    first = replace(_tool_call_response("c1", "query_logs"), input_tokens=120, output_tokens=30)
+    second = replace(_text_response("done"), input_tokens=200, output_tokens=50)
+    llm = FakeLLM(iter([first, second]))
+
+    # Act
+    result = _agent(llm, _tools(FakeTool("query_logs", {"ok": True}))).run(
+        [{"role": "user", "content": "hello"}]
+    )
+
+    # Assert: the run carries the totals the host records on the session.
+    assert (result.input_tokens, result.output_tokens) == (320, 80)

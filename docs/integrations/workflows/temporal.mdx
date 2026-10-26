@@ -1,0 +1,251 @@
+---
+title: "Temporal"
+description: "Connect Temporal so OpenSRE can inspect workflow executions, event history, and worker health"
+---
+
+## Overview
+
+OpenSRE queries Temporal's HTTP API to retrieve workflow executions, event history, task queue health, and namespace-level metrics — helping diagnose workflow failures, activity retries, and worker outages.
+
+<Note>
+OpenSRE connects to Temporal's **HTTP API** (the `/api/v1/...` REST interface served
+by the frontend service). This is a **self-hosted** server feature, enabled with the
+`--http-port` flag (dev server) or `frontend.httpPort` config.
+
+**Temporal Cloud is not currently supported**: Cloud exposes only gRPC/mTLS endpoints
+for workflow data and an HTTP *Ops API* for control-plane management — neither is the
+frontend HTTP API this integration uses. Point OpenSRE at a self-hosted Temporal
+deployment.
+</Note>
+
+## Prerequisites
+
+- A self-hosted Temporal Server with the HTTP API enabled
+- The HTTP API base URL (and an API key only if your deployment requires bearer auth)
+
+<Warning>
+Port `7233` is the **gRPC** frontend port and will **not** work as `base_url` — the
+HTTP API listens on a **separate** port. On the dev server it is set with
+`--http-port` (it otherwise defaults to a random free port). The examples below use
+`7243`.
+</Warning>
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup temporal
+```
+
+Prompts for HTTP API base URL, namespace, and optional API key.
+
+### Option 2: Environment variables
+
+```bash
+export TEMPORAL_API_URL="http://localhost:7243"
+export TEMPORAL_NAMESPACE="default"
+export TEMPORAL_API_KEY=""   # only if your deployment requires bearer auth
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TEMPORAL_API_URL` | — | **Required.** Temporal **HTTP API** base URL (`--http-port` listener, not gRPC `7233`) |
+| `TEMPORAL_NAMESPACE` | `default` | Namespace to query |
+| `TEMPORAL_API_KEY` | — | Optional bearer token (`Authorization: Bearer <key>`) |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "temporal-prod",
+      "service": "temporal",
+      "status": "active",
+      "credentials": {
+        "base_url": "http://temporal-frontend:7243",
+        "namespace": "default",
+        "api_key": ""
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+Set `base_url` / `TEMPORAL_API_URL` to the frontend's HTTP API endpoint. Leave `api_key` empty for unauthenticated clusters.
+
+### Quick local test with Docker
+
+```bash
+docker run -d --rm \
+  --name temporal-dev \
+  -p 127.0.0.1:7233:7233 \
+  -p 127.0.0.1:8233:8233 \
+  -p 127.0.0.1:7243:7243 \
+  temporalio/temporal:latest \
+  server start-dev \
+    --ip 0.0.0.0 \
+    --http-port 7243
+
+i=0
+until curl -sf -o /dev/null http://localhost:7243/api/v1/namespaces/default; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: Temporal never became ready" >&2; exit 1; }
+  sleep 2
+done
+[ $i -lt 30 ] || { echo "ERROR: Temporal never became ready" >&2; exit 1; }
+```
+
+| Port | Purpose |
+| --- | --- |
+| `7233` | gRPC frontend (SDKs, `temporal` CLI) |
+| `8233` | Web UI (`http://localhost:8233`) |
+| `7243` | **HTTP API** — set this as `base_url` |
+
+Confirm the HTTP API answers:
+
+```bash
+curl -s http://localhost:7243/api/v1/namespaces/default
+```
+
+```bash
+export TEMPORAL_API_URL="http://localhost:7243"
+```
+
+Verify:
+
+```bash
+opensre integrations verify temporal
+```
+
+```
+SERVICE  │ SOURCE    │ STATUS   │ DETAIL
+temporal │ local env │ ✓ passed │ Successfully connected to Temporal.
+```
+
+A fresh namespace has no workflows, and `temporal_namespace_info`'s `workflow_count: "0"` on its own isn't useful evidence. Run a real, deliberately failing workflow first:
+
+```bash
+pip install temporalio
+cat > worker.py << 'EOF'
+import asyncio
+from datetime import timedelta
+from temporalio import activity, workflow
+from temporalio.client import Client
+from temporalio.common import RetryPolicy
+from temporalio.worker import Worker
+
+
+@activity.defn
+async def deploy_payment_service() -> str:
+    raise RuntimeError("payment-service deploy failed: connection refused to billing-api")
+
+
+@workflow.defn
+class PaymentServiceDeploy:
+    @workflow.run
+    async def run(self) -> str:
+        return await workflow.execute_activity(
+            deploy_payment_service,
+            start_to_close_timeout=timedelta(seconds=5),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+
+
+async def main():
+    client = await Client.connect("localhost:7233")
+    worker = Worker(client, task_queue="payment-service-queue",
+                     workflows=[PaymentServiceDeploy], activities=[deploy_payment_service])
+    async with worker:
+        try:
+            await client.execute_workflow(PaymentServiceDeploy.run,
+                id="payment-service-deploy-1", task_queue="payment-service-queue")
+        except Exception as e:
+            print("workflow failed:", e)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+EOF
+python worker.py
+```
+
+Chat sessions only treat an integration as active once the store resolution has *something* to fall through to env vars with -- an untouched `~/.opensre/integrations.json` with an unrelated integration in it blocks env-var fallback entirely. Point `OPENSRE_INTEGRATIONS_STORE_PATH` at an empty, valid store instead, so your real config is never read or written and `TEMPORAL_API_URL` above is the only source of connection info:
+
+```bash
+export OPENSRE_INTEGRATIONS_STORE_PATH=$(mktemp /tmp/opensre-temporal-demo.XXXXXX)
+echo '{"version": 2, "integrations": []}' > "$OPENSRE_INTEGRATIONS_STORE_PATH"
+```
+
+A literal zero-byte file does not work here -- the store loader expects valid JSON and raises on an empty read, so this writes an explicitly empty (but valid) store rather than just creating the file with `mktemp` alone.
+
+Now ask the agent about the failed workflow:
+
+```bash
+opensre
+```
+
+Ask: *Why did the Temporal workflow payment-service-deploy-1 fail?*
+
+Against this exact local workflow the agent calls all 4 registered tools —
+namespace info, workflow list, workflow history, and task queue — and finds the
+real cause: the `deploy_payment_service` activity raised
+`RuntimeError('payment-service deploy failed: connection refused to billing-api')`
+and, with `maximumAttempts=1`, the failure propagated straight to
+`WORKFLOW_EXECUTION_FAILED`. An empty store makes the session fall through to
+env-var resolution for *every* integration, not just Temporal -- if your shell
+already resolves another integration from its own env vars, it rides along too
+(harmless).
+
+Teardown:
+
+```bash
+docker rm -f temporal-dev
+rm -f "$OPENSRE_INTEGRATIONS_STORE_PATH"
+unset OPENSRE_INTEGRATIONS_STORE_PATH TEMPORAL_API_URL
+```
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `temporal_namespace_info` | Namespace state and workflow counts by status (Running, Failed, TimedOut) |
+| `temporal_workflows` | Recent executions with status, type, task queue, timing |
+| `temporal_workflow_history` | Event history for a specific execution |
+| `temporal_task_queue` | Active pollers and backlog stats (depth, add/dispatch rates) |
+
+### Typical flow when you ask about a failed workflow
+
+1. **Namespace info** — how many workflows are running vs failed?
+2. **Workflows** — filter to failed/timed-out executions; note workflow type and task queue
+3. **Workflow history** — which activity failed and why?
+4. **Task queue** — are workers polling? Is backlog growing?
+
+## Verify
+
+```bash
+opensre integrations verify temporal
+```
+
+Verify probes `GET /api/v1/namespaces/{namespace}`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused / protocol errors** | You may be on the gRPC port — use the HTTP API port (`--http-port`, e.g. `7243`), not `7233` |
+| **404 on `/api/v1/...`** | Enable HTTP API (`--http-port` or `frontend.httpPort`) |
+| **401 Unauthorized** | Set `TEMPORAL_API_KEY` to a valid bearer token |
+| **404 Namespace not found** | Confirm `namespace` matches exactly (case-sensitive) |
+| **Empty workflow list** | Workflows may have passed retention — check namespace retention |
+| **No pollers on task queue** | Workers may be down — check worker deployment health |
+
+## Security
+
+- Use a **read-only API key** where your deployment supports scoped auth — OpenSRE never writes to Temporal.
+- Restrict network access to the HTTP API to trusted IPs.
+- Store credentials in `~/.opensre/integrations.json` or environment variables, not in source code.

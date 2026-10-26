@@ -201,13 +201,13 @@ def test_validate_provider_credentials_azure_not_found_lists_deployments(monkeyp
 
 
 def test_get_provider_base_url_deepseek() -> None:
-    from config.config import DEEPSEEK_BASE_URL
+    from config.llm_models import DEEPSEEK_BASE_URL
 
     assert _get_provider_base_url("deepseek") == DEEPSEEK_BASE_URL
 
 
 def test_get_provider_base_url_groq() -> None:
-    from config.config import GROQ_BASE_URL
+    from config.llm_models import GROQ_BASE_URL
 
     assert _get_provider_base_url("groq") == GROQ_BASE_URL
 
@@ -227,13 +227,13 @@ def test_get_provider_base_url_minimax() -> None:
     wizard's key prompt, but `_get_provider_base_url` has no branch for it and
     returns None — so the OpenAI SDK falls back to its default host and the key
     is sent to api.openai.com, which of course rejects it. `MINIMAX_BASE_URL`
-    has existed in config/config.py all along; it was simply never wired in.
+    has existed in config/llm_models.py all along; it was simply never wired in.
 
     Latent today (it already breaks `opensre auth`); a HARD BLOCK the moment
     onboarding gates on validation, because MiniMax users could then never
     finish the wizard at all.
     """
-    from config.config import MINIMAX_BASE_URL
+    from config.llm_models import MINIMAX_BASE_URL
 
     assert _get_provider_base_url("minimax") == MINIMAX_BASE_URL
     assert "openai.com" not in MINIMAX_BASE_URL

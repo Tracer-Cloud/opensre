@@ -16,10 +16,31 @@ class TestGitHubSearchCodeToolContract(BaseToolContract):
 def test_is_available_requires_connection_verified_owner_repo() -> None:
     rt = search_github_code.__opensre_registered_tool__
     assert (
-        rt.is_available({"github": {"connection_verified": True, "owner": "org", "repo": "repo"}})
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                    "owner": "org",
+                    "repo": "repo",
+                }
+            }
+        )
         is True
     )
-    assert rt.is_available({"github": {"connection_verified": True}}) is False
+    assert (
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                }
+            }
+        )
+        is False
+    )
     assert rt.is_available({}) is False
 
 
@@ -29,17 +50,6 @@ def test_extract_params_maps_fields() -> None:
     params = rt.extract_params(sources)
     assert params["owner"] == "my-org"
     assert params["repo"] == "my-repo"
-
-
-def test_run_returns_unavailable_when_no_config() -> None:
-    with patch("integrations.github.helpers.github_mcp_config_from_env", return_value=None):
-        result = search_github_code(owner="org", repo="repo", query="error")
-    assert result == {
-        "source": "github",
-        "available": False,
-        "error": "GitHub MCP integration is not configured.",
-        "matches": [],
-    }
 
 
 def test_run_happy_path() -> None:
@@ -65,6 +75,7 @@ def test_run_happy_path() -> None:
         ),
     ):
         result = search_github_code(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             query="error",
@@ -97,6 +108,7 @@ def test_run_tool_error() -> None:
         ),
     ):
         result = search_github_code(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             query="error",

@@ -56,7 +56,7 @@ def build_converse_tool_specs(tools: Sequence[SchemaDescribedTool]) -> list[dict
 
 
 def to_converse_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert investigation messages to Converse ``messages`` shape."""
+    """Convert agent messages to Converse ``messages`` shape."""
     converted: list[dict[str, Any]] = []
     for message in messages:
         content = message.get("content", "")

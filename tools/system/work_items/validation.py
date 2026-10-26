@@ -10,7 +10,9 @@ from core.domain.work_items import (
     WorkItemStatus,
     parse_priority,
     parse_status,
+    parse_work_item_datetime,
 )
+from infrastructure.scheduling.scheduler.types import Provider
 
 DEFAULT_WORK_ITEM_LIMIT = 20
 MAX_WORK_ITEM_LIMIT = 100
@@ -57,14 +59,37 @@ def valid_status_detail() -> str:
     return f"status must be one of {', '.join(WORK_ITEM_STATUSES)}"
 
 
+def validate_provider(provider: str) -> Provider | None:
+    try:
+        return Provider(provider.strip().lower())
+    except ValueError:
+        return None
+
+
+def validate_datetime_arg(value: str, *, field: str) -> dict[str, str] | None:
+    if value and parse_work_item_datetime(value) is None:
+        return {
+            "error": f"invalid_{field}",
+            "detail": f"{field} must be ISO-like, e.g. 2026-07-29T09:30 or 2026-07-29T09:30Z",
+        }
+    return None
+
+
+_validate_provider = validate_provider
+_validate_datetime_arg = validate_datetime_arg
+
 __all__ = [
     "DEFAULT_PRIORITY_LIMIT",
     "DEFAULT_WORK_ITEM_LIMIT",
     "MAX_WORK_ITEM_LIMIT",
+    "_validate_datetime_arg",
+    "_validate_provider",
     "normalize_limit",
     "normalize_priority",
     "normalize_selectors",
     "normalize_status_filter",
     "valid_priority_detail",
     "valid_status_detail",
+    "validate_datetime_arg",
+    "validate_provider",
 ]

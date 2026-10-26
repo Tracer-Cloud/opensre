@@ -11,7 +11,6 @@ import core.llm.transports.sdk.llm_clients as sdk_llm
 from core.llm import factory
 from core.llm.factory import reset_llm_clients
 from core.llm.shared import usage as usage_mod
-from core.llm.shared.openai_chat_completions import _RETRY_MAX_ATTEMPTS
 from core.llm.shared.structured_output import extract_json_payload
 
 
@@ -51,6 +50,7 @@ class _FakeOpenAI:
         api_key: str,
         base_url: str | None = None,
         timeout: float,
+        max_retries: int = 2,
         default_headers: dict[str, str] | None = None,
     ) -> None:
         _FakeOpenAI.last_api_key = api_key
@@ -59,6 +59,7 @@ class _FakeOpenAI:
         _FakeOpenAI.init_api_keys.append(api_key)
         self.base_url = base_url
         self.timeout = timeout
+        self.max_retries = max_retries
         self.default_headers = default_headers
         self.chat = _FakeOpenAIChat()
 
@@ -126,6 +127,21 @@ def test_openai_llm_client_omits_reasoning_effort_for_non_reasoning_models(monke
     assert "reasoning_effort" not in kwargs
 
 
+def test_openai_llm_client_defaults_only_gpt_6_1_to_extra_high(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "core.llm.providers.provider_credentials.resolve_llm_api_key",
+        lambda env_var: "stored-openai-key" if env_var == "OPENAI_API_KEY" else "",
+    )
+    monkeypatch.setattr(sdk_llm, "OpenAI", _FakeOpenAI)
+    monkeypatch.delenv("OPENSRE_REASONING_EFFORT", raising=False)
+
+    gpt_6_1 = sdk_llm.OpenAILLMClient(model="gpt-6.1-sol")._build_request_kwargs("hello")
+    gpt_5_6 = sdk_llm.OpenAILLMClient(model="gpt-5.6-sol")._build_request_kwargs("hello")
+
+    assert gpt_6_1["reasoning_effort"] == "xhigh"
+    assert "reasoning_effort" not in gpt_5_6
+
+
 def test_openai_llm_client_invoke_fails_when_key_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env_var: ""
@@ -151,7 +167,7 @@ def test_openai_llm_client_rebuilds_client_when_key_rotates(monkeypatch) -> None
     assert _FakeOpenAI.init_api_keys == ["first-key", "second-key"]
 
 
-class _InactiveGuardrailEngine:
+class _InactiveGuardrailEvaluator:
     is_active = False
 
     def apply(self, content: str) -> str:
@@ -219,8 +235,8 @@ def test_is_anthropic_bedrock_model_application_inference_profile_arn() -> None:
 
 def test_bedrock_client_routes_mistral_to_converse(monkeypatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     runtime = _RecordingBedrockRuntime(
         {"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}},
@@ -242,8 +258,8 @@ def test_bedrock_client_routes_mistral_to_converse(monkeypatch) -> None:
 
 def test_invoke_converse_includes_optional_system_temperature(monkeypatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     runtime = _RecordingBedrockRuntime(
         {"output": {"message": {"role": "assistant", "content": [{"text": ""}, {"text": "x"}]}}},
@@ -265,8 +281,8 @@ def test_invoke_converse_includes_optional_system_temperature(monkeypatch) -> No
 
 def test_invoke_converse_raises_when_no_text_blocks(monkeypatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     runtime = _RecordingBedrockRuntime(
         {
@@ -283,8 +299,8 @@ def test_invoke_converse_raises_when_no_text_blocks(monkeypatch) -> None:
 
 def test_bedrock_application_inference_profile_arn_uses_converse(monkeypatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     runtime = _RecordingBedrockRuntime(
         {"output": {"message": {"role": "assistant", "content": [{"text": "via-converse"}]}}},
@@ -300,8 +316,8 @@ def test_bedrock_application_inference_profile_arn_uses_converse(monkeypatch) ->
 
 def test_bedrock_anthropic_bad_request_does_not_retry(monkeypatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     attempts: list[int] = []
     sleeps: list[float] = []
@@ -328,8 +344,8 @@ def test_bedrock_anthropic_bad_request_does_not_retry(monkeypatch) -> None:
 
 def test_bedrock_anthropic_stream_bad_request_does_not_retry(monkeypatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     attempts: list[int] = []
     sleeps: list[float] = []
@@ -559,9 +575,9 @@ def test_anthropic_invoke_stream_applies_guardrails_to_input(monkeypatch) -> Non
         def apply(self, content: str) -> str:
             return content.replace("secret", "[REDACTED]")
 
-    import infrastructure.safety.guardrails.engine as engine_module
+    import infrastructure.safety.guardrails.evaluator as engine_module
 
-    monkeypatch.setattr(engine_module, "get_guardrail_engine", lambda: _RedactingEngine())
+    monkeypatch.setattr(engine_module, "get_guardrail_evaluator", lambda: _RedactingEngine())
 
     client = sdk_llm.LLMClient(model="claude-test")
     list(client.invoke_stream("share my secret"))
@@ -770,8 +786,10 @@ def _make_capturing_openai(
             api_key: str,
             base_url: str | None = None,
             timeout: float,
+            max_retries: int = 2,
             default_headers: dict[str, str] | None = None,
         ) -> None:
+            _ = max_retries
             self.api_key = api_key
             self.base_url = base_url
             self.timeout = timeout
@@ -1142,7 +1160,6 @@ def test_openai_invoke_stream_does_not_retry_after_yielding(monkeypatch) -> None
 
 def test_create_llm_client_openai_reasoning_sets_toolcall_fallback(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "openai")
-    monkeypatch.setenv("LLM_AUTH_METHOD", "api_key")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setenv("OPENAI_REASONING_MODEL", "gpt-5.4 mini")
     monkeypatch.setenv("OPENAI_TOOLCALL_MODEL", "gpt-5.4-mini")
@@ -1157,38 +1174,18 @@ def test_create_llm_client_openai_reasoning_sets_toolcall_fallback(monkeypatch) 
         reset_llm_clients()
 
 
-def test_create_llm_client_openai_oauth_routes_to_codex(monkeypatch) -> None:
+def test_create_llm_client_openai_ignores_legacy_oauth_auth_method(monkeypatch) -> None:
+    """A leftover LLM_AUTH_METHOD=oauth must not remap OpenAI onto Codex."""
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_AUTH_METHOD", "oauth")
-    monkeypatch.setenv("CODEX_MODEL", "gpt-5.5")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_REASONING_MODEL", "gpt-5.4")
     reset_llm_clients()
     try:
-        from integrations.llm_cli.codex import CodexAdapter
-        from integrations.llm_cli.runner import CLIBackedLLMClient
-
         client = factory.build_llm_client("reasoning")
 
-        assert isinstance(client, CLIBackedLLMClient)
-        assert isinstance(client._adapter, CodexAdapter)
-        assert client._model == "gpt-5.5"
-    finally:
-        reset_llm_clients()
-
-
-def test_create_llm_client_anthropic_oauth_routes_to_claude_code(monkeypatch) -> None:
-    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
-    monkeypatch.setenv("LLM_AUTH_METHOD", "oauth")
-    monkeypatch.setenv("CLAUDE_CODE_MODEL", "claude-opus-4-7")
-    reset_llm_clients()
-    try:
-        from integrations.llm_cli.claude_code import ClaudeCodeAdapter
-        from integrations.llm_cli.runner import CLIBackedLLMClient
-
-        client = factory.build_llm_client("reasoning")
-
-        assert isinstance(client, CLIBackedLLMClient)
-        assert isinstance(client._adapter, ClaudeCodeAdapter)
-        assert client._model == "claude-opus-4-7"
+        assert isinstance(client, sdk_llm.OpenAILLMClient)
+        assert client._model == "gpt-5.4"
     finally:
         reset_llm_clients()
 
@@ -1569,6 +1566,52 @@ class _FakeQuotaError(OpenAIRateLimitError):
 _FakeInsufficientQuotaError = _FakeQuotaError
 
 
+def test_openai_invoke_hosted_credit_exhaustion_preserves_upgrade_url(
+    monkeypatch,
+) -> None:
+    """A generic HTTP 402 from the OpenSRE proxy stops without retrying."""
+    from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
+
+    call_count = 0
+    upgrade_url = "https://app.opensre.dev/usage"
+
+    class _HostedCreditError(Exception):
+        code = "opensre_credits_exhausted"
+        body = {
+            "code": "opensre_credits_exhausted",
+            "upgrade_url": "https://app.opensre.dev/usage",
+        }
+
+    class _Completions:
+        def create(self, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise _HostedCreditError("Payment required")
+
+    class _Chat:
+        def __init__(self) -> None:
+            self.completions = _Completions()
+
+    class _OpenAI:
+        def __init__(self, **_kwargs) -> None:
+            self.chat = _Chat()
+
+    monkeypatch.setattr(
+        "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
+    )
+    monkeypatch.setattr(sdk_llm, "OpenAI", _OpenAI)
+    sleeps: list[float] = []
+    monkeypatch.setattr(sdk_llm.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    client = sdk_llm.OpenAILLMClient(model="gpt-4", api_key_env="OPENAI_API_KEY")
+    with pytest.raises(OpenSRECreditsExhaustedError) as excinfo:
+        client.invoke("hi")
+
+    assert call_count == 1
+    assert sleeps == []
+    assert excinfo.value.upgrade_url == upgrade_url
+
+
 def test_openai_invoke_rate_limit_insufficient_quota_raises_immediately(monkeypatch) -> None:
     """insufficient_quota (billing limit) must raise RuntimeError without retrying."""
     call_count = 0
@@ -1735,7 +1778,7 @@ def test_openai_invoke_stream_rate_limit_insufficient_quota_after_emit_is_wrappe
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OpenAILLMClient – APITimeoutError retry handling
+# OpenAILLMClient – a timeout is never retried
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -1746,63 +1789,25 @@ class _FakeTimeoutError(OpenAITimeoutError):
         super().__init__(request=None)  # type: ignore[arg-type]
 
 
-def test_openai_invoke_timeout_retries_and_succeeds(monkeypatch) -> None:
-    """APITimeoutError on the first attempt must be retried; success on the second."""
+def test_a_timed_out_request_is_sent_once_and_never_retried(monkeypatch) -> None:
+    """A slow compaction summary was re-sent 9 times, each one billed upstream.
+
+    A timed-out request already ran on the provider, so a retry pays again for
+    the same answer. Neither our loop nor the SDK (``max_retries``) may repeat it.
+    """
     attempts: list[int] = []
     sleeps: list[float] = []
-
-    class _Choice:
-        def __init__(self, content: str) -> None:
-            self.message = type("_Msg", (), {"content": content})()
-
-    class _Response:
-        def __init__(self, content: str) -> None:
-            self.choices = [_Choice(content)]
+    built: list[dict] = []
 
     class _Completions:
         def create(self, **_kwargs):
             attempts.append(1)
-            if len(attempts) == 1:
-                raise _FakeTimeoutError()
-            return _Response("ok")
-
-    class _Chat:
-        def __init__(self) -> None:
-            self.completions = _Completions()
-
-    class _OpenAI:
-        def __init__(self, **_kwargs) -> None:
-            self.chat = _Chat()
-
-    monkeypatch.setattr(
-        "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
-    )
-    monkeypatch.setattr(sdk_llm, "OpenAI", _OpenAI)
-    monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
-
-    client = sdk_llm.OpenAILLMClient(model="gpt-4", api_key_env="OPENAI_API_KEY")
-    result = client.invoke("hi")
-
-    assert result.content == "ok"
-    assert len(attempts) == 2
-    assert len(sleeps) == 1
-
-
-def test_openai_invoke_timeout_raises_timeout_message_after_exhaustion(monkeypatch) -> None:
-    """After all retries on APITimeoutError, raise a RuntimeError with a timeout message."""
-    sleeps: list[float] = []
-
-    class _Completions:
-        def create(self, **_kwargs):
             raise _FakeTimeoutError()
 
-    class _Chat:
-        def __init__(self) -> None:
-            self.completions = _Completions()
-
     class _OpenAI:
-        def __init__(self, **_kwargs) -> None:
-            self.chat = _Chat()
+        def __init__(self, **kwargs) -> None:
+            built.append(kwargs)
+            self.chat = type("_Chat", (), {"completions": _Completions()})()
 
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
@@ -1813,61 +1818,14 @@ def test_openai_invoke_timeout_raises_timeout_message_after_exhaustion(monkeypat
     client = sdk_llm.OpenAILLMClient(model="gpt-4", api_key_env="OPENAI_API_KEY")
     with pytest.raises(RuntimeError) as exc_info:
         client.invoke("hi")
+    with pytest.raises(RuntimeError):
+        list(client.invoke_stream("hi"))
 
     msg = str(exc_info.value).lower()
     assert "timed out" in msg or "timeout" in msg
-    assert "network connection" not in msg
-    assert len(sleeps) == _RETRY_MAX_ATTEMPTS - 1
-
-
-def test_openai_invoke_stream_timeout_retries_before_emit(monkeypatch) -> None:
-    """APITimeoutError before any chunk is emitted should be retried."""
-    attempts: list[int] = []
-    sleeps: list[float] = []
-
-    class _Delta:
-        def __init__(self, content: str) -> None:
-            self.content = content
-
-    class _Choice:
-        def __init__(self, content: str) -> None:
-            self.delta = _Delta(content)
-
-    class _Chunk:
-        def __init__(self, content: str) -> None:
-            self.choices = [_Choice(content)]
-
-    class _Completions:
-        def create(self, **_kwargs):
-            attempts.append(1)
-            if len(attempts) == 1:
-                raise _FakeTimeoutError()
-
-            def _stream():
-                yield _Chunk("hello")
-
-            return _stream()
-
-    class _Chat:
-        def __init__(self) -> None:
-            self.completions = _Completions()
-
-    class _OpenAI:
-        def __init__(self, **_kwargs) -> None:
-            self.chat = _Chat()
-
-    monkeypatch.setattr(
-        "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
-    )
-    monkeypatch.setattr(sdk_llm, "OpenAI", _OpenAI)
-    monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
-
-    client = sdk_llm.OpenAILLMClient(model="gpt-4", api_key_env="OPENAI_API_KEY")
-    chunks = list(client.invoke_stream("hi"))
-
-    assert chunks == ["hello"]
-    assert len(attempts) == 2
-    assert len(sleeps) == 1
+    assert attempts == [1, 1]
+    assert sleeps == []
+    assert {kwargs["max_retries"] for kwargs in built} == {0}
 
 
 def test_openai_invoke_stream_timeout_does_not_retry_after_emit(monkeypatch) -> None:
@@ -1968,7 +1926,7 @@ def _make_bedrock_anthropic_client(exc: Exception) -> object:
     return _Client()
 
 
-class _InactiveGuardrailEngine:
+class _InactiveGuardrailEvaluator:
     is_active = False
 
     def __call__(self):
@@ -1978,8 +1936,8 @@ class _InactiveGuardrailEngine:
 def test_bedrock_invoke_anthropic_not_found_raises_immediately(monkeypatch) -> None:
     """NotFoundError (EOL model) must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     sleeps: list[float] = []
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
@@ -2002,8 +1960,8 @@ def test_bedrock_invoke_anthropic_not_found_raises_immediately(monkeypatch) -> N
 def test_bedrock_invoke_anthropic_authentication_raises_immediately(monkeypatch) -> None:
     """AuthenticationError must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     sleeps: list[float] = []
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
@@ -2027,8 +1985,8 @@ def test_bedrock_invoke_anthropic_authentication_raises_immediately(monkeypatch)
 def test_bedrock_invoke_anthropic_bad_request_inference_profile(monkeypatch) -> None:
     """BadRequestError with 'on-demand throughput' hint must suggest inference profile."""
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     sleeps: list[float] = []
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
@@ -2059,8 +2017,8 @@ def test_bedrock_invoke_anthropic_bad_request_inference_profile(monkeypatch) -> 
 def test_bedrock_invoke_anthropic_permission_denied_raises_immediately(monkeypatch) -> None:
     """PermissionDeniedError must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     sleeps: list[float] = []
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
@@ -2084,8 +2042,8 @@ def test_bedrock_invoke_anthropic_permission_denied_raises_immediately(monkeypat
 def test_bedrock_invoke_converse_validation_exception_raises_immediately(monkeypatch) -> None:
     """ValidationException from boto3 converse must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     sleeps: list[float] = []
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
@@ -2125,8 +2083,8 @@ def test_bedrock_invoke_converse_hard_client_errors_raise_immediately(
 ) -> None:
     """Permanent boto3 ClientError codes must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     sleeps: list[float] = []
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
@@ -2163,8 +2121,8 @@ def test_bedrock_access_denied_surfaces_upstream_aws_message(monkeypatch) -> Non
     ``RuntimeError`` must include the upstream AWS ``Message`` so the user
     knows which one to fix. Regression coverage for #1808."""
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda _s: None)
 
@@ -2200,8 +2158,8 @@ def test_bedrock_access_denied_without_payment_keywords_shows_iam_checklist(
 ) -> None:
     """Other AccessDenied messages keep the broader Bedrock/IAM/marketplace checklist."""
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-        _InactiveGuardrailEngine,
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda _s: None)
 
@@ -2478,7 +2436,8 @@ def test_usage_hook_anthropic_invoke_fires_with_correct_token_counts(monkeypatch
             self.messages = _Messages()
 
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
@@ -2522,7 +2481,8 @@ def test_usage_hook_openai_invoke_fires_with_correct_token_counts(monkeypatch) -
             self.chat = _Chat()
 
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
@@ -2540,7 +2500,8 @@ def test_usage_hook_openai_invoke_fires_with_correct_token_counts(monkeypatch) -
 
 def test_usage_hook_bedrock_converse_fires_with_correct_token_counts(monkeypatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     response = {
         "output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}},
@@ -2583,7 +2544,8 @@ def test_usage_hook_exception_propagates(monkeypatch) -> None:
             self.messages = _Messages()
 
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
@@ -2627,7 +2589,8 @@ def test_usage_hook_unset_is_default_noop(monkeypatch) -> None:
             self.messages = _Messages()
 
     monkeypatch.setattr(
-        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+        _InactiveGuardrailEvaluator,
     )
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"

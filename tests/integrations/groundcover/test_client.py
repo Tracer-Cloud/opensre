@@ -28,7 +28,7 @@ def _config(**overrides: Any) -> GroundcoverIntegrationConfig:
 def _text_result(text: str, *, is_error: bool = False) -> types.CallToolResult:
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=text)],
-        isError=is_error,
+        is_error=is_error,
     )
 
 

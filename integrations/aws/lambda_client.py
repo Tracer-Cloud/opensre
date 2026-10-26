@@ -118,7 +118,6 @@ def get_function_code(
         }
 
         if extract_files and code_location and code_size < 5 * 1024 * 1024:
-            # Download and extract if code is under 5MB
             import requests
 
             zip_response = requests.get(code_location, timeout=30)
@@ -195,7 +194,6 @@ def get_recent_invocations(
         response = logs_client.filter_log_events(**kwargs)
         events = response.get("events", [])
 
-        # Parse events to identify invocations
         invocations = []
         current_invocation = None
 
@@ -221,7 +219,6 @@ def get_recent_invocations(
             elif "REPORT RequestId:" in message:
                 if current_invocation:
                     current_invocation["logs"].append(message)
-                    # Parse REPORT for duration and memory
                     if "Duration:" in message:
                         with suppress(IndexError, ValueError):
                             duration_part = message.split("Duration: ")[1].split()[0]
@@ -243,7 +240,7 @@ def get_recent_invocations(
             "data": {
                 "log_group": log_group_name,
                 "invocation_count": len(invocations),
-                "invocations": invocations[-10:],  # Return last 10 invocations
+                "invocations": invocations[-10:],
                 "raw_event_count": len(events),
             },
         }

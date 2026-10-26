@@ -78,7 +78,7 @@ def test_cli_llm_spawn_log_redacts_prompt_in_argv(mock_run: MagicMock, caplog) -
     mock_adapter.parse.return_value = "answer"
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         with caplog.at_level(logging.DEBUG, logger="integrations.llm_cli.runner"):
             client = CLIBackedLLMClient(mock_adapter)
@@ -106,7 +106,7 @@ def test_cli_llm_spawn_log_keeps_non_prompt_argv_args(mock_run: MagicMock, caplo
     mock_adapter.parse.return_value = "answer"
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         with caplog.at_level(logging.DEBUG, logger="integrations.llm_cli.runner"):
             client = CLIBackedLLMClient(mock_adapter)
@@ -133,7 +133,7 @@ def test_cli_llm_spawn_log_redacts_prompt_equals_form(mock_run: MagicMock, caplo
     mock_adapter.parse.return_value = "answer"
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         with caplog.at_level(logging.DEBUG, logger="integrations.llm_cli.runner"):
             client = CLIBackedLLMClient(mock_adapter)
@@ -170,7 +170,7 @@ def test_runner_uses_adapter_explain_failure_for_quota(mock_run: MagicMock) -> N
         returncode=1, stdout="", stderr="429 Too Many Requests: quota exceeded"
     )
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter)
         with pytest.raises(RuntimeError, match="quota or rate limit exceeded"):
@@ -209,7 +209,7 @@ def test_toolcall_cli_invocation_uses_low_reasoning_effort(
     mock_adapter.parse.return_value = "answer"
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model_type=ModelType.TOOLCALL)
         client.invoke("hello")
@@ -226,7 +226,7 @@ def test_invoke_stream_yields_plain_stdout_before_process_exit() -> None:
         "sys.stdout.write('done'); sys.stdout.flush()"
     )
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(_PlainStreamingAdapter(script))
         stream = client.invoke_stream("hello")

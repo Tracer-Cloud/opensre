@@ -13,7 +13,6 @@ from integrations.rocketchat import delivery as rocketchat_delivery
 from integrations.rocketchat.delivery import (
     post_rocketchat_message,
     post_rocketchat_webhook,
-    send_rocketchat_report,
 )
 
 # ---------------------------------------------------------------------------
@@ -224,67 +223,6 @@ class TestRocketChatExceptionRedaction:
 
 
 # ---------------------------------------------------------------------------
-# send_rocketchat_report
-# ---------------------------------------------------------------------------
-
-_CTX = {
-    "server_url": _SERVER,
-    "channel": "#incidents",
-    "auth_token": "tok",
-    "user_id": "u1",
-}
-
-
-def test_send_report_posts_attachment(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    def _fake_post(url: str, *, json: dict[str, Any], **_kw: Any) -> MagicMock:
-        captured["url"] = url
-        captured["json"] = json
-        return _mock_response(200, _ok_body())
-
-    monkeypatch.setattr(
-        "infrastructure.delivery.notifications.delivery_transport.httpx.post", _fake_post
-    )
-    ok, error = send_rocketchat_report("Report text", _CTX)
-
-    assert ok is True
-    assert error == ""
-    assert captured["json"]["channel"] == "#incidents"
-    attachment = captured["json"]["attachments"][0]
-    assert attachment["title"] == "Investigation Complete"
-    assert attachment["text"] == "Report text"
-    assert attachment["color"] == "#E74C3C"
-
-
-def test_send_report_returns_false_on_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "infrastructure.delivery.notifications.delivery_transport.httpx.post",
-        lambda *_a, **_kw: _mock_response(403, {"success": False, "error": "unauthorized"}),
-    )
-    ok, error = send_rocketchat_report("Report", _CTX)
-    assert ok is False
-    assert "unauthorized" in error
-
-
-def test_send_report_truncates_text_to_4096(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    monkeypatch.setattr(
-        "infrastructure.delivery.notifications.delivery_transport.httpx.post",
-        lambda *_a, **kw: (
-            captured.update({"attachments": kw["json"].get("attachments", [])})
-            or _mock_response(200, _ok_body())
-        ),  # type: ignore[misc]
-    )
-    long_report = "x" * 5000
-    send_rocketchat_report(long_report, _CTX)
-    text = captured["attachments"][0]["text"]
-    assert len(text) == 4096
-    assert text.endswith("…")
-
-
-# ---------------------------------------------------------------------------
 # post_rocketchat_webhook
 # ---------------------------------------------------------------------------
 
@@ -370,55 +308,3 @@ def test_post_webhook_error_body_redacts_url(monkeypatch: pytest.MonkeyPatch) ->
     assert ok is False
     assert _WEBHOOK not in error
     assert "<redacted>" in error
-
-
-# ---------------------------------------------------------------------------
-# send_rocketchat_report — webhook routing
-# ---------------------------------------------------------------------------
-
-
-def test_send_report_prefers_webhook_over_pat(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    def _fake_post(url: str, *, json: dict[str, Any], **_kw: Any) -> MagicMock:
-        captured["url"] = url
-        captured["json"] = json
-        return _mock_response(200, {"success": True})
-
-    monkeypatch.setattr(
-        "infrastructure.delivery.notifications.delivery_transport.httpx.post", _fake_post
-    )
-    ok, error = send_rocketchat_report("Report text", {**_CTX, "webhook_url": _WEBHOOK})
-
-    assert ok is True
-    assert error == ""
-    assert captured["url"] == _WEBHOOK
-    assert "channel" not in captured["json"]
-    attachment = captured["json"]["attachments"][0]
-    assert attachment["title"] == "Investigation Complete"
-    assert attachment["text"] == "Report text"
-
-
-def test_send_report_webhook_only_context(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    def _fake_post(url: str, **_kw: Any) -> MagicMock:
-        captured["url"] = url
-        return _mock_response(200, {"success": True})
-
-    monkeypatch.setattr(
-        "infrastructure.delivery.notifications.delivery_transport.httpx.post", _fake_post
-    )
-    ok, _ = send_rocketchat_report("Report", {"webhook_url": _WEBHOOK})
-    assert ok is True
-    assert captured["url"] == _WEBHOOK
-
-
-def test_send_report_webhook_failure_propagates_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "infrastructure.delivery.notifications.delivery_transport.httpx.post",
-        lambda *_a, **_kw: _mock_response(400, {"success": False, "error": "disabled"}),
-    )
-    ok, error = send_rocketchat_report("Report", {"webhook_url": _WEBHOOK})
-    assert ok is False
-    assert "disabled" in error

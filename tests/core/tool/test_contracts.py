@@ -178,7 +178,7 @@ def test_static_typechecking_rejects_surfaces_typos() -> None:
     code = """from core.tool.contracts import BaseTool
 
 class Tool(BaseTool):
-    surfaces = ("investigaton",)
+    surfaces = ("actoin",)
 """
     stdout = _run_mypy_snippet(code)
     assert "Incompatible types in assignment" in stdout, stdout

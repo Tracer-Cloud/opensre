@@ -1,7 +1,7 @@
 """Twilio SMS notification tool.
 
 Lets the agent push a short SMS notification through a configured
-Twilio integration. The investigation planner exposes this tool
+Twilio integration. The tool registry exposes this tool
 whenever a Twilio integration with the SMS channel enabled exists.
 """
 

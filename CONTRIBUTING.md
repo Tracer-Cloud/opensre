@@ -8,6 +8,18 @@ Welcome to OpenSRE
 - **Discord:** [https://discord.gg/opensre](https://discord.gg/opensre)
 - **X/Twitter:** [@open_sre](https://x.com/open_sre)
 
+## Current Priorities
+
+The public roadmap focuses on three areas:
+
+- **Scheduled tasks** — recurring skills, scheduler reliability, and delivery
+- **CI/CD skills and improvements** — release gating, packaging checks, installer verification
+- **Parallelization** — concurrent scheduled runs, delivery fan-out, and CI/test parallelism
+
+Browse the backlog by the `scheduled-task`, `ci`, `skills`, and `parallelization`
+labels. Investigation-pipeline, evidence-mapper, and cleanup-only refactor tasks
+are no longer on the roadmap; new issues in those areas will be closed.
+
 ## How to Contribute
 
 Looking for a safe first contribution? See [Good First Issues](docs/good-first-issues/README.md).
@@ -16,7 +28,7 @@ Use the path that matches the kind of contribution you want to make:
 
 1. **Bugs & small fixes** -> Open a PR. If you need to file an issue first, use the [bug report template](https://github.com/Tracer-Cloud/opensre/issues/new?template=bug_report.yml).
 2. **New features or behavioral changes** -> Start with a [feature request](https://github.com/Tracer-Cloud/opensre/issues/new?template=feature_request.yml) or ask in Discord before coding. Most feature ideas are better shipped as third-party plugins via the plugin SDK.
-3. **Improvements tied to concrete work** -> Use the [improvement template](https://github.com/Tracer-Cloud/opensre/issues/new?template=improvement.yml) when proposing a focused refactor, optimization, or quality improvement.
+3. **Improvements tied to concrete work** -> Use the [improvement template](https://github.com/Tracer-Cloud/opensre/issues/new?template=improvement.yml) when proposing a measurable improvement to scheduled tasks, CI/CD, performance, reliability, or parallel execution.
 4. **Refactor-only PRs** -> Do not open one unless a maintainer explicitly asked for it as part of a real fix.
 5. **Test/CI-only PRs for known `main` failures** -> Do not open one unless the change is required to validate a real fix the maintainers asked for.
 6. **Questions** -> Use the docs, email [support@opensre.com](mailto:support@opensre.com), or ask in Discord [#contribute](http://discord.gg/opensre). GitHub Issues are for actionable work.
@@ -30,7 +42,7 @@ See **[SETUP.md](SETUP.md)** for detailed setup instructions including Windows-s
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and clone the repository (see [SETUP.md](SETUP.md) for Windows and alternatives)
 2. Install dependencies: `make install`
-3. Run checks: `make lint && make format-check && make typecheck && make test-cov`
+3. Follow the validation workflow in [CI.md](CI.md).
     - When invoking the CLI from your checkout, prefer **`uv run opensre …`** (see `SETUP.md` troubleshooting if another `opensre` shadows `.venv`).
 4. Build release artifacts when needed: `make build`
 
@@ -92,7 +104,7 @@ Notes:
 
 - `source` is required for function tools.
 - `name`, `description`, and `input_schema` are inferred by default.
-- `surfaces` defaults to `("investigation",)`. Pass `surfaces=("investigation", "chat")` to expose the tool in both investigation and chat contexts.
+- `surfaces` defaults to `("chat",)`. Pass `surfaces=("chat", "action")` to expose the tool in both chat and action contexts.
 - Use the existing package/class style when a tool has complex helper logic, multiple exports, or substantial integration-specific code.
 
 The example above is the minimal shape. For **where** the tool belongs
@@ -107,37 +119,11 @@ verification) follow [docs/adding-tools-and-integrations.md](docs/adding-tools-a
 - **No Inline Tests:** Avoid adding `*_test.py` files directly inside source packages. We are phasing out existing inline tests to keep the core logic clean.
 - Bug fixes should include a test that would have caught the bug
 - New features should have corresponding tests
-- Aim for >80% code coverage (run `make test-cov` to check)
+- Aim for >80% code coverage; `make test-cov` is available for an optional local report.
 
-#### Tests under `tests/synthetic/` need an explicit `pytest.mark.synthetic` marker
+### 4. Validate Changes
 
-The synthetic test tree has its own Make target (`make test-synthetic`) and is excluded from `make test-cov`. The two targets use marker filters:
-
-- `make test-cov` runs `pytest --ignore=tests/synthetic -m "not synthetic"`, so the whole `tests/synthetic/` tree is excluded.
-- `make test-synthetic` runs `pytest -m synthetic`, so a file without `pytest.mark.synthetic` is collected but skipped.
-
-If you add a new test file under `tests/synthetic/`, declare the marker at module level so the file runs under `make test-synthetic`:
-
-```python
-import pytest
-
-pytestmark = pytest.mark.synthetic
-```
-
-Without this marker the new file silently runs in **zero** standard CI configurations. The pattern is already in `tests/synthetic/rds_postgres/test_suite.py`; new files in the same tree should follow it.
-
-See [#1671](https://github.com/Tracer-Cloud/opensre/issues/1671) for the meta-issue tracking this discoverability gap.
-
-### 4. Run Local Checks (Required Before PR)
-
-```bash
-make lint          # ruff: check code style
-make format-check  # ruff: check formatting (read-only)
-make typecheck     # mypy: check type annotations
-make test-cov      # pytest: run tests with coverage report
-```
-
-All four must pass. **CI will block merging if any fail.**
+See [CI.md](CI.md) for local validation, required PR checks, and review follow-through.
 
 ### Run one focused test
 
@@ -147,7 +133,6 @@ Replace the placeholders with your actual file or test name:
 pytest tests/cli/test_.py                                       # single file
 pytest tests/cli/test_.py::test_                                # single function
 pytest tests/tools/ -k "test_registry"                          # tools example
-pytest tests/synthetic/ -k "test_scenario"                      # no live infra needed
 ```
 
 ### 5. Open a Pull Request
@@ -169,7 +154,7 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 ### PR Checklist Before Submitting
 
 - Linked to the relevant issue
-- All local checks pass: `make lint && make format-check && make typecheck && make test-cov`
+- Followed [CI.md](CI.md) and reported validation results in the PR.
 - Added tests for bug fixes or new features
 - Updated documentation if behavior changed
 - Code follows project style (see **Code Quality** section below)
@@ -178,21 +163,9 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 
 ### Greptile Code Review
 
-We use [Greptile](https://greptile.com) for automated code review. Before a PR can be merged it must reach a **5/5 confidence score** with zero unresolved comments.
-
-**How Greptile, human review, and CI fit together:** see the public
-[Pull request review flow](docs/pr-review-flow.mdx) guide.
-
-**Trigger a review** by posting this comment on your PR:
-
-```
-@greptile review
-```
-
-Give it about **5–10 minutes** (sometimes longer), then address each comment and
-re-trigger until you hit 5/5.
-
-> **Automate the loop** — the [greploop skill](https://skills.sh/greptileai/skills/greploop) handles triggering, waiting, fixing, and re-reviewing automatically until 5/5 is reached.
+See [CI.md §8](CI.md#8-post-pr-follow-through) for review triggers and merge
+requirements. For an overview of automated and human review, see the
+[Pull request review flow](docs/guides/pr-review-flow.mdx) guide.
 
 ### If Your PR Includes Screenshots or Logs
 
@@ -216,6 +189,10 @@ This ensures you understand the code, not just copied it. Reviewers will pay ext
 
 ## Code Quality Standards
 
+See [AGENTS.md](AGENTS.md) for repository-wide conventions and
+[Contributor notes](CONTRIBUTOR_NOTES.md) for test fakes, LLM request handling,
+and safe CodeQL remediation.
+
 - **Clarity over cleverness:** Code should be easy to understand and maintain
 - **DRY principle:** Don't repeat yourself; extract common patterns
 - **Strong typing:** Use type hints for all function parameters and returns
@@ -231,15 +208,6 @@ We use:
 - **mypy** for strict type checking
 - **Black-compatible** formatting (4-space indents)
 - **pytest** for testing with coverage tracking
-
-Run these before every commit:
-
-```bash
-make lint          # Auto-fixes many style issues
-make format-check  # Checks formatting without modifying files
-make typecheck     # Catches type errors
-make test-cov      # Ensures tests pass and coverage is tracked
-```
 
 To verify the package can be shipped, run:
 
@@ -265,14 +233,14 @@ Use the **[bug report template](https://github.com/Tracer-Cloud/opensre/issues/n
 
 ```
 ### Expected Behavior
-`opensre investigate --org myorg` should return investigation results
+`opensre ask "why is checkout-api slow?"` should print an answer
 
 ### Actual Behavior
 Command exits silently with no output
 Error: exit code 0
 
 ### Steps to Reproduce
-1. Run `opensre investigate --org myorg`
+1. Run `opensre ask "why is checkout-api slow?"`
 2. Observe output
 
 ### Environment
@@ -294,7 +262,7 @@ Use the **[feature request template](https://github.com/Tracer-Cloud/opensre/iss
 
 ## Suggesting Improvements
 
-Use the **[improvement template](https://github.com/Tracer-Cloud/opensre/issues/new?template=improvement.yml)** to propose refactors, optimizations, or quality improvements. It requires:
+Use the **[improvement template](https://github.com/Tracer-Cloud/opensre/issues/new?template=improvement.yml)** to propose measurable improvements to scheduled tasks, CI/CD, performance, reliability, or parallel execution. Cleanup-only refactors are out of scope. It requires:
 
 - **Current state:** How does it work now? (with code references)
 - **Desired state:** How should it work instead?

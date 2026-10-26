@@ -38,8 +38,8 @@ def _check_env_file() -> tuple[bool, str]:
 
 
 def _check_llm_provider() -> tuple[bool, str]:
-    from config.config import get_configured_llm_provider
     from config.llm_auth.credentials import status as credential_status
+    from config.llm_settings import get_configured_llm_provider
 
     provider = get_configured_llm_provider()
     auth = credential_status(provider)
@@ -51,11 +51,11 @@ def _check_llm_provider() -> tuple[bool, str]:
 
 
 def _check_integrations() -> tuple[bool, str]:
-    from integrations.store import STORE_PATH, list_integrations
+    from integrations.store import list_integrations, resolve_store_path
 
-    path = Path(str(STORE_PATH))
+    path = resolve_store_path()
     if not path.exists():
-        return False, f"{STORE_PATH} not found — run 'opensre integrations setup'"
+        return False, f"{path} not found — run 'opensre integrations setup'"
     items = list_integrations()
     if not items:
         return False, "no integrations configured"
@@ -70,7 +70,7 @@ def _check_buzz_cli() -> tuple[bool, str]:
     distribution (cargo build only), so this check would otherwise warn every
     user who has never touched Buzz.
     """
-    from integrations.buzz.client import resolve_buzz_binary
+    from integrations.buzz import resolve_buzz_binary
     from integrations.catalog import resolve_effective_integrations
 
     if not resolve_effective_integrations().get("buzz"):
@@ -80,7 +80,7 @@ def _check_buzz_cli() -> tuple[bool, str]:
         return True, f"buzz CLI found ({path})"
     return False, (
         "Buzz is configured but the buzz CLI is not on PATH — install with "
-        "`cargo install --path crates/buzz-cli` (see docs/messaging/buzz)"
+        "`cargo install --path crates/buzz-cli` (see docs/integrations/messaging/buzz)"
     )
 
 

@@ -8,11 +8,10 @@ a frozen view, and a package's purpose from its name alone.
 
 | Term | Means | Example |
 | --- | --- | --- |
-| **State** | Mutable investigation/session facts that evolve during a run | `AgentState`, `InvestigationState`, harness port `SessionState` |
+| **State** | Mutable agent/session facts that evolve during a run | `AgentState`, harness port `SessionState` |
 | **Storage** / **Repo** | Durable persistence backends (not the in-memory turn port) | `SessionStore`, `SessionRepo`, `JsonlSessionStore` |
 | **Snapshot** | A frozen view captured at a boundary (turn start, run start) | `TurnSnapshot` |
 | **RunInput** / **RunResult** | The input to and output from one `Agent.run()` boundary | `AgentRunInput`, `AgentRunResult` |
-| **Slice** | A typed segment of a state dict | `DiagnosisSlice`, `AlertInputSlice` |
 | **Resources** | Handles passed into tool executors for one call | `ToolCallResources` |
 | **Budget** | An LLM token/window policy — not application state | `enforce_token_budget` |
 | **Host** | The callback contract an algorithm drives (a `Protocol`) | `LoopHost` |

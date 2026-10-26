@@ -7,10 +7,28 @@ import os
 from rich.console import Console
 from rich.markup import escape
 
-import surfaces.interactive_shell.command_registry.repl_data as repl_data
 from config.constants.llm import LLM_PROVIDER_ENV
-from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING, render_models_table
+from surfaces.interactive_shell.command_registry.model.presentation import render_current_models
+from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING
 from surfaces.shared.terminal.components.choice_menu import print_valid_choice_list
+
+
+def _account_model_change_is_locked(console: Console) -> bool:
+    """Explain and enforce the hosted model lock for signed-in accounts."""
+    from config.account import account_llm_route
+
+    route = account_llm_route()
+    if route is None:
+        return False
+    console.print(
+        f"[{WARNING}]LLM settings are managed by your OpenSRE account:[/] "
+        f"openai ({escape(route.model)}, hosted by OpenSRE)."
+    )
+    console.print(
+        f"[{DIM}]Run[/] [bold]/logout[/bold] "
+        f"[{DIM}]before configuring a different provider or model.[/]"
+    )
+    return True
 
 
 def _format_supported_models(provider_models: tuple[object, ...]) -> str:
@@ -88,6 +106,9 @@ def switch_llm_provider(
     *,
     toolcall_model: str | None = None,
 ) -> bool:
+    if _account_model_change_is_locked(console):
+        return False
+
     from config.llm_auth.credentials import status as credential_status
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
     from surfaces.shared.llm_setup.env_sync import sync_provider_env
@@ -107,6 +128,12 @@ def switch_llm_provider(
     # provider has no credential path. Stale metadata gets a warning, because
     # confirming it requires an intentional request-time credential read.
     auth_status = credential_status(provider.value)
+    if provider.credential_kind == "subscription" and not auth_status.configured:
+        console.print(
+            f"[{ERROR}]sign in before selecting this subscription:[/] "
+            f"[bold]/auth login {provider.value}[/bold]"
+        )
+        return False
     if provider.value == "azure-openai":
         from core.llm.providers.azure_openai import azure_openai_endpoint_configured
 
@@ -195,6 +222,13 @@ def switch_llm_provider(
             f"[{DIM}]known reasoning models:[/] {escape(_format_supported_models(provider.models))}"
         )
         return False
+    if selected_model:
+        from surfaces.interactive_shell.command_registry.model.provider_models import (
+            validate_model_available,
+        )
+
+        if not validate_model_available(provider, selected_model, console):
+            return False
 
     selected_toolcall: str | None = None
     if toolcall_model is not None:
@@ -225,16 +259,17 @@ def switch_llm_provider(
     # Be explicit about which slot each model lands in.
     console.print(f"[{HIGHLIGHT}]switched LLM provider:[/] {provider.value}")
     console.print(
-        f"[{HIGHLIGHT}]reasoning model:[/] {selected_model or 'provider default'} "
+        f"[{HIGHLIGHT}]reasoning model:[/] "
+        f"{escape(selected_model) if selected_model else 'provider default'} "
         f"[{DIM}]({provider.model_env})[/]"
     )
     if selected_toolcall:
         console.print(
-            f"[{HIGHLIGHT}]toolcall model:[/] {selected_toolcall} "
+            f"[{HIGHLIGHT}]toolcall model:[/] {escape(selected_toolcall)} "
             f"[{DIM}]({provider.toolcall_model_env})[/]"
         )
     console.print(f"[{DIM}]updated {env_path}[/]")
-    render_models_table(console, repl_data.load_llm_settings())
+    render_current_models(console)
     return True
 
 
@@ -245,6 +280,9 @@ def switch_toolcall_model(
     provider_name: str | None = None,
 ) -> bool:
     """Set the toolcall model for the active (or named) provider."""
+    if _account_model_change_is_locked(console):
+        return False
+
     from config.env_file import sync_env_values
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
@@ -276,11 +314,11 @@ def switch_toolcall_model(
     _reset_runtime_llm_caches()
 
     console.print(
-        f"[{HIGHLIGHT}]toolcall model set to:[/] {new_model} "
+        f"[{HIGHLIGHT}]toolcall model set to:[/] {escape(new_model)} "
         f"[{DIM}]({provider.value} · {provider.toolcall_model_env})[/]"
     )
     console.print(f"[{DIM}]updated {env_path}[/]")
-    render_models_table(console, repl_data.load_llm_settings())
+    render_current_models(console)
     return True
 
 
@@ -291,6 +329,9 @@ def switch_reasoning_model(
     provider_name: str | None = None,
 ) -> bool:
     """Set the reasoning model for the active (or named) provider."""
+    if _account_model_change_is_locked(console):
+        return False
+
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
     from surfaces.shared.llm_setup.env_sync import sync_reasoning_model_env
 
@@ -316,16 +357,22 @@ def switch_reasoning_model(
             f"[{DIM}]known reasoning models:[/] {escape(_format_supported_models(provider.models))}"
         )
         return False
+    from surfaces.interactive_shell.command_registry.model.provider_models import (
+        validate_model_available,
+    )
+
+    if not validate_model_available(provider, new_model, console):
+        return False
 
     env_path = sync_reasoning_model_env(provider=provider, model=new_model)
     _reset_runtime_llm_caches()
 
     console.print(
-        f"[{HIGHLIGHT}]reasoning model set to:[/] {new_model} "
+        f"[{HIGHLIGHT}]reasoning model set to:[/] {escape(new_model)} "
         f"[{DIM}]({provider.value} · {provider.model_env})[/]"
     )
     console.print(f"[{DIM}]updated {env_path}[/]")
-    render_models_table(console, repl_data.load_llm_settings())
+    render_current_models(console)
     return True
 
 

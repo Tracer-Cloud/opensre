@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from integrations.vercel.setup import VERCEL_SETUP
+from integrations.vercel import VERCEL_SETUP
 from surfaces.cli.wizard.configurators.spec_configurator import configure_from_spec
 
 

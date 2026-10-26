@@ -61,6 +61,16 @@ class ElasticsearchConfig:
         return h
 
 
+def _http_error(exc: httpx.HTTPStatusError) -> dict[str, Any]:
+    """The failed result for an HTTP error answer; ``status_code`` is what callers branch on."""
+    status = exc.response.status_code
+    return {
+        "success": False,
+        "error": f"HTTP {status}: {exc.response.text[:200]}",
+        "status_code": status,
+    }
+
+
 class ElasticsearchClient:
     """Synchronous client for querying Elasticsearch via the REST API."""
 
@@ -131,10 +141,7 @@ class ElasticsearchClient:
             capture_service_error(
                 exc, logger=logger, integration="elasticsearch", method="list_indices"
             )
-            return {
-                "success": False,
-                "error": f"HTTP {exc.response.status_code}: {exc.response.text[:200]}",
-            }
+            return _http_error(exc)
         except Exception as exc:
             capture_service_error(
                 exc, logger=logger, integration="elasticsearch", method="list_indices"
@@ -161,10 +168,7 @@ class ElasticsearchClient:
             capture_service_error(
                 exc, logger=logger, integration="elasticsearch", method="list_data_streams"
             )
-            return {
-                "success": False,
-                "error": f"HTTP {exc.response.status_code}: {exc.response.text[:200]}",
-            }
+            return _http_error(exc)
         except Exception as exc:
             capture_service_error(
                 exc, logger=logger, integration="elasticsearch", method="list_data_streams"
@@ -242,10 +246,7 @@ class ElasticsearchClient:
                 method="search_logs",
                 extras={"query": query, "time_range_minutes": time_range_minutes},
             )
-            return {
-                "success": False,
-                "error": f"HTTP {exc.response.status_code}: {exc.response.text[:200]}",
-            }
+            return _http_error(exc)
         except Exception as exc:
             capture_service_error(
                 exc,
@@ -276,10 +277,7 @@ class ElasticsearchClient:
             capture_service_error(
                 exc, logger=logger, integration="elasticsearch", method="get_cluster_health"
             )
-            return {
-                "success": False,
-                "error": f"HTTP {exc.response.status_code}: {exc.response.text[:200]}",
-            }
+            return _http_error(exc)
         except Exception as exc:
             capture_service_error(
                 exc, logger=logger, integration="elasticsearch", method="get_cluster_health"

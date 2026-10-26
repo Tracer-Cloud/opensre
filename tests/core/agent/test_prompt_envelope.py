@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
+from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
+from config.runtime_metadata import capture_runtime_facts
 from core.agent_harness.prompts import (
     PromptBlock,
     PromptBlockId,
@@ -15,14 +19,25 @@ from core.agent_harness.prompts import (
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
 
+@pytest.fixture(autouse=True)
+def _text_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the text-history fallback (``OPENSRE_STRUCTURED_HISTORY=0``)."""
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
+
+
+@pytest.fixture
+def pinned_runtime_facts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One reading of the clock for every build: two builds of a turn differ by the time between them."""
+    facts = capture_runtime_facts()
+    monkeypatch.setattr("config.runtime_metadata.capture_runtime_facts", lambda **_kw: dict(facts))
+
+
 def _ctx() -> TurnSnapshot:
     return TurnSnapshot(
         text="show connected integrations",
         conversation_messages=(("user", "hello"),),
         configured_integrations=("github",),
         configured_integrations_known=True,
-        last_state=None,
-        last_synthetic_observation_path=None,
         reasoning_effort=None,
     )
 
@@ -55,21 +70,34 @@ def test_prompt_envelope_renders_ordered_blocks_with_optional_titles() -> None:
         envelope.require_block("missing")
 
 
-def test_action_system_prompt_envelope_matches_legacy_rendering() -> None:
+@pytest.mark.usefixtures("pinned_runtime_facts")
+def test_action_system_prompt_envelope_matches_legacy_rendering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from config.constants import OPENSRE_MEMORY_DISABLED_ENV
+
+    monkeypatch.setenv(OPENSRE_MEMORY_DISABLED_ENV, "1")
     ctx = _ctx()
     envelope = build_action_system_prompt_envelope(ctx)
 
     # ACTION_VENDOR_FRAGMENTS carries integration-owned prompt recipes
     # (e.g. Slack/GitHub action routing) registered via
-    # infrastructure.harness_ports.register_action_prompt_fragment — see
+    # infrastructure.harness_providers.register_action_prompt_fragment — see
     # integrations/harness_adapters.py. It renders empty (and is absent from
     # this id list) when no fragments are registered.
     assert [block.id for block in envelope.blocks] == [
         PromptBlockId.ACTION_SYSTEM_BASE,
+        PromptBlockId.ACTION_GOAL_KERNEL,
         PromptBlockId.ACTION_VENDOR_FRAGMENTS,
         PromptBlockId.ACTION_RUNTIME_FACTS,
         PromptBlockId.ACTION_SKILLS,
         PromptBlockId.CONNECTED_INTEGRATIONS,
+        # GitHub is connected, so the organization's repository preferences
+        # and the fork rule ride every turn even before a repository is named.
+        PromptBlockId.REPOSITORY_CONTEXT,
+        PromptBlockId.ACTION_GOAL_KERNEL_CLOSER,
+        PromptBlockId.ACTION_LIVE_RUNTIME_FACTS,
+        PromptBlockId.TURN_INTERACTION,
         PromptBlockId.RECENT_CONVERSATION,
     ]
     assert (
@@ -91,6 +119,19 @@ def test_action_system_prompt_envelope_matches_legacy_rendering() -> None:
     assert envelope.render() == build_action_system_prompt(ctx)
 
 
+def test_repository_context_is_a_named_context_block() -> None:
+    ctx = replace(
+        _ctx(),
+        active_vcs_repositories={"github": "acme/payments"},
+        known_vcs_repositories={"github": ("Tracer-Cloud/opensre", "acme/payments")},
+    )
+
+    block = build_action_system_prompt_envelope(ctx).require_block(PromptBlockId.REPOSITORY_CONTEXT)
+    assert block.kind == PromptBlockKind.CONTEXT
+    assert block.tier == PromptTier.CONTEXT
+    assert "active=acme/payments" in block.content
+
+
 def _turn(messages: list[tuple[str, str]]) -> TurnSnapshot:
     """A snapshot differing from another only in conversation history."""
     return TurnSnapshot(
@@ -98,8 +139,6 @@ def _turn(messages: list[tuple[str, str]]) -> TurnSnapshot:
         conversation_messages=tuple(messages),
         configured_integrations=("github",),
         configured_integrations_known=True,
-        last_state=None,
-        last_synthetic_observation_path=None,
         reasoning_effort=None,
     )
 
@@ -143,27 +182,31 @@ def test_per_turn_conversation_never_reaches_the_cached_prefix() -> None:
     assert marker in ephemeral
 
 
-def test_the_split_halves_reassemble_into_the_unchanged_render() -> None:
-    """``render()`` output must not move while the halves are introduced.
+def test_the_split_layers_reassemble_into_the_unchanged_render() -> None:
+    """``render()`` output must not move while the layers are introduced.
 
-    Stated as the general contract — join the non-empty halves with the
+    Stated as the general contract — join the non-empty layers with the
     envelope's own separator — so the assertion holds for any envelope, not
     only one that happens to separate with the empty string. Requires every
-    ephemeral block to follow every cached block in declaration order.
+    layer's blocks to follow the previous layer's in declaration order.
     """
     # Arrange
     envelope = build_action_system_prompt_envelope(_turn([("user", "hello")]))
 
     # Act
-    cached, ephemeral = envelope.render_split()
-    rejoined = envelope.separator.join(half for half in (cached, ephemeral) if half)
+    rejoined = envelope.separator.join(layer for layer in envelope.render_split() if layer)
 
     # Assert
     assert rejoined == envelope.render()
 
 
-def test_every_block_declares_which_tier_it_belongs_to() -> None:
+def test_every_block_declares_which_tier_it_belongs_to(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A block with no tier would silently land in the cached prefix."""
+    from config.constants import OPENSRE_MEMORY_DISABLED_ENV
+
+    monkeypatch.setenv(OPENSRE_MEMORY_DISABLED_ENV, "1")
     # Arrange
     envelope = build_action_system_prompt_envelope(_turn([("user", "hello")]))
 
@@ -173,10 +216,15 @@ def test_every_block_declares_which_tier_it_belongs_to() -> None:
     # Assert
     assert tiers == {
         PromptBlockId.ACTION_SYSTEM_BASE: PromptTier.STABLE,
+        PromptBlockId.ACTION_GOAL_KERNEL: PromptTier.STABLE,
         PromptBlockId.ACTION_VENDOR_FRAGMENTS: PromptTier.STABLE,
         PromptBlockId.ACTION_RUNTIME_FACTS: PromptTier.STABLE,
         PromptBlockId.ACTION_SKILLS: PromptTier.STABLE,
         PromptBlockId.CONNECTED_INTEGRATIONS: PromptTier.CONTEXT,
+        PromptBlockId.REPOSITORY_CONTEXT: PromptTier.CONTEXT,
+        PromptBlockId.ACTION_GOAL_KERNEL_CLOSER: PromptTier.EPHEMERAL,
+        PromptBlockId.ACTION_LIVE_RUNTIME_FACTS: PromptTier.EPHEMERAL,
+        PromptBlockId.TURN_INTERACTION: PromptTier.EPHEMERAL,
         PromptBlockId.RECENT_CONVERSATION: PromptTier.EPHEMERAL,
     }
 
@@ -193,14 +241,17 @@ def test_the_action_envelope_exposes_a_stable_half_the_provider_can_cache() -> N
     second = _turn([("user", "hello"), ("assistant", "hi"), ("user", "again")])
 
     # Act
-    first_cached, first_ephemeral = build_action_system_prompt_envelope(first).render_split()
-    second_cached, _ = build_action_system_prompt_envelope(second).render_split()
+    first_cached, _context, first_ephemeral = build_action_system_prompt_envelope(
+        first
+    ).render_split()
+    second_cached = build_action_system_prompt_envelope(second).render_split().cached
 
     # Assert
     assert first_cached == second_cached
     assert len(first_cached) > 20 * len(first_ephemeral)
 
 
+@pytest.mark.usefixtures("pinned_runtime_facts")
 def test_the_rendered_prompt_is_unchanged_by_the_split() -> None:
     """``render()`` must stay the join of the two halves.
 
@@ -306,7 +357,11 @@ def test_newest_conversation_survives_head_preserving_truncation() -> None:
 def test_split_reassembles_when_long_term_memory_is_present(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Volatile memory must sit before ephemeral so join(cached, eph) == render()."""
+    """Memory rides the session context, between the system prompt and the turn.
+
+    It changes on a memory write, so in the cached system prompt one write would
+    re-price the whole prefix; joining the layers still reproduces ``render()``.
+    """
     from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
     from core.domain.memory import save_memory
 
@@ -325,23 +380,63 @@ def test_split_reassembles_when_long_term_memory_is_present(
     assert PromptBlockId.LONG_TERM_MEMORY in ids
     assert ids.index(PromptBlockId.LONG_TERM_MEMORY) < ids.index(PromptBlockId.RECENT_CONVERSATION)
 
-    cached, ephemeral = envelope.render_split()
-    rejoined = envelope.separator.join(half for half in (cached, ephemeral) if half)
+    cached, context, ephemeral = envelope.render_split()
+    rejoined = envelope.separator.join(layer for layer in (cached, context, ephemeral) if layer)
     assert rejoined == envelope.render()
-    assert "LONG-TERM MEMORY" in cached
+    assert "LONG-TERM MEMORY" in context
+    assert "LONG-TERM MEMORY" not in cached
     assert "RECENT CONVERSATION" in ephemeral
     assert marker in ephemeral
     assert marker not in cached
 
 
-def test_every_tier_lands_in_exactly_one_half() -> None:
-    """The halves must partition the blocks whatever tiers exist.
+def test_relevant_memories_ride_the_turn_while_the_index_stays_in_the_session_context(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Memory bodies change with every request, so they must stay out of the cached layers."""
+    from dataclasses import replace
 
-    Selecting the cached half by set membership and the ephemeral half by
-    equality partitions only while the enum has exactly today's members. A tier
-    added later would fall in neither half and vanish from the prompt with
-    nothing failing, so the invariant is asserted over every enum member rather
-    than over the four blocks the action prompt happens to build.
+    from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
+    from core.domain.memory import save_memory
+
+    monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
+    monkeypatch.delenv(OPENSRE_MEMORY_DISABLED_ENV, raising=False)
+    save_memory(
+        slug="redis-eviction",
+        memory_type="infrastructure",
+        description="Redis eviction policy",
+        body="zzmarker-redis-body: allkeys-lru on the session cache.",
+    )
+    save_memory(
+        slug="kafka-topics",
+        memory_type="infrastructure",
+        description="Kafka topic naming",
+        body="zzmarker-kafka-body: team.domain.event",
+    )
+
+    redis = build_action_system_prompt_envelope(replace(_turn([]), text="is redis eviction safe?"))
+    kafka = build_action_system_prompt_envelope(replace(_turn([]), text="name the kafka topic"))
+
+    assert redis.render_cached() == kafka.render_cached()
+    assert redis.render_context() == kafka.render_context()
+    redis_cached, redis_context, redis_turn = redis.render_split()
+    assert "zzmarker-redis-body" in redis_turn
+    assert "zzmarker-redis-body" not in redis_cached + redis_context
+    assert "zzmarker-kafka-body" not in redis_turn
+    ids = [block.id for block in redis.blocks]
+    assert (
+        ids.index(PromptBlockId.RELEVANT_MEMORIES) == ids.index(PromptBlockId.TURN_INTERACTION) + 1
+    )
+
+
+def test_every_tier_lands_in_exactly_one_layer() -> None:
+    """The layers must partition the blocks whatever tiers exist.
+
+    Selecting layers by set membership partitions only while the enum has
+    exactly today's members. A tier added later would fall in no layer and
+    vanish from the prompt with nothing failing, so the invariant is asserted
+    over every enum member rather than over the blocks the action prompt
+    happens to build.
     """
     # Arrange
     from core.agent_harness.prompts import PromptTier
@@ -355,22 +450,23 @@ def test_every_tier_lands_in_exactly_one_half() -> None:
     )
 
     # Act
-    cached, ephemeral = envelope.render_split()
+    layers = envelope.render_split()
 
     # Assert
     for tier in PromptTier:
         marker = f"marker-{tier.value}"
-        assert (marker in cached) ^ (marker in ephemeral), f"{tier} landed in neither or both"
+        landed = sum(marker in layer for layer in layers)
+        assert landed == 1, f"{tier} landed in {landed} layers"
 
 
 def test_layers_are_emitted_in_tier_order_however_blocks_were_added() -> None:
     """The three layers must hold by construction, not by authoring discipline.
 
-    Hermes joins the prompt ``stable → context → volatile``. Today that order
-    survives only because the builder happens to append in that sequence — a
-    volatile block added after an ephemeral one would silently break the layer
-    contract and land inside the churn. Rendering sorts by tier so the layout is
-    a property of the envelope, not of the order someone typed.
+    Prompt blocks join the prompt ``stable → context → volatile``. Today that
+    order survives only because the builder happens to append in that sequence —
+    a volatile block added after an ephemeral one would silently break the layer
+    contract and land inside the churn. Rendering sorts by tier so the layout is a
+    property of the envelope, not of the order someone typed.
     """
     # Arrange — deliberately scrambled
     from core.agent_harness.prompts import PromptTier
@@ -407,58 +503,3 @@ def test_blocks_sharing_a_tier_keep_the_order_they_were_added() -> None:
 
     # Act / Assert
     assert envelope.render() == "BASE|SKILLS"
-
-
-def test_the_assistant_cached_half_is_byte_identical_across_turns() -> None:
-    """The action path had this pinned; the assistant path only claimed it.
-
-    ``build_cli_agent_turn_prompt`` sends ``system`` and the user turn as
-    separate messages, so the system half must not move between turns or the
-    provider's cache marker never hits — the same defect the action path was
-    fixed for.
-    """
-    # Arrange
-    from core.agent_harness.prompts.assistant import (
-        build_assistant_system_prompt_envelope,
-    )
-
-    shared = {
-        "reference": "opensre --help" * 40,
-        "agents_md": "repo map" * 20,
-        "investigation_flow": "flow" * 30,
-        "environment": "env block",
-        "long_term_memory": "remembered facts",
-    }
-
-    # Act — differ only in per-turn content
-    first, _ = build_assistant_system_prompt_envelope(
-        history="user: hello", docs="docs for question one" * 10, **shared
-    ).render_split()
-    second, _ = build_assistant_system_prompt_envelope(
-        history="user: hello\nassistant: hi\nuser: and now?",
-        docs="docs for a different question" * 10,
-        prior_action_facts="fact from turn 1",
-        **shared,
-    ).render_split()
-
-    # Assert
-    assert first == second
-
-
-def test_per_question_docs_never_reach_the_assistant_cached_half() -> None:
-    """Docs are retrieved per message, so caching them would invalidate every turn."""
-    # Arrange
-    from core.agent_harness.prompts.assistant import (
-        build_assistant_system_prompt_envelope,
-    )
-
-    marker = "zzmarker-docs-retrieved-for-this-question"
-
-    # Act
-    cached, ephemeral = build_assistant_system_prompt_envelope(
-        reference="ref", history="user: hi", docs=marker
-    ).render_split()
-
-    # Assert
-    assert marker not in cached
-    assert marker in ephemeral

@@ -27,6 +27,15 @@ from typing import Any
 import httpx
 from pydantic import Field, field_validator
 
+from config.constants.rabbitmq import (
+    RABBITMQ_HOST_ENV,
+    RABBITMQ_MANAGEMENT_PORT_ENV,
+    RABBITMQ_PASSWORD_ENV,
+    RABBITMQ_SSL_ENV,
+    RABBITMQ_USERNAME_ENV,
+    RABBITMQ_VERIFY_SSL_ENV,
+    RABBITMQ_VHOST_ENV,
+)
 from config.strict_config import StrictConfigModel
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.coercion import safe_int
@@ -106,22 +115,22 @@ def build_rabbitmq_config(raw: dict[str, Any] | None) -> RabbitMQConfig:
 
 def rabbitmq_config_from_env() -> RabbitMQConfig | None:
     """Load a RabbitMQ config from env vars."""
-    host = os.getenv("RABBITMQ_HOST", "").strip()
-    username = os.getenv("RABBITMQ_USERNAME", "").strip()
+    host = os.getenv(RABBITMQ_HOST_ENV, "").strip()
+    username = os.getenv(RABBITMQ_USERNAME_ENV, "").strip()
     if not host or not username:
         return None
     return build_rabbitmq_config(
         {
             "host": host,
             "management_port": os.getenv(
-                "RABBITMQ_MANAGEMENT_PORT",
+                RABBITMQ_MANAGEMENT_PORT_ENV,
                 str(DEFAULT_RABBITMQ_MANAGEMENT_PORT),
             ).strip(),
             "username": username,
-            "password": os.getenv("RABBITMQ_PASSWORD", ""),
-            "vhost": os.getenv("RABBITMQ_VHOST", DEFAULT_RABBITMQ_VHOST).strip(),
-            "ssl": os.getenv("RABBITMQ_SSL", "false").strip().lower() in ("true", "1", "yes"),
-            "verify_ssl": os.getenv("RABBITMQ_VERIFY_SSL", "true").strip().lower()
+            "password": os.getenv(RABBITMQ_PASSWORD_ENV, ""),
+            "vhost": os.getenv(RABBITMQ_VHOST_ENV, DEFAULT_RABBITMQ_VHOST).strip(),
+            "ssl": os.getenv(RABBITMQ_SSL_ENV, "false").strip().lower() in ("true", "1", "yes"),
+            "verify_ssl": os.getenv(RABBITMQ_VERIFY_SSL_ENV, "true").strip().lower()
             in ("true", "1", "yes"),
         }
     )

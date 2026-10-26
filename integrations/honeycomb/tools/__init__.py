@@ -6,10 +6,53 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.tool import BaseTool
 from core.tool_framework.utils import tool_unavailable
+from infrastructure.text.truncation import truncate
 from integrations.honeycomb.client import HoneycombClient
 from integrations.honeycomb.config import HoneycombIntegrationConfig
+
+#: The query's group-by breakdown limit is sent to the Honeycomb API
+#: unclamped, so a returned count can only be compared against the caller's
+#: own requested limit -- not a fixed page size -- to detect saturation.
+_TARGET_SUMMARY_TRUNCATE_LEN = 80
+
+
+def _map_query_honeycomb_traces(
+    evidence: dict[str, Any], output: dict[str, Any], tool_input: dict[str, Any]
+) -> None:
+    """Cite the trace/span group count and the service or trace queried."""
+    if not output.get("available"):
+        return
+    traces = output.get("traces") or []
+    if not traces:
+        return
+    total = output.get("total_traces", len(traces))
+    requested_limit = tool_input.get("limit", 20)
+    count_label = f"{total}+" if total >= max(requested_limit, 1) else str(total)
+    summary = f"{count_label} trace/span group(s)"
+
+    def _safe(value: str) -> str:
+        return truncate(value.replace("\n", " "), _TARGET_SUMMARY_TRUNCATE_LEN)
+
+    # A query can filter by service_name and trace_id together (they AND in
+    # client.query_traces) -- cite both when both were applied, not just one.
+    service_name = output.get("service_name")
+    trace_id = output.get("trace_id")
+    targets = []
+    if service_name:
+        targets.append(f"service '{_safe(str(service_name))}'")
+    if trace_id:
+        targets.append(f"trace '{_safe(str(trace_id))}'")
+    if targets:
+        summary += f" for {', '.join(targets)}"
+    record_evidence_entry(
+        evidence,
+        source="query_honeycomb_traces",
+        label="Honeycomb Traces",
+        summary=summary,
+    )
 
 
 def _honeycomb_available(sources: dict) -> bool:
@@ -33,6 +76,7 @@ class HoneycombTracesTool(BaseTool):
 
     name = "query_honeycomb_traces"
     source = "honeycomb"
+    evidence_mapper = _map_query_honeycomb_traces
     description = "Query Honeycomb for trace/span groups related to an incident."
     use_cases = [
         "Investigating failing or slow distributed traces in Honeycomb",

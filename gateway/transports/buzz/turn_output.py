@@ -1,42 +1,74 @@
-"""Buzz turn output with throttled status editing.
+"""Buzz turn output: edit one message in place.
 
-Unlike Telegram, Buzz content is already markdown (Desktop renders it
-directly), so no HTML transform is needed on the way out. Status updates edit
-one message in place via ``buzz messages edit`` (a stored event, confirmed
-safe for repeated edits — see gateway/transports/buzz/__init__.py), matching
-Telegram's/Discord's UX rather than posting a new message per update.
+Buzz content is already markdown (Desktop renders it directly), so no HTML
+transform is needed on the way out, and Buzz posts no typing indicator. Status
+updates edit one stored event in place via ``buzz messages edit`` (confirmed
+safe for repeated edits), matching Telegram's/Discord's UX.
 """
 
 from __future__ import annotations
 
 import logging
-import threading
-import time
-from collections.abc import Iterable
 
+from gateway.core.single_message_output import (
+    SingleMessageTurnOutput,
+    log_preview,
+)
 from infrastructure.delivery.notifications.limits import MAX_MESSAGE_SIZE
 from infrastructure.text.truncation import truncate
-from infrastructure.turn_host.status_messages import (
-    EMPTY_RESPONSE_MESSAGE,
-    initial_status_message,
-    normalize_gateway_status,
-    status_from_response_label,
-    user_facing_error_message,
-)
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
 
-_LOG_PREVIEW_LIMIT = 500
 logger = logging.getLogger("gateway")
 
 
-def _log_preview(text: str) -> str:
-    preview = text.replace("\n", " ").strip()
-    if len(preview) > _LOG_PREVIEW_LIMIT:
-        return f"{preview[: _LOG_PREVIEW_LIMIT - 3]}..."
-    return preview
+class _BuzzChannel:
+    """Vendor I/O for a Buzz channel message edited in place."""
+
+    # A status arriving after finalize waits for the next finalize to send a
+    # fresh message, rather than reopening a placeholder mid-continuation.
+    reopen_placeholder_on_status = False
+
+    def __init__(self, *, client: BuzzClient, channel_id: str) -> None:
+        self._client = client
+        self._channel_id = channel_id
+        self.destination = f"channel={channel_id}"
+
+    def on_status(self) -> None:
+        # Buzz has no typing indicator.
+        return
+
+    def open_placeholder(self, text: str) -> str:
+        result = self._client.send_message(
+            channel=self._channel_id, content=truncate(text, MAX_MESSAGE_SIZE, suffix="…")
+        )
+        return result["event_id"] if result["success"] else ""
+
+    def edit_preview(self, message_id: str, text: str) -> bool:
+        result = self._client.edit_message(
+            event_id=message_id, content=truncate(text, MAX_MESSAGE_SIZE, suffix="…")
+        )
+        return bool(result["success"])
+
+    def deliver_final(self, message_id: str, answer: str) -> str:
+        final = truncate(answer, MAX_MESSAGE_SIZE, suffix="…")
+        if message_id and self._edit_final(message_id, final):
+            logger.info("outbound %s text=%r", self.destination, log_preview(final))
+            return ""
+        if self._send_final(final):
+            logger.info("outbound %s text=%r", self.destination, log_preview(final))
+            return ""
+        return message_id
+
+    def _edit_final(self, message_id: str, answer: str) -> bool:
+        result = self._client.edit_message(event_id=message_id, content=answer)
+        return bool(result["success"])
+
+    def _send_final(self, answer: str) -> bool:
+        result = self._client.send_message(channel=self._channel_id, content=answer)
+        return bool(result["success"])
 
 
-class BuzzTurnOutput:
+class BuzzTurnOutput(SingleMessageTurnOutput):
     """Stream assistant output back through the Buzz channel."""
 
     def __init__(
@@ -47,95 +79,11 @@ class BuzzTurnOutput:
         edit_interval_seconds: float = 1.5,
         tool_hooks: object | None = None,
     ) -> None:
-        # Set per turn by the host cancel plumbing; declared here so this class
-        # cooperates with cancellation like every other transport's, instead of
-        # relying on ``ensure_turn_cancel`` patching the attribute on.
-        self.turn_cancel: threading.Event | None = None
-        self._client = client
-        self._channel_id = channel_id
-        self._edit_interval = edit_interval_seconds
-        self.tool_hooks = tool_hooks
-        self._event_id = ""
-        self._last_edit = 0.0
-        self._lock = threading.Lock()
-        self._status_text = initial_status_message()
-        result = self._client.send_message(channel=self._channel_id, content=self._status_text)
-        if result["success"]:
-            self._event_id = result["event_id"]
-
-    def print(self, message: str = "") -> None:
-        if message:
-            self._set_status(message)
-
-    def render_response_header(self, label: str) -> None:
-        self._set_status(status_from_response_label(label))
-
-    def render_error(self, message: str) -> None:
-        # Raw detail to the server log only; the user sees safe generic copy.
-        logger.warning("gateway turn error channel=%s: %s", self._channel_id, message)
-        self._finalize(user_facing_error_message(message))
-
-    def stream(
-        self,
-        *,
-        label: str,
-        chunks: Iterable[str],
-        suppress_if_starts_with: str | None = None,
-        defer_want_me_to_closer: bool = False,
-    ) -> str:
-        _ = (label, suppress_if_starts_with)
-        parts: list[str] = []
-        for chunk in chunks:
-            parts.append(str(chunk))
-            now = time.monotonic()
-            if now - self._last_edit >= self._edit_interval:
-                self._edit_preview("".join(parts))
-        text = "".join(parts)
-        if defer_want_me_to_closer:
-            return text
-        self._finalize(text or EMPTY_RESPONSE_MESSAGE)
-        return text
-
-    def set_tool_status(self, status: str) -> None:
-        self._set_status(status)
-
-    def finish_streamed_response(self, answer: str) -> None:
-        self._finalize(answer or EMPTY_RESPONSE_MESSAGE)
-
-    def _set_status(self, status: str) -> None:
-        self._status_text = normalize_gateway_status(status)
-        self._edit_preview(self._status_text)
-
-    def _edit_preview(self, preview: str) -> None:
-        if not self._event_id:
-            return
-        preview = truncate(preview or self._status_text, MAX_MESSAGE_SIZE, suffix="…")
-        with self._lock:
-            result = self._client.edit_message(event_id=self._event_id, content=preview)
-            if result["success"]:
-                self._last_edit = time.monotonic()
-
-    def finalize(self, answer: str) -> None:
-        self._finalize(answer)
-
-    def _finalize(self, answer: str) -> None:
-        final = truncate(answer, MAX_MESSAGE_SIZE, suffix="…")
-        if self._event_id and self._edit_final(final):
-            logger.info("outbound channel=%s text=%r", self._channel_id, _log_preview(final))
-            # Release the id so the next session-goal turn cannot overwrite this answer.
-            self._event_id = ""
-            return
-        if self._send_final(final):
-            logger.info("outbound channel=%s text=%r", self._channel_id, _log_preview(final))
-            self._event_id = ""
-
-    def _edit_final(self, answer: str) -> bool:
-        result = self._client.edit_message(event_id=self._event_id, content=answer)
-        return bool(result["success"])
-
-    def _send_final(self, answer: str) -> bool:
-        result = self._client.send_message(channel=self._channel_id, content=answer)
-        return bool(result["success"])
+        super().__init__(
+            channel=_BuzzChannel(client=client, channel_id=channel_id),
+            edit_interval_seconds=edit_interval_seconds,
+            tool_hooks=tool_hooks,
+        )
 
 
 __all__ = ["BuzzTurnOutput"]

@@ -29,7 +29,7 @@ _DELIVERY_ARGS = ("--provider", "telegram", "--chat-id", "-100200300")
 def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Point the scheduler store at a temp file so tests never touch real tasks."""
     monkeypatch.setattr(
-        "infrastructure.scheduling.scheduler.store._default_store_path",
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
         lambda: tmp_path / "tasks.json",
     )
 
@@ -96,7 +96,22 @@ def test_cron_expression_must_have_five_fields(
     )
 
     assert result.exit_code == 1
-    assert "cron expression must have exactly 5 fields" in result.output
+    assert "cron expression must have 5 fields" in result.output
+
+
+def test_six_field_cron_with_leading_seconds_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, isolated_store: None
+) -> None:
+    """A leading seconds field (sub-minute polling) is stored verbatim."""
+    _allow_posthog(monkeypatch)
+
+    result = CliRunner().invoke(
+        posthog_command,
+        [*_POSTHOG_ADD, "--cron", "*/30 * * * * *", *_DELIVERY_ARGS],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Cron: */30 * * * * *  TZ: UTC" in result.output
 
 
 def test_unknown_timezone_is_refused(monkeypatch: pytest.MonkeyPatch, isolated_store: None) -> None:

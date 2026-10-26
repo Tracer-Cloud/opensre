@@ -1,6 +1,6 @@
 """Progress-tracker port (Protocol) + Noop default + injection helpers.
 
-Core code (under ``core/domain/``, ``tools/investigation/``, ``utils/``)
+Core code (under ``core/domain/``, ``utils/``)
 imports only from this module to report stage progress; the CLI
 surface implements the Protocol and registers its concrete tracker
 via :func:`set_progress_tracker` at boundary.
@@ -167,7 +167,7 @@ def silence_progress_tracker() -> None:
     """Replace whatever is registered with a Noop tracker.
 
     Used at the pipeline entry point when a run shouldn't emit progress
-    (e.g. headless investigations whose output goes only to a sink).
+    (e.g. headless runs whose output goes only to a sink).
     Calls ``stop()`` on the previous tracker first so any active
     display / watcher / animation it owns gets released — silencing a
     Rich tracker without stopping it leaks its toggle watcher and the

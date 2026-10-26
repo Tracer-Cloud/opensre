@@ -20,6 +20,10 @@ from integrations.signoz import SigNozConfig
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIME_RANGE_MINUTES = 60
+# Best-effort metadata lookup: cheap enough that it should never wait as long as the
+# actual query -- capped well below the configured query timeout so a slow/unreachable
+# metadata endpoint can't add its full timeout on top of every metrics call.
+_METADATA_LOOKUP_TIMEOUT_SECONDS = 2.0
 _NOT_CONFIGURED_ERROR = (
     "SigNoz not configured. Set SIGNOZ_URL and SIGNOZ_API_KEY (service account key)."
 )
@@ -156,6 +160,21 @@ class SigNozClient:
     def _query_api_base_url(self) -> str:
         return self.config.url.rstrip("/")
 
+    def _resolve_metric_temporality(self, metric_name: str) -> str:
+        """Look up a metric's real temporality; callers must query with the
+        temporality it was ingested with, or the backend returns zero rows."""
+        try:
+            response = httpx.get(
+                f"{self._query_api_base_url()}/api/v2/metrics/metadata",
+                params={"metricName": metric_name},
+                headers={"SigNoz-Api-Key": self.config.api_key, "Accept": "application/json"},
+                timeout=min(_METADATA_LOOKUP_TIMEOUT_SECONDS, self.config.timeout_seconds),
+            )
+            response.raise_for_status()
+            return str(response.json().get("data", {}).get("temporality") or "unspecified")
+        except Exception:
+            return "unspecified"
+
     def _query_range_post(
         self, payload: dict[str, Any]
     ) -> tuple[dict[str, Any] | None, str | None]:
@@ -245,6 +264,7 @@ class SigNozClient:
         start_ms = int(start.timestamp() * 1000)
         end_ms = int(end.timestamp() * 1000)
         step_interval = max(60, (end_ms - start_ms) // (1000 * 300))
+        temporality = self._resolve_metric_temporality(resolved_metric)
 
         if resolved_metric == "signoz_calls_total":
             time_aggregation = "rate"
@@ -272,7 +292,7 @@ class SigNozClient:
                             "aggregations": [
                                 {
                                     "metricName": resolved_metric,
-                                    "temporality": "unspecified",
+                                    "temporality": temporality,
                                     "timeAggregation": time_aggregation,
                                     "spaceAggregation": space_aggregation,
                                 }
@@ -287,16 +307,11 @@ class SigNozClient:
             "noCache": True,
         }
         if service:
-            payload["compositeQuery"]["queries"][0]["spec"]["filter"] = {
-                "items": [
-                    {
-                        "key": {"name": "service.name", "type": "tag"},
-                        "op": "=",
-                        "value": service,
-                    }
-                ],
-                "op": "AND",
-            }
+            metric_filter = _signoz_filter_expression(
+                [f"service.name = '{_escape_signoz_filter_value(service)}'"]
+            )
+            if metric_filter is not None:
+                payload["compositeQuery"]["queries"][0]["spec"]["filter"] = metric_filter
 
         response_json, error_message = self._query_range_post(payload)
         if error_message:
@@ -383,6 +398,7 @@ class SigNozClient:
             "aggregation": aggregation,
             "metrics": metrics,
             "query_backend": "signoz_query_api",
+            "effective_limit": effective_limit,
         }
 
     def _query_logs_via_api(
@@ -438,6 +454,7 @@ class SigNozClient:
             "total": len(logs),
             "logs": logs,
             "query_backend": "signoz_query_api",
+            "effective_limit": effective_limit,
         }
 
     def _query_traces_via_api(
@@ -501,6 +518,7 @@ class SigNozClient:
             "total": len(traces),
             "traces": traces,
             "query_backend": "signoz_query_api",
+            "effective_limit": effective_limit,
         }
 
     def _query_trace_summary_via_api(

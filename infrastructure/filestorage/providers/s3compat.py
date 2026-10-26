@@ -1,6 +1,6 @@
 """S3-compatible backend for remote sync (MinIO, Cloudflare R2, DigitalOcean Spaces).
 
-One registered :class:`~infrastructure.filestorage.ports.ObjectStore` implementation.
+One registered :class:`~infrastructure.filestorage.contracts.ObjectStore` implementation.
 Configures path-style addressing and custom endpoint URLs for non-AWS S3 stores.
 """
 

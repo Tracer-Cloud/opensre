@@ -8,18 +8,59 @@ from typing import Any
 
 import httpx
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from infrastructure.text.truncation import truncate
 
 _DEFAULT_MAX_RESULTS = 100
 _MAX_HARD_LIMIT = 200
+
+#: Bound the SQL query text echoed into a report summary -- it can be a long
+#: or multi-line query built by the caller, not just the default form.
+_QUERY_SUMMARY_TRUNCATE_LEN = 80
 
 
 def _bounded_limit(limit: int, max_results: int) -> int:
     safe_max = max(1, min(max_results, _MAX_HARD_LIMIT))
     return max(1, min(limit, safe_max))
+
+
+def _map_query_openobserve_logs(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the row count, stream, and a bounded snippet of the query executed.
+
+    ``records`` is truncated to ``effective_limit`` after the query runs, so
+    a returned count at that ceiling may understate how many rows actually
+    matched -- use the "N+" convention.
+    """
+    if not output.get("available"):
+        return
+    total = output.get("total_returned", 0)
+    if not total:
+        return
+    effective_limit = output.get("effective_limit", total)
+    count_label = f"{total}+" if total >= effective_limit else str(total)
+    parts = [f"{count_label} record(s)"]
+    stream = output.get("stream")
+    if stream:
+        safe_stream = truncate(str(stream).replace("\n", " "), 60)
+        parts.append(f"stream '{safe_stream}'")
+    query = truncate(
+        str(output.get("query", "")).replace("\r\n", " ").replace("\r", " ").replace("\n", " "),
+        _QUERY_SUMMARY_TRUNCATE_LEN,
+    )
+    if query:
+        parts.append(f"query '{query}'")
+    record_evidence_entry(
+        evidence,
+        source="query_openobserve_logs",
+        label="OpenObserve Logs",
+        summary=", ".join(parts),
+    )
 
 
 def _openobserve_available(sources: dict[str, dict[str, Any]]) -> bool:
@@ -84,7 +125,7 @@ def _extract_records(body: dict[str, Any]) -> list[dict[str, Any]]:
     name="query_openobserve_logs",
     description="Query OpenObserve logs using bounded read-only search.",
     source="openobserve",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     requires=["base_url"],
     input_schema={
         "type": "object",
@@ -107,6 +148,7 @@ def _extract_records(body: dict[str, Any]) -> list[dict[str, Any]]:
     is_available=_openobserve_available,
     injected_params=("base_url",),
     extract_params=_openobserve_extract_params,
+    evidence_mapper=_map_query_openobserve_logs,
 )
 def query_openobserve_logs(
     base_url: str,
@@ -195,5 +237,6 @@ def query_openobserve_logs(
         "integration_id": integration_id,
         "query": normalized_query,
         "total_returned": len(records),
+        "effective_limit": effective_limit,
         "records": records,
     }

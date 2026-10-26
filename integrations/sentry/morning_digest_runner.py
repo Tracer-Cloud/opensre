@@ -1,4 +1,4 @@
-"""Headless Sentry morning digest via the sentry-summary skill."""
+"""Headless Sentry morning digest via the summarizing-sentry-issues skill."""
 
 from __future__ import annotations
 
@@ -6,13 +6,15 @@ import logging
 from typing import Any
 
 from core.agent_harness import AgentSession, TurnResult
-from core.agent_harness.runtime import GatherPhase
 from core.agent_harness.spi.integrations import (
     merge_resolved_integrations,
     resolve_and_cache_integrations,
 )
-from infrastructure.harness_ports import configured_integration_services
+from infrastructure.harness_providers import configured_integration_services
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.schedule_cancel import cancel_requested_for_payload
+from infrastructure.scheduling.scheduler.types import TaskReport
+from integrations.scheduled_outcomes import ScheduledOutcomes
 from integrations.sentry.project_scope import (
     apply_sentry_project_scope,
     payload_project_slug,
@@ -23,7 +25,7 @@ logger = logging.getLogger(__name__)
 _MORNING_DIGEST_BASE_PROMPT = (
     "Sentry morning digest: summarize unresolved Sentry issues from the last 24 hours "
     "and include uptime status from the watch transition log. "
-    "Follow the sentry-summary skill workflow."
+    "Follow the summarizing-sentry-issues skill workflow."
 )
 
 
@@ -63,13 +65,13 @@ def _dispatch_headless_turn(message: str, payload: AgentPayload) -> TurnResult:
         message,
         prepare_session=lambda session: _apply_digest_project_scope(session, payload),
         logger=logger,
-        gather=GatherPhase(),
         is_tty=False,
+        cancel_requested=cancel_requested_for_payload(payload),
     )
 
 
-def run_sentry_morning_digest(payload: AgentPayload) -> str:
-    """Run one headless sentry-summary turn and return the assistant report."""
+def run_sentry_morning_digest(payload: AgentPayload) -> TaskReport:
+    """Run one headless summarizing-sentry-issues turn and return the assistant report."""
     message = build_morning_digest_prompt(payload)
     result = _dispatch_headless_turn(message, payload)
     report = result.primary_response_text
@@ -83,7 +85,7 @@ def run_sentry_morning_digest(payload: AgentPayload) -> str:
         raise RuntimeError(
             "Sentry morning digest failed: the reasoning client did not produce a response."
         )
-    return report
+    return ScheduledOutcomes().report(result, agent_mode=False)
 
 
 __all__ = ["build_morning_digest_prompt", "run_sentry_morning_digest"]

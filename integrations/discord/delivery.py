@@ -1,4 +1,4 @@
-"""Discord delivery helper - posts investigation findings to Discord API."""
+"""Discord delivery helper - posts report messages to the Discord API."""
 
 from __future__ import annotations
 
@@ -88,10 +88,10 @@ def send_discord_report(report: str, discord_ctx: dict[str, Any]) -> tuple[bool,
     thread_id: str = str(discord_ctx.get("thread_id") or "")
     bot_token: str = str(discord_ctx.get("bot_token") or "")
     embed = {
-        "title": truncate("Investigation Complete", _EMBED_TITLE_LIMIT, suffix="…"),
+        "title": truncate("OpenSRE Report", _EMBED_TITLE_LIMIT, suffix="…"),
         "color": 15158332,
         "description": truncate(report, _EMBED_DESCRIPTION_LIMIT, suffix="…"),
-        "footer": {"text": "OpenSRE Investigation"},
+        "footer": {"text": "OpenSRE"},
     }
     target = thread_id if thread_id else channel_id
     post_message_success, error, _ = post_discord_message(target, [embed], bot_token)

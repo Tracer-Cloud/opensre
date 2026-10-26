@@ -8,6 +8,7 @@ from surfaces.interactive_shell.prompt_history.policy import (
     HistoryPolicy,
     RedactingFileHistory,
     RedactionRule,
+    RefreshingFileHistory,
     redact_text,
 )
 from surfaces.interactive_shell.prompt_history.storage import (
@@ -21,6 +22,7 @@ __all__ = [
     "DEFAULT_MAX_ENTRIES",
     "DEFAULT_REDACTION_RULES",
     "HistoryPolicy",
+    "RefreshingFileHistory",
     "RedactingFileHistory",
     "RedactionRule",
     "clear_persisted_history",

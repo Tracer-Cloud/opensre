@@ -12,53 +12,312 @@ binding core ports while terminal formatting stays in ``ui/``.
 
 from __future__ import annotations
 
+import ast
 import contextlib
-import json
+import re
+from functools import partial
 from typing import Any
 
 from rich.console import Console
 from rich.text import Text
 
+from config.constants.gateway import (
+    PROMPT_PROGRESS_KIND_PLAN,
+    PROMPT_PROGRESS_KIND_PLAN_DONE,
+    PROMPT_PROGRESS_KIND_TOOL,
+    PROMPT_PROGRESS_PLAN_OMITTED,
+)
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
+from config.constants.tool_discovery import TOOL_SEARCH_NAME
 from core.agent_harness.spi.accounting import SELF_RECORDING_ACTION_TOOL_NAMES
-from infrastructure.terminal.theme import BOLD_SKILL, DIM, HIGHLIGHT
+from core.agent_harness.spi.activity import (
+    bounded_activity_preview,
+    generic_tool_activity,
+    github_cli_activity,
+    is_sensitive_activity_key,
+)
+from core.agent_harness.spi.prompt_chrome import is_outcome_report
+from core.agent_harness.spi.task_plan import is_plan_diagnosis_prose, task_plan_from_checklist
+from infrastructure.observability.trace.redaction import redact_sensitive
+from infrastructure.safety.terminal_output import strip_terminal_controls
+from infrastructure.terminal.theme import (
+    ANSI_RESET,
+    BOLD_SKILL,
+    DIM,
+    ERROR,
+    SECONDARY_ANSI,
+    TEXT,
+)
+from infrastructure.text import is_data_blob
+from infrastructure.text.plan_snapshots import strip_plan_snapshots
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui.streaming import render_markdown_block
-from surfaces.shared.terminal.output.console_state import get_investigation_spinner
+from surfaces.interactive_shell.runtime.core.state import SpinnerState
+from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
+from surfaces.interactive_shell.ui.action_log import flush_action_log
+from surfaces.interactive_shell.ui.streaming import ReplyStream, render_note_block
+from surfaces.interactive_shell.ui.task_plan import (
+    GATEWAY_ACTIVITY_MARKER,
+    render_plan_breakdown,
+)
+from surfaces.interactive_shell.ui.transcript import (
+    TranscriptRole,
+    transcript_continuation,
+    transcript_line,
+    transcript_prefix,
+)
+from surfaces.shared.terminal.components.rendering import print_repl_renderable, print_repl_text
+from surfaces.shared.terminal.output.console_state import get_repl_state, get_turn_spinner
+from tools.interactive_shell.action_names import ActionToolName
+from tools.interactive_shell.shell.display import format_shell_command_for_display
+
+# Tool labels whose payload is a runnable command.
+_COMMAND_TOOL_LABELS: frozenset[str] = frozenset({"Execute", "GitHub CLI", "opensre"})
 
 # Tools whose preview is just ``(label, single-arg)``. The display content is the
 # stripped string value of that single argument. Anything that needs to combine
 # multiple arguments (``slash_invoke``, ``synthetic_run``) keeps a custom branch
 # in :func:`tool_call_display`.
-# The spinner's thinking verb re-rolls once per this many agent-loop steps.
-_VERB_ROTATION_STEP_INTERVAL = 2
+_PYTHON_URL_RE = re.compile(r"https?://[^\s'\"`]+")
+_HOSTED_GATEWAY_TOOL = "ask_hosted_gateway"
+_DISCOVERY_TOOLS = frozenset({ActionToolName.SKILL_VIEW, TOOL_SEARCH_NAME})
 
 _SIMPLE_TOOL_LABELS: dict[str, tuple[str, str]] = {
-    "llm_set_provider": ("LLM provider", "target"),
-    "alert_sample": ("sample alert", "template"),
-    "investigation_start": ("investigation", "alert_text"),
-    "task_cancel": ("cancel task", "target"),
-    "cli_exec": ("opensre", "payload"),
-    "code_implement": ("implementation", "task"),
-    "shell_run": ("shell", "command"),
+    ActionToolName.LLM_SET_PROVIDER: ("LLM provider", "target"),
+    ActionToolName.TASK_CANCEL: ("cancel task", "target"),
+    ActionToolName.CLI_EXEC: ("opensre", "payload"),
+    ActionToolName.CODE_IMPLEMENT: ("implementation", "task"),
+    ActionToolName.SHELL_RUN: ("Execute", "command"),
 }
+
+#: Tools that must not appear in the post-execution plan work log (plan/UI plumbing).
+_SKIP_PLAN_WORK_TOOLS: frozenset[str] = frozenset(
+    {
+        ActionToolName.UPDATE_PLAN,
+        ActionToolName.ASK_USER_CHOICE,
+    }
+)
+
+#: Tools that render their own dedicated UI. The generic live tool-call preview
+#: is suppressed for these so it does not duplicate that UI as a wall of text.
+_SELF_RENDERING_TOOLS: frozenset[str] = frozenset(
+    {
+        ActionToolName.ASK_USER_CHOICE,
+        # shell_run / cli_exec stream their own ``$ <command>`` + output during
+        # execution, and the running tool is folded into the status spinner row —
+        # so a static ``Execute``/``opensre`` header here would print the command
+        # a third time. Suppress it; the status row and the ``$`` line are enough.
+        ActionToolName.SHELL_RUN,
+        ActionToolName.CLI_EXEC,
+    }
+)
+
+#: Tools that stream their own ``$ <command>`` line during execution. The live
+#: status row names the action only (``Execute``) rather than repeating the
+#: command, so the command is not shown twice while it runs.
+_COMMAND_STREAMING_TOOLS: frozenset[str] = frozenset(
+    {
+        ActionToolName.SHELL_RUN,
+        ActionToolName.CLI_EXEC,
+    }
+)
+
+
+def _tool_event_id(data: dict[str, Any]) -> str:
+    """Stable id for one tool call, or empty when the event omitted it."""
+    return str(data.get("id") or data.get("tool_call_id") or "").strip()
+
+
+def _skill_view_reference(data: dict[str, Any]) -> str:
+    """The ``reference`` arg of a ``skill_view`` event, or empty for a skill entry."""
+    args = data.get("input")
+    return str(args.get("reference", "")).strip() if isinstance(args, dict) else ""
+
+
+def _is_internal_choice_command(name: str, data: dict[str, Any]) -> bool:
+    """True for the private slash turn that opens the choice picker."""
+    if name != ActionToolName.SLASH_INVOKE:
+        return False
+    args = data.get("input")
+    return isinstance(args, dict) and str(args.get("command", "")).strip() == "/choose"
+
+
+def _collapsed_line(value: str) -> str:
+    """One line, whitespace collapsed. Do not truncate — the action log clips to width."""
+    return " ".join(value.split())
+
+
+def _preview_from_result_fields(payload: dict[str, Any]) -> str:
+    """Pull the one user-facing field from a tool-result dict, or empty."""
+    for key in ("response_text", "summary"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip() and not is_data_blob(value):
+            return value.strip()
+    stdout = payload.get("stdout")
+    if (
+        payload.get("ok")
+        and isinstance(stdout, str)
+        and stdout.strip()
+        and not is_data_blob(stdout)
+    ):
+        return stdout.strip()
+    error = payload.get("error")
+    if error:
+        return str(error).strip()
+    return ""
+
+
+def _tool_result_preview(output: object) -> str:
+    """User-facing result text for a ``↳`` child, or empty for model-only data."""
+    if isinstance(output, dict):
+        return _preview_from_result_fields(output)
+    details = getattr(output, "details", None)
+    if isinstance(details, dict):
+        preview = _preview_from_result_fields(details)
+        if preview:
+            return preview
+    if isinstance(output, str):
+        stripped = output.strip()
+        return "" if not stripped or is_data_blob(stripped) else stripped
+    content = getattr(output, "content", None)
+    if isinstance(content, str) and content.strip() and not is_data_blob(content):
+        return content.strip()
+    return ""
+
+
+def _python_execution_display(args: dict[str, Any]) -> tuple[str, str]:
+    details = ["run analysis"]
+    if args.get("allow_network") is True:
+        details.append("network enabled")
+    code = str(args.get("code", "") or "")
+    targets = _python_network_targets(code)
+    if targets:
+        details.append(f"target: {', '.join(targets)}")
+    outputs = _python_output_fields(code)
+    if outputs:
+        details.append(f"outputs: {', '.join(outputs)}")
+    inputs = args.get("inputs")
+    if isinstance(inputs, dict):
+        safe_inputs = redact_sensitive(
+            {
+                str(key): value
+                for key, value in inputs.items()
+                if key != "opensre_runtime" and not is_sensitive_activity_key(key)
+            }
+        )
+        rendered_inputs = [
+            f"{key}={bounded_activity_preview(str(value), limit=40)}"
+            for key, value in sorted(safe_inputs.items())
+        ]
+        if rendered_inputs:
+            details.append(f"inputs: {', '.join(rendered_inputs)}")
+    else:
+        referenced_inputs = _python_referenced_inputs(code)
+        if referenced_inputs:
+            details.append(f"inputs: {', '.join(referenced_inputs)}")
+    return "Python", bounded_activity_preview(" · ".join(details), limit=240)
+
+
+def _python_network_targets(code: str) -> list[str]:
+    targets: list[str] = []
+    for match in _PYTHON_URL_RE.finditer(code):
+        target = match.group(0).split("://", 1)[1].split("?", 1)[0].rstrip("/),]")
+        if not target or any(existing.startswith(target) for existing in targets):
+            continue
+        targets = [existing for existing in targets if not target.startswith(existing)]
+        targets.append(bounded_activity_preview(target, limit=64))
+    return targets[:2]
+
+
+def _python_tree(code: str) -> ast.AST | None:
+    try:
+        return ast.parse(code)
+    except (SyntaxError, ValueError):
+        return None
+
+
+def _python_referenced_inputs(code: str) -> list[str]:
+    tree = _python_tree(code)
+    if tree is None:
+        return []
+    names = {
+        str(node.slice.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "inputs"
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, str)
+        and not is_sensitive_activity_key(node.slice.value)
+    }
+    return sorted(names)
+
+
+def _python_output_fields(code: str) -> list[str]:
+    tree = _python_tree(code)
+    if tree is None:
+        return []
+    fields: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        if node.func.id != "print" or not node.args:
+            continue
+        value = node.args[0]
+        while isinstance(value, ast.Call) and value.args:
+            value = value.args[0]
+        if not isinstance(value, ast.Dict):
+            continue
+        for key in value.keys:
+            if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+                continue
+            if key.value not in fields and not is_sensitive_activity_key(key.value):
+                fields.append(key.value)
+    return fields[:4]
 
 
 def tool_call_display(tool_name: str, args: dict[str, Any]) -> tuple[str, str]:
-    """Return a ``(label, content)`` pair describing a planned tool call."""
-    if tool_name == "slash_invoke":
+    """Return a ``(label, content)`` pair describing a planned tool call.
+
+    Both strings are stripped of terminal controls: callers append them to a
+    raw Rich line, and the tool name and args are model-supplied.
+    """
+    if tool_name == "github_cli":
+        label, content = github_cli_activity(args)
+    elif tool_name == "execute_python_code":
+        label, content = _python_execution_display(args)
+    elif tool_name == ActionToolName.SLASH_INVOKE:
         command = str(args.get("command", "")).strip()
         raw_args = args.get("args")
         parsed_args = [str(item).strip() for item in raw_args] if isinstance(raw_args, list) else []
-        return "command", " ".join([command, *parsed_args]).strip()
-    if tool_name == "synthetic_run":
-        suite = str(args.get("suite", "")).strip()
-        scenario = str(args.get("scenario", "")).strip()
-        return "synthetic test", f"{suite}:{scenario}" if scenario else suite
-    simple = _SIMPLE_TOOL_LABELS.get(tool_name)
-    if simple is not None:
-        label, arg_key = simple
-        return label, str(args.get(arg_key, "")).strip()
-    return tool_name, json.dumps(args, default=str, sort_keys=True)
+        label, content = "command", " ".join([command, *parsed_args]).strip()
+    elif tool_name == ActionToolName.SKILL_VIEW:
+        skill_name = str(args.get("name", "")).strip()
+        reference = str(args.get("reference", "")).strip()
+        if reference:
+            label, content = "Skill reference", f"references/{reference}.md · {skill_name}"
+        else:
+            label, content = "Skill", skill_name
+    else:
+        simple = _SIMPLE_TOOL_LABELS.get(tool_name)
+        if simple is not None:
+            key_label, arg_key = simple
+            label, content = key_label, str(args.get(arg_key, "")).strip()
+        else:
+            label, content = generic_tool_activity(tool_name, args)
+    label = strip_terminal_controls(label)
+    if label in _COMMAND_TOOL_LABELS:
+        # A runnable command renders as a shell block: keep newlines and collapse
+        # heredoc bodies to ``… (N lines)`` so a multi-line command reads as code
+        # instead of a flattened wall.
+        return label, format_shell_command_for_display(
+            strip_terminal_controls(content, keep_whitespace=True)
+        )
+    return label, strip_terminal_controls(content)
+
+
+#: Prose a live reply holds in the prompt region before printing at a sentence
+#: break, so a long paragraph reaches the transcript every line or two.
+_LIVE_REPLY_FLUSH_CHARS = 240
 
 
 class ActionRenderObserver:
@@ -66,8 +325,8 @@ class ActionRenderObserver:
 
     Self-recording tools (``slash_invoke``, ``shell_run``, etc.) append their own
     history row; chat turns are recorded later by turn accounting when the
-    assistant runs. ``skill_view`` gets a dedicated live event: the skill name
-    on ``tool_start`` and an activation/failure child line on ``tool_end``.
+    assistant runs. ``skill_view`` gets a dedicated live event: a labeled skill
+    status line painted on ``tool_end``.
     """
 
     def __init__(self, *, session: Session, console: Console, message: str) -> None:
@@ -76,13 +335,39 @@ class ActionRenderObserver:
         self.message = message
         self.planned_count = 0
         self._pending_skill_calls: dict[str, str] = {}
+        self._pending_result_tools: set[str] = set()
 
     def __call__(self, kind: str, data: dict[str, Any]) -> None:
+        if kind == "agent_start":
+            self.session.terminal.live_reply = None
+            self.session.terminal.streamed_replies.clear()
+            return
         if kind == "llm_start":
-            self._advance_spinner_verb(data)
+            # A call that continues a cut-off reply prints into the same block.
+            # Any other reply still open was not the last one (a conclusion the
+            # host sent back): it ends where it stands.
+            if not data.get("continues_reply"):
+                self._finish_live_reply()
+            self._clear_reply_preview()
+            self._set_spinner_phase(SpinnerState.THINKING_PHASE)
+            return
+        if kind == "agent_end":
+            # A finished closing stays open for the turn's remaining parts; a
+            # cancelled run prints nothing after it, so its reply ends here.
+            if data.get("cancelled"):
+                self._finish_live_reply(keep_unprinted=False)
+            self._clear_reply_preview()
+            # Safety flush: the batch drain below normally empties the buffer,
+            # but a turn that ends without a clean drain still gets its log.
+            flush_action_log(self.console, self.session)
             return
         if kind == "message_update":
-            self._render_intermediate_message(data)
+            if data.get(PARTIAL_MESSAGE_KEY):
+                self._stream_reply(data)
+                return
+            self._clear_reply_preview()
+            if not self._settle_live_reply(data):
+                self._render_intermediate_message(data)
             return
         if kind == "tool_update":
             with contextlib.suppress(Exception):
@@ -92,36 +377,280 @@ class ActionRenderObserver:
                     update=data.get("update"),
                     tool_call_id=str(data.get("id") or "") or None,
                 )
+            self._render_progress_update(data)
             return
         if kind == "tool_end":
-            if str(data.get("name", "")).strip() == "skill_view":
+            if data.get("model_only") is True:
+                call_id = _tool_event_id(data)
+                self._pending_skill_calls.pop(call_id, None)
+                self._pending_result_tools.discard(call_id)
+                self.session.terminal.drop_action_log(call_id)
+                self._clear_active_action(data)
+                return
+            if str(data.get("name") or "") == _HOSTED_GATEWAY_TOOL:
+                self._clear_gateway_plan()
+            # Discriminate by how the start registered the call: skill entries
+            # sit in ``_pending_skill_calls`` (activation line); reference
+            # loads registered nothing and stay silent.
+            if _tool_event_id(data) in self._pending_skill_calls:
                 self._render_skill_end(data)
+            elif _tool_event_id(data) in self._pending_result_tools:
+                self._render_tool_result(data)
+            self._pending_result_tools.discard(_tool_event_id(data))
+            # update_plan is not painted into the transcript: the plan renders in
+            # the pinned bottom overlay (``task_plan_overlay_ansi``) from session
+            # state the tool committed.
+            self._clear_active_action(data)
+            if not self._has_active_action():
+                self._set_spinner_phase(SpinnerState.EXECUTING_PHASE)
+            # No per-iteration flush: the whole turn's calls are flushed once,
+            # just before the reply (``ShellOutputSink.stream``), so same-kind
+            # calls spanning iterations stay in one group. ``agent_end`` below is
+            # the fallback for turns that end without streaming a reply.
             return
         if kind != "tool_start":
             return
         name = str(data.get("name", "")).strip()
-        if not name or name == "assistant_handoff":
+        if not name:
             return
-        if name == "skill_view":
-            self._render_skill_start(data)
-        if self.planned_count == 0 and name not in SELF_RECORDING_ACTION_TOOL_NAMES:
+        self._set_spinner_phase(SpinnerState.INVOKING_TOOLS_PHASE)
+        if name == TOOL_SEARCH_NAME:
+            return
+        if name == ActionToolName.SKILL_VIEW:
+            # ``reference=`` loads one bundled file without re-entering the
+            # skill. It is prompt plumbing, not a user-visible action: no
+            # transcript row (the spinner status row still names it while it
+            # runs). Only a real entry earns the "Skill activated" line.
+            if not _skill_view_reference(data):
+                self._render_skill_start(data)
+        elif name == ActionToolName.UPDATE_PLAN:
+            pass  # no transcript preview; the plan shows in the pinned bottom overlay
+        elif _is_internal_choice_command(name, data):
+            pass  # private picker plumbing; the menu owns the visible interaction
+        elif name == ActionToolName.SLASH_INVOKE:
+            pass  # a user slash command is already echoed as the ``[N]`` row
+        elif name in _SELF_RENDERING_TOOLS:
+            pass  # owns its UI; a generic preview would duplicate it
+        else:
+            self._render_tool_invocation(name, data)
+            self._pending_result_tools.add(_tool_event_id(data))
+        if (
+            name not in _SKIP_PLAN_WORK_TOOLS
+            and name not in _DISCOVERY_TOOLS
+            and not _is_internal_choice_command(name, data)
+        ):
+            self._record_plan_work(name, data)
+            self._set_active_action(name, data)
+        if (
+            self.planned_count == 0
+            and name not in SELF_RECORDING_ACTION_TOOL_NAMES
+            and name not in _DISCOVERY_TOOLS
+        ):
             self.session.record("cli_agent", self.message)
         self.planned_count += 1
 
-    def _advance_spinner_verb(self, data: dict[str, Any]) -> None:
-        """Rotate the prompt spinner's thinking verb every two agent steps.
+    def _record_plan_work(self, name: str, data: dict[str, Any]) -> None:
+        """Attribute this tool call to the current in_progress plan step."""
+        from core.agent_harness.spi.task_plan import record_task_plan_work
 
-        ``llm_start`` fires once per think→act iteration of the agent loop.
-        The verb picked at ``SpinnerState.start()`` covers the first two
-        iterations; each pair after that re-rolls it, so the label changes
-        during a long turn without flickering on every step.
+        args = data.get("input")
+        label, content = tool_call_display(name, args if isinstance(args, dict) else {})
+        line = f"{label} {content}".strip() if content else label
+        record_task_plan_work(self.session, line)
+
+    def _stream_reply(self, data: dict[str, Any]) -> None:
+        """Print a streamed piece of the reply as soon as it completes a paragraph.
+
+        Finished paragraphs go to the transcript in the reply's own format; the
+        paragraph still being written shows in the prompt region above the
+        status row. The loop streams only text the turn will show as written.
         """
-        iteration = int(data.get("iteration", 0) or 0)
-        if iteration < _VERB_ROTATION_STEP_INTERVAL or iteration % _VERB_ROTATION_STEP_INTERVAL:
+        terminal = self.session.terminal
+        live = terminal.live_reply
+        if live is None:
+            live = ReplyStream(
+                self.console,
+                before_first_paragraph=partial(flush_action_log, self.console, self.session),
+                transform=strip_plan_snapshots,
+                partial_flush_chars=_LIVE_REPLY_FLUSH_CHARS,
+            )
+            terminal.live_reply = live
+        live.feed(str(data.get("content") or ""))
+        spinner = get_turn_spinner()
+        if spinner is not None and getattr(spinner, "streaming", False):
+            spinner.set_reply_preview(live.pending)
+
+    def _settle_live_reply(self, data: dict[str, Any]) -> bool:
+        """Settle the live reply when its response is complete; True when it is on screen.
+
+        A closing prints its last paragraph now, so the whole reply is up the
+        moment the model stops; it stays open for the turn's remaining parts.
+        Commentary before tool calls that already reached the transcript ends
+        there instead of being repeated as a note. Commentary still held in
+        the prompt region is dropped, and the working-note path prints it.
+        """
+        terminal = self.session.terminal
+        live = terminal.live_reply
+        if live is None:
+            return False
+        if not data.get("has_tool_calls"):
+            live.flush()
+            return True
+        terminal.live_reply = None
+        if not live.printed:
+            return False
+        live.finish()
+        # The whole printed reply and this response's own text: after a cut-off
+        # the transcript holds them as separate assistant messages.
+        terminal.streamed_replies.extend(
+            (live.text.strip(), str(data.get("content") or "").strip())
+        )
+        return True
+
+    def _finish_live_reply(self, *, keep_unprinted: bool = True) -> None:
+        """End an open live reply where it stands and remember it was shown.
+
+        A cancelled reply drops the text not yet printed: it never finished,
+        so it stays off the transcript like any reply stopped before it began.
+        """
+        terminal = self.session.terminal
+        live = terminal.live_reply
+        if live is None:
             return
-        spinner = get_investigation_spinner()
+        terminal.live_reply = None
+        if not keep_unprinted:
+            live.discard_pending()
+        if live.printed or live.pending.strip():
+            live.finish()
+            terminal.streamed_replies.append(live.text.strip())
+
+    def _clear_reply_preview(self) -> None:
+        spinner = get_turn_spinner()
         if spinner is not None:
-            spinner.advance_verb()
+            spinner.clear_reply_preview()
+
+    def _set_spinner_phase(self, label: str) -> None:
+        # Only relabel an already-running spinner; never activate one. Literal
+        # slash turns suppress the spinner (turn_start skips ``start()``) and
+        # never call ``stop()``, so activating it here would leave it on screen.
+        spinner = get_turn_spinner()
+        if spinner is not None and getattr(spinner, "streaming", False):
+            spinner.set_phase(label)
+
+    def _set_active_action(self, name: str, data: dict[str, Any]) -> None:
+        """Fold the running tool into the spinner status row (same line).
+
+        Stacked by tool-call id: the ReAct loop emits every ``tool_start``
+        before executing the batch, so a single slot would show the last
+        tool and clear on the first ``tool_end``. Scrollback keeps the
+        settled transcript copy. Only relabels an already-running spinner
+        (see ``_set_spinner_phase``).
+        """
+        spinner = get_turn_spinner()
+        if spinner is None or not getattr(spinner, "streaming", False):
+            return
+        args = data.get("input")
+        label, content = tool_call_display(name, args if isinstance(args, dict) else {})
+        if name in _COMMAND_STREAMING_TOOLS:
+            text = label  # the ``$ <command>`` line already shows the command
+        else:
+            text = f"{label} · {content}" if content else label
+        spinner.set_active_action(text, action_id=_tool_event_id(data))
+
+    def _clear_active_action(self, data: dict[str, Any]) -> None:
+        spinner = get_turn_spinner()
+        if spinner is not None:
+            spinner.clear_active_action(_tool_event_id(data))
+
+    def _has_active_action(self) -> bool:
+        spinner = get_turn_spinner()
+        return bool(spinner is not None and spinner.active_action)
+
+    def _render_progress_update(self, data: Any) -> None:
+        """Draw a tool's progress.
+
+        Hosted-gateway updates carry a ``kind``. A tool replaces the spinner
+        row (``on the gateway · GitHub CLI · …``) instead of appending a
+        description. A plan replaces the pinned gateway checklist. A settled
+        plan prints once, themed. Anything else is a dim note, uncut.
+        """
+        if not isinstance(data, dict):
+            return
+        update = data.get("update")
+        if not isinstance(update, dict):
+            return
+        progress = update.get("progress")
+        if not isinstance(progress, str) or not progress.strip():
+            return
+        text = strip_terminal_controls(progress, keep_whitespace=True).strip()
+        if not text:
+            return
+        kind = update.get("kind")
+        if kind == PROMPT_PROGRESS_KIND_TOOL:
+            self._render_gateway_tool(data, text)
+            return
+        if kind == PROMPT_PROGRESS_KIND_PLAN:
+            self._render_gateway_plan(text)
+            return
+        if kind == PROMPT_PROGRESS_KIND_PLAN_DONE:
+            self._render_gateway_plan_done(text)
+            return
+        rows = [row for row in text.splitlines() if row.strip()]
+        self._print_dim_rows(rows)
+
+    def _render_gateway_tool(self, data: dict[str, Any], text: str) -> None:
+        """Show the remote tool on the spinner. A TTY does not also scroll it."""
+        line = f"{GATEWAY_ACTIVITY_MARKER} · {' '.join(text.split())}"
+        spinner = get_turn_spinner()
+        if spinner is not None and getattr(spinner, "streaming", False):
+            spinner.set_active_action(line, action_id=_tool_event_id(data) or "gateway")
+            if self.console.is_terminal:
+                return
+        self._print_dim_rows([line])
+
+    def _render_gateway_plan(self, text: str) -> None:
+        """Replace the pinned gateway checklist. Do not append another copy."""
+        if PROMPT_PROGRESS_PLAN_OMITTED in text:
+            self._clear_gateway_plan()
+            self._print_dim_rows([row for row in text.splitlines() if row.strip()])
+            return
+        plan = task_plan_from_checklist(text)
+        state = get_repl_state()
+        if plan is not None and state is not None:
+            state.gateway_plan = plan
+            return
+        self._print_dim_rows([row for row in text.splitlines() if row.strip()])
+
+    def _render_gateway_plan_done(self, text: str) -> None:
+        """Clear the live gateway plan and print one themed breakdown."""
+        if PROMPT_PROGRESS_PLAN_OMITTED in text:
+            self._clear_gateway_plan()
+            self._print_dim_rows([row for row in text.splitlines() if row.strip()])
+            return
+        self._clear_gateway_plan()
+        self.console.print()
+        print_repl_text(
+            self.console,
+            f"{SECONDARY_ANSI}{GATEWAY_ACTIVITY_MARKER}{ANSI_RESET}",
+            markup=False,
+        )
+        render_plan_breakdown(self.console, text)
+
+    def _clear_gateway_plan(self) -> None:
+        state = get_repl_state()
+        if state is not None:
+            state.gateway_plan = None
+
+    def _print_dim_rows(self, rows: list[str]) -> None:
+        if not rows:
+            return
+        line = Text()
+        for index, row in enumerate(rows):
+            if index:
+                line.append("\n")
+            line.append("  ↳ " if index == 0 else "    ", style=str(DIM))
+            line.append(row, style=str(DIM))
+        print_repl_renderable(self.console, line)
 
     def _render_intermediate_message(self, data: dict[str, Any]) -> None:
         """Render the model's commentary preceding this iteration's tool calls.
@@ -137,32 +666,106 @@ class ActionRenderObserver:
         content = str(data.get("content", "")).strip()
         if not content:
             return
+        if is_plan_diagnosis_prose(content):
+            return
+        # An outcome report beside a tool call is the turn's reply, not
+        # progress chatter. The response composer shows it once; printing it
+        # here would sit a second copy above the tool snapshots.
+        if is_outcome_report(content):
+            return
         self.console.print()
-        render_markdown_block(self.console, content)
+        # Intermediate narration is a labeled working note, visually secondary
+        # to the final reply without floating as unmarked prose.
+        # ``render_note_block`` sanitizes model text at ``_build_markdown_block``.
+        render_note_block(self.console, content)
 
     def _render_skill_start(self, data: dict[str, Any]) -> None:
-        """Print ``Skill <name>`` when the agent starts loading a skill."""
+        """Remember the skill slug for its ``tool_end``; nothing prints yet."""
         args = data.get("input")
         raw_name = str(args.get("name", "")).strip() if isinstance(args, dict) else ""
-        slug = raw_name.replace("_", "-").lower() or "skill"
-        self._pending_skill_calls[str(data.get("id") or "")] = slug
+        slug = strip_terminal_controls(raw_name.replace("_", "-").lower()) or "skill"
+        self._pending_skill_calls[_tool_event_id(data)] = slug
+
+    def _render_tool_invocation(self, name: str, data: dict[str, Any]) -> None:
+        """Buffer the running tool for the grouped action log — no inline args.
+
+        The visible section shows a concise status only (a trimmed command for
+        runnable tools, the label alone for the rest); the ``key: value``
+        arguments go into the Ctrl+O detail, never the dotted inline strip.
+        """
+        args = data.get("input")
+        label, content = tool_call_display(name, args if isinstance(args, dict) else {})
+        if label in _COMMAND_TOOL_LABELS:
+            concise = _collapsed_line(content) if content else ""
+            detail = transcript_line(
+                TranscriptRole.TOOL,
+                f"{label} · {content}" if content else label,
+            )
+        else:
+            concise = ""
+            detail = transcript_line(TranscriptRole.TOOL, label)
+            if content:
+                # Unfold the dotted argument strip beneath the labeled body column.
+                indent = transcript_continuation(TranscriptRole.TOOL)
+                detail += "\n" + "\n".join(f"{indent}{part}" for part in content.split(" · "))
+        self.session.terminal.push_action_log(
+            ActionLogEntry(call_id=_tool_event_id(data), kind=label, concise=concise, detail=detail)
+        )
+
+    def _render_tool_result(self, data: dict[str, Any]) -> None:
+        """Fold the user-facing result under its buffered call (Ctrl+O detail).
+
+        JSON blobs stay hidden — the closing reply summarizes those. A tool that
+        painted its own output during execution loses its buffered row: the
+        buffer flushes at the end of the turn, so the row would print under the
+        output it labels.
+        """
+        if data.get("model_only") is True:
+            self.session.terminal.drop_action_log(_tool_event_id(data))
+            return
+        output = data.get("output")
+        if isinstance(output, dict) and output.get("rendered_in_shell") is True:
+            self.session.terminal.drop_action_log(_tool_event_id(data))
+            return
+        preview = _tool_result_preview(output)
+        if not preview:
+            return
+        rows = preview.splitlines() or [preview]
+        indent = transcript_continuation(TranscriptRole.TOOL)
+        result = "\n".join([f"{indent}↳ {rows[0]}", *(f"{indent}  {row}" for row in rows[1:])])
+        self.session.terminal.append_action_result(_tool_event_id(data), result)
+        self.session.terminal.inline_tool_results = True
+
+    def _render_skill_end(self, data: dict[str, Any]) -> None:
+        """Print one labeled status line once the skill load finishes.
+
+        Opens with its own blank line like every other block; the next block
+        (another call, a note, or the final reply) adds its own — do not add a
+        trailing one here or the gap doubles.
+        """
+        slug = self._pending_skill_calls.pop(_tool_event_id(data), None)
+        if slug is None:
+            return
+        output = data.get("output")
+        if isinstance(output, dict) and (
+            output.get("already_active") or output.get("already_loaded")
+        ):
+            # Already active: the activation line is in the transcript from the
+            # first entry. Already loaded: the name was guidance attached to a
+            # tool, so nothing was activated and nothing failed.
+            return
+        activated = isinstance(output, dict) and bool(output.get("ok"))
         # ``Text`` renders the (model-supplied) skill name literally — never
         # through Rich markup.
         line = Text()
-        line.append("Skill ", style=BOLD_SKILL)
-        line.append(slug, style=HIGHLIGHT)
+        if activated:
+            line.append("Skill activated ", style=BOLD_SKILL)
+        else:
+            line.append(transcript_prefix(TranscriptRole.ERROR), style=str(ERROR))
+            line.append("Could not load skill · ", style=str(TEXT))
+        line.append(slug, style=str(TEXT))
         self.console.print()
         self.console.print(line)
-
-    def _render_skill_end(self, data: dict[str, Any]) -> None:
-        """Print the ``↳`` child line under the skill's ``tool_start`` parent."""
-        if self._pending_skill_calls.pop(str(data.get("id") or ""), None) is None:
-            return
-        output = data.get("output")
-        activated = isinstance(output, dict) and bool(output.get("ok"))
-        label = "Skill activated" if activated else "Skill failed to load"
-        self.console.print(Text(f"  ↳ {label}", style=DIM))
-        self.console.print()
 
 
 __all__ = [

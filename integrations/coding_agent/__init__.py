@@ -2,9 +2,9 @@
 
 Callers depend on this interface — a :class:`CodingResult`, a
 :func:`run_coding_task` entry point, and :func:`verify_coding_agent` readiness —
-rather than on a specific agent. Wired backends: Pi, Claude Code, and Codex;
-``CODING_AGENT=auto`` (the default) picks the first ready one (see
-:mod:`integrations.coding_agent.runner`).
+rather than on a specific agent. Wired backends: Pi, Claude Code, Codex, Cursor,
+and OpenSRE's built-in agent (``opensre``); ``CODING_AGENT=auto`` (the default)
+picks the first ready one (see :mod:`integrations.coding_agent.runner`).
 """
 
 from __future__ import annotations
@@ -15,15 +15,23 @@ from integrations.coding_agent.config import (
     coding_timeout_seconds,
     coding_workspace,
 )
-from integrations.coding_agent.models import CodingResult
-from integrations.coding_agent.runner import run_coding_task, verify_coding_agent
+from integrations.coding_agent.models import CodingResult, Progress
+from integrations.coding_agent.runner import (
+    reuse_coding_agent_choice,
+    run_coding_task,
+    select_coding_agent,
+    verify_coding_agent,
+)
 
 __all__ = [
     "CodingResult",
+    "Progress",
     "coding_agent_provider",
     "coding_model",
     "coding_timeout_seconds",
     "coding_workspace",
+    "reuse_coding_agent_choice",
     "run_coding_task",
+    "select_coding_agent",
     "verify_coding_agent",
 ]

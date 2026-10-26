@@ -91,3 +91,27 @@ def test_no_gate_means_the_process_caps_nothing() -> None:
         assert running
     with queued_turn_slot(None):
         pass
+
+
+def test_a_waiting_slot_is_had_once_the_holder_releases_and_is_refused_after_the_timeout() -> None:
+    # Arrange: one slot, held by someone else who lets go after a moment
+    import threading
+
+    from infrastructure.process.turn_capacity import TurnGate, waiting_turn_slot
+    from infrastructure.turn_host.concurrency import TurnConcurrencyGate
+
+    gate: TurnGate = TurnConcurrencyGate(1)
+    assert gate.try_acquire() is True
+    threading.Timer(0.2, gate.release).start()
+
+    # Act
+    with (
+        waiting_turn_slot(gate, timeout_seconds=2.0) as had_after_wait,
+        waiting_turn_slot(gate, timeout_seconds=0.05) as had_while_held,
+    ):
+        pass
+
+    # Assert: the first waited and got the slot; the second timed out while it was held
+    assert had_after_wait is True and had_while_held is False
+    assert gate.try_acquire() is True  # released again on exit
+    gate.release()

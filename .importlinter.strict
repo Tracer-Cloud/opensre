@@ -26,54 +26,30 @@ layers =
     core : infrastructure
     config
 ignore_imports =
-    # config upward imports (T-4 debt — refactor into lower layers)
-    config.config -> core.llm.providers.azure_openai
-    config.llm_auth.credentials -> integrations.llm_cli.registry
-    config.repl_config -> infrastructure.terminal.theme
     # infrastructure -> integrations (T-4 debt — scheduler / observability)
-    infrastructure.analytics.cli -> integrations.github.identity
-    infrastructure.observability.errors.sentry -> integrations.llm_cli.errors
+    infrastructure.analytics.github_identity -> integrations.github
+    infrastructure.observability.errors.sentry -> integrations.llm_cli
     infrastructure.scheduling.scheduler.credentials -> integrations.catalog
-    infrastructure.scheduling.scheduler.executor -> integrations.discord.delivery
-    infrastructure.scheduling.scheduler.executor -> integrations.rocketchat.delivery
-    infrastructure.scheduling.scheduler.executor -> integrations.slack.delivery
-    infrastructure.scheduling.scheduler.executor -> integrations.telegram.delivery
-    infrastructure.scheduling.scheduler.executor -> integrations.telegram.formatting
     # surfaces -> gateway (cli + repl gateway commands)
     surfaces.cli.commands.gateway -> gateway.core.process
     surfaces.gateway_entry -> gateway.core.lifecycle.controller
+    surfaces.gateway_entry -> gateway.web.web_server
     surfaces.interactive_shell.command_registry.gateway_cmds -> gateway.core.process
     # tools -> integrations (T-4 debt — vendor tools / reporting)
     tools.cross_vendor.fix_sentry_issue.context -> integrations.sentry
     tools.cross_vendor.fix_sentry_issue.context -> integrations.sentry.issue_url
     tools.cross_vendor.fix_sentry_issue.runner -> integrations.coding_agent
     tools.cross_vendor.fix_sentry_issue.runner -> integrations.git
-    tools.cross_vendor.fix_sentry_issue.runner -> integrations.github.client
+    tools.cross_vendor.fix_sentry_issue.runner -> integrations.github
     tools.cross_vendor.fix_sentry_issue.ship -> integrations.coding_agent
     tools.cross_vendor.fix_sentry_issue.ship -> integrations.git
-    tools.cross_vendor.fix_sentry_issue.ship -> integrations.github.client
-    tools.cross_vendor.fix_sentry_issue.ship -> integrations.github.pull_requests
-    tools.interactive_shell.implementation.claude_code_executor -> integrations.llm_cli.claude_code
-    tools.interactive_shell.implementation.claude_code_executor -> integrations.llm_cli.subprocess_env
-    tools.investigation.reporting.delivery.bootstrap -> integrations.buzz.reporting_adapter
-    tools.investigation.reporting.delivery.bootstrap -> integrations.discord.reporting_adapter
-    tools.investigation.reporting.delivery.bootstrap -> integrations.grafana.reporting_adapter
-    tools.investigation.reporting.delivery.bootstrap -> integrations.openclaw.reporting_adapter
-    tools.investigation.reporting.delivery.bootstrap -> integrations.rocketchat.reporting_adapter
-    tools.investigation.reporting.delivery.bootstrap -> integrations.slack.reporting_adapter
-    tools.investigation.reporting.delivery.bootstrap -> integrations.telegram.reporting_adapter
-    tools.investigation.reporting.delivery.bootstrap -> integrations.twilio.reporting_adapter
-    tools.investigation.reporting.delivery.bootstrap -> integrations.whatsapp.reporting_adapter
-    tools.investigation.reporting.evaluation -> integrations.opensre.llm_eval_judge
-    tools.investigation.reporting.formatters.report -> integrations.telegram.formatting
-    tools.investigation.reporting.gitlab_writeback -> integrations.gitlab
-    tools.investigation.reporting.upstream_correlation.registry -> integrations.datadog.correlation.registration
-    tools.investigation.state_factory -> integrations.opensre.hf_remote
-    tools.system.python_execution_tool.credentials -> integrations.github.client
-    tools.system.python_execution_tool.credentials -> integrations.github.helpers
-    tools.system.watch_dog.runner -> integrations.buzz.alarms
-    tools.system.watch_dog.runner -> integrations.buzz.credentials
-    tools.system.watch_dog.runner -> integrations.rocketchat.alarms
-    tools.system.watch_dog.runner -> integrations.rocketchat.credentials
-    tools.system.watch_dog.runner -> integrations.telegram.alarms
-    tools.system.watch_dog.runner -> integrations.telegram.credentials
+    tools.cross_vendor.fix_sentry_issue.ship -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.coding_agent
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.errors -> integrations.git
+    tools.interactive_shell.implementation.claude_code_executor -> integrations.llm_cli
+    tools.interactive_shell.shell.merge_guard -> integrations.git
+    tools.system.python_execution_tool.credentials -> integrations.github

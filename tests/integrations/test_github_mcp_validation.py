@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from mcp import types as mcp_types
 from rich.console import Console
@@ -38,7 +40,7 @@ def _patch_fake_session(
         list_result.tools = [
             mcp_types.Tool(
                 name=str(t["name"]),
-                inputSchema=t.get("input_schema") or {},
+                input_schema=t.get("input_schema") or {},
             )
             for t in tools_dicts
         ]
@@ -48,11 +50,11 @@ def _patch_fake_session(
             if call_fn is None:
                 raise AssertionError(f"Unexpected call_tool({name!r}) - no call_fn provided")
             payload: dict[str, Any] = call_fn(config, name, args or {})
-            raw = MagicMock()
-            raw.isError = payload.get("is_error", False)
-            raw.content = [mcp_types.TextContent(type="text", text=payload.get("text", ""))]
-            raw.structuredContent = payload.get("structured_content")
-            return raw
+            return mcp_types.CallToolResult(
+                is_error=payload.get("is_error", False),
+                content=[mcp_types.TextContent(type="text", text=payload.get("text", ""))],
+                structured_content=payload.get("structured_content"),
+            )
 
         session.call_tool = _call_tool
         yield session
@@ -840,6 +842,41 @@ def test_connectivity_failure_detail_unwraps_taskgroup_exception_group() -> None
     assert "Check: outbound HTTPS" in msg
 
 
+def test_validate_github_mcp_config_reports_scope_challenge_as_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("POST", "https://api.githubcopilot.com/mcp/x/all/readonly")
+    response = httpx.Response(
+        HTTPStatus.FORBIDDEN,
+        request=request,
+        headers={
+            "WWW-Authenticate": ('Bearer error="insufficient_scope", scope="repo security_events"')
+        },
+    )
+    failure = httpx.HTTPStatusError("scope rejected", request=request, response=response)
+
+    @asynccontextmanager
+    async def _failing_open(_config: Any):  # type: ignore[return]
+        raise ExceptionGroup("MCP transport", [failure])
+        yield  # pragma: no cover
+
+    monkeypatch.setattr("integrations.github.mcp._open_github_mcp_session", _failing_open)
+    cfg = github_mcp_module.build_github_mcp_config(
+        {
+            "url": "https://api.githubcopilot.com/mcp/",
+            "mode": "streamable-http",
+            "auth_token": "gho_test",
+        }
+    )
+
+    result = github_mcp_module.validate_github_mcp_config(cfg)
+
+    assert result.ok is False
+    assert result.failure_category == "authentication"
+    assert "repo, security_events" in result.detail
+    assert "account login" in result.detail
+
+
 def test_validate_github_mcp_config_reports_session_open_failure_as_connectivity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -954,67 +991,49 @@ def test_build_github_mcp_config_strips_persisted_username_metadata() -> None:
     assert "username" not in config.model_fields_set
 
 
-def test_github_integration_is_configured_true_when_store_has_token_and_username(
+@pytest.mark.asyncio
+async def test_open_session_accepts_legacy_two_stream_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "integrations.store.get_integration",
-        lambda service: (
-            {
-                "credentials": {
-                    "mode": "streamable-http",
-                    "url": github_mcp_module.DEFAULT_GITHUB_MCP_URL,
-                    "auth_token": "gho_test",
-                    "username": "octocat",
-                }
-            }
-            if service == "github"
-            else None
-        ),
+    """Older streamable-HTTP clients yield ``(read, write)`` only."""
+    read, write = object(), object()
+    opened: list[object] = []
+
+    @asynccontextmanager
+    async def _two_stream_client(*_args: Any, **_kwargs: Any):
+        yield (read, write)
+
+    class _HttpClient:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+        async def __aenter__(self) -> _HttpClient:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+    class _Session:
+        def __init__(self, read_stream: Any, write_stream: Any) -> None:
+            assert read_stream is read
+            assert write_stream is write
+            opened.append(self)
+            self.initialize = AsyncMock()
+
+        async def __aenter__(self) -> _Session:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+    monkeypatch.setattr(github_mcp_module, "streamable_http_client", _two_stream_client)
+    monkeypatch.setattr(github_mcp_module.httpx, "AsyncClient", _HttpClient)
+    monkeypatch.setattr("mcp.client.session.ClientSession", _Session)
+
+    config = github_mcp_module.GitHubMCPConfig(
+        url="https://mcp.example.test/mcp",
+        mode="streamable-http",
     )
-    monkeypatch.setattr(github_mcp_module, "github_mcp_config_from_env", lambda: None)
-
-    assert github_mcp_module.github_integration_is_configured() is True
-
-
-def test_github_integration_is_configured_ignores_stale_store_record(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "integrations.store.get_integration",
-        lambda service: (
-            {
-                "credentials": {
-                    "mode": "streamable-http",
-                    "url": github_mcp_module.DEFAULT_GITHUB_MCP_URL,
-                }
-            }
-            if service == "github"
-            else None
-        ),
-    )
-    monkeypatch.setattr(github_mcp_module, "github_mcp_config_from_env", lambda: None)
-
-    assert github_mcp_module.github_integration_is_configured() is False
-
-
-def test_github_integration_is_configured_true_when_store_has_token(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "integrations.store.get_integration",
-        lambda service: (
-            {
-                "credentials": {
-                    "mode": "streamable-http",
-                    "url": github_mcp_module.DEFAULT_GITHUB_MCP_URL,
-                    "auth_token": "gho_test",
-                }
-            }
-            if service == "github"
-            else None
-        ),
-    )
-    monkeypatch.setattr(github_mcp_module, "github_mcp_config_from_env", lambda: None)
-
-    assert github_mcp_module.github_integration_is_configured() is True
+    async with github_mcp_module._open_github_mcp_session(config) as session:
+        assert session is opened[0]
+        session.initialize.assert_awaited_once()

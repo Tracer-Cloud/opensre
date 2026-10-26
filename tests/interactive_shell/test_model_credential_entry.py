@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 import surfaces.interactive_shell.command_registry.model.switching as switching
 from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
@@ -22,6 +24,11 @@ class _Console:
     def input(self, prompt: str = "", *, password: bool = False) -> str:
         _ = (prompt, password)
         return self._key
+
+
+@pytest.fixture(autouse=True)
+def _no_account_model_lock(monkeypatch: Any) -> None:
+    monkeypatch.setattr("config.account.account_llm_route", lambda: None)
 
 
 def _credential_status_sequence(monkeypatch: Any, *, configured_after: bool) -> None:
@@ -62,12 +69,52 @@ def test_pasted_key_is_saved_and_switch_proceeds(monkeypatch: Any) -> None:
     monkeypatch.setattr(service, "configure_api_key_provider", lambda **kw: saves.append(kw))
     monkeypatch.setattr(env_sync, "sync_provider_env", lambda **_: "/tmp/.env")
     monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
-    monkeypatch.setattr(switching, "render_models_table", lambda *_: None)
-    monkeypatch.setattr(switching.repl_data, "load_llm_settings", lambda: {})
+    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
 
     console = _Console(key="sk-test-123")
     assert switching.switch_llm_provider("openai", console) is True  # type: ignore[arg-type]
     assert saves and saves[0]["api_key"] == "sk-test-123"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda console: switching.switch_llm_provider("anthropic", console),
+        lambda console: switching.switch_reasoning_model("gpt-5.5", console),
+        lambda console: switching.switch_toolcall_model("gpt-5.5", console),
+        lambda console: switching.restore_default_model("anthropic", console),
+    ],
+)
+def test_account_login_blocks_every_model_change(monkeypatch: Any, change: Any) -> None:
+    monkeypatch.setattr(
+        "config.account.account_llm_route",
+        lambda: SimpleNamespace(model="gpt-5.4-mini"),
+    )
+    console = _Console()
+
+    assert change(console) is False
+    assert any("managed by your OpenSRE account" in line for line in console.printed)
+    assert any("/logout" in line for line in console.printed)
+
+
+def test_account_model_is_the_effective_model_shown_by_the_shell(monkeypatch: Any) -> None:
+    from surfaces.interactive_shell.command_registry import repl_data
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setattr(
+        "config.account.account_llm_route",
+        lambda: SimpleNamespace(
+            base_url="https://app.opensre.com/api/llm/v1",
+            model="gpt-account",
+        ),
+    )
+
+    settings = repl_data.load_llm_settings()
+
+    assert settings.provider == "openai"
+    assert settings.openai_reasoning_model == "gpt-account"
+    assert settings.openai_classification_model == "gpt-account"
+    assert settings.openai_toolcall_model == "gpt-account"
 
 
 def _configured(monkeypatch: Any) -> None:
@@ -121,8 +168,7 @@ def test_custom_provider_no_model_preserves_configured_model(monkeypatch: Any) -
         env_sync, "sync_provider_env", lambda **kw: synced.append(kw) or "/tmp/.env"
     )
     monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
-    monkeypatch.setattr(switching, "render_models_table", lambda *_: None)
-    monkeypatch.setattr(switching.repl_data, "load_llm_settings", lambda: {})
+    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
 
     console = _Console()
     assert switching.switch_llm_provider("custom-openai", console) is True  # type: ignore[arg-type]
@@ -136,3 +182,10 @@ def test_custom_provider_no_model_uses_legacy_model(monkeypatch: Any) -> None:
     monkeypatch.setenv(provider.legacy_model_env, "gateway-model")
 
     assert switching._resolve_omitted_model(provider) == "gateway-model"
+
+
+def test_missing_subscription_directs_to_browser_login_without_prompting_for_key(monkeypatch):
+    _credential_status_sequence(monkeypatch, configured_after=False)
+    console = _Console()
+    assert switching.switch_llm_provider("chatgpt", console) is False
+    assert any("/auth login chatgpt" in line for line in console.printed)

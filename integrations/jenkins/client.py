@@ -138,23 +138,38 @@ def _as_dict_list(value: object) -> list[dict[str, Any]]:
 def _nested_jobs_tree(leaf_fields: str, depth: int) -> str:
     """Build a Jenkins ``tree`` query that descends folders ``depth`` levels.
 
-    Each level requests ``leaf_fields`` plus a nested ``jobs[...]`` for the next
-    level, so folder-organized jobs are returned alongside top-level ones.
+    Each level requests ``leaf_fields`` plus a nested ``jobs[...]`` for the
+    next level, so folder-organized jobs are returned alongside top-level
+    ones. The deepest level also probes one level further with a bare
+    ``jobs[name]`` (name only, no other fields) -- without it, a folder
+    that exists exactly at the depth limit comes back with no ``jobs`` key
+    at all (Jenkins only returns what the tree asked for), indistinguishable
+    from a genuine leaf job. The probe lets ``_flatten_jobs`` tell the two
+    apart and report depth truncation instead of silently treating an
+    unexplored folder as a job with unknown status.
     """
-    tree = leaf_fields
+    tree = f"{leaf_fields},jobs[name]"
     for _ in range(max(0, depth - 1)):
         tree = f"{leaf_fields},jobs[{tree}]"
     return f"jobs[{tree}]"
 
 
-def _flatten_jobs(raw_jobs: list[dict[str, Any]], prefix: str = "") -> list[tuple[str, dict]]:
+def _flatten_jobs(
+    raw_jobs: list[dict[str, Any]], prefix: str = "", max_depth: int = 0
+) -> tuple[list[tuple[str, dict]], bool]:
     """Flatten a (possibly nested) Jenkins jobs tree into ``(full_path, job)`` pairs.
 
-    A node with a nested ``jobs`` list is a folder and is recursed into; its
-    children's names are prefixed with ``folder/`` so the path matches what
-    ``_job_api_path`` expects. Leaf jobs are returned with their full path.
+    Returns ``(flat, depth_truncated)``. A node with a nested ``jobs`` list is
+    a folder and is recursed into (its children's names are prefixed with
+    ``folder/``); leaf jobs (no ``jobs`` key) are appended with their full
+    path. At ``max_depth`` the tree query only probed one level further with
+    bare names (see ``_nested_jobs_tree``), so a folder still reporting a
+    non-empty ``jobs`` list here has children beyond the requested depth that
+    were never fully fetched -- it's dropped (it isn't a job) and
+    ``depth_truncated`` is set, rather than misreading it as a job.
     """
     flat: list[tuple[str, dict]] = []
+    depth_truncated = False
     for job in raw_jobs:
         name = str(job.get("name", "")).strip()
         if not name:
@@ -162,10 +177,18 @@ def _flatten_jobs(raw_jobs: list[dict[str, Any]], prefix: str = "") -> list[tupl
         full_path = f"{prefix}{name}"
         nested = job.get("jobs")
         if isinstance(nested, list):
-            flat.extend(_flatten_jobs(_as_dict_list(nested), prefix=f"{full_path}/"))
+            if max_depth <= 0:
+                if nested:
+                    depth_truncated = True
+                continue
+            child_flat, child_truncated = _flatten_jobs(
+                _as_dict_list(nested), prefix=f"{full_path}/", max_depth=max_depth - 1
+            )
+            flat.extend(child_flat)
+            depth_truncated = depth_truncated or child_truncated
         else:
             flat.append((full_path, job))
-    return flat
+    return flat, depth_truncated
 
 
 def _coerce_build_number(value: object) -> int | None:
@@ -336,7 +359,9 @@ class JenkinsClient:
             resp = self._get_client().get("/api/json", params={"tree": tree})
             resp.raise_for_status()
             data = _as_dict(resp.json())
-            flat = _flatten_jobs(_as_dict_list(data.get("jobs")))
+            flat, depth_truncated = _flatten_jobs(
+                _as_dict_list(data.get("jobs")), max_depth=_MAX_FOLDER_DEPTH - 1
+            )
             jobs = []
             for full_path, job in flat[:_MAX_JOBS]:
                 status, building = _status_from_color(job.get("color"))
@@ -355,7 +380,7 @@ class JenkinsClient:
                 "success": True,
                 "jobs": jobs,
                 "total": len(jobs),
-                "truncated": len(flat) > _MAX_JOBS,
+                "truncated": len(flat) > _MAX_JOBS or depth_truncated,
             }
         except Exception as exc:
             return self._error("list_jobs", exc, {})
@@ -374,7 +399,9 @@ class JenkinsClient:
             resp = self._get_client().get("/api/json", params={"tree": tree})
             resp.raise_for_status()
             data = _as_dict(resp.json())
-            flat = _flatten_jobs(_as_dict_list(data.get("jobs")))
+            flat, depth_truncated = _flatten_jobs(
+                _as_dict_list(data.get("jobs")), max_depth=_MAX_FOLDER_DEPTH - 1
+            )
             running = []
             for full_path, job in flat[:_MAX_JOBS]:
                 for build in _as_dict_list(job.get("builds")):
@@ -384,7 +411,7 @@ class JenkinsClient:
                 "success": True,
                 "running_builds": running,
                 "total": len(running),
-                "truncated": len(flat) > _MAX_JOBS,
+                "truncated": len(flat) > _MAX_JOBS or depth_truncated,
             }
         except Exception as exc:
             return self._error("list_running_builds", exc, {})

@@ -14,32 +14,25 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from infrastructure.scheduling.scheduler.delivery_bundle import ScheduledDeliveryAdapters
     from infrastructure.scheduling.scheduler.runners import SchedulerRunners
-
-
-def install_investigation_api() -> None:
-    """Wire :meth:`AgentSession.investigate` to the canonical payload runner.
-
-    ``agent_harness`` must not import ``tools``; this composition-root step
-    installs the callable the session API dispatches through.
-    """
-    from core.agent_harness.investigation_api import install_investigation_payload_runner
-    from tools.investigation.capability import run_investigation_payload
-
-    install_investigation_payload_runner(run_investigation_payload)
+    from integrations.knowledge_scans import KnowledgeScanService
+    from integrations.webapp_knowledge import WebappKnowledgeSync
+    from integrations.webapp_scheduled_loops import WebappLoopSync
 
 
 def install_harness_adapters() -> None:
     """Register the integration and tool adapters the harness resolves through.
 
     Without this a harness starts but no tool is available — the ports report
-    nothing until both registries have been installed. Also installs the
-    investigation payload runner used by :meth:`AgentSession.investigate`.
+    nothing until both registries have been installed.
     """
-    import infrastructure.harness_ports as harness_ports
+    import infrastructure.harness_providers as harness_providers
+    from infrastructure.scheduling.scheduler.loop_owner import install_member_resolver
     from integrations.harness_adapters import (
         register_harness_adapters as register_integrations,
     )
+    from integrations.webapp_requests import member_user_id
     from tools.harness_adapters import register_harness_adapters as register_tools
     from tools.interactive_shell.subprocess_presenter import (
         headless_subprocess_presenter_factory,
@@ -47,75 +40,128 @@ def install_harness_adapters() -> None:
 
     register_integrations()
     register_tools()
-    harness_ports.set_subprocess_presenter_factory(headless_subprocess_presenter_factory)
+    harness_providers.SubprocessPresenterProvider(headless_subprocess_presenter_factory).install()
     # Shell / REPL / gateway slash surface: CTA must name a runnable command.
-    harness_ports.set_integration_setup_command(
+    harness_providers.IntegrationSetupCommand(
         lambda service_id: f"/integrations setup {service_id}"
-    )
-    install_investigation_api()
-
-
-def install_notification_adapters() -> tuple[str, ...]:
-    """Register the outbound channels background-RCA notices dispatch through.
-
-    Without this the registry is empty and every configured channel reports
-    ``"unsupported"``, so the returned names are the diagnostic that tells an
-    empty registry apart from a genuinely unknown channel.
-
-    Called on background-RCA completion and when ``/background notify set``
-    validates a channel, not at boot. Importing an adapter module does not pull
-    its vendor transport, because each keeps its client import inside the
-    delivery function.
-
-    Registers the adapter objects rather than relying on the import side effect
-    alone. Imports are cached, so a re-import after
-    ``clear_outbound_adapters()`` runs no module body and would leave the
-    registry empty while this function reported success.
-    """
-    from infrastructure.delivery.notifications.outbound_registry import (
-        register_outbound_adapter,
-        registered_outbound_adapter_names,
-    )
-    from integrations.buzz.background_adapter import buzz_background_adapter
-    from integrations.rocketchat.background_adapter import rocketchat_background_adapter
-    from integrations.smtp.background_adapter import email_background_adapter
-    from integrations.telegram.background_adapter import telegram_background_adapter
-
-    for adapter in (
-        buzz_background_adapter,
-        rocketchat_background_adapter,
-        email_background_adapter,
-        telegram_background_adapter,
-    ):
-        register_outbound_adapter(adapter)
-    return registered_outbound_adapter_names()
+    ).install()
+    # A private loop's owner is one member under their Slack and web app ids.
+    install_member_resolver(member_user_id)
 
 
 def scheduler_runners() -> SchedulerRunners:
-    """Assemble the runners scheduled tasks dispatch through.
+    """Assemble the runner scheduled tasks dispatch through.
 
     The only layer that may see both ``integrations`` and ``tools``, so the
     bundle is built here and handed to whichever host installs it.
     """
     from infrastructure.scheduling.scheduler.runners import SchedulerRunners
-    from integrations.scheduled_agent_bootstrap import run_scheduled_agent_digest
-    from tools.investigation.scheduler_bootstrap import run_scheduled_investigation
+    from integrations.scheduled_agent_bootstrap import (
+        run_scheduled_agent_digest,
+        runs_model_turn,
+    )
 
-    return SchedulerRunners(
-        agent=run_scheduled_agent_digest,
-        investigation=run_scheduled_investigation,
+    return SchedulerRunners(agent=run_scheduled_agent_digest, runs_model_turn=runs_model_turn)
+
+
+def scheduled_delivery_adapters() -> ScheduledDeliveryAdapters:
+    """Assemble the per-provider adapters scheduled delivery dispatches through.
+
+    The only layer that may see both ``integrations`` and ``infrastructure``, so
+    the vendor adapters are bundled here and handed to whichever host installs it.
+    """
+    from infrastructure.scheduling.scheduler.delivery_bundle import ScheduledDeliveryAdapters
+    from infrastructure.scheduling.scheduler.interactive_shell_delivery import (
+        InteractiveShellScheduledDelivery,
+    )
+    from infrastructure.scheduling.scheduler.types import Provider
+    from integrations.discord.scheduled_delivery import DiscordScheduledDelivery
+    from integrations.rocketchat.scheduled_delivery import RocketChatScheduledDelivery
+    from integrations.scheduled_email import EmailScheduledDelivery
+    from integrations.slack.scheduled_delivery import SlackScheduledDelivery
+    from integrations.telegram.scheduled_delivery import TelegramScheduledDelivery
+
+    return ScheduledDeliveryAdapters(
+        {
+            Provider.TELEGRAM: TelegramScheduledDelivery(),
+            Provider.SLACK: SlackScheduledDelivery(),
+            Provider.DISCORD: DiscordScheduledDelivery(),
+            Provider.ROCKETCHAT: RocketChatScheduledDelivery(),
+            Provider.EMAIL: EmailScheduledDelivery(),
+            Provider.INTERACTIVE_SHELL: InteractiveShellScheduledDelivery(),
+        }
     )
 
 
-def install_scheduler_runners() -> None:
-    """Bind the scheduled runners ungated (worker and CLI hosts)."""
-    scheduler_runners().install()
+def install_scheduled_delivery_adapters() -> None:
+    """Bind the scheduled-delivery adapters (worker and CLI hosts)."""
+    scheduled_delivery_adapters().install()
+
+
+def webapp_loop_sync(runners: SchedulerRunners | None = None) -> WebappLoopSync | None:
+    """The hosted gateway's Tasks-page sync, or ``None`` off a hosted organization.
+
+    Built here so the gateway, which hosts the scheduler, never imports
+    ``integrations`` itself. ``runners`` are the scheduler's, for ``run`` requests.
+    """
+    from integrations.webapp_scheduled_loops import webapp_loop_sync_from_environment
+
+    return webapp_loop_sync_from_environment(runners)
+
+
+def knowledge_scan_service() -> KnowledgeScanService | None:
+    """The background scans that keep workspace knowledge current, or ``None`` when it is off.
+
+    Installed as this process's scan service, so ``/knowledge scan`` in a
+    gateway turn pokes it instead of scanning inside the turn. Built here so
+    the gateway never imports ``integrations`` itself.
+    """
+    from integrations.knowledge_scans import (
+        install_scan_service,
+        knowledge_scan_service_from_environment,
+    )
+
+    service = knowledge_scan_service_from_environment()
+    install_scan_service(service)
+    return service
+
+
+def webapp_knowledge_sync(scans: KnowledgeScanService | None = None) -> WebappKnowledgeSync | None:
+    """The hosted gateway's Knowledge-page sync, or ``None`` off a hosted organization.
+
+    ``scans`` serves the app's rescan requests and the scan status it shows.
+    """
+    from integrations.webapp_knowledge import webapp_knowledge_sync_from_environment
+
+    return webapp_knowledge_sync_from_environment(
+        request_rescan=scans.request_rescan if scans is not None else None,
+        scan_status=scans.status_rows if scans is not None else None,
+    )
+
+
+def install_cli_auth_checker() -> None:
+    """Bind the integrations-backed CLI auth checker config reports status through.
+
+    The integrations import is deferred to the first check, so a bare CLI
+    invocation (e.g. ``opensre --help``) does not pay the subprocess-client cost.
+    """
+    from config.llm_auth.cli_auth import CliAuthChecker, CliAuthState
+
+    def check(provider: str) -> CliAuthState | None:
+        from integrations.llm_cli import check_cli_auth
+
+        return check_cli_auth(provider)
+
+    CliAuthChecker(check).install()
 
 
 __all__ = [
     "install_harness_adapters",
-    "install_investigation_api",
-    "install_notification_adapters",
     "scheduler_runners",
-    "install_scheduler_runners",
+    "scheduled_delivery_adapters",
+    "install_scheduled_delivery_adapters",
+    "webapp_loop_sync",
+    "knowledge_scan_service",
+    "webapp_knowledge_sync",
+    "install_cli_auth_checker",
 ]

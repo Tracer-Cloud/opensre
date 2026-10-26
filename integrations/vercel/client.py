@@ -13,7 +13,6 @@ import re
 import time
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import quote
 
 import httpx
 
@@ -246,55 +245,6 @@ class VercelClient:
             }
         except Exception as exc:
             capture_service_error(exc, logger=logger, integration="vercel", method="list_projects")
-            return {"success": False, "error": str(exc)}
-
-    def get_project(self, project_id_or_name: str) -> dict[str, Any]:
-        """Fetch project details including the current production deployment (no deployment list)."""
-        cleaned = (project_id_or_name or "").strip()
-        if not cleaned:
-            return {"success": False, "error": "project id or name is required"}
-        params: dict[str, Any] = {}
-        params.update(self.config.team_params)
-        try:
-            safe = quote(cleaned, safe="")
-            resp = self._get_client().get(f"/v9/projects/{safe}", params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            if not isinstance(data, dict):
-                return {"success": False, "error": "unexpected project response"}
-            targets = data.get("targets")
-            prod: dict[str, Any] = {}
-            if isinstance(targets, dict):
-                raw_prod = targets.get("production")
-                if isinstance(raw_prod, dict):
-                    prod = raw_prod
-            prod_id = str(prod.get("id", "")).strip()
-            return {
-                "success": True,
-                "project": data,
-                "production_deployment_id": prod_id,
-                "production_target": prod,
-            }
-        except httpx.HTTPStatusError as exc:
-            capture_service_error(
-                exc,
-                logger=logger,
-                integration="vercel",
-                method="get_project",
-                extras={"project": cleaned},
-            )
-            return {
-                "success": False,
-                "error": f"HTTP {exc.response.status_code}: {exc.response.text[:200]}",
-            }
-        except Exception as exc:
-            capture_service_error(
-                exc,
-                logger=logger,
-                integration="vercel",
-                method="get_project",
-                extras={"project": cleaned},
-            )
             return {"success": False, "error": str(exc)}
 
     def list_deployments(

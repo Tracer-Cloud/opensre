@@ -2,7 +2,7 @@
 
 Maps a wizard provider selection onto env keys: which keys the provider owns,
 stripping the previous provider's keys on a switch, and mirroring the selection
-into the wizard store. File and keyring I/O uses ``config.env_file``.
+into the wizard store. File and secret-store I/O uses ``config.env_file``.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from config.constants.llm import LLM_AUTH_METHOD_ENV, LLM_PROVIDER_ENV, OPENSRE_LLM_CONNECTION_ENV
 from config.env_file import (
     PROJECT_ENV_PATH,
     env_assignment_key,
@@ -18,7 +19,7 @@ from config.env_file import (
     sync_env_values,
     write_env_lines,
 )
-from config.llm_auth.auth_method import LLM_AUTH_METHOD_ENV
+from config.env_key_sensitivity import is_sensitive_env_key
 from surfaces.shared.llm_setup.catalog import ProviderOption, WizardCredentialKind
 
 
@@ -41,22 +42,14 @@ def sync_reasoning_model_env(
     return target_path
 
 
-def _sync_llm_selection_to_store(
-    *,
-    provider: ProviderOption,
-    model: str,
-    model_provider: ProviderOption | None = None,
-    auth_method: str | None = None,
-) -> None:
+def _sync_llm_selection_to_store(*, provider: ProviderOption, model: str) -> None:
     from config.setup_store import update_local_llm_selection
 
-    resolved_model_provider = model_provider or provider
     update_local_llm_selection(
         provider=provider.value,
         model=model,
         api_key_env=provider.api_key_env or "",
-        model_env=resolved_model_provider.model_env,
-        auth_method=auth_method,
+        model_env=provider.model_env,
     )
 
 
@@ -106,46 +99,68 @@ def _remove_keys(lines: list[str], keys_to_remove: set[str]) -> list[str]:
     return result
 
 
+def reload_provider_selection() -> None:
+    """Apply a child login's saved connection without reloading unrelated exports."""
+    from config.local_env import get_project_env_path
+    from core.llm.transport_mode import LLM_TRANSPORT_ENV
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
+
+    lines = read_env_lines(get_project_env_path())
+    provider_value = _env_value_from_lines(lines, LLM_PROVIDER_ENV)
+    provider = PROVIDER_BY_VALUE.get(provider_value or "")
+    if provider is None:
+        return
+    keys = _provider_specific_keys(provider) | {
+        LLM_PROVIDER_ENV,
+        OPENSRE_LLM_CONNECTION_ENV,
+        LLM_TRANSPORT_ENV,
+    }
+    for key in keys:
+        value = _env_value_from_lines(lines, key)
+        if value is not None:
+            os.environ[key] = value
+        elif key == LLM_TRANSPORT_ENV:
+            os.environ.pop(key, None)
+
+
 def sync_provider_env(
     *,
     provider: ProviderOption,
     model: str,
     toolcall_model: str | None = None,
-    model_provider: ProviderOption | None = None,
-    auth_method: str | None = None,
     extra_env: dict[str, str] | None = None,
     env_path: Path | None = None,
 ) -> Path:
-    """Write non-secret provider settings into the project .env.
+    """Write provider settings into the project .env.
 
-    Removes stale keys from other providers and every API-key line. Secrets are
-    stored in the system keyring, not in ``.env``.
+    Removes stale non-secret keys from other providers. Existing API keys and
+    other secrets are left in place.
     """
     from surfaces.shared.llm_setup.catalog import SUPPORTED_PROVIDERS
 
-    resolved_model_provider = model_provider or provider
     target_path = env_path or PROJECT_ENV_PATH
     existing = read_env_lines(target_path)
 
-    # Strip every provider's API key and every provider's model keys except the
-    # active provider's model slots (secrets are stored in the system keyring).
+    # Strip stale model/endpoint keys from other providers. API keys and other
+    # secrets stay in ``.env`` — switching providers must not delete them.
     keys_to_remove: set[str] = set()
     for p in SUPPORTED_PROVIDERS:
         keys_to_remove |= _provider_specific_keys(p)
 
+    # Legacy OAuth-era key: no longer written, always scrubbed from old files.
     keys_to_remove.add(LLM_AUTH_METHOD_ENV)
     from core.llm.transport_mode import LLM_TRANSPORT_ENV
 
     keys_to_remove.add(LLM_TRANSPORT_ENV)
 
-    # Keep the active provider's model keys but always remove API key entries
-    # (API keys are persisted via the system keyring, not .env).
-    active_non_secret: set[str] = {resolved_model_provider.model_env}
-    if resolved_model_provider.legacy_model_env:
-        active_non_secret.add(resolved_model_provider.legacy_model_env)
-    if resolved_model_provider.toolcall_model_env:
-        active_non_secret.add(resolved_model_provider.toolcall_model_env)
-    classification_env = _classification_model_env(resolved_model_provider)
+    # Keep the active provider's model keys. Sensitive keys are dropped from
+    # the removal set below so a rewrite never deletes an existing API key.
+    active_non_secret: set[str] = {provider.model_env}
+    if provider.legacy_model_env:
+        active_non_secret.add(provider.legacy_model_env)
+    if provider.toolcall_model_env:
+        active_non_secret.add(provider.toolcall_model_env)
+    classification_env = _classification_model_env(provider)
     if classification_env:
         active_non_secret.add(classification_env)
     from core.llm.providers.custom_endpoints import is_custom_provider
@@ -163,6 +178,7 @@ def sync_provider_env(
     if provider.credential_kind == WizardCredentialKind.HOST and provider.api_key_env:
         active_non_secret.add(provider.api_key_env)
     keys_to_remove -= active_non_secret
+    keys_to_remove = {key for key in keys_to_remove if not is_sensitive_env_key(key)}
 
     lines = _remove_keys(existing, keys_to_remove)
 
@@ -174,10 +190,10 @@ def sync_provider_env(
     # an empty model (its CLI default), so scope this strictly to custom gateways.
     resolved_model = model
     if not resolved_model and is_custom_provider(provider.value):
-        legacy_env = resolved_model_provider.legacy_model_env
+        legacy_env = provider.legacy_model_env
         resolved_model = (
-            _env_value_from_lines(lines, resolved_model_provider.model_env)
-            or os.getenv(resolved_model_provider.model_env, "").strip()
+            _env_value_from_lines(lines, provider.model_env)
+            or os.getenv(provider.model_env, "").strip()
             or (
                 _env_value_from_lines(lines, legacy_env) or os.getenv(legacy_env, "").strip()
                 if legacy_env
@@ -187,14 +203,13 @@ def sync_provider_env(
 
     values: dict[str, str] = {
         "LLM_PROVIDER": provider.value,
-        resolved_model_provider.model_env: resolved_model,
+        OPENSRE_LLM_CONNECTION_ENV: "local",
+        provider.model_env: resolved_model,
     }
-    if auth_method:
-        values[LLM_AUTH_METHOD_ENV] = auth_method
-    if resolved_model_provider.legacy_model_env:
-        values[resolved_model_provider.legacy_model_env] = resolved_model
-    if toolcall_model and resolved_model_provider.toolcall_model_env:
-        values[resolved_model_provider.toolcall_model_env] = toolcall_model
+    if provider.legacy_model_env:
+        values[provider.legacy_model_env] = resolved_model
+    if toolcall_model and provider.toolcall_model_env:
+        values[provider.toolcall_model_env] = toolcall_model
     if provider.value == "azure-openai":
         # Azure forces the LiteLLM transport; the custom gateways stay on the
         # native SDK, so they must NOT write LLM_TRANSPORT_ENV.
@@ -225,11 +240,6 @@ def sync_provider_env(
         if preserved is not None:
             values[key] = preserved
     os.environ.update(values)
-    _sync_llm_selection_to_store(
-        provider=provider,
-        model=resolved_model,
-        model_provider=resolved_model_provider,
-        auth_method=auth_method,
-    )
+    _sync_llm_selection_to_store(provider=provider, model=resolved_model)
 
     return target_path

@@ -1,5 +1,5 @@
 ---
-name: yandex-cloud
+name: querying-yandex-cloud
 description: >
   Read Yandex Cloud through its REST API. Applies to any question about VMs,
   metrics, logs, audit events, Kubernetes, managed databases, serverless,
@@ -11,7 +11,7 @@ tools:
   - execute_yc_operation
 ---
 
-# yandex-cloud
+# querying-yandex-cloud
 
 Three rules first, because they are the ones that waste a whole investigation
 when they are missed.
@@ -39,6 +39,12 @@ instead.
 own separate authentication, and it can mutate. If you catch yourself writing
 `yc ...` to answer a question, use `execute_yc_operation` instead.
 
+**But do write the `yc ...` command out when something should change.** These
+tools only read. When the finding calls for an action — resize, restart,
+rebalance, change a setting — end with the exact `yc ...` command an operator
+can paste, not a description of what to do. Writing the command is correct;
+running it is not.
+
 Everything else reaches Yandex Cloud over its REST API with the configured
 credential. There is no CLI step and no shell step.
 
@@ -52,13 +58,13 @@ tell the user a piece of it "is not configured":
 | --- | --- |
 | Metrics, CPU, memory, disk, saturation | `query_yc_metrics`, `list_yc_metrics` |
 | Logs (Cloud Logging) | `read_yc_logs`, `list_yc_log_groups` |
-| Logs of a managed database | not readable yet — a separate store, see below |
+| Logs of a managed database | `read_yc_db_logs` — a separate store, see below |
 | Audit events, who changed what | not readable yet — audit trails write to a sink |
 | VMs, disks, images, instance groups | `list_yc_instances`, `get_yc_instance_diagnostics`; otherwise `execute_yc_operation` |
 | Load balancer target health | `get_yc_lb_health` |
 | Kubernetes **clusters and node groups** | `execute_yc_operation` on `/managed-kubernetes/` |
 | Kubernetes **pods, events, pod logs, nodes** | `kubernetes_list_pods`, `kubernetes_get_events`, `kubernetes_get_pod_logs`, `kubernetes_list_nodes` |
-| Managed PostgreSQL/MySQL/ClickHouse/Redis/MongoDB/Kafka/OpenSearch | `execute_yc_operation` |
+| Managed PostgreSQL/MySQL/ClickHouse/Valkey/StoreDoc/Kafka/OpenSearch | `list_yc_db_clusters`, `get_yc_db_cluster` |
 | Functions, containers, triggers, API gateways | `execute_yc_operation` |
 | Networks, subnets, security groups | `execute_yc_operation` |
 | Anything else in the API | `find_yc_api`, then `execute_yc_operation` |
@@ -136,7 +142,7 @@ Cloud Logging and nothing else.** Where to look depends on who wrote the log:
 
 | Written by | Read with | Reaches Cloud Logging? |
 | --- | --- | --- |
-| A managed database engine | not readable yet | Only if export was switched on |
+| A managed database engine | `read_yc_db_logs` | Only if export was switched on |
 | A container in Kubernetes | `kubernetes_get_pod_logs` | Only if a log agent was deployed |
 | A serverless function or container | `read_yc_logs` | Yes, by default |
 | Your own application, sending to Cloud Logging | `read_yc_logs` | Yes, that is what it is |
@@ -145,10 +151,10 @@ So the search order for "why did this break" is: ask the owning service first,
 then Cloud Logging. Doing it the other way round produces a confident "no logs
 found" for a database that has been logging all along.
 
-Managed-database logs are not reachable from this tree yet. When a database
-question needs them, say so plainly and fall back to metrics and to the cluster
-state read through `execute_yc_operation` on `/managed-<engine>/`, rather than
-reporting Cloud Logging's silence as "no logs".
+A managed database keeps several streams and serves one at a time, so name
+the one the question is about: MySQL answers with its error log unless
+`MYSQL_SLOW_QUERY` is asked for, and a question about slow queries otherwise
+gets a confident empty answer. The result lists the other streams.
 
 Export to Cloud Logging is optional and off unless someone enabled it. If a
 managed service has no log group, that is a configuration fact worth reporting —
@@ -174,7 +180,7 @@ Retention differs by source, and an empty result means different things:
 | Source | Kept | An empty result means |
 | --- | --- | --- |
 | Cloud Logging (`read_yc_logs`) | ~31 days | Beyond retention if the date is older — say so, do not call it "no evidence" |
-| Managed-database logs (not readable yet) | per cluster | A separate store from Cloud Logging, so Cloud Logging's silence says nothing about it |
+| Managed-database logs (`read_yc_db_logs`) | per cluster | A separate store from Cloud Logging, so Cloud Logging's silence says nothing about it |
 | Monitoring (`query_yc_metrics`) | months | Genuinely no data for that window, if the window was right |
 
 So for an incident weeks back, metrics are usually the only surviving evidence,

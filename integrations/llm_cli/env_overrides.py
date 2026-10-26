@@ -4,8 +4,8 @@
 Vendor CLIs still need HTTP credentials sometimes; adapters merge ``nonempty_env_values(...)``
 into ``CLIInvocation.env`` (same idea as Codex ``OPENAI_*``, Cursor ``CURSOR_API_KEY``, OpenCode HTTP keys).
 
-Keep ``HTTP_LLM_PROVIDER_ENV_KEYS`` aligned with ``LLMSettings`` / ``config/config.py`` API-key env
-names when adding HTTP LLM providers.
+Keep ``HTTP_LLM_PROVIDER_ENV_KEYS`` aligned with ``LLMSettings`` / ``config/llm_settings.py``
+API-key env names when adding HTTP LLM providers.
 """
 
 from __future__ import annotations

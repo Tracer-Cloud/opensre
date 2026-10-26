@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from contextlib import suppress
+from typing import TextIO, cast
 
 import click
 
@@ -27,6 +30,7 @@ from infrastructure.filestorage.setup import (
     save_remote_sync_settings,
 )
 from infrastructure.process.exit_codes import ERROR, SUCCESS
+from infrastructure.process.runtime_flags import is_json_output
 from surfaces.cli.commands.remote_sync_progress import CliProgress
 from surfaces.cli.telemetry import capture_exception
 
@@ -43,13 +47,54 @@ def remote_sync_command(ctx: click.Context) -> None:
 def status_command() -> None:
     """Show whether sync is on, and what would be mirrored."""
     try:
-        lines = format_status_lines(get_sync_status())
+        status = get_sync_status()
     except RemoteSyncError as exc:
         click.echo(str(exc), err=True)
         raise SystemExit(ERROR) from exc
+    if is_json_output():
+        click.echo(json.dumps(_status_json(status)))
+        raise SystemExit(SUCCESS)
+    lines = format_status_lines(status)
     for line in lines:
         click.echo(line)
     raise SystemExit(SUCCESS)
+
+
+def _status_json(status: object) -> dict[str, object]:
+    """Serialize the shared status view without coupling it to terminal formatting."""
+    from infrastructure.filestorage.operations import SyncStatus
+
+    assert isinstance(status, SyncStatus)
+    config = status.config
+    return {
+        "enabled": status.enabled,
+        "config": (
+            None
+            if config is None
+            else {
+                "provider": str(config.provider),
+                "bucket": config.bucket,
+                "prefix": config.prefix,
+                "region": config.region,
+                "profile": config.profile,
+                "exclusions": list(config.exclude.patterns),
+            }
+        ),
+        "roots": [
+            {
+                "name": str(root.name),
+                "path": str(root.path),
+                "exists": root.exists,
+                "excluded": root.excluded,
+            }
+            for root in status.roots
+        ],
+        "exposure": (
+            None
+            if status.exposure is None
+            else {"status": status.exposure.exposure.value, "detail": status.exposure.detail}
+        ),
+    }
 
 
 @remote_sync_command.command(name=RemoteSyncSubcommand.SYNC.value)
@@ -58,7 +103,8 @@ def status_command() -> None:
 @click.option("--dry-run", is_flag=True, help="Preview transfers without changing anything.")
 def sync_now_command(pull_only: bool, push_only: bool, dry_run: bool) -> None:
     """Sync now: pull remote changes, then push local ones."""
-    progress = CliProgress() if click.get_text_stream("stdout").isatty() else None
+    stdout = cast(Callable[[str], TextIO], click.get_text_stream)("stdout")
+    progress = CliProgress() if stdout.isatty() else None
     try:
         report = run_remote_sync(
             pull_only=pull_only, push_only=push_only, dry_run=dry_run, on_progress=progress
@@ -107,7 +153,10 @@ def run_remote_sync_on_exit() -> None:
 @click.option(
     "--provider",
     default=None,
-    help=f"Backend name (default {DEFAULT_REMOTE_SYNC_PROVIDER}; built-in: {', '.join(builtin_providers())}).",
+    help=(
+        f"Backend name (default {DEFAULT_REMOTE_SYNC_PROVIDER}; "
+        f"built-in: {', '.join(builtin_providers())})."
+    ),
 )
 @click.option(
     "--bucket",
@@ -215,7 +264,8 @@ def _collect_setup_request(
             enabled=enabled,
         )
 
-    if not click.get_text_stream("stdin").isatty():
+    stdin = cast(Callable[[str], TextIO], click.get_text_stream)("stdin")
+    if not stdin.isatty():
         raise RemoteSyncError(
             "pass --provider and --bucket, or run setup in an interactive terminal"
         )

@@ -8,7 +8,7 @@ from typing import Any, cast
 from pydantic import BaseModel, Field
 
 from core.tool import EvidenceType, SideEffectLevel, report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available_or_backend
 from integrations.eks.eks_k8s_client import build_k8s_clients

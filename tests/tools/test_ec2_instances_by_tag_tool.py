@@ -7,7 +7,13 @@ from typing import Any
 import pytest
 
 from integrations.aws.topology_helper import extract_ec2_instances_params
-from integrations.ec2.tools.ec2_instances_by_tag_tool import _is_available, ec2_instances_by_tag
+from integrations.ec2.tools.ec2_instances_by_tag_tool import (
+    _is_available,
+    ec2_instances_by_tag,
+)
+from integrations.ec2.tools.ec2_instances_by_tag_tool._evidence import (
+    map_ec2_instances_by_tag as _map_ec2_instances_by_tag,
+)
 
 
 class _FakeAWSBackend:
@@ -203,3 +209,76 @@ def test_real_path_propagates_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     out = ec2_instances_by_tag(tier="web")
     assert out["available"] is False
     assert "Failed" in out["error"]
+
+
+class TestMapEc2InstancesByTag:
+    def test_records_entry_with_primary_tier(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_ec2_instances_by_tag(
+            evidence,
+            {
+                "available": True,
+                "total_instances": 5,
+                "instances": [{"instance_id": "i-1"}],
+                "summary": {"primary_tier": "web"},
+                "tiers_detected": ["web", "worker"],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "ec2_instances_by_tag"
+        assert entries[0]["summary"] == "5 active instance(s), primary tier 'web', 2 tiers"
+
+    def test_records_entry_without_tier_clause_when_single_tier(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_ec2_instances_by_tag(
+            evidence,
+            {
+                "available": True,
+                "total_instances": 4,
+                "instances": [{"instance_id": "i-1"}],
+                "summary": {"primary_tier": "web"},
+                "tiers_detected": ["web"],
+            },
+            {},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"] == "4 active instance(s), primary tier 'web'"
+        )
+
+    def test_qualifies_count_when_truncated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_ec2_instances_by_tag(
+            evidence,
+            {
+                "available": True,
+                "total_instances": 5000,
+                "truncated": True,
+                "instances": [{"instance_id": "i-1"}],
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "5000+ active instance(s)"
+
+    def test_records_nothing_when_no_instances(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_ec2_instances_by_tag(
+            evidence, {"available": True, "total_instances": 0, "instances": []}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_ec2_instances_by_tag(evidence, {"available": False, "error": "AccessDenied"}, {})
+
+        assert "catalog_entries" not in evidence

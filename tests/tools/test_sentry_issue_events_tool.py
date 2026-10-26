@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.sentry.tools.sentry_issue_events_tool import list_sentry_issue_events
+from integrations.sentry.tools.sentry_issue_events_tool import (
+    _map_list_sentry_issue_events,
+    list_sentry_issue_events,
+)
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -51,3 +55,39 @@ def test_run_happy_path() -> None:
         )
     assert result["available"] is True
     assert len(result["events"]) == 1
+
+
+class TestMapListSentryIssueEvents:
+    def test_records_entry_with_event_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_sentry_issue_events(
+            evidence,
+            {
+                "available": True,
+                "events": [
+                    {"eventID": "e1", "dateCreated": "2024-01-02"},
+                    {"eventID": "e2", "dateCreated": "2024-01-01"},
+                ],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "list_sentry_issue_events"
+        assert entries[0]["summary"] == "2 recent event(s) retrieved"
+
+    def test_records_nothing_when_no_events(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_sentry_issue_events(evidence, {"available": True, "events": []}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_sentry_issue_events(evidence, {"available": False, "error": "not configured"}, {})
+
+        assert "catalog_entries" not in evidence

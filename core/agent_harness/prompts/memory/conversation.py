@@ -10,13 +10,12 @@ import re
 
 from core.agent_harness.session.pending_offer import (
     DispatchablePendingOffer,
-    PendingInvestigationOffer,
     PendingScheduleOffer,
 )
 from core.agent_harness.session.want_me_to import offer_from_assistant_content
 from core.state import MAX_CONVERSATION_TURNS
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
-from infrastructure.harness_ports import strip_message_context_prefix
+from infrastructure.harness_providers import strip_message_context_prefix
 
 NO_HISTORY_PLACEHOLDER = "(no prior messages in this CLI thread)"
 _ACTION_FACT_MARKERS = (
@@ -53,19 +52,17 @@ def expand_affirmative_follow_up(
     messages: list[tuple[str, str]] | tuple[tuple[str, str], ...] | None,
     *,
     pending_schedule: PendingScheduleOffer | None = None,
-    pending_investigation: PendingInvestigationOffer | None = None,
     pending_offer: DispatchablePendingOffer | None = None,
 ) -> str:
     """Rewrite bare affirmatives into the prior actionable offer.
 
     Gateway/Slack turns often arrive as ``yes`` / ``sure`` after the assistant
     offered a next step. Without expansion, the action agent treats that as a
-    new vague request and hands off to the investigate-onboarding assistant.
+    new vague request.
 
     Structured :class:`~core.agent_harness.session.pending_offer.DispatchablePendingOffer`
-    instances (schedule → ``/cron``, investigation → ``/investigate alert:…``)
-    expand without scraping Want-me-to prose. Pass ``pending_offer`` (preferred) or
-    the typed kwargs; schedule kwargs win over investigation when both are set.
+    instances (schedule → ``/cron``) expand without scraping Want-me-to prose.
+    Pass ``pending_offer`` (preferred) or the typed kwarg.
 
     Other Want-me-to closers still expand from the newest assistant turn only,
     so an older remediation offer cannot shadow a fresher one.
@@ -78,7 +75,7 @@ def expand_affirmative_follow_up(
     if not (_is_affirmative(remainder) or _is_restated_affirmative(remainder)):
         return raw
 
-    structured = pending_offer or pending_schedule or pending_investigation
+    structured = pending_offer or pending_schedule
     if structured is not None:
         # No vendor context prefix (would hide a leading /cron dispatch).
         return structured.to_dispatch_message()

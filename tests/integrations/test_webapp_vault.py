@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
+import config.account as account
 import integrations.webapp_vault as vault
 from config.constants.billing import (
     MACHINE_SECRET_ENV,
@@ -14,6 +15,7 @@ from config.constants.billing import (
     USAGE_SECRET_ENV,
     WEBAPP_URL_ENV,
 )
+from integrations.catalog import classify_integrations
 
 
 class _FakeResponse:
@@ -25,6 +27,31 @@ class _FakeResponse:
         if isinstance(self._payload, Exception):
             raise self._payload
         return self._payload
+
+
+@pytest.fixture(autouse=True)
+def _no_account_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a token stored on the developer's machine out of these tests."""
+    monkeypatch.setattr(account, "resolve_account_token", lambda: "")
+
+
+def test_account_token_wins_over_the_fleet_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The webapp takes the organization from this token; the fleet secret names none.
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example.com")
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_1")
+    monkeypatch.setenv(USAGE_SECRET_ENV, "SHARED-SECRET")
+    monkeypatch.setattr(account, "resolve_account_token", lambda: "ORG-TOKEN")
+    sent: list[dict[str, Any]] = []
+
+    def fake_get(url: str, **kwargs: Any) -> _FakeResponse:
+        sent.append(kwargs)
+        return _FakeResponse(200, {"success": True, "data": []})
+
+    monkeypatch.setattr(vault.httpx, "get", fake_get)
+
+    vault.fetch_webapp_org_integrations()
+
+    assert sent[0]["headers"]["Authorization"] == "Bearer ORG-TOKEN"
 
 
 def test_unconfigured_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -84,7 +111,9 @@ def test_fetches_and_normalizes_records(monkeypatch: pytest.MonkeyPatch) -> None
                 "data": [
                     {
                         "id": "int_gh",
+                        "origin": "webapp",
                         "service": "github",
+                        "connection_origin": "webapp",
                         "status": "active",
                         "name": "default",
                         "credentials": {
@@ -136,7 +165,7 @@ def test_http_error_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_resolve_integrations_merges_webapp_vault(monkeypatch: pytest.MonkeyPatch) -> None:
     """Gateway warm path: vault github appears in resolved integrations."""
-    import infrastructure.harness_ports as ports
+    from infrastructure.harness_providers import integration_resolution as ports
     from integrations.harness_adapters import register_harness_adapters
 
     register_harness_adapters()
@@ -149,7 +178,9 @@ def test_resolve_integrations_merges_webapp_vault(monkeypatch: pytest.MonkeyPatc
         lambda: [
             {
                 "id": "int_gh",
+                "origin": "webapp",
                 "service": "github",
+                "connection_origin": "webapp",
                 "status": "active",
                 "name": "default",
                 "credentials": {
@@ -160,8 +191,13 @@ def test_resolve_integrations_merges_webapp_vault(monkeypatch: pytest.MonkeyPatc
             }
         ],
     )
-    monkeypatch.setattr(ports, "_load_integrations", lambda: [])
-    monkeypatch.setattr(ports, "_load_env_integrations", lambda: [])
+    from dataclasses import replace
+
+    monkeypatch.setattr(
+        ports,
+        "_installed_adapters",
+        replace(ports._adapters(), load_integrations=lambda: [], load_env_integrations=lambda: []),
+    )
 
     result = ports.resolve_integrations_with_metadata({})
     assert "github" in result.resolved_integrations
@@ -188,14 +224,8 @@ def test_push_sends_the_org_scoped_record(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(vault.httpx, "post", _post)
 
-    assert vault.push_webapp_org_integration("github", {"token": "ghp_x"}) is True
-    assert calls[0]["url"] == "https://app.example.com/api/agent/integrations"
-    assert calls[0]["json"] == {
-        "organizationId": "org_1",
-        "service": "github",
-        "credentials": {"token": "ghp_x"},
-    }
-    assert calls[0]["headers"]["Authorization"] == "Bearer shared"
+    assert vault.push_webapp_org_integration("github", {"token": "ghp_x"}) is False
+    assert calls == []
 
 
 def test_delete_sends_service_and_org(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -256,7 +286,7 @@ def test_list_credentials_survive_the_round_trip(monkeypatch: pytest.MonkeyPatch
     quotes — a silo would then request toolsets that do not exist.
     """
     # Arrange
-    from integrations.github.mcp import DEFAULT_GITHUB_MCP_TOOLSETS, GitHubMCPConfig
+    from integrations.github.mcp import DEFAULT_GITHUB_MCP_TOOLSETS
 
     monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example.com")
     monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_1")
@@ -274,11 +304,8 @@ def test_list_credentials_survive_the_round_trip(monkeypatch: pytest.MonkeyPatch
         "github", {"toolsets": list(DEFAULT_GITHUB_MCP_TOOLSETS)}
     )
 
-    # Assert: every value is text, and the reader restores the original list.
-    assert ok is True
-    stored = sent[0]["json"]["credentials"]["toolsets"]
-    assert all(isinstance(value, str) for value in sent[0]["json"]["credentials"].values())
-    assert list(GitHubMCPConfig._normalize_toolsets(stored)) == list(DEFAULT_GITHUB_MCP_TOOLSETS)
+    assert ok is False
+    assert sent == []
 
 
 def test_read_is_bound_to_this_silos_own_organization(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -308,3 +335,106 @@ def test_read_is_bound_to_this_silos_own_organization(monkeypatch: pytest.Monkey
     # Assert: no caller-supplied organization, and the env one is used.
     assert inspect.signature(vault.fetch_webapp_org_integrations).parameters == {}
     assert sent[0]["params"]["organizationId"] == "org_mine"
+
+
+def test_turn_time_vault_read_drops_personal_connections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example.com")
+    monkeypatch.setenv(USAGE_SECRET_ENV, "mt_vault")
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_1")
+
+    def _item(record_id: str, owner: dict[str, str]) -> dict[str, Any]:
+        return {
+            "id": record_id,
+            "service": "github",
+            "connection_origin": "webapp",
+            "status": "active",
+            "name": record_id,
+            "owner": owner,
+            "credentials": {"auth_token": f"tok-{record_id}"},
+        }
+
+    def fake_get(_url: str, **_kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(
+            200,
+            {
+                "success": True,
+                "data": [
+                    _item("team", {"kind": "organization", "id": "org_1"}),
+                    _item("mine", {"kind": "user", "id": "user_1"}),
+                ],
+            },
+        )
+
+    monkeypatch.setattr(vault.httpx, "get", fake_get)
+
+    records = vault.fetch_webapp_org_integrations()
+
+    assert records is not None
+    assert [record["id"] for record in records] == ["team"]
+
+
+@pytest.mark.parametrize(
+    "owner",
+    [
+        None,
+        "organization",
+        {},
+        {"kind": "organization"},
+        {"kind": "organization", "id": " "},
+    ],
+)
+def test_turn_time_vault_read_rejects_malformed_owners(owner: object) -> None:
+    records = vault.records_from_vault_payload(
+        {
+            "success": True,
+            "data": [
+                {
+                    "id": "unsafe",
+                    "service": "github",
+                    "connection_origin": "webapp",
+                    "status": "active",
+                    "name": "default",
+                    "owner": owner,
+                    "credentials": {"auth_token": "must-not-escape"},
+                }
+            ],
+        },
+        organization_id="org_1",
+    )
+
+    assert records == []
+
+
+def test_turn_time_vault_selects_the_workspace_default() -> None:
+    def _item(record_id: str, *, is_default: bool) -> dict[str, Any]:
+        return {
+            "id": record_id,
+            "service": "github",
+            "connection_origin": "webapp",
+            "status": "active",
+            "name": record_id,
+            "owner": {"kind": "organization", "id": "org_1"},
+            "is_default": is_default,
+            "credentials": {
+                "auth_token": f"tok-{record_id}",
+                "is_default": str(is_default).lower(),
+            },
+        }
+
+    records = vault.records_from_vault_payload(
+        {
+            "success": True,
+            "data": [
+                _item("first", is_default=False),
+                _item("second", is_default=True),
+            ],
+        },
+        organization_id="org_1",
+    )
+
+    assert records is not None
+    resolved = classify_integrations(records)
+    assert resolved["github"]["auth_token"] == "tok-second"
+    assert resolved["github"]["connection_id"] == "second"

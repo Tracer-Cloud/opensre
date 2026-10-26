@@ -14,7 +14,8 @@ metered turn / vault fetch), so the token is reused across calls.
 The webapp verifies the token (``clerkClient.m2m.verify``) and requires its
 subject to equal the org's bound machine id, so it is org-scoped. Any failure
 here returns "" (fail closed): the caller then falls back to the shared secret
-or treats metering/vault as unavailable — it never blocks a turn.
+or treats metering/vault as unavailable. Hosted credit admission blocks the
+turn when neither credential can establish a trustworthy ledger decision.
 """
 
 from __future__ import annotations

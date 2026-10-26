@@ -1,0 +1,114 @@
+---
+title: "SMTP"
+description: "Configure SMTP so OpenSRE can send email through your existing relay."
+---
+
+## Overview
+
+OpenSRE can send email through any existing SMTP relay you already use. You do **not** need to run your own mail server.
+
+Typical providers:
+
+- Google Workspace / Gmail SMTP
+- Microsoft 365 SMTP
+- AWS SES SMTP
+- SendGrid / Postmark / Mailgun SMTP
+- local dev SMTP sinks like Mailpit or MailHog
+
+## Prerequisites
+
+- An SMTP host you can reach from OpenSRE
+- A sender address the relay will accept
+- Optional username/password if the relay requires auth
+
+## Setup
+
+### Option 1: CLI wizard
+
+```bash
+opensre integrations setup smtp
+```
+
+You'll be prompted for:
+
+- SMTP host
+- SMTP port
+- security mode: `starttls`, `ssl`, or `none`
+- optional username/password
+- sender address
+- optional default recipient
+
+SMTP is configured separately from first-run onboarding — use this setup command.
+
+### Option 2: Environment variables
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+SMTP_USERNAME=mailer
+SMTP_PASSWORD=secret
+SMTP_FROM_ADDRESS=opensre@example.com
+SMTP_DEFAULT_TO=team@example.com
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SMTP_HOST` | — | SMTP hostname |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_SECURITY` | `starttls` | `starttls`, `ssl`, or `none` |
+| `SMTP_USERNAME` | — | Optional auth username (set with password) |
+| `SMTP_PASSWORD` | — | Optional auth password (set with username) |
+| `SMTP_FROM_ADDRESS` | — | Sender address |
+| `SMTP_DEFAULT_TO` | — | Default recipient for outbound email |
+
+If authentication is required, set **both** `SMTP_USERNAME` and `SMTP_PASSWORD`.
+
+## Credentials
+
+Use any SMTP relay your org already trusts. For local testing, Mailpit is a good fake SMTP target:
+
+```bash
+docker run -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+```bash
+SMTP_HOST=localhost
+SMTP_PORT=1025
+SMTP_SECURITY=none
+SMTP_FROM_ADDRESS=opensre@example.com
+SMTP_DEFAULT_TO=team@example.com
+```
+
+## Verify
+
+```bash
+opensre integrations verify smtp
+```
+
+A passing verification confirms OpenSRE can:
+
+- connect to the SMTP server
+- negotiate TLS when configured
+- authenticate when credentials are provided
+
+Sample success output:
+
+```text
+smtp: passed — Connected to SMTP server successfully.
+```
+
+## Troubleshooting
+
+| Detail | Likely cause |
+| --- | --- |
+| `Missing recipient email address` | No `SMTP_DEFAULT_TO` is configured yet. |
+| `username and password must both be set` | Only one auth field was provided. |
+| `from_address must look like an email address` | Sender address is malformed. |
+| `SMTP connection failed` | Host/port/TLS settings are wrong, or the relay is unreachable. |
+
+## Security
+
+- Prefer app passwords / SMTP credentials scoped to a mailer account.
+- Store passwords in `.env` or your secret manager — not in source control.
+- Use `starttls` or `ssl` in production; reserve `none` for local sinks.

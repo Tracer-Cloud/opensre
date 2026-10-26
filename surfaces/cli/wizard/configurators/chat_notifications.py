@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from infrastructure.terminal.theme import SECONDARY
-from integrations.buzz.setup import BUZZ_SETUP
-from integrations.discord.setup import DISCORD_SETUP
-from integrations.rocketchat.setup import ROCKETCHAT_SETUP
-from integrations.slack.setup import SLACK_SETUP
+from integrations.buzz import BUZZ_SETUP
+from integrations.discord import DISCORD_SETUP
+from integrations.rocketchat import ROCKETCHAT_SETUP
+from integrations.slack import SLACK_SETUP
 from integrations.telegram.setup import TELEGRAM_SETUP
 from surfaces.cli.wizard.configurators.spec_configurator import configure_from_spec
 
@@ -30,8 +30,8 @@ def _configure_discord() -> tuple[str, str]:
         intro=(
             "\n[bold]Discord Integration[/bold]\n"
             f"[{SECONDARY}]Get your credentials from https://discord.com/developers/applications. "
-            "Only the bot token is required; the application ID (needed to register the "
-            "/investigate slash command), public key, and a default channel ID are optional.[/]\n"
+            "Only the bot token is required; the application ID, public key, and a "
+            "default channel ID are optional.[/]\n"
         ),
     )
 
@@ -59,10 +59,10 @@ def _configure_buzz() -> tuple[str, str]:
             "\n[bold]Buzz Integration[/bold]\n"
             f"[{SECONDARY}]Buzz (block/buzz) is a self-hostable, Nostr-based workspace. "
             "Generate an agent identity with `buzz-admin generate-key`, then paste its "
-            "private key here (kept out of plain .env — stored in the system keyring). "
+            "private key here (kept out of plain .env — stored in ~/.opensre/credentials.json). "
             "Channels are UUIDs — run `buzz channels list` to find one.\n"
             "Requires the `buzz` CLI on PATH (`cargo install --path crates/buzz-cli` from "
-            "https://github.com/block/buzz). Press Ctrl+C to skip and continue onboarding; "
+            "https://github.com/block/buzz). Press Ctrl+C to skip Buzz setup; "
             "`opensre integrations setup buzz` picks it up later.[/]\n"
         ),
     )
@@ -76,9 +76,8 @@ def _configure_telegram() -> tuple[str, str]:
             "\n[bold]Telegram Integration[/bold]\n"
             f"[{SECONDARY}]Create a bot with @BotFather, then add it to the chat it should post "
             "in. For a public channel the @name is enough; otherwise find the numeric chat id "
-            "via getUpdates. See docs/messaging/telegram for details.\n"
+            "via getUpdates. See docs/integrations/messaging/telegram for details.\n"
             "Both answers are required — Telegram cannot deliver without a chat. Press Ctrl+C to "
-            "skip Telegram and continue onboarding; `opensre integrations setup telegram` picks "
-            "it up later.[/]\n"
+            "skip Telegram setup; `opensre integrations setup telegram` picks it up later.[/]\n"
         ),
     )

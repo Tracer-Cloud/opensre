@@ -6,12 +6,58 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.domain.types.evidence import record_evidence_entry
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
+from infrastructure.text.truncation import truncate
 from integrations.prefect.client import make_prefect_client
 
 _ERROR_KEYWORDS = ("error", "failed", "exception", "fatal", "crash", "traceback", "exitcode")
 _FAILED_STATES = {"FAILED", "CRASHED", "CANCELLED", "CANCELLING"}
+
+#: Bound the caller-supplied work pool name echoed into a report summary.
+_POOL_NAME_SUMMARY_TRUNCATE_LEN = 60
+
+#: Prefect's ``/flow_runs/filter``, ``/work_pools/filter``, and
+#: ``/work_pools/{name}/workers/filter`` endpoints all cap ``limit`` at 200
+#: server-side (``min(limit, 200)`` in ``integrations/prefect/client.py``),
+#: and none surfaces pagination metadata -- a returned count cannot be
+#: distinguished from a true total except by comparing it against the
+#: effective page size that was requested.
+_PREFECT_MAX_PAGE_SIZE = 200
+
+
+def _prefect_page_is_truncated(returned_count: int, requested_limit: int) -> bool:
+    effective_limit = min(max(requested_limit, 1), _PREFECT_MAX_PAGE_SIZE)
+    return returned_count >= effective_limit
+
+
+def _map_prefect_flow_runs(
+    evidence: dict[str, Any], output: dict[str, Any], tool_input: dict[str, Any]
+) -> None:
+    """Cite the flow run count, failed count, and error-log-line count when fetched."""
+    if not output.get("available"):
+        return
+    flow_runs = output.get("flow_runs") or []
+    if not flow_runs:
+        return
+    total = output.get("total", len(flow_runs))
+    truncated = _prefect_page_is_truncated(total, tool_input.get("limit", 20))
+    total_label = f"{total}+" if truncated else str(total)
+    failed_count = output.get("total_failed", 0)
+    # A truncated page's failed-count is only a floor even when it's zero --
+    # zero failed runs *in the returned page* does not mean zero overall.
+    failed_label = f"{failed_count}+" if truncated else str(failed_count)
+    parts = [f"{total_label} flow run(s), {failed_label} failed"]
+    if output.get("fetched_logs_for_run_id"):
+        error_count = len(output.get("error_log_lines") or [])
+        parts.append(f"{error_count} error log line(s)")
+    record_evidence_entry(
+        evidence,
+        source="prefect_flow_runs",
+        label="Prefect Flow Runs",
+        summary=", ".join(parts),
+    )
 
 
 class PrefectFlowRunsTool(BaseTool):
@@ -19,6 +65,9 @@ class PrefectFlowRunsTool(BaseTool):
 
     name = "prefect_flow_runs"
     source = "prefect"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = _map_prefect_flow_runs
     description = (
         "Fetch recent Prefect flow runs filtered by state, and retrieve logs for failed runs "
         "to surface orchestration failures and root-cause evidence."
@@ -212,11 +261,44 @@ _UNHEALTHY_WORKER_STATUSES = {"OFFLINE", "UNHEALTHY"}
 _UNHEALTHY_POOL_STATUSES = {"NOT_READY", "PAUSED"}
 
 
+def _map_prefect_worker_health(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite work pool health, and worker health when a specific pool was inspected."""
+    if not output.get("available"):
+        return
+    work_pools = output.get("work_pools") or []
+    if not work_pools:
+        return
+    total_pools = output.get("total_pools", len(work_pools))
+    unhealthy_pools = output.get("total_unhealthy_pools", 0)
+    parts = [f"{total_pools} work pool(s), {unhealthy_pools} unhealthy"]
+    pool_name = output.get("work_pool_name")
+    if pool_name:
+        safe_pool_name = truncate(
+            str(pool_name).replace("\n", " "), _POOL_NAME_SUMMARY_TRUNCATE_LEN
+        )
+        total_workers = output.get("total_workers", 0)
+        unhealthy_workers = output.get("total_unhealthy_workers", 0)
+        parts.append(
+            f"{total_workers} worker(s) in '{safe_pool_name}', {unhealthy_workers} unhealthy"
+        )
+    record_evidence_entry(
+        evidence,
+        source="prefect_worker_health",
+        label="Prefect Worker Health",
+        summary=", ".join(parts),
+    )
+
+
 class PrefectWorkerHealthTool(BaseTool):
     """Inspect Prefect work pool and worker health to identify orchestration bottlenecks."""
 
     name = "prefect_worker_health"
     source = "prefect"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = _map_prefect_worker_health
     description = (
         "Inspect Prefect work pools and their registered workers to identify offline, "
         "unhealthy, or paused workers that may be blocking flow run execution."

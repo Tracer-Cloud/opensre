@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-from integrations.pagerduty.tools import PagerDutyOnCallTool
+from integrations.pagerduty.tools import PagerDutyOnCallTool, _map_pagerduty_oncall
 
 
 def _tool() -> PagerDutyOnCallTool:
@@ -105,3 +106,44 @@ def test_metadata_is_valid() -> None:
     assert t.name == "pagerduty_oncall"
     assert t.source == "pagerduty"
     assert "api_key" in t.input_schema["required"]
+
+
+class TestMapPagerdutyOncall:
+    def test_records_entry_with_responder_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_oncall(
+            evidence,
+            {"available": True, "total": 2, "oncalls": [{"user": {}}, {"user": {}}]},
+            {"limit": 25},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "pagerduty_oncall"
+        assert entries[0]["summary"] == "2 on-call responder(s)"
+
+    def test_qualifies_count_when_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_oncall(
+            evidence,
+            {"available": True, "total": 25, "oncalls": [{"user": {}} for _ in range(25)]},
+            {"limit": 25},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "25+ on-call responder(s)"
+
+    def test_records_nothing_when_no_oncalls(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_oncall(evidence, {"available": True, "total": 0, "oncalls": []}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_oncall(evidence, {"available": False, "error": "HTTP 403"}, {})
+
+        assert "catalog_entries" not in evidence

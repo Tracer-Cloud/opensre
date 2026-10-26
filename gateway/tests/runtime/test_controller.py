@@ -8,10 +8,20 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from config.constants.gateway import SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS
 from gateway.core.lifecycle.controller import GatewayController
+from gateway.core.process.shutdown_budget import ShutdownBudget
 from gateway.startup import StartedGateway
 from gateway.transports.names import TransportName
 from gateway.transports.startup import TransportHandle
+
+
+class _Clock:
+    def __init__(self, now: float = 0.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
 
 
 def test_start_surfaces_delegates_to_the_startup_module(
@@ -30,7 +40,9 @@ def test_start_surfaces_delegates_to_the_startup_module(
     )
     captured: dict[str, object] = {}
 
-    def _boot(*, logger, handler):
+    def _boot(*, logger, handler, prompt_runner=None, loop_sync_wake=None):
+        captured["prompt_runner"] = prompt_runner
+        captured["loop_sync_wake"] = loop_sync_wake
         captured["logger"] = logger
         captured["handler"] = handler
         return expected
@@ -43,6 +55,7 @@ def test_start_surfaces_delegates_to_the_startup_module(
     manager.start_surfaces(logger=logger, handler=handler)
 
     assert manager.surfaces is expected
+    assert captured["loop_sync_wake"] == manager.request_webapp_loop_sync
     assert captured["logger"] is logger
     assert captured["handler"] is handler
     assert manager.components[TransportName.TELEGRAM] == "polling for messages"
@@ -106,8 +119,8 @@ def test_manager_reload_scheduler_refreshes_component_status(
     """Loop/cron mutations must resync the long-lived gateway scheduler."""
     publishes: list[dict[str, str]] = []
 
-    def _refresh(scheduler: object | None, *, task_filter=None):
-        _ = task_filter
+    def _refresh(scheduler: object | None, runners: object, *, task_filter=None):
+        _ = (task_filter, runners)
         assert scheduler is None
         return object(), 3
 
@@ -126,3 +139,77 @@ def test_manager_reload_scheduler_refreshes_component_status(
 
     assert manager.components["scheduler"] == "running 3 scheduled task(s)"
     assert publishes == [{"scheduler": "running 3 scheduled task(s)"}]
+
+
+def test_stop_subtracts_reload_join_from_the_surface_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reload-watcher join is a slice of SIGTERM, not extra time on top of it."""
+    clock = _Clock()
+
+    def _budget(seconds: float) -> ShutdownBudget:
+        return ShutdownBudget(seconds, clock=clock)
+
+    monkeypatch.setattr("gateway.core.lifecycle.controller.ShutdownBudget", _budget)
+    manager = GatewayController()
+    reload_thread = MagicMock()
+
+    def _join(timeout: float | None = None) -> None:
+        _ = timeout
+        clock.now += 2.0
+
+    reload_thread.join.side_effect = _join
+    manager._scheduler_reload_thread = reload_thread
+    surfaces = MagicMock()
+    surfaces.stop.return_value = True
+    manager.surfaces = surfaces
+
+    assert manager.stop(timeout=8.0) is True
+    reload_thread.join.assert_called_once_with(timeout=SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS)
+    surfaces.stop.assert_called_once_with(timeout=6.0)
+    assert manager.surfaces is None
+    assert manager._scheduler_reload_thread is None
+
+
+def test_webapp_sync_keeps_report_and_poll_cadences_when_nudged_mid_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _Clock()
+    manager = GatewayController()
+    wake = manager._webapp_loop_sync_wake
+    polls: list[float] = []
+    reports: list[float] = []
+
+    def _poll() -> None:
+        polls.append(clock.now)
+        if len(polls) == 1:
+            manager.request_webapp_loop_sync()
+
+    def _report() -> None:
+        reports.append(clock.now)
+        if len(reports) == 1:
+            manager.request_webapp_loop_sync()
+
+    def _wait(timeout: float) -> bool:
+        assert timeout == 30.0
+        if wake.is_set():
+            return True
+        clock.now += timeout
+        if clock.now >= 360.0:
+            manager._stopped.set()
+        return False
+
+    sync = MagicMock()
+    sync.sync.side_effect = _poll
+    sync.report.side_effect = _report
+    thread_factory = MagicMock()
+    monkeypatch.setattr("bootstrap.adapters.webapp_loop_sync", lambda _runners=None: sync)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.monotonic", clock)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.threading.Thread", thread_factory)
+    monkeypatch.setattr(wake, "wait", _wait)
+
+    manager._start_webapp_loop_sync(logging.getLogger("test"))
+    thread_factory.call_args.kwargs["target"]()
+
+    assert polls == [0.0, 0.0, 30.0, 330.0]
+    assert reports == [float(seconds) for seconds in range(30, 330, 30)]

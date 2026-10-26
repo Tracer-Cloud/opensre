@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import io
-import re
 
 from rich.console import Console
 
-from core.agent_harness.session.pending_offer import ensure_canonical_investigation_closer
 from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
 from surfaces.interactive_shell.runtime.agent_harness_adapters import ShellOutputSink
 
@@ -37,39 +35,10 @@ def test_render_error_shows_auth_login_hint_on_credit_exhaustion() -> None:
 
 
 def test_render_error_no_hint_for_generic_error() -> None:
-    output = _render_error("some other failure")
+    output = _render_error("some\nother failure")
+    assert output.startswith("Error    some other failure")
     assert "/model" not in output
     assert "/auth login" not in output
-
-
-def _strip_ansi(text: str) -> str:
-    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text)
-
-
-def test_finish_streamed_response_paints_canonical_not_dual_menu() -> None:
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=True, color_system=None, width=100, highlight=False)
-    sink = ShellOutputSink(console)
-    dual = (
-        "Grafana unreachable; kube refused.\n\n"
-        "**Want me to:**\n"
-        "1. run a full investigation once you paste the alert, or\n"
-        "2. walk you through `/integrations setup grafana`?"
-    )
-    streamed = sink.stream(
-        label="assistant",
-        chunks=[dual],
-        defer_want_me_to_closer=True,
-    )
-    mid = _strip_ansi(buf.getvalue())
-    assert "Grafana unreachable" in mid
-    assert "/integrations setup grafana" not in mid
-
-    canonical = ensure_canonical_investigation_closer(streamed)
-    sink.finish_streamed_response(canonical)
-    final = _strip_ansi(buf.getvalue())
-    assert "run a full investigation" in final
-    assert "/integrations" not in final
 
 
 def test_finalize_does_not_reprint_an_answer_the_console_already_showed() -> None:
@@ -107,20 +76,20 @@ def test_finalize_satisfies_the_host_contract_while_staying_silent() -> None:
     assert isinstance(sink, TurnOutput)
 
 
-def test_response_header_opens_with_a_blank_line() -> None:
-    """The sink owns this spacing: the turn engine no longer emits it.
-
-    ``_show_response`` used to print a blank line before the header. That was
-    terminal layout living in the shared turn engine — chat sinks route
-    ``print`` to a placeholder status and never wanted it. Moving it here kept
-    the REPL looking the same; without a test, deleting it stays green.
-    """
-    # Arrange
+def test_response_header_waits_for_the_following_terminal_renderer() -> None:
+    """The body or error row owns the terminal marker, so no empty row appears."""
     console = _RecordingConsole()
 
-    # Act
     ShellOutputSink(console).render_response_header("assistant")  # type: ignore[arg-type]
 
-    # Assert: blank line first, then the ● marker.
-    assert console.lines[0] == ""
-    assert "●" in console.lines[1]
+    assert console.lines == []
+
+
+def test_error_after_response_header_emits_only_the_labeled_error() -> None:
+    console = _RecordingConsole()
+    sink = ShellOutputSink(console)  # type: ignore[arg-type]
+
+    sink.render_response_header("assistant")
+    sink.render_error("tool call failed")
+
+    assert console.lines == ["Error    tool call failed"]

@@ -10,6 +10,7 @@ from config.constants.llm import (
     AZURE_OPENAI_API_VERSION_ENV,
     AZURE_OPENAI_BASE_URL_ENV,
 )
+from config.llm_auth.azure import normalize_azure_openai_base_url
 from core.llm.types import ModelType
 
 AZURE_OPENAI_PROVIDER = "azure-openai"
@@ -18,16 +19,6 @@ AZURE_OPENAI_PROVIDER = "azure-openai"
 def is_azure_openai_provider(provider: str) -> bool:
     """Return whether *provider* is the Azure OpenAI LLM slug."""
     return provider.strip().lower() == AZURE_OPENAI_PROVIDER
-
-
-def normalize_azure_openai_base_url(value: str) -> str:
-    """Normalize an Azure OpenAI resource endpoint URL."""
-    base = (value or "").strip()
-    if not base:
-        return ""
-    if not base.startswith(("http://", "https://")):
-        base = f"https://{base}"
-    return base.rstrip("/")
 
 
 def select_azure_openai_model(settings: Any, model_type: ModelType) -> str:
@@ -57,7 +48,7 @@ def is_azure_litellm_model(model: str) -> bool:
 
 def resolve_azure_openai_api_version(value: str = "") -> str:
     """Return the configured Azure API version, falling back to the OpenSRE default."""
-    from config.config import DEFAULT_AZURE_OPENAI_API_VERSION
+    from config.llm_models import DEFAULT_AZURE_OPENAI_API_VERSION
 
     version = (value or os.getenv(AZURE_OPENAI_API_VERSION_ENV, "")).strip()
     return version or DEFAULT_AZURE_OPENAI_API_VERSION
@@ -102,7 +93,7 @@ def format_azure_deployment_not_found_message(deployment: str) -> str:
 
 
 def azure_deployment_not_found_remediation_steps() -> list[str]:
-    """Return investigation remediation steps for Azure deployment 404s."""
+    """Return remediation steps for Azure deployment 404s."""
     return [
         (
             "Set AZURE_OPENAI_*_MODEL to your deployment name from the Azure portal, "
@@ -199,7 +190,6 @@ __all__ = [
     "is_azure_openai_failure_message",
     "is_azure_openai_provider",
     "list_azure_openai_deployments",
-    "normalize_azure_openai_base_url",
     "resolve_azure_openai_api_version",
     "resolve_azure_openai_request_kwargs",
     "select_azure_openai_model",

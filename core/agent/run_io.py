@@ -2,18 +2,36 @@
 
 ``AgentRunInput`` is the resolved per-run input ``Agent.run`` assembles and
 hands to ``run_react_loop``; ``AgentRunResult`` is what the loop returns.
+``RunProgress`` is what a run has produced so far, for host policies the loop
+consults mid-run.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeAlias
 
 from core.llm.types import ToolCall
 from core.messages import MessageMapper, RuntimeMessage, RuntimeMessageLike
 from core.tool.contracts import RuntimeTool
 from core.tool.execution import ToolExecutionResult
+
+
+@dataclass(frozen=True)
+class RunProgress:
+    """What a run has produced before its next model call: the transcript and tool results.
+
+    The same two fields as :class:`AgentRunResult`, so a host rule written for
+    the finished run can judge the run in progress.
+    """
+
+    messages: Sequence[RuntimeMessage]
+    tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]]
+
+
+#: Whether the reply the next model call writes may show while it streams.
+ReplyStreamPolicy: TypeAlias = Callable[[RunProgress], bool]  # noqa: UP040
 
 
 @dataclass
@@ -33,8 +51,17 @@ class AgentRunResult:
     #: Host cooperative cancel (``console.cancel_requested``), not a tool terminate.
     cancelled: bool = False
     hit_iteration_cap: bool = False
+    #: Why the loop ended: ``completed``, ``no_tools_needed``, ``tool_terminated``,
+    #: ``cancelled``, ``reply_interrupted`` (a reply still cut off after every
+    #: continuation; ``final_text`` holds what streamed), ``goal_unverified``,
+    #: ``stagnation_limit``, ``discovery_stagnation`` or ``iteration_cap``. The
+    #: last four are hard stops that also set ``hit_iteration_cap``.
+    stop_reason: str = ""
     llm_iterations_used: int = 0
     final_system_prompt: str = ""
+    #: Provider-reported totals; None if any model call omitted that measurement.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     """System prompt sent to the LLM on the last request (post-hook), for debugging."""
 
 
@@ -49,6 +76,7 @@ class AgentRunInput[RuntimeToolT: RuntimeTool]:
     tool_resources: dict[str, Any]
     max_iterations: int
     messages: list[RuntimeMessage]
+    max_stagnant_iterations: int | None = None
 
     @classmethod
     def from_runtime_request(cls, request: Any, *, llm: Any) -> AgentRunInput[RuntimeToolT]:
@@ -70,6 +98,7 @@ class AgentRunInput[RuntimeToolT: RuntimeTool]:
             tool_resources=dict(getattr(request, "tool_resources", {}) or {}),
             max_iterations=request.max_iterations,
             messages=messages,
+            max_stagnant_iterations=getattr(request, "max_stagnant_iterations", None),
         )
 
     @classmethod
@@ -83,6 +112,7 @@ class AgentRunInput[RuntimeToolT: RuntimeTool]:
         resolved: dict[str, Any] | None,
         tool_resources: dict[str, Any],
         max_iterations: int,
+        max_stagnant_iterations: int | None = None,
     ) -> AgentRunInput[RuntimeToolT]:
         """Build from raw messages and a caller's construction-time config."""
         return cls(
@@ -93,7 +123,8 @@ class AgentRunInput[RuntimeToolT: RuntimeTool]:
             tool_resources=dict(tool_resources),
             max_iterations=max_iterations,
             messages=MessageMapper.to_runtime_messages(messages),
+            max_stagnant_iterations=max_stagnant_iterations,
         )
 
 
-__all__ = ["AgentRunInput", "AgentRunResult"]
+__all__ = ["AgentRunInput", "AgentRunResult", "ReplyStreamPolicy", "RunProgress"]

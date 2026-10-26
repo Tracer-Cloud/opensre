@@ -244,8 +244,10 @@ def test_get_pod_logs_run_happy_path(monkeypatch) -> None:  # type: ignore[no-un
 
     cfg = KubernetesIntegrationConfig.model_validate({"kubeconfig": _MINIMAL_KUBECONFIG})
     mock_client = KubernetesClient(cfg)
+    raw_response = MagicMock()
+    raw_response.data = b"line1\nline2\nline3"
     mock_core = MagicMock()
-    mock_core.read_namespaced_pod_log.return_value = "line1\nline2\nline3"
+    mock_core.read_namespaced_pod_log.return_value = raw_response
     mock_client._core_v1 = mock_core
     mock_client._apps_v1 = MagicMock()
     mock_client._networking_v1 = MagicMock()

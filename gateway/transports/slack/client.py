@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Sequence
 from typing import Any, Protocol
@@ -24,6 +25,15 @@ _FAILED_REACTION = "x"
 Blocks = Sequence[dict[str, Any]]
 
 
+class SlackChannelNotFound(RuntimeError):
+    """The bot token cannot see the conversation, so no reply could be delivered.
+
+    Raised when a turn is acknowledged, before any model call: a workspace
+    whose events reach this gateway under a different Slack app than its
+    token belongs to otherwise pays for every turn and delivers none.
+    """
+
+
 class SlackMessagingClient(Protocol):
     """The messaging surface the Slack turn output needs."""
 
@@ -37,6 +47,16 @@ class SlackMessagingClient(Protocol):
     ) -> str | None:
         """Post a message and return its ``ts``, or ``None`` on failure."""
 
+    def post_ephemeral(
+        self,
+        *,
+        channel: str,
+        user: str,
+        text: str,
+        thread_ts: str | None = None,
+    ) -> bool:
+        """Show ``text`` to ``user`` alone; return whether Slack accepted it."""
+
     def update_message(
         self,
         *,
@@ -48,7 +68,10 @@ class SlackMessagingClient(Protocol):
         """Replace a posted message's text; return whether the update succeeded."""
 
     def add_reaction(self, *, channel: str, timestamp: str, emoji: str) -> bool:
-        """Add an emoji reaction; return whether it succeeded."""
+        """Add an emoji reaction; return whether it succeeded.
+
+        Raises :class:`SlackChannelNotFound` when the bot cannot see ``channel``.
+        """
 
     def remove_reaction(self, *, channel: str, timestamp: str, emoji: str) -> bool:
         """Remove an emoji reaction; return whether it succeeded."""
@@ -64,6 +87,20 @@ class SlackMessagingClient(Protocol):
 
     def stop_stream(self, *, channel: str, ts: str, blocks: Blocks | None = None) -> bool:
         """Finish a streamed message, optionally attaching final blocks."""
+
+    def set_thread_status(
+        self,
+        *,
+        channel: str,
+        thread_ts: str,
+        status: str,
+        loading_messages: Sequence[str] | None = None,
+    ) -> bool:
+        """Show or clear the loading indicator on the triggering thread.
+
+        This is Slack's assistant status on that thread, not a reply. An empty
+        ``status`` clears it.
+        """
 
 
 # API errors that mean streaming will never work for this app/workspace
@@ -124,6 +161,28 @@ class SlackWebApiClient:
             return None
         return str(response.get("ts") or "") or None
 
+    def post_ephemeral(
+        self,
+        *,
+        channel: str,
+        user: str,
+        text: str,
+        thread_ts: str | None = None,
+    ) -> bool:
+        try:
+            self._web_client.chat_postEphemeral(
+                channel=channel,
+                user=user,
+                text=text,
+                thread_ts=thread_ts,
+            )
+        except SlackApiError as exc:
+            logger.warning(
+                "[slack-gateway] chat.postEphemeral failed: %s", exc.response.get("error")
+            )
+            return False
+        return True
+
     def update_message(
         self,
         *,
@@ -155,6 +214,8 @@ class SlackWebApiClient:
             error = str(exc.response.get("error") or "")
             if error == "already_reacted":
                 return True
+            if error == "channel_not_found":
+                raise SlackChannelNotFound(channel) from exc
             logger.debug("[slack-gateway] reactions.add failed: %s", error)
             return False
         return True
@@ -249,19 +310,59 @@ class SlackWebApiClient:
             return False
         return True
 
+    def set_thread_status(
+        self,
+        *,
+        channel: str,
+        thread_ts: str,
+        status: str,
+        loading_messages: Sequence[str] | None = None,
+    ) -> bool:
+        """Loading indicator on the triggering thread. Empty ``status`` clears it."""
+        payload: dict[str, Any] = {
+            "channel_id": channel,
+            "thread_ts": thread_ts,
+            "status": status,
+        }
+        if loading_messages:
+            payload["loading_messages"] = list(loading_messages)[:10]
+        try:
+            self._web_client.assistant_threads_setStatus(**payload)
+        except SlackApiError as exc:
+            logger.debug(
+                "[slack-gateway] assistant.threads.setStatus failed: %s",
+                exc.response.get("error"),
+            )
+            return False
+        except Exception:
+            logger.debug("[slack-gateway] assistant.threads.setStatus failed", exc_info=True)
+            return False
+        return True
+
 
 def mark_turn_working(client: SlackMessagingClient, *, channel: str, timestamp: str) -> None:
-    """Best-effort eyes reaction while the agent is working."""
+    """Eyes reaction while the agent works; raises :class:`SlackChannelNotFound`.
+
+    Otherwise best effort. The raise lets the caller skip a turn whose reply
+    could never be delivered.
+    """
     client.add_reaction(channel=channel, timestamp=timestamp, emoji=_WORKING_REACTION)
+
+
+def clear_turn_working(client: SlackMessagingClient, *, channel: str, timestamp: str) -> None:
+    """Drop the eyes reaction from a message that will not get a turn."""
+    client.remove_reaction(channel=channel, timestamp=timestamp, emoji=_WORKING_REACTION)
 
 
 def mark_turn_done(client: SlackMessagingClient, *, channel: str, timestamp: str) -> None:
     """Swap eyes → checkmark when the turn finishes."""
     client.remove_reaction(channel=channel, timestamp=timestamp, emoji=_WORKING_REACTION)
-    client.add_reaction(channel=channel, timestamp=timestamp, emoji=_DONE_REACTION)
+    with contextlib.suppress(SlackChannelNotFound):
+        client.add_reaction(channel=channel, timestamp=timestamp, emoji=_DONE_REACTION)
 
 
 def mark_turn_failed(client: SlackMessagingClient, *, channel: str, timestamp: str) -> None:
     """Swap eyes → x when the turn raised without completing."""
     client.remove_reaction(channel=channel, timestamp=timestamp, emoji=_WORKING_REACTION)
-    client.add_reaction(channel=channel, timestamp=timestamp, emoji=_FAILED_REACTION)
+    with contextlib.suppress(SlackChannelNotFound):
+        client.add_reaction(channel=channel, timestamp=timestamp, emoji=_FAILED_REACTION)

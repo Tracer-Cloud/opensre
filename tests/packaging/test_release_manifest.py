@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from infrastructure.deployment.packaging.release_manifest import (
+    infrastructure_data_entries,
     required_skill_files,
     runtime_hidden_imports,
 )
 from tools.registry_discovery import INTEGRATION_TOOL_PACKAGES
+from tools.registry_index import BAKED_INDEX_RELATIVE_PATH
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _RELEASE_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "release.yml"
@@ -19,17 +23,30 @@ def test_hidden_imports_cover_runtime_discovered_tool_packages() -> None:
     hidden_imports = set(runtime_hidden_imports(_REPO_ROOT))
 
     assert set(INTEGRATION_TOOL_PACKAGES) <= hidden_imports
-    assert "integrations.x_mcp.tools.x_mcp_tool" in hidden_imports
+    assert "integrations.sentry_mcp.tools.sentry_mcp_tool" in hidden_imports
     assert "tools.system.work_items" in hidden_imports
     assert "tools.system.work_items.tool" in hidden_imports
+
+
+def test_hidden_imports_cover_lazy_cli_command_modules() -> None:
+    """CLI commands load via importlib from COMMAND_SPECS; freeze must list them.
+
+    Without this, ``opensre _package-smoke`` (and every other top-level command)
+    fails in the PyInstaller binary with ModuleNotFoundError before Click runs.
+    """
+    from surfaces.cli.commands.command_specs import COMMAND_SPECS
+
+    hidden_imports = set(runtime_hidden_imports(_REPO_ROOT))
+    command_modules = {spec.import_path.split(":", 1)[0] for spec in COMMAND_SPECS}
+
+    assert command_modules <= hidden_imports
+    assert "surfaces.cli.commands.package_smoke" in hidden_imports
 
 
 def test_hidden_imports_exclude_non_runtime_discovery_modules() -> None:
     hidden_imports = set(runtime_hidden_imports(_REPO_ROOT))
 
     assert "tools.registry" not in hidden_imports
-    assert "tools.investigation_registry" not in hidden_imports
-    assert "tools.investigation_registry.prioritization" not in hidden_imports
 
 
 def test_hidden_imports_cover_runtime_discovered_integration_verifiers() -> None:
@@ -47,31 +64,42 @@ def test_required_skill_data_covers_action_and_tool_guidance() -> None:
         path.relative_to(_REPO_ROOT).as_posix() for path in required_skill_files(_REPO_ROOT)
     }
 
-    assert "core/agent_harness/prompts/skills/architecture_audit/SKILL.md" in relative_paths
+    assert "core/agent_harness/prompts/skills/repair-github-ci/SKILL.md" in relative_paths
     assert (
-        "core/agent_harness/prompts/skills/architecture_audit/architecture_audit_report.md"
+        "core/agent_harness/prompts/skills/reporting-github-ci-failures/SKILL.md" in relative_paths
+    )
+    assert "core/agent_harness/prompts/skills/onboarding-github-ci/SKILL.md" in relative_paths
+    assert (
+        "core/agent_harness/prompts/skills/onboarding-github-ci/a-analyzing-github-ci-performance/SKILL.md"
         in relative_paths
     )
     assert "integrations/github/tools/workflow/SKILL.md" in relative_paths
-    assert "integrations/sentry/tools/skills/sentry-summary/SKILL.md" in relative_paths
+    assert "integrations/sentry/tools/skills/summarizing-sentry-issues/SKILL.md" in relative_paths
     assert (
-        "tools/system/python_execution_tool/skills/github-star-velocity/SKILL.md" in relative_paths
+        "tools/system/python_execution_tool/skills/measuring-github-star-velocity/SKILL.md"
+        in relative_paths
     )
 
 
-def test_required_data_covers_tool_data_files_that_are_not_documents() -> None:
-    """A tool reading a data file degrades silently when it is left out of the build.
+def test_release_includes_executable_skill_helpers_and_their_reference() -> None:
+    skill = (
+        _REPO_ROOT
+        / "core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-repairs"
+    )
+    included = set(required_skill_files(_REPO_ROOT))
+    assert skill / "references/script-tools.md" in included
+    assert set((skill / "scripts").glob("*.py")) <= included
+    assert skill / "scripts/write_demo_evidence.py" in included
 
-    ``find_yc_api`` reads its endpoint index from a JSON file rather than a
-    document, so the ``SKILL.md`` globs above do not reach it. Left out, the
-    tool reports no endpoints at all instead of failing to import, which reads
-    as "Yandex Cloud exposes nothing" rather than as a broken artifact.
-    """
+
+def test_required_data_covers_runtime_files_that_are_not_skill_documents() -> None:
+    """Loop templates must be bundled alongside skill documents."""
     relative_paths = {
         path.relative_to(_REPO_ROOT).as_posix() for path in required_skill_files(_REPO_ROOT)
     }
 
-    assert "integrations/yandex_cloud/api_index.json" in relative_paths
+    assert "core/agent_harness/prompts/loop_templates/pr-ci.md" in relative_paths
+    assert "core/agent_harness/task_plan/planning_instructions.md" not in relative_paths
 
 
 def test_release_build_uses_checked_in_spec() -> None:
@@ -82,3 +110,103 @@ def test_release_build_uses_checked_in_spec() -> None:
     assert "OPENSRE_PYINSTALLER_MODE: ${{ matrix.pyinstaller_mode }}" in workflow
     assert "release_manifest.py" in spec
     assert "skill_data_entries(ROOT)" in spec
+
+
+def test_spec_bakes_the_descriptor_index_into_the_bundle() -> None:
+    """The frozen fallback imports every vendor module when this file is missing.
+
+    A unit test that writes the JSON into a fake ``_MEIPASS`` cannot catch a
+    spec that omits or misplaces it. Pin the PyInstaller data entry: dump at
+    build time, ship under ``BAKED_INDEX_RELATIVE_PATH.parent`` so the runtime
+    path ``sys._MEIPASS / tools / descriptor_index.json`` is what the bundle
+    actually contains.
+    """
+    spec = _SPEC_FILE.read_text(encoding="utf-8")
+
+    assert '_baked_index = ROOT / "build" / "baked" / BAKED_INDEX_RELATIVE_PATH' in spec
+    assert "dump_descriptor_index(_baked_index)" in spec
+    assert "datas.append((str(_baked_index), str(BAKED_INDEX_RELATIVE_PATH.parent)))" in spec
+    assert BAKED_INDEX_RELATIVE_PATH.as_posix() == "tools/descriptor_index.json"
+
+
+def test_release_smoke_asserts_onedir_contains_the_baked_index() -> None:
+    """Unix onedir smoke must see the file on disk, not only via ``_package-smoke``.
+
+    A unit test that writes JSON into a fake ``_MEIPASS`` cannot catch a spec
+    that omits or misplaces the bake. ``_package-smoke`` fail-closed covers
+    onefile (Windows), where datas live inside the archive. Onedir can assert
+    the path PyInstaller materializes under ``_internal/``, same as LiteLLM.
+    """
+    workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    baked_onedir = f"./dist/opensre/_internal/{BAKED_INDEX_RELATIVE_PATH.as_posix()}"
+
+    assert baked_onedir in workflow
+    assert "_package-smoke" in workflow
+
+
+def test_release_workflow_parallelizes_macos_onedir_resign() -> None:
+    """Nested lib signs are independent; main binary stays serial and last."""
+    workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'xargs -0 -P "$JOBS" -n 1 codesign --force --sign -' in workflow
+    assert 'codesign --force --sign - "$APP_BIN"' in workflow
+    assert 'if [ "$JOBS" -gt 4 ]; then' in workflow
+
+
+def test_release_workflow_does_not_run_on_pull_requests() -> None:
+    workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    triggers = yaml.load(workflow, Loader=yaml.BaseLoader)["on"]
+
+    assert isinstance(triggers, dict)
+    assert "pull_request" not in triggers
+    assert triggers["workflow_run"] == {
+        "workflows": ["CI"],
+        "types": ["completed"],
+        "branches": ["main"],
+    }
+    assert 'if [ "$EVENT_NAME" = "pull_request" ]; then' not in workflow
+    assert 'echo "channel=pr" >> "$GITHUB_OUTPUT"' not in workflow
+    assert "opensre_pr_" not in workflow
+
+
+def test_release_workflow_does_not_publish_python_distributions_to_pypi() -> None:
+    raw = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    workflow = yaml.load(raw, Loader=yaml.BaseLoader)
+
+    assert "publish-python-dist" not in workflow["jobs"]
+    assert "# publish-python-dist:" in raw
+    assert "#       uses: pypa/gh-action-pypi-publish@" in raw
+
+
+def test_infrastructure_data_excludes_the_cloudflare_worker() -> None:
+    """The Cloudflare install-proxy is a JS Worker deployed via ``wrangler``.
+
+    It never runs from the frozen binary, so bundling it only adds dead,
+    non-Python weight to the release artifact.
+    """
+    relative_paths = {
+        Path(dest) / Path(source).name for source, dest in infrastructure_data_entries(_REPO_ROOT)
+    }
+
+    assert not any("cloudflare_install_proxy" in path.parts for path in relative_paths), (
+        relative_paths
+    )
+
+    assert Path("infrastructure/deployment/cloudflare_install_proxy/README.md").exists()
+    assert Path("infrastructure/deployment/cloudflare_install_proxy/src/index.mjs").exists()
+
+
+def test_infrastructure_data_still_covers_real_infrastructure_code() -> None:
+    relative_paths = {
+        Path(dest) / Path(source).name for source, dest in infrastructure_data_entries(_REPO_ROOT)
+    }
+
+    assert Path("infrastructure/deployment/packaging/release_manifest.py") in relative_paths
+    assert Path("infrastructure/deployment/ec2/telegram_gateway/README.md") in relative_paths
+
+
+def test_spec_bundles_infrastructure_via_the_filtered_helper() -> None:
+    spec = _SPEC_FILE.read_text(encoding="utf-8")
+
+    assert "infrastructure_data_entries(ROOT)" in spec
+    assert '(str(ROOT / "infrastructure"), "infrastructure")' not in spec

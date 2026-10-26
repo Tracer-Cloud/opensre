@@ -8,9 +8,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from integrations.new_relic.tools.new_relic_alerts_tool.results import parse_incident_rows
-from integrations.new_relic.tools.new_relic_metrics_tool.tool import NewRelicMetricsTool
+from integrations.new_relic.tools.new_relic_metrics_tool.tool import (
+    NewRelicMetricsTool,
+    _map_query_new_relic_metrics,
+)
 from integrations.new_relic.tools.new_relic_metrics_tool.validation import (
     apply_default_window_and_limit,
+    clamp_timeseries_buckets,
     extract_limit,
     validate_nrql,
 )
@@ -111,6 +115,24 @@ def test_apply_default_window_and_limit_inserts_since_before_an_existing_limit()
     result = apply_default_window_and_limit(nrql, since_minutes=60, limit=100)
     assert result.index("SINCE") < result.index("LIMIT")
     assert "LIMIT 50" in result
+
+
+def test_clamp_timeseries_buckets_widens_a_bucket_over_the_nrql_cap() -> None:
+    # Production: "TIMESERIES supports a maximum of 366 buckets. Query has 1008."
+    nrql = (
+        "SELECT count(*) FROM Transaction SINCE 7 days ago TIMESERIES 10 minutes "
+        "WHERE name = 'TIMESERIES 1 minute' LIMIT 100"
+    )
+    result = clamp_timeseries_buckets(nrql)
+    assert result == (
+        "SELECT count(*) FROM Transaction SINCE 7 days ago TIMESERIES 28 minutes "
+        "WHERE name = 'TIMESERIES 1 minute' LIMIT 100"
+    )
+    # A bucket that already fits, or an absolute window, is left untouched.
+    fits = "SELECT count(*) FROM Transaction SINCE 1 day ago TIMESERIES 5 minutes"
+    assert clamp_timeseries_buckets(fits) == fits
+    absolute = "SELECT count(*) FROM Transaction SINCE 1700000000000 TIMESERIES 1 minute"
+    assert clamp_timeseries_buckets(absolute) == absolute
 
 
 def test_extract_limit_reads_the_effective_clause() -> None:
@@ -234,3 +256,46 @@ def test_run_api_error_is_reported_as_unavailable() -> None:
         )
     assert result["available"] is False
     assert result["error_type"] == "rate_limited"
+
+
+class TestMapQueryNewRelicMetrics:
+    def test_records_entry_with_row_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_new_relic_metrics(
+            evidence,
+            {"available": True, "results": [{"x": 1}, {"x": 2}, {"x": 3}], "truncated": False},
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "query_new_relic_metrics"
+        assert entries[0]["summary"] == "3 row(s)"
+
+    def test_records_entry_with_truncated_note(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_new_relic_metrics(
+            evidence, {"available": True, "results": [{"x": 1}], "truncated": True}, {}
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "1 row(s) (truncated)"
+
+    def test_records_nothing_when_no_results(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_new_relic_metrics(
+            evidence, {"available": True, "results": [], "total": 0, "truncated": False}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_new_relic_metrics(
+            evidence, {"available": False, "error": "New Relic integration is not configured."}, {}
+        )
+
+        assert "catalog_entries" not in evidence

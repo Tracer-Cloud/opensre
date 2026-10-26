@@ -1,0 +1,154 @@
+name: Installer Canary
+
+# Exercises the real public install paths (install.opensre.com CDN, GitHub
+# release resolution, PowerShell installer, checksums, Homebrew stable) after
+# publication, on Linux, macOS arm64, and Windows. See
+# tests/e2e/install/test_live_installers.py and
+# tests/e2e/install/test_live_installers_windows.py for the actual checks —
+# this workflow only decides when/where to run them.
+
+on:
+  repository_dispatch:
+    types: [installer-release-published]
+  schedule:
+    - cron: "0 8 * * *" # daily, offset from release.yml's 00:30 UTC cron
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to pin (e.g. v0.1.2026.6.26). Empty = latest."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  OPENSRE_CICD: "1"
+  OPENSRE_LIVE_INSTALL: "1"
+  OPENSRE_LIVE_INSTALL_TAG: ${{ github.event.client_payload.tag || inputs.tag || '' }}
+
+jobs:
+  canary:
+    if: github.repository == 'Tracer-Cloud/opensre'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x64
+            test_path: tests/e2e/install/test_live_installers.py
+          - os: macos-latest
+            target: darwin-arm64
+            test_path: tests/e2e/install/test_live_installers.py
+          - os: windows-latest
+            target: windows-x64
+            test_path: tests/e2e/install/test_live_installers_windows.py
+    runs-on: ${{ matrix.os }}
+    # macOS also runs the Homebrew tests (tap/fetch/install), and every leg is
+    # bound by real network calls (CDN, GitHub, brew) — match the e2e job
+    # budget in ci.yml rather than the tighter default.
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "latest-known" # avoid live ndjson "latest" fetch flakes
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run installer canary (${{ matrix.target }})
+        # On macOS this also runs the Homebrew stable-tap tests in
+        # test_live_installers.py — Homebrew ships preinstalled on
+        # macos-latest runners, so they aren't skipped.
+        shell: bash
+        env:
+          OPENSRE_INSTALL_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          uv run python -m pytest ${{ matrix.test_path }} -v \
+            2>&1 | tee installer-canary-${{ matrix.target }}.log
+          status="${PIPESTATUS[0]}"
+          exit "$status"
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-canary-${{ matrix.target }}
+          path: installer-canary-${{ matrix.target }}.log
+          if-no-files-found: warn
+
+  report:
+    if: always() && github.repository == 'Tracer-Cloud/opensre'
+    needs: [canary]
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TRACKING_LABEL: installer-canary-failure
+
+    steps:
+      - name: Report canary result
+        env:
+          CANARY_RESULT: ${{ needs.canary.result }}
+        run: |
+          set -euo pipefail
+
+          existing_issue="$(
+            gh issue list --repo "${{ github.repository }}" \
+              --label "$TRACKING_LABEL" --state open \
+              --json number --jq '.[0].number // empty' || true
+          )"
+
+          if [ "$CANARY_RESULT" = "success" ]; then
+            if [ -n "$existing_issue" ]; then
+              gh issue comment "$existing_issue" --repo "${{ github.repository }}" \
+                --body "Installer canary is green again: ${RUN_URL}"
+              gh issue close "$existing_issue" --repo "${{ github.repository }}" \
+                --reason completed
+            fi
+            exit 0
+          fi
+
+          # cancelled/skipped are not evidence the installers are broken — leave
+          # any existing tracking issue as-is and don't open a new one on a guess.
+          if [ "$CANARY_RESULT" != "failure" ]; then
+            echo "Canary result was '$CANARY_RESULT' (not failure); nothing to report."
+            exit 0
+          fi
+
+          {
+            printf 'The public install paths (curl/PowerShell against install.opensre.com, GitHub release resolution, or Homebrew) failed a post-publish canary run.\n\n'
+            printf 'Run: %s\n' "$RUN_URL"
+            printf 'Trigger: %s\n' "${{ github.event_name }}"
+            printf 'Pinned tag: %s\n\n' "${OPENSRE_LIVE_INSTALL_TAG:-latest}"
+            printf 'Check the failed matrix leg(s) above and the uploaded `installer-canary-*` diagnostics artifact for the failing platform.\n'
+          } > ISSUE_BODY.md
+
+          if [ -n "$existing_issue" ]; then
+            gh issue comment "$existing_issue" --repo "${{ github.repository }}" \
+              --body "Still failing: ${RUN_URL}"
+          else
+            gh issue create --repo "${{ github.repository }}" \
+              --title "Installer canary failing" \
+              --label "ci,reliability,${TRACKING_LABEL}" \
+              --body-file ISSUE_BODY.md
+          fi

@@ -50,11 +50,29 @@ def test_package_module_runner_uses_the_entrypoint() -> None:
     assert f"from {_ENTRYPOINT_MODULE} import main" in source
 
 
-def test_frozen_bundle_ships_the_shared_surface_data() -> None:
-    """``surfaces/shared`` holds the bundled demo alert the CLI and shell offer."""
-    # Arrange
+def test_frozen_bundle_includes_the_gateway_postgres_driver() -> None:
+    """DATABASE_URL imports psycopg2 lazily, so the spec and the release sync must name it."""
+    spec = (REPO_ROOT / "opensre.spec").read_text(encoding="utf-8")
+    release = (REPO_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert '"psycopg2"' in spec
+    assert '"psycopg2.pool"' in spec
+    assert "--extra postgresql" in release
+
+
+def test_frozen_bundle_ships_the_shared_system_prompt() -> None:
+    """The shared prompt loader reads its adjacent Markdown at runtime."""
     spec = (REPO_ROOT / "opensre.spec").read_text(encoding="utf-8")
 
-    # Act / Assert
-    assert 'collect_data_files("surfaces.shared")' in spec
-    assert (REPO_ROOT / "surfaces/shared/sample_alerts/alert.json").is_file()
+    assert '"core.agent_harness.prompts"' in spec
+    assert 'includes=["opensre_system_prompt.md"]' in spec
+    assert (REPO_ROOT / "core/agent_harness/prompts/opensre_system_prompt.md").is_file()
+
+
+def test_release_artifacts_do_not_ship_removed_planning_instructions() -> None:
+    """Planning instructions were retired; do not reintroduce the data file."""
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    package_data = pyproject["tool"]["setuptools"]["package-data"]
+
+    assert "core.agent_harness.task_plan" not in package_data
+    assert not (REPO_ROOT / "core/agent_harness/task_plan/planning_instructions.md").is_file()

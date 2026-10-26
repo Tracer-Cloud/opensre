@@ -176,7 +176,7 @@ def test_alert_rules_tool_connect_timeout_marks_grafana_source() -> None:
     mock_client.query_alert_rules.side_effect = _timeout()
 
     with patch(
-        "integrations.grafana.tools._resolve_grafana_client",
+        "integrations.grafana.tools._helpers._resolve_grafana_client",
         return_value=mock_client,
     ):
         results = execute_tool_calls(

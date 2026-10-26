@@ -14,6 +14,31 @@ from infrastructure.evidence.evidence_compaction import compact_traces, summariz
 from infrastructure.evidence.log_compaction import build_error_taxonomy, deduplicate_logs
 
 
+def format_grafana_metrics_summary(
+    metric_name: str,
+    total_series: int,
+    *,
+    service_name: str | None = None,
+) -> str:
+    """One-line user-facing summary for a Mimir metrics query result."""
+    scope = f" for {service_name}" if service_name else ""
+    return f"{total_series} series for `{metric_name}`{scope}"
+
+
+def format_grafana_logs_summary(
+    log_count: int,
+    *,
+    error_count: int = 0,
+    service_name: str | None = None,
+) -> str:
+    """One-line user-facing summary for a Loki logs query result."""
+    scope = f" for {service_name}" if service_name else ""
+    line = f"{log_count} log(s){scope}"
+    if error_count:
+        return f"{line}, {error_count} look like errors"
+    return line
+
+
 def query_logs_from_backend(
     backend: Any,
     *,
@@ -51,6 +76,9 @@ def query_logs_from_backend(
         "service_name": service_name,
         "execution_run_id": execution_run_id,
         "query": "",
+        "summary": format_grafana_logs_summary(
+            len(logs), error_count=len(error_logs), service_name=service_name
+        ),
     }
     summary = summarize_counts(len(logs), len(compacted_logs), "logs")
     if summary:
@@ -74,6 +102,9 @@ def query_metrics_from_backend(
         "total_series": len(metrics),
         "metric_name": metric_name,
         "service_name": service_name,
+        "summary": format_grafana_metrics_summary(
+            metric_name, len(metrics), service_name=service_name
+        ),
     }
 
 

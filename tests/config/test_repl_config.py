@@ -7,11 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from config.repl_config import (
-    ReplConfig,
-    read_github_login_deferred,
-    write_github_login_deferred,
-)
+from config.repl_config import ReplConfig
 
 
 class TestReplConfigDefaults:
@@ -23,14 +19,14 @@ class TestReplConfigDefaults:
         cfg = ReplConfig.load()
         assert cfg.layout == "classic"
 
-    def test_default_theme_is_blue(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_theme_is_purple(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("OPENSRE_THEME", raising=False)
         import config.constants as const_module
 
         monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
         monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
         cfg = ReplConfig.load()
-        assert cfg.theme == "blue"
+        assert cfg.theme == "purple"
 
 
 class TestEnvVarResolution:
@@ -68,7 +64,7 @@ class TestEnvVarResolution:
 
     def test_invalid_theme_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENSRE_THEME", "nope")
-        assert ReplConfig.load().theme == "blue"
+        assert ReplConfig.load().theme == "purple"
 
     def test_invalid_theme_logs_warning(self, monkeypatch: pytest.MonkeyPatch, caplog) -> None:
         monkeypatch.setenv("OPENSRE_THEME", "chartreuse")
@@ -76,7 +72,7 @@ class TestEnvVarResolution:
         with caplog.at_level("WARNING"):
             cfg = ReplConfig.load()
 
-        assert cfg.theme == "blue"
+        assert cfg.theme == "purple"
         assert "OPENSRE_THEME='chartreuse' is not a valid theme" in caplog.text
 
 
@@ -201,7 +197,7 @@ class TestFileResolution:
         with caplog.at_level("WARNING"):
             cfg = ReplConfig.load()
 
-        assert cfg.theme == "blue"
+        assert cfg.theme == "purple"
         assert "interactive.theme='chartreuse' is not a valid theme" in caplog.text
 
     def test_env_overrides_file(
@@ -358,34 +354,21 @@ class TestThemeRegistry:
         assert active.name == DEFAULT_THEME_NAME
         assert get_active_theme().name == DEFAULT_THEME_NAME
 
-    def test_load_without_apply_active_theme_leaves_global_palette(
+    def test_load_is_pure_and_never_activates_a_palette(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Arrange: a palette is active and a different theme is configured.
         from infrastructure.terminal.theme import get_active_theme_name, set_active_theme
 
-        monkeypatch.delenv("OPENSRE_THEME", raising=False)
+        monkeypatch.setenv("OPENSRE_THEME", "amber")
         set_active_theme("pink")
-        ReplConfig.load(apply_active_theme=False)
+
+        # Act: resolving config must not touch the live terminal palette.
+        cfg = ReplConfig.load()
+
+        # Assert: the name is resolved, but activation stays the caller's job.
+        assert cfg.theme == "amber"
         assert get_active_theme_name() == "pink"
-
-
-class TestGithubLoginDeferral:
-    def test_read_defaults_false(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-        import config.constants as const_module
-
-        monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
-        monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
-        assert read_github_login_deferred() is False
-
-    def test_write_and_read_round_trip(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-        import config.constants as const_module
-
-        monkeypatch.setattr(const_module, "OPENSRE_HOME_DIR", tmp_path)
-        monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
-        write_github_login_deferred(True)
-        assert read_github_login_deferred() is True
-        write_github_login_deferred(False)
-        assert read_github_login_deferred() is False
 
 
 class TestAlertListenerPortParsing:

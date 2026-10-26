@@ -1,0 +1,124 @@
+---
+title: "OpenObserve"
+description: "Connect OpenObserve so OpenSRE can pull structured logs as evidence"
+---
+
+## Overview
+
+OpenSRE connects to OpenObserve to retrieve log evidence when an alert fires — correlating errors, anomalies, and service activity during incidents.
+
+## Prerequisites
+
+- An OpenObserve instance (self-hosted or cloud-hosted)
+- The URL of your OpenObserve deployment
+- Either an access token **or** a username and password
+- Access to the organization you want OpenSRE to query
+
+## Setup
+
+There is no `opensre integrations setup openobserve` handler. Configure OpenObserve with environment variables or the persistent store only.
+
+### Option 1: Environment variables
+
+Add to your `.env`:
+
+```bash
+OPENOBSERVE_URL=https://openobserve.example.com
+OPENOBSERVE_TOKEN=your_access_token
+OPENOBSERVE_ORG=default
+OPENOBSERVE_STREAM=logs
+OPENOBSERVE_MAX_RESULTS=100
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENOBSERVE_URL` | — | **Required.** URL of your OpenObserve instance |
+| `OPENOBSERVE_TOKEN` | — | Authentication token (use **or** username/password) |
+| `OPENOBSERVE_USERNAME` | — | Username when not using a token |
+| `OPENOBSERVE_PASSWORD` | — | Password when not using a token |
+| `OPENOBSERVE_ORG` | `default` | Organization name |
+| `OPENOBSERVE_STREAM` | *(empty)* | Optional stream to query |
+| `OPENOBSERVE_MAX_RESULTS` | `100` | Maximum number of results returned |
+
+#### Alternative authentication
+
+If your deployment uses username/password instead of a token:
+
+```bash
+OPENOBSERVE_URL=https://openobserve.example.com
+OPENOBSERVE_USERNAME=your_username
+OPENOBSERVE_PASSWORD=your_password
+OPENOBSERVE_ORG=default
+```
+
+Use **either** `OPENOBSERVE_TOKEN` **or** `OPENOBSERVE_USERNAME` + `OPENOBSERVE_PASSWORD`. Verify requires the URL plus one of those auth pairs.
+
+### Option 2: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "openobserve-prod",
+      "service": "openobserve",
+      "status": "active",
+      "credentials": {
+        "base_url": "https://openobserve.example.com",
+        "api_token": "your_access_token",
+        "org": "default",
+        "stream": "logs",
+        "max_results": 100
+      }
+    }
+  ]
+}
+```
+
+Store credentials use `base_url` and `api_token` (not `url` / `token`). For username/password auth, set `username` and `password` instead of `api_token`.
+
+## Credentials
+
+1. Log in to your OpenObserve instance
+2. Open user or organization settings
+3. Create or retrieve an access token
+4. Copy your OpenObserve URL
+5. Note the organization name you want OpenSRE to query
+6. Add these values to your OpenSRE configuration
+
+## Tools
+
+| Tool | Use it for |
+| --- | --- |
+| `query_openobserve_logs` | Bounded read-only log search (timestamp, service, level, message) |
+
+OpenSRE does not expose separate OpenObserve traces or metrics tools.
+
+## Verify
+
+```bash
+opensre integrations verify openobserve
+```
+
+Verify is a config-shape check only — it does not call OpenObserve.
+
+Expected output:
+
+```
+SERVICE        SOURCE      STATUS   DETAIL
+openobserve    local env   passed   Configured for OpenObserve at https://openobserve.example.com
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Regenerate the access token or confirm username/password credentials. |
+| **404 on query** | Check `OPENOBSERVE_ORG` matches your organization slug. Verify the stream name if `OPENOBSERVE_STREAM` is set. |
+| **Connection refused** | Confirm `OPENOBSERVE_URL` includes the correct protocol and port. Ensure network access from OpenSRE to the instance. |
+| **Empty log results** | Widen the time range in the query. Confirm logs are ingested into the target stream. |
+| **Missing credentials on verify** | Set `OPENOBSERVE_URL` and either `OPENOBSERVE_TOKEN` or both `OPENOBSERVE_USERNAME` and `OPENOBSERVE_PASSWORD`. |
+
+## Security
+
+Use a token with the minimum permissions required for the agent's queries whenever possible.

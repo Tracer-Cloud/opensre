@@ -8,7 +8,7 @@ from core.tool.registry import normalize_surfaces
 
 
 def test_tool_surface_members_round_trip_from_string() -> None:
-    assert [member.value for member in ToolSurface] == ["investigation", "chat", "action"]
+    assert [member.value for member in ToolSurface] == ["chat", "action"]
     assert ToolSurface("chat") is ToolSurface.CHAT
     assert ToolSurface.CHAT == "chat"
 
@@ -48,4 +48,4 @@ def test_enums_are_closed(enum: type[ToolSurface | EvidenceType | SideEffectLeve
 
 def test_normalize_surfaces_coerces_plain_strings_to_members() -> None:
     assert normalize_surfaces(["chat", "action"]) == (ToolSurface.CHAT, ToolSurface.ACTION)
-    assert normalize_surfaces(None) == (ToolSurface.INVESTIGATION,)
+    assert normalize_surfaces(None) == (ToolSurface.CHAT,)

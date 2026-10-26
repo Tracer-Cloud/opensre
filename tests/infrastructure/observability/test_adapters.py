@@ -6,10 +6,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from infrastructure.harness_ports import (
-    _default_fetch_remote,
-    reset_harness_ports,
-    set_remote_integrations_fetcher,
+from infrastructure.harness_providers import (
+    reset_harness_providers,
 )
 from infrastructure.observability import (
     NoopProgressTracker,
@@ -17,13 +15,8 @@ from infrastructure.observability import (
     silence_progress_tracker,
 )
 from infrastructure.observability.render import debug as obs_debug
-from infrastructure.observability.render import display as obs_display
 from infrastructure.observability.render import progress as obs_progress
 from infrastructure.observability.render.debug import set_debug_printer
-from infrastructure.observability.render.display import (
-    set_investigation_footer_renderer,
-    set_investigation_header_renderer,
-)
 from infrastructure.observability.render.progress import (
     set_progress_tracker,
     set_progress_tracker_factory,
@@ -31,10 +24,6 @@ from infrastructure.observability.render.progress import (
 from surfaces.shared.terminal.output import boundary as output_boundary
 from surfaces.shared.terminal.output import tracker as output_tracker
 from surfaces.shared.terminal.output.environment import debug_print
-from surfaces.shared.terminal.output.renderers import (
-    render_completed_investigation_footer,
-    render_investigation_header,
-)
 from surfaces.shared.terminal.output.tracker import ProgressTracker, get_tracker
 
 
@@ -43,10 +32,7 @@ def _reset_all_ports() -> None:
     set_progress_tracker_factory(None)
     obs_progress._silenced = False
     set_debug_printer(obs_debug._default_debug_printer)
-    set_investigation_header_renderer(obs_display._default_header_renderer)
-    set_investigation_footer_renderer(obs_display._default_footer_renderer)
-    set_remote_integrations_fetcher(_default_fetch_remote)
-    reset_harness_ports()
+    reset_harness_providers()
 
 
 @pytest.fixture(autouse=True)
@@ -71,12 +57,10 @@ def test_install_product_adapters_wires_progress_tracker() -> None:
     assert tracker is get_tracker()
 
 
-def test_install_product_adapters_wires_debug_and_display() -> None:
+def test_install_product_adapters_wires_debug_printer() -> None:
     output_boundary.install_product_adapters()
 
     assert obs_debug._printer is debug_print
-    assert obs_display._header_renderer is render_investigation_header
-    assert obs_display._footer_renderer is render_completed_investigation_footer
 
 
 def test_sync_pipeline_path_records_progress_after_install(

@@ -19,10 +19,8 @@ from bootstrap import adapters
 _REGISTRARS = {
     "integrations.harness_adapters.register_harness_adapters": "integrations",
     "tools.harness_adapters.register_harness_adapters": "tools",
-    "infrastructure.scheduling.scheduler.runners.register_investigation_runner": "investigation",
-    "infrastructure.scheduling.scheduler.runners.register_agent_runner": "scheduled",
 }
-_STEPS = ("install_harness_adapters", "install_scheduler_runners")
+_STEPS = ("install_harness_adapters",)
 
 
 @pytest.fixture
@@ -40,10 +38,6 @@ def registration_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     for target, name in _REGISTRARS.items():
         monkeypatch.setattr(target, _recorder(name))
-    monkeypatch.setattr(
-        "bootstrap.adapters.install_investigation_api",
-        _recorder("investigation_api"),
-    )
     return calls
 
 
@@ -51,34 +45,8 @@ def test_harness_adapters_registers_both_registries(registration_calls: list[str
     # Arrange / Act
     adapters.install_harness_adapters()
 
-    # Assert: adapters include the AgentSession.investigate payload runner;
-    # they must not silently pull in scheduler runners.
-    assert registration_calls == ["integrations", "tools", "investigation_api"]
-
-
-def test_scheduler_runners_registers_investigation_first(registration_calls: list[str]) -> None:
-    # Arrange / Act
-    adapters.install_scheduler_runners()
-
-    # Assert: the scheduled-agent runner resolves against the investigation one,
-    # so the order is load-bearing, not cosmetic.
-    assert registration_calls == ["investigation", "scheduled"]
-
-
-def test_steps_compose_without_a_flag_argument(registration_calls: list[str]) -> None:
-    # Arrange / Act: a host needing both calls both — there is no mode
-    # parameter to get wrong.
-    adapters.install_harness_adapters()
-    adapters.install_scheduler_runners()
-
-    # Assert
-    assert registration_calls == [
-        "integrations",
-        "tools",
-        "investigation_api",
-        "investigation",
-        "scheduled",
-    ]
+    # Assert: both registries install; they must not silently pull in scheduler runners.
+    assert registration_calls == ["integrations", "tools"]
 
 
 def test_only_the_composition_root_defines_the_steps() -> None:
@@ -108,5 +76,4 @@ def test_only_the_composition_root_defines_the_steps() -> None:
     # Assert
     assert definers == [
         "bootstrap/adapters.py::install_harness_adapters",
-        "bootstrap/adapters.py::install_scheduler_runners",
     ], definers

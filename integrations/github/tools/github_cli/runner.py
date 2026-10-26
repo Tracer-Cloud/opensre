@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from typing import Any
 
-from integrations.github.tools.github_cli.credentials import resolve_github_token
+from integrations.github.client import resolve_github_token
 
 DEFAULT_TIMEOUT_SECONDS = 60
 MAX_TIMEOUT_SECONDS = 120
@@ -17,25 +17,48 @@ MAX_TIMEOUT_SECONDS = 120
 # and the context budget silently trims the tail, so the agent reads a handful
 # of records and cannot tell the rest existed. Cap here instead and say so on
 # the payload, matching what ``shell_run`` already does.
-MAX_GH_OUTPUT_CHARS = 24_000
+MAX_GH_OUTPUT_CHARS = 6_000
 
 # Top-level ``gh`` commands that must never run under OpenSRE-injected credentials.
 # - auth: ``gh auth token`` prints GH_TOKEN to stdout (self-exfiltration)
 # - extension: install/run can download and execute arbitrary code
-# - workflow / run: trigger or re-run CI (arbitrary code via workflow YAML)
 # - secret: mutate repository secrets
 # - codespace / ssh-key / gpg-key / config: credential and host-config mutation surface
 _DENIED_TOP_LEVEL_COMMANDS = frozenset(
     {
         "auth",
         "extension",
-        "workflow",
-        "run",
         "secret",
         "codespace",
         "ssh-key",
         "gpg-key",
         "config",
+    }
+)
+
+# Mutating ``gh run`` / ``gh workflow`` subcommands. ``list`` and ``view`` stay
+# allowed so a /goal can look up workflow runs by SHA.
+_DENIED_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "run": frozenset({"rerun", "cancel", "delete", "watch", "download"}),
+    "workflow": frozenset({"run", "enable", "disable"}),
+}
+
+# Top-level ``gh`` commands that do not define ``-R/--repo``: ``gh api`` takes the
+# repo in the endpoint path; most ``gh repo``/``gh org``/``gh gist``/``gh project`` and
+# friends take it positionally or via ``--owner``. Injecting ``-R`` in front of
+# them fails with ``unknown shorthand flag: 'R'`` before gh runs anything.
+_REPO_FLAG_FREE_COMMANDS = frozenset(
+    {
+        "alias",
+        "api",
+        "completion",
+        "gist",
+        "help",
+        "org",
+        "project",
+        "repo",
+        "status",
+        "version",
     }
 )
 
@@ -54,21 +77,26 @@ _VALUE_FLAGS = frozenset(
 
 
 def positional_gh_tokens(args: list[str] | tuple[str, ...]) -> list[str]:
-    """Return command positionals, skipping leading global flags."""
+    """Return command positionals with every flag removed, wherever it sits.
+
+    ``gh`` accepts global flags before and after the command word, so
+    ``run -R owner/repo rerun 123`` must read as ``run rerun``: a flag between
+    the command and its subcommand cannot hide a denied subcommand.
+    """
     positionals: list[str] = []
     i = 0
     cleaned = [str(a) for a in args]
     while i < len(cleaned):
         token = cleaned[i]
-        if not token or token == "--":
+        if not token:
             i += 1
             continue
+        if token == "--":
+            positionals.extend(cleaned[i + 1 :])
+            break
         if token.startswith("-"):
             name, _, inline = token.partition("=")
-            if inline:
-                i += 1
-                continue
-            if name in _VALUE_FLAGS and i + 1 < len(cleaned):
+            if not inline and name in _VALUE_FLAGS and i + 1 < len(cleaned):
                 nxt = cleaned[i + 1]
                 if nxt and not nxt.startswith("-"):
                     i += 2
@@ -77,29 +105,46 @@ def positional_gh_tokens(args: list[str] | tuple[str, ...]) -> list[str]:
             continue
         positionals.append(token)
         i += 1
-        while i < len(cleaned):
-            positionals.append(cleaned[i])
-            i += 1
-        break
     return positionals
 
 
 def denied_gh_command(args: list[str] | tuple[str, ...]) -> str | None:
-    """Return the blocked top-level ``gh`` command, or None if allowed."""
+    """Return the blocked ``gh`` command (or ``command sub``), or None if allowed."""
     positionals = positional_gh_tokens(args)
     if not positionals:
         return None
     command = positionals[0].lower()
-    return command if command in _DENIED_TOP_LEVEL_COMMANDS else None
+    if command in _DENIED_TOP_LEVEL_COMMANDS:
+        return command
+    denied_subs = _DENIED_SUBCOMMANDS.get(command)
+    if denied_subs is None:
+        return None
+    sub = positionals[1].lower() if len(positionals) > 1 else ""
+    if sub in denied_subs:
+        return f"{command} {sub}"
+    return None
 
 
 def build_gh_argv(*, args: list[str], repo: str | None = None) -> list[str]:
-    """Build full argv for ``gh`` including optional ``-R owner/name``."""
+    """Build full argv for ``gh`` including optional ``-R owner/name``.
+
+    The flag is skipped for commands that do not accept it (see
+    ``_REPO_FLAG_FREE_COMMANDS``); such commands take the repository positionally.
+    """
     argv = ["gh"]
     cleaned_repo = (repo or "").strip()
     positionals = positional_gh_tokens(args)
     command = positionals[0].lower() if positionals else None
-    if cleaned_repo and command != "api":
+    scoped_repo_command = (
+        command == "repo"
+        and len(positionals) > 1
+        and positionals[1]
+        in {
+            "autolink",
+            "deploy-key",
+        }
+    )
+    if cleaned_repo and (command not in _REPO_FLAG_FREE_COMMANDS or scoped_repo_command):
         argv.extend(["-R", cleaned_repo])
     argv.extend(str(a) for a in args)
     return argv
@@ -163,7 +208,7 @@ def run_gh(
             "ok": False,
             "error": (
                 "GitHub token is required. Configure the GitHub integration, or set "
-                "GITHUB_MCP_AUTH_TOKEN, GITHUB_TOKEN, or GH_TOKEN."
+                "an authorized GitHub connection in the OpenSRE app."
             ),
             "error_type": "configuration_error",
             "argv": build_gh_argv(args=args, repo=repo),
@@ -234,6 +279,17 @@ def run_gh(
     }
     if stdout_truncated or stderr_truncated:
         payload["truncated"] = True
+    if ok and stdout_truncated and stdout.lstrip().startswith(("[", "{")):
+        # A cut JSON document is not a partial answer, it is no answer: refuse it
+        # outright so the caller narrows the query instead of acting on it.
+        payload["ok"] = False
+        payload["error"] = (
+            f"gh output exceeded {MAX_GH_OUTPUT_CHARS} characters and the JSON was cut, so "
+            "this result is incomplete and must not be used. Re-run with --jq to select "
+            "only the needed fields, fewer --json fields, or a smaller --limit."
+        )
+        payload["error_type"] = "output_truncated"
+        return payload
     if not ok:
         error_text = stderr.strip() or stdout.strip() or f"gh exited with {completed.returncode}"
         payload["error"] = _redact_secret(error_text, token)
@@ -243,6 +299,7 @@ def run_gh(
 
 __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
+    "MAX_GH_OUTPUT_CHARS",
     "MAX_TIMEOUT_SECONDS",
     "build_gh_argv",
     "denied_gh_command",

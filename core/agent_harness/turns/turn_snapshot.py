@@ -11,12 +11,17 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from core.agent_harness.prompts.kernel.surfaces import profile_for
-from core.state import MAX_CONVERSATION_MESSAGES
+from core.agent_harness.session_goal.goal import SessionGoal
+from core.agent_harness.session_goal.progress import format_session_goal_brief
+from core.agent_harness.task_plan.ownership import session_answer_continues_plan
+from core.domain.repositories import RepositoryPreferences, load_repository_preferences
+from core.state import TurnEvidence, history_window_messages
 from core.state.transcript_window import compact_messages_to_window
 from infrastructure.setup_state import cached_setup_state
 
 if TYPE_CHECKING:
     from config.llm_reasoning_effort import ReasoningEffortChoice
+    from core.agent_harness.task_plan.plan import TaskPlan
     from core.messages import RuntimeMessage
 
 RuntimeTool = Any
@@ -60,8 +65,6 @@ class TurnSnapshotSource(Protocol):
 
     cli_agent_messages: list[tuple[str, str]]
     configured_integrations_known: bool
-    last_state: dict[str, Any] | None
-    last_synthetic_observation_path: str | None
     reasoning_effort: ReasoningEffortChoice | None
 
     # Read-only here; ``Session`` stores a tuple. A property matches
@@ -114,6 +117,21 @@ def _select_runtime_request_input(text: str, source: Any) -> Any | None:
     return None
 
 
+def _interactive_choice_available(session: Any, surface: str | None) -> bool:
+    """True when this turn can accept an Ask User choice.
+
+    The interactive shell queues its picker. A headless CLI host, or an unattended
+    gateway prompt, instead persists the choice for a later resume. A chat gateway
+    turn can do neither.
+    """
+    if surface in ("gateway", "headless_cli"):
+        capabilities = getattr(session, "available_capabilities", {})
+        return "deferred" in capabilities.get("ask_user_choice", ())
+    if surface not in (None, "interactive_shell"):
+        return False
+    return getattr(session, "terminal", None) is not None
+
+
 @dataclass(frozen=True)
 class TurnSnapshot:
     """Immutable per-turn snapshot and optional runtime request.
@@ -131,20 +149,14 @@ class TurnSnapshot:
 
     conversation_messages: tuple[tuple[str, str], ...]
     """Snapshot of recent CLI conversation: ``(role, content)`` pairs, oldest
-    first, compacted to the ``MAX_CONVERSATION_MESSAGES`` window at assembly
-    time (overflow becomes a leading session-summary message)."""
+    first, compacted to the history window at assembly time (overflow becomes a
+    leading session-summary message)."""
 
     configured_integrations: tuple[str, ...]
     """Integration names known to be configured at turn start."""
 
     configured_integrations_known: bool
     """Whether ``configured_integrations`` reflects real state (vs unknown)."""
-
-    last_state: dict[str, Any] | None
-    """Final ``AgentState`` from the most recent investigation (follow-up grounding)."""
-
-    last_synthetic_observation_path: str | None
-    """Path to latest synthetic-run observation file (failure explanation context)."""
 
     reasoning_effort: ReasoningEffortChoice | None
     """Session-scoped reasoning effort preference for LLM calls this turn."""
@@ -154,6 +166,10 @@ class TurnSnapshot:
     outcome, rendered as a fact block. The planner decides whether to offer a
     scheduled delivery, so it reads what is already configured."""
 
+    turn_evidence: tuple[TurnEvidence, ...] = ()
+    """Structured records of recent turns (tool calls and bounded results), matched
+    to ``conversation_messages`` by text when history is replayed."""
+
     system_prompt: SystemPromptInput = ""
     """Runtime system prompt used by the shared agent loop."""
 
@@ -162,6 +178,15 @@ class TurnSnapshot:
 
     active_tools: tuple[RuntimeTool, ...] = ()
     """Subset of tools offered to the model for this turn."""
+
+    skill_discovery_enabled: bool = True
+    """Whether the host allows workflow discovery for this turn."""
+
+    long_term_memory_enabled: bool = True
+    """Whether the host shows long-term memory to this turn."""
+
+    active_skill: str | None = None
+    """Skill whose question this turn answers, independent of transcript retention."""
 
     resolved_integrations: dict[str, Any] = field(default_factory=dict)
     """Resolved integration configuration passed to tool execution."""
@@ -180,12 +205,45 @@ class TurnSnapshot:
     shell_command_context: dict[str, Any] = field(default_factory=dict)
     slash_command: str | None = None
     display_preferences: dict[str, Any] = field(default_factory=dict)
-    last_observation: str | None = None
 
     recovery_note: str | None = None
     """WAL recovery note from ``/resume`` — dangling tool intents formatted for
     the action agent. Consumed from ``session.pending_recovery_note`` (popped:
     the note rides exactly one turn)."""
+
+    task_plan: TaskPlan | None = None
+    """Live ``update_plan`` checklist at turn start (survives transcript drop)."""
+
+    plan_only_until_authorized: bool = False
+    """When true, the user asked for a plan without running it yet."""
+
+    plan_answer_continues: bool = False
+    """This turn answers a question the open plan's owner skill asked.
+
+    Then the host advances the plan on each next step's tool and the prompt
+    says so; otherwise the model writes its own status transitions.
+    """
+
+    prompt_surface: str | None = None
+    """``interactive_shell``, ``gateway``, or ``None`` when the host did not say."""
+
+    session_goal_attached: bool = False
+    """True when a ``/goal`` (SessionGoal) is attached for this turn."""
+
+    session_goal_brief: str = ""
+    """Condition, checklist and last verdict of the attached ``/goal``, for the prompt."""
+
+    interactive_choice_available: bool = False
+    """True when ``ask_user_choice`` can open a keyboard menu on this surface."""
+
+    active_vcs_repositories: dict[str, str] = field(default_factory=dict)
+    """Active repository identity per VCS vendor for this turn."""
+
+    known_vcs_repositories: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    """Repository identities retained in this session, grouped by VCS vendor."""
+
+    repository_preferences: RepositoryPreferences = field(default_factory=RepositoryPreferences)
+    """The organization's primary and excluded repositories, kept across sessions."""
 
     @classmethod
     def from_session(
@@ -194,6 +252,7 @@ class TurnSnapshot:
         session: TurnSnapshotSource,
         *,
         surface: str | None,
+        consume_recovery_note: bool = True,
     ) -> TurnSnapshot:
         """Snapshot the relevant session fields for one turn.
 
@@ -207,6 +266,10 @@ class TurnSnapshot:
         caller can silently claim to be the shell: gateway passes ``"gateway"``
         to keep setup facts out of shared chats, and ``None`` says "unknown",
         which omits them.
+
+        A turn consumes a pending ``/resume`` recovery note so it rides exactly
+        one turn; a preview of the next turn (``/context``) passes
+        ``consume_recovery_note=False`` to read it and leave it pending.
         """
         valid_messages = [
             (str(role), str(content))
@@ -214,29 +277,43 @@ class TurnSnapshot:
             if isinstance(role, str) and isinstance(content, str)
         ]
         snapshot: tuple[tuple[str, str], ...] = tuple(
-            compact_messages_to_window(valid_messages, max_messages=MAX_CONVERSATION_MESSAGES)
+            compact_messages_to_window(valid_messages, max_messages=history_window_messages())
         )
         runtime_input = _select_runtime_request_input(text, session)
-        last_observation = _read_last_observation(session, runtime_input)
-        recovery_note = _pop_recovery_note(session)
+        recovery_note = _read_recovery_note(session, consume=consume_recovery_note)
         return cls(
             text=text,
             conversation_messages=snapshot,
+            turn_evidence=_read_turn_evidence(session),
             configured_integrations=tuple(session.configured_integrations),
             configured_integrations_known=bool(session.configured_integrations_known),
             setup_state=_setup_state_for_surface(session.configured_integrations, surface),
-            last_state=session.last_state,
-            last_synthetic_observation_path=session.last_synthetic_observation_path,
             reasoning_effort=session.reasoning_effort,
             system_prompt=getattr(runtime_input, "system_prompt", ""),
             available_tools=tuple(getattr(runtime_input, "available_tools", ())),
             active_tools=tuple(getattr(runtime_input, "active_tools", ())),
+            skill_discovery_enabled=bool(getattr(session, "skill_discovery_enabled", True)),
+            long_term_memory_enabled=bool(getattr(session, "long_term_memory_enabled", True)),
+            active_skill=getattr(session, "active_skill", None),
             resolved_integrations=dict(getattr(runtime_input, "resolved_integrations", {}) or {}),
             tool_resources=dict(getattr(runtime_input, "tool_resources", {}) or {}),
             max_iterations=int(getattr(runtime_input, "max_iterations", 1)),
             model=getattr(runtime_input, "model", None),
-            last_observation=last_observation,
             recovery_note=recovery_note,
+            task_plan=_read_task_plan(session),
+            plan_only_until_authorized=bool(getattr(session, "plan_only_until_authorized", False)),
+            plan_answer_continues=session_answer_continues_plan(session, text),
+            prompt_surface=surface,
+            session_goal_attached=getattr(session, "session_goal", None) is not None,
+            session_goal_brief=_session_goal_brief(session),
+            interactive_choice_available=_interactive_choice_available(session, surface),
+            active_vcs_repositories=dict(getattr(session, "active_vcs_repositories", {}) or {}),
+            known_vcs_repositories={
+                str(vendor): tuple(scopes)
+                for vendor, scopes in (getattr(session, "known_vcs_repo_scopes", {}) or {}).items()
+                if isinstance(scopes, dict)
+            },
+            repository_preferences=load_repository_preferences(),
         )
 
     def render_system_prompt(self) -> str:
@@ -259,36 +336,42 @@ class TurnSnapshot:
             raise ValueError("TurnSnapshot.active_tools must include at least one tool.")
 
 
-def _pop_recovery_note(session: TurnSnapshotSource) -> str | None:
-    """Consume ``session.pending_recovery_note`` (optional field, one turn only).
+def _read_recovery_note(session: TurnSnapshotSource, *, consume: bool) -> str | None:
+    """Read ``session.pending_recovery_note`` (optional field), taking it when ``consume``.
 
-    Popping here — the single per-turn snapshot point — guarantees the note is
+    Consuming here — the single per-turn snapshot point — guarantees the note is
     injected into exactly the first turn after ``/resume`` and never lingers in
     later cached prompts.
     """
     note = getattr(session, "pending_recovery_note", None)
     if not isinstance(note, str) or not note.strip():
         return None
-    setattr(session, "pending_recovery_note", None)  # noqa: B010 - protocol lacks the optional field
+    if consume:
+        setattr(session, "pending_recovery_note", None)  # noqa: B010 - protocol lacks the optional field
     return note
 
 
-def _read_last_observation(session: TurnSnapshotSource, runtime_input: Any | None) -> str | None:
-    """Read the last tool observation from runtime input or the live session."""
-    from_runtime = getattr(runtime_input, "last_observation", None)
-    if isinstance(from_runtime, str) and from_runtime.strip():
-        return from_runtime
+def _read_turn_evidence(session: Any) -> tuple[TurnEvidence, ...]:
+    """Copy the session's turn evidence when it keeps any (headless doubles may not)."""
+    records = getattr(session, "turn_evidence", None)
+    if not isinstance(records, (list, tuple)):
+        return ()
+    return tuple(record for record in records if isinstance(record, TurnEvidence))
 
-    agent = getattr(session, "agent", None)
-    agent_observation = getattr(agent, "last_observation", None)
-    if isinstance(agent_observation, str) and agent_observation.strip():
-        return agent_observation
 
-    session_observation = getattr(session, "last_command_observation", None)
-    if isinstance(session_observation, str) and session_observation.strip():
-        return session_observation
+def _session_goal_brief(session: Any) -> str:
+    goal = getattr(session, "session_goal", None)
+    if not isinstance(goal, SessionGoal):
+        return ""
+    return format_session_goal_brief(goal)
 
-    return None
+
+def _read_task_plan(session: TurnSnapshotSource) -> TaskPlan | None:
+    """Copy the live task plan if the source carries one."""
+    from core.agent_harness.task_plan.plan import TaskPlan
+
+    plan = getattr(session, "task_plan", None)
+    return plan if isinstance(plan, TaskPlan) else None
 
 
 __all__ = [

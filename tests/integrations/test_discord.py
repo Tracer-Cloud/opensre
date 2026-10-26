@@ -63,14 +63,17 @@ def test_verify_discord_reports_an_unexpected_status() -> None:
 
 
 def test_verify_discord_reports_a_transport_error() -> None:
+    token = "bot-token-secret"
     with patch(
         "integrations.discord.verifier.httpx.get",
-        side_effect=httpx.RequestError("unreachable"),
+        side_effect=httpx.RequestError(f"unreachable with {token}"),
     ):
-        result = verify_discord("local env", {"bot_token": "token"})
+        result = verify_discord("local env", {"bot_token": token})
 
     assert result["status"] == "failed"
     assert "Discord API check failed" in result["detail"]
+    assert token not in result["detail"]
+    assert "<redacted>" in result["detail"]
 
 
 def test_classify_validation_error_returns_none_and_reports() -> None:

@@ -1,9 +1,9 @@
 """Host capability seams are typed contracts declared once.
 
-Four capabilities reach the agent from its host: named commands, LLM-provider
-switching, task cancellation and investigation launch. Each re-declared the
-same seven-parameter ``execution_allowed`` — one approval contract written out
-four times across three tiers — and the harness's factory aliases for them were
+Three capabilities reach the agent from its host: named commands, LLM-provider
+switching and task cancellation. Each re-declared the same seven-parameter
+``execution_allowed`` — one approval contract written out multiple times
+across three tiers — and the harness's factory aliases for them were
 re-declared again inside the gateway.
 
 The gate lives beside ``ExecutionPolicyResult``, the type it takes: the
@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 _SOURCE_TIERS = ("core", "gateway", "surfaces", "tools", "infrastructure", "integrations")
 
 #: The one module allowed to declare the approval gate.
-_GATE_HOME = "tools/interactive_shell/shared/host_ports.py"
+_GATE_HOME = "tools/interactive_shell/shared/host_contracts.py"
 
 #: The one module allowed to declare the factory aliases (the harness API).
 _ALIAS_HOME = "core/agent_harness/ports.py"
@@ -31,7 +31,6 @@ _CAPABILITY_PROTOCOLS = {
     "SlashPorts",
     "LlmProviderPorts",
     "TaskCancelPorts",
-    "InvestigationLaunchPorts",
 }
 
 
@@ -78,7 +77,7 @@ def _protocols_declaring_the_gate() -> set[str]:
                 and _is_protocol_class(node)
                 and _declares_the_wide_gate(node)
             ):
-                found.add(f"{path.relative_to(REPO_ROOT)}::{node.name}")
+                found.add(f"{path.relative_to(REPO_ROOT).as_posix()}::{node.name}")
     return found
 
 
@@ -139,7 +138,6 @@ def _aliases_bound_by(tree: ast.Module) -> set[str]:
 def test_no_tier_redeclares_a_host_port_factory_alias() -> None:
     # Arrange — the aliases are part of the harness API; a second copy drifts.
     aliases = {
-        "InvestigationPortsFactory",
         "LlmProviderPortsFactory",
         "TaskCancelPortsFactory",
         "SlashPortsFactory",
@@ -148,7 +146,7 @@ def test_no_tier_redeclares_a_host_port_factory_alias() -> None:
     # Act
     offenders: dict[str, list[str]] = {}
     for path in _python_sources():
-        relative = str(path.relative_to(REPO_ROOT))
+        relative = path.relative_to(REPO_ROOT).as_posix()
         if relative == _ALIAS_HOME:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

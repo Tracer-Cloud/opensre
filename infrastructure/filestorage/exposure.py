@@ -1,6 +1,6 @@
 """Whether the configured store is publicly readable — an optional provider capability.
 
-Kept apart from :mod:`infrastructure.filestorage.ports` on purpose: the engine's
+Kept apart from :mod:`infrastructure.filestorage.contracts` on purpose: the engine's
 ``ObjectStore`` protocol stays at its four operations for every backend.
 Answering "can anyone on the internet read this?" needs vendor-specific APIs
 (S3's ``GetBucketPolicyStatus`` today) that most providers, and every

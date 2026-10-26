@@ -1,0 +1,237 @@
+"""Tests for merging the base branch into a conflicted PR head before the CI fix."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+from rich.console import Console
+
+from integrations.coding_agent import CodingResult, Progress
+from integrations.git import head_sha, merge_in_progress
+from integrations.github.tools.ci_fix.base_merge import base_has_new_commits, merge_base_into_head
+from integrations.github.tools.ci_fix.context import MERGE_STATE_DIRTY, CiFixContext
+from integrations.github.tools.ci_fix.errors import (
+    ERR_MERGE_CONFLICT,
+    ERR_MERGE_DECISION,
+    ERR_MERGE_UNSETTLED,
+    GitHubCiFixError,
+)
+
+_CTX = CiFixContext(
+    owner="Tracer-Cloud",
+    repo="webapp",
+    number=39,
+    title="chore: bump deps",
+    url="https://github.com/Tracer-Cloud/webapp/pull/39",
+    base_branch="main",
+    head_branch="ci-fix",
+    head_sha="abc123",
+    skipped_check_names=(),
+    failing_checks=(),
+    task="",
+    merge_state=MERGE_STATE_DIRTY,
+)
+
+
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _repo(tmp_path: Path, *, conflict: bool) -> Path:
+    """Work tree on ``ci-fix`` with ``origin/main`` ahead; optionally on the same lines."""
+    bare = tmp_path / "remote.git"
+    work = tmp_path / "work"
+    _git(tmp_path, "init", "--bare", str(bare))
+    _git(tmp_path, "init", "-b", "main", str(work))
+    _git(work, "config", "user.email", "t@example.com")
+    _git(work, "config", "user.name", "Tester")
+    (work / "package.json").write_text('{"dep": "1.0"}\n')
+    (work / "pnpm-lock.yaml").write_text("dep: 1.0\n")
+    (work / "README.md").write_text("readme\n")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-m", "init")
+    _git(work, "remote", "add", "origin", str(bare))
+    _git(work, "push", "-u", "origin", "main")
+
+    _git(work, "checkout", "-b", "ci-fix")
+    (work / "package.json").write_text('{"dep": "1.1"}\n')
+    (work / "pnpm-lock.yaml").write_text("dep: 1.1\n")
+    _git(work, "commit", "-am", "bump dep")
+
+    _git(work, "checkout", "main")
+    if conflict:
+        (work / "package.json").write_text('{"dep": "2.0"}\n')
+        (work / "pnpm-lock.yaml").write_text("dep: 2.0\n")
+    else:
+        (work / "README.md").write_text("readme from main\n")
+    _git(work, "commit", "-am", "main moves on")
+    _git(work, "push", "origin", "main")
+    _git(work, "reset", "--hard", "HEAD~1")
+    _git(work, "checkout", "ci-fix")
+    return work
+
+
+def _never_called(task: str, **_kw: object) -> CodingResult:
+    raise AssertionError(f"coding agent must not run for a clean merge: {task}")
+
+
+def test_base_has_new_commits_reads_the_remote_base_not_github(tmp_path: Path) -> None:
+    # Arrange: origin/main moved on without touching the PR's files, so GitHub calls it mergeable.
+    work = _repo(tmp_path, conflict=False)
+    _git(work, "update-ref", "-d", "refs/remotes/origin/main")
+
+    # Act
+    behind = base_has_new_commits(str(work), _CTX)
+    merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=_never_called)
+    up_to_date = base_has_new_commits(str(work), _CTX)
+
+    # Assert
+    assert behind is True
+    assert up_to_date is False
+
+
+def test_clean_merge_commits_without_the_coding_agent(tmp_path: Path) -> None:
+    # Arrange
+    work = _repo(tmp_path, conflict=False)
+
+    # Act
+    merge = merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=_never_called)
+
+    # Assert
+    assert merge.resolved_files == ()
+    assert merge.commit_sha == head_sha(str(work))
+    assert (work / "README.md").read_text() == "readme from main\n"
+    assert merge_in_progress(str(work)) is False
+
+
+def test_conflicts_resolved_by_agent_are_committed_and_reported(tmp_path: Path) -> None:
+    # Arrange
+    work = _repo(tmp_path, conflict=True)
+    tasks: list[str] = []
+
+    def resolve(task: str, **_kw: object) -> CodingResult:
+        tasks.append(task)
+        (work / "package.json").write_text('{"dep": "2.1"}\n')
+        (work / "pnpm-lock.yaml").write_text("dep: 2.1\n")
+        return CodingResult(success=True, summary="Took 2.x and regenerated the lockfile.")
+
+    # Act
+    merge = merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=resolve)
+
+    # Assert
+    assert sorted(merge.resolved_files) == ["package.json", "pnpm-lock.yaml"]
+    assert merge_in_progress(str(work)) is False
+    assert len(_git(work, "log", "-1", "--pretty=%P").split()) == 2
+    assert _git(work, "status", "--porcelain") == ""
+    assert (work / "package.json").read_text() == '{"dep": "2.1"}\n'
+    task = tasks[0]
+    assert "- package.json: changed on both ci-fix and main" in task
+    assert "Do not hand-edit lockfiles (pnpm-lock.yaml)" in task
+    assert "pnpm install --lockfile-only" in task
+
+
+@pytest.mark.parametrize(
+    "edits_package_json, kind",
+    [
+        # Edited, yet markers kept: the agent's way to flag a choice for a person.
+        (True, ERR_MERGE_DECISION),
+        # Never touched: git's own markers prove nothing; the runner retries, then asks.
+        (False, ERR_MERGE_UNSETTLED),
+    ],
+)
+def test_conflicts_the_agent_left_abort_the_merge_and_name_the_blocked_files(
+    tmp_path: Path, edits_package_json: bool, kind: str
+) -> None:
+    # Arrange
+    work = _repo(tmp_path, conflict=True)
+    before = head_sha(str(work))
+
+    def resolve(_task: str, **_kw: object) -> CodingResult:
+        (work / "pnpm-lock.yaml").write_text("dep: 2.0\n")
+        if edits_package_json:
+            (work / "package.json").write_text(
+                '<<<<<<< ci-fix\n{"dep": "1.1"}\n=======\n{"dep": "2.0", "pin": true}\n'
+                ">>>>>>> main\n"
+            )
+        return CodingResult(success=True, summary="Regenerated the lockfile; package.json unclear.")
+
+    # Act
+    with pytest.raises(GitHubCiFixError) as excinfo:
+        merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=resolve)
+
+    # Assert
+    error = excinfo.value
+    assert error.kind == kind
+    assert "blocked on 1 file(s) a person must decide" in error.message
+    assert "package.json (changed on both ci-fix and main)" in error.message
+    assert "pnpm-lock.yaml" not in error.message.split("decide:")[1].split(".")[0]
+    assert "package.json unclear" in error.message
+    assert "no push was made" in error.message
+    assert merge_in_progress(str(work)) is False
+    assert head_sha(str(work)) == before
+    assert _git(work, "status", "--porcelain") == ""
+
+
+def test_failed_agent_run_aborts_the_merge(tmp_path: Path) -> None:
+    # Arrange
+    work = _repo(tmp_path, conflict=True)
+    before = head_sha(str(work))
+
+    def resolve(_task: str, **_kw: object) -> CodingResult:
+        return CodingResult(success=False, summary="", error="agent timed out", timed_out=True)
+
+    # Act
+    with pytest.raises(GitHubCiFixError) as excinfo:
+        merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=resolve)
+
+    # Assert: a failed run may succeed on a later attempt, so it is no decision
+    assert excinfo.value.kind == ERR_MERGE_CONFLICT
+    assert "Coding agent: agent timed out" in excinfo.value.message
+    assert merge_in_progress(str(work)) is False
+    assert head_sha(str(work)) == before
+
+
+def test_console_shows_the_conflicts_before_and_the_verdicts_after_the_agent(
+    tmp_path: Path,
+) -> None:
+    # Arrange: a console to paint on, and an agent that reports one step while taking main's side.
+    work = _repo(tmp_path, conflict=True)
+    console = Console(record=True, width=100, force_terminal=False)
+    steps: list[str] = []
+
+    def resolve(_task: str, *, on_progress: Progress | None = None) -> CodingResult:
+        assert on_progress is not None
+        on_progress("Editing package.json")
+        (work / "package.json").write_text('{"dep": "2.0"}\n')
+        (work / "pnpm-lock.yaml").write_text("dep: 2.0\n")
+        return CodingResult(success=True, summary="Took main's versions.")
+
+    # Act
+    merge = merge_base_into_head(
+        str(work),
+        _CTX,
+        baseline={},
+        resolve_conflicts=resolve,
+        console=console,
+        on_progress=steps.append,
+    )
+
+    # Assert: the overview names both sides, the review carries a verdict per file,
+    # and the result says how each conflict was settled.
+    painted = console.export_text()
+    assert "Merging main into ci-fix" in painted
+    assert 'ours {"dep": "1.1"}  theirs {"dep": "2.0"}' in painted
+    assert 'took theirs (main)  {"dep": "2.0"}' in painted
+    assert steps == ["Editing package.json"]
+    assert merge.resolutions == (
+        "package.json: 1 conflict (conflict 1 took theirs)",
+        "pnpm-lock.yaml: 1 conflict (conflict 1 took theirs)",
+    )
+    assert merge.summary == (
+        "merged main, resolving conflicts in package.json: 1 conflict (conflict 1 took theirs); "
+        "pnpm-lock.yaml: 1 conflict (conflict 1 took theirs)"
+    )

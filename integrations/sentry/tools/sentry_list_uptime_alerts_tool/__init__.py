@@ -4,15 +4,37 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel, report_run_error
+from core.tool_framework import tool
 from integrations.sentry import (
     SentryConfig,
     build_sentry_config,
     sentry_config_from_env,
 )
 from integrations.sentry.uptime import list_sentry_uptime_monitors
+
+
+def _map_list_sentry_uptime_alerts(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the monitor count and how many are currently down."""
+    if not output.get("available"):
+        return
+    monitors = output.get("monitors") or []
+    if not monitors:
+        return
+    down_count = output.get("down_count", 0)
+    summary = f"{output.get('monitor_count', len(monitors))} uptime monitor(s)"
+    if down_count:
+        summary += f", {down_count} down"
+    record_evidence_entry(
+        evidence,
+        source="list_sentry_uptime_alerts",
+        label="Sentry Uptime Alerts",
+        summary=summary,
+    )
 
 
 def _resolve_config(
@@ -53,6 +75,8 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 @tool(
     name="list_sentry_uptime_alerts",
     source="sentry",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description=(
         "List Sentry uptime monitors and their current health (up/down). "
         "Use for downtime/alerts status — not for clustering error Issues."
@@ -76,7 +100,8 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     injected_params=("organization_slug", "sentry_token", "sentry_url", "project_slug"),
     is_available=_sentry_available,
     extract_params=_extract_params,
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
+    evidence_mapper=_map_list_sentry_uptime_alerts,
 )
 def list_sentry_uptime_alerts(
     organization_slug: str,

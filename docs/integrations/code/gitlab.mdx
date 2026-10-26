@@ -1,0 +1,115 @@
+---
+title: "GitLab"
+description: "Connect GitLab so OpenSRE can read merge requests, commits, pipelines, and files"
+---
+
+## Overview
+
+OpenSRE's GitLab integration gives the agent read access to your merge requests, commits, pipelines, and files, so it can answer questions about recent changes and failing pipelines.
+
+## Prerequisites
+
+- GitLab.com or a self-hosted GitLab instance reachable from OpenSRE
+- A **Personal Access Token** or **Project Access Token**
+- Scopes: `read_api` (required); `api` only if you enable MR write-back
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup gitlab
+```
+
+When prompted, enter:
+
+- **GitLab base URL** — leave as `https://gitlab.com/api/v4` for GitLab.com, or change to your self-hosted instance URL (for example `https://gitlab.example.com/api/v4`)
+- **GitLab access token** — from Credentials below
+
+Setup validates your token by calling the GitLab API and writes credentials to your environment / store.
+
+### Option 2: Environment variables
+
+| Variable | Description |
+| --- | --- |
+| `GITLAB_ACCESS_TOKEN` | Token used for all GitLab API calls |
+| `GITLAB_BASE_URL` | API base URL (defaults to `https://gitlab.com/api/v4`) |
+| `GITLAB_PROJECT_ID` | Optional default project scope helper |
+| `GITLAB_REF` | Optional default ref helper |
+| `GITLAB_FILE_PATH` | Optional default file-path helper |
+
+```bash
+GITLAB_ACCESS_TOKEN=glpat-...
+GITLAB_BASE_URL=https://gitlab.com/api/v4
+```
+
+GitLab tools use this configured integration for the base URL and token. Do not pass `gitlab_url` or `gitlab_token` as tool arguments; those values are resolved from the integration configuration. A self-hosted instance host such as `https://gitlab.example.com` is normalized to `https://gitlab.example.com/api/v4`.
+
+## Credentials
+
+OpenSRE supports both **Personal Access Tokens** and **Project Access Tokens**. A Project Access Token is recommended for production — it is scoped to a single project and does not depend on a user account.
+
+### Personal Access Token (quickest for local use)
+
+1. In GitLab, go to your avatar → **Edit profile** → **Access Tokens**.
+2. Click **Add new token**.
+3. Give it a name (for example `opensre`) and set an expiry date.
+4. Select the following scopes:
+   - `read_api` — required for reading MRs, commits, pipelines, and files
+   - `api` — required only if you enable MR write-back (posting findings as MR notes)
+5. Click **Create personal access token** and copy the value immediately — it is shown only once.
+
+### Project Access Token (recommended for server deployments)
+
+1. Open your GitLab project → **Settings** → **Access Tokens**.
+2. Click **Add new token**.
+3. Give it a name, set a role of **Reporter** (or **Developer** if write-back is needed), and select the same scopes as above.
+4. Click **Create project access token** and copy the value.
+
+<Note>
+If your GitLab instance is self-hosted, make sure your OpenSRE server can reach it over the network before proceeding.
+</Note>
+
+## Tools
+
+| Tool | What it reads |
+| --- | --- |
+| `list_gitlab_mrs` | MR title, description, author, reviewers, labels, diff stats |
+| `list_gitlab_commits` | Commit messages, authors, and changed files in a branch or MR |
+| `list_gitlab_pipelines` | Pipeline status, failed jobs, and job logs |
+| `get_gitlab_file` | File contents at a specific ref for diff analysis |
+
+### Use GitLab tools in the interactive shell
+
+After connecting GitLab, include a GitLab project or file URL in your request. OpenSRE infers the project scope from the current message and keeps it for follow-up questions in the same session.
+
+```text
+Read https://gitlab.com/group/project/-/blob/main/runbooks/api.md and summarize the recovery steps.
+```
+
+Project URLs enable commits, merge request, and pipeline tools:
+
+```text
+Check recent changes and failed pipelines for https://gitlab.com/group/project.
+```
+
+OpenSRE also checks recent conversation, `GITLAB_PROJECT_ID`, `GITLAB_REF`, `GITLAB_FILE_PATH`, and the current repository's GitLab origin remote when the current message does not contain a URL.
+
+## Verify
+
+```bash
+opensre integrations verify gitlab
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Validation fails with 401** | Your token is invalid or has expired. Regenerate it in GitLab and re-run setup. |
+| **Validation fails with 403** | Ensure `read_api` is selected. |
+| **Self-hosted instance not reachable** | Verify that `GITLAB_BASE_URL` ends in `/api/v4` and that OpenSRE can reach the host. Test with `curl -H "Authorization: Bearer <token>" https://your-gitlab-host/api/v4/user`. |
+
+## Security
+
+- Prefer a **Project Access Token** with **Reporter** for read-only access.
+- Store tokens in `.env` or your secret manager — not in source control.

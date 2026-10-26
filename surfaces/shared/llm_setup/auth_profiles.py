@@ -1,10 +1,11 @@
-"""Provider metadata for browser-assisted LLM auth setup."""
+"""Separate API-key and subscription authentication profiles."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
 
+from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
 from surfaces.shared.llm_setup.catalog import (
     PROVIDER_BY_VALUE,
     SUPPORTED_PROVIDERS,
@@ -12,7 +13,7 @@ from surfaces.shared.llm_setup.catalog import (
     WizardCredentialKind,
 )
 
-AuthKind = Literal["api_key", "cli_subscription"]
+AuthKind = Literal["api_key", "subscription"]
 
 
 @dataclass(frozen=True)
@@ -45,34 +46,6 @@ _API_KEY_SETUP_URLS: dict[str, str] = {
 }
 
 
-_SUBSCRIPTION_PROFILES: tuple[ProviderAuthProfile, ...] = (
-    ProviderAuthProfile(
-        name="chatgpt",
-        provider_value="codex",
-        label="ChatGPT subscription via Codex CLI",
-        kind="cli_subscription",
-        aliases=("openai-chatgpt", "openai-codex", "codex-cli"),
-        setup_url="https://github.com/openai/codex",
-        auth_hint="Run: codex login",
-    ),
-    ProviderAuthProfile(
-        name="claude",
-        provider_value="claude-code",
-        label="Anthropic subscription via Claude Code CLI",
-        kind="cli_subscription",
-        aliases=(
-            "claude-ai",
-            "claude-subscription",
-            "anthropic-subscription",
-            "anthropic-claude",
-            "claude-code-cli",
-        ),
-        setup_url="https://github.com/anthropics/claude-code",
-        auth_hint="Run: claude auth login",
-    ),
-)
-
-
 def _api_key_profiles() -> tuple[ProviderAuthProfile, ...]:
     profiles: list[ProviderAuthProfile] = []
     for provider in SUPPORTED_PROVIDERS:
@@ -93,18 +66,39 @@ def _api_key_profiles() -> tuple[ProviderAuthProfile, ...]:
     return tuple(profiles)
 
 
-def iter_auth_profiles() -> tuple[ProviderAuthProfile, ...]:
+def iter_auth_profiles(kind: AuthKind | None = None) -> tuple[ProviderAuthProfile, ...]:
     """Return all supported auth setup paths."""
-    return (*_SUBSCRIPTION_PROFILES, *_api_key_profiles())
+    profiles = (
+        *_api_key_profiles(),
+        *(
+            ProviderAuthProfile(
+                name=provider.value,
+                provider_value=provider.value,
+                label=provider.label,
+                kind="subscription",
+                auth_hint=SUBSCRIPTION_BY_VALUE[provider.value].auth_hint,
+            )
+            for provider in SUPPORTED_PROVIDERS
+            if provider.credential_kind == WizardCredentialKind.SUBSCRIPTION
+        ),
+    )
+    return tuple(profile for profile in profiles if kind is None or profile.kind == kind)
+
+
+def _normalize_auth_name(name: str) -> str:
+    return name.strip().lower().replace("_", "-")
 
 
 def resolve_auth_profile(raw_name: str) -> ProviderAuthProfile:
-    """Resolve a user-supplied provider/auth alias to an auth profile."""
-    normalized = raw_name.strip().lower()
+    """Resolve a user-supplied provider/auth alias to an auth profile.
+
+    Case-insensitive, and ``_`` matches ``-`` (``custom_openai`` is ``custom-openai``).
+    """
+    normalized = _normalize_auth_name(raw_name)
     if not normalized:
         raise KeyError(raw_name)
     for profile in iter_auth_profiles():
-        if normalized in {name.lower() for name in profile.all_names}:
+        if normalized in {_normalize_auth_name(name) for name in profile.all_names}:
             return profile
     raise KeyError(raw_name)
 

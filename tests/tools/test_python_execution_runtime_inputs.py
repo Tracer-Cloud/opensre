@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
 
@@ -123,11 +124,18 @@ def test_socket_reachability_blocked_without_allow_network() -> None:
 
 
 def test_reports_version_via_importlib_metadata() -> None:
+    """Sandbox can read package metadata; that is not always get_opensre_version().
+
+    Dev checkouts keep ``pyproject`` / installed metadata at the base (``0.1``)
+    while ``get_opensre_version()`` expands it to ``0.1+branch.sha``. A
+    release build embeds the full string in metadata, so both agree. This test
+    only asserts the sandbox sees the same installed metadata as the host.
+    """
     result = execute_python_code.run(
         code=("import importlib.metadata as m\nprint(m.version('opensre'))\n"),
     )
     assert result["success"] is True
-    assert get_opensre_version() in result["stdout"]
+    assert result["stdout"].strip() == importlib.metadata.version("opensre")
 
 
 def test_still_blocks_subprocess_version_check() -> None:

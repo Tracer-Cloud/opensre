@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from config.constants.paths import get_store_path
+from infrastructure.analytics.install_state import record_install_marker_state
 from infrastructure.analytics.provider import (
     Properties,
     capture_install_detected_if_needed,
@@ -19,6 +21,7 @@ _INSTALL_FLUSH_TIMEOUT_SECONDS = 2.0
 
 
 def main() -> int:
+    record_install_marker_state(get_store_path().parent)
     capture_install_detected_if_needed(_INSTALL_PROPERTIES)
     shutdown_analytics(flush=True, timeout=_INSTALL_FLUSH_TIMEOUT_SECONDS)
     return 0

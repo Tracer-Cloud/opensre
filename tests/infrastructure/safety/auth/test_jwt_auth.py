@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import jwt as pyjwt
 import pytest
 
-from config.config import CLERK_CONFIG_DEV, CLERK_CONFIG_PROD, CLERK_ISSUER_ENV, CLERK_JWKS_URL_ENV
+from config.clerk import CLERK_CONFIG_DEV, CLERK_CONFIG_PROD
+from config.constants.clerk import CLERK_ISSUER_ENV, CLERK_JWKS_URL_ENV
 from infrastructure.safety.auth.jwt_auth import (
     AsyncJWKSCache,
     JWTVerificationError,

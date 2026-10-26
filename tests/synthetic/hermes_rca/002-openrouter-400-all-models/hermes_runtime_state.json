@@ -1,9 +1,0 @@
-{
-  "pid": 5120,
-  "started_at": "2026-05-17T10:58:00Z",
-  "frozen_now_ts": "2026-05-17T11:00:06Z",
-  "interrupt_queue_depth": 0,
-  "last_progress_ts": "2026-05-17T11:00:05Z",
-  "is_blocked": false,
-  "blocking_call": null
-}

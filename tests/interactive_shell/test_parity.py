@@ -33,5 +33,5 @@ def test_slash_command_help_parity():
     for name, cmd in SLASH_COMMANDS.items():
         assert len(cmd.description) > 10, f"Description for {name} is too short or missing."
         assert "(" not in cmd.description, f"Description for {name} should not contain usage."
-        if name in {"/integrations", "/remote", "/tests", "/guardrails"}:
+        if name in {"/integrations", "/remote", "/runbooks", "/tests", "/guardrails"}:
             assert cmd.usage, f"Usage for {name} should list common subcommands."

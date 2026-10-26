@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rich.console import Console
 
-from infrastructure.harness_ports import configured_integration_services
+from infrastructure.harness_providers import configured_integration_services
 from infrastructure.scheduling.scheduler.delivery import require_delivery_provider
 
 _console = Console()

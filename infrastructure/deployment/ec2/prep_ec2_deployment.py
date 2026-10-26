@@ -9,8 +9,8 @@ from dataclasses import dataclass
 
 import boto3
 
-from config.config import get_configured_llm_provider, get_llm_provider_api_key_env
 from config.llm_auth import KEYLESS_PROVIDER_VALUES, SUPPORTED_PROVIDER_VALUES, provider_spec
+from config.llm_settings import get_configured_llm_provider, get_llm_provider_api_key_env
 from config.local_env import bootstrap_opensre_env, get_project_env_path
 
 _DEPLOY_ENV_EXAMPLE = ".env.deploy.example"

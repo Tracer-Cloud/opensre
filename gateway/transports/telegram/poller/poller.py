@@ -18,6 +18,7 @@ from gateway.transports.telegram.settings import (
     TelegramCallbackQuery,
     TelegramInboundMessage,
 )
+from infrastructure.delivery.notifications.redaction import redact_token
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,12 @@ class TelegramPoller:
         try:
             response = httpx.get(url, params=params, timeout=float(self._timeout + 5))
         except Exception as exc:
-            self._log_transient("[telegram-gateway] getUpdates failed: %s", exc)
+            safe_error = redact_token(str(exc), self._token)
+            self._log_transient(
+                "[telegram-gateway] getUpdates failed (%s): %s",
+                type(exc).__name__,
+                safe_error,
+            )
             time.sleep(_DEFAULT_RETRY_SECONDS)
             return TelegramPollResult()
 
@@ -102,8 +108,9 @@ class TelegramPoller:
         response: httpx.Response,
     ) -> None:
         error_code = data.get("error_code")
-        description = str(
-            data.get("description") or response.text.strip() or f"HTTP {response.status_code}"
+        description = redact_token(
+            str(data.get("description") or response.text.strip() or f"HTTP {response.status_code}"),
+            self._token,
         )
         if error_code == _CONFLICT_ERROR_CODE:
             logger.debug(

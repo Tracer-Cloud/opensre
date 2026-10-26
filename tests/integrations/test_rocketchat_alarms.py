@@ -128,7 +128,7 @@ def test_cooldown_is_per_threshold_name(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_dispatch_returns_false_on_transport_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     # A failed delivery still arms cooldown; otherwise a bad token, bad
-    # channel, or network outage retries on every watchdog sample.
+    # channel, or network outage retries on every monitoring sample.
     calls = _stub_post_message(monkeypatch, ok=False, error="channel not found")
     _patch_clock(monkeypatch, [100.0, 105.0])
 

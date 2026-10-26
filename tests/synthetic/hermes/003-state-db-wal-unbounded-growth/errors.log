@@ -1,9 +1,0 @@
-2026-05-11 19:00:00,000 WARNING agent.hermes_state: state.db-wal size=512MB, last PASSIVE wal_checkpoint returned busy=1
-2026-05-11 19:05:00,000 WARNING agent.hermes_state: state.db-wal size=648MB, last PASSIVE wal_checkpoint returned busy=1
-2026-05-11 19:10:00,000 WARNING agent.hermes_state: state.db-wal size=784MB, last PASSIVE wal_checkpoint returned busy=1
-2026-05-11 19:15:00,000 WARNING agent.hermes_state: state.db-wal size=920MB, last PASSIVE wal_checkpoint returned busy=1
-2026-05-11 19:20:00,000 ERROR agent.hermes_state: sqlite3.OperationalError: database or disk is full
-2026-05-11 19:20:00,500 ERROR agent.hermes_state: Traceback (most recent call last):
-  File "/opt/hermes/hermes_state.py", line 188, in commit
-    self._conn.commit()
-sqlite3.OperationalError: database or disk is full

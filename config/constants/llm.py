@@ -1,22 +1,31 @@
 """LLM provider connection env-var names and base-URL value normalizers.
 
-Kept in this leaf module (not ``config.config``) because modules that
-``config.config`` imports — e.g. ``config.llm_auth.provider_catalog`` — also
-need them, so co-locating with ``config.config`` would be a cyclic import.
+Kept in this leaf module (not ``config.llm_settings``) because modules that
+``config.llm_settings`` imports — e.g. ``config.llm_auth.provider_catalog`` —
+also need them, so co-locating them would be a cyclic import.
 
 The base-URL normalizers live here (a Tier-4 leaf that imports only stdlib) so
 that ``config`` never has to reach up into ``core`` to normalize a value: both
-``config.config`` validators and the ``surfaces`` wizard import them from here,
-and ``core`` may import them downward too.
+``config.llm_settings`` validators and the ``surfaces`` wizard import them from
+here, and ``core`` may import them downward too.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Final
 
 # --- Connection env-var names ------------------------------------------------
 
 LLM_PROVIDER_ENV: Final[str] = "LLM_PROVIDER"
+
+# Explicit local model selection is independent of OpenSRE account identity.
+OPENSRE_LLM_CONNECTION_ENV: Final[str] = "OPENSRE_LLM_CONNECTION"
+OPENSRE_SUBSCRIPTION_AUTH_DIR_ENV: Final[str] = "OPENSRE_SUBSCRIPTION_AUTH_DIR"
+
+#: Retired auth-method selector; subscription connections now have separate
+#: provider identities. Env sync strips this from existing ``.env`` files.
+LLM_AUTH_METHOD_ENV: Final[str] = "LLM_AUTH_METHOD"
 
 AZURE_OPENAI_BASE_URL_ENV: Final[str] = "AZURE_OPENAI_BASE_URL"
 AZURE_OPENAI_API_VERSION_ENV: Final[str] = "AZURE_OPENAI_API_VERSION"
@@ -26,6 +35,33 @@ AZURE_OPENAI_API_KEY_ENV: Final[str] = "AZURE_OPENAI_API_KEY"
 #: OpenAI ``chat.completions.parse``). Default off until a live diagnose turn
 #: has verified the request shape — silent fallback would double-invoke.
 OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV: Final[str] = "OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT"
+
+#: Opt-in same-LLM ReAct goal review after tool work. Default off: the acting
+#: prompt proposes done; host gates (unfinished plan, gather discovery-only)
+#: still reject. Set to ``1`` to restore the extra review call.
+OPENSRE_REACT_GOAL_LLM_REVIEW_ENV: Final[str] = "OPENSRE_REACT_GOAL_LLM_REVIEW"
+
+
+#: ``prompt_cache_key`` sent with OpenAI Responses requests: this prefix plus a
+#: hash of the system prompt. Without a key every install shares one routing
+#: bucket (the system prompt's first tokens are identical), so busy prefixes
+#: overflow to cold cache machines. OpenAI and the hosted proxy cap it at 128.
+OPENAI_PROMPT_CACHE_KEY_PREFIX: Final[str] = "opensre-sys-"
+OPENAI_PROMPT_CACHE_KEY_HASH_CHARS: Final[int] = 32
+
+#: Anthropic tool-schema field that keeps a tool out of the prompt until a tool
+#: reference loads it. Such a tool sits outside the cached prefix and cannot
+#: carry a cache marker: the API rejects the request.
+ANTHROPIC_DEFER_LOADING_KEY: Final[str] = "defer_loading"
+#: Internal marker on an assistant message: the conversation its thinking blocks
+#: are bound to, as ``{"prefix": <digest>, "after": <block id or "">}``.
+ANTHROPIC_THINKING_BINDING_KEY: Final[str] = "_opensre_thinking_binding"
+
+
+def react_goal_llm_review_enabled() -> bool:
+    """True when the same-LLM ReAct goal reviewer is opted back in."""
+    return os.environ.get(OPENSRE_REACT_GOAL_LLM_REVIEW_ENV, "").strip() == "1"
+
 
 # Custom OpenAI-/Anthropic-compatible gateways (LiteLLM proxy, vLLM, LocalAI,
 # internal model gateways). The base URL is user-supplied, not hard-coded.
@@ -38,6 +74,7 @@ CUSTOM_ANTHROPIC_API_KEY_ENV: Final[str] = "CUSTOM_ANTHROPIC_API_KEY"
 # Leaf SoT so ``config.secrets`` never imports ``config.llm_auth`` (cyclic).
 ANTHROPIC_API_KEY_ENV: Final[str] = "ANTHROPIC_API_KEY"
 OPENAI_API_KEY_ENV: Final[str] = "OPENAI_API_KEY"
+OPENAI_BASE_URL_ENV: Final[str] = "OPENAI_BASE_URL"
 OPENROUTER_API_KEY_ENV: Final[str] = "OPENROUTER_API_KEY"
 TRUSTEDROUTER_API_KEY_ENV: Final[str] = "TRUSTEDROUTER_API_KEY"
 DEEPSEEK_API_KEY_ENV: Final[str] = "DEEPSEEK_API_KEY"

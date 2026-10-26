@@ -10,10 +10,6 @@ this package.
 from __future__ import annotations
 
 from surfaces.interactive_shell.session.alert_inbox import SessionAlertInbox
-from surfaces.interactive_shell.session.background_investigations import (
-    BackgroundInvestigationRecord,
-    BackgroundNotificationPreferences,
-)
 from surfaces.interactive_shell.session.session import Session
 from surfaces.interactive_shell.session.terminal_metrics import (
     InterventionKind,
@@ -23,8 +19,6 @@ from surfaces.interactive_shell.session.terminal_metrics import (
 from surfaces.interactive_shell.session.terminal_session import TerminalSession
 
 __all__ = [
-    "BackgroundInvestigationRecord",
-    "BackgroundNotificationPreferences",
     "InterventionKind",
     "Session",
     "SessionAlertInbox",

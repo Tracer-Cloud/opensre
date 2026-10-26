@@ -1,0 +1,301 @@
+---
+title: "AWS"
+description: "Connect AWS so OpenSRE can map your infrastructure and investigate cloud-related issues"
+---
+
+## Overview
+
+OpenSRE uses AWS to map your environment: Lambda functions, EKS clusters, S3 buckets, and more. It reads infrastructure state to build context when you ask about cloud resources.
+
+Related AWS tool pages (same credentials, no separate setup): [EC2](/integrations/cloud/ec2), [ELB](/integrations/cloud/elb), [S3](/integrations/cloud/s3), [Lambda](/integrations/cloud/aws_lambda), and [CloudTrail](/integrations/cloud/cloudtrail_events).
+
+## Prerequisites
+
+- AWS account with IAM permissions
+- Either a role ARN (recommended) or static access keys. A role ARN is *assumed* using your ambient AWS credentials — environment keys, an `aws configure` profile, or an attached instance/task role — so one of those must exist on the machine running OpenSRE
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup aws
+```
+
+Provide a role ARN or static access keys when prompted. If you pick a role
+and this machine has no base AWS credentials, setup offers to switch to
+access keys, pause so you can run `aws configure`, or continue anyway
+(for EC2/ECS/Lambda with an attached role).
+
+### Option 2: Environment variables (IAM role)
+
+```bash
+AWS_ROLE_ARN=arn:aws:iam::123456789012:role/OpenSREReadOnly
+AWS_EXTERNAL_ID=your-external-id     # optional
+AWS_REGION=us-east-1
+```
+
+### Option 3: Environment variables (static keys)
+
+```bash
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_SESSION_TOKEN=...                # optional, for temporary credentials
+AWS_REGION=us-east-1
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AWS_ROLE_ARN` | — | IAM role to assume (recommended) |
+| `AWS_EXTERNAL_ID` | — | External ID for role assumption |
+| `AWS_REGION` | `us-east-1` | AWS region |
+| `AWS_ACCESS_KEY_ID` | — | Static access key (if not using role) |
+| `AWS_SECRET_ACCESS_KEY` | — | Static secret key |
+| `AWS_SESSION_TOKEN` | — | Session token for temporary credentials |
+
+<Info>
+Either `AWS_ROLE_ARN` or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` is required.
+`AWS_ROLE_ARN` alone is not enough on a laptop: the role is assumed with whatever
+credentials boto3 finds (env keys, `~/.aws/credentials`, or an instance/task role), and
+that identity needs `sts:AssumeRole` on the role.
+</Info>
+
+For multiple AWS accounts or regions, use [multi-instance](/platform/multi-instance-integrations) with `AWS_INSTANCES`.
+
+### Option 4: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "aws-prod",
+      "service": "aws",
+      "status": "active",
+      "credentials": {
+        "role_arn": "arn:aws:iam::123456789012:role/OpenSREReadOnly",
+        "external_id": "your-external-id",
+        "region": "us-east-1"
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+### IAM role (recommended)
+
+1. Create an IAM role that OpenSRE can assume (or attach to the host).
+2. Attach read-only permissions (see below).
+3. Set `AWS_ROLE_ARN` (and optional `AWS_EXTERNAL_ID`) or enter the ARN in `opensre integrations setup aws`.
+
+### Static access keys
+
+1. Create an IAM user with the same read-only permissions.
+2. Create an access key and set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (and `AWS_SESSION_TOKEN` if temporary).
+
+### IAM permissions
+
+OpenSRE needs read-only access. Attach the AWS managed `ReadOnlyAccess` policy, or a custom policy scoped to the services you want OpenSRE to inspect.
+
+For least privilege, the minimum services used are:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity",
+        "ec2:Describe*",
+        "ecs:Describe*",
+        "ecs:List*",
+        "eks:Describe*",
+        "eks:List*",
+        "lambda:List*",
+        "lambda:Get*",
+        "s3:ListBucket",
+        "s3:GetObject",
+        "logs:FilterLogEvents",
+        "logs:GetLogEvents",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics",
+        "cloudtrail:LookupEvents",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+<Note>
+`opensre integrations verify aws` assumes `AWS_ROLE_ARN` when set. Many AWS tools (S3, CloudTrail, EC2, ELB, Lambda) call AWS through the ambient credential chain (environment keys, shared profile, or instance/task role) and do **not** assume that role for the API call. Give S3/CloudTrail/EC2 permissions to the identity the OpenSRE process actually runs as.
+</Note>
+
+## Tools
+
+| Area | Tools / capability |
+| --- | --- |
+| Core AWS | `execute_aws_operation` (manual / advanced; not auto-planned) |
+| EC2 | `ec2_instances_by_tag` — see [EC2](/integrations/cloud/ec2) |
+| ELB | `get_elb_target_health` — see [ELB](/integrations/cloud/elb) |
+| S3 | `list_s3_objects`, `inspect_s3_object`, `get_s3_object`, `check_s3_marker` — see [S3](/integrations/cloud/s3) |
+| Lambda | `get_lambda_configuration`, `inspect_lambda_function`, `get_lambda_invocation_logs`, `get_lambda_errors` — see [Lambda](/integrations/cloud/aws_lambda) |
+| CloudTrail | `lookup_cloudtrail_events` — see [CloudTrail](/integrations/cloud/cloudtrail_events) |
+
+## Verify
+
+```bash
+opensre integrations verify aws
+```
+
+Expected output (role example):
+
+```
+Service: aws
+Status: passed
+Detail: Authenticated via assume-role in us-east-1 as arn:aws:iam::123456789012:role/OpenSREReadOnly (account 123456789012)
+```
+
+Expected output (static keys example):
+
+```
+Service: aws
+Status: passed
+Detail: Connected to AWS STS via static-creds in us-east-1; caller identity account=123456789012 arn=arn:aws:iam::123456789012:user/opensre.
+```
+
+Inside the REPL: `/integrations verify aws` or `/verify aws`. Aliases such as `eks` also map to this check.
+
+## Local verification recipe
+
+A short end-to-end recipe to bring AWS up locally, confirm the verifier passes, exercise `execute_aws_operation` against real data, and tear everything down. This uses temporary credentials from an existing AWS account or SSO session — no long-lived infrastructure to provision.
+
+### Bring it up (credentials)
+
+If you authenticate with AWS SSO (`aws sso login`), the credentials are not exposed as environment variables by default. Export them into the variables OpenSRE's env resolver reads:
+
+```powershell
+# PowerShell (Windows)
+$creds = aws configure export-credentials --format process | ConvertFrom-Json
+$env:AWS_ACCESS_KEY_ID = $creds.AccessKeyId
+$env:AWS_SECRET_ACCESS_KEY = $creds.SecretAccessKey
+$env:AWS_SESSION_TOKEN = $creds.SessionToken
+$env:AWS_REGION = "us-east-1"
+```
+
+```bash
+# bash / zsh (macOS / Linux)
+eval "$(aws configure export-credentials --format env)"
+export AWS_REGION=us-east-1
+```
+
+Static access keys or a role ARN work too — see [Setup](#setup) above.
+
+### Verify
+
+```bash
+uv run opensre integrations verify aws
+```
+
+Expected:
+
+```
+SERVICE │ SOURCE    │ STATUS   │ DETAIL
+━━━━━━━━┿━━━━━━━━━━━┿━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+aws     │ local env │ ✓ passed │ Connected to AWS STS via static-creds
+        │           │          │ in us-east-1; caller identity
+        │           │          │ account=<REDACTED> arn=<REDACTED>.
+```
+
+### Exercise `execute_aws_operation`
+
+`execute_aws_operation` is the registered AWS tool. It is read-only: the allowlist admits `describe_*`, `get_*`, `list_*`, `head_*`, `select_*`, `batch_get_*`, `lookup_*` (e.g. `cloudtrail.lookup_events`), and the exact operations `query` and `scan` (e.g. `dynamodb.query`). Mutating operations (e.g. `terminate_instances`) are rejected with an `"Operation not allowed"` error.
+
+The agent needs an explicit service and operation to call it, so to exercise it directly, look it up in the tool registry and run it. Any region works — set `AWS_REGION`, or pass a region-scoped service; `us-east-1` is used here as the example:
+
+```bash
+uv run python -c "from tools.registry import get_registered_tool; import json; tool = get_registered_tool('execute_aws_operation'); print(json.dumps(tool.run(service='sts', operation='get_caller_identity'), indent=2, default=str))"
+```
+
+A successful call returns a payload of this shape (redacted):
+
+```json
+{
+  "found": true,
+  "service": "sts",
+  "operation": "get_caller_identity",
+  "result": {
+    "UserId": "<REDACTED>",
+    "Account": "<REDACTED>",
+    "Arn": "arn:aws:sts::<REDACTED>:assumed-role/<REDACTED_ROLE>/<REDACTED_USER>"
+  },
+  "metadata": {"region": "us-east-1", "parameters_provided": false}
+}
+```
+
+Other read-only operations confirmed against a live account (output trimmed and redacted):
+
+- `ec2` / `describe_instances` — returned a running `t2.micro` in `us-east-1a` with full metadata.
+- `s3` / `list_buckets` — returned the account's real buckets.
+- `iam` / `list_roles` with `parameters={"MaxItems": 5}` — returned real IAM roles; confirms parameters pass through to the API.
+- `ecs` / `list_clusters` — returned `{"clusterArns": []}`, a valid empty result (`"found": true`), not a stub or error.
+
+Because AWS spans many regions, target another region either by exporting a different `AWS_REGION` or by passing a region-scoped `service`/`parameters` combination; global services (e.g. `iam`) report `"region": "aws-global"` in the metadata.
+
+### Teardown
+
+There is no cloud infrastructure to remove. What you clean up depends on how you configured AWS.
+
+**If you only exported credentials for this session** (the SSO / env-var path above), clear them from your shell:
+
+```powershell
+# PowerShell
+Remove-Item Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY, Env:AWS_SESSION_TOKEN, Env:AWS_REGION
+```
+
+```bash
+# bash / zsh
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION
+```
+
+**If you ran `opensre integrations setup aws`**, that writes to three tiers — the integration store, the project `.env` (non-secret fields), and an owner-only local secret file at `~/.opensre/credentials.json` (secret fields such as `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`). `opensre integrations remove aws` clears only the store entry, so clear the other two tiers too or the credentials stay resolvable:
+
+1. Remove the store entry:
+
+   ```bash
+   opensre integrations remove aws
+   ```
+
+2. Delete the non-secret `AWS_*` lines (`AWS_ROLE_ARN`, `AWS_EXTERNAL_ID`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`) from your project `.env`.
+
+3. Delete the secret entries from the local secret store. OpenSRE stores secrets in `~/.opensre/credentials.json`, not the OS keychain. Remove the AWS keys from it:
+
+   ```bash
+   uv run python -c "from config.secrets.store import delete_secret; [delete_secret(k) for k in ('AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN')]"
+   ```
+
+   `delete_secret` removes each key from every local tier. Deleting `~/.opensre/credentials.json` outright also works if it holds no other integration's secrets.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Unable to locate credentials** (role ARN setup) | You chose IAM Role ARN but nothing on this machine has base AWS credentials. The setup wizard detects this when you pick the role option and offers to switch to Access Key + Secret, or to pause while you run `aws configure` / export `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` for an identity allowed to assume the role. If you set `AWS_ROLE_ARN` by hand instead of through the wizard, provide one of those base credentials |
+| **AccessDenied on STS** | Ensure the caller has `sts:AssumeRole` permission on the target role |
+| **InvalidClientTokenId** | Check that `AWS_ACCESS_KEY_ID` is correct and the key is active |
+| **Could not connect to endpoint** | Check `AWS_REGION` and network connectivity |
+| **ExpiredTokenException** | Refresh your session token or rotate the access key |
+| **Verify passes but S3/CloudTrail/EC2 tools fail** | Those tools use the ambient credential chain, not only the role assumed during verify — attach the needed IAM actions to that identity |
+
+## Security
+
+- Prefer **IAM roles** over static keys wherever possible.
+- Scope IAM permissions to only the AWS services OpenSRE needs to inspect.
+- Rotate static access keys regularly.
+- Enable CloudTrail so all OpenSRE API calls are auditable.
+- Store keys in `.env` or your secret manager — not in source control.

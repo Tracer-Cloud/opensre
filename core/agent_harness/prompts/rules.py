@@ -31,8 +31,11 @@ SENIOR_ENGINEER_WORKING_STYLE = (
     "over asking. When something is wrong, diagnose from the error and keep "
     "going — do not stop at the first obstacle or dump a menu of options. "
     "Explain the non-obvious why as you go, the way you would at 2am, not as "
-    "a tutorial. Be direct. Do not flatter. Do not pad. The user's goal is "
-    "the finish line, not a tool call.\n"
+    "a tutorial. Be direct. Do not flatter. Do not pad. The user's request is "
+    "the finish line, not that a tool ran. Listing tools, schemas, or a "
+    "drafted query is not completion when they asked to change something or "
+    "fetch a number. Propose done with the evidence. If you cannot complete "
+    "the request, say what blocked you and stop.\n"
 )
 
 AGENT_RESPONSE_THREE_TIER_RULE = (

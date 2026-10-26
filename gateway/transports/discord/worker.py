@@ -12,7 +12,6 @@ from dataclasses import replace
 
 import discord
 
-from config.constants.investigation import ALERT_TEMPLATE_CHOICES
 from gateway.core.middleware.approvals import ApprovalBroker
 from gateway.core.storage import SessionResolver
 from gateway.core.storage.session.binding_store import BindingStore
@@ -49,49 +48,6 @@ async def _reap_cancelled_task(task: asyncio.Task[object]) -> None:
         _ = await task
     except asyncio.CancelledError:
         return
-
-
-def application_command_name(interaction: discord.Interaction) -> str:
-    """Resolve slash command name when commands are registered via REST, not a local tree."""
-    command = interaction.command
-    if command is not None:
-        return str(command.name)
-    data = interaction.data
-    if data is None:
-        return ""
-    if isinstance(data, dict):
-        return str(data.get("name") or "")
-    return str(getattr(data, "name", "") or "")
-
-
-def application_command_option(interaction: discord.Interaction, option_name: str) -> str:
-    """Read one slash option value from namespace or raw interaction payload."""
-    if interaction.namespace is not None:
-        value = getattr(interaction.namespace, option_name, None)
-        if value is not None and str(value).strip():
-            return str(value).strip()
-    data = interaction.data
-    if data is None:
-        return ""
-    raw = data.get("options") if isinstance(data, dict) else getattr(data, "options", None)
-    if not isinstance(raw, (list, tuple)):
-        return ""
-    for option in raw:
-        name = option.get("name") if isinstance(option, dict) else getattr(option, "name", None)
-        if str(name or "") != option_name:
-            continue
-        value = option.get("value") if isinstance(option, dict) else getattr(option, "value", None)
-        if value is not None:
-            return str(value).strip()
-    return ""
-
-
-def investigate_slash_text(alert: str) -> str:
-    """Map Discord ``/investigate`` alert input to a literal REPL slash line."""
-    body = alert.strip() or "generic"
-    if body.lower() in ALERT_TEMPLATE_CHOICES:
-        return f"/investigate {body.lower()}"
-    return f"/investigate alert:{body}"
 
 
 def run_discord_gateway_thread(
@@ -189,40 +145,6 @@ async def _discord_gateway_main(
                 # "This interaction failed" in the client.
                 with contextlib.suppress(discord.HTTPException):
                     await interaction.response.defer()
-                return
-            if interaction.type != discord.InteractionType.application_command:
-                return
-            if application_command_name(interaction) != "investigate":
-                return
-            alert = application_command_option(interaction, "alert")
-            # Resolve the interaction with a real message instead of
-            # defer(thinking=True): turn output is posted to the channel by the
-            # output sink, so a deferred interaction would show "thinking..."
-            # forever. Interactions expire fast (3s / already-acked), so 404s
-            # here are expected and non-fatal.
-            with contextlib.suppress(discord.HTTPException):
-                await interaction.response.send_message(
-                    f"Running `/investigate {alert.strip() or 'generic'}` -- "
-                    "progress and results will follow in this channel."
-                )
-            user_id = str(interaction.user.id)
-            channel_id = str(interaction.channel_id or "")
-            guild_id = str(interaction.guild_id or DM_GUILD_ID)
-            thread_id = channel_id
-            if isinstance(interaction.channel, discord.Thread):
-                thread_id = str(interaction.channel.id)
-            text = investigate_slash_text(alert)
-            inbound = DiscordInboundMessage(
-                guild_id=guild_id,
-                user_id=user_id,
-                channel_id=channel_id,
-                message_id=str(interaction.id),
-                thread_id=thread_id,
-                text=text,
-                addressed=True,
-            )
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(executor, dispatcher.dispatch, inbound)
 
     client = OpenSREDiscordClient(intents=intents)
 
@@ -322,10 +244,7 @@ def client_mentions_bot(message: discord.Message, bot_user_id: str) -> bool:
 
 
 __all__ = [
-    "application_command_name",
-    "application_command_option",
     "client_mentions_bot",
-    "investigate_slash_text",
     "normalize_message",
     "run_discord_gateway_thread",
     "strip_leading_discord_mentions",

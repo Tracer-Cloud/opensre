@@ -15,12 +15,6 @@ high-level modules depend on abstractions, not concretions.
 from __future__ import annotations
 
 from infrastructure.observability.render.debug import debug_print, set_debug_printer
-from infrastructure.observability.render.display import (
-    render_completed_investigation_footer,
-    render_investigation_header,
-    set_investigation_footer_renderer,
-    set_investigation_header_renderer,
-)
 from infrastructure.observability.render.output_format import get_output_format
 from infrastructure.observability.render.progress import (
     NoopProgressTracker,
@@ -37,11 +31,7 @@ __all__ = [
     "debug_print",
     "get_output_format",
     "get_progress_tracker",
-    "render_completed_investigation_footer",
-    "render_investigation_header",
     "set_debug_printer",
-    "set_investigation_footer_renderer",
-    "set_investigation_header_renderer",
     "set_progress_tracker",
     "set_progress_tracker_factory",
     "silence_progress_tracker",

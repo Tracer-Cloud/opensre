@@ -232,7 +232,10 @@ def get_current_ops(
         client = _get_client(config)
         try:
             result = client.admin.command(
-                "currentOp", {"microsecs_running": {"$gte": threshold_microsecs}}
+                {
+                    "currentOp": 1,
+                    "microsecs_running": {"$gte": threshold_microsecs},
+                }
             )
             ops = result.get("inprog", [])
             # Cap results and strip potentially sensitive fields

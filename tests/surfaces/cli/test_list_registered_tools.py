@@ -28,7 +28,6 @@ def test_get_integration_names_includes_specs_and_tool_packages() -> None:
 def test_get_integration_from_module_only_matches_integration_tools() -> None:
     assert get_integration_from_module("integrations.aws.tools.foo") == "aws"
     assert get_integration_from_module("integrations.aws.verifier") is None
-    assert get_integration_from_module("tools.system.watch_dog") is None
 
 
 def test_registered_tools_are_sorted_and_grouped() -> None:

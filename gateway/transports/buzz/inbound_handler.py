@@ -9,8 +9,14 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager, nullcontext
 
-from config.constants.gateway import TURN_ERROR_MESSAGE, TURN_TIMEOUT_MESSAGE, USER_STOP_MESSAGE
+from config.constants.gateway import (
+    CREDITS_DENIED_MESSAGE,
+    TURN_ERROR_MESSAGE,
+    TURN_TIMEOUT_MESSAGE,
+    USER_STOP_MESSAGE,
+)
 from config.scope_context import bound_storage_scope
+from gateway.core.billing.turn_metering import bound_turn_metering
 from gateway.core.middleware.active_turns import ActiveTurnRegistry
 from gateway.core.middleware.approvals import ApprovalBroker, approval_tool_hooks
 from gateway.core.middleware.terminal_outcome import TerminalOutcomeArbiter
@@ -24,7 +30,7 @@ from gateway.transports.buzz.settings import BuzzInboundMessage, GatewaySettings
 from gateway.transports.buzz.turn_output import BuzzTurnOutput
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.turn_host.turn_callback import TurnCallback
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +149,21 @@ async def handle_polled_inbound_buzz_message(
             except Exception:
                 logger.debug("[buzz-gateway] user-stop finalize failed", exc_info=True)
 
+        def _on_credit_denied() -> None:
+            logger.info(
+                "[buzz-gateway] turn denied: out of credits channel=%s",
+                event.channel_id,
+            )
+            if terminal.claim():
+                try:
+                    output.finalize(CREDITS_DENIED_MESSAGE)
+                except Exception:
+                    logger.debug("[buzz-gateway] credits-denied finalize failed", exc_info=True)
+
         def _run_turn() -> None:
+            # The shared runner applies metering after process-capacity
+            # admission. Keeping its bound request here leaves the ledger POST
+            # on this executor thread instead of blocking the polling loop.
             try:
                 with (
                     bound_storage_scope(scope),
@@ -151,6 +171,12 @@ async def handle_polled_inbound_buzz_message(
                         surface=UsageSurface.BUZZ,
                         session_id=session.session_id,
                         user_id=event.pubkey or None,
+                    ),
+                    bound_turn_metering(
+                        organization_id=scope.principal.id,
+                        reason="buzz_turn",
+                        idempotency_key=f"{UsageSurface.BUZZ.value}:{event.event_id}",
+                        on_denied=_on_credit_denied,
                     ),
                 ):
                     handle_callback_to_gateway_agent(

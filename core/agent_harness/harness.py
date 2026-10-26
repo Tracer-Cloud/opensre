@@ -1,11 +1,10 @@
-"""``AgentSession`` — the embedder's entry point for chat and investigation.
+"""``AgentSession`` — the embedder's entry point for chat.
 
 Create the session, attach an agent, run turns::
 
     session = AgentSession.start(config)  # builds the default agent
     result = session.chat("…")            # turn 1
     follow = session.chat("…")            # turn 2 — same attached agent
-    report = session.investigate({…})     # needs no attached chat agent
 
 Embedded scripts that need local adapters use
 ``bootstrap.embedded.start_embedded_session``. Scheduled one-shots may use
@@ -14,7 +13,7 @@ Embedded scripts that need local adapters use
 A host with its own ports (the gateway pool, the REPL) builds the agent through
 :class:`~core.agent_harness.turns.headless_build.DefaultHeadlessBuild` and drives it
 with :meth:`HeadlessAgent.handle` per message; it may still attach it here to
-use :meth:`chat` and :meth:`investigate`.
+use :meth:`chat`.
 
 Session lifecycle (create / resolve / rotate / restore) belongs to
 :class:`~core.agent_harness.session.lifecycle.SessionManager`; this module adds
@@ -28,18 +27,23 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from core.agent_harness.session import SessionManager
 
 if TYPE_CHECKING:
-    from core.agent_harness.investigation_api import AlertInput, InvestigationResult
-    from core.agent_harness.ports import OutputSink, PromptContextProvider, ToolProvider
+    from core.agent_harness.ports import (
+        OutputSink,
+        PromptContextProvider,
+        ToolEventObserver,
+        ToolProvider,
+        TurnBinding,
+    )
     from core.agent_harness.session.session_core import SessionCore
     from core.agent_harness.session_goal.goal import SessionGoal
     from core.agent_harness.session_goal.run_until import SessionGoalRunResult
-    from core.agent_harness.turns.gather_phase import GatherPhase
     from core.agent_harness.turns.turn_results import TurnResult
+    from core.tool.execution import ToolExecutionHooks
 
 
 class ChatDispatcher(Protocol):
@@ -49,16 +53,37 @@ class ChatDispatcher(Protocol):
         """Run one turn for ``message`` and return its :class:`TurnResult`."""
 
 
+@runtime_checkable
+class GoalDispatcher(ChatDispatcher, Protocol):
+    """A dispatcher that also drives the session-goal loop (a :class:`HeadlessAgent`)."""
+
+    def run_goal(
+        self,
+        text: str,
+        binding: TurnBinding | None = None,
+        *,
+        goal: SessionGoal | None = None,
+        evaluate: Callable[..., str] | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
+        on_progress: Callable[[SessionGoal], None] | None = None,
+    ) -> SessionGoalRunResult:
+        """Run the session-goal loop for ``text`` and return the full run result."""
+
+
 @dataclass(frozen=True)
 class SessionConfig:
     """What a surface hands :class:`AgentSession` to start up.
 
     Every field is optional so a surface only opts into the behavior it
     needs: a fresh gateway turn has nothing to resume (``session_id=None``);
-    a headless action-only turn has no grounded context (``prompts=None``).
+    a turn without its own prompt-context provider gets the default one
+    (``prompts=None``).
     """
 
     session_id: str | None = None
+    # A caller can preallocate a fresh identity (for example, before acquiring
+    # a cross-process lease) without asking the harness to restore that ID.
+    new_session_id: str | None = None
     prompts: PromptContextProvider | None = None
     load_env: bool = True
     hydrate_integrations: bool = True
@@ -98,7 +123,7 @@ class SessionStartupResult:
 
 
 class AgentSession:
-    """Public host API: ``start`` / ``chat`` / ``investigate``.
+    """Public host API: ``start`` / ``chat``.
 
     Order of startup steps matters: env vars must be resolved before session
     creation (integration hydration/warm may depend on env-provided credentials),
@@ -120,11 +145,14 @@ class AgentSession:
         prompts: PromptContextProvider | None = None,
         prepare_session: Callable[[SessionCore], None] | None = None,
         tools: ToolProvider | None = None,
-        gather: GatherPhase | None = None,
         console: Any | None = None,
         logger: logging.Logger | None = None,
         surface: str | None = None,
         is_tty: bool | None = None,
+        tool_hooks: ToolExecutionHooks | None = None,
+        tool_event_observer: ToolEventObserver | None = None,
+        unattended: bool = False,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> AgentSession:
         """Return a session that is ready to :meth:`chat`.
 
@@ -146,10 +174,15 @@ class AgentSession:
         ``prepare_session`` runs after session create (e.g. pin a project scope)
         and before the agent is built. ``console``, ``logger`` and ``surface``
         are the :class:`~core.agent_harness.turns.headless_build.DefaultHeadlessBuild`
-        fields; ``tools`` and ``gather`` the ports its ``agent()`` takes;
-        ``is_tty`` is bound on the first turn. A host that needs more (its own
-        sink, prompts, error reporter, an action ``llm_factory``) builds through
-        :class:`DefaultHeadlessBuild` itself and calls :meth:`attach_agent`.
+        fields; ``tools`` the port its ``agent()`` takes;
+        ``is_tty`` and ``tool_hooks`` (the turn's approval hooks) are bound on
+        the first turn. ``tool_event_observer`` receives action-tool lifecycle
+        events from the default tool provider. ``cancel_requested`` writes the
+        host cancel Event so ReAct and tools stop when the caller (a disabled
+        cron task, a gateway ``/stop``) says the turn is cancelled. A host that
+        needs more (its own sink, prompts, error reporter, an action
+        ``llm_factory``) builds through :class:`DefaultHeadlessBuild` itself and
+        calls :meth:`attach_agent`.
         """
         from core.agent_harness.turns.headless_adapters import BufferOutputSink
 
@@ -158,16 +191,24 @@ class AgentSession:
         if prepare_session is not None:
             prepare_session(startup.session)
         agent_session._bound_session = startup.session
+        sink = output if output is not None else BufferOutputSink()
+        bound_console = console
+        if cancel_requested is not None:
+            from core.agent_harness.turns.host_cancel import bind_cancel_predicate
+
+            bound_console = bind_cancel_predicate(sink, cancel_requested, console=bound_console)
         agent_session._attach_default_headless(
             session=startup.session,
-            output=output if output is not None else BufferOutputSink(),
+            output=sink,
             prompts=prompts if prompts is not None else startup.prompts,
             tools=tools,
-            gather=gather,
-            console=console,
+            console=bound_console,
             logger=logger,
             surface=surface,
             is_tty=is_tty,
+            tool_hooks=tool_hooks,
+            tool_event_observer=tool_event_observer,
+            unattended=unattended,
         )
         return agent_session
 
@@ -179,9 +220,11 @@ class AgentSession:
         config: SessionConfig | None = None,
         output: OutputSink | None = None,
         prepare_session: Callable[[SessionCore], None] | None = None,
-        gather: GatherPhase | None = None,
         logger: logging.Logger | None = None,
         is_tty: bool | None = None,
+        unattended: bool = False,
+        tool_hooks: ToolExecutionHooks | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> TurnResult:
         """Run exactly one turn for ``message`` on a throwaway session.
 
@@ -189,14 +232,32 @@ class AgentSession:
         loop that runs several turns must call :meth:`start` once and
         :meth:`chat` per turn instead — this rebuilds the session, re-hydrates
         integrations, and discards every warm cache on each call.
+        ``cancel_requested`` stops the turn (same host Event as chat ``/stop``)
+        when a scheduled task is disabled or removed mid-tick. Inside a
+        scheduled run attempt, the turn's tool calls that changed something
+        are recorded for the attempt's run record beside ``tool_hooks``.
         """
+        from core.tool.execution import ToolExecutionHooks, compose_tool_execution_hooks
+        from infrastructure.observability.trace.submitted_messages import note_submitted_message
+        from infrastructure.scheduling.scheduler.tool_actions import bound_action_hook
+
+        # A scheduled run keeps the exact message its turn was given and the
+        # calls that changed something.
+        note_submitted_message(message)
+        record_action = bound_action_hook()
+        if record_action is not None:
+            tool_hooks = compose_tool_execution_hooks(
+                tool_hooks, ToolExecutionHooks(after_tool_call=record_action)
+            )
         return cls.start(
             config or SCHEDULED_RUN_CONFIG,
             output=output,
             prepare_session=prepare_session,
-            gather=gather,
             logger=logger,
             is_tty=is_tty,
+            unattended=unattended,
+            tool_hooks=tool_hooks,
+            cancel_requested=cancel_requested,
         ).chat(message)
 
     def startup(self) -> SessionStartupResult:
@@ -204,7 +265,7 @@ class AgentSession:
 
         :attr:`SessionConfig.boot_process`, when supplied, runs first — an
         embedded host passes ``lambda: configure_process(EMBEDDED_PROFILE)`` so
-        gather and tools see the same local integrations as the interactive
+        tools see the same local integrations as the interactive
         shell. CLI, gateway and web already boot their own profile, so they
         leave it unset. ``configure_process`` is idempotent per profile, so a
         host that boots twice is harmless.
@@ -219,6 +280,11 @@ class AgentSession:
     def attach_agent(self, agent: ChatDispatcher) -> None:
         """Bind a chat dispatcher for :meth:`chat` reuse."""
         self._agent = agent
+
+    @property
+    def bound_session(self) -> SessionCore | None:
+        """The session created by :meth:`start`, for host-side lifecycle (e.g. close)."""
+        return self._bound_session
 
     @property
     def agent(self) -> ChatDispatcher | None:
@@ -255,50 +321,36 @@ class AgentSession:
         cancel_requested: Callable[[], bool] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
     ) -> SessionGoalRunResult:
-        """Run :meth:`chat` in a loop until the :class:`SessionGoal` completes.
+        """Run the session-goal loop for ``message`` until the goal completes.
 
+        Delegates to the attached agent's :meth:`HeadlessAgent.run_goal` — the
+        same loop the gateway host runs — so there is one goal loop, not two. No
+        binding is passed: the agent was configured once at :meth:`start` /
+        :meth:`attach_agent`, so the loop reuses its bound turn context (tool
+        hooks, tty) rather than replacing it per turn. Requires an agent that
+        drives goals (a :class:`GoalDispatcher`); a dispatch-only agent raises.
         Pass ``goal=`` explicitly, or let the first action turn attach one via a
-        ``session_goal:`` handoff tag. Does not scan user prose for intent.
-        Caps at ``goal.max_outer_turns``. Honors ``cancel_requested`` between turns.
+        ``session_goal:`` handoff tag. Does not scan user prose for intent. Caps
+        at ``goal.max_outer_turns``. Honors ``cancel_requested`` between turns.
         ``on_progress`` receives the goal after each turn (checklist UI).
         """
-        from core.agent_harness.session_goal.run_until import run_until_session_goal
-
-        session = self._bound_session
-        if session is None:
+        if self._bound_session is None:
             raise RuntimeError(
                 "AgentSession.chat_until_goal requires a bound session "
                 "(call AgentSession.start() first)."
             )
-        return run_until_session_goal(
-            self.chat,
-            session,
+        agent = self._agent
+        if not isinstance(agent, GoalDispatcher):
+            raise RuntimeError(
+                "AgentSession.chat_until_goal requires an agent that drives the "
+                "session-goal loop (attach a HeadlessAgent via start/attach_agent)."
+            )
+        return agent.run_goal(
             message,
             goal=goal,
             evaluate=evaluate,
             cancel_requested=cancel_requested,
             on_progress=on_progress,
-        )
-
-    def investigate(
-        self,
-        alert: AlertInput,
-        *,
-        opensre_evaluate: bool = False,
-        investigation_metadata: tuple[str, str] | None = None,
-    ) -> InvestigationResult:
-        """Run an investigation and return a typed result.
-
-        Uses the payload runner installed at process boot
-        (:func:`core.agent_harness.investigation_api.install_investigation_payload_runner`).
-        Does not require an attached chat agent.
-        """
-        from core.agent_harness.investigation_api import run_installed_investigation_payload
-
-        return run_installed_investigation_payload(
-            raw_alert=alert,
-            opensre_evaluate=opensre_evaluate,
-            investigation_metadata=investigation_metadata,
         )
 
     def resolve_integrations(self, session: SessionCore) -> dict[str, Any]:
@@ -314,11 +366,13 @@ class AgentSession:
         output: OutputSink,
         prompts: PromptContextProvider | None,
         tools: ToolProvider | None = None,
-        gather: GatherPhase | None = None,
         console: Any | None = None,
         logger: logging.Logger | None = None,
         surface: str | None = None,
         is_tty: bool | None = None,
+        tool_hooks: ToolExecutionHooks | None = None,
+        tool_event_observer: ToolEventObserver | None = None,
+        unattended: bool = False,
     ) -> None:
         """Attach the agent built on the default port family (one construction recipe).
 
@@ -330,9 +384,15 @@ class AgentSession:
         from core.agent_harness.turns.headless_build import DefaultHeadlessBuild
 
         agent = DefaultHeadlessBuild(
-            session=session, output=output, console=console, logger=logger, surface=surface
-        ).agent(tools=tools, prompts=prompts, gather=gather)
-        agent.bind_turn(TurnBinding(is_tty=is_tty))
+            session=session,
+            output=output,
+            console=console,
+            logger=logger,
+            surface=surface,
+            tool_event_observer=tool_event_observer,
+            unattended=unattended,
+        ).agent(tools=tools, prompts=prompts)
+        agent.bind_turn(TurnBinding(is_tty=is_tty, tool_hooks=tool_hooks))
         self.attach_agent(agent)
 
     def _resolve_env_variables(self) -> None:
@@ -355,6 +415,8 @@ class AgentSession:
         call to make based on whether the surface is resuming.
         """
         manager = self._session_manager
+        if self._config.session_id and self._config.new_session_id:
+            raise ValueError("SessionConfig cannot resume and create the same session.")
         if self._config.session_id:
             # SessionManager.resolve()'s own default is True: a resumed
             # session needs tools ready immediately.
@@ -370,15 +432,18 @@ class AgentSession:
         # SessionManager.create()'s own default is False: a fresh session can
         # warm lazily on first turn.
         warm = False if self._config.warm_integrations is None else self._config.warm_integrations
-        return manager.create(
-            hydrate_integrations=self._config.hydrate_integrations,
-            warm_integrations=warm,
-            persistent_tasks=self._config.persistent_tasks,
-            open_store=self._config.open_store,
-        )
+        create_args: dict[str, Any] = {
+            "hydrate_integrations": self._config.hydrate_integrations,
+            "warm_integrations": warm,
+            "persistent_tasks": self._config.persistent_tasks,
+            "open_store": self._config.open_store,
+        }
+        if self._config.new_session_id is not None:
+            create_args["session_id"] = self._config.new_session_id
+        return manager.create(**create_args)
 
     def _load_context(self) -> PromptContextProvider | None:
-        """Return the surface's grounding-context provider, if any."""
+        """Return the caller's prompt-context provider, if any."""
         return self._config.prompts
 
 
@@ -386,6 +451,7 @@ __all__ = [
     "SCHEDULED_RUN_CONFIG",
     "AgentSession",
     "ChatDispatcher",
+    "GoalDispatcher",
     "SessionConfig",
     "SessionStartupResult",
 ]

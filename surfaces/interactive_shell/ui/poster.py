@@ -1,4 +1,4 @@
-"""Launch poster for the REPL: splash art plus welcome panel, redrawn on theme change."""
+"""Launch poster for the REPL: welcome panel, redrawn on theme change."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from rich.markup import escape
 from rich.text import Text
 
 import infrastructure.terminal.theme as ui_theme
+from surfaces.shared.terminal.banner import ResponsiveLaunchBanner, animate_launch_wordmark
 from surfaces.shared.terminal.components.rendering import (
     _console_is_capturing,
     _console_print_prepared,
@@ -33,7 +34,7 @@ def repl_render_launch_poster(
     session: object = None,
     theme_notice: str | None = None,
 ) -> None:
-    """Render splash + welcome panel using REPL-safe CRLF writes."""
+    """Render the welcome panel using REPL-safe CRLF writes."""
     from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
 
     if console.file is sys.stdout and sys.stdout.isatty() and not _console_is_capturing(console):
@@ -47,8 +48,9 @@ def repl_render_launch_poster(
             legacy_windows=False,
             width=width,
         )
-        render_terminal_ui(buf_console, session=session, first_run=False)
+        render_terminal_ui(buf_console, session=session)
         prefix = _theme_notice_line(theme_notice) if theme_notice else ""
+        animate_launch_wordmark(console)
         _repl_write_buffer(prefix + buf.getvalue())
         _feed_record_buffer(console, Text.from_ansi(buf.getvalue()).plain)
         return
@@ -58,7 +60,26 @@ def repl_render_launch_poster(
             console,
             f"[{ui_theme.HIGHLIGHT}]theme set:[/] {escape(theme_notice)}",
         )
-    render_terminal_ui(console, session=session, first_run=False)
+    render_terminal_ui(console, session=session)
+
+
+def reset_full_screen_transcript(
+    session: object = None, *, theme_notice: str | None = None
+) -> bool:
+    """Start the full-screen transcript over with the launch banner.
+
+    Returns False when the shell is not full screen, so the caller clears the
+    terminal itself.
+    """
+    terminal = getattr(session, "terminal", None)
+    transcript = getattr(terminal, "transcript", None)
+    if transcript is None:
+        return False
+    transcript.clear()
+    if theme_notice:
+        transcript.append_text(_theme_notice_line(theme_notice))
+    transcript.append_renderable(ResponsiveLaunchBanner(session=session))
+    return True
 
 
 def refresh_welcome_poster(
@@ -67,13 +88,19 @@ def refresh_welcome_poster(
     session: object = None,
     theme_notice: str | None = None,
 ) -> None:
-    """Clear scrollback and redraw splash art + welcome panel with the active theme."""
+    """Clear scrollback and redraw the welcome panel with the active theme."""
     from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
+    if reset_full_screen_transcript(session, theme_notice=theme_notice):
+        return
     repl_clear_screen()
     # ``repl_clear_screen`` can trigger a toolbar DSR/CPR exchange; drain before writing.
     drain_stale_cpr_bytes()
     repl_render_launch_poster(console, session=session, theme_notice=theme_notice)
 
 
-__all__ = ["refresh_welcome_poster", "repl_render_launch_poster"]
+__all__ = [
+    "refresh_welcome_poster",
+    "repl_render_launch_poster",
+    "reset_full_screen_transcript",
+]

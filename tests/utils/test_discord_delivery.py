@@ -191,9 +191,9 @@ def test_send_discord_report_posts_to_channel(monkeypatch: pytest.MonkeyPatch) -
     assert "chan-1" in captured["url"]
     embed = captured["embeds"][0]
     assert embed["description"] == "Report text"
-    assert embed["title"] == "Investigation Complete"
+    assert embed["title"] == "OpenSRE Report"
     assert embed["color"] == 15158332
-    assert embed["footer"]["text"] == "OpenSRE Investigation"
+    assert embed["footer"]["text"] == "OpenSRE"
 
 
 def test_send_discord_report_prefers_thread_over_channel(monkeypatch: pytest.MonkeyPatch) -> None:

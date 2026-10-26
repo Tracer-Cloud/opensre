@@ -255,6 +255,7 @@ def test_environment_configures_the_integrations_secret(
     monkeypatch.setenv(ORGANIZATION_ID_ENV, "org-a")
     monkeypatch.setenv(CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV, "arn:bootstrap")
     monkeypatch.setenv(INTEGRATIONS_SECRET_ARN_ENV, "arn:integrations")
+    monkeypatch.setenv(INTEGRATIONS_STORE_PATH_ENV, "/tmp/opensre/integrations.json")
     monkeypatch.delenv(CREDENTIALS_API_URL_ENV, raising=False)
 
     config = CredentialHydrationConfig.from_environment()
@@ -262,6 +263,23 @@ def test_environment_configures_the_integrations_secret(
     assert config is not None
     assert config.integrations_secret_arn == "arn:integrations"
     assert config.credentials_api_url is None
+
+
+def test_the_secret_route_needs_an_explicit_store_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Transports read the store unscoped and turns read it under the organization's
+    scope; without an explicit path those are two files, so the silo must not start."""
+    # Arrange
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org-a")
+    monkeypatch.setenv(CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV, "arn:bootstrap")
+    monkeypatch.setenv(INTEGRATIONS_SECRET_ARN_ENV, "arn:integrations")
+    monkeypatch.delenv(CREDENTIALS_API_URL_ENV, raising=False)
+    monkeypatch.delenv(INTEGRATIONS_STORE_PATH_ENV, raising=False)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="explicit integrations store path"):
+        CredentialHydrationConfig.from_environment()
 
 
 def test_partial_environment_configuration_is_rejected(

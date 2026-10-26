@@ -11,11 +11,15 @@ Covers:
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from integrations.kafka.tools.kafka_consumer_group_tool import get_kafka_consumer_group_lag
+from integrations.kafka.tools.kafka_consumer_group_tool import (
+    _map_get_kafka_consumer_group_lag,
+    get_kafka_consumer_group_lag,
+)
 from tests.tools.conftest import BaseToolContract
 
 # ---------------------------------------------------------------------------
@@ -87,7 +91,6 @@ def test_metadata() -> None:
     rt = get_kafka_consumer_group_lag.__opensre_registered_tool__
     assert rt.name == "get_kafka_consumer_group_lag"
     assert rt.source == "kafka"
-    assert "investigation" in rt.surfaces
     assert "chat" in rt.surfaces
 
 
@@ -292,3 +295,47 @@ class TestKafkaConsumerGroupRun:
         assert result["source"] == "kafka"
         # Confirm the integration was entered but short-circuited before broker contact.
         mock_fn.assert_called_once()
+
+
+class TestMapGetKafkaConsumerGroupLag:
+    def test_records_entry_with_group_id_and_total_lag(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_kafka_consumer_group_lag(evidence, _CONSUMER_GROUP_LAG_RESPONSE, {})
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_kafka_consumer_group_lag"
+        assert entries[0]["summary"] == "payments-consumer: 2 partition(s), total lag 1500"
+
+    def test_records_entry_for_zero_lag_healthy_group(self) -> None:
+        """Zero lag is still a real result worth citing -- it's the partition
+        count and lag figure that matter, not whether lag happens to be 0."""
+        evidence: dict[str, Any] = {}
+
+        _map_get_kafka_consumer_group_lag(evidence, _CONSUMER_GROUP_ZERO_LAG_RESPONSE, {})
+
+        entries = evidence["catalog_entries"]
+        assert entries[0]["summary"] == "events-consumer: 1 partition(s), total lag 0"
+
+    def test_records_nothing_when_no_partitions(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_kafka_consumer_group_lag(
+            evidence,
+            {"available": True, "group_id": "empty-group", "total_lag": 0, "partitions": []},
+            {},
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_kafka_consumer_group_lag(
+            evidence,
+            {"source": "kafka", "available": False, "error": "Group does not exist."},
+            {},
+        )
+
+        assert "catalog_entries" not in evidence

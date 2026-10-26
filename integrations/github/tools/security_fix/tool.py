@@ -7,13 +7,18 @@ from typing import Any
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
-from integrations.github.client import resolve_github_token
+from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
 )
+from integrations.github.repair_outcomes import attach_repair_outcome
 from integrations.github.tools.security_fix.runner import run_security_fix
 
 _INPUT_SCHEMA: dict[str, Any] = {
@@ -48,7 +53,12 @@ _INPUT_SCHEMA: dict[str, Any] = {
         },
         "workspace": {
             "type": "string",
-            "description": "Absolute path to the local checkout to edit. Defaults to CODING_WORKSPACE or cwd.",
+            "description": (
+                "Explicit matching checkout. When omitted, a local-only fix uses CODING_WORKSPACE "
+                "or cwd if it is a checkout of the repository; otherwise the repository is "
+                "cloned and the fix is always shipped. Ignored with push_to_default_branch, "
+                "which always works in a fresh clone."
+            ),
         },
         "model": {
             "type": "string",
@@ -57,6 +67,19 @@ _INPUT_SCHEMA: dict[str, Any] = {
         "open_pr": {
             "type": "boolean",
             "description": "True when the user asks to raise/open a pull request or ship the fix.",
+        },
+        "push_to_default_branch": {
+            "type": "boolean",
+            "description": (
+                "True only when the user explicitly asks to push or commit the fix straight "
+                "to the default branch (e.g. 'push straight to main') instead of opening a PR. "
+                "The fix is made in a fresh clone and never force-pushed; if a branch rule "
+                "requires a pull request, the tool opens one and says why."
+            ),
+        },
+        "quality_only": {
+            "type": "boolean",
+            "description": "Fix only findings without a security severity; use for unattended loops on public repositories.",
         },
         "github_token": {
             "type": "string",
@@ -68,12 +91,7 @@ _INPUT_SCHEMA: dict[str, Any] = {
 
 
 def _github_security_fix_available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        github_source_available(sources)
-        or resolve_github_token(None)
-        or github_creds(gh).get("github_token")
-    )
+    return github_source_available(sources)
 
 
 def _github_security_fix_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -108,8 +126,10 @@ def _confirm_fn(context: Any) -> Any:
         "Fix a GitHub security and quality issue, Dependabot alert, "
         "code-scanning/CodeQL alert, or Code Quality finding "
         "in the current repository with built-in local fixers and an auto-detected "
-        "coding agent (Pi, Claude Code, or Codex CLI). With open_pr=true, commit the "
+        "coding agent (Pi, Claude Code, Codex, or Cursor CLI). With open_pr=true, commit the "
         "fix to a fresh opensre/github-security-fix-* branch, push it, and open a PR. "
+        "With push_to_default_branch=true, commit the fix straight onto the default "
+        "branch and push it there instead. "
         "It refuses secret-scanning alerts because safe remediation requires "
         "credential rotation."
     ),
@@ -118,6 +138,7 @@ def _confirm_fn(context: Any) -> Any:
         "Fix a GitHub code-scanning alert or code-scanning page backlog in the local checkout",
         "Fix a GitHub Code Quality finding from the Security and quality page",
         "Fix GitHub security and quality issues and raise a PR",
+        "Fix GitHub code-scanning issues and push the fix straight to main",
         "Auto-select one open supported security or quality finding from a repo and propose a PR",
     ],
     anti_examples=[
@@ -127,15 +148,13 @@ def _confirm_fn(context: Any) -> Any:
     ],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    requires_approval=True,
-    approval_reason=("Edits files and can push a branch and open a GitHub PR."),
-    parallel_safe=False,
     accepts_runtime_context=True,
     input_schema=_INPUT_SCHEMA,
-    is_available=_github_security_fix_available,
-    extract_params=_github_security_fix_extract_params,
+    is_available=github_tool_available(_github_security_fix_available),
+    extract_params=github_tool_params(_github_security_fix_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def fix_github_security_alert(
     owner: str | None = None,
     repo: str | None = None,
@@ -145,12 +164,14 @@ def fix_github_security_alert(
     workspace: str | None = None,
     model: str | None = None,
     open_pr: bool = False,
+    quality_only: bool = False,
+    push_to_default_branch: bool = False,
     github_token: str | None = None,
     context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Run the GitHub security remediation flow."""
-    return run_security_fix(
+    output = run_security_fix(
         owner=owner,
         repo=repo,
         alert_type=alert_type,
@@ -159,8 +180,14 @@ def fix_github_security_alert(
         workspace=workspace,
         model=model,
         open_pr=open_pr,
+        quality_only=quality_only,
         github_token=github_token,
         confirm_fn=_confirm_fn(context),
+        push_to_default_branch=push_to_default_branch,
+    )
+
+    return attach_repair_outcome(
+        output, operation=f"security:{owner}/{repo}:{alert_url or alert_number or alert_type}"
     )
 
 

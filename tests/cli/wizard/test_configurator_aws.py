@@ -12,14 +12,14 @@ import pytest
 
 import surfaces.cli.wizard.configurators.aws as aws_configurator
 from integrations.aws import role_mode_gate as gate
-from surfaces.cli.wizard._ui import WizardBack
+from surfaces.cli.wizard.components import WizardBack
 
 
 @pytest.fixture
 def quiet_console(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     printed: list[str] = []
     monkeypatch.setattr(
-        aws_configurator._console, "print", lambda *args, **_kw: printed.append(str(args[0]))
+        aws_configurator.console, "print", lambda *args, **_kw: printed.append(str(args[0]))
     )
     return printed
 
@@ -32,7 +32,7 @@ def _pick(monkeypatch: pytest.MonkeyPatch, value: str) -> list[dict[str, Any]]:
         offered.append({"prompt": prompt, "values": [c.value for c in choices], **kwargs})
         return value
 
-    monkeypatch.setattr(aws_configurator, "_choose", _fake_choose)
+    monkeypatch.setattr(aws_configurator, "choose", _fake_choose)
     return offered
 
 

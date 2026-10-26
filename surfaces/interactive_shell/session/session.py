@@ -7,30 +7,12 @@ the methods that drive them.
 
 from __future__ import annotations
 
-import re
-import time
 from dataclasses import dataclass, field
 
-from config.constants.prompts import SUGGESTED_PROMPT_AFTER_FAILED_SYNTHETIC_TEST
 from core.agent_harness import SessionCore
 from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.session.alert_inbox import SessionAlertInbox
 from surfaces.interactive_shell.session.terminal_session import TerminalSession
-
-_SCENARIO_FLAG_RE = re.compile(r"--scenario\s+(\S+)")
-_SYNTHETIC_SCENARIO_ID_RE = re.compile(r"^\d{3}-[a-z0-9][a-z0-9-]*$")
-
-
-def _scenario_id_from_synthetic_label(label: str) -> str:
-    """Extract a scenario id from a synthetic command or ``suite:scenario`` label."""
-    match = _SCENARIO_FLAG_RE.search(label)
-    if match is not None:
-        candidate = match.group(1).strip()
-        return candidate if _SYNTHETIC_SCENARIO_ID_RE.fullmatch(candidate) else ""
-    if ":" in label:
-        candidate = label.rsplit(":", 1)[-1].strip()
-        return candidate if _SYNTHETIC_SCENARIO_ID_RE.fullmatch(candidate) else ""
-    return ""
 
 
 @dataclass
@@ -54,35 +36,6 @@ class Session(SessionCore):
     A surface facet: the bounded alert list + cap live on ``SessionAlertInbox`` so
     core-session consumers that never touch alerts don't see the field."""
 
-    def suggest_synthetic_failure_follow_up(self, *, label: str = "") -> None:
-        """Queue RCA prefill after a failed synthetic run and refresh the active prompt."""
-        self.terminal.pending_prompt_default = SUGGESTED_PROMPT_AFTER_FAILED_SYNTHETIC_TEST
-        self.terminal.notify_prompt_changed()
-        self._bind_last_synthetic_observation(_scenario_id_from_synthetic_label(label))
-        self.terminal.notify_prompt_changed()
-
-    def _bind_last_synthetic_observation(self, scenario_id: str) -> None:
-        """Point ``last_synthetic_observation_path`` (a core field) at the run's latest.json.
-
-        Synthetic-run UX, so it lives on the shell session rather than the core.
-        """
-        if not scenario_id:
-            self.last_synthetic_observation_path = None
-            return
-        # Shared path constant lives in config so core and surfaces stay decoupled.
-        try:
-            from config.constants.paths import SYNTHETIC_SCENARIOS_DIR
-        except Exception:
-            self.last_synthetic_observation_path = None
-            return
-        latest = SYNTHETIC_SCENARIOS_DIR / "_observations" / scenario_id / "latest.json"
-        for _ in range(8):
-            if latest.is_file():
-                self.last_synthetic_observation_path = str(latest.resolve())
-                return
-            time.sleep(0.06)
-        self.last_synthetic_observation_path = None
-
     def record_incoming_alert(self, alert: IncomingAlert) -> None:
         """Append a full IncomingAlert with all metadata to session history.
 
@@ -100,18 +53,17 @@ class Session(SessionCore):
         super().clear(rotate_identity=rotate_identity)
         self.alerts.clear()
         self.terminal.metrics.reset()
-        self.terminal.submitted_turn_count = 0
+        self.terminal.connection_checks = {}
+        self.terminal.connection_check_key = None
         self.terminal.pending_prompt_default = None
         self.terminal.pending_prompt_autosubmit = False
+        self.terminal.pending_prompt_plain_turn = False
         self.terminal.last_input_autosubmitted = False
+        self.terminal.pending_choice_response = None
+        self.terminal.closed_choice = None
+        self.terminal.setup_resume = None
         self.terminal.dispatch_active = False
         self.terminal.exclusive_stdin_active = False
-        self.terminal.background_mode_enabled = False
-        self.terminal.background_investigations.clear()
-        # Preserve notification channel prefs across /new like trust_mode.
-        # Only reset when the user explicitly changes them via /background notify.
-        with self.terminal._background_notices_lock:
-            self.terminal.background_notices.clear()
         # trust_mode and reasoning_effort are intentionally preserved across /new
 
     def release_resources(self) -> None:
@@ -121,7 +73,5 @@ class Session(SessionCore):
         integration-warm task) with the shell facet's own teardown.
         """
         super().release_resources()
-        with self.terminal._background_notices_lock:
-            self.terminal.background_notices.clear()
         self.terminal.prompt_refresh_fn = None
-        self.terminal.fleet_sampler_starter = None
+        self.terminal.startup_work_release = None

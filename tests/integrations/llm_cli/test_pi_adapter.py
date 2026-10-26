@@ -213,7 +213,7 @@ def test_cli_backed_client_invoke_forwards_pi_env(
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
     with (
-        patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr,
+        patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr,
         patch.dict(os.environ, {"GEMINI_API_KEY": "sk-gemini"}, clear=False),
     ):
         gr.return_value.is_active = False

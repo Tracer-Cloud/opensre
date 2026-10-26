@@ -6,9 +6,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.vercel.client import make_vercel_client
+from integrations.vercel.tools._evidence import (
+    map_vercel_deployment_logs,
+    map_vercel_deployment_status,
+)
 
 _ERROR_STATES = {"ERROR", "CANCELED"}
 
@@ -18,6 +22,9 @@ class VercelDeploymentStatusTool(BaseTool):
 
     name = "vercel_deployment_status"
     source = "vercel"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = map_vercel_deployment_status
     description = (
         "Fetch recent Vercel deployments for a project and surface failed ones with error details, "
         "git commit info, and timestamps."
@@ -123,8 +130,6 @@ vercel_deployment_status = VercelDeploymentStatusTool()
 """Vercel deployment logs investigation tool."""
 
 
-from core.tool import BaseTool
-
 _ERROR_KEYWORDS = ("error", "failed", "exception", "fatal", "crash", "panic", "unhandled")
 
 
@@ -133,6 +138,9 @@ class VercelLogsTool(BaseTool):
 
     name = "vercel_deployment_logs"
     source = "vercel"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = map_vercel_deployment_logs
     description = (
         "Fetch build events and serverless function runtime logs for a specific Vercel deployment, "
         "useful for diagnosing build failures and runtime errors."

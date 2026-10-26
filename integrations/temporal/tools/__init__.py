@@ -6,9 +6,42 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.domain.types.evidence import record_evidence_entry
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.temporal.client import TemporalClient, TemporalConfig
+
+#: CountWorkflowExecutions GROUP BY results use short Temporal Payload
+#: status names ("Running", "Failed", "TimedOut"), decoded by
+#: TemporalClient._flatten_status_groups -- a different vocabulary from the
+#: raw HTTP API's WORKFLOW_EXECUTION_STATUS_* enum strings used elsewhere in
+#: this file (list_workflow_executions), so this constant is scoped to the
+#: namespace-info mapper only.
+_UNHEALTHY_GROUP_STATUSES = frozenset({"Failed", "TimedOut", "Terminated"})
+
+
+def _map_temporal_namespace_info(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the namespace state, workflow count, and unhealthy workflow count."""
+    if not output.get("available") or output.get("error"):
+        return
+    groups = output.get("groups") or []
+    unhealthy = sum(
+        int(g.get("count", 0) or 0) for g in groups if g.get("status") in _UNHEALTHY_GROUP_STATUSES
+    )
+    parts = [
+        f"namespace '{output.get('name', 'unknown')}' ({output.get('state', 'unknown')})",
+        f"{output.get('workflow_count', 0)} workflow(s)",
+    ]
+    if groups:
+        parts.append(f"{unhealthy} failed/timed-out/terminated")
+    record_evidence_entry(
+        evidence,
+        source="temporal_namespace_info",
+        label="Temporal Namespace Info",
+        summary=", ".join(parts),
+    )
 
 
 class TemporalNamespaceInfoTool(BaseTool):
@@ -22,6 +55,9 @@ class TemporalNamespaceInfoTool(BaseTool):
 
     name = "temporal_namespace_info"
     source = "temporal"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = _map_temporal_namespace_info
     description = (
         "Fetch Temporal namespace health overview: namespace state and workflow "
         "execution counts grouped by status (Running, Failed, TimedOut, etc.). "
@@ -113,6 +149,35 @@ temporal_namespace_info = TemporalNamespaceInfoTool()
 from core.tool import BaseTool
 
 
+def _map_temporal_task_queue(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the active poller count and backlog stats.
+
+    An empty poller list is itself the tool's primary failure signal (workers
+    are down, per this tool's own docstring) -- unlike most list-based
+    mappers, a genuine zero is always cited rather than treated as "nothing
+    to report". ``total`` is only absent from the output when the required
+    ``task_queue_name`` param was missing (an input-validation error, not a
+    real zero), so its presence is the guard.
+    """
+    if not output.get("available") or output.get("error"):
+        return
+    total = output.get("total")
+    if total is None:
+        return
+    parts = [f"{total} active poller(s)"]
+    backlog = (output.get("stats") or {}).get("approximateBacklogCount")
+    if backlog:
+        parts.append(f"backlog {backlog}")
+    record_evidence_entry(
+        evidence,
+        source="temporal_task_queue",
+        label="Temporal Task Queue",
+        summary=", ".join(parts),
+    )
+
+
 class TemporalTaskQueueTool(BaseTool):
     """Describe a task queue's pollers and backlog stats.
 
@@ -129,6 +194,9 @@ class TemporalTaskQueueTool(BaseTool):
 
     name = "temporal_task_queue"
     source = "temporal"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = _map_temporal_task_queue
     description = (
         "Describe a Temporal task queue: active worker pollers and backlog stats "
         "(approximate count, age, add/dispatch rates). Use after identifying failed "
@@ -238,6 +306,36 @@ temporal_task_queue = TemporalTaskQueueTool()
 
 from core.tool import BaseTool
 
+_FAILURE_EVENT_TYPE_MARKERS = ("FAILED", "TIMED_OUT", "TERMINATED")
+
+
+def _map_temporal_workflow_history(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the event count and how many are failure/timeout/termination events."""
+    if not output.get("available") or output.get("error"):
+        return
+    events = output.get("events") or []
+    if not events:
+        return
+    total = output.get("total", len(events))
+    failure_events = sum(
+        1
+        for e in events
+        if any(marker in str(e.get("eventType", "")) for marker in _FAILURE_EVENT_TYPE_MARKERS)
+    )
+    parts = [f"{total} event(s), {failure_events} failure/timeout/termination event(s)"]
+    if output.get("archived"):
+        parts.append("from archival storage")
+    if output.get("next_page_token"):
+        parts.append("more available")
+    record_evidence_entry(
+        evidence,
+        source="temporal_workflow_history",
+        label="Temporal Workflow History",
+        summary=", ".join(parts),
+    )
+
 
 class TemporalWorkflowHistoryTool(BaseTool):
     """Fetch the event history for a specific workflow execution.
@@ -251,6 +349,9 @@ class TemporalWorkflowHistoryTool(BaseTool):
 
     name = "temporal_workflow_history"
     source = "temporal"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = _map_temporal_workflow_history
     description = (
         "Fetch the event history for a specific Temporal workflow execution. "
         "Shows the ordered sequence of events (started, activity scheduled, "
@@ -376,6 +477,37 @@ temporal_workflow_history = TemporalWorkflowHistoryTool()
 
 from core.tool import BaseTool
 
+#: Raw HTTP API executions use the WORKFLOW_EXECUTION_STATUS_* proto enum
+#: naming, a different vocabulary from CountWorkflowExecutions' short status
+#: names used by the namespace-info mapper above.
+_FAILURE_STATUS_MARKERS = ("FAILED", "TIMED_OUT", "TERMINATED")
+
+
+def _map_temporal_workflows(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the execution count and how many are in a failed/timed-out/terminated state."""
+    if not output.get("available"):
+        return
+    executions = output.get("executions") or []
+    if not executions:
+        return
+    total = output.get("total", len(executions))
+    failed = sum(
+        1
+        for e in executions
+        if any(marker in str(e.get("status", "")) for marker in _FAILURE_STATUS_MARKERS)
+    )
+    parts = [f"{total} execution(s), {failed} failed/timed-out/terminated"]
+    if output.get("next_page_token"):
+        parts.append("more available")
+    record_evidence_entry(
+        evidence,
+        source="temporal_workflows",
+        label="Temporal Workflows",
+        summary=", ".join(parts),
+    )
+
 
 class TemporalWorkflowsTool(BaseTool):
     """List recent workflow executions with status and failure reason.
@@ -388,6 +520,9 @@ class TemporalWorkflowsTool(BaseTool):
 
     name = "temporal_workflows"
     source = "temporal"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = _map_temporal_workflows
     description = (
         "List recent Temporal workflow executions showing workflowId, type, status, "
         "taskQueue, and timing. Use after namespace info reveals failures, to identify "

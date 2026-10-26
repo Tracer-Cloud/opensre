@@ -1,36 +1,33 @@
 """Build the interactive shell's agent with DefaultHeadlessBuild.
 
 The shell is a host: it supplies :class:`AgentBuildConfig` (tools, prompts,
-gather, error reporter) and omits capability policy so gateway-chat withholds
+error reporter) and omits capability policy so gateway-chat withholds
 do not run. Construction still goes through :class:`DefaultHeadlessBuild` — the same
-family the gateway pool uses — so the shell keeps investigation / llm_provider
-/ task_cancel and REPL slash / TTY paint.
+family the gateway pool uses — so the shell keeps llm_provider / task_cancel
+and REPL slash / TTY paint.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from rich.console import Console
 
 from core.agent_harness import OutputSink
+from core.agent_harness.ports import SessionState, ToolEventObserver
 from core.agent_harness.runtime import (
     AgentBuildConfig,
     DefaultHeadlessBuild,
     DefaultToolProvider,
     HeadlessAgent,
+    resolve_agent_ports,
 )
-from surfaces.interactive_shell.grounding.cli_reference import shell_prompt_context_provider
+from core.agent_harness.spi.defaults import DefaultPromptContextProvider
 from surfaces.interactive_shell.runtime.agent_harness_adapters import (
     ShellErrorReporter,
     resolve_output_sink,
-)
-from surfaces.interactive_shell.runtime.background import runner as background_runner
-from surfaces.interactive_shell.runtime.integration_tool_gathering import shell_gather_phase
-from surfaces.interactive_shell.runtime.investigation_adapter import (
-    repl_investigation_launch_ports,
 )
 from surfaces.interactive_shell.runtime.llm_provider_adapter import repl_llm_provider_ports
 from surfaces.interactive_shell.runtime.slash_adapter import repl_slash_ports
@@ -40,7 +37,6 @@ from surfaces.interactive_shell.runtime.subprocess_runner.repl_presenter import 
 from surfaces.interactive_shell.runtime.task_cancel_adapter import repl_task_cancel_ports
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.action_rendering import ActionRenderObserver
-from tools.interactive_shell.shared.investigation_launch import InvestigationLaunchPorts
 
 
 def _subprocess_presenter_factory(
@@ -59,13 +55,6 @@ def _subprocess_presenter_factory(
     )
 
 
-def _investigation_ports_factory() -> InvestigationLaunchPorts:
-    return repl_investigation_launch_ports(
-        start_background_text=background_runner.start_background_text_investigation,
-        start_background_sample=background_runner.start_background_template_investigation,
-    )
-
-
 def _observer_factory(session: Session, console: Console) -> Callable[[str], Any]:
     def observer_factory(message: str) -> Any:
         return ActionRenderObserver(session=session, console=console, message=message)
@@ -73,24 +62,31 @@ def _observer_factory(session: Session, console: Console) -> Callable[[str], Any
     return observer_factory
 
 
+def _shell_prompts(session: SessionState) -> DefaultPromptContextProvider:
+    """The shell's turns run on the interactive-shell prompt surface."""
+    return DefaultPromptContextProvider(session, surface="interactive_shell")
+
+
 def shell_agent_build_config(
     *,
     request_exit: Callable[[], None] | None = None,
 ) -> AgentBuildConfig:
-    """REPL wiring: shell tools, CLI grounding, console gather; no withholds."""
+    """REPL wiring: shell tools on the interactive-shell prompt surface; no withholds."""
 
     def build_tools(
-        session: Session,
+        session: SessionState,
         console: Console,
         _logger: logging.Logger,
-        _observer: Any,
+        _observer: ToolEventObserver | None,
     ) -> DefaultToolProvider:
-        return shell_tool_provider(session, console, request_exit=request_exit)
+        # BuildTools' Protocol declares the base SessionState (contravariance
+        # requires accepting at least as wide a type); this closure is only
+        # ever wired up below with a real interactive-shell Session.
+        return shell_tool_provider(cast(Session, session), console, request_exit=request_exit)
 
     return AgentBuildConfig(
         build_tools=build_tools,
-        build_prompts=shell_prompt_context_provider,
-        build_gather=shell_gather_phase,
+        build_prompts=_shell_prompts,
         error_reporter=ShellErrorReporter(),
     )
 
@@ -108,7 +104,6 @@ def shell_tool_provider(
         request_exit=request_exit,
         observer_factory=_observer_factory(session, console),
         subprocess_presenter_factory=_subprocess_presenter_factory,
-        investigation_ports_factory=_investigation_ports_factory,
         llm_provider_ports_factory=repl_llm_provider_ports,
         task_cancel_ports_factory=repl_task_cancel_ports,
         slash_ports_factory=repl_slash_ports,
@@ -124,28 +119,21 @@ def build_shell_agent(
 ) -> HeadlessAgent:
     """One shell agent from :func:`shell_agent_build_config`; per-turn values via ``bind_turn``."""
     config = shell_agent_build_config(request_exit=request_exit)
-    policy = config.apply_capability_policy
-    if policy is not None:
-        policy(session)
-    logger = logging.getLogger("opensre.interactive_shell")
-    tools = (
-        config.build_tools(session, console, logger, None)
-        if config.build_tools is not None
-        else None
+    if config.apply_capability_policy is not None:
+        config.apply_capability_policy(session)
+    tools, prompts = resolve_agent_ports(
+        config,
+        session=session,
+        console=console,
+        logger=logging.getLogger("opensre.interactive_shell"),
     )
-    prompts = config.build_prompts(session) if config.build_prompts is not None else None
-    gather = config.build_gather(session, console) if config.build_gather is not None else None
     return DefaultHeadlessBuild(
         session=session,
-        output=resolve_output_sink(console, output),
+        output=resolve_output_sink(console, output, session),
         console=console,
         surface="interactive_shell",
         error_reporter=config.error_reporter,
-    ).agent(
-        tools=tools,
-        prompts=prompts,
-        gather=gather,
-    )
+    ).agent(tools=tools, prompts=prompts)
 
 
 __all__ = [

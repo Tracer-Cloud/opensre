@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from core.agent.run_io import AgentRunResult
-from infrastructure.analytics import cli
+from infrastructure.analytics import capture
 from infrastructure.analytics.events import Event
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
 
@@ -48,7 +48,7 @@ def test_run_react_agent_with_telemetry_emits_one_completed_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stub = _StubAnalytics()
-    monkeypatch.setattr(cli, "get_analytics", lambda: stub)
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
     agent = _StubAgent(
         result=AgentRunResult(
             messages=[],
@@ -80,7 +80,7 @@ def test_run_react_agent_with_telemetry_emits_error_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stub = _StubAnalytics()
-    monkeypatch.setattr(cli, "get_analytics", lambda: stub)
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
     agent = _StubAgent(error=RuntimeError("provider down"))
 
     with pytest.raises(RuntimeError, match="provider down"):
@@ -105,7 +105,7 @@ def test_run_react_agent_with_telemetry_reports_partial_iterations_on_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stub = _StubAnalytics()
-    monkeypatch.setattr(cli, "get_analytics", lambda: stub)
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
     agent = _StubAgent(error=RuntimeError("provider down"), iterations_used=3)
 
     with pytest.raises(RuntimeError, match="provider down"):

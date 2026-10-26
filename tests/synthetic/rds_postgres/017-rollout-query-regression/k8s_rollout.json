@@ -1,9 +1,0 @@
-{
-  "service": "checkout-api",
-  "namespace": "checkout",
-  "revision": "checkout-api-9bdaf",
-  "rollout_started_at": "2026-04-05T14:03:00Z",
-  "rollout_completed_at": "2026-04-05T14:06:00Z",
-  "change_summary": "Introduced search endpoint fallback query for legacy clients."
-}
-

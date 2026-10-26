@@ -24,7 +24,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from infrastructure.safety.guardrails.engine import GuardrailEngine
+from infrastructure.safety.guardrails.evaluator import GuardrailEvaluator
 from infrastructure.safety.guardrails.rules import GuardrailAction, GuardrailRule
 from infrastructure.safety.guardrails.stream import GuardrailStream
 
@@ -52,8 +52,8 @@ def _rule(
     )
 
 
-def _engine_for_aws_keys() -> GuardrailEngine:
-    return GuardrailEngine([_rule(patterns=("AKIA[0-9A-Z]{16}",))])
+def _evaluator_for_aws_keys() -> GuardrailEvaluator:
+    return GuardrailEvaluator([_rule(patterns=("AKIA[0-9A-Z]{16}",))])
 
 
 @pytest.fixture
@@ -84,8 +84,8 @@ def test_secret_split_across_chunk_boundary_is_redacted(
     ``ODNN7EXAMPLE`` separately and miss both. The stream buffers up to a
     newline boundary so the engine sees the joined window.
     """
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator)
 
     # First chunk: leading half of the secret, no newline -> stays buffered.
     out1 = stream.feed("env AKIAIOSF")
@@ -108,8 +108,8 @@ def test_secret_split_across_three_chunks_is_redacted(
     stub_capture: list[dict[str, Any]],
 ) -> None:
     """Worst-case fragmentation: three reads, none of which match alone."""
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator)
 
     assert stream.feed("AKIA") == ""
     assert stream.feed("IOSFODNN") == ""
@@ -123,8 +123,8 @@ def test_text_without_newline_stays_buffered_until_flush(
     stub_capture: list[dict[str, Any]],
 ) -> None:
     """A trailing line with no terminating newline must not be silently dropped."""
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator)
 
     assert stream.feed("AKIAIOSFODNN7EXAMPLE no-newline") == ""
 
@@ -138,8 +138,8 @@ def test_buffer_force_flushes_at_max_chunk_len(
 ) -> None:
     """A no-newline stream must not grow without bound. Once the buffer hits
     ``max_chunk_len`` characters the wrapper force-flushes to disk."""
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine, max_chunk_len=64)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator, max_chunk_len=64)
 
     # Pad out the buffer just below the threshold without a newline.
     padding = "x" * 60
@@ -159,8 +159,8 @@ def test_buffer_force_flushes_at_max_chunk_len(
 
 
 def test_match_returns_redacted_text(stub_capture: list[dict[str, Any]]) -> None:
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator)
 
     out = stream.feed("export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n")
 
@@ -170,20 +170,20 @@ def test_match_returns_redacted_text(stub_capture: list[dict[str, Any]]) -> None
 
 
 def test_no_match_passes_through_unchanged(stub_capture: list[dict[str, Any]]) -> None:
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator)
 
     out = stream.feed("nothing sensitive here\n")
     assert out == "nothing sensitive here\n"
     assert stub_capture == []
 
 
-def test_inactive_engine_passes_through_unchanged(
+def test_inactive_evaluator_passes_through_unchanged(
     stub_capture: list[dict[str, Any]],
 ) -> None:
-    """Engine with no rules: stream is a passthrough so users who haven't
+    """Evaluator with no rules: stream is a passthrough so users who haven't
     configured guardrails do not pay any per-chunk overhead beyond buffering."""
-    stream = GuardrailStream(GuardrailEngine([]))
+    stream = GuardrailStream(GuardrailEvaluator([]))
     out = stream.feed("export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n")
     assert out == "export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n"
     assert stub_capture == []
@@ -192,8 +192,8 @@ def test_inactive_engine_passes_through_unchanged(
 def test_match_emits_agent_secret_detected_event(
     stub_capture: list[dict[str, Any]],
 ) -> None:
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator)
 
     stream.feed("AKIAIOSFODNN7EXAMPLE\n")
 
@@ -209,8 +209,8 @@ def test_two_chunks_two_secrets_emit_two_events(
 ) -> None:
     """Each flushed chunk that matched gets one event. Two separate flushes
     therefore produce two events even if they trip the same rule."""
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator)
 
     stream.feed("AKIAIOSFODNN7EXAMPLE\n")
     stream.feed("AKIAABCDEFGHIJKLMNOP\n")
@@ -225,9 +225,9 @@ def test_two_chunks_two_secrets_emit_two_events(
 
 def test_audit_logger_receives_each_match(stub_capture: list[dict[str, Any]]) -> None:
     """Original (non-redacted) match text must be quarantined for forensic audit."""
-    engine = _engine_for_aws_keys()
+    evaluator = _evaluator_for_aws_keys()
     audit = MagicMock()
-    stream = GuardrailStream(engine, audit_logger=audit)
+    stream = GuardrailStream(evaluator, audit_logger=audit)
 
     stream.feed("AKIAIOSFODNN7EXAMPLE\n")
 
@@ -239,8 +239,8 @@ def test_audit_logger_receives_each_match(stub_capture: list[dict[str, Any]]) ->
 
 def test_audit_logger_optional(stub_capture: list[dict[str, Any]]) -> None:
     """Stream works without an audit logger (useful for tests and lightweight callers)."""
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine, audit_logger=None)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator, audit_logger=None)
 
     out = stream.feed("AKIAIOSFODNN7EXAMPLE\n")
     assert "[REDACTED:aws_key]" in out
@@ -250,8 +250,8 @@ def test_flush_on_empty_buffer_returns_empty(
     stub_capture: list[dict[str, Any]],
 ) -> None:
     """Idempotent flush — calling it twice should not double-emit anything."""
-    engine = _engine_for_aws_keys()
-    stream = GuardrailStream(engine)
+    evaluator = _evaluator_for_aws_keys()
+    stream = GuardrailStream(evaluator)
 
     assert stream.flush() == ""
     stream.feed("clean line\n")
@@ -262,16 +262,16 @@ def test_overlapping_matches_merge_into_single_redaction(
     stub_capture: list[dict[str, Any]],
 ) -> None:
     """Two rules that overlap on the same span must produce one redaction, not two
-    nested ones. Mirrors GuardrailEngine._redact's longest-source-wins behavior."""
+    nested ones. Mirrors GuardrailEvaluator._redact's longest-source-wins behavior."""
     # Two rules that hit the same string ``super_secret_token``. The wider
     # match wins on rule-name selection.
-    engine = GuardrailEngine(
+    evaluator = GuardrailEvaluator(
         [
             _rule(name="narrow", patterns=("secret_token",)),
             _rule(name="wide", patterns=("super_secret_token_value",)),
         ]
     )
-    stream = GuardrailStream(engine)
+    stream = GuardrailStream(evaluator)
 
     out = stream.feed("found super_secret_token_value here\n")
 
@@ -291,11 +291,11 @@ def test_audit_action_is_logged_but_not_redacted(
     through unchanged. Engine parity matters here so a team running AUDIT
     rules to observe agent behaviour gets the same output in both paths.
     """
-    engine = GuardrailEngine(
+    evaluator = GuardrailEvaluator(
         [_rule(name="watch_passwords", action=GuardrailAction.AUDIT, keywords=("password",))]
     )
     audit = MagicMock()
-    stream = GuardrailStream(engine, audit_logger=audit)
+    stream = GuardrailStream(evaluator, audit_logger=audit)
 
     out = stream.feed("user typed password=hunter2\n")
 
@@ -315,14 +315,14 @@ def test_audit_match_alongside_redact_match_only_redacts_redact(
     the REDACT span and leave the AUDIT span visible. The audit logger must
     still receive both matches so the AUDIT rule's forensic intent is
     preserved even when the chunk also contained a REDACT-action secret."""
-    engine = GuardrailEngine(
+    evaluator = GuardrailEvaluator(
         [
             _rule(name="aws_key", action=GuardrailAction.REDACT, patterns=("AKIA[0-9A-Z]{16}",)),
             _rule(name="watch_email", action=GuardrailAction.AUDIT, keywords=("@example.com",)),
         ]
     )
     audit = MagicMock()
-    stream = GuardrailStream(engine, audit_logger=audit)
+    stream = GuardrailStream(evaluator, audit_logger=audit)
 
     out = stream.feed("user=alice@example.com key=AKIAIOSFODNN7EXAMPLE\n")
 
@@ -344,7 +344,7 @@ def test_custom_rule_replacement_is_honored(
     The streaming path must use that string, mirroring the engine's
     :meth:`_get_replacement` behaviour, so the same secret is replaced
     identically in LLM and stdout output."""
-    engine = GuardrailEngine(
+    evaluator = GuardrailEvaluator(
         [
             _rule(
                 name="email",
@@ -354,7 +354,7 @@ def test_custom_rule_replacement_is_honored(
             )
         ]
     )
-    stream = GuardrailStream(engine)
+    stream = GuardrailStream(evaluator)
 
     out = stream.feed("user contact alice@example.com here\n")
 
@@ -371,10 +371,10 @@ def test_block_action_is_redacted_not_raised(
     streaming path raising would silently truncate the agent's output, so the
     wrapper promotes BLOCK to REDACT and reports the BLOCK status via the
     analytics event instead."""
-    engine = GuardrailEngine(
+    evaluator = GuardrailEvaluator(
         [_rule(name="forbidden", action=GuardrailAction.BLOCK, keywords=("rm -rf /",))]
     )
-    stream = GuardrailStream(engine)
+    stream = GuardrailStream(evaluator)
 
     out = stream.feed("about to run rm -rf / on host\n")
 

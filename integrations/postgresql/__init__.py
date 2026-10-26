@@ -555,13 +555,13 @@ def get_slow_queries(
                         "queryid": str(row[0]) if row[0] else "",
                         "query_truncated": row[1] or "",
                         "calls": row[2],
-                        "total_time_ms": row[3],
-                        "mean_time_ms": row[4],
-                        "min_time_ms": row[5],
-                        "max_time_ms": row[6],
-                        "stddev_time_ms": row[7],
+                        "total_time_ms": float(row[3]),
+                        "mean_time_ms": float(row[4]),
+                        "min_time_ms": float(row[5]),
+                        "max_time_ms": float(row[6]),
+                        "stddev_time_ms": float(row[7]),
                         "total_rows": row[8],
-                        "cache_hit_percent": round(row[9] or 0, 2),
+                        "cache_hit_percent": round(float(row[9] or 0), 2),
                     }
                 )
 

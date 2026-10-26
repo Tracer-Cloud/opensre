@@ -16,10 +16,31 @@ class TestGitHubRepositoryTreeToolContract(BaseToolContract):
 def test_is_available_requires_owner_repo() -> None:
     rt = get_github_repository_tree.__opensre_registered_tool__
     assert (
-        rt.is_available({"github": {"connection_verified": True, "owner": "org", "repo": "repo"}})
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                    "owner": "org",
+                    "repo": "repo",
+                }
+            }
+        )
         is True
     )
-    assert rt.is_available({"github": {"connection_verified": True}}) is False
+    assert (
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                }
+            }
+        )
+        is False
+    )
     assert rt.is_available({}) is False
 
 
@@ -33,7 +54,9 @@ def test_extract_params_maps_fields() -> None:
 
 def test_run_returns_unavailable_when_no_config() -> None:
     with patch("integrations.github.helpers.github_mcp_config_from_env", return_value=None):
-        result = get_github_repository_tree(owner="org", repo="repo")
+        result = get_github_repository_tree(
+            github_connection_origin="webapp", github_token="app-token", owner="org", repo="repo"
+        )
     assert result["available"] is False
 
 
@@ -59,6 +82,7 @@ def test_run_happy_path() -> None:
         ),
     ):
         result = get_github_repository_tree(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             github_url="http://mcp",

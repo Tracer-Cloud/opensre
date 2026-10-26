@@ -2,9 +2,7 @@
 
 ``_run_action_turn`` is one long function doing three unrelated jobs: building
 the agent, running it, and turning what happened into a
-``ToolCallingTurnResult`` plus console output. Splitting it is only safe with
-the whole observable outcome pinned first — the counts, the response text, the
-handoff contents and what the user actually sees.
+``ToolCallingTurnResult`` plus console output.
 
 These assert on complete values rather than single fields, so a refactor that
 drops or reorders part of the composed text fails here rather than in a
@@ -37,15 +35,11 @@ def _outcome(result: Any) -> dict[str, Any]:
         "executed_success_count": result.executed_success_count,
         "has_unhandled_clause": result.has_unhandled_clause,
         "handled": result.handled,
-        "handoff_contents": result.handoff_contents,
-        "handoff_requires_gather": result.handoff_requires_gather,
         "accounting_status": result.accounting_status,
-        "investigation_dispatched": result.investigation_dispatched,
     }
 
 
-def test_a_turn_with_no_tool_calls_is_unhandled() -> None:
-    """The plainest turn: the model answers without calling anything."""
+def test_a_turn_with_no_tool_calls_returns_the_agent_reply() -> None:
     # Arrange
     harness = ActionExecutionHarness(llm=FakeActionLLM([no_tool_response("just talking")]))
 
@@ -61,96 +55,9 @@ def test_a_turn_with_no_tool_calls_is_unhandled() -> None:
         "executed_success_count": 0,
         "has_unhandled_clause": False,
         "handled": False,
-        "handoff_contents": (),
-        "handoff_requires_gather": True,
         "accounting_status": "completed",
-        "investigation_dispatched": False,
     }
-    # Fall-through to stream_answer owns the user-visible reply — painting here
-    # produced a second ● assistant bubble on conversational asks.
-    assert "assistant" not in _console_text(harness)
-    assert "just talking" not in _console_text(harness)
-
-
-def test_an_assistant_handoff_is_reported_but_not_counted_as_planned() -> None:
-    """``assistant_handoff`` is excluded from ``planned_count`` by name.
-
-    It is the one tool whose execution does not mean the turn did something for
-    the user, so it must not flip ``handled``.
-    """
-    # Arrange
-    harness = ActionExecutionHarness(
-        llm=FakeActionLLM(
-            [
-                tool_response("assistant_handoff", {"content": "let me explain instead"}),
-                no_tool_response(""),
-            ]
-        )
-    )
-
-    # Act
-    result = run_action_tool_turn(
-        "why?", Session(), harness.console, llm_factory=harness.llm_factory
-    )
-
-    # Assert
-    assert result.planned_count == 0
-    assert result.handled is False
-    assert result.handoff_contents == ("let me explain instead",)
-    assert result.handoff_requires_gather is True
-
-
-def test_an_answer_only_handoff_opts_out_of_the_gather_pass() -> None:
-    """``requires_gather=false`` on the handoff input reaches the turn result.
-
-    The router skips gather for stream-only chat and for turns whose tools
-    already produced the reply evidence.
-    """
-    # Arrange
-    harness = ActionExecutionHarness(
-        llm=FakeActionLLM(
-            [
-                tool_response(
-                    "assistant_handoff",
-                    {"content": "onboarding checks all passed", "requires_gather": False},
-                ),
-                no_tool_response(""),
-            ]
-        )
-    )
-
-    # Act
-    result = run_action_tool_turn(
-        "onboard me on the CI/CD fix", Session(), harness.console, llm_factory=harness.llm_factory
-    )
-
-    # Assert
-    assert result.handoff_contents == ("onboarding checks all passed",)
-    assert result.handoff_requires_gather is False
-
-
-def test_stream_only_conversational_handoff_opts_out_of_gather() -> None:
-    """Pure docs/greeting handoffs set ``requires_gather=false`` for stream_answer.
-
-    No other action tools ran; the host must still skip the gather agent so the
-    turn is action handoff → stream_answer only.
-    """
-    harness = ActionExecutionHarness(
-        llm=FakeActionLLM(
-            [
-                tool_response(
-                    "assistant_handoff",
-                    {"content": "chat:greeting", "requires_gather": False},
-                ),
-                no_tool_response(""),
-            ]
-        )
-    )
-
-    result = run_action_tool_turn("hi", Session(), harness.console, llm_factory=harness.llm_factory)
-
-    assert result.handoff_contents == ("chat:greeting",)
-    assert result.handoff_requires_gather is False
+    assert "just talking" in _console_text(harness)
 
 
 def test_final_text_that_reads_like_a_reply_becomes_the_response() -> None:
@@ -166,56 +73,6 @@ def test_final_text_that_reads_like_a_reply_becomes_the_response() -> None:
 
     # Assert
     assert result.response_text == report
-
-
-def test_a_terse_closing_line_keeps_the_tool_derived_text(monkeypatch) -> None:
-    """ "done" after a tool call must not become the whole answer.
-
-    Short one-liners are common filler. Taking one as the response would throw
-    away the tool output the user actually needs — so the composed text wins
-    unless the closing message reads like a real reply.
-    """
-    # Arrange
-    from core.agent_harness.turns.action_driver import ActionTurnRunner
-    from core.tool.contracts import RegisteredTool
-    from tests.core.agent.orchestration.test_agent_actions_harness import (
-        _GenericActionToolProvider,
-        _OutputSink,
-    )
-
-    tool = RegisteredTool(
-        name="fake_send_message",
-        description="Send a fake message.",
-        input_schema={
-            "type": "object",
-            "properties": {"message": {"type": "string"}},
-            "required": ["message"],
-            "additionalProperties": False,
-        },
-        source="knowledge",
-        surfaces=("action",),
-        run=lambda message: {"status": "sent", "message": message},
-    )
-    harness = ActionExecutionHarness(
-        llm=FakeActionLLM(
-            [
-                tool_response("fake_send_message", {"message": "hello"}),
-                no_tool_response("done"),
-            ]
-        )
-    )
-
-    # Act
-    result = ActionTurnRunner(
-        output=_OutputSink(harness.console),
-        tools=_GenericActionToolProvider(tool),
-        llm_factory=harness.llm_factory,
-    ).run("send it", Session())
-
-    # Assert
-    assert result.handled is True
-    assert "sent" in result.response_text, result.response_text
-    assert result.response_text != "done"
 
 
 def test_a_terse_closing_line_is_the_answer_when_nothing_else_ran() -> None:
@@ -234,3 +91,463 @@ def test_a_terse_closing_line_is_the_answer_when_nothing_else_ran() -> None:
 
     # Assert
     assert result.response_text == "done"
+
+
+def test_iteration_cap_is_preserved_on_turn_result() -> None:
+    harness = ActionExecutionHarness(
+        llm=FakeActionLLM([tool_response("skill_view", {"name": "missing"}) for _ in range(5)])
+    )
+
+    result = run_action_tool_turn(
+        "keep trying",
+        Session(),
+        harness.console,
+        llm_factory=harness.llm_factory,
+    )
+
+    assert result.hit_iteration_cap is True
+    assert result.stop_reason == "discovery_stagnation"
+    assert result.response_streamed is True
+    assert "repeated tool discovery found no new capability" in result.response_text
+    assert _console_text(harness).count("repeated tool discovery found no new capability") == 1
+    assert harness.llm.invocations == 4
+
+
+def test_a_menu_answered_this_turn_is_not_asked_again_through_the_real_turn() -> None:
+    """The scope must carry the turn's message, or the answered-menu guard is blind.
+
+    The guard lives in ``ask_user_choice`` but reads ``turn_user_message`` off
+    the tool scope. The driver built that scope without the message, so the
+    guard never fired in the shell while its own unit tests passed.
+    """
+    # Arrange: this turn's message is the answer; the model asks the same thing.
+    title = "When should it run?"
+    answer_turn = f"1. {title}\nWeekdays at 08:00 (recommended)"
+    harness = ActionExecutionHarness(
+        llm=FakeActionLLM(
+            [
+                tool_response(
+                    "ask_user_choice",
+                    {"title": title, "options": ["Weekdays at 08:00 (recommended)", "Every day"]},
+                ),
+                no_tool_response("Scheduling it for weekdays."),
+            ]
+        )
+    )
+    session = Session()
+
+    # Act: a TTY turn, so a menu would really queue if the guard did not refuse.
+    result = run_action_tool_turn(
+        answer_turn, session, harness.console, llm_factory=harness.llm_factory, is_tty=True
+    )
+
+    # Assert: the call ran and was refused, so no menu was queued for a
+    # question this turn's message already answered.
+    assert (result.executed_count, result.executed_success_count) == (1, 0)
+    assert session.pending_user_choice is None
+
+
+def test_a_painted_tool_result_is_not_restated_in_the_closing() -> None:
+    """A report painted during execution must not be printed a second time."""
+    # Arrange: a tool result that says the console already shows it.
+    from core.agent_harness.turns.display_text import format_generic_tool_payload
+    from core.llm.types import ToolCall
+
+    class _Result:
+        details = {
+            "rendered_in_shell": True,
+            "summary": "acme/app: 8151 runs in 30 days, 1174 of 5727 PR runs failed.",
+            "response_text": "acme/app: 8151 runs in 30 days.",
+        }
+        content = ""
+        is_error = False
+
+    call = ToolCall(id="1", name="analyze_github_ci_reliability", input={})
+
+    # Act
+    shown = format_generic_tool_payload(call, _Result())
+
+    # Assert
+    assert shown == ""
+
+
+def _painted_result(*, final_text: str) -> Any:
+    """A turn whose only tool painted its report straight to the console."""
+    from core.llm.types import ToolCall
+
+    class _ToolResult:
+        details = {
+            "rendered_in_shell": True,
+            "summary": "acme/app: 8151 runs in 30 days.",
+            "key_results": [
+                {"label": "main branch red", "value": "36.4h of 30 days (5.1%)"},
+                {"label": "CI-caused failures", "value": "333 of 1174 failed PR runs"},
+                {"label": "Mean time back to green", "value": "1.0h"},
+            ],
+        }
+        content = "{}"
+        is_error = False
+
+    call = ToolCall(id="1", name="analyze_github_ci_reliability", input={})
+
+    class _Result:
+        tool_results = [(call, _ToolResult())]
+        executed = tool_results
+        planned = [call]
+
+    result = _Result()
+    result.final_text = final_text  # type: ignore[attr-defined]
+    return result
+
+
+def test_a_closing_written_over_a_painted_report_is_dropped() -> None:
+    """The model restates the figures, or contradicts them, without having seen them."""
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+
+    session = Session()
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=1,
+        executed_success_count=1,
+        planned_count=1,
+        handled=True,
+    )
+
+    # Act
+    restatement = "36.4h red over 30 days, 333 of 1174 PR runs CI-caused, 1.0h back to green."
+    _text, chunks, _use_final = _compose_response(
+        _painted_result(final_text=restatement), session, counts
+    )
+
+    # Assert: the console already shows the report; nothing is added over it.
+    assert chunks == []
+
+
+def _painted_result_with_reply_text(*, failed: bool) -> Any:
+    """A painting tool that also ships a one-line ``response_text`` recap."""
+    from core.llm.types import ToolCall
+
+    class _ToolResult:
+        details = {
+            "rendered_in_shell": True,
+            "response_text": "Found 43 git repositories: 6031 commits in the last 30 days.",
+        }
+        content = "{}"
+        is_error = failed
+
+    call = ToolCall(id="1", name="scan_local_git_workspace", input={})
+
+    class _Result:
+        tool_results = [(call, _ToolResult())]
+        executed = tool_results
+        planned = [call]
+        final_text = ""
+
+    return _Result()
+
+
+def _one_generic_success() -> Any:
+    from core.agent_harness.turns.action_driver import _TurnCounts
+
+    return _TurnCounts(
+        executed_entries=[],
+        executed_count=1,
+        executed_success_count=1,
+        planned_count=1,
+        handled=True,
+    )
+
+
+def test_a_silent_model_does_not_resurface_a_painted_recap() -> None:
+    """The demo ends its scan turn on a menu call, so the model writes no closing.
+
+    The fallback that then borrows the tool's reply text must respect the same
+    painted rule as a written closing, or the scan summary lands as a ``●`` reply
+    under the table it summarizes.
+    """
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result_with_reply_text(failed=False), Session(), _one_generic_success()
+    )
+
+    # Assert
+    assert chunks == []
+
+
+def test_a_failed_painter_still_surfaces_its_reply_text() -> None:
+    """A painter that errored drew nothing, so its text is the only thing to show."""
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result_with_reply_text(failed=True), Session(), _one_generic_success()
+    )
+
+    # Assert
+    assert chunks == ["Found 43 git repositories: 6031 commits in the last 30 days."]
+
+
+def test_a_closing_question_survives_a_painted_report() -> None:
+    """A question seeks direction; dropping it would leave the user with dead air."""
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+
+    session = Session()
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=1,
+        executed_success_count=1,
+        planned_count=1,
+        handled=True,
+    )
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result(final_text="Want me to break this down by workflow?"), session, counts
+    )
+
+    # Assert
+    assert chunks == ["Want me to break this down by workflow?"]
+
+
+def test_an_interpretation_of_a_painted_report_is_kept() -> None:
+    """Only the duplicate goes: a judgement the table does not carry survives."""
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+
+    session = Session()
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=1,
+        executed_success_count=1,
+        planned_count=1,
+        handled=True,
+    )
+    judgement = "The Windows label job is your worst offender; I would quarantine it first."
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result(final_text=judgement), session, counts
+    )
+
+    # Assert
+    assert chunks == [judgement]
+
+
+def test_a_plan_update_does_not_rescue_a_restated_closing() -> None:
+    """The real demo turn updates its plan and paints the report in one go.
+
+    Requiring every result to be painted let that turn keep a closing that
+    repeated the figures, because ``update_plan`` is not a painted result.
+    """
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+    from core.llm.types import ToolCall
+
+    class _Painted:
+        details = {
+            "rendered_in_shell": True,
+            "key_results": [
+                {"label": "main branch red", "value": "36.4h of 30 days (5.1%)"},
+                {"label": "CI-caused failures", "value": "333 of 1174 failed PR runs"},
+                {"label": "Mean time back to green", "value": "1.0h"},
+            ],
+        }
+        content = "{}"
+        is_error = False
+
+    class _Plan:
+        details = {"ok": True, "steps": []}
+        content = "{}"
+        is_error = False
+
+    plan_call = ToolCall(id="1", name="update_plan", input={})
+    report_call = ToolCall(id="2", name="analyze_github_ci_reliability", input={})
+
+    class _Result:
+        tool_results = [(plan_call, _Plan()), (report_call, _Painted())]
+        executed = tool_results
+        planned = [plan_call, report_call]
+        final_text = "Main was red 36.4h (5.1%), with 333 of 1174 PR runs CI-caused; 1.0h to green."
+
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=2,
+        executed_success_count=2,
+        planned_count=2,
+        handled=True,
+    )
+
+    # Act
+    _text, chunks, _use_final = _compose_response(_Result(), Session(), counts)
+
+    # Assert
+    assert chunks == []
+
+
+def test_a_verify_reread_of_the_same_record_is_shown_once() -> None:
+    """A re-read that returns the delegated report again must not print it twice."""
+    from core.agent_harness.turns.action_driver import (
+        _generic_chunks,
+        _response_text_from_generic_results,
+    )
+    from core.llm.types import ToolCall
+
+    report = "acme/demo#1 success: task t1, failed run 11, fix abc, passing run 12."
+
+    class _ToolResult:
+        def __init__(self, text: str, prompt_id: str = "") -> None:
+            self.details = {"response_text": text}
+            if prompt_id:
+                self.details["prompt_id"] = prompt_id
+            self.content = text
+            self.is_error = False
+
+    probe = ToolCall(id="1", name="ask_hosted_gateway", input={"prompt": "probe"})
+    repair = ToolCall(id="2", name="ask_hosted_gateway", input={"prompt": "repair"})
+    reread = ToolCall(id="3", name="ask_hosted_gateway", input={"prompt_id": "p_repair"})
+    first_check = ToolCall(id="4", name="github_cli", input={"args": ["api", "a"]})
+    second_check = ToolCall(id="5", name="github_cli", input={"args": ["api", "b"]})
+
+    class _Result:
+        tool_results = [
+            (probe, _ToolResult("Login acme; classic PAT.", "p_probe")),
+            (repair, _ToolResult(report, "p_repair")),
+            (reread, _ToolResult(report, "p_repair")),
+            (first_check, _ToolResult("0")),
+            (second_check, _ToolResult("0")),
+        ]
+        executed = tool_results
+        planned = [probe, repair, reread, first_check, second_check]
+
+    chunks = _generic_chunks(_Result())
+    response_text = _response_text_from_generic_results(_Result())
+
+    # The re-read of the same record shows once, in the chunks and the saved text.
+    assert sum(report in chunk for chunk in chunks) == 1
+    assert response_text.count(report) == 1
+    assert "Login acme" in response_text
+    # Two independent checks with the same output both stay.
+    assert sum(chunk.strip().endswith("0") for chunk in chunks) >= 2
+
+
+def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
+    """Polls and retried failures before the repair must not head the closing.
+
+    A result that names a record the later call does not (a ``task_id``, or a
+    failed prompt's ``prompt_id``) is a separate report and stays.
+
+    Live QA on 50d8fc7 (session c7273771): the gateway was starting, so the
+    turn polled ``check_hosted_gateway`` eight times and its probe failed twice
+    before it succeeded. The closing above the handoff menu printed all of it.
+    """
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+    from core.llm.types import ToolCall
+    from core.tool import SideEffectLevel
+
+    starting = "Gateway g1 is starting; check again in a minute."
+    unhealthy = "Gateway g1 is running. Last error: GATEWAY_UNREACHABLE."
+    refused = "The control plane found the gateway's task but could not connect to it."
+    running = "Gateway g1 is running."
+    probed = "Login acme; classic PAT; acme can create repositories."
+    report = "- **Outcome:** acme/demo#1 success: task t1, failed run 11, fix abc, passing run 12."
+
+    class _ToolResult:
+        def __init__(self, text: str, *, ok: bool = True, **ids: str) -> None:
+            self.details: dict[str, Any] = {"response_text": text, "ok": ok, **ids}
+            self.content = text
+            self.is_error = not ok
+
+    class _Tool:
+        def __init__(self, name: str, level: SideEffectLevel) -> None:
+            self.name = name
+            self.side_effect_level = level
+
+    calls = iter(range(100))
+
+    def call(name: str, tool_input: dict[str, Any]) -> ToolCall:
+        return ToolCall(id=str(next(calls)), name=name, input=tool_input)
+
+    def check() -> ToolCall:
+        return call("check_hosted_gateway", {})
+
+    def probe() -> ToolCall:
+        return call("ask_hosted_gateway", {"conversation": "new", "prompt": "probe"})
+
+    def label(text: str) -> ToolCall:
+        return call("github_cli", {"args": ["label", "create", "repair", text]})
+
+    def latest_repair() -> ToolCall:
+        return call("get_ci_repair_loop", {})
+
+    class _Result:
+        final_text = ""
+        tool_results = [
+            *((check(), _ToolResult(starting)) for _ in range(4)),
+            (check(), _ToolResult(unhealthy, gateway_id="g1")),
+            (probe(), _ToolResult(refused, ok=False)),
+            (check(), _ToolResult(unhealthy, gateway_id="g1")),
+            (probe(), _ToolResult(refused, ok=False)),
+            (check(), _ToolResult(running, gateway_id="g1")),
+            (probe(), _ToolResult(probed, prompt_id="p_probe")),
+            (
+                call("ask_hosted_gateway", {"conversation": "new", "prompt": "repair"}),
+                _ToolResult(report, prompt_id="p_repair"),
+            ),
+            # A mutating call that ran twice did two things; both stay.
+            (label("x"), _ToolResult("Created label repair.")),
+            (label("x"), _ToolResult("Created label repair.")),
+            # The gateway took this prompt before the connection dropped; its id
+            # is how the user recovers that work, so the resend does not hide it.
+            (
+                call("ask_hosted_gateway", {"conversation": "new", "prompt": "scan"}),
+                _ToolResult("Lost contact; recover with p_scan1.", ok=False, prompt_id="p_scan1"),
+            ),
+            (
+                call("ask_hosted_gateway", {"conversation": "new", "prompt": "scan"}),
+                _ToolResult("Scan finished.", prompt_id="p_scan2"),
+            ),
+            # "The most recent run" moved to a new repair between two reads.
+            (latest_repair(), _ToolResult("Repair t1 succeeded.", task_id="t1")),
+            (latest_repair(), _ToolResult("Repair t2 is running.", task_id="t2")),
+        ]
+        executed = tool_results
+        planned = [tool_call for tool_call, _ in tool_results]
+        messages: list[Any] = []
+
+    tools = {
+        "check_hosted_gateway": _Tool("check_hosted_gateway", SideEffectLevel.READ_ONLY),
+        "ask_hosted_gateway": _Tool("ask_hosted_gateway", SideEffectLevel.EXTERNAL),
+        "github_cli": _Tool("github_cli", SideEffectLevel.MUTATING),
+        "get_ci_repair_loop": _Tool("get_ci_repair_loop", SideEffectLevel.READ_ONLY),
+    }
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=13,
+        executed_success_count=11,
+        planned_count=13,
+        handled=True,
+    )
+
+    # The report was already painted mid-turn, as in the live run.
+    response_text, chunks, _use_final = _compose_response(
+        _Result(), Session(), counts, deferred_replies=(report,), tools_by_name=tools
+    )
+
+    shown = "\n".join(chunks)
+    for text in (shown, response_text):
+        assert starting not in text
+        assert unhealthy not in text
+        assert refused not in text
+        assert text.count(running) == 1
+        assert text.count(probed) == 1
+    assert shown.count("Created label repair.") == 2
+    assert "recover with p_scan1" in shown
+    assert "Repair t1 succeeded." in shown
+    assert "Repair t2 is running." in shown
+    assert shown.index(running) < shown.index(probed)

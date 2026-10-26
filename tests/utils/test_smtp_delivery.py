@@ -8,7 +8,6 @@ from email.message import EmailMessage
 import pytest
 
 from integrations.smtp.delivery import (
-    format_background_rca_email,
     send_smtp_report,
     verify_smtp_connection,
 )
@@ -57,23 +56,6 @@ def _return_fake_client(fake_client: _FakeSMTP):
         return fake_client
 
     return _factory
-
-
-def test_format_background_rca_email_includes_required_sections() -> None:
-    subject, body = format_background_rca_email(
-        task_id="bg-123",
-        command="/investigate checkout",
-        root_cause="postgres connection pool saturation",
-        top_analysis=("rds cpu spike", "error rate climbed"),
-        next_steps=("raise pool size",),
-        stats={"tool_call_count": 4, "investigation_loop_count": 2, "validity_score": 0.91},
-    )
-
-    assert subject == "OpenSRE RCA complete: bg-123"
-    assert "Root cause" in body
-    assert "Top analysis" in body
-    assert "What to do next" in body
-    assert "Internal stats" in body
 
 
 def test_verify_smtp_connection_uses_starttls(monkeypatch: pytest.MonkeyPatch) -> None:

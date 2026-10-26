@@ -7,9 +7,9 @@ from typing import Any, cast, overload
 
 from pydantic import BaseModel
 
-from core.domain.types.evidence import EvidenceSource
+from core.domain.types.evidence import EvidenceMapper, EvidenceSource
 from core.domain.types.retrieval import RetrievalControls
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool.contracts import (
     REGISTERED_TOOL_ATTR,
     BaseTool,
@@ -25,6 +25,7 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
+    compact_description: str | None = None,
     display_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
     input_model: type[BaseModel] | None = None,
@@ -40,6 +41,7 @@ def tool(
     outputs: dict[str, str] | None = None,
     output_schema: dict[str, Any] | None = None,
     output_model: type[BaseModel] | None = None,
+    evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -48,8 +50,9 @@ def tool(
     requires_approval: bool | None = None,
     approval_reason: str | None = None,
     approval_expiry_seconds: int | None = None,
-    parallel_safe: bool | None = None,
+    role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
+    concurrency_safe: bool | None = None,
 ) -> BaseTool:
     pass
 
@@ -60,6 +63,7 @@ def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
     description: str | None = None,
+    compact_description: str | None = None,
     display_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
     input_model: type[BaseModel] | None = None,
@@ -75,6 +79,7 @@ def tool[F: Callable[..., Any]](
     outputs: dict[str, str] | None = None,
     output_schema: dict[str, Any] | None = None,
     output_model: type[BaseModel] | None = None,
+    evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -83,8 +88,9 @@ def tool[F: Callable[..., Any]](
     requires_approval: bool | None = None,
     approval_reason: str | None = None,
     approval_expiry_seconds: int | None = None,
-    parallel_safe: bool | None = None,
+    role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
+    concurrency_safe: bool | None = None,
 ) -> F:
     pass
 
@@ -95,6 +101,7 @@ def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
     description: str | None = None,
+    compact_description: str | None = None,
     display_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
     input_model: type[BaseModel] | None = None,
@@ -110,6 +117,7 @@ def tool[F: Callable[..., Any]](
     outputs: dict[str, str] | None = None,
     output_schema: dict[str, Any] | None = None,
     output_model: type[BaseModel] | None = None,
+    evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -118,8 +126,9 @@ def tool[F: Callable[..., Any]](
     requires_approval: bool | None = None,
     approval_reason: str | None = None,
     approval_expiry_seconds: int | None = None,
-    parallel_safe: bool | None = None,
+    role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
+    concurrency_safe: bool | None = None,
 ) -> Callable[[F], F]:
     pass
 
@@ -129,6 +138,7 @@ def tool[F: Callable[..., Any]](
     *,
     name: str | None = None,
     description: str | None = None,
+    compact_description: str | None = None,
     display_name: str | None = None,
     input_schema: dict[str, Any] | None = None,
     input_model: type[BaseModel] | None = None,
@@ -144,6 +154,7 @@ def tool[F: Callable[..., Any]](
     outputs: dict[str, str] | None = None,
     output_schema: dict[str, Any] | None = None,
     output_model: type[BaseModel] | None = None,
+    evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -152,8 +163,9 @@ def tool[F: Callable[..., Any]](
     requires_approval: bool | None = None,
     approval_reason: str | None = None,
     approval_expiry_seconds: int | None = None,
-    parallel_safe: bool | None = None,
+    role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
+    concurrency_safe: bool | None = None,
 ) -> Any:
     """Register a lightweight function tool or annotate an existing BaseTool.
 
@@ -167,6 +179,7 @@ def tool[F: Callable[..., Any]](
             [
                 name is not None,
                 description is not None,
+                compact_description is not None,
                 display_name is not None,
                 input_schema is not None,
                 input_model is not None,
@@ -182,6 +195,7 @@ def tool[F: Callable[..., Any]](
                 bool(outputs),
                 output_schema is not None,
                 output_model is not None,
+                evidence_mapper is not None,
                 bool(injected_params),
                 retrieval_controls is not None,
                 is_available is not None,
@@ -190,36 +204,43 @@ def tool[F: Callable[..., Any]](
                 requires_approval is not None,
                 approval_reason is not None,
                 approval_expiry_seconds is not None,
-                parallel_safe is not None,
+                role is not None,
                 accepts_runtime_context is not None,
+                concurrency_safe is not None,
             ]
         )
 
     def attach(target: F | BaseTool) -> F | BaseTool:
         if isinstance(target, BaseTool):
             if (
-                surfaces is not None
+                compact_description is not None
+                or surfaces is not None
                 or retrieval_controls is not None
                 or tags is not None
                 or requires_approval is not None
                 or approval_reason is not None
                 or approval_expiry_seconds is not None
-                or parallel_safe is not None
+                or role is not None
                 or accepts_runtime_context is not None
+                or evidence_mapper is not None
+                or concurrency_safe is not None
             ):
                 setattr(
                     target,
                     REGISTERED_TOOL_ATTR,
                     RegisteredTool.from_base_tool(
                         target,
+                        compact_description=compact_description,
                         surfaces=surfaces,
                         retrieval_controls=retrieval_controls,
                         tags=tags,
                         requires_approval=requires_approval,
                         approval_reason=approval_reason,
                         approval_expiry_seconds=approval_expiry_seconds,
-                        parallel_safe=parallel_safe,
+                        role=role,
                         accepts_runtime_context=accepts_runtime_context,
+                        evidence_mapper=evidence_mapper,
+                        concurrency_safe=concurrency_safe,
                     ),
                 )
             return target
@@ -232,6 +253,7 @@ def tool[F: Callable[..., Any]](
                     target,
                     name=name,
                     description=description,
+                    compact_description=compact_description,
                     display_name=display_name,
                     input_schema=input_schema,
                     input_model=input_model,
@@ -247,6 +269,7 @@ def tool[F: Callable[..., Any]](
                     outputs=outputs,
                     output_schema=output_schema,
                     output_model=output_model,
+                    evidence_mapper=evidence_mapper,
                     injected_params=injected_params,
                     retrieval_controls=retrieval_controls,
                     is_available=is_available,
@@ -255,8 +278,9 @@ def tool[F: Callable[..., Any]](
                     requires_approval=requires_approval,
                     approval_reason=approval_reason,
                     approval_expiry_seconds=approval_expiry_seconds,
-                    parallel_safe=parallel_safe,
+                    role=role,
                     accepts_runtime_context=accepts_runtime_context,
+                    concurrency_safe=concurrency_safe,
                 ),
             )
         return target

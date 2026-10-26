@@ -13,10 +13,10 @@ import httpx
 from config.constants.filestorage import BLOB_READ_WRITE_TOKEN_ENV
 from config.constants.vercel import VERCEL_API_BASE_URL, VERCEL_API_TOKEN_ENV, VERCEL_TEAM_ID_ENV
 from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.enums import BucketExposure, BuiltInProvider
 from infrastructure.filestorage.errors import RemoteSyncUnavailableError
 from infrastructure.filestorage.exposure import PublicAccessStatus
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.providers.registry import register_object_store
 
 if TYPE_CHECKING:

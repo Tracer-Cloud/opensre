@@ -66,7 +66,7 @@ _EXPORT_MODULES = {
     "AgentToolContext": "core.tool.contracts",
     "AgentToolExecutor": "core.tool.contracts",
     "RuntimeTool": "core.tool.contracts",
-    "ToolParallelism": "core.tool.contracts",
+    "ToolRole": "core.tool.contracts",
 }
 
 

@@ -22,9 +22,9 @@ OUTPUT_FORMAT_RICH = "rich"
 OUTPUT_FORMAT_TEXT = "text"
 OUTPUT_FORMAT_NONE = "none"
 
-# Env-var keys the probe consults, in priority order. Named constants
-# match the rest of the observability surface (``HERMES_LOG_PATH`` etc.)
-# and make ``grep`` for "who reads TRACER_OUTPUT_FORMAT" trivial.
+# Env-var keys the probe consults, in priority order. Named constants keep the
+# spelling in one place and make ``grep`` for "who reads TRACER_OUTPUT_FORMAT"
+# trivial.
 _ENV_OUTPUT_FORMAT = "TRACER_OUTPUT_FORMAT"
 _ENV_NO_COLOR = "NO_COLOR"
 

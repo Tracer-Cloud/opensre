@@ -59,6 +59,7 @@ def _run(
             exit 1
         fi
         log()  {{ printf '%s\\n' "$*"; }}
+        muted() {{ printf '%s\\n' "$*"; }}
         warn() {{ printf 'Warning: %s\\n' "$*" >&2; }}
         eval "$__fn"
         INSTALL_DIR={idir_shell} platform="{platform}" HOME={home_shell} SHELL="{shell}" configure_path
@@ -80,47 +81,12 @@ def _run_logging_snippet(body: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
 
 
-def _find_release_metadata_step_block() -> str:
-    lines = INSTALL_SH.read_text().splitlines()
-    for i, line in enumerate(lines):
-        if line.strip() != 'release_tag=""':
-            continue
-
-        block = []
-        for candidate in lines[i + 1 :]:
-            block.append(candidate)
-            if candidate.strip() == "fi":
-                return "\n".join(block)
-
-    raise RuntimeError(f"Could not locate release metadata step block in {INSTALL_SH}.")
-
-
-def _run_release_metadata_step(
-    install_channel: str = "release", version: str = ""
-) -> subprocess.CompletedProcess[str]:
-    block = _find_release_metadata_step_block()
-    install_sh = _INSTALL_SH_SHELL
-    script = textwrap.dedent(f"""\
-        eval "$(awk '/^REPO=/{{exit}} {{print}}' {install_sh})"
-        eval "$(awk '
-            /^[a-z_][a-z_]*\\(\\)/ {{ in_fn=1 }}
-            in_fn {{ print }}
-            in_fn && /^\\}}$/ {{ in_fn=0 }}
-        ' {install_sh})"
-        INSTALL_CHANNEL="{install_channel}"
-        version="{version}"
-        {block}
-        printf '%s\\n' "$metadata_step"
-    """)
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
-
-
 def test_install_sh_logging_falls_back_to_plain_text_when_not_tty() -> None:
     result = _run_logging_snippet(
         """
         warn "check config"
         success "installed"
-        step "[1/4] Fetching metadata"
+        muted "[1/4] Fetching metadata"
         """
     )
 
@@ -146,168 +112,100 @@ def test_install_sh_defines_tty_aware_ansi_formatting() -> None:
     assert "COLOR_GREEN=$'\\033[32m'" in source
     assert "COLOR_YELLOW=$'\\033[33m'" in source
     assert "COLOR_RED=$'\\033[31m'" in source
+    assert "COLOR_GRAY=$'\\033[90m'" in source
     assert "success()" in source
 
 
-def test_install_sh_success_screen_has_visual_structure() -> None:
-    result = _run_logging_snippet("print_success_screen 2026.4.1")
+def test_install_sh_styles_details_gray_and_get_started_yellow() -> None:
+    result = _run_logging_snippet(
+        """
+        COLOR_RESET=$'\\033[0m'
+        COLOR_GRAY=$'\\033[90m'
+        COLOR_YELLOW=$'\\033[33m'
+        BIN_NAME="opensre"
+        muted "Checksum verification passed"
+        log "${COLOR_YELLOW}Run '${BIN_NAME}' to sign in and get started.${COLOR_RESET}"
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "\x1b[90mChecksum verification passed\x1b[0m" in result.stdout
+    assert "\x1b[33mRun 'opensre' to sign in and get started.\x1b[0m" in result.stdout
+
+
+def test_install_sh_prints_concise_install_confirmation() -> None:
+    result = _run_logging_snippet(
+        """
+        BIN_NAME="opensre"
+        INSTALL_DIR="/tmp/bin"
+        installed_version="2026.4.1"
+        print_install_confirmation
+        """
+    )
     output = result.stdout + result.stderr
 
     assert result.returncode == 0, result.stderr
-    assert "--------------------------------------------" in output
-    assert "Success: Welcome to OpenSRE" in output
-    assert "opensre v2026.4.1 installed successfully" in output
-    assert "Next steps:" in output
+    assert output == "OpenSRE v2026.4.1 installed successfully to /tmp/bin/opensre\n"
 
 
-def test_install_sh_contains_auto_onboarding_launch_hook() -> None:
+def test_install_sh_auto_launches_account_setup_only_on_a_tty() -> None:
     source = INSTALL_SH.read_text()
 
+    assert "auto_setup_enabled()" in source
+    assert "launch_setup_after_install()" in source
     assert "OPENSRE_AUTO_LAUNCH" in source
-    assert "launch_onboarding_after_install" in source
-    assert '"$installed_binary" onboard' in source
+    assert "[ ! -t 0 ] || [ ! -t 1 ]" in source
+    assert '"$binary_path" setup' in source
 
 
-def test_install_sh_auto_onboarding_piped_installs_reattach_dev_tty() -> None:
-    """Piped ``curl … | bash`` installs auto-launch onboarding via /dev/tty.
-
-    stdin is the curl pipe there, so the wizard's stdin is reattached to the
-    controlling terminal — but only when ``stty -g`` confirms the terminal can
-    actually be controlled. Where that tcgetattr fails, the full-screen wizard
-    would die with a terminal I/O error mid-render (issue #3273), so the
-    launch is skipped instead.
-    """
+def test_install_sh_records_install_analytics_without_blocking_install() -> None:
     source = INSTALL_SH.read_text()
 
-    assert "controlling_tty_usable" in source
-    assert "stty -g </dev/tty" in source
-    assert "run_onboarding </dev/tty" in source
-    # Only stdin is reattached; redirecting stdout to /dev/tty as well was the
-    # original #3273 failure mode.
-    assert "</dev/tty >/dev/tty 2>&1" not in source
+    assert "record_install_analytics()" in source
+    assert 'OPENSRE_INSTALL_SOURCE="posix_installer"' in source
+    assert '"$binary_path" --record-install >/dev/null 2>&1 || true' in source
 
 
-def test_install_sh_auto_onboarding_piped_install_launches_via_pty(tmp_path: Path) -> None:
-    """Simulate a piped install inside a real pty: onboarding must launch
-    with its stdin reattached to the terminal."""
-    import os
-    import pty
-
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    fake_binary = bin_dir / "opensre"
-    fake_binary.write_text(
+@pytest.mark.parametrize("analytics_disabled", ["0", "1"])
+def test_macos_warmup_does_not_consume_installer_analytics(
+    tmp_path: Path, analytics_disabled: str
+) -> None:
+    calls = tmp_path / "calls"
+    binary = tmp_path / "opensre"
+    binary.write_text(
         "#!/usr/bin/env bash\n"
-        'if [ -t 0 ]; then echo "ONBOARD_STDIN_IS_TTY"; else echo "ONBOARD_STDIN_NOT_TTY"; fi\n'
+        'printf "%s|%s|%s|%s|%s|%s\\n" "$1" "${OPENSRE_ANALYTICS_DISABLED:-}" '
+        '"${OPENSRE_INSTALL_SOURCE:-}" "${OPENSRE_INSTALL_CHANNEL:-}" '
+        '"${OPENSRE_INSTALL_VERSION:-}" "${OPENSRE_INSTALL_MARKER_STATE:-}" >> "$INSTALL_CALLS"\n',
+        encoding="utf-8",
     )
-    fake_binary.chmod(0o755)
+    binary.chmod(0o755)
 
-    script = textwrap.dedent(f"""\
-        eval "$(awk '/^REPO=/{{exit}} {{print}}' {_INSTALL_SH_SHELL})"
-        eval "$(awk '
-            /^[a-z_][a-z_]*\\(\\)/ {{ in_fn=1 }}
-            in_fn {{ print }}
-            in_fn && /^\\}}$/ {{ in_fn=0 }}
-        ' {_INSTALL_SH_SHELL})"
-        INSTALL_DIR={shlex.quote(str(bin_dir))}
-        BIN_NAME="opensre"
-        platform="linux"
-        launch_onboarding_after_install </dev/null
-    """)
-
-    pid, controller_fd = pty.fork()
-    if pid == 0:  # pragma: no cover - child process replaced by bash
-        os.execvp("bash", ["bash", "-c", script])
-
-    chunks = []
-    try:
-        while True:
-            try:
-                chunk = os.read(controller_fd, 4096)
-            except OSError:  # Linux raises EIO once the child side closes
-                break
-            if not chunk:
-                break
-            chunks.append(chunk)
-    finally:
-        os.close(controller_fd)
-        _, wait_status = os.waitpid(pid, 0)
-
-    output = b"".join(chunks).decode(errors="replace")
-    assert os.waitstatus_to_exitcode(wait_status) == 0, output
-    assert "Launching opensre onboard" in output
-    assert "ONBOARD_STDIN_IS_TTY" in output
-
-
-def test_install_sh_auto_onboarding_skips_piped_install_on_windows(tmp_path: Path) -> None:
-    """Git Bash /dev/tty emulation is not trusted: piped installs on the
-    windows platform never auto-launch."""
-    import os
-    import pty
-
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    fake_binary = bin_dir / "opensre"
-    fake_binary.write_text('#!/usr/bin/env bash\necho "ONBOARD_RAN"\n')
-    fake_binary.chmod(0o755)
-
-    script = textwrap.dedent(f"""\
-        eval "$(awk '/^REPO=/{{exit}} {{print}}' {_INSTALL_SH_SHELL})"
-        eval "$(awk '
-            /^[a-z_][a-z_]*\\(\\)/ {{ in_fn=1 }}
-            in_fn {{ print }}
-            in_fn && /^\\}}$/ {{ in_fn=0 }}
-        ' {_INSTALL_SH_SHELL})"
-        INSTALL_DIR={shlex.quote(str(bin_dir))}
-        BIN_NAME="opensre"
-        platform="windows"
-        launch_onboarding_after_install </dev/null
-    """)
-
-    pid, controller_fd = pty.fork()
-    if pid == 0:  # pragma: no cover - child process replaced by bash
-        os.execvp("bash", ["bash", "-c", script])
-
-    chunks = []
-    try:
-        while True:
-            try:
-                chunk = os.read(controller_fd, 4096)
-            except OSError:
-                break
-            if not chunk:
-                break
-            chunks.append(chunk)
-    finally:
-        os.close(controller_fd)
-        _, wait_status = os.waitpid(pid, 0)
-
-    output = b"".join(chunks).decode(errors="replace")
-    assert os.waitstatus_to_exitcode(wait_status) == 0, output
-    assert "ONBOARD_RAN" not in output
-    assert "Launching opensre onboard" not in output
-
-
-def test_install_sh_auto_onboarding_noops_without_tty() -> None:
-    # stdin is redirected from /dev/null so the gate is exercised deterministically
-    # regardless of how the test runner's own stdin is wired.
+    # The snapshot is deliberately skipped: the installer runs under ``set -u``
+    # and the record step must report ``unknown`` rather than abort or claim
+    # ``absent`` when the marker was never observed.
     result = _run_logging_snippet(
-        """
-        INSTALL_DIR="/tmp"
-        BIN_NAME="opensre"
-        launch_onboarding_after_install </dev/null
+        f"""
+        export INSTALL_CALLS={shlex.quote(str(calls))}
+        export OPENSRE_ANALYTICS_DISABLED={shlex.quote(analytics_disabled)}
+        unset OPENSRE_INSTALL_SOURCE OPENSRE_INSTALL_CHANNEL OPENSRE_INSTALL_VERSION
+        unset OPENSRE_INSTALL_MARKER_STATE
+        uname() {{ printf 'Darwin\\n'; }}
+        BIN_NAME=opensre
+        INSTALL_DIR={shlex.quote(str(tmp_path))}
+        INSTALL_CHANNEL=main
+        installed_version=2026.9.17
+        record_install_analytics
+        warm_first_launch {shlex.quote(str(binary))}
+        wait "$warm_pid"
         """
     )
 
     assert result.returncode == 0, result.stderr
-    assert "Launching opensre onboard" not in result.stdout + result.stderr
-
-
-def test_install_sh_has_step_for_explicit_version_fetch() -> None:
-    result = _run_release_metadata_step(version="2026.4.29")
-
-    assert result.returncode == 0, result.stderr
-    assert "[1/6] Fetching release metadata for v2026.4.29" in result.stdout
+    assert calls.read_text().splitlines() == [
+        f"--record-install|{analytics_disabled}|posix_installer|main|2026.9.17|unknown",
+        "_package-smoke|1||||",
+    ]
 
 
 def test_install_sh_defaults_to_main_build_channel() -> None:
@@ -323,162 +221,57 @@ def test_install_sh_defines_progress_helpers() -> None:
     source = INSTALL_SH.read_text()
 
     for helper in (
-        "is_interactive_terminal()",
-        "terminal_supports_unicode()",
-        "terminal_columns()",
-        "truncate_text()",
-        "friendly_progress_label()",
-        "print_installer_header()",
-        "progress_frame()",
-        "draw_progress()",
-        "finish_progress()",
-        "run_with_progress()",
-        "capture_with_progress()",
+        "is_interactive_status_terminal()",
+        "animate_dots()",
+        "finish_dots()",
+        "run_with_dots()",
         "binary_app_root()",
-        "install_binary_app()",
+        "stage_binary_app()",
+        "activate_staged_binary()",
         "print_binary_diagnostics()",
     ):
         assert helper in source
 
     assert "OPENSRE_INSTALL_VERBOSE" in source
     assert "\\033[?25h" in source
-    assert 'trap \'kill "$command_pid"' in source
     assert "\\033[2J" not in source
     assert "preparing installer" not in source
+    assert "run_with_progress" not in source
+    assert "draw_progress" not in source
+    assert "█" not in source
+    assert "░" not in source
 
 
-def test_install_sh_draw_progress_fits_terminal_width_with_long_labels() -> None:
-    long_checksum = (
-        "[4/6] Downloading and verifying checksum (opensre_main_darwin-arm64.tar.gz.sha256)"
-    )
+def test_install_sh_animates_binary_verification_dots() -> None:
+    label = "Found opensre binary, verifying it runs"
     result = _run_logging_snippet(
         f"""
-        terminal_columns() {{ printf '60\\n'; }}
-        terminal_supports_unicode() {{ return 1; }}
-        draw_progress {shlex.quote(long_checksum)} 9
+        is_interactive_status_terminal() {{ return 0; }}
+        run_with_dots {shlex.quote(label)} bash -c 'sleep 0.9'
         """
     )
-    output = result.stdout + result.stderr
-    visible_segments = [
-        _visible_terminal_text(segment) for segment in re.split(r"[\r\n]", output) if segment
-    ]
-
-    assert result.returncode == 0, result.stderr
-    assert visible_segments
-    assert all(len(segment) <= 60 for segment in visible_segments)
-    assert "verifying checksum" in visible_segments[-1]
-    assert "opensre_main_darwin-arm64" not in visible_segments[-1]
-
-
-def test_install_sh_animated_repaints_do_not_wrap_or_leave_long_label_residue() -> None:
-    long_checksum = (
-        "[4/6] Downloading and verifying checksum (opensre_main_darwin-arm64.tar.gz.sha256)"
-    )
-    result = _run_logging_snippet(
-        f"""
-        is_interactive_terminal() {{ return 0; }}
-        terminal_columns() {{ printf '56\\n'; }}
-        terminal_supports_unicode() {{ return 1; }}
-        run_with_progress {shlex.quote(long_checksum)} bash -c 'sleep 0.25'
-        """
-    )
-    output = result.stdout + result.stderr
-    animated_segments = [
+    frames = {
         _visible_terminal_text(segment)
-        for segment in re.split(r"[\r\n]", output)
-        if "Installing OpenSRE" in _visible_terminal_text(segment)
-    ]
+        for segment in re.split(r"[\r\n]", result.stdout + result.stderr)
+        if label in _visible_terminal_text(segment)
+    }
 
     assert result.returncode == 0, result.stderr
-    assert animated_segments
-    assert all(len(segment) <= 56 for segment in animated_segments)
-    assert all("opensre_main_darwin-arm64" not in segment for segment in animated_segments)
+    assert {f"{label}.", f"{label}..", f"{label}..."} <= frames
 
 
-def test_install_sh_header_is_stable_without_intro_animation() -> None:
+def test_install_sh_verification_dots_are_plain_when_not_tty() -> None:
     result = _run_logging_snippet(
         """
-        is_interactive_terminal() { return 0; }
-        print_installer_header
+        run_with_dots "Found opensre binary, verifying it runs" true
         """
     )
     output = result.stdout + result.stderr
 
     assert result.returncode == 0, result.stderr
-    assert "OpenSRE Installer" in output
-    assert "Installing the OpenSRE CLI" in output
-    assert "preparing installer" not in output
-    assert "\x1b[2J" not in output
-
-
-def test_install_sh_progress_plain_when_not_tty() -> None:
-    result = _run_logging_snippet(
-        """
-        run_with_progress "Plain progress step" bash -c 'printf "work complete\\\\n"'
-        """
-    )
-    output = result.stdout + result.stderr
-
-    assert result.returncode == 0, result.stderr
-    assert "Plain progress step" in output
-    assert "work complete" in output
+    assert output == "Found opensre binary, verifying it runs...\n"
     assert "\x1b[" not in output
     assert "\r" not in output
-
-
-def test_install_sh_capture_with_progress_keeps_stdout_value_clean() -> None:
-    result = _run_logging_snippet(
-        """
-        is_interactive_terminal() { return 0; }
-        terminal_supports_unicode() { return 1; }
-        capture_with_progress captured_value "Capture value" bash -c 'printf "release-json"'
-        printf '\\nRESULT:%s\\n' "$captured_value"
-        """
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "RESULT:release-json" in result.stdout
-    assert "RESULT:Capture value" not in result.stdout
-
-
-def test_install_sh_capture_with_progress_preserves_failure_status_and_logs() -> None:
-    result = _run_logging_snippet(
-        """
-        if capture_with_progress captured_value "Failing capture step" bash -c 'echo hidden-out; echo hidden-err >&2; exit 7'; then
-            exit 99
-        else
-            progress_status=$?
-        fi
-        exit "$progress_status"
-        """
-    )
-    output = result.stdout + result.stderr
-
-    assert result.returncode == 7
-    assert "Failing capture step" in output
-    assert "hidden-out" in output
-    assert "hidden-err" in output
-
-
-def test_install_sh_run_with_progress_prints_captured_logs_on_failure() -> None:
-    result = _run_logging_snippet(
-        """
-        is_interactive_terminal() { return 0; }
-        terminal_supports_unicode() { return 1; }
-        if run_with_progress "Failing progress step" bash -c 'echo hidden-out; echo hidden-err >&2; exit 7'; then
-            exit 99
-        else
-            progress_status=$?
-        fi
-        exit "$progress_status"
-        """
-    )
-    output = result.stdout + result.stderr
-
-    assert result.returncode == 7
-    assert "Failing progress step failed" in output
-    assert "hidden-out" in output
-    assert "hidden-err" in output
 
 
 def test_install_sh_verify_binary_failure_includes_diagnostics(tmp_path: Path) -> None:
@@ -518,7 +311,12 @@ def test_install_sh_installs_pyinstaller_onedir_app(tmp_path: Path) -> None:
         platform="linux"
         BIN_NAME="opensre"
         INSTALL_DIR={shlex.quote(str(install_dir))}
-        install_verified_binary {shlex.quote(str(app_binary))} {shlex.quote(str(destination))}
+        staged="$(stage_binary {shlex.quote(str(app_binary))})"
+        test -f "$staged"
+        test ! -e {shlex.quote(str(app_root))}
+        test ! -e {shlex.quote(str(destination))}
+        activate_staged_binary "$staged" {shlex.quote(str(destination))}
+        test ! -e "$staged"
         test -L {shlex.quote(str(destination))}
         test -x {shlex.quote(str(destination))}
         test -f {shlex.quote(str(install_dir / ".opensre-app" / "_internal" / "payload.txt"))}
@@ -530,14 +328,61 @@ def test_install_sh_installs_pyinstaller_onedir_app(tmp_path: Path) -> None:
     assert "opensre test" in result.stdout
 
 
-def test_install_sh_uses_six_step_extract_verify_install_labels() -> None:
+def test_install_sh_uses_concise_unnumbered_install_messages() -> None:
     source = INSTALL_SH.read_text()
 
-    assert "[4/6] Downloading and verifying checksum" in source
-    assert "[5/6] Extracting and verifying binary" in source
-    assert "[6/6] Installing ${BIN_NAME} to ${INSTALL_DIR}" in source
-    assert "[6/6] Extracting release archive" not in source
-    assert 'capture_with_progress installed_version "Verifying installed binary"' not in source
+    assert "Downloading OpenSRE main build for ${platform}-${asset_arch}" in source
+    assert 'run_with_dots "Fetching and verifying checksum"' in source
+    assert 'run_with_dots "Extracting OpenSRE"' in source
+    assert 'run_with_dots "Installing OpenSRE"' in source
+    assert 'run_with_dots "Checking PATH configuration"' in source
+    assert 'muted "Checksum verification passed"' in source
+    assert "Run '${BIN_NAME}' to get started!" in source
+    assert re.search(r"\[[0-9]+/[0-9]+\]", source) is None
+    assert "Extracting %s into %s" not in source
+    assert "Found binary at %s" not in source
+
+
+def test_install_sh_concise_output_sequence() -> None:
+    result = _run_logging_snippet(
+        """
+        INSTALL_CHANNEL="main"
+        platform="darwin"
+        asset_arch="arm64"
+        archive="opensre_main_darwin-arm64.tar.gz"
+        tmp_dir="/tmp"
+        download_url="https://example.invalid/archive"
+        checksum_asset="${archive}.sha256"
+        checksum_url="${download_url}.sha256"
+        release_json="{}"
+        INSTALL_DIR="/tmp/bin"
+        BIN_NAME="opensre"
+        installed_version="2026.8.26"
+        PATH="${INSTALL_DIR}:${PATH}"
+        download_to() { return 0; }
+        release_has_asset() { return 0; }
+        download_and_verify_checksum() { return 0; }
+
+        download_release_archive
+        verify_release_checksum
+        print_install_confirmation
+        ensure_on_path
+        log "Run '${BIN_NAME}' to get started!"
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "Checksum verification passed",
+        "OpenSRE v2026.8.26 installed successfully to /tmp/bin/opensre",
+        "PATH already configured",
+        "Run 'opensre' to get started!",
+    ]
+    assert result.stderr.splitlines() == [
+        "Downloading OpenSRE main build for darwin-arm64...",
+        "Fetching and verifying checksum...",
+        "Checking PATH configuration...",
+    ]
 
 
 def test_zsh_writes_export_to_zshrc(tmp_path: Path) -> None:
@@ -579,7 +424,8 @@ def test_unknown_shell_prints_manual_instructions(tmp_path: Path) -> None:
     assert not (home / ".zshrc").exists()
     assert not (home / ".bashrc").exists()
     assert not (home / ".bash_profile").exists()
-    assert "export PATH" in result.stdout or "export PATH" in result.stderr
+    assert "Add " in result.stdout
+    assert " to PATH to run opensre" in result.stdout
 
 
 def test_idempotent_no_duplicate_on_rerun(tmp_path: Path) -> None:
@@ -615,11 +461,12 @@ def test_marker_comment_present(tmp_path: Path) -> None:
     assert "# Added by opensre installer" in content
 
 
-def test_post_install_message_mentions_source(tmp_path: Path) -> None:
+def test_post_install_message_is_concise(tmp_path: Path) -> None:
     result = _run(tmp_path, shell="/bin/zsh")
     assert result.returncode == 0, result.stderr
     combined = result.stdout + result.stderr
-    assert "source" in combined
+    assert "PATH configured in " in combined
+    assert "source" not in combined
 
 
 def test_fish_creates_parent_dirs(tmp_path: Path) -> None:
@@ -641,132 +488,25 @@ def test_readds_export_when_marker_present_but_line_removed(tmp_path: Path) -> N
 
 
 # ---------------------------------------------------------------------------
-# Helpers and tests for the post-install onboarding hint (issue #1153)
+# PowerShell post-install output
 # ---------------------------------------------------------------------------
 
 
-def _run_post_install(
-    tmp_path: Path,
-    shell: str,
-    platform: str = "linux",
-    install_channel: str = "release",
-    installed_version: str = "2026.4.1",
-    dir_already_on_path: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    """Run the real post-install function from install.sh with side-effects stubbed.
-
-    Unlike ``_run()``, which only calls ``configure_path()`` in isolation, this
-    helper calls ``finish_install()`` from install.sh (version print +
-    configure_path + onboarding hint) rather than copying those lines into the
-    test.  That means if the hint is removed from install.sh the assertions will
-    correctly fail — there is no tautology.
-
-    The approach:
-      1. Load all function definitions from install.sh via awk.
-      2. Set every shell variable the post-install function needs.
-      3. Call the real post-install function.
-    """
-    fake_home = tmp_path / "home"
-    fake_home.mkdir(exist_ok=True)
-    idir = str(fake_home / _LOCAL_BIN)
-
-    # When dir_already_on_path=True, configure_path() hits the early return
-    # and prints nothing.  The onboarding hint must still appear.
-    path_value = f"{idir}:/usr/bin:/bin" if dir_already_on_path else "/usr/bin:/bin"
-
-    install_sh = _INSTALL_SH_SHELL
-    idir_shell = shlex.quote(idir)
-    home_shell = shlex.quote(str(fake_home))
-
-    script = textwrap.dedent(f"""\
-        # 1. Load every function definition from install.sh
-        eval "$(awk '
-            /^[a-z_][a-z_]*\\(\\)/ {{ in_fn=1 }}
-            in_fn {{ print }}
-            in_fn && /^\\}}$/ {{ in_fn=0 }}
-        ' {install_sh})"
-
-        # 2. Set every variable the post-install function reads
-        BIN_NAME="opensre"
-        INSTALL_DIR={idir_shell}
-        INSTALL_CHANNEL="{install_channel}"
-        installed_version="{installed_version}"
-        platform="{platform}"
-        HOME={home_shell}
-        SHELL="{shell}"
-        PATH="{path_value}"
-        export HOME SHELL PATH
-
-        # 3. Execute the real post-install function from install.sh.
-        finish_install
-    """)
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
-
-
-def test_install_sh_contains_onboarding_hint() -> None:
-    """Contract test: the hint string must be present in install.sh source.
-
-    This is a direct grep of the script file — independent of any subprocess
-    execution — so it will fail immediately if the hint is removed from
-    install.sh even if the subprocess-based tests are somehow still passing.
-    """
-    source = INSTALL_SH.read_text()
-    assert "${BIN_NAME:-opensre} onboard" in source, (
-        "install.sh does not contain the onboarding hint "
-        "(expected ``${BIN_NAME:-opensre} onboard`` in Next steps output)."
-    )
-
-
-def test_install_ps1_contains_onboarding_hint() -> None:
-    """Contract test: the hint string must be present in install.ps1 source."""
+def test_install_ps1_contains_setup_hint() -> None:
+    """Contract test: the setup hint must be present in install.ps1 source."""
     install_ps1 = Path(__file__).parents[2] / "install.ps1"
     source = install_ps1.read_text()
-    assert "$exe onboard" in source, (
-        "install.ps1 does not contain the onboarding step "
-        '(expected a line with ``$exe onboard``, e.g. ``Write-Host "  1. Run  $exe onboard"``).'
+    assert "$exe setup" in source, (
+        "install.ps1 does not contain the setup step "
+        '(expected a line with ``$exe setup``, e.g. ``Write-Host "  1. Run  $exe setup"``).'
     )
-
-
-def test_onboarding_hint_shown_when_path_not_set(tmp_path: Path) -> None:
-    """Hint appears on a first install where configure_path writes the rc file."""
-    result = _run_post_install(tmp_path, shell="/bin/zsh", dir_already_on_path=False)
-    assert result.returncode == 0, result.stderr
-    assert "opensre onboard" in result.stdout + result.stderr
-
-
-def test_onboarding_hint_shown_when_path_already_set(tmp_path: Path) -> None:
-    """Hint appears even when configure_path returns early (install dir already on PATH).
-
-    This is the silent-upgrade scenario that the old configure_path-only
-    helper could never cover: configure_path() hits the early return at
-    line 490 and outputs nothing, yet the user must still see the hint.
-    """
-    result = _run_post_install(tmp_path, shell="/bin/zsh", dir_already_on_path=True)
-    assert result.returncode == 0, result.stderr
-    assert "opensre onboard" in result.stdout + result.stderr
-
-
-def test_onboarding_hint_shown_for_bash_linux(tmp_path: Path) -> None:
-    """Hint appears on bash/linux installs."""
-    result = _run_post_install(tmp_path, shell="/bin/bash", platform="linux")
-    assert result.returncode == 0, result.stderr
-    assert "opensre onboard" in result.stdout + result.stderr
-
-
-def test_onboarding_hint_shown_for_main_channel(tmp_path: Path) -> None:
-    """Hint appears when installing the rolling main build (not a versioned release)."""
-    result = _run_post_install(
-        tmp_path,
-        shell="/bin/zsh",
-        install_channel="main",
-        installed_version="main",
-    )
-    assert result.returncode == 0, result.stderr
-    assert "opensre onboard" in result.stdout + result.stderr
 
 
 def _run_ensure_on_path(
-    tmp_path: Path, path_dirs: list[str], platform: str = "linux"
+    tmp_path: Path,
+    path_dirs: list[str],
+    platform: str = "linux",
+    include_install_dir: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     """Call the real ensure_on_path() with INSTALL_DIR off PATH.
 
@@ -779,7 +519,8 @@ def _run_ensure_on_path(
     binary.write_text("#!/usr/bin/env bash\necho opensre-ok\n")
     binary.chmod(0o755)
 
-    path_value = ":".join([*path_dirs, "/usr/bin", "/bin"])
+    effective_path_dirs = [str(install_dir), *path_dirs] if include_install_dir else path_dirs
+    path_value = ":".join([*effective_path_dirs, "/usr/bin", "/bin"])
     script = textwrap.dedent(f"""\
         eval "$(awk '
             /^[a-z_][a-z_]*\\(\\)/ {{ in_fn=1 }}
@@ -803,20 +544,23 @@ def _run_ensure_on_path(
     return completed, install_dir
 
 
-def test_ensure_on_path_links_into_writable_path_dir(tmp_path: Path) -> None:
-    """A writable dir already on PATH gets a symlink, so `opensre` works in
-    the current terminal immediately — no sudo, no rc-file edit needed."""
-    writable_dir = tmp_path / "on-path-bin"
-    writable_dir.mkdir()
-
-    result, install_dir = _run_ensure_on_path(tmp_path, [str(writable_dir)])
+def test_ensure_on_path_reports_existing_configuration(tmp_path: Path) -> None:
+    result, _ = _run_ensure_on_path(tmp_path, [], include_install_dir=True)
 
     assert result.returncode == 0, result.stderr
-    link = writable_dir / "opensre"
-    assert link.is_symlink()
-    assert link.resolve() == (install_dir / "opensre").resolve()
-    assert "Linked opensre into" in result.stdout
-    assert not (tmp_path / "home" / ".zshrc").exists()
+    assert result.stdout.splitlines() == ["PATH already configured"]
+    assert result.stderr.splitlines() == ["Checking PATH configuration..."]
+
+
+def test_ensure_on_path_does_not_link_into_arbitrary_dependency_bin(tmp_path: Path) -> None:
+    dependency_bin = tmp_path / "apache-spark" / "bin"
+    dependency_bin.mkdir(parents=True)
+
+    result, _ = _run_ensure_on_path(tmp_path, [str(dependency_bin)])
+
+    assert result.returncode == 0, result.stderr
+    assert not (dependency_bin / "opensre").exists()
+    assert (tmp_path / "home" / ".zshrc").exists()
 
 
 def test_ensure_on_path_falls_back_to_rc_update_without_writable_dir(tmp_path: Path) -> None:
@@ -836,37 +580,6 @@ def test_ensure_on_path_ignores_relative_path_entries(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / "opensre").exists()
     assert (tmp_path / "home" / ".zshrc").exists()
-
-
-def test_ensure_on_path_skips_python_venv_bin(tmp_path: Path) -> None:
-    """``.venv/bin`` on PATH must not be hijacked (``uv run`` / editable installs)."""
-    venv_bin = tmp_path / ".venv" / "bin"
-    venv_bin.mkdir(parents=True)
-    (tmp_path / ".venv" / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
-    safe_bin = tmp_path / "safe-bin"
-    safe_bin.mkdir()
-
-    result, install_dir = _run_ensure_on_path(tmp_path, [str(venv_bin), str(safe_bin)])
-
-    assert result.returncode == 0, result.stderr
-    assert not (venv_bin / "opensre").exists()
-    link = safe_bin / "opensre"
-    assert link.is_symlink()
-    assert link.resolve() == (install_dir / "opensre").resolve()
-
-
-def test_onboarding_hint_appears_after_version_line(tmp_path: Path) -> None:
-    """The onboarding hint must appear AFTER the 'Installed opensre v...' line."""
-    result = _run_post_install(tmp_path, shell="/bin/zsh", installed_version="2026.4.1")
-    assert result.returncode == 0, result.stderr
-    output = result.stdout + result.stderr
-    installed_pos = output.find("Installed opensre")
-    onboard_pos = output.find("opensre onboard")
-    assert installed_pos != -1, "'Installed opensre' line missing from output"
-    assert onboard_pos != -1, "'opensre onboard' hint missing from output"
-    assert onboard_pos > installed_pos, (
-        "Onboarding hint must come after the install confirmation line"
-    )
 
 
 def _run_ensure_github_cli(
@@ -905,6 +618,26 @@ def test_ensure_github_cli_skips_when_gh_present(tmp_path: Path) -> None:
     assert "Installing GitHub CLI" not in result.stdout
 
 
+def test_ensure_github_cli_installs_via_homebrew_without_auto_update(tmp_path: Path) -> None:
+    """Homebrew's auto-update alone costs ~10s; a soft dependency must not pay it."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    brew_log = tmp_path / "brew.log"
+    brew = bin_dir / "brew"
+    brew.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s|%s\\n" "$*" "$HOMEBREW_NO_AUTO_UPDATE" >> {shlex.quote(str(brew_log))}\n'
+    )
+    brew.chmod(0o755)
+
+    # No system dirs on PATH: CI runners ship gh in /usr/bin.
+    result = _run_ensure_github_cli(path_dirs=[bin_dir])
+
+    assert result.returncode == 0, result.stderr
+    assert brew_log.read_text().splitlines() == ["install gh|1"]
+    assert "Installed GitHub CLI (gh) via Homebrew" in result.stdout
+
+
 def test_ensure_github_cli_respects_skip_env(tmp_path: Path) -> None:
     empty_bin = tmp_path / "empty-bin"
     empty_bin.mkdir()
@@ -916,3 +649,110 @@ def test_ensure_github_cli_respects_skip_env(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "OPENSRE_SKIP_GH_INSTALL" in result.stderr
     assert "OpenSRE GitHub chat tools" in result.stderr
+
+
+def test_warm_first_launch_skips_package_smoke_off_darwin() -> None:
+    """Linux/Windows have no codesign cache; the installer must not pay for smoke."""
+    result = _run_logging_snippet(
+        """
+        uname() { printf 'Linux\\n'; }
+        package_smoke_quiet() { printf 'SMOKE_RAN\\n'; return 0; }
+        BIN_NAME=opensre
+        warm_first_launch /tmp/opensre
+        printf 'done\\n'
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    combined = result.stdout + result.stderr
+    assert "SMOKE_RAN" not in combined
+    assert "Preparing OpenSRE for first launch" not in combined
+    assert "done" in result.stdout
+
+
+def test_warm_first_launch_runs_package_smoke_on_darwin_without_blocking(
+    tmp_path: Path,
+) -> None:
+    """The warm-up is detached: the installer returns while the smoke still runs."""
+    marker = tmp_path / "smoke-ran"
+    release = tmp_path / "release"
+    result = _run_logging_snippet(
+        f"""
+        uname() {{ printf 'Darwin\\n'; }}
+        package_smoke_quiet() {{
+            while [ ! -e {shlex.quote(str(release))} ]; do sleep 0.05; done
+            : > {shlex.quote(str(marker))}
+        }}
+        BIN_NAME=opensre
+        warm_first_launch /tmp/opensre
+        test ! -e {shlex.quote(str(marker))}
+        : > {shlex.quote(str(release))}
+        wait "$warm_pid"
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert marker.exists()
+    assert "Preparing OpenSRE for first launch" not in result.stderr
+
+
+def test_install_verifies_the_staged_tree_and_warms_the_activated_one() -> None:
+    """Signature validation is cached per file: check the tree that gets renamed into
+    place, warm it after activation, and never copy it (a copy is validated again)."""
+    source = INSTALL_SH.read_text(encoding="utf-8")
+    pipeline = source.split("install_release_binary()")[1].split("\nprint_install_confirmation()")[
+        0
+    ]
+    assert pipeline.index('verify_staged_binary "$staged_path"') < pipeline.index(
+        'activate_staged_binary "$staged_path"'
+    )
+    assert "warm_first_launch" not in pipeline
+    finish = source.split("finish_install()")[1].split("\nmain()")[0]
+    # The analytics record runs first so it does not queue behind the warm-up.
+    assert finish.index("record_install_analytics") < finish.index(
+        'warm_first_launch "${INSTALL_DIR}/${BIN_NAME}"'
+    )
+    assert "cp -R" not in source
+    # prepare_and_verify must not invoke warm (comment may still name it).
+    prepare = source.split("prepare_and_verify_binary()")[1].split("\nwarm_first_launch()")[0]
+    assert "warm_first_launch " not in prepare
+    assert "warm_first_launch\n" not in prepare
+
+
+def test_discarding_a_staged_app_leaves_the_existing_install_alone(tmp_path: Path) -> None:
+    app_root = tmp_path / "opensre-app"
+    (app_root / "_internal").mkdir(parents=True)
+    app_binary = app_root / "opensre"
+    app_binary.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    app_binary.chmod(0o755)
+    install_dir = tmp_path / "bin"
+    existing_app = install_dir / ".opensre-app"
+    (existing_app / "_internal").mkdir(parents=True)
+    (existing_app / "opensre").write_text("#!/usr/bin/env sh\nprintf 'old\\n'\n", encoding="utf-8")
+    (existing_app / "opensre").chmod(0o755)
+    destination = install_dir / "opensre"
+    destination.symlink_to(existing_app / "opensre")
+
+    result = _run_logging_snippet(
+        f"""
+        platform="linux"
+        BIN_NAME="opensre"
+        INSTALL_DIR={shlex.quote(str(install_dir))}
+        staged="$(stage_binary {shlex.quote(str(app_binary))})"
+        discard_staged_binary "$staged"
+        test ! -e "$staged"
+        {shlex.quote(str(destination))}
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "old" in result.stdout
+
+
+def test_resign_macos_onedir_parallelizes_nested_libs() -> None:
+    """Nested dylib/so signs are independent; main binary stays serial and last."""
+    source = INSTALL_SH.read_text(encoding="utf-8")
+    assert 'xargs -0 -P "$jobs" -n 1 codesign --force --sign -' in source
+    assert 'codesign --force --sign - "$binary_path"' in source
+    # Cap avoids disk stampede on large hosts.
+    assert 'if [ "$jobs" -gt 4 ]; then' in source

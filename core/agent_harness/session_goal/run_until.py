@@ -7,78 +7,80 @@ user prose.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any
 
-from core.agent_harness.session.terminal_access import clear_pending_autosubmit
-from core.agent_harness.session_goal.continuation import continuation_nudge
+from core.agent_harness.session.pending_choice import PendingUserChoice
+from core.agent_harness.session.terminal_access import (
+    clear_pending_autosubmit,
+    pending_autosubmit,
+    session_terminal,
+    set_auto_command,
+)
+from core.agent_harness.session_goal.continuation import (
+    continuation_prompt,
+    start_goal_prompt,
+)
 from core.agent_harness.session_goal.evaluate import (
     default_evaluate_session_goal,
     session_goal_reply_text,
     turn_has_session_goal_evidence,
 )
 from core.agent_harness.session_goal.goal import (
+    SESSION_GOAL_CHECKPOINT_TURNS,
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
-    apply_session_goal_progress,
     attach_session_goal,
     refresh_session_goal_reason,
+    session_goal_has_turn_budget,
     session_goal_is_active,
     session_goal_is_paused,
-    strip_session_goal_progress_tags,
 )
-from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+from core.agent_harness.session_goal.judge import judge_reason_is_contradiction
+from core.agent_harness.session_goal.review_input import retain_tool_evidence
+from core.agent_harness.turns.host_cancel import HostCancelReason, is_goal_control_reason
+from core.agent_harness.turns.turn_results import TurnResult
+
+log = logging.getLogger(__name__)
 
 ChatFn = Callable[[str], TurnResult]
 EvaluateFn = Callable[..., str]
 CancelFn = Callable[[], bool]
+CancelReasonFn = Callable[[], HostCancelReason | None]
 ProgressFn = Callable[[SessionGoal], None]
 
 
-def _empty_turn_result() -> TurnResult:
-    return TurnResult(
-        final_intent="cli_agent_handled",
-        action_result=ToolCallingTurnResult(
-            planned_count=0,
-            executed_count=0,
-            executed_success_count=0,
-            has_unhandled_clause=False,
-            handled=True,
-        ),
-        assistant_response_text="",
-    )
+def _goal_control_reason(
+    cancel_reason: CancelReasonFn | None,
+) -> HostCancelReason | None:
+    reason = cancel_reason() if cancel_reason is not None else None
+    return reason if is_goal_control_reason(reason) else None
 
 
-def _refresh_active(session: Any, active: SessionGoal, result: TurnResult) -> SessionGoal:
-    """Merge checklist progress from the reply and keep session in sync."""
-    updated = apply_session_goal_progress(active, session_goal_reply_text(result))
+def _record_goal_turn(session: Any, active: SessionGoal) -> SessionGoal:
+    """Count this chat as a session-goal turn and keep tool ticks on the session.
+
+    ``session_goal_complete`` attaches ticks onto ``session.session_goal``.
+    Recording the loop copy first would wipe them; merge them back so evaluate
+    sees ``new_ticks`` and custom evaluate callbacks still advance ``turns_used``.
+    """
+    stored = getattr(session, "session_goal", None)
+    completed = active.completed
+    bookkeeping = active.bookkeeping_calls
+    if isinstance(stored, SessionGoal):
+        completed = completed | stored.completed
+        bookkeeping = max(bookkeeping, stored.bookkeeping_calls)
+    updated = replace(active.record_turn(), bookkeeping_calls=bookkeeping)
+    if completed != updated.completed:
+        updated = updated.with_completed(completed)
+    if isinstance(stored, SessionGoal) and stored.status == SessionGoalStatus.PAUSED:
+        updated = updated.with_status(SessionGoalStatus.PAUSED).with_reason(stored.last_reason)
     attach_session_goal(session, updated)
     return updated
-
-
-def _scrub_progress_tags(result: TurnResult) -> TurnResult:
-    """Hide ``session_goal:done=`` / ``achieved`` tokens from the user-visible reply.
-
-    Scrubs both ``assistant_response_text`` and any action ``response_text`` so
-    shell and gateway ``primary_response_text`` stay tag-free.
-    """
-    assistant = result.assistant_response_text or ""
-    cleaned_assistant = strip_session_goal_progress_tags(assistant)
-    action = result.action_result
-    action_text = getattr(action, "response_text", "") or ""
-    cleaned_action = strip_session_goal_progress_tags(action_text)
-    if cleaned_assistant == assistant and cleaned_action == action_text:
-        return result
-    new_action = action
-    if cleaned_action != action_text and hasattr(action, "response_text"):
-        new_action = replace(action, response_text=cleaned_action)
-    return replace(
-        result,
-        assistant_response_text=cleaned_assistant,
-        action_result=new_action,
-    )
 
 
 def _paint(
@@ -102,13 +104,49 @@ def _paint(
     return painted
 
 
+def _end(
+    session: Any,
+    goal: SessionGoal,
+    status: str,
+    on_progress: ProgressFn | None,
+    *,
+    reason: str | None = None,
+    drop_queued: bool = False,
+) -> SessionGoal:
+    """Leave the continuation loop: store the state, then tell the host.
+
+    ``reason`` keeps a verdict the host should show (achieved, impossible, a
+    failed turn); without one the reason is derived from ``status``. State is
+    stored before the paint so a failing host paint can neither leave the goal
+    running nor mask an error the caller is about to re-raise. A command queued
+    as the next turn (a setup wizard, a menu) is kept for the shell to run;
+    ``drop_queued`` discards it for a pause or cancel the host asked for, so
+    that stop also stops the next turn.
+    """
+    ended = goal.with_status(status)
+    if reason is not None:
+        ended = ended.with_reason(reason)
+    else:
+        ended = refresh_session_goal_reason(ended)
+    attach_session_goal(session, ended)
+    if drop_queued:
+        clear_pending_autosubmit(session)
+    try:
+        _paint(session, ended, on_progress, rederive=False)
+    except Exception:
+        log.debug("session-goal end paint failed", exc_info=True)
+    return ended
+
+
 def _announce_working(
     session: Any,
     active: SessionGoal,
     on_progress: ProgressFn | None,
 ) -> SessionGoal:
     """Paint a clear 'working now' line before a session-goal ``chat`` starts."""
-    next_turn = min(active.turns_used + 1, active.max_outer_turns)
+    next_turn = active.turns_used + 1
+    if session_goal_has_turn_budget(active.max_outer_turns):
+        next_turn = min(next_turn, active.max_outer_turns)
     working = active.with_reason(
         SessionGoalReason.working_session_turn(next_turn, active.max_outer_turns)
     )
@@ -118,9 +156,239 @@ def _announce_working(
     return working
 
 
-def _clear_host_autosubmit(session: Any) -> None:
-    """Drop any queued shell autosubmit when the session goal stops continuing."""
-    clear_pending_autosubmit(session)
+_NO_PROGRESS_TURNS = 2
+STALL_MENU_TITLE = "The goal made no progress in 2 turns. How should I continue?"
+CHECKPOINT_MENU_TITLE = "The goal has run {turns} turns without finishing. How should I continue?"
+STALL_OPTION_MORE = "Keep going for one more turn"
+STALL_OPTION_STOP = "Stop here; the work above is enough"
+STALL_COMMANDS: Mapping[str, str] = MappingProxyType(
+    {STALL_OPTION_MORE: "/goal resume", STALL_OPTION_STOP: "/goal clear"}
+)
+
+
+def goal_has_stalled(goal: SessionGoal) -> bool:
+    """True when two turns passed with no checklist tick and no successful tool."""
+    if goal.checklist_complete:
+        return False
+    return goal.turns_used - goal.last_progress_turns_used >= _NO_PROGRESS_TURNS
+
+
+def goal_reached_checkpoint(goal: SessionGoal) -> bool:
+    """True every ``SESSION_GOAL_CHECKPOINT_TURNS`` turns of a goal with no turn budget."""
+    if session_goal_has_turn_budget(goal.max_outer_turns):
+        return False
+    return goal.turns_used > 0 and goal.turns_used % SESSION_GOAL_CHECKPOINT_TURNS == 0
+
+
+def _headless_stall_reason(reason: str) -> str:
+    """User-visible reason when this invocation yields but the goal stays active."""
+    if reason == SessionGoalReason.PAUSED_SAME_VERDICT:
+        return SessionGoalReason.WAITING_AFTER_SAME_VERDICT
+    if SessionGoalReason.is_checkpoint(reason):
+        return SessionGoalReason.WAITING_AFTER_CHECKPOINT
+    return SessionGoalReason.WAITING_AFTER_STALL
+
+
+def _yield_after_stall(
+    session: Any,
+    active: SessionGoal,
+    on_progress: ProgressFn | None,
+    *,
+    reason: str,
+) -> SessionGoal:
+    """Stop this invocation; keep ACTIVE so the next inbound message continues.
+
+    Reset the stall clock so the next message is not immediately treated as
+    another two-turn plateau.
+    """
+    waiting = replace(active, last_progress_turns_used=active.turns_used).with_reason(reason)
+    attach_session_goal(session, waiting)
+    try:
+        _paint(session, waiting, on_progress, rederive=False)
+    except Exception:
+        log.debug("session-goal stall yield paint failed", exc_info=True)
+    return waiting
+
+
+def pause_for_no_progress(
+    session: Any,
+    active: SessionGoal,
+    on_progress: ProgressFn | None,
+    *,
+    reason: str = SessionGoalReason.PAUSED_NO_PROGRESS,
+    menu_title: str = STALL_MENU_TITLE,
+) -> SessionGoal:
+    """Stop a stalled goal this invocation; the shell also opens a menu.
+
+    Two full turns without a tick or a successful tool means the loop is
+    idle. The interactive shell asks: one more turn, stop, or typed guidance.
+    Headless hosts have no ``/choose`` picker — they keep the goal active
+    and return so the next message continues. A repeated not-yet after a
+    successful tool is not a stall: the next turn continues under budget.
+    """
+    if session_terminal(session) is None:
+        return _yield_after_stall(
+            session,
+            active,
+            on_progress,
+            reason=_headless_stall_reason(reason),
+        )
+    paused = _end(session, active, SessionGoalStatus.PAUSED, on_progress, reason=reason)
+    session.pending_user_choice = PendingUserChoice(
+        title=menu_title,
+        options=(STALL_OPTION_MORE, STALL_OPTION_STOP),
+        commands=dict(STALL_COMMANDS),
+    )
+    set_auto_command(session, "/choose")
+    return paused
+
+
+def _chat_or_pause(
+    chat: ChatFn,
+    message: str,
+    session: Any,
+    on_progress: ProgressFn | None,
+    cancel_reason: CancelReasonFn | None = None,
+) -> TurnResult:
+    """Run one goal turn; when it raises, stop the goal safely before the error propagates.
+
+    The host still prints the turn error. Without the pause the next message
+    would resume the goal into the same failure (a credit wall, a rejected key)
+    and burn its budget.
+    """
+    try:
+        return chat(message)
+    except Exception:
+        active = getattr(session, "session_goal", None)
+        if isinstance(active, SessionGoal) and active.status == SessionGoalStatus.ACTIVE:
+            control_reason = _goal_control_reason(cancel_reason)
+            if control_reason is not None:
+                _pause_for_goal_control(session, active, control_reason, on_progress)
+            else:
+                _pause_failed_turn(session, active, on_progress)
+        raise
+
+
+def _pause_by_user(
+    session: Any, active: SessionGoal, on_progress: ProgressFn | None
+) -> SessionGoal:
+    """Pause ``active`` in response to the host's concurrent user control."""
+    return _end(
+        session,
+        active,
+        SessionGoalStatus.PAUSED,
+        on_progress,
+        reason=SessionGoalReason.PAUSED_BY_USER,
+        drop_queued=True,
+    )
+
+
+def _pause_for_goal_control(
+    session: Any,
+    active: SessionGoal,
+    reason: HostCancelReason,
+    on_progress: ProgressFn | None,
+) -> SessionGoal:
+    """Pause at the worker boundary, hiding transient state for a pending clear."""
+    progress = None if reason is HostCancelReason.GOAL_CLEAR else on_progress
+    return _pause_by_user(session, active, progress)
+
+
+def _finish_goal_control(
+    session: Any,
+    active: SessionGoal,
+    last: TurnResult,
+    reason: HostCancelReason,
+    on_progress: ProgressFn | None,
+) -> tuple[SessionGoal, TurnResult, bool]:
+    """Return one completed loop result for a pending host goal control."""
+    return _pause_for_goal_control(session, active, reason, on_progress), last, True
+
+
+def pause_active_session_goal(
+    session: Any,
+    on_progress: ProgressFn | None = None,
+) -> SessionGoal | None:
+    """Pause the currently active goal and discard any queued shell continuation."""
+    active = getattr(session, "session_goal", None)
+    if not isinstance(active, SessionGoal) or active.status != SessionGoalStatus.ACTIVE:
+        return None
+    return _pause_by_user(session, active, on_progress)
+
+
+def _requested_goal_control_boundary(
+    session: Any,
+    active: SessionGoal,
+    cancel_reason: CancelReasonFn | None,
+    on_progress: ProgressFn | None,
+) -> SessionGoal | None:
+    """Pause at a pending host-control boundary without overwriting an existing pause."""
+    reason = _goal_control_reason(cancel_reason)
+    if reason is None:
+        return None
+    stored = getattr(session, "session_goal", None)
+    current = stored if isinstance(stored, SessionGoal) else active
+    if current.status == SessionGoalStatus.PAUSED:
+        return current
+    if current.status != SessionGoalStatus.ACTIVE:
+        return None
+    return _pause_for_goal_control(session, current, reason, on_progress)
+
+
+def _pause_failed_turn(
+    session: Any, active: SessionGoal, on_progress: ProgressFn | None
+) -> SessionGoal:
+    """Pause the goal because its turn failed, so the next message does not resume into it."""
+    return _end(
+        session,
+        active,
+        SessionGoalStatus.PAUSED,
+        on_progress,
+        reason=SessionGoalReason.PAUSED_TURN_FAILED,
+    )
+
+
+def _turn_did_not_run(result: TurnResult) -> bool:
+    """True when the action phase never ran: the driver caught the model call's failure.
+
+    A rejected key or a provider outage comes back as a normal result marked
+    ``not_run`` instead of an exception, so the loop must read the mark or it
+    retries the same failure until the budget is gone.
+    """
+    return getattr(result.action_result, "accounting_status", "") == "not_run"
+
+
+def _goal_turn_should_count(
+    active: SessionGoal,
+    last: TurnResult,
+    *,
+    pause_requested: bool,
+) -> bool:
+    """Count completed work, but not a pause that stopped before useful work."""
+    if not pause_requested or not last.cancelled:
+        return True
+    return turn_has_session_goal_evidence(last, bookkeeping_calls=active.bookkeeping_calls)
+
+
+def _validate_pending_ticks_before_pause(
+    session: Any,
+    active: SessionGoal,
+    last: TurnResult,
+    *,
+    evaluate_fn: EvaluateFn,
+) -> SessionGoal:
+    """Validate ephemeral checklist ticks while preserving the pending pause."""
+    if not active.new_ticks:
+        return active
+    status = active.status
+    reason = active.last_reason
+    evaluate_fn(active, last, session=session)
+    stored = getattr(session, "session_goal", None)
+    if isinstance(stored, SessionGoal):
+        active = stored
+    active = active.with_status(status).with_reason(reason)
+    attach_session_goal(session, active)
+    return active
 
 
 def _finish_outer_turn(
@@ -130,31 +398,108 @@ def _finish_outer_turn(
     *,
     evaluate_fn: EvaluateFn,
     on_progress: ProgressFn | None,
+    goal_control: HostCancelReason | None = None,
 ) -> tuple[SessionGoal, TurnResult, bool]:
-    """Refresh → evaluate → single paint. Returns ``(goal, scrubbed, stop)``."""
-    active = _refresh_active(session, active, last)
+    """Evaluate → single paint. Returns ``(goal, result, stop)``."""
+    pause_requested = goal_control is not None
+    control_progress = None if goal_control is HostCancelReason.GOAL_CLEAR else on_progress
+    turn_evidence = turn_has_session_goal_evidence(
+        last,
+        bookkeeping_calls=active.bookkeeping_calls,
+    )
+    pause_will_skip_evaluation = active.status == SessionGoalStatus.PAUSED or (
+        pause_requested and last.cancelled and not turn_evidence
+    )
+    if pause_will_skip_evaluation and active.new_ticks:
+        # ``new_ticks`` is intentionally not persisted, so validate goal-tool
+        # updates now even when a concurrent pause makes the turn budget-free.
+        active = _validate_pending_ticks_before_pause(
+            session,
+            active,
+            last,
+            evaluate_fn=evaluate_fn,
+        )
+    if active.status == SessionGoalStatus.PAUSED:
+        if turn_evidence:
+            active = retain_tool_evidence(
+                active,
+                getattr(last.action_result, "tool_evidence", ""),
+                succeeded=True,
+            )
+            reply_text = session_goal_reply_text(last)
+            if reply_text:
+                # Preserve what was said without treating an unevaluated
+                # interpretation as an established cross-turn finding.
+                active = active.with_last_answer(reply_text)
+            attach_session_goal(session, active)
+        ended = _end(
+            session,
+            active,
+            SessionGoalStatus.PAUSED,
+            control_progress,
+            reason=active.last_reason,
+        )
+        return ended, last, True
 
-    if last.cancelled:
-        active = active.with_status(SessionGoalStatus.CANCELLED)
-        active = _paint(session, active, on_progress)
-        _clear_host_autosubmit(session)
-        return active, _scrub_progress_tags(last), True
+    if last.cancelled and not (pause_requested and turn_evidence):
+        if goal_control is not None:
+            return _finish_goal_control(
+                session,
+                active,
+                last,
+                goal_control,
+                on_progress,
+            )
+        cancelled = _end(
+            session, active, SessionGoalStatus.CANCELLED, on_progress, drop_queued=True
+        )
+        return cancelled, last, True
 
-    if getattr(session, "pending_user_choice", None) is not None:
+    if _turn_did_not_run(last):
+        if goal_control is not None:
+            return _finish_goal_control(
+                session,
+                active,
+                last,
+                goal_control,
+                on_progress,
+            )
+        return _pause_failed_turn(session, active, on_progress), last, True
+
+    # The user owns the next turn: a menu to answer, or a command the shell
+    # submits next (a setup wizard). Another goal turn now would run ahead of it.
+    if getattr(session, "pending_user_choice", None) is not None or pending_autosubmit(session):
+        if goal_control is not None:
+            return _finish_goal_control(
+                session,
+                active,
+                last,
+                goal_control,
+                on_progress,
+            )
         active = active.with_reason(SessionGoalReason.PAUSED_USER_CHOICE)
         active = _paint(session, active, on_progress, rederive=False)
-        return active, _scrub_progress_tags(last), True
+        return active, last, True
 
     next_status = evaluate_fn(active, last, session=session)
     stored = getattr(session, "session_goal", None)
     if isinstance(stored, SessionGoal):
         active = stored
+    active = retain_tool_evidence(
+        active,
+        getattr(last.action_result, "tool_evidence", ""),
+        succeeded=turn_evidence,
+    )
+    attach_session_goal(session, active)
     # After the reload, never before it: ``evaluate_fn`` re-attaches the goal
     # and taking the session copy would discard the finding. A continuation is
     # a fresh chat call and history carries prose only, so this is the only way
     # a later turn learns what earlier ones established.
     reply_text = session_goal_reply_text(last)
-    if turn_has_session_goal_evidence(last):
+    # A contradicted reply is not established. Live five-PR runs stored the
+    # wrong all-Yes table as a finding, then told the next turn to treat it
+    # as done.
+    if turn_evidence and not judge_reason_is_contradiction(active.last_reason):
         active = active.with_finding(reply_text)
         attach_session_goal(session, active)
     # Recorded even without tool evidence. Evidence gates *closing* the goal and
@@ -168,22 +513,51 @@ def _finish_outer_turn(
     if active.status != next_status:
         active = active.with_status(next_status)
         attach_session_goal(session, active)
-    last = _scrub_progress_tags(last)
 
     if next_status != SessionGoalStatus.ACTIVE:
-        active = _paint(session, active, on_progress, rederive=False)
-        _clear_host_autosubmit(session)
+        ended = _end(
+            session,
+            active,
+            next_status,
+            control_progress,
+            reason=active.last_reason,
+        )
+        return ended, last, True
+
+    if goal_control is not None:
+        return _finish_goal_control(
+            session,
+            active,
+            last,
+            goal_control,
+            on_progress,
+        )
+
+    if (
+        session_goal_has_turn_budget(active.max_outer_turns)
+        and active.turns_used >= active.max_outer_turns
+    ):
+        ended = _end(session, active, SessionGoalStatus.BUDGET_EXHAUSTED, on_progress)
+        return ended, last, True
+
+    if goal_has_stalled(active):
+        active = pause_for_no_progress(session, active, on_progress)
         return active, last, True
 
-    if active.turns_used >= active.max_outer_turns:
-        active = active.with_status(SessionGoalStatus.BUDGET_EXHAUSTED)
-        active = _paint(session, active, on_progress)
-        _clear_host_autosubmit(session)
+    if goal_reached_checkpoint(active):
+        active = pause_for_no_progress(
+            session,
+            active,
+            on_progress,
+            reason=SessionGoalReason.checkpoint(active.turns_used),
+            menu_title=CHECKPOINT_MENU_TITLE.format(turns=active.turns_used),
+        )
         return active, last, True
 
-    # Still active under budget: skip paint here — ``_announce_working`` owns
-    # the next status line so the TTY does not show two near-identical
-    # ``◎ /goal active`` blocks back-to-back before the continuation turn.
+    # Still active under budget: paint the verdict (the judge's reason) before
+    # ``_announce_working`` paints the next turn's line. Hosts render both as
+    # one-line status rows, so the reason is visible between turns.
+    active = _paint(session, active, on_progress, rederive=False)
     return active, last, False
 
 
@@ -204,12 +578,13 @@ def run_until_session_goal(
     goal: SessionGoal | None = None,
     evaluate: EvaluateFn | None = None,
     cancel_requested: CancelFn | None = None,
+    cancel_reason: CancelReasonFn | None = None,
     on_progress: ProgressFn | None = None,
 ) -> SessionGoalRunResult:
     """Run ``chat`` until the session goal is terminal or the budget is hit.
 
     Always runs the first ``chat(message)`` through the action-agent path.
-    Continues with nudges only when a goal is already active afterward
+    Continues with prompts only when a goal is already active afterward
     (explicit ``goal=`` attach, or ``session_goal:`` handoff from that turn).
     """
     evaluate_fn = evaluate or default_evaluate_session_goal
@@ -230,11 +605,28 @@ def run_until_session_goal(
         had_active_before = True
         _announce_working(session, pre, on_progress)
 
-    last = chat(message)
+    pre_chat_completed = pre.completed if isinstance(pre, SessionGoal) else frozenset()
+    first = message
+    if isinstance(pre, SessionGoal) and pre.status == SessionGoalStatus.ACTIVE:
+        first = start_goal_prompt(pre, message)
+    # Also covers a goal attached by ``session_goal_set`` inside this very turn:
+    # the pause applies to whatever goal is active when the turn raises.
+    last = _chat_or_pause(chat, first, session, on_progress, cancel_reason)
     active = getattr(session, "session_goal", None)
-    if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
+    control_after_first = _goal_control_reason(cancel_reason)
+    if not isinstance(active, SessionGoal):
+        synthetic = SessionGoal(
+            condition=message.strip() or "(none)",
+            max_outer_turns=1,
+            status=SessionGoalStatus.CLEARED,
+            turns_used=1,
+        )
+        return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
+    if not session_goal_is_active(session) and not (
+        had_active_before and session_goal_is_paused(session) and control_after_first is not None
+    ):
         # Paused after the first chat (e.g. slash during turn) — keep state.
-        if isinstance(active, SessionGoal) and session_goal_is_paused(session):
+        if session_goal_is_paused(session):
             return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
         synthetic = SessionGoal(
             condition=message.strip() or "(none)",
@@ -244,15 +636,58 @@ def run_until_session_goal(
         )
         return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
 
-    # ``/goal set`` attaches a host-owned goal mid-turn and queues autosubmit.
-    # That attach turn must not count against the budget or run evaluate —
-    # the next submitted condition is the first real session-goal turn.
-    if not had_active_before and active.host_owned and active.turns_used == 0:
-        return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
+    if not had_active_before:
+        requested_boundary = _requested_goal_control_boundary(
+            session,
+            active,
+            cancel_reason,
+            on_progress,
+        )
+        if requested_boundary is not None:
+            return SessionGoalRunResult(
+                goal=requested_boundary,
+                last_result=last,
+                turn_count=requested_boundary.turns_used,
+            )
 
-    if active.turns_used == 0:
-        active = active.record_turn()
-        attach_session_goal(session, active)
+    # ``/goal set`` attaches a host-owned goal mid-turn. The attach turn must
+    # not count against the budget or run evaluate. The shell queues the
+    # condition as the next REPL submit. Headless hosts have no REPL, so the
+    # condition starts here as the first real session-goal turn.
+    if not had_active_before and active.host_owned and active.turns_used == 0:
+        if session_terminal(session) is not None:
+            requested_boundary = _requested_goal_control_boundary(
+                session,
+                active,
+                cancel_reason,
+                on_progress,
+            )
+            if requested_boundary is not None:
+                active = requested_boundary
+            return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
+        last = _chat_or_pause(
+            chat,
+            start_goal_prompt(active, active.condition),
+            session,
+            on_progress,
+            cancel_reason,
+        )
+        stored = getattr(session, "session_goal", None)
+        if isinstance(stored, SessionGoal):
+            active = stored
+        control_after_first = _goal_control_reason(cancel_reason)
+
+    control_after_turn = control_after_first
+    if (had_active_before or active.turns_used == 0) and _goal_turn_should_count(
+        active,
+        last,
+        pause_requested=control_after_turn is not None,
+    ):
+        # This chat was a goal turn: the first one, or a resumed goal's next
+        # one. Evaluate must see this-turn tool ticks as new, so re-read them
+        # from the session instead of the pre-chat copy.
+        active = replace(active, completed=pre_chat_completed, new_ticks=frozenset())
+        active = _record_goal_turn(session, active)
 
     active, last, stop = _finish_outer_turn(
         session,
@@ -260,39 +695,72 @@ def run_until_session_goal(
         last,
         evaluate_fn=evaluate_fn,
         on_progress=on_progress,
+        goal_control=control_after_turn,
     )
     if stop:
         return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
 
     while active.status == SessionGoalStatus.ACTIVE:
-        if cancel_requested is not None and cancel_requested():
-            active = active.with_status(SessionGoalStatus.CANCELLED)
-            active = _paint(session, active, on_progress)
-            _clear_host_autosubmit(session)
+        requested_boundary = _requested_goal_control_boundary(
+            session,
+            active,
+            cancel_reason,
+            on_progress,
+        )
+        if requested_boundary is not None:
+            active = requested_boundary
             break
 
-        if active.turns_used >= active.max_outer_turns:
-            active = active.with_status(SessionGoalStatus.BUDGET_EXHAUSTED)
-            active = _paint(session, active, on_progress)
-            _clear_host_autosubmit(session)
+        if cancel_requested is not None and cancel_requested():
+            # Read the canonical reason so goal controls reach their safe
+            # boundary rather than becoming an ordinary terminal cancel.
+            requested_boundary = _requested_goal_control_boundary(
+                session,
+                active,
+                cancel_reason,
+                on_progress,
+            )
+            active = requested_boundary or _end(
+                session,
+                active,
+                SessionGoalStatus.CANCELLED,
+                on_progress,
+                drop_queued=True,
+            )
+            break
+
+        if (
+            session_goal_has_turn_budget(active.max_outer_turns)
+            and active.turns_used >= active.max_outer_turns
+        ):
+            active = _end(session, active, SessionGoalStatus.BUDGET_EXHAUSTED, on_progress)
             break
 
         _announce_working(session, active, on_progress)
-        last = chat(continuation_nudge(active))
-        active = active.record_turn()
-        attach_session_goal(session, active)
+        last = _chat_or_pause(
+            chat,
+            continuation_prompt(active),
+            session,
+            on_progress,
+            cancel_reason,
+        )
+        control_after_turn = _goal_control_reason(cancel_reason)
+        if _goal_turn_should_count(
+            active,
+            last,
+            pause_requested=control_after_turn is not None,
+        ):
+            active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
             session,
             active,
             last,
             evaluate_fn=evaluate_fn,
             on_progress=on_progress,
+            goal_control=control_after_turn,
         )
         if stop:
             break
-
-    if last is None:
-        last = _empty_turn_result()
 
     stored = getattr(session, "session_goal", None)
     if isinstance(stored, SessionGoal):
@@ -307,6 +775,6 @@ def run_until_session_goal(
 
 __all__ = [
     "SessionGoalRunResult",
+    "pause_active_session_goal",
     "run_until_session_goal",
-    "session_goal_is_active",
 ]

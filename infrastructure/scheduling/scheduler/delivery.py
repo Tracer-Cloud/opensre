@@ -7,6 +7,7 @@ package so integrations depend downward on it instead of on each other.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -16,11 +17,39 @@ from rich.console import Console
 from infrastructure.scheduling.scheduler.credentials import (
     resolve_rocketchat_credentials,
     resolve_slack_credentials,
+    resolve_slack_default_chat_id,
     resolve_telegram_credentials,
 )
-from infrastructure.scheduling.scheduler.types import Provider
+from infrastructure.scheduling.scheduler.loop_constants import LOOP_SLACK_CHAT_ID_PARAM
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask
 
 _console = Console()
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def strip_html(text: str) -> str:
+    """Strip HTML tags for providers that use plain text or Markdown."""
+    return _HTML_TAG_RE.sub("", text)
+
+
+def resolve_slack_delivery_chat_id(task: ScheduledTask, *, webhook_url: str) -> str:
+    """Resolve the Slack ``chat_id`` for scheduled delivery.
+
+    A configured webhook is channel-bound, so an implicit default channel must
+    not be applied on top of it — that would force the bot-token path while
+    credentials resolve to webhook-only. Implicit bot-token defaults come from
+    :func:`resolve_slack_default_chat_id`, which pairs the channel with the same
+    credential source as the token.
+    """
+    explicit = task.params.get(LOOP_SLACK_CHAT_ID_PARAM, "").strip() or (
+        (task.chat_id or "").strip() if task.provider == Provider.SLACK else ""
+    )
+    if explicit:
+        return explicit
+    if webhook_url.strip():
+        return ""
+    return resolve_slack_default_chat_id(task.params)
 
 
 def telegram_delivery_ready() -> bool:

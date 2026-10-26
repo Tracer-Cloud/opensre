@@ -13,10 +13,11 @@ from typing import Any, Protocol
 from core.agent_harness.ports import (
     ErrorReporter,
     PromptContextProvider,
+    SessionState,
     SubprocessPresenterFactory,
+    ToolEventObserver,
     ToolProvider,
 )
-from core.agent_harness.turns.gather_phase import GatherPhase
 
 
 class BuildTools(Protocol):
@@ -29,10 +30,10 @@ class BuildTools(Protocol):
 
     def __call__(
         self,
-        session: Any,
+        session: SessionState,
         console: Any,
         logger: logging.Logger,
-        observer: Any,
+        observer: ToolEventObserver | None,
         /,
     ) -> ToolProvider:
         """Return the tools for this session."""
@@ -41,15 +42,8 @@ class BuildTools(Protocol):
 class BuildPrompts(Protocol):
     """``(session) -> PromptContextProvider``."""
 
-    def __call__(self, session: Any, /) -> PromptContextProvider:
+    def __call__(self, session: SessionState, /) -> PromptContextProvider:
         """Return the prompt context for this session."""
-
-
-class BuildGather(Protocol):
-    """``(session, console) -> GatherPhase``."""
-
-    def __call__(self, session: Any, console: Any, /) -> GatherPhase:
-        """Return how this host runs the gather phase."""
 
 
 class DescribeTool(Protocol):
@@ -66,7 +60,7 @@ class DescribeTool(Protocol):
 class ApplyCapabilityPolicy(Protocol):
     """``(session) -> None``. ``None`` on the config field means do not call."""
 
-    def __call__(self, session: Any, /) -> None:
+    def __call__(self, session: SessionState, /) -> None:
         """Mutate ``session`` capabilities, or do nothing."""
 
 
@@ -75,14 +69,11 @@ class AgentBuildConfig:
     """How a host wants its headless agent built.
 
     Omit a field to keep that host's usual default. ``apply_capability_policy``
-    left unset means do not mutate the session. Passing an empty
-    ``AgentBuildConfig()`` is not the same as omitting the config: the
-    gateway pool injects chat withholds only when ``agent_build is None``.
+    left unset means do not mutate the session.
     """
 
     build_tools: BuildTools | None = None
     build_prompts: BuildPrompts | None = None
-    build_gather: BuildGather | None = None
     error_reporter: ErrorReporter | None = None
     apply_capability_policy: ApplyCapabilityPolicy | None = None
     #: Live tool-status wording and subprocess rendering. Both reach the tool
@@ -94,7 +85,6 @@ class AgentBuildConfig:
 __all__ = [
     "AgentBuildConfig",
     "ApplyCapabilityPolicy",
-    "BuildGather",
     "BuildPrompts",
     "BuildTools",
     "DescribeTool",

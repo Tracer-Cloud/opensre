@@ -17,9 +17,8 @@ mirroring how ``execute_python_code`` is gated by availability:
 - ``side_effect_level = SideEffectLevel.MUTATING``.
 - ``is_available`` returns True only when ``PI_CODING_ENABLED`` is set, so it is
   never offered to the agent unless the operator opts in.
-- ``surfaces=(ToolSurface.INVESTIGATION,)`` — the surface the REPL assistant tool loop and
-  the investigation pipeline actually consume (the ``chat`` surface has no live
-  consumer). Reachability is gated by ``PI_CODING_ENABLED``, not by the surface.
+- ``surfaces=(ToolSurface.ACTION,)`` — the surface the REPL action agent consumes.
+  Reachability is gated by ``PI_CODING_ENABLED``, not by the surface.
 
 Expected failures return a structured ``{"success": False, "error_kind": ...}`` dict;
 any *unexpected* exception propagates to ``BaseTool.__call__``, which reports it to
@@ -53,7 +52,7 @@ class PiCodingTool(BaseTool):
     display_name = "Pi coding task"
     source = SOURCE
     side_effect_level = SideEffectLevel.MUTATING
-    surfaces = (ToolSurface.INVESTIGATION,)
+    surfaces = (ToolSurface.ACTION,)
     description = (
         "Submit a coding task to the Pi agent (pi.dev). Pi edits files in the workspace to "
         "implement the change and returns a summary plus the git diff. It does not commit, "

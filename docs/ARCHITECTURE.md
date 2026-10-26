@@ -13,7 +13,7 @@ last column says whether peers may import each other.
 
 | Tier | Packages | May import | Must never import | Peer rule |
 | --- | --- | --- | --- | --- |
-| 1 (top) | `surfaces`, `gateway` | `bootstrap`, `tools`, `integrations`, `core`, `infrastructure`, `config` | — | Independent: must not import each other. |
+| 1 (top) | `surfaces`, `gateway` | `bootstrap`, `tools`, `integrations`, `core`, `infrastructure`, `config` | — | Independent peers; must not import each other, except three tracked CLI/REPL gateway-command edges listed in `.importlinter.strict`. |
 | 2 | `bootstrap` | `tools`, `integrations`, `core`, `infrastructure`, `config` | `surfaces`, `gateway` | Composition root. The only package that may import `tools` **and** `integrations` together, because wiring needs both. |
 | 3 | `tools` | `core`, `infrastructure`, `config` | `surfaces`, `gateway`, `bootstrap` | Peer of `integrations`: must not import it. Existing edges are listed as debt in `.importlinter.strict`. |
 | 3 | `integrations` | `core`, `infrastructure`, `config` | `tools`, `surfaces`, `gateway`, `bootstrap` | Peer of `tools`: must not import it. |
@@ -39,7 +39,7 @@ flowchart TD
     end
     subgraph T4["Tier 4 — runtime + infrastructure"]
         CORE[core]
-        PLATFORM[infrastructure]
+        INFRA[infrastructure]
     end
     subgraph T5["Tier 5 — config"]
         CONFIG[config]
@@ -55,14 +55,14 @@ flowchart TD
     BOOT --> INTEGRATIONS
 
     TOOLS --> CORE
-    TOOLS --> PLATFORM
+    TOOLS --> INFRA
     INTEGRATIONS --> CORE
-    INTEGRATIONS --> PLATFORM
+    INTEGRATIONS --> INFRA
 
-    CORE <--> PLATFORM
+    CORE <--> INFRA
 
     CORE --> CONFIG
-    PLATFORM --> CONFIG
+    INFRA --> CONFIG
 ```
 
 The arrows show edges between **adjacent** tiers to keep the diagram readable.
@@ -89,14 +89,16 @@ layers below it.
   tables, prompts, banner, health and feedback rendering), `llm_setup/`,
   `error_handling/` — or a lower layer. `surfaces/entrypoint.py` is the
   `opensre` console script: it hands the CLI a `CliHost` (how to open the
-  shell, how to run the gateway attached) and hands the shell the CLI's Click
-  group for grounding, so composition happens in one place above both. Slack is not a surface: its inbound
+  shell, how to run the gateway attached), so composition happens in one place
+  above both. Slack is not a surface: its inbound
   transport lives in `gateway/transports/slack`, outbound delivery in
   `integrations/slack`.
 - **`gateway/`** — the standalone messaging gateway for inbound chat platforms
-  (`gateway/transports/telegram`, `gateway/transports/slack`,
-  `gateway/core/session`, `gateway/core/storage`). A peer of
-  `surfaces`, not a child: the two never import each other.
+  (`gateway/transports/{telegram,slack,discord,buzz}`), plus the FastAPI
+  `gateway/web/` surface (health, alert intake) and the
+  shared per-turn machinery in `gateway/core/{session,storage,middleware}`
+  (`middleware/` holds the inbound-decision, identity, and approval steps every
+  transport composes). A peer of `surfaces`, not a child.
 
 ### Tier 2 — `bootstrap`
 
@@ -126,42 +128,41 @@ responsibility:
   (`client.py`), the store/catalog that resolves credentials, and
   integration-local helpers. One folder per vendor (`integrations/datadog`,
   `integrations/grafana`, `integrations/github`, …) plus cross-cutting pieces
-  like `integrations/hermes` and `integrations/llm_cli`.
-- **`tools/`** — the **agent-callable** boundary: every `@tool(...)` function
-  and `BaseTool` subclass, the tool registry, framework subsystems
-  (`tools/investigation`, `tools/interactive_shell`), `tools/system/` for
-  tools with no vendor in their domain purpose (`fleet_monitoring`,
-  `python_execution_tool`, `sre_guidance_tool`, `watch_dog`), and
-  `tools/cross_vendor/` for tools whose logic spans 2+ vendor integrations
-  (`fix_sentry_issue`). See
-  [tool-placement-policy.md](tool-placement-policy.md) for the full decision
-  rule, including when a tool belongs under `integrations/<vendor>/tools/`
-  instead. A tool is what the planner selects and the runtime executes.
+  like `integrations/llm_cli`.
+- **`tools/`** — the **vendor-neutral agent-callable** boundary: the registry,
+  interactive-shell tool framework, `tools/system/` for capabilities with no
+  vendor in their domain purpose, and the narrow `tools/cross_vendor/` bucket
+  for capabilities that genuinely span vendors. A tool tied to one vendor
+  belongs under `integrations/<vendor>/tools/`, beside that vendor's client and
+  configuration. See [tool-placement-policy.md](tool-placement-policy.md).
 
-The import rule between them is one-directional: `integrations` must never
-import `tools` (or `surfaces`), so a vendor client never depends on the agent
-layer and stays reusable on its own. The reverse edge is allowed and common — a
-tool reaches an integration's client for external data — so `integrations`
-effectively sits one step below `tools` in the dependency graph. Do **not**
-reintroduce top-level `vendors/` or `services/` packages — external-system code
-belongs in `integrations/`, agent-callable code in `tools/`.
+`tools` and `integrations` are peers, so neither may import the other in new
+code. The exceptions in `.importlinter.strict` are tracked migration debt, not
+precedent: they cover the existing cross-vendor tools and a few incidental
+credential/client edges. Single-vendor tools avoid the peer edge entirely by
+living inside their owning `integrations/<vendor>/` package. `bootstrap`
+discovers and registers both tool families into the `core.tool` registry.
+Do **not** reintroduce top-level `vendors/` or `services/` packages.
 
 ### Tier 4 — `core` and `infrastructure`
 
 The shared runtime and cross-cutting services the capability layer is built on.
 
 - **`core/`** — the provider-agnostic agent runtime: the think → call tools →
-  observe loop (`core.agent.Agent`), agent/investigation state (`core/state`) and
+  observe loop (`core.agent.Agent`), agent state (`core/state`) and
   context-budget enforcement (`core/context_budget.py`), tool contracts, schema,
   registry ports, execution, and error reporting (`core/tool`), tool authoring
   helpers (`core/tool_framework`),
   shared LLM clients (`core/llm`), agent-harness
   session handling (`core/agent_harness`), and pure domain rules (`core/domain`).
-- **`infrastructure/`** — cross-cutting services with no investigation logic of their
+- **`infrastructure/`** — cross-cutting services with no agent logic of their
   own: guardrails, masking, sandbox, analytics, auth, notifications,
-  observability, scheduler, and deployment. Not to be confused with the
-  top-level `infra/` directory (e.g. `infra/cloudflare_install_proxy`), which
-  holds ops/deploy assets, not a first-party Python package.
+  observability, scheduler, deployment, and the shared **turn host**
+  (`turn_host`) — the single `TurnRunner` the interactive shell and every
+  gateway transport run turns through, so the two entry paths cannot drift.
+  Deploy-time assets live under
+  `infrastructure/deployment/` (EC2/packaging Python tooling plus the
+  `cloudflare_install_proxy` edge worker); these are not imported by the app.
 
 These two are the one bidirectional pair by design: `core` reaches `infrastructure`
 for guardrails, masking, observability, and evidence/log compaction, while
@@ -178,50 +179,50 @@ imported anywhere without dragging runtime along.
 
 ## Cross-layer flows
 
-Two worked examples showing how control descends the stack and results flow back
-up. Arrows only ever cross a boundary downward.
+Two worked examples showing runtime control flow and how results return to the
+host. Dashed registry-dispatch arrows are callbacks installed by `bootstrap`;
+they do not represent static imports from `core` into capability packages.
 
-### An investigation from the CLI
+### A chat turn from the interactive shell
 
 ```mermaid
 flowchart LR
-    A["surfaces/cli\n opensre investigate"] --> B["tools/investigation\n capability + lifecycle"]
-    B --> C["core\n Agent runtime, context budget, LLM"]
-    B --> D["integrations\n vendor clients + credentials"]
-    C --> E["infrastructure\n guardrails, masking, sandbox, observability"]
-    B --> F["config\n prompts + constants"]
+    A["surfaces/interactive_shell\n user question"] --> B["core/agent_harness\n session + turn orchestration"]
+    B --> C["core/agent\n ReAct loop, context budget, LLM"]
+    C --> D["core/tool\n runtime registry"]
+    D -. "dispatch registered callable" .-> E["tools\n vendor-neutral tools"]
+    D -. "dispatch registered callable" .-> F["integrations/vendor/tools\n vendor-owned tools + clients"]
+    C --> G["infrastructure\n guardrails, masking, observability"]
 ```
 
-1. `surfaces/cli` parses the command and hands off to the investigation
-   capability in `tools/investigation` — the surface never runs pipeline logic
-   itself.
-2. `tools/investigation` drives the six-stage pipeline (see
-   [`investigation-pipeline-architecture.md`](investigation-pipeline-architecture.md)),
-   asking `core` to run the ReAct loop and select/execute tools.
-3. Evidence-gathering tools reach `integrations` for vendor clients and resolved
-   credentials; `core` and `infrastructure` supply the runtime, guardrails, and
-   masking around every call.
-4. The structured diagnosis flows back up to the surface, which owns how it is
-   presented or delivered.
+1. The shell (or a gateway transport) hands the message to the shared agent
+   harness in `core/agent_harness` — the surface never runs agent logic itself.
+2. The harness runs the ReAct agent (`core/agent`): think → call tools →
+   observe, under the context budget.
+3. `bootstrap` has already registered vendor-neutral tools from `tools` and
+   vendor-owned tools from `integrations/<vendor>/tools` behind the registry's
+   `core` contract. Dispatch through that registry is a runtime callback, not a
+   forbidden `core` import of either capability package.
+4. Vendor-owned tools use the client and resolved credentials in their own
+   integration package; `infrastructure` supplies guardrails, masking, and
+   observability around calls.
+5. The answer flows back up to the surface, which owns how it is presented or
+   delivered.
 
 ### An inbound gateway message
 
 ```mermaid
 flowchart LR
     A["gateway/transports\n inbound chat message"] --> B["gateway/core session + storage\n resolve conversation state"]
-    B --> C["tools + core\n run the requested capability"]
+    B --> C["core registry\n dispatch the requested capability"]
     C --> D["infrastructure\n notifications, observability"]
 ```
 
 `gateway` receives a message, resolves session state from its own storage, then
-composes the same tier-3 capability code a surface would (after shared
-`bootstrap` process boot) — without ever importing `surfaces`, since the two
-are independent tier-1 peers.
+uses the same boot-registered tier-3 capabilities as a surface — without ever
+importing `surfaces`, since the two are independent tier-1 peers.
 
 ## Related docs
 
 - [`AGENTS.md`](https://github.com/Tracer-Cloud/opensre/blob/main/AGENTS.md) —
   repo map and per-area "files to touch" guides.
-- [`investigation-pipeline-architecture.md`](investigation-pipeline-architecture.md)
-  — how a single investigation runs end-to-end within the `tools` + `core`
-  layers.

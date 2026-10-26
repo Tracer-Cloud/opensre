@@ -16,13 +16,6 @@ from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.session.session import Session
 
 # Core fields are inherited from SessionCore; the shell adds these two facets.
-# Includes pending_schedule_offer (structured yes → /cron confirmations),
-# pending_investigation_offer (structured yes → investigation dispatch),
-# pending_user_choice (structured decision → /choose selection menu), and
-# pending_recovery_note (WAL recovery note for the first turn after /resume),
-# plus the session-goal trio (session_goal, pending_integration_setup_offer,
-# offered_upgrade_ctas).
-_CORE_FIELD_COUNT = 28
 _FACET_FIELDS = ("alerts", "terminal")
 
 
@@ -33,9 +26,8 @@ def _session() -> Session:
 def test_session_is_a_session_core_with_two_facets() -> None:
     assert issubclass(Session, SessionCore)
     field_names = {f.name for f in dataclasses.fields(Session)}
-    assert "terminal" in field_names
-    assert "alerts" in field_names
-    assert len(field_names) == _CORE_FIELD_COUNT + len(_FACET_FIELDS)
+    core_field_names = {f.name for f in dataclasses.fields(SessionCore)}
+    assert field_names == core_field_names | set(_FACET_FIELDS)
 
 
 def test_alert_inbox_facet_holds_the_relocated_alert_state() -> None:
@@ -57,7 +49,6 @@ def test_terminal_facet_holds_the_prompt_toolkit_cluster() -> None:
         "prompt_app",
         "main_loop",
         "prompt_refresh_fn",
-        "fleet_sampler_starter",
     ):
         assert hasattr(terminal, f)
 
@@ -69,18 +60,6 @@ def test_terminal_facet_holds_the_pending_prompt_cluster() -> None:
         "pending_prompt_autosubmit",
         "exclusive_stdin_active",
         "dispatch_active",
-    ):
-        assert hasattr(terminal, f)
-
-
-def test_terminal_facet_holds_the_background_cluster() -> None:
-    terminal = _session().terminal
-    for f in (
-        "background_mode_enabled",
-        "background_investigations",
-        "background_notification_preferences",
-        "background_notices",
-        "_background_notices_lock",
     ):
         assert hasattr(terminal, f)
 

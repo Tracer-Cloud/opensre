@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from surfaces.cli.wizard._ui import Choice
+    from surfaces.cli.wizard.components import Choice
     from surfaces.shared.llm_setup.catalog import ProviderOption
 
 CUSTOM_ENDPOINT_SELECTION = "__custom-api-endpoint__"
@@ -22,7 +22,7 @@ _CUSTOM_PROVIDER_VALUES = frozenset(("custom-openai", "custom-anthropic"))
 
 def onboarding_provider_choices(choices: list[Choice]) -> list[Choice]:
     """Collapse both custom protocols into one discoverable onboarding choice."""
-    from surfaces.cli.wizard._ui import Choice
+    from surfaces.cli.wizard.components import Choice
 
     custom = Choice(
         value=CUSTOM_ENDPOINT_SELECTION,
@@ -44,10 +44,10 @@ def resolve_onboarding_provider(selection: str, *, default: str | None) -> str:
     if selection != CUSTOM_ENDPOINT_SELECTION:
         return selection
 
-    from surfaces.cli.wizard._ui import Choice, _choose, _step
+    from surfaces.cli.wizard.components import Choice, choose, step
 
-    _step("Custom API Endpoint")
-    return _choose(
+    step("Custom API Endpoint")
+    return choose(
         "Choose endpoint compatibility",
         [
             Choice(
@@ -101,12 +101,12 @@ def ensure_endpoint_settings(provider: ProviderOption) -> dict[str, str] | None:
 
 def _prompt_endpoint(provider: ProviderOption) -> dict[str, str] | None:
     from infrastructure.terminal.theme import ERROR
-    from surfaces.cli.wizard._ui import WizardBack, _console, _prompt_value, _step
+    from surfaces.cli.wizard.components import WizardBack, console, prompt_value, step
 
     normalize = _base_url_normalizer(provider)
-    _step("Endpoint")
+    step("Endpoint")
     try:
-        raw = _prompt_value(
+        raw = prompt_value(
             f"Base URL ({provider.endpoint_env})",
             default=os.getenv(provider.endpoint_env, provider.credential_default),
             secret=False,
@@ -116,6 +116,6 @@ def _prompt_endpoint(provider: ProviderOption) -> dict[str, str] | None:
         return None
     normalized = normalize(raw)
     if not normalized:
-        _console.print(f"[{ERROR}]A base URL is required for this provider.[/]")
+        console.print(f"[{ERROR}]A base URL is required for this provider.[/]")
         return None
     return {provider.endpoint_env: normalized}

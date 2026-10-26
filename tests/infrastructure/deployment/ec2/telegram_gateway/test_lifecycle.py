@@ -149,3 +149,20 @@ def test_destroy_purges_ami_when_opted_in(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert _FAKE_AMI_ID in deregister_calls
     assert any(item.startswith("ami:") for item in results["deleted"])
+
+
+def test_collect_deploy_env_vars_includes_current_model_env_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_REASONING_MODEL", "claude-opus-4-7")
+    monkeypatch.setenv("OPENAI_REASONING_MODEL", "gpt-5.4-mini")
+    monkeypatch.setenv("ANTHROPIC_TOOLCALL_MODEL", "claude-haiku-4-5-20251001")
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+
+    env_vars = lifecycle_module._collect_deploy_env_vars()
+
+    assert env_vars["ANTHROPIC_REASONING_MODEL"] == "claude-opus-4-7"
+    assert env_vars["OPENAI_REASONING_MODEL"] == "gpt-5.4-mini"
+    assert env_vars["ANTHROPIC_TOOLCALL_MODEL"] == "claude-haiku-4-5-20251001"
+    assert "ANTHROPIC_MODEL" not in env_vars

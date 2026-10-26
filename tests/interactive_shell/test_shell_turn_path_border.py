@@ -1,6 +1,6 @@
 """The shell's shipped turn path runs through the turn host, not its own agent.
 
-The REPL uses :class:`infrastructure.turn_host.turn_handler.TurnHandler` — the same
+The REPL uses :class:`infrastructure.turn_host.turn_runner.TurnRunner` — the same
 handler Slack, Telegram and Discord use. ``build_shell_agent`` still exists so
 tests can get an agent without standing up a host, but nothing shipped may
 call it: that would rebuild the agent beside the host and let the surfaces
@@ -32,8 +32,8 @@ _PRODUCT_PACKAGES = (
 )
 
 _SHELL_AGENT_BUILDER = "build_shell_agent"
-_TURN_HANDLER = "TurnHandler"
-_TURN_HANDLER_MODULE = "infrastructure.turn_host.turn_handler"
+_TURN_HANDLER = "TurnRunner"
+_TURN_HANDLER_MODULE = "infrastructure.turn_host.turn_runner"
 _TURN_PATH = Path("surfaces/interactive_shell/runtime/shell_turn_execution.py")
 
 #: The module that defines the builder, plus its own ``__all__``. Nothing else.
@@ -71,7 +71,7 @@ def _references_builder(tree: ast.AST) -> bool:
 
 
 def _turn_handler_aliases(tree: ast.AST) -> set[str]:
-    """Local names bound to ``TurnHandler`` via ``from … import TurnHandler [as X]``."""
+    """Local names bound to ``TurnRunner`` via ``from … import TurnRunner [as X]``."""
     aliases: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
@@ -149,7 +149,7 @@ def _bind_from_assignment(
         and isinstance(value, ast.Constant)
         and value.value is None
     ):
-        # ``handler: TurnHandler | None = None`` — still a TurnHandler slot.
+        # ``handler: TurnRunner | None = None`` — still a TurnRunner slot.
         keeps_handler = True
     if keeps_handler:
         next_bound.update(names)
@@ -253,7 +253,7 @@ def _block_calls_handler_run(
     bound: set[str],
     handler_aliases: set[str],
 ) -> bool:
-    """True when a statement in this scope calls ``run`` on a live TurnHandler binding."""
+    """True when a statement in this scope calls ``run`` on a live TurnRunner binding."""
     current = set(bound)
     for stmt in stmts:
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -299,10 +299,10 @@ def _function_calls_handler_run(
 
 
 def _calls_turn_handler_run(tree: ast.AST) -> bool:
-    """True when ``run`` is invoked on a ``TurnHandler`` in the same scope that binds it.
+    """True when ``run`` is invoked on a ``TurnRunner`` in the same scope that binds it.
 
     Bindings do not leak across functions. Reassigning a tracked name to a
-    non-``TurnHandler`` value clears it before a later ``.run()`` can count.
+    non-``TurnRunner`` value clears it before a later ``.run()`` can count.
     """
     handler_aliases = _turn_handler_aliases(tree)
     if not handler_aliases:
@@ -343,10 +343,10 @@ def test_the_shell_turn_path_runs_the_turn_host() -> None:
     runs_host = _calls_turn_handler_run(tree)
 
     # Assert
-    assert imports_host, f"{_TURN_PATH} must import TurnHandler — it is the shared turn"
+    assert imports_host, f"{_TURN_PATH} must import TurnRunner — it is the shared turn"
     assert runs_host, (
-        f"{_TURN_PATH} must call TurnHandler.run (or handler.run where handler is "
-        "a TurnHandler), not an unrelated .run()"
+        f"{_TURN_PATH} must call TurnRunner.run (or handler.run where handler is "
+        "a TurnRunner), not an unrelated .run()"
     )
 
 
@@ -365,7 +365,7 @@ def test_builder_guard_ignores_unrelated_names() -> None:
 
 def test_turn_host_guard_rejects_an_unrelated_run_call() -> None:
     tree = ast.parse(
-        "from infrastructure.turn_host.turn_handler import TurnHandler\n"
+        "from infrastructure.turn_host.turn_runner import TurnRunner\n"
         "def execute_shell_turn():\n"
         "    agent = object()\n"
         "    return agent.run()\n"
@@ -375,8 +375,8 @@ def test_turn_host_guard_rejects_an_unrelated_run_call() -> None:
 
 def test_turn_host_guard_accepts_handler_run_on_a_typed_parameter() -> None:
     tree = ast.parse(
-        "from infrastructure.turn_host.turn_handler import TurnHandler\n"
-        "def execute_shell_turn(handler: TurnHandler | None = None):\n"
+        "from infrastructure.turn_host.turn_runner import TurnRunner\n"
+        "def execute_shell_turn(handler: TurnRunner | None = None):\n"
         "    return handler.run('hi', None, None, None)\n"
     )
     assert _calls_turn_handler_run(tree) is True
@@ -384,9 +384,9 @@ def test_turn_host_guard_accepts_handler_run_on_a_typed_parameter() -> None:
 
 def test_turn_host_guard_does_not_leak_bindings_across_functions() -> None:
     tree = ast.parse(
-        "from infrastructure.turn_host.turn_handler import TurnHandler\n"
+        "from infrastructure.turn_host.turn_runner import TurnRunner\n"
         "def _other():\n"
-        "    handler = TurnHandler()\n"
+        "    handler = TurnRunner()\n"
         "def execute_shell_turn():\n"
         "    handler = object()\n"
         "    return handler.run()\n"
@@ -396,8 +396,8 @@ def test_turn_host_guard_does_not_leak_bindings_across_functions() -> None:
 
 def test_turn_host_guard_rejects_run_after_reassignment() -> None:
     tree = ast.parse(
-        "from infrastructure.turn_host.turn_handler import TurnHandler\n"
-        "def execute_shell_turn(handler: TurnHandler | None = None):\n"
+        "from infrastructure.turn_host.turn_runner import TurnRunner\n"
+        "def execute_shell_turn(handler: TurnRunner | None = None):\n"
         "    handler = object()\n"
         "    return handler.run()\n"
     )
@@ -406,10 +406,10 @@ def test_turn_host_guard_rejects_run_after_reassignment() -> None:
 
 def test_turn_host_guard_accepts_run_after_optional_construction() -> None:
     tree = ast.parse(
-        "from infrastructure.turn_host.turn_handler import TurnHandler\n"
-        "def execute_shell_turn(handler: TurnHandler | None = None):\n"
+        "from infrastructure.turn_host.turn_runner import TurnRunner\n"
+        "def execute_shell_turn(handler: TurnRunner | None = None):\n"
         "    if handler is None:\n"
-        "        handler = TurnHandler()\n"
+        "        handler = TurnRunner()\n"
         "    return handler.run('hi', None, None, None)\n"
     )
     assert _calls_turn_handler_run(tree) is True
@@ -417,10 +417,10 @@ def test_turn_host_guard_accepts_run_after_optional_construction() -> None:
 
 def test_turn_host_guard_accepts_run_on_handler_built_inside_if() -> None:
     tree = ast.parse(
-        "from infrastructure.turn_host.turn_handler import TurnHandler\n"
+        "from infrastructure.turn_host.turn_runner import TurnRunner\n"
         "def execute_shell_turn():\n"
         "    if True:\n"
-        "        handler = TurnHandler()\n"
+        "        handler = TurnRunner()\n"
         "        return handler.run()\n"
     )
     assert _calls_turn_handler_run(tree) is True

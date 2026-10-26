@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.betterstack.tools.betterstack_logs_tool import query_betterstack_logs
+from integrations.betterstack.tools.betterstack_logs_tool import (
+    _map_query_betterstack_logs,
+    query_betterstack_logs,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -17,7 +21,7 @@ def test_metadata() -> None:
     rt = query_betterstack_logs.__opensre_registered_tool__
     assert rt.name == "query_betterstack_logs"
     assert rt.source == "betterstack"
-    assert "investigation" in rt.surfaces
+    assert "chat" in rt.surfaces
 
 
 def test_run_happy_path_explicit_source() -> None:
@@ -90,3 +94,54 @@ def test_missing_source_and_no_hints_surfaces_downstream() -> None:
     assert args[1] == ""
     assert result["available"] is False
     assert "invalid" in result["error"].lower()
+
+
+class TestMapQueryBetterstackLogs:
+    def test_records_entry_with_source(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_betterstack_logs(
+            evidence,
+            {
+                "available": True,
+                "betterstack_source": "t1_myapp",
+                "row_count": 5,
+                "limit": 1000,
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "query_betterstack_logs"
+        assert entries[0]["summary"] == "5 log row(s) from 't1_myapp'"
+
+    def test_qualifies_count_when_page_is_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_betterstack_logs(
+            evidence,
+            {
+                "available": True,
+                "betterstack_source": "t1_myapp",
+                "row_count": 1000,
+                "limit": 1000,
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "1000+ log row(s) from 't1_myapp'"
+
+    def test_records_nothing_when_no_rows(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_betterstack_logs(evidence, {"available": True, "row_count": 0, "rows": []}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_betterstack_logs(evidence, {"available": False, "error": "not configured"}, {})
+
+        assert "catalog_entries" not in evidence

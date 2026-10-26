@@ -4,7 +4,7 @@ This file is not testing platform code that changes often - it exists as a
 worked example for anyone adding a new cloud backend (an S3-alternative, a
 self-hosted blob store, etc.) to remote sync. The whole contract is:
 
-1. Implement the four :class:`~infrastructure.filestorage.ports.ObjectStore`
+1. Implement the four :class:`~infrastructure.filestorage.contracts.ObjectStore`
    protocol methods: ``list_objects``, ``get_object``, ``put_object``,
    ``describe``.
 2. Scope every key through ``config.key_for()`` on write/read, and strip the
@@ -22,7 +22,7 @@ self-hosted blob store, etc.) to remote sync. The whole contract is:
 4. Protect any shared state ``put_object`` mutates with a lock. A push calls
    it concurrently - up to ``max_parallel_uploads`` at once, a cap the
    provider declares to :func:`~infrastructure.filestorage.providers.registry.register_object_store`
-   (see the concurrency note on :meth:`~infrastructure.filestorage.ports.ObjectStore.put_object`
+   (see the concurrency note on :meth:`~infrastructure.filestorage.contracts.ObjectStore.put_object`
    itself) - so an implementation that mutates shared state unprotected can
    silently lose writes under a real multi-file push.
 5. Call :func:`~infrastructure.filestorage.providers.registry.register_object_store`
@@ -55,9 +55,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.engine import content_tag, pull, push
 from infrastructure.filestorage.enums import SyncRootName
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.providers.registry import (
     build_object_store,
     register_object_store,
@@ -250,7 +250,7 @@ def test_put_object_records_a_stable_write_time_not_a_fresh_one_per_listing(
 def test_put_object_is_safe_under_the_engines_real_concurrent_push(tmp_path: Path) -> None:
     """``put_object`` is called concurrently by a real push - see step 4 in
     the module docstring and the concurrency note on
-    :meth:`~infrastructure.filestorage.ports.ObjectStore.put_object` itself - up to
+    :meth:`~infrastructure.filestorage.contracts.ObjectStore.put_object` itself - up to
     ``max_parallel_uploads`` objects in flight at once. A barrier, not a mere
     file count, is what proves genuine overlap happened rather than the
     uploads happening to run one after another; the same technique is used

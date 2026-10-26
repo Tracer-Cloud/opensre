@@ -13,9 +13,9 @@ from pydantic import ValidationError
 from infrastructure.scheduling.task_registry import TaskRegistry
 from surfaces.interactive_shell.controller import InteractiveShellController
 from surfaces.interactive_shell.runtime.context import (
-    ReplRuntimeContext,
+    ReplRuntime,
     SessionBootstrapSpec,
-    create_repl_runtime_context,
+    create_repl_runtime,
 )
 from surfaces.interactive_shell.runtime.core.state import (
     ReplState,
@@ -45,7 +45,7 @@ def test_create_context_applies_canonical_session_bootstrap(
     with create_app_session(input=DummyInput(), output=DummyOutput()):
         prompt = _prompt_session()
         session = Session()
-        context = create_repl_runtime_context(
+        context = create_repl_runtime(
             session=session,
             pt_session=prompt,
             active_theme_name="pink",
@@ -74,7 +74,7 @@ def test_context_supports_lightweight_bootstrap_for_unit_seams(
         staticmethod(lambda: (_ for _ in ()).throw(AssertionError("persistent"))),
     )
 
-    context = create_repl_runtime_context(
+    context = create_repl_runtime(
         active_theme_name="green",
         hydrate_integrations=False,
         persistent_tasks=False,
@@ -109,7 +109,7 @@ def test_create_context_registers_jsonl_session_trace_store(
     )
     set_session_trace_store(NoopSessionTraceStore())
     try:
-        create_repl_runtime_context(
+        create_repl_runtime(
             hydrate_integrations=False,
             persistent_tasks=False,
         )
@@ -137,7 +137,7 @@ def test_create_context_uses_noop_trace_store_for_in_memory_session(
     )
     set_session_trace_store(NoopSessionTraceStore())
     try:
-        create_repl_runtime_context(
+        create_repl_runtime(
             session=Session(store=InMemorySessionStore()),
             hydrate_integrations=False,
             persistent_tasks=False,
@@ -149,7 +149,7 @@ def test_create_context_uses_noop_trace_store_for_in_memory_session(
 
 
 def test_context_uses_canonical_initial_mutable_state() -> None:
-    context = ReplRuntimeContext(session=Session())
+    context = ReplRuntime(session=Session())
 
     assert isinstance(context.state, ReplState)
     assert isinstance(context.spinner, SpinnerState)
@@ -159,7 +159,7 @@ def test_context_uses_canonical_initial_mutable_state() -> None:
 
 def test_context_preserves_explicit_partial_mutable_state() -> None:
     state = ReplState()
-    context = ReplRuntimeContext(session=Session(), state=state)
+    context = ReplRuntime(session=Session(), state=state)
 
     assert context.state is state
     assert isinstance(context.spinner, SpinnerState)
@@ -167,14 +167,14 @@ def test_context_preserves_explicit_partial_mutable_state() -> None:
 
 def test_context_rejects_invalid_state_contracts() -> None:
     with pytest.raises(ValidationError):
-        ReplRuntimeContext(session=object())  # type: ignore[arg-type]
+        ReplRuntime(session=object())  # type: ignore[arg-type]
 
     with pytest.raises(ValidationError):
         SessionBootstrapSpec(active_theme_name=" ")
 
 
 def test_context_assignment_validates_inbox_type() -> None:
-    context = ReplRuntimeContext(session=Session())
+    context = ReplRuntime(session=Session())
 
     with pytest.raises(ValidationError):
         context.inbox = object()  # type: ignore[assignment]
@@ -184,7 +184,7 @@ def test_controller_reuses_validated_runtime_context() -> None:
     session = Session()
     state = ReplState()
     spinner = SpinnerState()
-    context = ReplRuntimeContext(session=session, state=state, spinner=spinner)
+    context = ReplRuntime(session=session, state=state, spinner=spinner)
 
     controller = InteractiveShellController(context)
 

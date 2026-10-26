@@ -1,17 +1,10 @@
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "tests/benchmarks/cloudopsbench/infra/**"
-      - "infra/cloudflare_install_proxy/**"
-      - "tests/e2e/kubernetes/helm/scripts/**"
-      - "tests/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - ".claude/**"
   schedule:
     - cron: "30 0 * * *"
   workflow_dispatch:
@@ -30,25 +23,33 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   actions: read
 
+env:
+  OPENSRE_CICD: "1"
+
 concurrency:
-  group: release-${{ github.event_name == 'push' && 'main' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'main' && 'main') || 'stable' }}
+  group: release-${{ github.event_name == 'workflow_run' && 'main' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'main' && 'main') || 'stable' }}
   cancel-in-progress: true
 
 jobs:
   prepare:
-    if: github.repository == 'Tracer-Cloud/opensre'
-    runs-on: ubuntu-latest
+    if: >-
+      github.repository == 'Tracer-Cloud/opensre' &&
+      (github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
       tag_name: ${{ steps.meta.outputs.tag_name }}
       version_name: ${{ steps.meta.outputs.version_name }}
 
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Resolve release metadata
@@ -57,18 +58,47 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_CHANNEL: ${{ inputs.channel }}
           DISPATCH_TAG: ${{ inputs.tag }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
 
           channel="release"
+          source_sha="$GITHUB_SHA"
 
-          if [ "$EVENT_NAME" = "push" ]; then
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
             channel="main"
+            source_sha="$WORKFLOW_RUN_HEAD_SHA"
           fi
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_CHANNEL" = "main" ]; then
             channel="main"
+          fi
+
+          if ! git cat-file -e "${source_sha}^{commit}"; then
+            echo "Release source commit is unavailable: ${source_sha}" >&2
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            released_sha="$(git rev-parse -q --verify "refs/tags/main-build^{commit}" || true)"
+            if [ -n "$released_sha" ]; then
+              if ! git merge-base --is-ancestor "$released_sha" "$source_sha"; then
+                echo "The validated commit predates the current rolling release."
+                echo "channel=skip" >> "$GITHUB_OUTPUT"
+                echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              changed_paths="$(git diff --name-only "$released_sha" "$source_sha")"
+            else
+              changed_paths="$(git ls-tree -r --name-only "$source_sha")"
+            fi
+            if [ "$(printf '%s\n' "$changed_paths" | python3 .github/ci/release_paths.py)" != "true" ]; then
+              echo "No unreleased validated paths require a rolling release."
+              echo "channel=skip" >> "$GITHUB_OUTPUT"
+              echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
           if [ "$channel" = "main" ]; then
@@ -80,10 +110,17 @@ jobs:
             year="$(date -u +%Y)"
             month="$(date -u +%-m)"
             day="$(date -u +%-d)"
-            short_sha="${GITHUB_SHA:0:7}"
-            main_version="0.1.${year}.${month}.${day}+main.${short_sha}"
+            short_sha="${source_sha:0:7}"
+            raw_version="0.1.${year}.${month}.${day}+main.${short_sha}"
+            # Hatchling/importlib report the PEP 440 canonical form: an all-digit
+            # SHA segment like 0273802 becomes 273802. Match that here so the
+            # binary smoke test and release notes agree with --version.
+            main_version="$(
+              python3 -c 'from infrastructure.deployment.packaging.sync_release_version import canonical_release_version; import sys; print(canonical_release_version(sys.argv[1]))' "$raw_version"
+            )"
 
             echo "channel=main" >> "$GITHUB_OUTPUT"
+            echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
             echo "tag_name=main-build" >> "$GITHUB_OUTPUT"
             echo "version_name=${main_version}" >> "$GITHUB_OUTPUT"
             exit 0
@@ -101,16 +138,19 @@ jobs:
           fi
 
           echo "channel=release" >> "$GITHUB_OUTPUT"
+          echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
           echo "version_name=${tag_name#v}" >> "$GITHUB_OUTPUT"
 
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: prepare
-    if: github.event_name != 'push'
+    if: github.event_name != 'workflow_run'
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
@@ -140,13 +180,15 @@ jobs:
 
   build-python-dist:
     if: needs.prepare.outputs.channel == 'release' && needs.verify.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [verify, prepare]
     env:
       TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
@@ -183,7 +225,7 @@ jobs:
             "dist/opensre-${VERSION}-py3-none-any.whl"
 
       - name: Upload Python distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-python-dist
           path: dist/*
@@ -233,6 +275,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
@@ -304,7 +348,7 @@ jobs:
 
       - name: Install binary build dependencies
         shell: bash
-        run: uv sync --frozen --extra release-binary
+        run: uv sync --frozen --extra release-binary --extra postgresql
 
       - name: Build binary
         env:
@@ -380,10 +424,17 @@ jobs:
             echo "No onedir binary at ${APP_BIN}; skip re-sign"
             exit 0
           fi
+          # Nested libs are independent — parallelize with a small cap, then
+          # sign the main binary last (same order as install.sh).
+          JOBS="$(sysctl -n hw.ncpu 2>/dev/null || printf '4')"
+          if [ "$JOBS" -gt 4 ]; then
+            JOBS=4
+          fi
+          if [ "$JOBS" -lt 1 ]; then
+            JOBS=1
+          fi
           find "$APP_DIR" -type f \( -name '*.dylib' -o -name '*.so' -o -name '*.so.*' \) -print0 \
-            | while IFS= read -r -d '' lib; do
-                codesign --force --sign - "$lib"
-              done
+            | xargs -0 -P "$JOBS" -n 1 codesign --force --sign -
           codesign --force --sign - "$APP_BIN"
           codesign --verify --strict "$APP_BIN"
           echo "Re-signed onedir libs + ${APP_BIN} (adhoc) after post-build mutations"
@@ -426,6 +477,14 @@ jobs:
           LITELLM_DATA="./dist/opensre/_internal/litellm/model_prices_and_context_window_backup.json"
           if [ ! -f "$LITELLM_DATA" ]; then
             echo "LiteLLM package data missing from Unix onedir bundle: ${LITELLM_DATA}" >&2
+            exit 1
+          fi
+          # Baked tool index: without this file the frozen binary imports every
+          # vendor module on the first turn. _package-smoke fail-closed covers
+          # onefile (Windows); onedir can also assert the path on disk.
+          BAKED_INDEX="./dist/opensre/_internal/tools/descriptor_index.json"
+          if [ ! -f "$BAKED_INDEX" ]; then
+            echo "Baked descriptor index missing from Unix onedir bundle: ${BAKED_INDEX}" >&2
             exit 1
           fi
 
@@ -489,7 +548,7 @@ jobs:
           Set-Content -Path "${assetBaseName}.zip.sha256" -Value "$hash  ${assetBaseName}.zip"
 
       - name: Upload binary archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.RELEASE_CHANNEL == 'main' && 'main-' || '' }}release-${{ matrix.target }}
           path: |
@@ -499,7 +558,10 @@ jobs:
 
   publish-release:
     if: needs.prepare.outputs.channel == 'release'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
     needs:
       - prepare
       - build-python-dist
@@ -508,11 +570,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ needs.prepare.outputs.source_sha }}
           fetch-depth: 0
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: release-assets
@@ -522,14 +584,14 @@ jobs:
         id: release_ctx
         env:
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
 
-          default_branch="${{ github.event.repository.default_branch }}"
-          git fetch origin "$default_branch" --tags --force
-          target_sha="$(git rev-parse "origin/$default_branch")"
+          git fetch origin --tags --force
+          target_sha="$(git rev-parse "${SOURCE_SHA}^{commit}")"
 
           previous_tag="$(
             git tag --list 'v0.1.[0-9][0-9][0-9][0-9].[0-9]*.[0-9]*' --sort=-v:refname \
@@ -610,9 +672,7 @@ jobs:
           {
             printf '## Install\n\n'
             printf '### cURL (macOS / Linux)\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash -s -- --release --version %s\n%s\n\n' "$CB" "${TAG_NAME#v}" "$CB"
-            printf '### Homebrew (macOS / Linux)\n\n%sbash\nbrew tap tracer-cloud/tap\nbrew install tracer-cloud/tap/opensre\n%s\n\n' "$CB" "$CB"
-            printf '### PowerShell (Windows)\n\n%spowershell\n$env:OPENSRE_INSTALL_CHANNEL="release"; $env:OPENSRE_VERSION="%s"; irm https://install.opensre.com | iex\n%s\n\n' "$CB" "${TAG_NAME#v}" "$CB"
-            printf '### Python\n\n%sbash\npipx install opensre\n%s\n\n' "$CB" "$CB"
+            printf 'Start OpenSRE:\n\n%sbash\nopensre\n%s\n\nOn Windows, use [WSL](https://www.opensre.com/docs/install/windows-local).\n\n' "$CB" "$CB"
           } > RELEASE_NOTES.md
           cat GENERATED_CHANGELOG.md >> RELEASE_NOTES.md
 
@@ -625,6 +685,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          git fetch origin --tags --force
+          existing_tag_sha="$(git rev-parse -q --verify "refs/tags/${TAG_NAME}^{commit}" || true)"
+          if [ -n "$existing_tag_sha" ] && [ "$existing_tag_sha" != "$TARGET_SHA" ]; then
+            echo "Release tag $TAG_NAME points to $existing_tag_sha, expected $TARGET_SHA." >&2
+            exit 1
+          fi
 
           if gh release view "$TAG_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             echo "created=false" >> "$GITHUB_OUTPUT"
@@ -699,9 +766,56 @@ jobs:
           export VERSION="${VERSION#v}"
           bash .github/scripts/sync-homebrew-tap-formula.sh
 
+      - name: Trigger installer canary
+        if: steps.github_release.outputs.created == 'true'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          if ! gh api "repos/${{ github.repository }}/dispatches" \
+            -f event_type=installer-release-published \
+            -f "client_payload[tag]=${TAG_NAME}"; then
+            # continue-on-error keeps the release green on a dispatch hiccup;
+            # surface it loudly so it isn't silently missed until the next
+            # scheduled installer-canary run (up to ~24h later).
+            echo "::warning::Failed to dispatch installer-canary for ${TAG_NAME}. It will still run on the next scheduled canary." >&2
+            exit 1
+          fi
+
+  # PyPI publish is disabled: the nightly/main release was failing on this job.
+  # publish-python-dist:
+  #   name: Publish Python distributions to PyPI
+  #   runs-on: ubuntu-24.04
+  #   needs:
+  #     - build-python-dist
+  #     - publish-release
+  #   environment:
+  #     name: pypi
+  #     url: https://pypi.org/p/opensre
+  #   permissions:
+  #     id-token: write
+  #
+  #   steps:
+  #     - name: Download Python distributions
+  #       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+  #       with:
+  #         name: release-python-dist
+  #         path: dist
+  #
+  #     - name: Publish Python distributions to PyPI
+  #       uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+  #       with:
+  #         skip-existing: true
+
   publish-main-release:
     if: always() && needs.prepare.outputs.channel == 'main' && needs.build-binaries.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
     needs:
       - prepare
       - build-binaries
@@ -709,6 +823,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
           fetch-depth: 0
           # The rolling `main-build` tag is force-moved to each new main commit
           # below. Whenever main has advanced past a commit that touches
@@ -726,7 +841,7 @@ jobs:
           persist-credentials: true
 
       - name: Download main release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: main-release-*
           path: main-release-assets
@@ -734,11 +849,12 @@ jobs:
 
       - name: Create release notes
         env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
           VERSION_NAME: ${{ needs.prepare.outputs.version_name }}
         shell: bash
         run: |
           set -euo pipefail
-          short_sha="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          short_sha="$(printf '%s' "$SOURCE_SHA" | cut -c1-7)"
           built_at="$(date -u +"%Y-%m-%d %H:%M UTC")"
 
           CB='```'
@@ -746,22 +862,13 @@ jobs:
             printf '## Main build\n\nRolling binary build from `main`.\n\n'
             printf -- '- Version: `%s`\n- Commit: `%s`\n- Built: %s\n\n' "$VERSION_NAME" "$short_sha" "$built_at"
             printf '### Install\n\nmacOS / Linux:\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash\n%s\n\n' "$CB" "$CB"
-            printf 'Equivalent explicit main channel:\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash -s -- --main\n%s\n\n' "$CB" "$CB"
-            printf 'Windows:\n\n%spowershell\nirm https://install.opensre.com | iex\n%s\n' "$CB" "$CB"
+            printf 'Start OpenSRE:\n\n%sbash\nopensre\n%s\n\nOn Windows, use [WSL](https://www.opensre.com/docs/install/windows-local).\n' "$CB" "$CB"
           } > MAIN_RELEASE_NOTES.md
-
-      - name: Move main build tag to the latest commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f "${{ needs.prepare.outputs.tag_name }}" "$GITHUB_SHA"
-          git push origin "refs/tags/${{ needs.prepare.outputs.tag_name }}" --force
 
       - name: Publish rolling main release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MAIN_BUILD_TAG_TOKEN || secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -780,7 +887,18 @@ jobs:
           gh release create "$tag_name" \
             main-release-assets/* \
             --repo "${{ github.repository }}" \
-            --target "$GITHUB_SHA" \
+            --target "$SOURCE_SHA" \
             --title "Main" \
             --notes-file MAIN_RELEASE_NOTES.md \
             --prerelease
+
+      - name: Move main build tag to the latest commit
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "${{ needs.prepare.outputs.tag_name }}" "$SOURCE_SHA"
+          git push origin "refs/tags/${{ needs.prepare.outputs.tag_name }}" --force

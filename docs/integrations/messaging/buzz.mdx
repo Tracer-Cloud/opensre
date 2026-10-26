@@ -1,0 +1,203 @@
+---
+title: "Buzz"
+description: "Chat with the agent and send messages to a Buzz (block/buzz) channel."
+---
+
+## Overview
+
+OpenSRE's Buzz integration posts messages to a channel in [Buzz](https://github.com/block/buzz), Block's self-hostable, Nostr-based workspace where humans and AI agents share rooms.
+
+Start the interactive shell with `opensre` (no subcommand). Slash commands below are run from that REPL.
+
+<Note>
+Steps 1–3 give you **outbound delivery** for agent-requested messages. To `@mention` the agent from a Buzz channel and get replies, also do [Step 4](#step-4-enable-two-way-chat).
+</Note>
+
+## Prerequisites
+
+- A running Buzz relay (self-hosted) and its URL, e.g. `https://buzz.example.com` (defaults to `http://localhost:3000` for local dev).
+- The **`buzz` CLI** on `PATH`. It is not published to any package registry — build it from the [block/buzz](https://github.com/block/buzz) repo:
+
+  ```bash
+  cargo install --path crates/buzz-cli
+  ```
+
+  If you can't put it on `PATH`, point OpenSRE at the binary with `BUZZ_PATH=/path/to/buzz` or the `buzz_path` field during setup.
+- An agent identity (a Nostr keypair). Generate one with the relay's admin tool:
+
+  ```bash
+  buzz-admin generate-key
+  ```
+
+  This prints a public key (`npub...`) and a private key (`nsec...` or hex). The private key is what OpenSRE needs — treat it like a password; it's routed to `~/.opensre/credentials.json`, never plain `.env`.
+- If your relay has `BUZZ_REQUIRE_RELAY_MEMBERSHIP` enabled, the agent's public key must be registered as a relay member before it can post — ask your Buzz admin to add it, or messages will fail silently.
+
+## Setup
+
+### Find a channel
+
+Buzz channels are identified by **UUID**, not by name. List the channels your agent identity can see:
+
+```bash
+BUZZ_PRIVATE_KEY=<your-key> BUZZ_RELAY_URL=<your-relay> buzz channels list
+```
+
+Copy the UUID of the channel messages should land in.
+
+### Option 1: CLI setup (recommended)
+
+```bash
+opensre integrations setup buzz
+```
+
+Interactive shell: `/integrations setup buzz`. The setup prompts for:
+
+- **Relay URL** (`BUZZ_RELAY_URL`, defaults to `http://localhost:3000`)
+- **Private key** (`BUZZ_PRIVATE_KEY` in `.env` and `~/.opensre/credentials.json`)
+- **Default channel** — the UUID from above (`BUZZ_DEFAULT_CHANNEL`)
+- **Auth tag** — optional NIP-OA JSON for owner attestation (`BUZZ_AUTH_TAG`)
+- **CLI binary path** — only if `buzz` isn't on `PATH` (`BUZZ_PATH`)
+
+Credentials are also saved to `~/.opensre/integrations.json` via `upsert_integration("buzz", ...)`.
+
+### Option 2: Environment variables
+
+```bash
+BUZZ_RELAY_URL=https://buzz.example.com
+BUZZ_PRIVATE_KEY=<nsec-or-hex-private-key>
+BUZZ_DEFAULT_CHANNEL=<channel-uuid>
+# BUZZ_AUTH_TAG=<optional-nip-oa-json>
+BUZZ_PATH=buzz
+```
+
+| Variable | Description |
+| --- | --- |
+| `BUZZ_RELAY_URL` | Buzz relay base URL. Defaults to `http://localhost:3000`. |
+| `BUZZ_PRIVATE_KEY` | Agent's Nostr private key (hex or `nsec1...`). Required. Resolved via env then keyring. |
+| `BUZZ_DEFAULT_CHANNEL` | Default delivery destination — a channel UUID from `buzz channels list`. Required for delivery. |
+| `BUZZ_AUTH_TAG` | Optional NIP-OA owner-attestation JSON, injected into every signed event. |
+| `BUZZ_PATH` | Override when the `buzz` binary isn't on `PATH`. Defaults to `buzz`. |
+| `BUZZ_ALLOWED_PUBKEYS` | Two-way chat only. Comma-separated 64-char hex pubkeys allowed to talk to the agent. |
+| `BUZZ_GATEWAY_POLL_INTERVAL_SECONDS` | Two-way chat only. How often to check for mentions. Defaults to `15`. |
+| `BUZZ_GATEWAY_MAX_CONCURRENT` | Two-way chat only. Turns run in parallel. Defaults to `4`. |
+| `BUZZ_GATEWAY_AUTO_START` | Two-way chat only. Set `false` to keep the gateway from starting Buzz polling. |
+
+<Note>
+**Credential resolution.** `BUZZ_PRIVATE_KEY` resolves via store → env → `~/.opensre/credentials.json`. The rest (relay URL, default channel, auth tag, binary path) stay plain env / store.
+</Note>
+
+## Credentials
+
+1. Build/install the `buzz` CLI.
+2. Generate a keypair with `buzz-admin generate-key`.
+3. Register the public key as a relay member if your relay requires membership.
+4. List channels and copy the destination UUID.
+5. Store the private key via setup (keyring) or `BUZZ_PRIVATE_KEY`.
+
+## Buzz tools
+
+| Tool | What it does |
+| --- | --- |
+| `buzz_send_message` | Post a message to the configured (or explicit) Buzz channel |
+
+## Verify
+<Note>
+**Verify does not test two-way chat.** It confirms the relay accepts your key; it does not start a listening process. If you `@mention` the agent at this point, nothing will answer. Complete Step 4 for that.
+</Note>
+
+---
+
+## Step 4: Enable two-way chat
+
+> **Skip this step if you only need outbound delivery.** Steps 1–3 are sufficient for that.
+
+### 4a — Give the agent a name and add it to the channel
+
+Run both with the agent's own `BUZZ_PRIVATE_KEY`:
+
+```bash
+buzz users set-profile --name opensre
+buzz channels join --channel <channel-uuid>
+```
+
+The name is what makes `@opensre` work: Buzz resolves `@Name` against the channel's member profiles to get a pubkey. Without one the agent shows as a raw hex key and is effectively unmentionable. Skipping the join is the most common cause of "the gateway is running but nothing happens" — the agent only sees messages that mention it, and only members can be mentioned.
+
+<Note>
+This is **not** the same as a Buzz *managed agent* (`buzz agents draft-create`). Those are agents Buzz itself runs — the record holds a system prompt, provider, and model, and Buzz drives the loop. OpenSRE runs its own agent loop and uses Buzz purely as a chat surface, so it joins as a normal identity. Mention delivery works the same either way.
+</Note>
+
+### 4b — Allow your own pubkey
+
+```text
+/messaging allow -p buzz -u <your-64-char-hex-pubkey>
+```
+
+CLI:
+
+```bash
+opensre messaging allow -p buzz -u <your-64-char-hex-pubkey>
+```
+
+Or set in `.env`:
+
+```bash
+BUZZ_ALLOWED_PUBKEYS=<hex-pubkey>   # comma-separated for multiple people
+```
+
+<Warning>
+Use the **64-character hex** public key, not the `npub1...` form. Inbound authorization matches the hex key that Nostr events actually carry, so an `npub` entry can never match a real sender. `opensre messaging allow -p buzz` rejects anything that isn't 64 hex characters. Your own hex key is the `pubkey` field of `buzz users get` (run with your key, no `--pubkey` flag), or your key generator's hex output.
+</Warning>
+
+### 4c — Start the gateway daemon
+
+```bash
+opensre gateway start
+```
+
+Then `@mention` the agent in the channel. Follow-up messages **in the same channel do not need a mention** — the agent keeps your session and picks up the thread. Each person gets their own private session, so two people in one channel never see each other's context.
+
+| You type | What happens |
+|---|---|
+| `@agent why is checkout-service erroring?` | Starts (or continues) your session |
+| `/new` | Drops your session history and starts fresh |
+| `/help` | Built-in command list |
+| `/pair <code>` | Completes pairing when your pubkey isn't allowlisted yet |
+
+Manage the daemon with `opensre gateway status`, `opensre gateway logs -f`, and `opensre gateway stop`.
+
+<Note>
+Buzz has no push socket here — the gateway polls the relay every 15 seconds (`BUZZ_GATEWAY_POLL_INTERVAL_SECONDS`). Expect up to that long before the agent starts typing. Restarting the gateway can re-deliver the single most recent mention; it never replays your whole history.
+</Note>
+
+### Approving write actions
+
+Tools that change something ask before running. The agent posts a prompt in the channel and you answer by **replying to that message** with `approve` or `deny` — no mention needed, and no buttons (Buzz has none).
+
+- **Only the person whose request triggered it can answer**, in the channel it was posted to. Another channel member replying `approve` is ignored, even if they are allowlisted.
+- A reply that is neither approve nor deny (`hold on, checking`) leaves the prompt open rather than counting as a refusal.
+- Unanswered prompts expire after 3 minutes and the action is skipped.
+
+---
+
+```bash
+opensre integrations verify buzz
+```
+
+Interactive shell: `/integrations verify buzz`.
+
+This resolves the `buzz` binary, then runs `buzz channels list` against the configured relay. A missing binary or key reports **missing** with an install/setup hint; an unreachable relay or rejected key reports **failed**.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **missing binary / key** | Install `buzz` CLI or set `BUZZ_PATH`; configure `BUZZ_PRIVATE_KEY` |
+| **failed: unreachable relay** | Check `BUZZ_RELAY_URL` and network path |
+| **Messages fail silently** | If `BUZZ_REQUIRE_RELAY_MEMBERSHIP` is on, register the agent public key |
+| **Wrong destination** | Channels are UUIDs — use `buzz channels list`, not `#names` |
+
+## Security
+
+- Treat the Nostr private key like a password; prefer `~/.opensre/credentials.json`.
+- Use a dedicated agent identity for OpenSRE.
+- Do not commit private keys to source control.

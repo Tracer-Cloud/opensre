@@ -14,7 +14,7 @@
   --opensre-sidebar-active-bg: rgba(0, 0, 0, 0.06);
 }
 
-/* Group headers — OpenClaw-style section labels */
+/* Group headers — concise section labels */
 #sidebar .sidebar-group-header,
 #sidebar .sidebar-group-header h5,
 #sidebar [class*="sidebar-group-header"],

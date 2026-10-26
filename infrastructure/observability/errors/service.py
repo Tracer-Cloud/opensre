@@ -36,7 +36,7 @@ def _is_transient_vendor_error(exc: BaseException) -> bool:
     return sc == _HTTP_TOO_MANY_REQUESTS or sc >= _HTTP_SERVER_ERROR_FLOOR
 
 
-def _is_service_unreachable(exc: BaseException) -> bool:
+def is_service_unreachable(exc: BaseException) -> bool:
     """Whether the cause chain bottoms out in a connect, DNS, or timeout failure.
 
     Wrappers hide the real cause: urllib3 raises ``MaxRetryError`` from
@@ -65,7 +65,7 @@ def capture_service_error(
     # An unreachable service is an operational fact, not a fault in our code —
     # the same fact that already drops the traceback below decides severity:
     # a refused connection or timeout is a warning, like a 5xx, not an error.
-    unreachable = _is_service_unreachable(exc)
+    unreachable = is_service_unreachable(exc)
     severity = "warning" if unreachable or _is_transient_vendor_error(exc) else "error"
     merged_extras: dict[str, Any] = dict(extras) if extras else {}
     merged_extras.pop("surface", None)

@@ -1,52 +1,17 @@
-"""Investigation source and classification helpers for analytics events."""
+"""Traffic classification helpers for analytics events."""
 
 from __future__ import annotations
 
 import os
-from enum import StrEnum
-from typing import Final
 
-from infrastructure.analytics.provider import Properties
-from infrastructure.analytics.runtime_context import is_ci_environment
-
-INVESTIGATION_EVENT_SCHEMA_VERSION: Final[int] = 1
-
-
-class EntrypointSource(StrEnum):
-    """Canonical origin for an investigation invocation."""
-
-    SDK = "sdk"
-    MCP = "mcp"
-    REMOTE_HTTP = "remote_http"
-    CLI_COMMAND = "cli_command"
-    CLI_PASTE = "cli_paste"
-    CLI_REPL_FILE = "cli_repl_file"
-
-
-class TriggerMode(StrEnum):
-    """How the alert payload was supplied by the caller."""
-
-    PASTE = "paste"
-    FILE = "file"
-    INLINE_JSON = "inline_json"
-    SERVICE_RUNTIME = "service_runtime"
-
-
-_API_SOURCES: Final[frozenset[EntrypointSource]] = frozenset(
-    {
-        EntrypointSource.SDK,
-        EntrypointSource.MCP,
-        EntrypointSource.REMOTE_HTTP,
-    }
-)
+from config.constants.analytics import ANALYTICS_ENV_ENV, ANALYTICS_TEST_ENV
+from config.constants.environment import DEPLOYMENT_ENV_ENV
+from infrastructure.analytics.analytics_runtime import is_ci_environment
 
 
 def is_test_run() -> bool:
     """Return True when the current process should be tagged as test traffic."""
-    if os.getenv("OPENSRE_INVESTIGATION_SOURCE", "").strip().lower() == "test":
-        return True
-
-    if os.getenv("OPENSRE_IS_TEST", "0").strip() == "1":
+    if os.getenv(ANALYTICS_TEST_ENV, "").strip().lower() in {"1", "true", "yes"}:
         return True
 
     if os.getenv("PYTEST_CURRENT_TEST"):
@@ -58,7 +23,12 @@ def is_test_run() -> bool:
 def resolve_environment_tag() -> str:
     """Resolve coarse environment classification for analytics slicing."""
     raw = (
-        (os.getenv("OPENSRE_ANALYTICS_ENV") or os.getenv("ENV") or os.getenv("ENVIRONMENT") or "")
+        (
+            os.getenv(ANALYTICS_ENV_ENV)
+            or os.getenv(DEPLOYMENT_ENV_ENV)
+            or os.getenv("ENVIRONMENT")
+            or ""
+        )
         .strip()
         .lower()
     )
@@ -69,32 +39,3 @@ def resolve_environment_tag() -> str:
     if raw in {"dev", "development", "local"}:
         return "dev"
     return "unknown"
-
-
-def _category_for(entrypoint: EntrypointSource, *, test: bool) -> str:
-    if test:
-        return "test"
-    if entrypoint in _API_SOURCES:
-        return "api"
-    return "cli"
-
-
-def build_source_properties(
-    *,
-    entrypoint: EntrypointSource,
-    trigger_mode: TriggerMode,
-    investigation_id: str,
-) -> Properties:
-    """Return standardized source properties for investigation lifecycle events."""
-    test = is_test_run()
-    source = "test" if test else entrypoint.value
-    return {
-        "source": source,
-        "entrypoint_source": entrypoint.value,
-        "category": _category_for(entrypoint, test=test),
-        "trigger_mode": trigger_mode.value,
-        "is_test": test,
-        "environment": resolve_environment_tag(),
-        "investigation_id": investigation_id,
-        "investigation_event_schema_version": INVESTIGATION_EVENT_SCHEMA_VERSION,
-    }

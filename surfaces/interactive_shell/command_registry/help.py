@@ -7,24 +7,24 @@ from collections.abc import Sequence
 from rich.console import Console
 from rich.markup import escape
 
+from config.cli_command_choices import CLI_COMMAND_CHOICES
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import ERROR
-from surfaces.interactive_shell.ui.help.help_menu import (
+from surfaces.interactive_shell.ui.help import (
     HelpSection,
-    choose_help_command,
+    browse_help_commands,
     render_command_detail,
     render_help_index,
     render_section_detail,
 )
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
+from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 
 QUICK_ACCESS_COMMANDS: list[str] = [
-    "/investigate",
     "/integrations",
     "/model",
     "/health",
-    "/watch",
     "/status",
     "/help",
 ]
@@ -38,17 +38,14 @@ def _quick_access_section() -> HelpSection:
 
 
 def _raw_help_sections() -> list[HelpSection]:
-    from surfaces.interactive_shell.command_registry.agents import COMMANDS as AGENTS_CMDS
     from surfaces.interactive_shell.command_registry.alerts import COMMANDS as ALERTS_CMDS
-    from surfaces.interactive_shell.command_registry.background_cmds import (
-        COMMANDS as BACKGROUND_CMDS,
-    )
     from surfaces.interactive_shell.command_registry.choice_prompt import (
         COMMANDS as CHOICE_CMDS,
     )
     from surfaces.interactive_shell.command_registry.cli_parity import (
         COMMANDS as PARITY_COMMANDS,
     )
+    from surfaces.interactive_shell.command_registry.demo_cmds import COMMANDS as DEMO_CMDS
     from surfaces.interactive_shell.command_registry.diagnostics_cmds import (
         COMMANDS as DIAGNOSTICS_CMDS,
     )
@@ -56,7 +53,9 @@ def _raw_help_sections() -> list[HelpSection]:
         COMMANDS as GATEWAY_CMDS,
     )
     from surfaces.interactive_shell.command_registry.integrations import COMMANDS as INT_CMDS
-    from surfaces.interactive_shell.command_registry.investigation import COMMANDS as INV_CMDS
+    from surfaces.interactive_shell.command_registry.knowledge_cmds import (
+        COMMANDS as KNOWLEDGE_CMDS,
+    )
     from surfaces.interactive_shell.command_registry.loops_cmds import COMMANDS as LOOPS_CMDS
     from surfaces.interactive_shell.command_registry.memory_cmds import (
         COMMANDS as MEMORY_CMDS,
@@ -65,7 +64,6 @@ def _raw_help_sections() -> list[HelpSection]:
     from surfaces.interactive_shell.command_registry.privacy_cmds import (
         COMMANDS as PRIVACY_CMDS,
     )
-    from surfaces.interactive_shell.command_registry.rca_cmds import COMMANDS as RCA_CMDS
     from surfaces.interactive_shell.command_registry.remote_sync_cmds import (
         COMMANDS as REMOTE_SYNC_CMDS,
     )
@@ -79,7 +77,6 @@ def _raw_help_sections() -> list[HelpSection]:
     from surfaces.interactive_shell.command_registry.tasks_cmds import COMMANDS as TASK_CMDS
     from surfaces.interactive_shell.command_registry.theme import COMMANDS as THEME_CMDS
     from surfaces.interactive_shell.command_registry.tools_cmds import COMMANDS as TOOLS_CMDS
-    from surfaces.interactive_shell.command_registry.watch_cmds import COMMANDS as WATCH_CMDS
     from surfaces.interactive_shell.command_registry.work_cmds import COMMANDS as WORK_CMDS
 
     return [
@@ -89,24 +86,18 @@ def _raw_help_sections() -> list[HelpSection]:
             "Session",
             list(SESSION_CMDS)
             + list(CHOICE_CMDS)
-            + list(BACKGROUND_CMDS)
+            + list(DEMO_CMDS)
             + list(SETTINGS_CMDS)
             + list(DIAGNOSTICS_CMDS),
         ),
         ("Integrations, Models & Tools", list(INT_CMDS) + list(MODEL_CMDS) + list(TOOLS_CMDS)),
-        ("Investigation", list(INV_CMDS) + list(RCA_CMDS)),
-        ("Privacy", list(PRIVACY_CMDS) + list(MEMORY_CMDS)),
+        ("Privacy", list(PRIVACY_CMDS) + list(MEMORY_CMDS) + list(KNOWLEDGE_CMDS)),
         ("Remote sync", list(REMOTE_SYNC_CMDS)),
         (
             "Tasks",
-            list(WORK_CMDS)
-            + list(LOOPS_CMDS)
-            + list(TASK_CMDS)
-            + list(WATCH_CMDS)
-            + list(GATEWAY_CMDS),
+            list(WORK_CMDS) + list(LOOPS_CMDS) + list(TASK_CMDS) + list(GATEWAY_CMDS),
         ),
         ("Theme", list(THEME_CMDS)),
-        ("Agents", list(AGENTS_CMDS)),
         ("Alerts", list(ALERTS_CMDS)),
         ("CLI (parity)", list(PARITY_COMMANDS)),
         ("System", list(SYS_CMDS)),
@@ -121,7 +112,7 @@ def _help_sections() -> list[HelpSection]:
 
     The "Quick Access" section is intentionally exempted from the dedup set so
     its curated commands remain visible in their canonical sections too (e.g.
-    ``/help investigation`` still contains ``/investigate``).
+    ``/help session`` still contains ``/status``).
     """
     seen: set[str] = set()
     sections: list[HelpSection] = []
@@ -167,6 +158,31 @@ def _find_section(
     return None
 
 
+def _subcommand_options(command: SlashCommand) -> tuple[tuple[str, str], ...]:
+    """Named subcommands of ``command``, excluding ``--flag`` style completions."""
+    return tuple(
+        (name, meta) for name, meta in command.first_arg_completions if not name.startswith("-")
+    )
+
+
+def _command_text(command: SlashCommand) -> str | None:
+    """Text to dispatch for a help selection, or ``None`` when the user backs out.
+
+    A command with subcommands opens its picker first: selecting it in the
+    browser should offer the same choice the composer tray offers while typing
+    it, not silently run whichever subcommand happens to be the default.
+    """
+    path: tuple[str, ...] = (command.name,)
+    options = _subcommand_options(command)
+    while options:
+        chosen = repl_choose_subcommand(parent=" ".join(path), options=options)
+        if chosen is None:
+            return None
+        path = (*path, chosen)
+        options = CLI_COMMAND_CHOICES.get(path, ())
+    return " ".join(path)
+
+
 def _cmd_help(_session: Session, console: Console, args: list[str]) -> bool:
     sections = _help_sections()
     if args:
@@ -191,14 +207,18 @@ def _cmd_help(_session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     if repl_tty_interactive():
-        selected = choose_help_command(sections)
-        if selected:
-            # Re-dispatch the selected slash command so Enter in the help picker
-            # runs the command directly instead of only opening details.
-            from surfaces.interactive_shell.command_registry import dispatch_slash
+        selected = browse_help_commands(sections)
+        if not selected:
+            return True
+        command = _find_command(sections, selected)
+        text = selected if command is None else _command_text(command)
+        if text is None:
+            return True
+        # Run the selection rather than only describing it, so Enter in the
+        # help browser is the same gesture as typing the command.
+        from surfaces.interactive_shell.command_registry import dispatch_slash
 
-            return dispatch_slash(selected, _session, console)
-        return True
+        return dispatch_slash(text, _session, console)
 
     render_help_index(console, sections)
     return True

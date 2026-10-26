@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-from integrations.gitlab.tools.gitlab_pipelines_tool import list_gitlab_pipelines
+from integrations.gitlab.tools.gitlab_pipelines_tool import (
+    _map_list_gitlab_pipelines,
+    list_gitlab_pipelines,
+)
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -149,3 +153,44 @@ def test_run_error_path_returns_empty_pipelines_when_integration_returns_empty()
         result = list_gitlab_pipelines(project_id="42")
     assert result["available"] is True
     assert result["pipelines"] == []
+
+
+class TestMapListGitlabPipelines:
+    def test_records_plain_count_with_status_filter(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_gitlab_pipelines(
+            evidence,
+            {"available": True, "pipelines": [{"id": 1}, {"id": 2}]},
+            {"per_page": 10, "status": "failed"},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "list_gitlab_pipelines"
+        assert entries[0]["summary"] == "2 pipeline(s) with status 'failed'"
+
+    def test_qualifies_count_when_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_gitlab_pipelines(
+            evidence,
+            {"available": True, "pipelines": [{"id": i} for i in range(10)]},
+            {"per_page": 10, "status": "failed"},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "10+ pipeline(s) with status 'failed'"
+
+    def test_records_nothing_when_no_pipelines(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_gitlab_pipelines(evidence, {"available": True, "pipelines": []}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_gitlab_pipelines(evidence, {"available": False, "error": "not configured"}, {})
+
+        assert "catalog_entries" not in evidence

@@ -1,9 +1,8 @@
 """Shared per-key cooldown/throttle gate for alarm dispatchers.
 
-Telegram and Rocket.Chat alarm dispatchers (watchdog thresholds, Hermes
-incident sinks) both need to suppress repeat deliveries for the same key
-within a cooldown window. This module owns the throttling primitive so each
-dispatcher only implements its own transport.
+Notification dispatchers use this primitive to suppress repeat deliveries for
+the same key within a cooldown window, leaving each dispatcher responsible only
+for its own transport.
 """
 
 from __future__ import annotations

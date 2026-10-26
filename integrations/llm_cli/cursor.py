@@ -16,6 +16,7 @@ from integrations.llm_cli.binary_resolver import (
 from integrations.llm_cli.binary_resolver import resolve_cli_binary
 from integrations.llm_cli.constants import DEFAULT_EXEC_TIMEOUT_SEC
 from integrations.llm_cli.env_overrides import CURSOR_CLI_ENV_KEYS, nonempty_env_values
+from integrations.llm_cli.output import require_nonempty_output
 from integrations.llm_cli.probe_utils import run_version_probe
 
 _CURSOR_VERSION_RE = re.compile(r"(\d{4}\.\d{2}\.\d{2}-[a-zA-Z0-9]+|\d+\.\d+\.\d+)")
@@ -202,15 +203,14 @@ class CursorAdapter:
         )
 
     def parse(self, *, stdout: str, stderr: str, returncode: int) -> str:
-        result = (stdout or "").strip()
-        if not result:
-            if returncode == 0:
-                raise RuntimeError("Cursor Agent CLI returned empty output.")
-            raise RuntimeError(
-                self.explain_failure(stdout=stdout, stderr=stderr, returncode=returncode)
-                + " (empty output)"
-            )
-        return result
+        empty_output_error = "Cursor Agent CLI returned empty output." if returncode == 0 else None
+        return require_nonempty_output(
+            stdout,
+            stderr,
+            returncode,
+            self.explain_failure,
+            empty_output_error=empty_output_error,
+        )
 
     def explain_failure(self, *, stdout: str, stderr: str, returncode: int) -> str:
         from integrations.llm_cli.failure_explain import explain_cli_failure

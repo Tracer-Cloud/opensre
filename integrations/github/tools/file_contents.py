@@ -4,14 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    normalize_github_tool_result,
     resolve_github_mcp_config,
 )
 from integrations.github.mcp import call_github_mcp_tool
@@ -48,9 +55,25 @@ def _get_github_file_contents_available(sources: dict[str, dict]) -> bool:
     )
 
 
+def _map_get_github_file_contents(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    file_data = output.get("file")
+    if file_data and isinstance(file_data, dict) and file_data.get("content"):
+        path = output.get("path") or _input.get("path", "unknown")
+        record_evidence_entry(
+            evidence,
+            source="get_github_file_contents",
+            label="GitHub File Contents",
+            summary=f"File: {path}",
+        )
+
+
 @tool(
     name="get_github_file_contents",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Fetch a file or directory from GitHub through the MCP server.",
     use_cases=[
         "Reading application code referenced by an alert",
@@ -58,7 +81,7 @@ def _get_github_file_contents_available(sources: dict[str, dict]) -> bool:
         "Checking how a specific path looked on a branch or commit",
     ],
     requires=["owner", "repo", "path"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -73,10 +96,12 @@ def _get_github_file_contents_available(sources: dict[str, dict]) -> bool:
         },
         "required": ["owner", "repo", "path"],
     },
-    is_available=_get_github_file_contents_available,
-    extract_params=_get_github_file_contents_extract_params,
+    is_available=github_tool_available(_get_github_file_contents_available),
+    extract_params=github_tool_params(_get_github_file_contents_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_get_github_file_contents,
 )
+@require_webapp_github
 def get_github_file_contents(
     owner: str,
     repo: str,

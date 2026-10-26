@@ -1,0 +1,106 @@
+---
+title: "Grafana Annotations"
+description: "Query Grafana annotations to correlate deploys and config changes with incidents"
+---
+
+## Overview
+
+Correlate incidents with **deployments and config changes** from any source. OpenSRE reads
+[Grafana annotations](https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/annotate-visualizations/) —
+the standard “what changed and when” marker — so the agent can answer whether a deploy or
+config change preceded an alert, even when the change did **not** come from a GitHub push
+(Argo CD/Flux syncs, `helm upgrade`, Jenkins/CircleCI jobs, Terraform applies, manual hotfixes).
+
+This complements the GitHub deploy timeline, which only sees GitHub-originated deploys.
+
+## Prerequisites
+
+No new credentials. The tool reuses your existing [Grafana](/integrations/monitoring/grafana) integration. Once
+Grafana is connected, `query_grafana_annotations` is available in chat.
+
+## Setup
+
+No separate OpenSRE setup. Configure the [Grafana](/integrations/monitoring/grafana) integration (CLI, environment
+variables, or persistent store). Annotation query uses that connection.
+
+## Credentials
+
+None beyond your Grafana service account token. See [Grafana → Credentials](/integrations/monitoring/grafana#credentials).
+
+## Tools
+
+### `query_grafana_annotations`
+
+| Parameter | Description |
+| --- | --- |
+| `from` | ISO 8601 window start (for example `2026-05-30T14:00:00Z`). Overrides the default. |
+| `to` | ISO 8601 window end. Overrides the default. |
+| `tags` | Optional list of annotation tags to filter by (for example `["deployment"]`). |
+| `time_range_minutes` | Window size when `from`/`to` are omitted (default `60`, ending now). |
+| `limit` | Maximum annotations to return (default `100`). |
+
+Example:
+
+```text
+query_grafana_annotations(from="2026-05-30T14:00:00Z", to="2026-05-30T15:00:00Z", tags=["deployment"])
+```
+
+```json
+{
+  "source": "grafana_annotations",
+  "total": 1,
+  "annotations": [
+    {
+      "time": "2026-05-30T14:41:09Z",
+      "time_end": null,
+      "text": "deploy checkout-api v2.8.1",
+      "tags": ["deployment", "checkout-api"],
+      "dashboard_uid": null
+    }
+  ]
+}
+```
+
+Each annotation may also include:
+
+| Field | When it is set |
+| --- | --- |
+| `time_end` | Region annotations only; otherwise `null` |
+| `dashboard_uid` | Annotations attached to a dashboard; otherwise `null` |
+
+The agent uses results like this to flag a likely change-induced regression and tie the
+suspected root cause to a specific deploy.
+
+## Verify
+
+No separate verify command. Use `opensre integrations verify grafana` to confirm the
+underlying Grafana connection.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Tool unavailable | Confirm the [Grafana](/integrations/monitoring/grafana) integration is configured and verified. |
+| Empty annotation results | Widen the time window, relax `tags`, or confirm annotations exist in Grafana for that period. |
+
+## Security
+
+Annotation query is read-only through your existing Grafana credentials. Prefer a
+read-scoped service account token as described in [Grafana → Security](/integrations/monitoring/grafana#security).
+
+## Extras
+
+### Emitting annotations
+
+Make deploys visible by writing a Grafana annotation when you ship. Most CD tools can
+post to Grafana’s annotations API, for example:
+
+```bash
+curl -s -X POST "$GRAFANA_URL/api/annotations" \
+  -H "Authorization: Bearer $GRAFANA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"time": 1717079669000, "text": "deploy checkout-api v2.8.1", "tags": ["deployment", "checkout-api"]}'
+```
+
+Tag deploy annotations consistently (for example `deployment`) so the agent can filter
+precisely.

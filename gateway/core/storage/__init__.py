@@ -1,13 +1,12 @@
 """Gateway persistence.
 
 Session bindings are a JSON file on the org home (``session/``; paths in ``session/paths.py``). Records shared
-across replicas — investigations and handled Slack events — are repositories:
-each domain package holds its contract, a process-local implementation, a
-Postgres implementation and a selector (``investigation_repository(database)``).
-:func:`open_database` gives a process its one migrated
+across replicas — handled Slack events — are repositories: each domain package
+holds its contract, a process-local implementation, a Postgres implementation
+and a selector. :func:`open_database` gives a process its one migrated
 :class:`~gateway.core.storage.postgres.PostgresDatabase`, or ``None`` when
 ``DATABASE_URL`` is unset. :mod:`gateway.core.storage.security_audit` appends
-approval and investigation actions to a JSONL file on the org home.
+approval actions to a JSONL file on the org home.
 
 Stores are transport-neutral: they key records by platform id and never
 import a transport package.

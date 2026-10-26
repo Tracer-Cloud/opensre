@@ -16,7 +16,7 @@ _REPL_SAFE_PROGRESS: contextvars.ContextVar[bool] = contextvars.ContextVar(
 def repl_safe_progress_scope() -> Generator[None]:
     """Mark the current context (and ``asyncio.to_thread`` children) as REPL-safe.
 
-    Investigation dispatch runs in a worker thread where ``get_app_or_none()`` is
+    Turn dispatch runs in a worker thread where ``get_app_or_none()`` is
     unset even though the main thread still has an active ``prompt_async``.  Set
     this scope around ``asyncio.to_thread`` so progress renderers avoid Rich Live.
     """

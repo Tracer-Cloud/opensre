@@ -12,8 +12,8 @@ from config.constants.azure import (
     AZURE_MAX_RESULTS_HARD_LIMIT,
 )
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel, report_run_error
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 
 
@@ -59,7 +59,9 @@ def _ensure_take_clause(query: str, limit: int) -> str:
     name="query_azure_monitor_logs",
     description="Query Azure Monitor Log Analytics using a bounded KQL query.",
     source="azure",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     requires=["workspace_id", "access_token"],
     input_schema={
         "type": "object",

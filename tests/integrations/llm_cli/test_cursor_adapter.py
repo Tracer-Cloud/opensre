@@ -283,7 +283,7 @@ def test_cli_backed_client_invoke_forwards_cursor_env(mock_run: MagicMock) -> No
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
     with (
-        patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as guardrails,
+        patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as guardrails,
         patch.dict(
             os.environ,
             {

@@ -4,19 +4,10 @@ from __future__ import annotations
 
 import os
 
-from config.llm_auth.auth_method import effective_llm_provider, get_configured_llm_auth_method
 from config.llm_auth.provider_catalog import provider_spec
 
 _CLI_DEFAULT_MODEL = "CLI default"
 _UNSET_MODEL = "default"
-
-
-def _runtime_provider(provider: str) -> str:
-    """The provider the auth method actually routes to (a CLI login may stand in for an API key)."""
-    try:
-        return effective_llm_provider(provider, get_configured_llm_auth_method(provider))
-    except Exception:
-        return provider
 
 
 def resolve_provider_models(settings: object, provider: str) -> tuple[str, str]:
@@ -26,10 +17,12 @@ def resolve_provider_models(settings: object, provider: str) -> tuple[str, str]:
     catalog names for it. Others read the provider's ``*_model`` setting, or its
     ``*_reasoning_model`` / ``*_toolcall_model`` pair.
     """
-    runtime_provider = _runtime_provider(provider)
-    if runtime_provider != provider:
-        return resolve_provider_models(settings, runtime_provider)
+    from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
 
+    subscription = SUBSCRIPTION_BY_VALUE.get(provider)
+    if subscription is not None:
+        model = os.getenv(subscription.model_env, "").strip() or subscription.default_model
+        return model, model
     spec = provider_spec(provider)
     if spec is not None and spec.cli_model_env:
         cli_model = os.getenv(spec.cli_model_env, "").strip() or _CLI_DEFAULT_MODEL

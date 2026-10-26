@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 import pytest
 
+from infrastructure.analytics.events import cli_command_event_name
 from surfaces.cli.wizard import app as wizard_main
 
 
@@ -24,7 +25,9 @@ def test_main_initialises_sentry_and_emits_cli_invoked(
     monkeypatch.setattr(
         wizard_main,
         "capture_cli_invoked",
-        lambda properties=None: captured.append(properties),
+        lambda properties=None, command_parts=(): captured.append(
+            {**(properties or {}), "event_name": cli_command_event_name(command_parts)}
+        ),
     )
     monkeypatch.setattr(wizard_main, "run_wizard", lambda: 0)
     monkeypatch.setattr(wizard_main, "install_questionary_escape_cancel", lambda: None)
@@ -39,6 +42,7 @@ def test_main_initialises_sentry_and_emits_cli_invoked(
     assert properties["entrypoint"] == "python -m surfaces.cli.wizard"
     assert properties["command_path"] == "python -m surfaces.cli.wizard wizard"
     assert properties["command_family"] == "wizard"
+    assert properties["event_name"] == "cli_command_opensre_onboard"
 
 
 def test_main_shuts_down_analytics_without_blocking_flush(

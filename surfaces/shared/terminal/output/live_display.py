@@ -145,7 +145,7 @@ def _footer(
 
 
 class _EventLogDisplay:
-    """Rich Live-backed animated event log. One instance per investigation."""
+    """Rich Live-backed animated event log. One instance per run."""
 
     def __init__(
         self,
@@ -250,12 +250,11 @@ class _EventLogDisplay:
     def print_above(self, text: str) -> None:
         if not text.strip():
             return
-        from rich.markdown import Markdown
-
+        from infrastructure.terminal.markdown import ReplyMarkdown, UnpaddedRows
         from infrastructure.terminal.theme import MARKDOWN_THEME
 
         with self._live.console.use_theme(MARKDOWN_THEME):
-            self._live.console.print(Markdown(text, code_theme="ansi_dark"))
+            self._live.console.print(UnpaddedRows(ReplyMarkdown(text, code_theme="ansi_dark")))
 
     def print_above_renderable(self, renderable: Any) -> None:
         self._live.console.print(renderable)

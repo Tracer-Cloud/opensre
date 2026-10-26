@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
+
 from rich.console import Console
 from rich.text import Text
 
+from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
     BRAND,
     DIM,
@@ -57,12 +60,8 @@ def test_rich_renders_each_token_with_its_own_color() -> None:
         assert f"38;2;{red};{green};{blue}m" in output
 
 
-def test_muted_tokens_are_readable_on_theme_background() -> None:
-    """SECONDARY and DIM must keep minimum contrast against the theme BG.
-
-    Regression for the near-invisible onboarding text: DIM #444444 on the
-    #0A0A0A background was ~2:1 contrast.
-    """
+def test_semantic_text_tokens_meet_aa_contrast_on_theme_surfaces() -> None:
+    """Every text token must remain readable on the shell's painted surfaces."""
 
     def _luminance(hex_color: str) -> float:
         def channel(value: int) -> float:
@@ -79,5 +78,152 @@ def test_muted_tokens_are_readable_on_theme_background() -> None:
 
     for name in list_theme_names():
         theme = get_theme(name)
-        assert _contrast(theme.SECONDARY, theme.BG) >= 6.0, name
-        assert _contrast(theme.DIM, theme.BG) >= 3.0, name
+        for token in (
+            theme.HIGHLIGHT,
+            theme.BRAND,
+            theme.TEXT,
+            theme.SECONDARY,
+            theme.DIM,
+            theme.WARNING,
+            theme.ERROR,
+        ):
+            assert _contrast(token, theme.BG) >= 4.5, (name, token, theme.BG)
+        for token in (theme.HIGHLIGHT, theme.TEXT, theme.SECONDARY, theme.DIM):
+            assert _contrast(token, theme.INPUT_SURFACE) >= 4.5, (
+                name,
+                token,
+                theme.INPUT_SURFACE,
+            )
+        assert _contrast(theme.BRAND, theme.INPUT_SURFACE) >= 4.5, (
+            name,
+            theme.BRAND,
+            theme.INPUT_SURFACE,
+        )
+        set_active_theme(name)
+        assert _contrast(theme.HIGHLIGHT, ui_theme.menu_selection_hex()) >= 4.5, (
+            name,
+            theme.HIGHLIGHT,
+            ui_theme.menu_selection_hex(),
+        )
+
+
+def test_fade_fg_ansi_interpolates_dim_to_text() -> None:
+    """Live-action glow must come from theme tokens, not a raw RGB escape."""
+    from infrastructure.terminal import theme as ui_theme
+
+    ui_theme.set_active_theme("solarized")
+    assert ui_theme.fade_fg_ansi(0.0) == ui_theme.DIM_ANSI
+    assert ui_theme.fade_fg_ansi(1.0) == ui_theme.TEXT_ANSI
+    assert ui_theme.fade_fg_ansi(0.0) != ui_theme.fade_fg_ansi(1.0)
+    mid = ui_theme.fade_fg_ansi(0.5)
+    assert mid.startswith("\x1b[38;2;")
+    assert mid != ui_theme.DIM_ANSI
+    assert mid != ui_theme.TEXT_ANSI
+
+
+def test_shimmer_text_ansi_paints_a_traveling_metallic_wave() -> None:
+    """Status shimmer mixes neutral silver stops with muted accent reflections."""
+    from infrastructure.terminal import theme as ui_theme
+
+    ui_theme.set_active_theme("blue")
+    early = ui_theme.shimmer_text_ansi("Thinking…", elapsed=0.0)
+    later = ui_theme.shimmer_text_ansi("Thinking…", elapsed=0.75)
+    assert early.count("\x1b[38;2;") >= 5
+    assert early.endswith(ui_theme.ANSI_RESET)
+    assert early != later
+    assert ui_theme.TEXT_ANSI in early
+    assert ui_theme.SECONDARY_ANSI in early
+    colors = re.findall(r"\x1b\[38;2;(\d+);(\d+);(\d+)m", early)
+    assert len(set(colors)) >= 5
+
+    highlight_wave = ui_theme.shimmer_text_ansi(
+        "Thinking…",
+        elapsed=0.0,
+        high_hex=ui_theme.get_active_theme().HIGHLIGHT,
+    )
+    brand_wave = ui_theme.shimmer_text_ansi(
+        "Thinking…",
+        elapsed=0.0,
+        high_hex=ui_theme.get_active_theme().BRAND,
+    )
+    assert highlight_wave != brand_wave
+
+    # Whitespace is not individually coloured.
+    spaced = ui_theme.shimmer_text_ansi("Invoking tools", elapsed=0.1)
+    assert " tools" in spaced or "tools" in re.sub(r"\x1b\[[0-9;]*m", "", spaced)
+
+
+def test_transcript_marker_follows_the_active_theme_highlight() -> None:
+    """The bold transcript marker follows each palette's highlight colour."""
+    from infrastructure.terminal import theme as ui_theme
+
+    for name in ("blue", "purple", "green", "mono"):
+        ui_theme.set_active_theme(name)
+        assert ui_theme.reply_marker_style() == f"bold {ui_theme.get_theme(name).HIGHLIGHT}"
+
+
+def test_reply_block_paints_accent_label_and_themed_body() -> None:
+    """Regression: label washed out when body fell through to terminal white."""
+    import os
+
+    from surfaces.interactive_shell.ui.streaming.renderer import (
+        _transcript_label_style,
+        render_reply_block,
+    )
+
+    os.environ.pop("NO_COLOR", None)
+    set_active_theme("blue")
+    console = Console(
+        force_terminal=True,
+        color_system="truecolor",
+        legacy_windows=False,
+        no_color=False,
+    )
+    with console.capture() as capture:
+        render_reply_block(console, "Hey! How can I help?")
+    output = capture.get()
+    assert "●" in output
+    assert _transcript_label_style() == f"bold {get_theme('blue').HIGHLIGHT}"
+    # Marker follows the active theme's HIGHLIGHT (whatever the palette sets).
+    highlight = get_theme("blue").HIGHLIGHT.lstrip("#")
+    r, g, b = (int(highlight[i : i + 2], 16) for i in (0, 2, 4))
+    assert f"38;2;{r};{g};{b}m" in output
+    # Body uses the active palette's primary text colour.
+    text = get_theme("blue").TEXT.lstrip("#")
+    r, g, b = (int(text[i : i + 2], 16) for i in (0, 2, 4))
+    assert f"38;2;{r};{g};{b}m" in output
+
+
+def test_palette_registry_keys_match_the_config_vocabulary() -> None:
+    """The infra palettes must cover exactly the config-owned theme names.
+
+    ``config.constants.repl_theme.THEME_NAMES`` is the leaf-tier vocabulary the
+    config validator trusts. A palette added or removed here without updating
+    that tuple would let config accept a name with no palette, or reject one
+    that renders — this pins them to the same set and order.
+    """
+    from config.constants.repl_theme import THEME_NAMES
+    from infrastructure.terminal.theme import THEME_REGISTRY
+
+    assert tuple(THEME_REGISTRY.keys()) == THEME_NAMES
+
+
+def test_blue_theme_uses_blue_accents() -> None:
+    """Blue must not regress to the amber palette while retaining its name."""
+    blue = get_theme("blue")
+
+    assert blue.HIGHLIGHT == "#B7D4F0"
+    assert blue.BRAND == "#81A4C6"
+
+
+def test_markdown_theme_reserves_bold_for_structure() -> None:
+    # Arrange
+    from infrastructure.terminal import theme as ui_theme
+
+    styles = ui_theme.MARKDOWN_THEME.styles
+
+    # Act / Assert: code spans keep their colour without bold; table header is
+    # bold and the border is dim, so the body of a table never outweighs it.
+    assert styles["markdown.code"].bold is not True
+    assert styles["markdown.table.header"].bold is True
+    assert styles["markdown.table.border"] == styles["markdown.hr"]

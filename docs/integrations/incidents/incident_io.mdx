@@ -1,0 +1,103 @@
+---
+title: "incident.io"
+description: "Connect incident.io so OpenSRE can read incident context, updates, and metadata"
+---
+
+## Overview
+
+OpenSRE can use incident.io as incident context during RCA. The integration can list
+live incidents, fetch full metadata, read incident updates, and append final findings
+to the incident summary through the supported incident edit API.
+
+## Prerequisites
+
+- incident.io account
+- API key with read access to incidents and incident updates
+- Write permission if you want OpenSRE to append findings to incident summaries
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup incident_io
+```
+
+Aliases also work: `incident.io`, `incidentio`.
+
+### Option 2: Environment variables
+
+```bash
+INCIDENT_IO_API_KEY=your-api-key
+INCIDENT_IO_BASE_URL=https://api.incident.io   # optional
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `INCIDENT_IO_API_KEY` | — | **Required.** incident.io API key |
+| `INCIDENT_IO_BASE_URL` | `https://api.incident.io` | Optional API URL override for tests or private routing |
+
+## Credentials
+
+Create an API key in the incident.io dashboard with read access to incidents and
+incident updates. Add write permission only if you plan to use
+`action="append_summary"`.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `incident_io_incidents` | List, get, read updates/context, or append a summary |
+
+Actions on `incident_io_incidents`:
+
+| Action | Behavior |
+| --- | --- |
+| `list` | List live incidents when no incident ID is present |
+| `get` | Fetch incident metadata (`GET /v2/incidents/{id}`) |
+| `updates` | Read incident updates |
+| `context` | Combine metadata + updates for RCA context |
+| `append_summary` | Append findings to the incident summary (write-back) |
+
+When an alert includes an incident.io incident ID or URL, OpenSRE can use
+`action="context"` to load metadata and updates for that incident.
+
+## Verify
+
+```bash
+opensre integrations verify incident_io
+```
+
+Verification performs a minimal `GET /v2/incidents` request (page size 1).
+
+Expected detail:
+
+```
+Connected to incident.io; API key accepted.
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check the API key and its scopes |
+| **No incident context** | Confirm the alert includes an incident.io ID or URL, or use `action="list"` |
+| **Write-back fails** | Confirm the key can edit incidents; OpenSRE does not create native timeline events |
+
+## Security
+
+- Prefer a read-only key unless you need `append_summary`.
+- Store `INCIDENT_IO_API_KEY` in `.env` or your secret manager — not in source control.
+
+## Extras
+
+### Write-back details
+
+OpenSRE does not create native timeline events. Write-back uses:
+
+```text
+POST /v2/incidents/{id}/actions/edit
+```
+
+Use `action="append_summary"` only after the RCA has useful findings or next steps
+ready to publish.

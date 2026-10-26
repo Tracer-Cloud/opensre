@@ -7,7 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
-from integrations.bitbucket.tools.bitbucket_commits_tool import list_bitbucket_commits
+from integrations.bitbucket.tools.bitbucket_commits_tool import (
+    list_bitbucket_commits,
+)
+from integrations.bitbucket.tools.bitbucket_commits_tool._evidence import (
+    map_list_bitbucket_commits as _map_list_bitbucket_commits,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -135,3 +140,58 @@ def test_run_returns_unavailable_without_credentials() -> None:
     assert result["available"] is False
     assert result["commits"] == []
     assert result["error"] == "Bitbucket integration is not configured."
+
+
+class TestMapListBitbucketCommits:
+    def test_records_entry_with_repo(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_bitbucket_commits(
+            evidence,
+            {
+                "available": True,
+                "repo": "acme/backend-service",
+                "total_returned": 1,
+                "effective_limit": 20,
+                "commits": [{"hash": "abc123"}],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "list_bitbucket_commits"
+        assert entries[0]["summary"] == "1 commit(s) for 'acme/backend-service'"
+
+    def test_qualifies_count_when_page_is_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_bitbucket_commits(
+            evidence,
+            {
+                "available": True,
+                "repo": "acme/backend-service",
+                "total_returned": 20,
+                "effective_limit": 20,
+                "commits": [{"hash": "abc123"}],
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"].startswith("20+ commit(s)")
+
+    def test_records_nothing_when_no_commits(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_bitbucket_commits(
+            evidence, {"available": True, "total_returned": 0, "commits": []}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_list_bitbucket_commits(evidence, {"available": False, "error": "not configured"}, {})
+
+        assert "catalog_entries" not in evidence

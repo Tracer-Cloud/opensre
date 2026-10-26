@@ -18,15 +18,18 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
-from mcp import ClientSession, types  # type: ignore[import-not-found]
+import mcp_types as types
 
 from infrastructure.observability.errors.service import capture_service_error
 from integrations.groundcover.config import GroundcoverIntegrationConfig
 from integrations.mcp_streamable_http_compat import streamable_http_client
 from integrations.probes import ProbeResult
+
+if TYPE_CHECKING:
+    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +117,7 @@ def _tool_result_to_payload(result: types.CallToolResult) -> tuple[str, Any]:
             resource = item.resource
             if isinstance(resource, types.TextResourceContents):
                 text_parts.append(resource.text)
-    structured = getattr(result, "structuredContent", None)
+    structured = result.structured_content
     text_output = "\n".join(part for part in text_parts if part).strip()
     return text_output, structured
 
@@ -148,6 +151,8 @@ class GroundcoverClient:
 
     @asynccontextmanager
     async def _session(self) -> AsyncIterator[ClientSession]:
+        from mcp.client.session import ClientSession  # type: ignore[import-not-found]
+
         stack = AsyncExitStack()
         try:
             read_timeout = max(_DEFAULT_SSE_READ_TIMEOUT_SECONDS, self.timeout)
@@ -222,7 +227,7 @@ class GroundcoverClient:
             data = parsed
             if remainder:
                 notes.append(self._redact(remainder))
-        if result.isError:
+        if result.is_error:
             return GroundcoverToolResult(
                 success=False,
                 tool=tool_name,

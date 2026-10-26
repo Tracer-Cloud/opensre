@@ -2,9 +2,10 @@
 
 When the interactive shell starts and no scheduled tasks ("loops") are
 configured on this machine, offer three suggested recurring loops in an inline
-dropdown. Picking one auto-submits a canned prompt as the first turn; the
-action agent then drives the matching bundled skill (``github-ci-fix``,
-``github-cli``, ``morning-report``) through a first demo pass and the existing
+dropdown. The CI/CD loop runs the deterministic CI reliability agent demo
+(scan, repository, schedule, first pass) without a model turn. The other two
+auto-submit a canned prompt as the first turn; the action agent then drives
+the matching bundled skill through a first demo pass and the existing
 ``propose_scheduled_delivery`` → ``/cron add`` confirmation flow. Escape skips
 into the normal prompt for this launch — nothing is persisted, so the picker
 returns on the next launch while zero loops exist.
@@ -20,13 +21,13 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from infrastructure.analytics.cli import (
+from infrastructure.analytics.capture import (
     capture_loop_suggestion_prompted,
     capture_loop_suggestion_selected,
     capture_loop_suggestion_skipped,
 )
 from infrastructure.analytics.source import is_test_run
-from infrastructure.terminal.theme import DIM
+from surfaces.interactive_shell.runtime.startup.ci_agent_demo import start_ci_agent_demo
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MENU_TITLE = "No loops scheduled yet — pick one to set up (Esc to skip)"
+_MENU_TITLE = "No loops scheduled yet — pick one to set up"
 _MENU_EXPLAINER = (
     "Loops are scheduled check-ins that post a summary here each weekday. "
     "Picking one runs a first pass now, then offers the schedule — nothing is "
@@ -61,19 +62,15 @@ class LoopSuggestion:
     label: str
     """Menu row shown to the user (name + cadence + one-line pitch)."""
 
-    prompt: str
-    """Canned prompt auto-submitted as the first turn when selected."""
+    prompt: str = ""
+    """Canned prompt auto-submitted as the first turn when selected; empty when the
+    suggestion runs deterministically."""
 
 
 LOOP_SUGGESTIONS: tuple[LoopSuggestion, ...] = (
     LoopSuggestion(
         option=OPTION_CI_CD,
-        label="CI/CD loop — weekdays 8:00 AM · watch pipelines, surface failing checks",
-        prompt=(
-            "Check CI on the current repository's pull requests and fix any "
-            "failing checks, then set this up as a recurring weekday check at "
-            "8:00 AM."
-        ),
+        label="CI/CD loop — weekdays 8:00 AM · CI reliability report for a repository you pick",
     ),
     LoopSuggestion(
         option=OPTION_TASK_MANAGEMENT,
@@ -95,7 +92,7 @@ _SUGGESTIONS_BY_OPTION = {suggestion.option: suggestion for suggestion in LOOP_S
 
 
 def _no_loops_configured() -> bool:
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import list_tasks
 
     return not list_tasks()
 
@@ -119,17 +116,19 @@ def offer_loop_suggestions(session: Session, console: Console | None = None) -> 
         if not should_offer_loop_suggestions():
             return
         capture_loop_suggestion_prompted()
-        if console is not None:
-            console.print(f"[{DIM}]{_MENU_EXPLAINER}[/]")
         selected = repl_choose_one(
             title=_MENU_TITLE,
             choices=[(suggestion.option, suggestion.label) for suggestion in LOOP_SUGGESTIONS],
+            note=_MENU_EXPLAINER,
         )
         if selected is None:
             capture_loop_suggestion_skipped()
             return
         suggestion = _SUGGESTIONS_BY_OPTION[selected]
         capture_loop_suggestion_selected(option=suggestion.option)
+        if suggestion.option == OPTION_CI_CD:
+            start_ci_agent_demo(session, console)
+            return
         # Prefill + auto-submit: the prompt echoes the command itself, so no
         # extra announcement print here (it would show the text twice).
         session.terminal.set_auto_command(suggestion.prompt)

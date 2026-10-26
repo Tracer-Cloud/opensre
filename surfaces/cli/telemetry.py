@@ -13,22 +13,38 @@ from typing import TYPE_CHECKING, Any
 import click
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from infrastructure.analytics.provider import Properties
     from infrastructure.errors import OpenSREError
 
 
 def capture_first_run_if_needed() -> None:
+    from infrastructure.analytics.event_properties import build_install_detected_properties
     from infrastructure.analytics.provider import capture_first_run_if_needed as _capture
 
+    _capture(build_install_detected_properties(entrypoint="opensre"))
+
+
+def record_install_marker_state() -> None:
+    from config.constants.paths import get_store_path
+    from infrastructure.analytics.install_state import record_install_marker_state as _record
+
+    _record(get_store_path().parent)
+
+
+def capture_cli_invoked(
+    properties: Properties | None = None, command_parts: Sequence[str] = ()
+) -> None:
+    from infrastructure.analytics.capture import capture_cli_invoked as _capture
+
+    _capture(properties, command_parts)
+
+
+def capture_account_authenticated() -> None:
+    from infrastructure.analytics.capture import capture_account_authenticated as _capture
+
     _capture()
-
-
-def capture_cli_invoked(properties: Properties | None = None) -> None:
-    from infrastructure.analytics.cli import capture_cli_invoked as _capture
-
-    _capture(properties)
 
 
 def analytics_needs_flush() -> bool:
@@ -54,9 +70,10 @@ def build_cli_invoked_properties(
     verbose: bool,
     debug: bool,
     yes: bool,
-    interactive: bool,
+    interactive: bool | None,
+    interactive_option_source: str = "caller",
 ) -> Properties:
-    from infrastructure.analytics.cli import build_cli_invoked_properties as _build
+    from infrastructure.analytics.event_properties import build_cli_invoked_properties as _build
 
     return _build(
         entrypoint=entrypoint,
@@ -66,6 +83,7 @@ def build_cli_invoked_properties(
         debug=debug,
         yes=yes,
         interactive=interactive,
+        interactive_option_source=interactive_option_source,
     )
 
 

@@ -94,7 +94,7 @@ def test_capture_segment_records_prints_delegated_to_output() -> None:
     the base console, so the capture was always empty and the model never saw
     command results (e.g. the /cron list table with task IDs).
     """
-    from surfaces.interactive_shell.utils.telemetry.console_capture import (
+    from surfaces.interactive_shell.telemetry.console_capture import (
         capture_console_segment,
     )
 

@@ -9,27 +9,32 @@ from core.domain.types.tools import ToolSurface
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
     WORK_ITEM_STATUSES,
-    WorkItem,
+    AmbiguousWorkItemDatetimeError,
     WorkItemChannelTarget,
     WorkItemPriority,
+    WorkItemStatus,
     WorkItemUpdates,
     add_work_item,
     complete_work_items,
-    cron_from_datetime,
-    dedupe_channel_targets,
     list_work_items,
     make_work_item,
-    parse_work_item_datetime,
     prioritize_work_items,
+    resolve_work_item_datetime,
     resolve_work_item_selector,
     update_work_item,
     work_items_path,
 )
 from core.tool import AgentToolContext, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
-from infrastructure.scheduling.scheduler.store import add_task as add_scheduled_task
-from infrastructure.scheduling.scheduler.store import list_tasks, update_task
+from core.tool_framework import tool
+from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
+from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
+from tools.system.work_items.delivery import delivery_targets, invalid_delivery_targets
+from tools.system.work_items.reminders import (
+    disable_existing_item_reminders,
+    schedule_item_reminder,
+)
 from tools.system.work_items.results import (
     added_result,
     complete_result,
@@ -48,141 +53,12 @@ from tools.system.work_items.validation import (
     normalize_status_filter,
     valid_priority_detail,
     valid_status_detail,
+    validate_datetime_arg,
 )
 
 
 def _work_items_available(_sources: dict[str, dict[str, Any]]) -> bool:
     return True
-
-
-def _gateway_delivery_context(context: AgentToolContext | None) -> tuple[str, str]:
-    if context is None:
-        return "", ""
-    try:
-        from core.agent_harness.tools import action_context_from_agent_context
-
-        action_ctx = action_context_from_agent_context(context)
-    except RuntimeError:
-        return "", ""
-    resolved = getattr(action_ctx.session, "resolved_integrations_cache", None) or {}
-    provider = str(resolved.get("_gateway_platform") or "").strip().lower()
-    chat_id = str(resolved.get("_gateway_chat_id") or "").strip()
-    return provider, chat_id
-
-
-def _delivery_targets(
-    *,
-    provider: str,
-    chat_id: str,
-    item: WorkItem | None = None,
-    channel_targets: list[dict[str, str]] | None = None,
-    context: AgentToolContext | None = None,
-) -> list[WorkItemChannelTarget]:
-    default_provider, default_chat_id = _gateway_delivery_context(context)
-    targets: list[WorkItemChannelTarget] = []
-    for raw_target in channel_targets or []:
-        if isinstance(raw_target, dict):
-            targets.append(WorkItemChannelTarget.from_mapping(raw_target))
-    if provider.strip():
-        targets.append(
-            WorkItemChannelTarget(provider=provider.strip().lower(), chat_id=chat_id.strip())
-        )
-    if item is not None:
-        targets.extend(item.channel_targets)
-        if item.channel.provider:
-            targets.append(item.channel)
-    if not targets and default_provider:
-        targets.append(WorkItemChannelTarget(provider=default_provider, chat_id=default_chat_id))
-    return _dedupe_targets(targets)
-
-
-def _dedupe_targets(targets: list[WorkItemChannelTarget]) -> list[WorkItemChannelTarget]:
-    return list(dedupe_channel_targets(targets))
-
-
-def _validate_provider(provider: str) -> Provider | None:
-    try:
-        return Provider(provider.strip().lower())
-    except ValueError:
-        return None
-
-
-def _validate_datetime_arg(value: str, *, field: str) -> dict[str, str] | None:
-    if value and parse_work_item_datetime(value) is None:
-        return {
-            "error": f"invalid_{field}",
-            "detail": f"{field} must be ISO-like, e.g. 2026-07-29T09:30 or 2026-07-29T09:30Z",
-        }
-    return None
-
-
-def _invalid_delivery_targets(targets: list[WorkItemChannelTarget]) -> list[str]:
-    invalid: list[str] = []
-    for target in targets:
-        parsed_provider = _validate_provider(target.provider)
-        if parsed_provider is None:
-            invalid.append(f"{target.provider}: unsupported provider")
-            continue
-        if parsed_provider is Provider.SLACK:
-            continue
-        if not target.chat_id:
-            invalid.append(f"{target.provider}: missing chat_id")
-    return invalid
-
-
-def _disable_existing_item_reminders(item_id: str) -> int:
-    """Disable enabled one-shot reminders for ``item_id`` so updates replace them."""
-    disabled = 0
-    for task in list_tasks():
-        if task.kind is not TaskKind.WORK_ITEM_REMINDER:
-            continue
-        if not task.enabled:
-            continue
-        if task.params.get("work_item_id", "").strip() != item_id:
-            continue
-        task.enabled = False
-        if update_task(task):
-            disabled += 1
-    return disabled
-
-
-def _schedule_item_reminder(
-    item: WorkItem,
-    *,
-    targets: list[WorkItemChannelTarget],
-    timezone: str,
-) -> ScheduledTask | None:
-    if not item.remind_at:
-        return None
-    remind_at = parse_work_item_datetime(item.remind_at)
-    if remind_at is None:
-        return None
-    valid_targets = [
-        target for target in targets if _validate_provider(target.provider) is not None
-    ]
-    if not valid_targets:
-        return None
-    # Replace any prior reminder for this work item before scheduling a new one.
-    _disable_existing_item_reminders(item.id)
-    primary = valid_targets[0]
-    parsed_provider = Provider(primary.provider)
-    schedule_timezone = "UTC" if remind_at.tzinfo is not None else timezone
-    task = ScheduledTask(
-        kind=TaskKind.WORK_ITEM_REMINDER,
-        cron=cron_from_datetime(remind_at),
-        timezone=schedule_timezone,
-        provider=parsed_provider,
-        chat_id=primary.chat_id,
-        params={
-            "work_item_id": item.id,
-            "store_path": str(work_items_path()),
-            "disable_after_success": "true",
-            "delivery_targets": json.dumps(
-                [target.to_dict() for target in valid_targets], separators=(",", ":")
-            ),
-        },
-    )
-    return add_scheduled_task(task)
 
 
 @tool(
@@ -192,7 +68,9 @@ def _schedule_item_reminder(
     description=(
         "Create a durable human work item, todo, reminder, or hackathon task. Use this for "
         "'add task ...', 'todo ...', 'remind me ...', and follow-ups the user wants tracked. "
-        "If remind_at is provided, also schedule a one-shot reminder to the selected channel."
+        "If remind_at is provided, also schedule a one-shot reminder to the selected channel. "
+        "In a Slack gateway turn the reminder targets the current channel automatically; "
+        "add channel_targets to also send it to other chats."
     ),
     use_cases=[
         "User asks to add a task or todo",
@@ -204,9 +82,8 @@ def _schedule_item_reminder(
         "User asks to create a GitHub issue rather than a local work item",
     ],
     tags=("safe", "fast", "no-credentials"),
-    surfaces=(ToolSurface.ACTION, ToolSurface.INVESTIGATION),
+    surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     is_available=_work_items_available,
     input_schema={
@@ -277,16 +154,16 @@ def work_task_add(
     if parsed_priority is None:
         return {"error": "invalid_priority", "detail": valid_priority_detail()}
     for field_name, value in (("due_at", due_at), ("remind_at", remind_at)):
-        error = _validate_datetime_arg(value, field=field_name)
+        error = validate_datetime_arg(value, field=field_name)
         if error is not None:
             return error
-    targets = _delivery_targets(
+    targets = delivery_targets(
         provider=channel_provider,
         chat_id=channel_id,
         channel_targets=channel_targets,
         context=context,
     )
-    invalid_targets = _invalid_delivery_targets(targets)
+    invalid_targets = invalid_delivery_targets(targets)
     if invalid_targets:
         return {
             "error": "invalid_delivery_target",
@@ -300,6 +177,23 @@ def work_task_add(
                 "a gateway chat with an active channel"
             ),
         }
+    if remind_at:
+        try:
+            if resolve_work_item_datetime(remind_at, timezone.strip() or "UTC") is None:
+                return {
+                    "error": "invalid_remind_at",
+                    "detail": "remind_at does not exist in the specified timezone",
+                }
+        except AmbiguousWorkItemDatetimeError:
+            return {
+                "error": "invalid_remind_at",
+                "detail": "remind_at is ambiguous in the specified timezone; include an explicit UTC offset",
+            }
+        except ValueError:
+            return {
+                "error": "invalid_timezone",
+                "detail": "timezone must be a valid IANA timezone",
+            }
     item = add_work_item(
         title=title,
         priority=parsed_priority,
@@ -313,7 +207,7 @@ def work_task_add(
         channel_targets=targets,
         source="agent",
     )
-    scheduled = _schedule_item_reminder(
+    scheduled = schedule_item_reminder(
         item,
         targets=targets,
         timezone=timezone or "UTC",
@@ -330,7 +224,7 @@ def work_task_add(
         "hackathon task overview, completed tasks, blocked tasks, or project-specific todos."
     ),
     tags=("safe", "fast", "no-credentials"),
-    surfaces=(ToolSurface.ACTION, ToolSurface.INVESTIGATION),
+    surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
     is_available=_work_items_available,
     input_schema={
@@ -348,6 +242,7 @@ def work_task_add(
         "required": [],
         "additionalProperties": False,
     },
+    evidence_mapper=map_work_task_list,
 )
 def work_task_list(
     status: str = "open",
@@ -376,9 +271,8 @@ def work_task_list(
         "Use when the user says a task is done or asks to mark tasks Y and Z completed."
     ),
     tags=("safe", "fast", "no-credentials"),
-    surfaces=(ToolSurface.ACTION, ToolSurface.INVESTIGATION),
+    surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     is_available=_work_items_available,
     input_schema={
         "type": "object",
@@ -400,7 +294,10 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
             "error": "empty_selectors",
             "detail": "selectors must include at least one task id or title",
         }
-    return complete_result(complete_work_items(normalized))
+    result = complete_work_items(normalized)
+    for item in result.completed:
+        disable_existing_item_reminders(item.id)
+    return complete_result(result)
 
 
 @tool(
@@ -412,9 +309,8 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
         "notes, or reminder channel."
     ),
     tags=("safe", "fast", "no-credentials"),
-    surfaces=(ToolSurface.ACTION, ToolSurface.INVESTIGATION),
+    surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     is_available=_work_items_available,
     input_schema={
@@ -488,15 +384,32 @@ def work_task_update(
     if notes:
         changes["notes"] = notes
     for field_name, value in (("due_at", due_at), ("remind_at", remind_at)):
-        error = _validate_datetime_arg(value, field=field_name)
+        error = validate_datetime_arg(value, field=field_name)
         if error is not None:
             return error
-    explicit_targets = _delivery_targets(
+    if remind_at:
+        try:
+            if resolve_work_item_datetime(remind_at, timezone.strip() or "UTC") is None:
+                return {
+                    "error": "invalid_remind_at",
+                    "detail": "remind_at does not exist in the specified timezone",
+                }
+        except AmbiguousWorkItemDatetimeError:
+            return {
+                "error": "invalid_remind_at",
+                "detail": "remind_at is ambiguous in the specified timezone; include an explicit UTC offset",
+            }
+        except ValueError:
+            return {
+                "error": "invalid_timezone",
+                "detail": "timezone must be a valid IANA timezone",
+            }
+    explicit_targets = delivery_targets(
         provider=channel_provider,
         chat_id=channel_id,
         channel_targets=channel_targets,
     )
-    invalid_targets = _invalid_delivery_targets(explicit_targets)
+    invalid_targets = invalid_delivery_targets(explicit_targets)
     if invalid_targets:
         return {"error": "invalid_delivery_target", "detail": "; ".join(invalid_targets)}
     if explicit_targets:
@@ -512,14 +425,14 @@ def work_task_update(
             if existing.candidates:
                 payload["candidates"] = [item_summary(item) for item in existing.candidates]
             return payload
-        reminder_targets = _delivery_targets(
+        reminder_targets = delivery_targets(
             provider=channel_provider,
             chat_id=channel_id,
             item=existing.item,
             channel_targets=channel_targets,
             context=context,
         )
-        invalid_reminder_targets = _invalid_delivery_targets(reminder_targets)
+        invalid_reminder_targets = invalid_delivery_targets(reminder_targets)
         if invalid_reminder_targets:
             return {
                 "error": "invalid_delivery_target",
@@ -539,8 +452,10 @@ def work_task_update(
             update_error_payload["candidates"] = [item_summary(item) for item in result.candidates]
         return update_error_payload
     scheduled = None
-    if remind_at:
-        scheduled = _schedule_item_reminder(
+    if result.item.status is WorkItemStatus.COMPLETED:
+        disable_existing_item_reminders(result.item.id)
+    elif remind_at:
+        scheduled = schedule_item_reminder(
             result.item,
             targets=reminder_targets,
             timezone=timezone or "UTC",
@@ -560,7 +475,7 @@ def work_task_update(
         "and 'which of these tasks should I pick up?'. Use the returned reasons in the final answer."
     ),
     tags=("safe", "fast", "no-credentials"),
-    surfaces=(ToolSurface.ACTION, ToolSurface.INVESTIGATION),
+    surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
     is_available=_work_items_available,
     input_schema={
@@ -578,6 +493,7 @@ def work_task_update(
         "required": [],
         "additionalProperties": False,
     },
+    evidence_mapper=map_work_task_prioritize,
 )
 def work_task_prioritize(
     project: str = "",
@@ -613,9 +529,8 @@ def work_task_prioritize(
         "User asks for proactive reminders in Slack or Telegram on a recurring cadence",
     ],
     tags=("safe", "no-credentials"),
-    surfaces=(ToolSurface.ACTION, ToolSurface.INVESTIGATION),
+    surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     is_available=_work_items_available,
     input_schema={
@@ -623,7 +538,7 @@ def work_task_prioritize(
         "properties": {
             "cron": {
                 "type": "string",
-                "description": "Five-field cron expression, e.g. 0 9 * * 1-5.",
+                "description": "Five-field cron expression, e.g. 0 9 * * mon-fri for weekdays.",
             },
             "timezone": {"type": "string", "default": "UTC"},
             "provider": {
@@ -665,19 +580,17 @@ def work_task_schedule_checkin(
     if len(parts) != 5:
         return {"error": "invalid_cron", "detail": "cron must have exactly 5 fields"}
     try:
-        from apscheduler.triggers.cron import CronTrigger
-
-        CronTrigger.from_crontab(cron, timezone=timezone or "UTC")
-    except (KeyError, TypeError, ValueError) as exc:
+        build_cron_trigger(cron, timezone or "UTC")
+    except ValueError as exc:
         return {"error": "invalid_cron", "detail": str(exc)}
 
-    targets = _delivery_targets(
+    targets = delivery_targets(
         provider=provider,
         chat_id=chat_id,
         channel_targets=channel_targets,
         context=context,
     )
-    invalid_targets = _invalid_delivery_targets(targets)
+    invalid_targets = invalid_delivery_targets(targets)
     if invalid_targets:
         return {"error": "invalid_delivery_target", "detail": "; ".join(invalid_targets)}
     if not targets:

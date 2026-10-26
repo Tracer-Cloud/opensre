@@ -4,24 +4,92 @@ from __future__ import annotations
 
 LOOP_CHANNELS_PARAM = "loop_channels"
 LOOP_CREATED_BY_PARAM = "loop_created_by"
+LOOP_SHELL_CREATOR = "interactive_shell"
+"""``loop_created_by`` of a loop made outside any organization's turn (the local CLI)."""
+
+LOOP_WEBAPP_CREATOR = "webapp"
+"""``loop_created_by`` of a loop the web app asked for without naming a member."""
+
 LOOP_DESCRIPTION_PARAM = "loop_description"
+LOOP_EMAIL_ACCOUNT_PARAM = "loop_email_account"
+"""The loop owner's mailbox an email loop sends from: ``smtp:<record>`` or ``gmail:<account id>``."""
+
+LOOP_EMAIL_TO_PARAM = "loop_email_to"
+"""Comma-separated recipients of an email loop; its email destination's chat id."""
+
 LOOP_GROUP_ID_PARAM = "loop_group_id"
+LOOP_LEGACY_TASK_KIND_PARAM = "opensre_legacy_task_kind"
+LOOP_MIGRATION_NOTICE_PARAM = "opensre_task_migration_notice"
+LOOP_MODE_PARAM = "loop_mode"
+"""How the runner frames the tick: ``report`` (default) or ``agent``."""
+
+LOOP_MODE_REPORT = "report"
+LOOP_MODE_AGENT = "agent"
+LOOP_MODES = (LOOP_MODE_REPORT, LOOP_MODE_AGENT)
+
+#: What a loop summary reports as its status.
+LOOP_STATUS_ACTIVE = "active"
+LOOP_STATUS_PAUSED = "paused"
+LOOP_STATUS_DRAFT = "draft"
+
+LOOP_PRIVATE_PARAM = "loop_private"
+"""``"true"`` when the loop is its creator's own: it runs as them and only they see or change it."""
+
 LOOP_PROMPT_PARAM = "loop_prompt"
+LOOP_REPORT_PARAM = "loop_report"
+"""Name of a deterministic report builder that replaces the model turn for this loop."""
+
+LOOP_REPORT_ARGS_PARAM = "loop_report_args"
+"""JSON object of string arguments handed to the report builder."""
+
+LOOP_SKILL_PARAM = "loop_skill"
+"""Workflow card, or installed skill folder path, an agent-mode loop follows.
+
+Its body is added to each tick's task."""
+
 LOOP_SLACK_CHAT_ID_PARAM = "slack_chat_id"
 LOOP_SLUG_PARAM = "loop_slug"
 LOOP_SOURCE_PARAM = "loop_source"
+LOOP_STATELESS_PARAM = "loop_stateless"
+"""``"true"`` when each agent tick starts without earlier runs, carry notes or long-term memory."""
+
 LOOP_TELEGRAM_CHAT_ID_PARAM = "telegram_chat_id"
+LOOP_TEMPLATE_PARAM = "loop_template"
+"""Name of the shipped loop template whose current text each tick runs."""
+
 LOOP_TIME_PARAM = "loop_time"
+LOOP_WEBAPP_REQUEST_ID_PARAM = "webapp_request_id"
+"""The webapp Tasks-page request a loop was created from; its idempotency key."""
 
 __all__ = [
     "LOOP_CHANNELS_PARAM",
     "LOOP_CREATED_BY_PARAM",
     "LOOP_DESCRIPTION_PARAM",
+    "LOOP_EMAIL_ACCOUNT_PARAM",
+    "LOOP_EMAIL_TO_PARAM",
     "LOOP_GROUP_ID_PARAM",
+    "LOOP_LEGACY_TASK_KIND_PARAM",
+    "LOOP_MIGRATION_NOTICE_PARAM",
+    "LOOP_MODES",
+    "LOOP_MODE_AGENT",
+    "LOOP_MODE_PARAM",
+    "LOOP_MODE_REPORT",
+    "LOOP_PRIVATE_PARAM",
     "LOOP_PROMPT_PARAM",
+    "LOOP_REPORT_ARGS_PARAM",
+    "LOOP_REPORT_PARAM",
+    "LOOP_SHELL_CREATOR",
+    "LOOP_SKILL_PARAM",
     "LOOP_SLACK_CHAT_ID_PARAM",
     "LOOP_SLUG_PARAM",
     "LOOP_SOURCE_PARAM",
+    "LOOP_STATELESS_PARAM",
+    "LOOP_STATUS_ACTIVE",
+    "LOOP_STATUS_DRAFT",
+    "LOOP_STATUS_PAUSED",
     "LOOP_TELEGRAM_CHAT_ID_PARAM",
+    "LOOP_TEMPLATE_PARAM",
     "LOOP_TIME_PARAM",
+    "LOOP_WEBAPP_CREATOR",
+    "LOOP_WEBAPP_REQUEST_ID_PARAM",
 ]

@@ -1,9 +1,14 @@
 """Unit tests for the PostgreSQL integration module."""
 
+import json
+from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
 from integrations.postgresql import (
     PostgreSQLConfig,
     PostgreSQLValidationResult,
     build_postgresql_config,
+    get_slow_queries,
     postgresql_config_from_env,
 )
 
@@ -192,3 +197,44 @@ class TestPostgreSQLValidationResult:
         )
         assert result.ok is False
         assert result.detail == "PostgreSQL connection failed: connection refused"
+
+
+def _fake_cursor(extension_row: tuple | None, query_rows: list[tuple]) -> MagicMock:
+    cursor = MagicMock()
+    cursor.fetchone.return_value = extension_row
+    cursor.fetchall.return_value = query_rows
+    return cursor
+
+
+class TestGetSlowQueries:
+    """psycopg2 returns PostgreSQL's numeric type as Decimal; the tool result
+    must be JSON-serializable, since it flows into the CLI's json.dumps output."""
+
+    def test_numeric_columns_are_json_serializable_floats(self) -> None:
+        config = PostgreSQLConfig(host="localhost", database="testdb")
+        cursor = _fake_cursor(
+            extension_row=(1,),
+            query_rows=[
+                (
+                    "1234567890",
+                    "SELECT pg_sleep($1)",
+                    1,
+                    Decimal("2002.086"),
+                    Decimal("2002.086"),
+                    Decimal("2002.086"),
+                    Decimal("2002.086"),
+                    Decimal("0.0"),
+                    1,
+                    Decimal("96.5"),
+                )
+            ],
+        )
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        with patch("integrations.postgresql._get_connection", return_value=conn):
+            result = get_slow_queries(config, threshold_ms=1000)
+
+        query = result["queries"][0]
+        assert isinstance(query["mean_time_ms"], float)
+        assert isinstance(query["cache_hit_percent"], float)
+        json.dumps(result)  # must not raise TypeError: Decimal is not JSON serializable

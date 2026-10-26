@@ -1,6 +1,8 @@
 """The tool contract: what a tool is, how it runs, and where it is registered."""
 
 from core.tool.contracts import (
+    CALL_SIDE_EFFECT_LEVEL_KEY,
+    ERROR_KIND_REFUSED,
     REGISTERED_TOOL_ATTR,
     AgentToolContext,
     BaseTool,
@@ -8,6 +10,7 @@ from core.tool.contracts import (
     RegisteredTool,
     RuntimeTool,
     SideEffectLevel,
+    ToolRole,
     ToolSurface,
 )
 from core.tool.execution import (
@@ -18,14 +21,23 @@ from core.tool.execution import (
     availability_view,
     report_run_error,
 )
+from core.tool.live_catalog import LiveToolCatalog
+from core.tool.output import (
+    history_replay_byte_budget,
+    tool_output_byte_budget,
+    truncate_output_text,
+)
 from core.tool.registry import ToolRegistry, normalize_surfaces
 
 __all__ = [
+    "CALL_SIDE_EFFECT_LEVEL_KEY",
+    "ERROR_KIND_REFUSED",
     "REGISTERED_TOOL_ATTR",
     "AgentToolContext",
     "BaseTool",
     "BeforeToolCallResult",
     "EvidenceType",
+    "LiveToolCatalog",
     "RegisteredTool",
     "RuntimeTool",
     "SideEffectLevel",
@@ -33,8 +45,12 @@ __all__ = [
     "ToolExecutionRequest",
     "ToolExecutionResult",
     "ToolRegistry",
+    "ToolRole",
     "ToolSurface",
     "availability_view",
     "normalize_surfaces",
+    "history_replay_byte_budget",
     "report_run_error",
+    "tool_output_byte_budget",
+    "truncate_output_text",
 ]

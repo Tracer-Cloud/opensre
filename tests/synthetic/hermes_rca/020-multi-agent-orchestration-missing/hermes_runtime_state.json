@@ -1,9 +1,0 @@
-{
-  "pid": 5821,
-  "started_at": "2026-05-18T09:00:00Z",
-  "frozen_now_ts": "2026-05-18T09:12:18Z",
-  "interrupt_queue_depth": 0,
-  "last_progress_ts": "2026-05-18T09:12:17Z",
-  "is_blocked": false,
-  "blocking_call": null
-}

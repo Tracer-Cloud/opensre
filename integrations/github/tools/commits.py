@@ -4,14 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    normalize_github_tool_result,
     resolve_github_mcp_config,
 )
 from integrations.github.mcp import call_github_mcp_tool
@@ -48,9 +55,26 @@ def _list_github_commits_available(sources: dict[str, dict]) -> bool:
     return bool(github_source_available(sources) and gh.get("owner") and gh.get("repo"))
 
 
+def _map_list_github_commits(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    commits = output.get("commits", [])
+    if commits:
+        count = len(commits)
+        word = "commit" if count == 1 else "commits"
+        record_evidence_entry(
+            evidence,
+            source="list_github_commits",
+            label="GitHub Commits",
+            summary=f"{count} {word}",
+        )
+
+
 @tool(
     name="list_github_commits",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List recent commits for a GitHub repository through the MCP server.",
     use_cases=[
         "Checking whether a recent change could explain a failure",
@@ -58,7 +82,7 @@ def _list_github_commits_available(sources: dict[str, dict]) -> bool:
         "Correlating a deployment or incident window with code changes",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -73,10 +97,12 @@ def _list_github_commits_available(sources: dict[str, dict]) -> bool:
         },
         "required": ["owner", "repo"],
     },
-    is_available=_list_github_commits_available,
-    extract_params=_list_github_commits_extract_params,
+    is_available=github_tool_available(_list_github_commits_available),
+    extract_params=github_tool_params(_list_github_commits_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_list_github_commits,
 )
+@require_webapp_github
 def list_github_commits(
     owner: str,
     repo: str,

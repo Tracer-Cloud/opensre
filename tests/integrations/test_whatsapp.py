@@ -89,8 +89,10 @@ def test_verify_whatsapp_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_verify_whatsapp_api_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = "whatsapp-auth-token"
+
     def _fake_get(*args: Any, **kwargs: Any) -> Any:
-        raise Exception("Connection timeout")
+        raise Exception(f"Connection timeout for {token}")
 
     monkeypatch.setattr("integrations.whatsapp.verifier.requests.get", _fake_get)
 
@@ -98,6 +100,8 @@ def test_verify_whatsapp_api_failure(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result["status"] == "failed"
     assert "Connection timeout" in result["detail"]
+    assert token not in result["detail"]
+    assert "<redacted>" in result["detail"]
 
 
 def test_verify_whatsapp_http_error(monkeypatch: pytest.MonkeyPatch) -> None:

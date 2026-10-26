@@ -1,0 +1,63 @@
+---
+title: "Enterprise setup (OpenSRE Cloud)"
+description: "Set up OpenSRE for your organization in the hosted OpenSRE Cloud web app"
+---
+
+This guide is for teams using the hosted OpenSRE account and an optional
+organization-managed gateway at [app.opensre.com](https://app.opensre.com).
+
+## 1) Create your organization account
+
+Sign up at [app.opensre.com](https://app.opensre.com) to create or join your
+organization workspace. The same account activates the hosted model when an
+engineer signs in from the CLI.
+
+## 2) Complete workspace onboarding
+
+In the web app, complete the available workspace onboarding to:
+
+- Confirm the organization and membership
+- Review account usage
+- Provision the organization-managed gateway, if your plan includes one
+
+## 3) Run the local CLI
+
+Each engineer installs OpenSRE and signs in with the organization account:
+
+```bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
+opensre
+```
+
+The browser sign-in activates the account-hosted model. GitHub and production
+systems are still optional integrations; account sign-in does not connect them.
+
+## 4) Manage the organization gateway
+
+An organization admin provisions the gateway from
+[Agent Backend settings](https://app.opensre.com/settings/agent-backend). Once
+it exists, a signed-in shell user can ask OpenSRE to check its health. Admins
+can also ask the shell to start or stop it; both operations require approval.
+
+Stopping the gateway keeps its configuration and credentials. Remote loops and
+chat integrations remain stopped until an admin starts it again. See
+[Deployment](/guides/deployment#opensre-cloud-managed-gateway).
+
+## 5) Configure integrations locally
+
+Organization-wide hosted connectors are not available in the current CLI
+release. Configure the integrations an engineer or self-hosted gateway needs on
+that machine:
+
+```bash
+opensre integrations setup <service>
+opensre integrations verify <service>
+```
+
+Start with [Integrations overview](/integrations). The signed-in shell
+uses the account-hosted model. A bring-your-own provider is needed only where
+nobody is signed in: self-hosted gateways and headless `opensre ask` jobs on CI
+machines, see [LLM providers](/platform/llm-providers).
+
+For a completely self-hosted gateway instead of the managed service, follow
+[Deployment](/guides/deployment#self-hosted-container).

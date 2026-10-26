@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from config.config import LLMSettings
 from config.constants.llm import normalize_custom_base_url
+from config.llm_settings import LLMSettings
 from core.llm.client_builders import build_agent_client, build_reasoning_client
 from core.llm.providers.custom_endpoints import redact_base_url
 from core.llm.transports.litellm.routing import (
@@ -108,7 +108,7 @@ def test_per_tier_models_fall_back_to_custom_model(monkeypatch: pytest.MonkeyPat
     monkeypatch.delenv("CUSTOM_OPENAI_REASONING_MODEL", raising=False)
     monkeypatch.delenv("CUSTOM_OPENAI_CLASSIFICATION_MODEL", raising=False)
     monkeypatch.delenv("CUSTOM_OPENAI_TOOLCALL_MODEL", raising=False)
-    from config.config import _llm_settings_env_payload
+    from config.llm_settings import _llm_settings_env_payload
 
     s = LLMSettings.model_validate(_llm_settings_env_payload("custom-openai"))
     assert s.custom_openai_reasoning_model == "gpt-5.4"

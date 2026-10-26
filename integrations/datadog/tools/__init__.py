@@ -10,7 +10,7 @@ import re
 from typing import Any
 
 from core.tool import EvidenceType, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.evidence.evidence_compaction import compact_logs, summarize_counts
 from integrations.datadog._client import make_async_client
@@ -170,6 +170,8 @@ def _context_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_datadog_all",
     display_name="Datadog",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Fetch Datadog logs, monitors, and events in parallel for fast investigation.",
     use_cases=[
         "Full Datadog context in a single fast operation",
@@ -291,7 +293,7 @@ def fetch_datadog_context(
 """Datadog events query tool."""
 
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.datadog._client import make_client, unavailable
 
 
@@ -312,6 +314,8 @@ def _events_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_datadog_events",
     display_name="Datadog events",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Query Datadog events for deployments, alerts, and system changes.",
     use_cases=[
         "Finding recent deployment events that may correlate with failures",
@@ -366,7 +370,7 @@ def query_datadog_events(
 
 from typing import cast
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.datadog.availability import datadog_available_or_backend
 
 _ERROR_KEYWORDS = (
@@ -418,6 +422,8 @@ _DATADOG_LOGS_ANTI = (
     name="query_datadog_logs",
     display_name="Datadog logs",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     tags=("logs", "observability"),
     description=(
         "Search Datadog Logs with a concrete query string (required), e.g. "
@@ -505,7 +511,7 @@ def query_datadog_logs(
 
 from pydantic import BaseModel, Field
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 
 
 class QueryDatadogMetricsInput(BaseModel):
@@ -598,7 +604,7 @@ def query_datadog_metrics(
 """Datadog monitor listing tool."""
 
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 
 
 def _monitors_is_available(sources: dict[str, dict]) -> bool:
@@ -618,6 +624,8 @@ def _monitors_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     name="query_datadog_monitors",
     display_name="Datadog monitors",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="List Datadog monitors to understand alerting configuration and current states.",
     use_cases=[
         "Understanding which monitors triggered an alert",
@@ -680,7 +688,7 @@ def query_datadog_monitors(
 """Datadog tool: resolve a node IP to the pods running on that node."""
 
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 
 
 def _node_pods_is_available(sources: dict[str, dict]) -> bool:
@@ -700,6 +708,8 @@ def _node_pods_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 @tool(
     name="get_pods_on_node",
     source="datadog",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Resolve a node IP address to all pods running on that node via Datadog.",
     use_cases=[
         "Mapping a node IP from an infrastructure alert to specific pods",

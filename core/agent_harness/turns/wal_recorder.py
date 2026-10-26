@@ -1,12 +1,14 @@
 """Write-ahead logging for action-turn tool execution.
 
-The ReAct loop emits ``ToolExecutionStartEvent`` *before* ``execute_tool_calls``
-runs and ``ToolExecutionEndEvent`` after, both synchronously. Recording the
+The ReAct loop emits ``ToolExecutionStartEvent`` synchronously, immediately
+before each call executes, and ``ToolExecutionEndEvent`` after. Recording the
 intent on Start (durably, fsynced) and the commit on End therefore gives the
 write-ahead property with no loop changes: a ``tool_intent`` record with no
-matching ``tool_call`` commit after the process died means the turn was
-interrupted mid-execution. Recovery re-discovers state instead of replaying —
-see ``core.agent_harness.session.persistence.wal_recovery``.
+matching ``tool_call`` commit after the process died means that call was
+interrupted mid-execution. A call that never started — skipped after an
+earlier call ended the turn, or part of a rejected batch — gets no intent
+record, only its error commit. Recovery re-discovers state instead of
+replaying — see ``core.agent_harness.session.persistence.wal_recovery``.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import json
 import logging
 from typing import Any
 
+from config.constants.tool_output import TOOL_OUTPUT_PERSIST_MAX_BYTES
 from core.agent_harness.session import default_session_store
 from core.events import (
     RuntimeEvent,
@@ -23,14 +26,9 @@ from core.events import (
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
 )
+from core.tool import truncate_output_text
 
 logger = logging.getLogger(__name__)
-
-# Pure routing marker with no side effects: not worth an fsync, and a dangling
-# handoff intent after a crash would tell recovery nothing actionable.
-_UNLOGGED_TOOLS: frozenset[str] = frozenset({"assistant_handoff"})
-
-_COMMIT_RESULT_MAX_CHARS = 2_000
 
 # Marks WAL commit records so readers can tell them apart from the
 # integration-gathering tool rows that share the ``tool_call`` type.
@@ -39,11 +37,12 @@ WAL_SOURCE = "wal"
 
 def _bounded_result(result: Any) -> str:
     if isinstance(result, str):
-        return result[:_COMMIT_RESULT_MAX_CHARS]
+        return truncate_output_text(result, TOOL_OUTPUT_PERSIST_MAX_BYTES, tokens=False)
     try:
-        return json.dumps(result, ensure_ascii=False, default=str)[:_COMMIT_RESULT_MAX_CHARS]
+        text = json.dumps(result, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
-        return str(result)[:_COMMIT_RESULT_MAX_CHARS]
+        text = str(result)
+    return truncate_output_text(text, TOOL_OUTPUT_PERSIST_MAX_BYTES, tokens=False)
 
 
 def wal_event_recorder(session: Any, *, user_text: str | None = None) -> RuntimeEventCallback:
@@ -62,8 +61,6 @@ def wal_event_recorder(session: Any, *, user_text: str | None = None) -> Runtime
             return
         try:
             if isinstance(event, ToolExecutionStartEvent):
-                if event.tool_name in _UNLOGGED_TOOLS:
-                    return
                 store.append_tool_intent(
                     session_id,
                     tool=event.tool_name,
@@ -73,8 +70,6 @@ def wal_event_recorder(session: Any, *, user_text: str | None = None) -> Runtime
                     user_text=user_text,
                 )
             elif isinstance(event, ToolExecutionEndEvent):
-                if event.tool_name in _UNLOGGED_TOOLS:
-                    return
                 store.append_tool_call(
                     session_id,
                     tool=event.tool_name,

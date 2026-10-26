@@ -6,7 +6,7 @@ from typing import Any
 
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.slack.tools.slack_read_messages_tool.constants import SOURCE
 from integrations.slack.tools.slack_read_messages_tool.validation import validate_channel_id
 from integrations.slack.tools.slack_send_message_tool.validation import validate_message
@@ -37,13 +37,11 @@ class SlackReplyMessageTool(BaseTool):
         "Answering a question in the channel where it was asked",
     ]
     anti_examples = [
-        "Publishing a full RCA report (use the investigation publish flow instead)",
+        "Publishing a long multi-section report as one message (send a short summary instead)",
         "Posting to a channel the bot has not been invited to",
     ]
     requires = ["slack"]
     side_effect_level = SideEffectLevel.EXTERNAL
-    requires_approval = True
-    approval_reason = "Posts a message to a Slack channel on your behalf."
     input_schema = {
         "type": "object",
         "properties": {
@@ -141,5 +139,5 @@ class SlackReplyMessageTool(BaseTool):
 
 slack_reply_message = tool(
     SlackReplyMessageTool(),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+    surfaces=(ToolSurface.ACTION,),
 )

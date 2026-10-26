@@ -20,10 +20,10 @@ from pathlib import Path
 import pytest
 
 from config.constants.filestorage import DEFAULT_MAX_PARALLEL_UPLOADS
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.engine import SyncProgress, content_tag, push
 from infrastructure.filestorage.enums import SyncDirection, SyncRootName
 from infrastructure.filestorage.errors import UnsyncablePathError
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.syncable import SyncRoot
 
 LEAKED_SECRET = "sk-live-CANARY-must-never-reach-the-bucket"

@@ -7,7 +7,7 @@ import logging
 from infrastructure.logging.quiet_third_party import quiet_noisy_third_party_loggers
 
 # Routine authorized inbound audits are still emitted at INFO for other surfaces
-# (Hermes, ops tooling) but are hidden in the dedicated gateway process.
+# (ops tooling) but are hidden in the dedicated gateway process.
 _ROUTINE_AUDIT_MARKER = "authorized=True"
 
 

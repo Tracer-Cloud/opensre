@@ -9,8 +9,8 @@ Naming convention:
 
 Each ``AlertSourceRouting`` entry carries two tool-source lists:
 
-- ``relevance_tool_sources`` — broad prioritization during tool planning.
-- ``seed_tool_sources`` — narrower subset auto-invoked before the LLM loop.
+- ``relevance_tool_sources`` — broad prioritization for alert-driven tool use.
+- ``seed_tool_sources`` — narrower subset worth auto-calling first.
   Expensive or context-dependent tools stay out of seeding.
 
 Core owns only the mechanism (the dataclass, the registries, and the
@@ -148,7 +148,7 @@ def primary_sources_for_alert(state: dict[str, Any]) -> tuple[str, ...]:
 
 
 def seed_tool_sources_for_alert(state: dict[str, Any]) -> tuple[str, ...]:
-    """Return tool sources auto-called before the investigation LLM loop."""
+    """Return tool sources worth auto-calling first for this alert."""
     entry = routing_for_alert_source(resolve_alert_source(state))
     return entry.seed_tool_sources if entry is not None else ()
 

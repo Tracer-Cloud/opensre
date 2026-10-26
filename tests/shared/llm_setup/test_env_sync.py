@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import stat
 
-import keyring
 import pytest
 
 from config.env_file import is_sensitive_env_key, sync_env_secret, sync_env_values
@@ -14,7 +13,6 @@ from surfaces.shared.llm_setup.env_sync import (
     sync_provider_env,
     sync_reasoning_model_env,
 )
-from tests.shared.keyring_backend import MemoryKeyring
 
 _SKIP_AS_ROOT = not hasattr(os, "getuid") or os.getuid() == 0
 
@@ -102,8 +100,8 @@ def test_sync_provider_env_updates_provider_specific_keys(tmp_path, monkeypatch)
     assert "ENV=development\n" in content
     assert content.count("LLM_PROVIDER=") == 1
     assert "LLM_PROVIDER=openai\n" in content
-    assert "OPENAI_API_KEY=" not in content
-    assert "ANTHROPIC_API_KEY=" not in content
+    assert "OPENAI_API_KEY=old-key\n" in content
+    assert "ANTHROPIC_API_KEY=legacy-anthropic\n" in content
     assert "OPENAI_REASONING_MODEL=gpt-5-mini\n" in content
     assert "OPENAI_MODEL=gpt-5-mini\n" in content
 
@@ -135,7 +133,7 @@ def test_sync_provider_env_preserves_host_credential(tmp_path, monkeypatch) -> N
     assert "OLLAMA_MODEL=llama3.1\n" in content
 
 
-def test_sync_provider_env_strips_integration_fallback_secrets(tmp_path, monkeypatch) -> None:
+def test_sync_provider_env_preserves_integration_secrets(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     monkeypatch.delenv("OPENAI_REASONING_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
@@ -152,7 +150,7 @@ def test_sync_provider_env_strips_integration_fallback_secrets(tmp_path, monkeyp
     )
 
     content = env_path.read_text(encoding="utf-8")
-    assert "TELEGRAM_BOT_TOKEN=" not in content
+    assert "TELEGRAM_BOT_TOKEN=manual-fallback-token\n" in content
     assert "LLM_PROVIDER=openai\n" in content
 
 
@@ -219,7 +217,7 @@ def test_sync_provider_env_appends_to_file_without_final_newline(tmp_path, monke
     content = env_path.read_text(encoding="utf-8")
     assert content.endswith("OPENAI_MODEL=gpt-5-mini\n")
     assert "LLM_PROVIDER=openai\n" in content
-    assert "ANTHROPIC_API_KEY=" not in content
+    assert "ANTHROPIC_API_KEY=legacy-anthropic\n" in content
 
 
 def test_sync_provider_env_codex_writes_codex_model(tmp_path, monkeypatch) -> None:
@@ -237,34 +235,25 @@ def test_sync_provider_env_codex_writes_codex_model(tmp_path, monkeypatch) -> No
     assert "CODEX_MODEL=\n" in content
 
 
-def test_sync_provider_env_openai_oauth_writes_auth_method_and_codex_model(
-    tmp_path, monkeypatch
-) -> None:
+def test_sync_provider_env_scrubs_legacy_auth_method(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     monkeypatch.delenv("LLM_AUTH_METHOD", raising=False)
-    monkeypatch.delenv("CODEX_MODEL", raising=False)
     env_path = tmp_path / ".env"
     env_path.write_text(
-        "LLM_PROVIDER=anthropic\nANTHROPIC_REASONING_MODEL=claude-opus-4-7\n",
+        "LLM_PROVIDER=openai\nLLM_AUTH_METHOD=oauth\nOPENAI_REASONING_MODEL=gpt-5.5\n",
         encoding="utf-8",
     )
 
     sync_provider_env(
         provider=PROVIDER_BY_VALUE["openai"],
-        model="",
-        model_provider=PROVIDER_BY_VALUE["codex"],
-        auth_method="oauth",
+        model="gpt-5.5",
         env_path=env_path,
     )
 
     content = env_path.read_text(encoding="utf-8")
     assert "LLM_PROVIDER=openai\n" in content
-    assert "LLM_AUTH_METHOD=oauth\n" in content
-    assert "CODEX_MODEL=\n" in content
-    assert "ANTHROPIC_REASONING_MODEL=" not in content
-    assert os.environ["LLM_PROVIDER"] == "openai"
-    assert os.environ["LLM_AUTH_METHOD"] == "oauth"
-    assert os.environ["CODEX_MODEL"] == ""
+    assert "LLM_AUTH_METHOD=" not in content
+    assert "LLM_AUTH_METHOD" not in os.environ
 
 
 def test_sync_provider_env_gemini_cli_writes_model(tmp_path, monkeypatch) -> None:
@@ -541,62 +530,93 @@ def test_sync_provider_env_permission_error(tmp_path) -> None:
         env_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
-def test_sync_env_values_rejects_sensitive_keys(tmp_path) -> None:
+@pytest.mark.skipif(os.name == "nt", reason="owner-only mode is a POSIX .env write")
+def test_sync_env_values_creates_env_file_with_owner_only_mode(tmp_path) -> None:
+    env_path = tmp_path / ".env"
+
+    sync_env_values({"DD_SITE": "datadoghq.com"}, env_path=env_path)
+
+    mode = stat.S_IMODE(env_path.stat().st_mode)
+    assert mode == 0o600
+
+
+def test_sync_env_values_writes_sensitive_keys(tmp_path) -> None:
     env_path = tmp_path / ".env"
     env_path.write_text("FOO=bar\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="sync_env_secret"):
-        sync_env_values({"GITLAB_ACCESS_TOKEN": "secret"}, env_path=env_path)
+    sync_env_values({"GITLAB_ACCESS_TOKEN": "secret"}, env_path=env_path)
+
+    content = env_path.read_text(encoding="utf-8")
+    assert "FOO=bar\n" in content
+    assert "GITLAB_ACCESS_TOKEN=secret\n" in content
 
 
-def test_set_env_value_rejects_sensitive_keys_with_value_error() -> None:
+def test_set_env_value_writes_sensitive_keys() -> None:
     from config.env_file import set_env_value
 
-    with pytest.raises(ValueError, match="sync_env_secret"):
-        set_env_value(["FOO=bar\n"], "GITLAB_ACCESS_TOKEN", "secret")
+    lines = set_env_value(["FOO=bar\n"], "GITLAB_ACCESS_TOKEN", "secret")
+
+    assert lines == ["FOO=bar\n", "GITLAB_ACCESS_TOKEN=secret\n"]
 
 
-def test_sync_env_secret_raises_when_keyring_unavailable(monkeypatch) -> None:
+def test_set_env_value_rejects_newline_injection() -> None:
+    from config.env_file import set_env_value
+
+    with pytest.raises(ValueError, match="single line"):
+        set_env_value(["FOO=bar\n"], "FOO", "ok\nTELEGRAM_BOT_TOKEN=leaked")
+
+
+def test_set_env_value_replaces_export_prefixed_assignment() -> None:
+    from config.env_file import set_env_value
+
+    lines = set_env_value(["export DD_SITE=old\n"], "DD_SITE", "datadoghq.eu")
+
+    assert lines == ["DD_SITE=datadoghq.eu\n"]
+
+
+def test_sync_env_secret_raises_when_storage_unavailable(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "config.env_file.save_keyring_secret",
+        "config.env_file.save_credential",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("Secure local credential storage is unavailable on this machine.")
+            RuntimeError("Local credential storage is unavailable on this machine.")
         ),
     )
 
-    with pytest.raises(RuntimeError, match="Failed to persist.*system keyring"):
-        sync_env_secret("GITLAB_ACCESS_TOKEN", "gl-secret-token")
+    with pytest.raises(RuntimeError, match="Failed to persist.*credentials.json"):
+        sync_env_secret(
+            "GITLAB_ACCESS_TOKEN",
+            "gl-secret-token",
+            env_path=tmp_path / ".env",
+        )
 
 
-def test_sync_env_values_routes_secrets_to_keyring(tmp_path, monkeypatch) -> None:
+def test_sync_env_values_preserves_existing_secrets_and_updates_public_keys(
+    tmp_path, monkeypatch
+) -> None:
     monkeypatch.delenv("GITLAB_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
+    monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", tmp_path / "unused.env")
 
-    previous_backend = keyring.get_keyring()
-    keyring.set_keyring(MemoryKeyring())
-    try:
-        env_path = tmp_path / ".env"
-        env_path.write_text(
-            "GITLAB_BASE_URL=https://gitlab.example.com\nGITLAB_ACCESS_TOKEN=legacy-plaintext\n",
-            encoding="utf-8",
-        )
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GITLAB_BASE_URL=https://gitlab.example.com\nGITLAB_ACCESS_TOKEN=legacy-plaintext\n",
+        encoding="utf-8",
+    )
 
-        sync_env_secret("GITLAB_ACCESS_TOKEN", "gl-secret-token")
-        sync_env_values(
-            {"GITLAB_BASE_URL": "https://gitlab.corp.com"},
-            env_path=env_path,
-        )
+    sync_env_secret("GITLAB_ACCESS_TOKEN", "gl-secret-token", env_path=env_path)
+    sync_env_values(
+        {"GITLAB_BASE_URL": "https://gitlab.corp.com"},
+        env_path=env_path,
+    )
 
-        content = env_path.read_text(encoding="utf-8")
-        assert "GITLAB_BASE_URL=https://gitlab.corp.com\n" in content
-        assert "GITLAB_ACCESS_TOKEN=" not in content
-        assert resolve_env_credential("GITLAB_ACCESS_TOKEN") == "gl-secret-token"
-    finally:
-        keyring.set_keyring(previous_backend)
+    content = env_path.read_text(encoding="utf-8")
+    assert "GITLAB_BASE_URL=https://gitlab.corp.com\n" in content
+    assert "GITLAB_ACCESS_TOKEN=gl-secret-token\n" in content
+    assert resolve_env_credential("GITLAB_ACCESS_TOKEN") == "gl-secret-token"
 
 
-def test_sync_env_secret_with_blank_value_deletes_the_stored_secret(monkeypatch) -> None:
-    """A field cleared back to blank must remove the old keyring entry, not just skip writing.
+def test_sync_env_secret_with_blank_value_deletes_the_stored_secret(tmp_path, monkeypatch) -> None:
+    """A field cleared back to blank must remove the old stored entry, not just skip writing.
 
     apply_setup calls sync_env_secret for every secret field on every save,
     submitted or not (see integrations/setup_flow.py:_persist_env) — so clearing
@@ -604,18 +624,16 @@ def test_sync_env_secret_with_blank_value_deletes_the_stored_secret(monkeypatch)
     """
     monkeypatch.delenv("DAGSTER_API_TOKEN", raising=False)
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
+    env_path = tmp_path / ".env"
 
-    previous_backend = keyring.get_keyring()
-    keyring.set_keyring(MemoryKeyring())
-    try:
-        sync_env_secret("DAGSTER_API_TOKEN", "dag_stale_token")
-        assert resolve_env_credential("DAGSTER_API_TOKEN") == "dag_stale_token"
+    sync_env_secret("DAGSTER_API_TOKEN", "dag_stale_token", env_path=env_path)
+    assert resolve_env_credential("DAGSTER_API_TOKEN") == "dag_stale_token"
+    assert "DAGSTER_API_TOKEN=dag_stale_token\n" in env_path.read_text(encoding="utf-8")
 
-        sync_env_secret("DAGSTER_API_TOKEN", "")
+    sync_env_secret("DAGSTER_API_TOKEN", "", env_path=env_path)
 
-        assert resolve_env_credential("DAGSTER_API_TOKEN") == ""
-    finally:
-        keyring.set_keyring(previous_backend)
+    assert resolve_env_credential("DAGSTER_API_TOKEN") == ""
+    assert "DAGSTER_API_TOKEN=" not in env_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(_SKIP_AS_ROOT, reason="root bypasses file permission checks")
@@ -630,21 +648,7 @@ def test_sync_env_values_permission_error(tmp_path) -> None:
         env_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
-def test_strip_keyring_backed_secret_lines_removes_all_sensitive_lines() -> None:
-    from config.env_file import strip_secret_env_lines
-
-    lines = [
-        "TELEGRAM_BOT_TOKEN=fallback\n",
-        "DD_API_KEY=in-keyring\n",
-        "DD_SITE=old\n",
-    ]
-
-    kept = strip_secret_env_lines(lines)
-
-    assert kept == ["DD_SITE=old\n"]
-
-
-def test_sync_env_values_strips_telegram_bot_token_fallback(tmp_path) -> None:
+def test_sync_env_values_preserves_telegram_bot_token(tmp_path) -> None:
     env_path = tmp_path / ".env"
     env_path.write_text(
         "TELEGRAM_BOT_TOKEN=manual-fallback-token\nDD_SITE=old\n",
@@ -654,11 +658,11 @@ def test_sync_env_values_strips_telegram_bot_token_fallback(tmp_path) -> None:
     sync_env_values({"DD_SITE": "datadoghq.eu"}, env_path=env_path)
 
     content = env_path.read_text(encoding="utf-8")
-    assert "TELEGRAM_BOT_TOKEN=" not in content
+    assert "TELEGRAM_BOT_TOKEN=manual-fallback-token\n" in content
     assert "DD_SITE=datadoghq.eu" in content
 
 
-def test_sync_env_values_strips_multiple_fallback_secrets(tmp_path) -> None:
+def test_sync_env_values_preserves_multiple_existing_secrets(tmp_path) -> None:
     env_path = tmp_path / ".env"
     env_path.write_text(
         "DD_API_KEY=datadog-api\nDD_APP_KEY=datadog-app\n",
@@ -668,19 +672,33 @@ def test_sync_env_values_strips_multiple_fallback_secrets(tmp_path) -> None:
     sync_env_values({"DD_SITE": "datadoghq.com"}, env_path=env_path)
 
     content = env_path.read_text(encoding="utf-8")
-    assert "DD_API_KEY=" not in content
-    assert "DD_APP_KEY=" not in content
+    assert "DD_API_KEY=datadog-api\n" in content
+    assert "DD_APP_KEY=datadog-app\n" in content
     assert "DD_SITE=datadoghq.com" in content
 
 
-def test_sync_env_values_empty_update_strips_fallback_secrets(tmp_path) -> None:
+def test_sync_env_values_empty_update_preserves_existing_secrets(tmp_path) -> None:
     """Wizard paths call ``sync_env_values({})`` after integration setup."""
     env_path = tmp_path / ".env"
     env_path.write_text("TELEGRAM_BOT_TOKEN=manual-fallback-token\n", encoding="utf-8")
 
     sync_env_values({}, env_path=env_path)
 
-    assert env_path.read_text(encoding="utf-8") == ""
+    assert env_path.read_text(encoding="utf-8") == "TELEGRAM_BOT_TOKEN=manual-fallback-token\n"
+
+
+def test_sync_env_values_preserves_export_prefixed_secrets(tmp_path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "export TELEGRAM_BOT_TOKEN=manual-fallback-token\nDD_SITE=old\n",
+        encoding="utf-8",
+    )
+
+    sync_env_values({"DD_SITE": "datadoghq.eu"}, env_path=env_path)
+
+    content = env_path.read_text(encoding="utf-8")
+    assert "export TELEGRAM_BOT_TOKEN=manual-fallback-token\n" in content
+    assert "DD_SITE=datadoghq.eu" in content
 
 
 def test_sync_provider_env_preserves_custom_openai_base_url(tmp_path, monkeypatch) -> None:

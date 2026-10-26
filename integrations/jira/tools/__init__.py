@@ -6,9 +6,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.domain.types.evidence import record_evidence_entry
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.jira.client import make_jira_client
+from integrations.jira.tools.search_issues import JiraSearchIssuesTool, jira_search_issues
+
+
+def _map_jira_issue_detail(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    issue = output.get("issue")
+    if isinstance(issue, dict) and issue:
+        record_evidence_entry(
+            evidence,
+            source="jira_issue_detail",
+            label="Jira Issue Detail",
+            summary=str(issue.get("summary") or issue.get("issue_key") or "Issue details"),
+        )
 
 
 class JiraAddCommentTool(BaseTool):
@@ -242,6 +257,9 @@ class JiraIssueDetailTool(BaseTool):
 
     name = "jira_issue_detail"
     source = "jira"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = _map_jira_issue_detail
     description = (
         "Fetch the full details of a specific Jira issue to pull context, status, "
         "and description into the current investigation."
@@ -328,107 +346,13 @@ class JiraIssueDetailTool(BaseTool):
 jira_issue_detail = JiraIssueDetailTool()
 
 
-# ======== from tools/jira_search_issues_tool/ ========
-
-"""Jira issue search tool for investigation workflows."""
-
-
-from core.tool import BaseTool
-
-
-class JiraSearchIssuesTool(BaseTool):
-    """Search Jira issues via JQL to find related incidents, bugs, or tasks."""
-
-    name = "jira_search_issues"
-    source = "jira"
-    description = (
-        "Search Jira issues using JQL to find related incidents, open bugs, or recent tasks "
-        "that may provide context for the current investigation."
-    )
-    use_cases = [
-        "Finding open bugs or incidents for a specific service or component",
-        "Searching for recent Jira issues related to the alert under investigation",
-        "Checking whether a similar incident was already filed in Jira",
-        "Listing high-priority issues updated recently in a project",
-    ]
-    requires = ["base_url", "email", "api_token"]
-    injected_params = ["api_token", "base_url", "email"]
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "base_url": {
-                "type": "string",
-                "description": "Jira instance URL (e.g. https://myorg.atlassian.net)",
-            },
-            "email": {"type": "string", "description": "Jira account email for authentication"},
-            "api_token": {"type": "string", "description": "Jira API token"},
-            "project_key": {
-                "type": "string",
-                "default": "",
-                "description": "Jira project key to scope the search (e.g. OPS)",
-            },
-            "jql": {
-                "type": "string",
-                "default": "",
-                "description": "JQL query string (e.g. status = Open AND priority = High)",
-            },
-            "max_results": {
-                "type": "integer",
-                "default": 20,
-                "description": "Maximum number of issues to return",
-            },
-        },
-        "required": ["base_url", "email", "api_token"],
-    }
-    outputs = {
-        "issues": "List of issues with key, summary, status, priority, labels, and assignee",
-        "total": "Total number of matching issues",
-    }
-
-    def is_available(self, sources: dict) -> bool:
-        return bool(sources.get("jira", {}).get("connection_verified"))
-
-    def extract_params(self, sources: dict) -> dict[str, Any]:
-        jira = sources["jira"]
-        return {
-            "base_url": jira.get("base_url", ""),
-            "email": jira.get("email", ""),
-            "api_token": jira.get("api_token", ""),
-            "project_key": jira.get("project_key", ""),
-            "jql": "",
-            "max_results": 20,
-        }
-
-    def run(
-        self,
-        base_url: str,
-        email: str,
-        api_token: str,
-        project_key: str = "",
-        jql: str = "",
-        max_results: int = 20,
-        **_kwargs: Any,
-    ) -> dict[str, Any]:
-        client = make_jira_client(base_url, email, api_token, project_key)
-        if client is None:
-            return tool_unavailable(
-                "jira", "Jira integration is not configured.", issues=[], total=0
-            )
-
-        result = client.search_issues(jql=jql, max_results=max_results)
-
-        if not result.get("success"):
-            return tool_unavailable(
-                "jira", result.get("error", "unknown error"), issues=[], total=0
-            )
-
-        return {
-            "source": "jira",
-            "available": True,
-            "issues": result.get("issues", []),
-            "total": result.get("total", 0),
-            "jql": jql,
-        }
-
-
-jira_search_issues = JiraSearchIssuesTool()
+__all__ = [
+    "JiraAddCommentTool",
+    "JiraCreateIssueTool",
+    "JiraIssueDetailTool",
+    "JiraSearchIssuesTool",
+    "jira_add_comment",
+    "jira_create_issue",
+    "jira_issue_detail",
+    "jira_search_issues",
+]

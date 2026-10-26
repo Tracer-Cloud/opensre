@@ -19,15 +19,14 @@ from typing import Any
 import httpx
 import jwt
 
-from config.config import (
+from config.clerk import (
     CLERK_CONFIG_DEV,
     CLERK_CONFIG_PROD,
     JWKS_CACHE_TTL_SECONDS,
     JWT_ALGORITHM,
-    Environment,
     get_clerk_config_override,
-    get_environment,
 )
+from config.environment import Environment, get_environment
 
 
 @dataclass

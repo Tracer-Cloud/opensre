@@ -27,7 +27,7 @@ def is_vertex_ai_provider(provider: str) -> bool:
 
 def resolve_vertex_ai_location(value: str = "") -> str:
     """Return the configured Vertex AI region, falling back to the OpenSRE default."""
-    from config.config import DEFAULT_VERTEX_AI_LOCATION
+    from config.llm_models import DEFAULT_VERTEX_AI_LOCATION
 
     location = (value or os.getenv(VERTEX_AI_LOCATION_ENV, "")).strip()
     return location or DEFAULT_VERTEX_AI_LOCATION

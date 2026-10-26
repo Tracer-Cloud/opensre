@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -41,6 +42,7 @@ def _reset_analytics(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     provider.shutdown_analytics(flush=False)
     provider._instance = None
     usage_ctx._PROCESS_SESSION_ID = None
+    usage_ctx._ProcessSessionClaim.session_id = None
 
 
 def _stub_httpx_client(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
@@ -60,8 +62,14 @@ def _stub_httpx_client(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object
         def __exit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-        def post(self, url: str, json: dict[str, object]) -> _StubResponse:
-            posted_payloads.append({"url": url, "json": json})
+        def post(
+            self,
+            url: str,
+            *,
+            content: bytes,
+            headers: dict[str, str],
+        ) -> _StubResponse:
+            posted_payloads.append({"url": url, "json": json.loads(content), "headers": headers})
             return _StubResponse()
 
     monkeypatch.setattr(provider.httpx, "Client", _StubClient)
@@ -81,6 +89,28 @@ def test_build_usage_enrichment_from_context_and_env(monkeypatch: pytest.MonkeyP
     assert props["surface"] == UsageSurface.SLACK
     assert props["session_id"] == "sess-1"
     assert props["user_id"] == "U123"
+    assert "slack_user_id" not in props
+
+
+def test_slack_signup_stamps_member_and_workspace_without_replacing_caller_values() -> None:
+    with bound_usage_context(
+        surface=UsageSurface.SLACK,
+        user_id="U094FN4AHME",
+        organization_id="enrian",
+        slack_user_id="U094FN4AHME",
+        slack_team_id="T123",
+    ):
+        props = build_usage_enrichment()
+        merged = merge_usage_enrichment(
+            {"slack_user_id": "U_CALLER", "organization_id": "org_caller"}
+        )
+    assert props["slack_user_id"] == "U094FN4AHME"
+    assert props["slack_team_id"] == "T123"
+    assert props["user_id"] == "U094FN4AHME"
+    assert props["organization_id"] == "enrian"
+    assert merged["slack_user_id"] == "U_CALLER"
+    assert merged["slack_team_id"] == "T123"
+    assert merged["organization_id"] == "org_caller"
 
 
 def test_session_id_falls_back_to_cli_session() -> None:
@@ -106,21 +136,19 @@ def test_capture_stamps_org_groups_and_emits_groupidentify(
 
     analytics = provider.Analytics()
     with bound_usage_context(surface=UsageSurface.CLI, session_id="s1"):
-        analytics.capture(Event.CLI_INVOKED, {"entrypoint": "opensre"})
+        analytics.capture("cli_command_opensre", {"entrypoint": "opensre"})
     analytics.shutdown(flush=True)
 
     events = [p["json"]["event"] for p in posted]
     assert "$groupidentify" in events
-    assert Event.CLI_INVOKED.value in events
+    assert "cli_command_opensre" in events
 
     group_payload = next(p["json"] for p in posted if p["json"]["event"] == "$groupidentify")
     assert group_payload["properties"]["$group_type"] == ORGANIZATION_GROUP_TYPE
     assert group_payload["properties"]["$group_key"] == "org_prod"
     assert group_payload["properties"]["$group_set"]["organization_id"] == "org_prod"
 
-    capture_payload = next(
-        p["json"] for p in posted if p["json"]["event"] == Event.CLI_INVOKED.value
-    )
+    capture_payload = next(p["json"] for p in posted if p["json"]["event"] == "cli_command_opensre")
     props = capture_payload["properties"]
     assert props["organization_id"] == "org_prod"
     assert props["$groups"] == {ORGANIZATION_GROUP_TYPE: "org_prod"}
@@ -133,7 +161,7 @@ def test_group_identify_once_per_org(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_once")
 
     analytics = provider.Analytics()
-    analytics.capture(Event.CLI_INVOKED)
+    analytics.capture("cli_command_opensre")
     analytics.capture(Event.ONBOARD_STARTED)
     analytics.shutdown(flush=True)
 
@@ -153,67 +181,40 @@ def test_group_identify_direct(monkeypatch: pytest.MonkeyPatch) -> None:
     assert props["$group_set"] == {"name": "Acme"}
 
 
-def test_process_session_id_stamps_cli_investigate_without_repl(
+def test_process_session_id_stamps_cli_capture_without_repl(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     posted = _stub_httpx_client(monkeypatch)
     monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_cli")
 
-    from infrastructure.analytics import cli as analytics_cli
+    from infrastructure.analytics import capture
     from infrastructure.analytics.usage_context import ensure_process_session_id
 
     analytics = provider.Analytics()
     monkeypatch.setattr(provider, "_instance", analytics)
-    monkeypatch.setattr(analytics_cli, "get_analytics", lambda: analytics)
+    monkeypatch.setattr(capture, "get_analytics", lambda: analytics)
 
-    analytics_cli.capture_cli_invoked({"entrypoint": "opensre"})
+    capture.capture_cli_invoked({"entrypoint": "opensre"})
     process_session = ensure_process_session_id()
-    with analytics_cli.track_investigation(
-        entrypoint=analytics_cli.EntrypointSource.CLI_COMMAND,
-        trigger_mode=analytics_cli.TriggerMode.FILE,
-        input_path="alert.json",
-    ):
-        pass
+    capture.capture_onboard_started()
     analytics.shutdown(flush=True)
 
-    started = next(
-        p["json"] for p in posted if p["json"]["event"] == Event.INVESTIGATION_STARTED.value
-    )
-    props = started["properties"]
+    onboard = next(p["json"] for p in posted if p["json"]["event"] == Event.ONBOARD_STARTED.value)
+    props = onboard["properties"]
     assert props["organization_id"] == "org_cli"
     assert props["$groups"] == {ORGANIZATION_GROUP_TYPE: "org_cli"}
     assert props["surface"] == UsageSurface.CLI
     assert props["session_id"] == process_session
 
 
-def test_track_investigation_binds_session_from_session_object(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    posted = _stub_httpx_client(monkeypatch)
-    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_repl")
-
-    from infrastructure.analytics import cli as analytics_cli
-
-    analytics = provider.Analytics()
-    monkeypatch.setattr(provider, "_instance", analytics)
-    monkeypatch.setattr(analytics_cli, "get_analytics", lambda: analytics)
-    analytics.set_persistent_property("surface", UsageSurface.CLI)
-
-    class _Session:
-        session_id = "repl-session-123"
-        last_investigation_id = ""
-
-    with analytics_cli.track_investigation(
-        entrypoint=analytics_cli.EntrypointSource.CLI_REPL_FILE,
-        trigger_mode=analytics_cli.TriggerMode.FILE,
-        session=_Session(),  # type: ignore[arg-type]
-    ):
-        pass
-    analytics.shutdown(flush=True)
-
-    started = next(
-        p["json"] for p in posted if p["json"]["event"] == Event.INVESTIGATION_STARTED.value
+def test_only_the_first_session_adopts_the_process_session_id() -> None:
+    from infrastructure.analytics.usage_context import (
+        claim_process_session_id,
+        ensure_process_session_id,
     )
-    assert started["properties"]["session_id"] == "repl-session-123"
-    assert started["properties"]["surface"] == UsageSurface.CLI
-    assert started["properties"]["organization_id"] == "org_repl"
+
+    process_session = ensure_process_session_id()
+
+    assert claim_process_session_id() == process_session
+    assert claim_process_session_id() is None
+    assert ensure_process_session_id() == process_session

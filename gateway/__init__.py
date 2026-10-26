@@ -6,7 +6,7 @@ Subpackages:
   ``runtime``, ``storage``, ``billing``, ``attachments``, ``session``,
   ``config``)
 * ``transports/`` — chat peers (``slack``, ``discord``, ``telegram``, ``buzz``)
-* ``web/`` — web surface (FastAPI health / alerts / investigations; not a chat transport)
+* ``web/`` — web surface (FastAPI health / alerts; not a chat transport)
 
 Entry points:
 

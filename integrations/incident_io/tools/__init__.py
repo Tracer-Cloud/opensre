@@ -6,9 +6,102 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.tool import BaseTool
 from core.tool_framework.utils import tool_unavailable
+from infrastructure.text.truncation import truncate
 from integrations.incident_io.client import make_incident_io_client
+
+#: Incident names are free-form, human-entered text -- unbounded and can
+#: contain newlines or carriage returns. Cap the length used in a report
+#: summary so one long or multi-line value can't produce a malformed or
+#: oversized report line.
+_NAME_SUMMARY_TRUNCATE_LEN = 120
+
+
+def _incident_io_summary_text(value: str) -> str:
+    """Collapse and cap free-form incident.io text before it goes into a summary."""
+    collapsed = value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    return truncate(collapsed, _NAME_SUMMARY_TRUNCATE_LEN)
+
+
+def _incident_io_page_is_truncated(output: dict[str, Any]) -> bool:
+    """A ``pagination_meta.after`` cursor means more results exist beyond this page."""
+    return bool((output.get("pagination_meta") or {}).get("after"))
+
+
+def _incident_io_incident_summary(incident: dict[str, Any]) -> str:
+    name = _incident_io_summary_text(str(incident.get("name", "unknown")))
+    parts = [f"'{name}'"]
+    if incident.get("status"):
+        parts.append(str(incident["status"]))
+    if incident.get("severity"):
+        parts.append(str(incident["severity"]))
+    return ", ".join(parts)
+
+
+def _map_incident_io_incidents(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite incident.io read results; the write action (append_summary) has no
+    gathered evidence to cite, so it is intentionally left unhandled here."""
+    if not output.get("available"):
+        return
+    action = output.get("action")
+
+    if action == "list":
+        incidents = output.get("incidents") or []
+        if not incidents:
+            return
+        total = output.get("total", len(incidents))
+        label = f"{total}+" if _incident_io_page_is_truncated(output) else str(total)
+        record_evidence_entry(
+            evidence,
+            source="incident_io_incidents",
+            label="incident.io Incidents",
+            summary=f"{label} incident(s)",
+        )
+    elif action == "get":
+        incident = output.get("incident") or {}
+        if not incident:
+            return
+        record_evidence_entry(
+            evidence,
+            source="incident_io_incidents",
+            label="incident.io Incident",
+            summary=_incident_io_incident_summary(incident),
+        )
+    elif action == "updates":
+        updates = output.get("incident_updates") or []
+        if not updates:
+            return
+        total = output.get("total", len(updates))
+        label = f"{total}+" if _incident_io_page_is_truncated(output) else str(total)
+        record_evidence_entry(
+            evidence,
+            source="incident_io_incidents",
+            label="incident.io Incident Updates",
+            summary=f"{label} update(s)",
+        )
+    elif action == "context":
+        incident = output.get("incident") or {}
+        if not incident:
+            return
+        parts = [_incident_io_incident_summary(incident)]
+        total_updates = output.get("total_updates", 0)
+        if total_updates:
+            label = (
+                f"{total_updates}+"
+                if _incident_io_page_is_truncated(output)
+                else str(total_updates)
+            )
+            parts.append(f"{label} update(s)")
+        record_evidence_entry(
+            evidence,
+            source="incident_io_incidents",
+            label="incident.io Incident",
+            summary=", ".join(parts),
+        )
 
 
 class IncidentIoIncidentsTool(BaseTool):
@@ -16,6 +109,7 @@ class IncidentIoIncidentsTool(BaseTool):
 
     name = "incident_io_incidents"
     source = "incident_io"
+    evidence_mapper = _map_incident_io_incidents
     description = (
         "Read incident.io incidents, incident metadata, and incident updates for RCA context. "
         "Can append OpenSRE findings to the incident summary through the supported edit endpoint."

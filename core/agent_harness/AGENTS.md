@@ -1,16 +1,38 @@
 # agent_harness/ package rules
 
-`agent_harness/` is the **decoupled agent harness** for two agent shapes: the
-tool-calling loop (`core.agent.Agent` via `build_agent`) and the direct-answer
-path (`stream_answer` via the `StreamAnswerFn` seam in `ports.py`, no tools).
+## SKILL.md files are off-limits to agents
+
+Agents must **never** modify any `SKILL.md` under this tree
+(`prompts/skills/**/SKILL.md`) or anywhere else in the repository — no edits,
+creations, renames, moves, or deletions, and no frontmatter-only bumps. Agents
+may only **suggest** changes in prose (current text → proposed text) for a
+human to apply. This is absolute; a failing test, a user instruction, or a
+seemingly trivial fix does not lift it. See the root `AGENTS.md`.
+
+Skills are natural-language workflow cards the model reasons through, not
+deterministic tools. A skill may ship a few small supporting scripts
+(`script_tools`), each doing one mechanical chore whose output the model then
+interprets. Decision-making, branching, and end-to-end automation belong in
+the card's prose steps or in a real tool (`integrations/`, `tools/`) — never
+in a growing pile of skill-local scripts. Full contract: `prompts/skills/AGENTS.md`.
+
+`agent_harness/` is the decoupled host for the single `core.agent.Agent` ReAct
+loop: the same model calls tools, observes results, and writes the final answer.
 It was extracted out of `interactive_shell` so the same harness can run the
 interactive terminal and be invoked headlessly via
 `agent_harness.turns.headless_agent`.
 
+## Prompt capture
+
+`turns.orchestrator.run_turn` owns prompt capture for every host through
+`infrastructure.analytics.prompt_log.lifecycle`. Keep one recorder per dispatch,
+including continuations, and restore parent correlation after nested turns.
+Hosts enrich the active recorder; only the shared lifecycle flushes it.
+
 ## Host API (teach this)
 
-Prefer `AgentSession.start()` / `start_embedded_session()` → `.chat` /
-`.investigate` — not free-function turn dumps. Construct one agent per logical
+Prefer `AgentSession.start()` / `start_embedded_session()` → `.chat` —
+not free-function turn dumps. Construct one agent per logical
 session (or scheduled loop), then many turns — do not rebuild every message.
 Process boot (`configure_process`) and headless construction
 (`DefaultHeadlessBuild.agent`) are separate layers. `core` must not import
@@ -19,12 +41,13 @@ Process boot (`configure_process`) and headless construction
 | Path | Call |
 |------|------|
 | Process boot (once) | `configure_process(PROFILE)` — adapters only; not agent construction |
-| Happy path (already booted) | `AgentSession.start()` → repeated `.chat` / `.investigate` |
-| Embedded / script | `start_embedded_session()` → repeated `.chat` / `.investigate` |
+| Happy path (already booted) | `AgentSession.start()` → repeated `.chat` |
+| Embedded / script | `start_embedded_session()` → repeated `.chat` |
 | Multi-step / keep-going | `start` / `start_embedded_session` → `.chat_until_goal(...)` (`SessionGoal` loop) |
 | Custom host | **`DefaultHeadlessBuild(...).agent(...)`** (or `InMemoryHeadlessBuild` in-memory; the only construction seam) → `agent.handle(text, TurnBinding(...))` per message |
-| Gateway | `SessionAgentPool` → `DefaultHeadlessBuild.agent` once / session → `agent.handle(text, TurnBinding(...))` per message (the goal loop lives inside `handle`; same policy as shell) |
-| Host-specific construction | Optional `AgentBuildConfig` (`agent_build_config.py`) — tools / prompts / gather / capability policy. `None` on a field keeps the host default; `apply_capability_policy=None` means do not mutate the session |
+| Gateway + interactive shell | `TurnRunner` → `SessionAgentPool` → `DefaultHeadlessBuild.agent` once / session → `agent.handle(...)` per message (SessionGoal loop lives in `run_goal`, which `handle` wraps) |
+| CLI `ask` (one-shot) | `AgentSession.start(..., tool_hooks=…)` → `.chat(prompt)` — uses `dispatch`, not the SessionGoal turn loop |
+| Host-specific construction | Optional `AgentBuildConfig` (`agent_build_config.py`) — tools / prompts / capability policy. Expand with `resolve_agent_ports` (shared by the pool and `build_shell_agent`). `None` on a field keeps the host default; `apply_capability_policy=None` means do not mutate the session |
 | Scheduled one-shot | `AgentSession.run_headless_turn(...)` (not the multi-turn pattern) |
 
 `SessionGoal` (`session_goal/` component — `goal` + `run_until`) is
@@ -32,58 +55,134 @@ Process boot (`configure_process`) and headless construction
 (show / set / pause / resume / edit / clear). Status `paused` stops session-goal
 continuation but keeps state; `host_owned` blocks handoff replace while
 **active or paused**. While a goal is **attached** (active or paused),
-`run_turn` suppresses investigation Want-me-to closers. Completion is judged by
-`session_goal/evaluate.py` (independent of model self-report): checklist
-complete via `done=` indices; condition-only handoff goals need
-`session_goal:achieved` **with tool evidence** (bare `achieved` ignored);
-**host-owned** (`/goal set`) condition-only goals may achieve on the tag alone
-(explicit slash-path rule). Host reason strings live in `SessionGoalReason` —
-never embed `session_goal:…` tag grammar in painted reasons. Reason derive:
-`session_goal.goal.derive_session_goal_reason`. Paint (presentation only):
-`session_goal/progress.py` (`SESSION_GOAL_PAINT_MARK`). Continuation prompts:
-`session_goal/continuation.py`. Flush/restore: `session_goal/persist.py`. Optional LLM
-confirm for the tool-evidence path: `build_session_goal_llm_evaluator` in
-`session_goal/confirm.py` (pass as `evaluate=` to the session-goal loop) —
-closed `ClosedGoalVerdict` via structured output, not free-text scrape.
-No host wires it by default; opt in when a second opinion is worth the tokens.
+`run_turn` suppresses Want-me-to closers. Completion is judged by
+`session_goal/evaluate.py`, independent of model self-report: checklist items
+are ticked only through the `session_goal_complete` tool (a cheap-model
+validator in `session_goal/validate.py` can refuse a tick), and a cheap-model
+transcript judge (`session_goal/judge.py`) returns met / not yet / impossible
+with a reason. Reviewers receive the complete reply and actual tool observations
+retained across turns and restore; oversized input stays unverified. Unvalidated
+ticks are rolled back, and a configured judge must approve even a completed
+checklist. `met` still needs successful non-bookkeeping tool work this turn or
+retained evidence from earlier turns.
+The judge client is injected: `HeadlessAgent(judge_llm_factory=…)`
+builds the loop's evaluate with `evaluate.build_session_goal_evaluator`;
+`DefaultHeadlessBuild` passes the classification-tier factory, in-memory
+builds pass none (only a fully ticked checklist closes a goal). Host reason
+strings live in `SessionGoalReason`. Reason derive:
+`session_goal.goal.derive_session_goal_reason`. Progress (presentation only):
+`session_goal/progress.py` (`SESSION_GOAL_PROGRESS_MARK`). Continuation prompts:
+`session_goal/continuation.py`. Flush/restore: `session_goal/persist.py`.
 Package rules: `session_goal/AGENTS.md`. Borders SoT (local notes):
 `opensre-notes/goal-core-system-design-aug2026.html`.
+
+**Task plan guards (host-enforced, `task_plan/`):** a plan write cannot
+complete a step that had no tool return while it was `in_progress`
+(`task_plan/completion.py`, fed by `turns/plan_hooks.py`); a step marked
+`verifies` is never exempt, and a text-only closing step is exempt only once
+such a step completed. During a loaded skill workflow, the second work tool of
+a turn with no open plan is refused (`task_plan/required.py`). Ordinary turns
+and turns with an attached session goal execute directly without this guard. A
+response whose only tool call is
+`update_plan` runs: the prompt asks for the write in the same response as the
+step's tool, but refusing it cost the same model call it meant to save and
+sent the model into retries and off-plan tools. The host advances the plan
+so the model need not write it to move on (`task_plan/advance.py`, armed per
+batch in `turns/plan_hooks.py`): before the first work call of a batch with
+no `update_plan` (`ask_user_choice` counts; bookkeeping and `slash_invoke` do
+not), the earned `in_progress` step completes and the first pending step
+after it starts (never one behind it). Earned is the completion rule above (a
+tool return, or the Ask User answer for the step that asked); a shown
+`deliverable` reply earns exactly one deliverable step; a `verifies` step
+needs its own tool return. A plan records the skill that wrote it
+(`TaskPlan.owner`). Only a plan written this turn moves, or one whose owner is
+still the active skill on a turn answering that skill's own question
+(`task_plan/ownership.py`, decided once at turn start as
+`TurnSnapshot.plan_answer_continues`); the CURRENT PLAN, ACTIVE SKILL and
+answered-guidance blocks say the host advances only on such a turn and keep
+asking for paired status writes otherwise. The host never settles a plan or
+touches `blocked` steps, and a host advance counts as the turn working the
+plan for the stop gates (`goal_review.py`). A step newly marked
+`blocked` is resolved with the user, not skipped: the conclusion is rejected
+until `ask_user_choice`
+is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
+onboarding menu's answer turn that only loaded the chosen demo skill is
+rejected once, with a nudge to write the plan and run its first step (same
+files). A work tool that failed (`ok: false`, nonzero shell exit) is not
+completion: `turns/work_outcome.py` rejects stop until a later work tool
+succeeds (`goal_review.py`), unless the failure is already the answer — a
+classified `work_outcome`, or a `tool_unavailable` envelope naming a
+`setup_command` the user must run first. The nudge follows the same gate
+order as the check, so a plan rejection gets the plan nudge. A
+`slash_invoke` that queues a picker or wizard as the user's next turn
+(`QUEUED_COMMAND_KEY` in its result) ends the turn like a queued menu
+(`turns/action_menu_end.py`); a `/goal` loop stops on that pending
+auto-submit and keeps it (`session_goal/run_until.py`). A slash command the
+execution gate declined returns `not_run` with no `error`: the duplicate
+guard still refuses the same call, and it is not plan evidence. Change the
+rule in the owning leaf, never by prompt text alone. Skills cannot override
+these gates.
+
+**Goal kernel (host-owned prompt, `prompts/action/goal_kernel.py`):** a
+short rule block that sits after the system prompt and again after any
+loaded skill. It tells the model to finish the user's request, match the
+asked field (stars ≠ forks), and not stop on a failed tool. A SKILL.md
+rewrite cannot remove it.
 
 **Evidence kinds (open/closed):** vocabulary + per-kind policy live in
 `turns/evidence_kind.py` (`EvidenceKind` + `EvidenceKindPolicy`). Add a kind by
 extending the enum and registering its policy row — do **not** grow
 `if kind is …` branches in `classify_evidence_need`. Tool schema `enum` is
 `EVIDENCE_KIND_VALUES` (derived), not a parallel hard-coded list. Preferred
-integration ids stay opt-in via `infrastructure.harness_ports.register_preferred_evidence_source`.
+integration ids stay opt-in via `infrastructure.harness_providers.register_preferred_evidence_source`.
 
-**Evidence tiers / degradation:** `classify_evidence_need` is connectivity-first
-(`L0_degraded` + skip gather when a preferred authoritative source is missing).
-After an L1 gather, `reclassify_evidence_need_after_gather` may flip to
-`L0_degraded` with `EvidenceDegradeCause.CONFIG_FAILURE` only for a typed
-`tool_unavailable` envelope (`{"source", "available": False, "error"}`).
-Prefer `GatheredEvidence.tool_results` from the gather loop; fall back to
-`split`/`partition` on the rendered `Tool:`/`Result:` observation (see
-`gather_observation.iter_tool_result_blocks`) — never regex or phrase lists.
-Empty SQL / vendor-query failures stay L1 (no L0 CTA). A metric gather that never
-ran a live query still gets a vendor-registered draft query block (via
-`infrastructure.harness_ports.register_metric_query_draft`) and one
-`/integrations setup …` line, then stops — the **unformed-metric floor**
-(`turns/metric_query_floor.py`). Product cohort / signup-retention identity
-is core policy (`turns/cohort_identity.py`); vendors supply dialect drafts and
-optional observation parsers (`register_metric_cohort_resolver`).
+**Evidence kinds:** vocabulary + per-kind policy still live in
+`turns/evidence_kind.py`. `classify_evidence_need` is connectivity-first
+(`L0_degraded` when a preferred authoritative source is missing) so the
+assistant can emit a setup CTA. There is no second gather ReAct loop on the
+chat path — the action agent owns tools.
 
-**No keyword intent routing around the action agent.** Do not scan user text
-with regex/keywords to skip gather, attach goals, or bypass `execute_actions`.
-Policy keys off typed `AssistantHandoff` (`turns/assistant_handoff.py`) —
-schema fields first; content tags are decode fallback only. Legacy tag tuples
-(`evidence_kind:…`, `session_goal:…`, `session_goal_item:…`, `database_query:…`)
-and explicit host APIs remain for older readers. Checklist progress uses
-`session_goal:done=<index>` in replies.
+**No keyword intent routing around the agent.** Do not scan user text with
+regex/keywords to attach goals or bypass the ReAct loop. Session goals attach
+through the structured `session_goal_set` tool or explicit host APIs.
+Checklist progress uses the `session_goal_complete` tool, not reply tags.
+
+Workflow cards are validated before discovery. Invalid cards are excluded with
+diagnostics, while CI checks the unfiltered catalog and fails on every invalid
+card. Large interactive catalogs use progressive disclosure: universal controls
+and `tool_search` are visible first, `tool_search` activates specialist schemas
+on the next ReAct iteration, and workflow-local script tools appear immediately
+while their skill is active. Skills retain access to the complete available
+catalog; they do not declare filters. The per-run catalog refreshes after skill
+changes; execution rechecks the active session. Settling the plan retires its
+helpers. A new user request clears active skill context, while menu answers
+and slash commands retain it. Full contract: `prompts/skills/AGENTS.md`.
+
+A turn held behind integration setup (a skill's prerequisite gate, or
+`/integrations setup <service>` deferred mid-skill) is parked as a
+`SetupResume` (`session/setup_resume.py`, via `spi.session_state`) on the
+shell's terminal facet only. The shell replays it at most once, after the
+prerequisite's registered check passes again; a typed turn, a closed menu, a
+new demo, and `/new` drop it. Never park skill-less prose or a slash command.
+
+Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`
+to `False` through `prepare_session`. This host-owned policy removes the skill
+index and `skill_view` while retaining execution tools; never infer it from
+prompt text or restore it from conversation history. A loop bound to a skill
+(`loop_skill`) still gets that one card: the runner appends its rendered body
+to the task (`infrastructure/scheduling/scheduler/loop_prompt.py`), and a missing
+card fails the tick.
+
+**Repository AGENTS.md files are for local coding agents.** Never load a
+repository's `AGENTS.md` (or `AGENTS.override.md`) into the OpenSRE agent's
+prompt, from a checkout or through an integration.
 
 Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.
-The interactive shell builds a `HeadlessAgent` via `AgentBuildConfig` and
-`DefaultHeadlessBuild.agent` (not `TurnHandler`). Do not reintroduce
-peer `bootstrap.adapters` copies under surfaces or gateway.
+Expand `AgentBuildConfig` through `resolve_agent_ports` — do not re-copy the
+`build_tools` / `build_prompts` branch in each host. Gateway
+chat and the interactive shell share `TurnRunner` + `SessionAgentPool`
+(`build_shell_agent` remains for tests / direct construction). Do not
+reintroduce peer `bootstrap.adapters` copies under surfaces or gateway.
 
 **Bind ports:** session-aware defaults implement
 `SessionBindable` / `ConsoleBindable` / `OutputBindable` (`ports.py`).
@@ -96,11 +195,17 @@ headless impl `InMemorySessionState`) — not `SessionStore`. Durable JSONL is
 
 **Host cancel:** one `threading.Event` on the output sink
 (`ensure_turn_cancel` / `host_cancel_requested` in `turns/host_cancel.py`) —
-tools (console `cancel_requested`), orchestrator/gather, and stream guards all
-read that same Event. Do not invent a second cancel channel.
+tools (console `cancel_requested`), orchestrator, and stream guards all
+read that same Event. Scheduled ticks write it when the stored task is
+disabled or removed (`PredicateCancelConsole`). Do not invent a second
+cancel channel.
 
-**Cloud scale-out:** more Fargate tasks (fleet), not unbound in-process
-concurrency or a new `chat` API.
+**Cloud scale-out:** one gateway task per organization running a bounded
+in-process pool (the process gate, per-conversation ordering, a separate cap on
+heavy subprocess work). An organization that outgrows one task moves agent
+execution into separate worker containers. That means no unbounded in-process
+concurrency, no fleet of gateway tasks sharing one session store, and no new
+`chat` API.
 
 ## Hard boundary
 
@@ -108,8 +213,8 @@ concurrency or a new `chat` API.
   direction is strictly one-way: `interactive_shell -> agent_harness -> core`.
 - `agent_harness/` may depend on `core/`, `config/`, and `infrastructure/`. It must not
   import `integrations/`, `tools/`, `surfaces/`, or `gateway/`. Integration and tool
-  behavior reaches the harness through ports in `infrastructure/harness_ports.py`, wired at
-  startup via `install_harness_ports()` in the interactive-shell output boundary.
+  behavior reaches the harness through the providers in `infrastructure/harness_providers/`, wired at
+  startup via `install_harness_providers()` in the interactive-shell output boundary.
   It must not depend on terminal UI concerns (Rich rendering, prompt-toolkit
   mutable UI state, slash dispatch, the shell `REGISTRY`).
 
@@ -125,21 +230,26 @@ subpackage. Default port implementations live with the concern they serve, not i
 
 - `ports.py` — Protocols the engine talks to (output, confirmation, session
   store, tool provider, prompt-context provider, telemetry, error reporter,
-  evidence gatherer). Kept top-level as the central seam imported everywhere.
+  telemetry). Kept top-level as the central seam imported everywhere.
 - `agent_builder.py` — `AgentConfig` dataclass + `build_agent(config)`. The
   single instantiation site for `core.agent.Agent` across all surfaces
   (action, evidence, gateway). See "Agent construction pattern" below.
 - `turns/` — the turn drivers that orchestrate `core.agent.Agent`:
   - `orchestrator.py` — `run_turn` sequences three seams (do not merge them):
     1. **route decide** — pure `turn_route.route_turn` (no I/O, no stream flags)
-    2. **route execute** — summarize / handled / gather+answer effects
+    2. **route execute** — summarize / handled / answer effects
     3. **answer finalize** — `answer_finalize.finalize_routed_answer` (CTA,
        Want-me-to, stream flush). Stream rewrite locals
        (`text_changed_after_streaming`) stay inside finalize and must **never**
        gate route selection.
-    Resolves integrations **once** at the top of the turn onto the frozen
-    `turn_snapshot`, so `turn_snapshot.resolved_integrations` is the single
-    source of truth for what the turn knows. Downstream components (e.g.
+    Resolves base integrations **once** at the top of the turn, enriches that
+    per-turn copy with repository scopes from the frozen message/history, and
+    stores the enriched view on `turn_snapshot`. One active scope per vendor
+    drives unqualified tool calls while the session retains a bounded collection
+    of every repository scope it has encountered. Thus
+    `turn_snapshot.resolved_integrations` is
+    the single source of truth for what the turn knows without mutating the
+    session's base integration cache. Downstream components (e.g.
     `action_driver._resolved_integrations_for_turn`) read it from there rather
     than re-resolving. Do NOT reintroduce per-component integration resolution.
   - `turn_route.py` / `answer_finalize.py` / `handoff_policy.py` — the seams
@@ -149,9 +259,6 @@ subpackage. Default port implementations live with the concern they serve, not i
   - `action_driver.py` — `ActionTurnRunner`: one action tool-calling turn
     over the ports, via a `_build_action_agent` factory that returns an
     `ActionTurnPlan`.
-  - `evidence_driver.py` — bounded evidence-gather loop, via a
-    `_build_evidence_agent` factory that returns an `AgentConfig` handed to
-    `build_agent`.
   - `headless_agent.py` — headless programmatic entry point
     (`HeadlessAgent`, built by a port family; `.handle(text, binding)` per message, `.dispatch` underneath)
     plus in-memory port adapters for
@@ -160,20 +267,15 @@ subpackage. Default port implementations live with the concern they serve, not i
   - `turn_snapshot.py` / `turn_results.py` — the immutable per-turn `TurnSnapshot`
     (built from any object satisfying `TurnSnapshotSource`, not `Session` directly)
     and the neutral turn-result models.
-  - `default_reasoning_client.py` — `DefaultReasoningClientProvider`, kept with the
-    reasoning-client family (`stream_answer`, `StaticReasoningClientProvider`).
 - `tools/` — action-tool wiring over the canonical registry (`action_tools.py`,
   `tool_context.py`) and `tool_provider.py` (`DefaultToolProvider`).
-- `accounting/` — session-scoped token accounting and LLM run metadata, plus the
-  default `TurnAccounting` (`turn_accounting.py`) and `RunRecordFactory`
-  (`run_record.py`).
-- `prompts/` — prompt builders by agent path (pure string assembly; grounding
-  via `PromptContextProvider`). Layout: `kernel/`
-  (envelope + surface Strategy), `assistant/` / `action/` / `gather/` (peer
-  assemblers), `grounding/` (prompt providers), plus leaves `memory/` /
+- `accounting/` — session-scoped token accounting and the default
+  `TurnAccounting` (`turn_accounting.py`).
+- `prompts/` — the single agent's prompt assembly. Layout: `kernel/`
+  (envelope + surface Strategy), `action/` (assembler), `grounding/`
+  (the provider that names a session's surface), plus leaves `memory/` /
   `runtime_facts/` / `skills/`.
-- `grounding/` — reusable grounding cache and rendering contracts; surfaces
-  inject surface-owned command registries instead of being imported here.
+- `grounding/` — grounding sources the action assembler reads.
 - `session/` — reusable agent session state (`SessionCore`), JSONL storage, prompt
   history, task registry, session-scoped background records, integration resolution
   (:mod:`session.integration_resolution`), and `SessionManager` (the lifecycle owner).
@@ -191,8 +293,8 @@ to it instead of re-implementing bootstrap + persistence:
 
 - **shell** — `SessionBootstrapSpec` calls `SessionManager().bootstrap(...)` for
   the core startup mutations (persistent task registry + integration
-  hydration), then layers shell-only UI concerns (theme, grounding providers,
-  prompt history) on top. Interactive REPL entry calls
+  hydration), then layers shell-only UI concerns (theme, prompt history) on
+  top. Interactive REPL entry calls
   :meth:`SessionManager.open_storage` once the run is confirmed interactive;
   ``/new`` calls :meth:`SessionManager.rotate_in_place`; ``/resume`` calls
   :meth:`SessionManager.rebind_for_resume` then :meth:`SessionManager.restore_context`.
@@ -204,7 +306,7 @@ to it instead of re-implementing bootstrap + persistence:
   transports). Per-chat session create/resolve stays on
   `gateway/core/storage/session/resolver.py::SessionResolver` →
   `SessionManager`. Turn dispatch uses `HeadlessAgent` via
-  `infrastructure/turn_host/turn_handler.py`'s `TurnHandler` with
+  `infrastructure/turn_host/turn_runner.py`'s `TurnRunner` with
   :class:`~core.agent_harness.tools.tool_provider.DefaultToolProvider`
   built from the **live per-chat session** each turn (same tool resolution as
   shell). There is no separate gateway-owned ``Agent`` instance.
@@ -212,6 +314,13 @@ to it instead of re-implementing bootstrap + persistence:
   :meth:`AgentSession.run_headless_turn` (or ``start`` + ``chat``).
   That is the same ``run_turn`` engine as the shell; do not reassemble
   ``BufferOutputSink`` + ``DefaultHeadlessBuild`` in integrations.
+  Inside a scheduler run attempt, ``run_headless_turn`` records the message
+  it submits and adds an ``after_tool_call`` hook that records each call of a
+  tool declaring a mutating or external ``side_effect_level``
+  (``infrastructure/scheduling/scheduler/tool_actions.py``). The attempt's run
+  record keeps them, and the loop's next tick reads them back as its PREVIOUS
+  RUNS block: a loop's continuity across ticks comes from those records, not
+  from a long-lived agent.
   Ephemeral in-memory sessions (``headless_adapters.InMemorySessionState``)
   bypass ``SessionManager`` by design when tests need no JSONL.
 
@@ -247,9 +356,8 @@ config = AgentConfig(
 agent = build_agent(config)
 ```
 
-Action (`turns/action_driver.py::_build_action_agent`) and evidence
-(`turns/evidence_driver.py::_build_evidence_agent`) assemble an
-``AgentConfig`` and call ``build_agent``. The gateway turn path does not
+Action (`turns/action_driver.py::_build_action_agent`) assembles an
+``AgentConfig`` and calls ``build_agent``. The gateway turn path does not
 construct a persistent ``core.agent.Agent`` — gateway chat reuses one
 ``HeadlessAgent`` per logical session via ``SessionAgentPool`` (each turn
 ``bind_turn`` + live ``DefaultToolProvider`` from the chat session). When
@@ -262,50 +370,87 @@ construct a persistent ``core.agent.Agent`` — gateway chat reuses one
 Turn assembly starts in ``turns/orchestrator.py`` with
 ``TurnSnapshot.from_session``.
 
+**Conversation history is replayed, not quoted.** Earlier turns go to the model
+as typed messages ahead of the new user message (``turns/structured_history.py``):
+each user message, every assistant tool-call batch with its results (bounded at
+record time, head and tail kept), and the reply.
+
+**Each request extends the previous one byte for byte** (the provider caches the
+prefix tools → system → messages; any changed byte re-prices everything after
+it). Pinned by ``tests/core/agent_harness/turns/test_prompt_cache_prefix.py``:
+
+- ``system`` is only the ``STABLE`` tier. ``CONTEXT``/``VOLATILE`` blocks
+  (integrations, repositories, setup state, workspace knowledge, the memory
+  index) form a session-context section in the user message, sent only when its
+  digest differs from the newest one the replayed history carries
+  (``session_context_to_send``). Never move a block that can change mid-session
+  back into ``STABLE``.
+- A turn replays exactly as it was sent: the evidence keeps the user message as
+  the model received it (``sent``), and live assistant blocks use the same
+  builders as their replay (``anthropic_cache.replay_stable_blocks``). Each
+  tool-call batch also keeps the provider's own message, reasoning included
+  (``TurnEvidence`` ``ASSISTANT_PROVIDER_KEY``); only a client with the same
+  ``provider_binding`` (endpoint and model) resends it, any other rebuilds it
+  from text and calls. The Anthropic client drops each thinking block whose
+  prefix changed since it was written (``anthropic_thinking.bind_thinking``),
+  because the API's history-editing check rejects it with a 400; an edit to
+  replayed history therefore costs the reasoning after it, not the request.
+- The tool list is append-only per conversation (``core.state.ShownTools``):
+  tools keep their position and first-shown description, a search's reveals stay
+  visible (so its result replays), new tools join at the end.
+- A client that loads tools by reference (``deferred_tool_schemas``; Anthropic
+  models from version 4.5 on, ``anthropic_deferred_tools``) also declares the rest of the
+  catalog deferred from the first request (``ProgressiveToolCatalog.deferred``),
+  and each ``tool_search`` result references what it revealed, so a reveal does
+  not change ``tools`` even within a turn. A 400 that blames it turns it off for
+  the client's lifetime. Other providers get the list above unchanged.
+- The memory index is a pure function of the memory files; usage never orders it. ``record_conversation_turn``
+stores a turn's ``TurnEvidence`` beside its ``(user, assistant)`` text pair and
+appends it to the session log as a ``turn_evidence`` record; ``restore_context``
+brings it back. Evidence is matched to transcript pairs by reply text, so a
+transcript rewritten elsewhere (thread seeding, compaction) replays as text
+instead of the wrong turn. Compaction (``turns/transcript_compaction.py``) is
+token-based: past ``OPENSRE_HISTORY_TOKEN_BUDGET`` a model writes a handoff
+summary of the older turns, the newest stay verbatim with their evidence, and
+the compaction record keeps both so resume restarts from the same state.
+Tool observations use the shared ``core.tool`` output policy. Preserve that
+observation during replay and summarization; history adds serialization space.
+Audit records are bounded independently and are not a lossless output archive.
+``OPENSRE_STRUCTURED_HISTORY=0`` restores the text block (``RECENT
+CONVERSATION``) as a kill switch. Code that scans a run's ``result.messages``
+for this turn's output must skip the replayed prefix (``history_count``), or an
+earlier turn's message is mistaken for this one's.
+
+**The model's context is measured in one place.** ``turns/prompt_size.py``
+sizes each envelope block, the replayed history and the tool schemas of a model
+call; the prompt log records that per turn (``model_blocks``) and ``/context``
+shows it for the next turn without calling a model. A new block or context
+source is assembled in ``prompts/action/assemble.py`` and is measured from
+there; do not compute prompt sizes anywhere else.
+
 **Do NOT** reintroduce per-surface `Agent` subclasses that override
 `build_llm` / `build_system_prompt` / `build_tools` / `resolved_integrations`
 hooks. Those hooks were removed because they let each surface hide per-turn
 configuration on `self`, which diverged routing across surfaces.
 
-## Two agent shapes (not one pattern with an exception)
+## One agent shape
 
-- **Tool-calling agent** — `core.agent.Agent`, the ReAct loop (think → call
-  tools → observe) driven by `llm.invoke`. Built via `AgentConfig` +
-  `build_agent`. Used by the action, evidence/gather, and investigation agents.
-- **Direct answer (no tools)** — `orchestrator.stream_answer`, one grounded
-  text answer streamed via `client.invoke_stream` (the `StreamAnswerFn` seam).
-  It does **not** use `Agent`: no tool loop, no observe step. The host reaches
-  this path after action when `assistant_handoff` sets `requires_gather=false`
-  (pure docs/how-to/greeting chat, or action tools already answered) — gather
-  is skipped. Default `requires_gather=true` still runs the evidence gatherer
-  before `stream_answer` for live-data asks.
-
-A new agent is one shape or the other: if it calls tools it is the tool-calling
-shape; if it answers directly without tools it is the direct-answer shape.
+`core.agent.Agent` owns the ReAct loop (think → call tools → observe → answer).
+A no-tool response is its accepted conclusion; hosts must not start a second
+LLM to rewrite that answer.
 
 ### Contributor checklist (agent changes)
 
-1. State the shape explicitly (tool-calling vs. direct answer) in the entrypoint
-   docstring (three lines max).
-2. Update this file when harness rules change.
-3. Inject through `ports.py` callables (`StreamAnswerFn`, `ExecuteActions`,
-   `EvidenceGatherer`); do not import surface code into `agent_harness/`.
-4. Add or extend shape-guard tests when you introduce a new entrypoint or
-   rename a shape seam.
-5. Public host API is `AgentSession.chat` / `AgentSession.investigate`.
+1. Update this file when harness rules change.
+2. Inject action execution through the `ExecuteActions` port; do not import
+   surface code into `agent_harness/`.
+3. Public host API is `AgentSession.chat`.
    Adapters build `ChatTurnBindings` and call `dispatch_chat_turn` internally —
    never add a new top-level binder that calls `run_turn` directly.
 
 **Read order for new code:** this file → `harness.py` (`AgentSession`) →
 `turns/orchestrator.py` (`run_turn`) → `core/agent/agent.py` (facade + wiring)
 → `core/agent/react_loop.py` (`run_react_loop`, the tool-calling algorithm).
-
-## Investigation agent — shared loop, investigation-owned policy
-
-`tools/investigation/stages/gather_evidence/agent.py::ConnectedInvestigationAgent`
-assembles an `AgentConfig` and calls `build_agent()`. Seed calls, evidence
-collection, duplicate detection, and stagnation handling remain
-investigation-owned policy around the shared `Agent.run()` loop.
 
 ## Construct once → many turns
 
@@ -318,10 +463,9 @@ a headless agent on every message for the same logical session.
 ```python
 from bootstrap.embedded import start_embedded_session
 
-session = start_embedded_session()    # EMBEDDED_PROFILE + default agent
-result = session.chat("…")            # turn 1
-result = session.chat("…")            # turn 2 — same attached agent
-report = session.investigate({…})     # investigation pipeline (separate stage machine)
+session = start_embedded_session()  # EMBEDDED_PROFILE + default agent
+result = session.chat("…")  # turn 1
+result = session.chat("…")  # turn 2 — same attached agent
 ```
 
 ``AgentSession.start`` must not import ``bootstrap`` (layer contract). Surfaces
@@ -332,37 +476,53 @@ explicit ``boot_process``).
 
 | Lifetime | Construct | Then |
 |----------|-----------|------|
-| Chat session (gateway) | `SessionAgentPool` keeps one `HeadlessAgent` per session id; each turn rebinds transport output via `BindableOutput.bind`, then `bind_turn` (session / accounting / console / tool_hooks) | `AgentSession.chat` / `agent.dispatch` |
+| Chat session (gateway + shell) | `TurnRunner` → `SessionAgentPool` keeps one `HeadlessAgent` per session id; each turn rebinds transport/TTY output via `BindableOutput.bind`, then `bind_turn` (session / accounting / console / tool_hooks) | `agent.handle(...)` (SessionGoal loop via `run_goal`) |
 | Embedder / script | `start_embedded_session()` or `attach_agent(HeadlessAgent…)` once | repeated `chat` / `dispatch` |
 | Scheduled loop | Prefer one agent for the loop’s lifetime when multi-turn; `run_headless_turn` is OK for true one-shot digests | do not treat one-shot as the multi-turn pattern |
-| Interactive shell | `build_shell_agent` → `DefaultHeadlessBuild.agent` once; `HeadlessAgent.handle` per submission (not `TurnHandler`) | `HeadlessAgent.handle` |
+| CLI `ask` | `AgentSession.start` once per invocation (ephemeral) | `.chat` once (`dispatch`) |
 
 Same-session turns must not overlap on one pooled agent (gateway holds a
 per-session lock). Different sessions stay concurrent under the capacity gate.
 
 | Name | Use |
 |------|-----|
-| **`AgentSession`** + **`chat` / `investigate`** | **Public host API** — prefer in all new code |
-| **`HeadlessAgent`** + **`dispatch`** | Non-TTY `ChatDispatcher` (ports object); gateway / embedders / tests |
-| **`SessionAgentPool`** | Gateway: one headless agent per logical session across turns |
-| **`DefaultHeadlessBuild`** | The default port family for one session; `.agent(tools=…, prompts=…, gather=…)` builds the agent on it |
+| **`AgentSession`** + **`chat`** | **Public host API** — prefer in all new code |
+| **`HeadlessAgent`** + **`handle`** | Gateway / shell per-message entry; thin wrapper over `run_goal` returning its last result |
+| **`HeadlessAgent`** + **`run_goal`** | The one SessionGoal loop driver; `AgentSession.chat_until_goal` delegates here |
+| **`HeadlessAgent`** + **`dispatch`** | One engine turn; what `AgentSession.chat` calls |
+| **`SessionAgentPool`** | One headless agent per logical session across turns (gateway + shell) |
+| **`DefaultHeadlessBuild`** | The default port family for one session; `.agent(tools=…, prompts=…)` builds the agent on it |
+| **`resolve_agent_ports`** | Expand `AgentBuildConfig` → `(tools, prompts)` — shared by the pool and `build_shell_agent` |
 | **`run_headless_turn`** | One-shot convenience for scheduler digests — not the multi-turn pattern |
 | **`dispatch_chat_turn`** | **Internal** seam over `run_turn` — adapters only |
 
 There is no `dispatch_message_to_headless_agent` — that free-function dump was
 replaced by `HeadlessAgent.dispatch` / `AgentSession.chat`.
 
+### Two doors into a turn (Concurrency & Serialization)
+
+There are two ways into an agent turn:
+1. **The Host Loop (`TurnRunner` → `HeadlessAgent.handle`)**:
+   - Used by concurrent multi-actor hosts (**Gateway** transports and **Interactive Shell**).
+   - Takes the `SessionAgentPool` per-session lock (serializing turns for the same session to prevent `AgentBusyError` and state corruption).
+   - Takes the process turn capacity gate (`TurnConcurrencyGate` / `OPENSRE_MAX_CONCURRENT_TURNS`).
+   - Drives the full `SessionGoal` outer loop (`run_goal`).
+2. **Scripted / Headless API (`AgentSession.chat` / `chat_until_goal`)**:
+   - The un-gated single-turn API for programmatic scripts (`main.py`, notebooks), tests, and single-shot CLI (`opensre ask`).
+   - Deliberately kept as an unguarded entry point for single-tenant, scripted use.
+   - **Forbidden for concurrent hosts:** Gateway and Shell modules must never call `chat()` or `chat_until_goal()` directly (enforced by `gateway/tests/test_harness_behaviour_border.py` and `tests/interactive_shell/test_harness_api_border.py`).
+
 **Scaling** is separate from the host API: local concurrency
 (`TurnConcurrencyGate` / transport pools / `OPENSRE_SIZE_PROFILE`) and cloud
-Fargate scale-out (spin more tasks; same API per task) sit *around*
-`chat`/`investigate`. Construct-once-per-session is the reuse story;
+scale-out (separate worker containers once one task is not enough; same API
+per worker) sit *around* `chat`. Construct-once-per-session is the reuse story;
 process/task scale-out is deploy. Do not redesign the host API to “enable
 scaling.”
 
-## Four hosts, one AgentSession API
+## Hosts, one AgentSession API
 
 **Public host contract:** :class:`~core.agent_harness.harness.AgentSession`
-with ``chat`` and ``investigate``. One name per concept — the former
+with ``chat``. One name per concept — the former
 ``AgentHarness`` / ``HarnessConfig`` / ``HarnessStartupResult`` /
 ``dispatch_message`` aliases are deleted.
 
@@ -370,23 +530,20 @@ with ``chat`` and ``investigate``. One name per concept — the former
 :class:`~core.agent_harness.turns.chat_api.ChatTurnBindings`, then call
 :func:`~core.agent_harness.turns.chat_api.dispatch_chat_turn` (thin facade
 over ``run_turn``). Do **not** add new top-level chat entrypoints that call
-``run_turn`` directly — adapters only.
-
-**Internal investigate seam:** payload runner installed by
-``bootstrap.adapters.install_investigation_api`` (via harness adapters).
-``agent_harness`` must not import ``tools``.
+``run_turn`` directly — adapters only. ``agent_harness`` must not import
+``tools``.
 
 | Host | Process boot | Host call |
 |------|--------------|-----------|
-| CLI / interactive shell | `configure_process(CLI_PROFILE)` + shell Rich adapters | `build_shell_agent` → `HeadlessAgent.handle` |
-| Gateway chat | `configure_process(GATEWAY_PROFILE)` | `TurnHandler` → `SessionAgentPool` → `AgentSession.chat` |
-| Standalone web | `configure_process(WEB_PROFILE)` | `AgentSession.investigate` |
+| Interactive shell | `configure_process(CLI_PROFILE)` + shell Rich adapters | `TurnRunner` → `SessionAgentPool` → `agent.handle` (TTY accounting / `is_tty=True`) |
+| CLI `ask` | same CLI profile (already booted) | `AgentSession.start` → `.chat` (one-shot; `dispatch`) |
+| Gateway chat | `configure_process(GATEWAY_PROFILE)` | `TurnRunner` → `SessionAgentPool` → `agent.handle` |
 | Scheduled digests | adapters via profile; runners via `install_scheduler_runners` | `AgentSession.run_headless_turn` → `chat` |
 
-Do **not** route the REPL through `TurnHandler` (that callback
-finalizes a chat sink with `is_tty=False`). The shell is a TTY host of the
-same `HeadlessAgent` construction seam. Do **not** invent a second public
-investigate entrypoint beside ``AgentSession.investigate``.
+Shell and gateway share the same turn host (`TurnRunner` + pool). The shell
+passes TTY-aware accounting and `is_tty=True`; do **not** invent a parallel
+REPL turn stack. `build_shell_agent` remains for tests and direct construction
+characterization — production REPL submissions go through the pool.
 
 ## Keep the loop primitive in core
 
@@ -403,8 +560,7 @@ which owns the actual think → call-tools → observe algorithm.
 
 - `core/agent/mixins.py` — `EventEmitterMixin` (event dispatch),
   `ToolFilterMixin` (tool-narrowing hook), `SteeringMixin` (`steer`/`follow_up`
-  to nudge a run in progress). `Agent` composes all three; investigation policy
-  reaches them through the built `Agent` (see "Investigation agent" above).
+  to nudge a run in progress). `Agent` composes all three.
 - `core/agent/provider_hooks.py` — `ProviderHookDelegate`, a fail-open wrapper
   around `core.provider.ProviderHooks` applied around each LLM call. A raised
   hook exception is logged and swallowed; it never breaks the loop.
@@ -419,12 +575,14 @@ which owns the actual think → call-tools → observe algorithm.
   for the `from core.agent import AgentRunResult` path.
 - `core/agent/react_loop.py` — `ReactLoop` (the loop as a method-object, phases
   `_think` / `_handle_conclusion` / `_observe`) and `run_react_loop` (its thin
-  functional entry). The conclusion phase delegates to `ConclusionHandler` in
-  `core/agent/handle_conclusion.py` (textual-tool-call bounce, host acceptance,
-  queued follow-ups, nudges).
+  functional entry). A reply with no tool calls ends the turn unless a queued
+  `follow_up` is waiting, or the host's `_should_accept_conclusion` rejects it
+  (reviewed goals from `build_goal_reviewer`, including an unfinished task
+  plan). Bare Goals without `verify` do not gate stop.
 - `core/agent/agent.py` — the `Agent` facade: `__init__` (holds config), `run()`
   (builds the per-run `AgentRunInput` via `_build_run_input` and hands it to
-  `run_react_loop`), and the `_should_accept_conclusion` override hook.
+  `run_react_loop`), and the `_should_accept_conclusion` / `_filter_tools`
+  override hooks.
 
 Do not reintroduce hook-method overrides on `Agent` itself (e.g. a subclass
 overriding a private `_before_provider_request`-style method) — customize via

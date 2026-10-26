@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from io import StringIO
 from types import SimpleNamespace
 
 from rich.console import Console
 
-from core.agent_harness.runtime import TurnBinding
+import core.agent_harness.runtime as runtime
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.headless_adapters import BufferOutputSink
@@ -35,7 +36,6 @@ def test_default_headless_build_sets_gateway_surface() -> None:
 
 def test_default_headless_build_is_exported_from_runtime_and_the_buffer_sink_is_not() -> None:
     import core.agent_harness as pkg
-    import core.agent_harness.runtime as runtime
 
     assert runtime.DefaultHeadlessBuild is DefaultHeadlessBuild
     assert not hasattr(pkg, "DefaultHeadlessBuild")
@@ -93,7 +93,6 @@ def test_primary_response_text_prefers_assistant() -> None:
             response_text="from action",
         ),
         assistant_response_text=" from assistant ",
-        llm_run=object(),
     )
     assert result.primary_response_text == "from assistant"
     empty_assistant = TurnResult(
@@ -107,7 +106,6 @@ def test_primary_response_text_prefers_assistant() -> None:
             response_text=" from action ",
         ),
         assistant_response_text="",
-        llm_run=object(),
     )
     assert empty_assistant.primary_response_text == "from action"
 
@@ -137,7 +135,7 @@ def test_default_headless_build_takes_the_hosts_tool_provider_and_forwards_the_l
     agent = DefaultHeadlessBuild(session=session, output=BufferOutputSink()).agent(
         tools=tools, llm_factory=llm_factory
     )
-    agent.bind_turn(TurnBinding(tool_hooks=hooks))
+    agent.bind_turn(runtime.TurnBinding(tool_hooks=hooks))
     bare = DefaultHeadlessBuild(session=session, output=BufferOutputSink()).agent()
 
     # Assert — the host's provider is used as-is; the factory and hooks reach the
@@ -149,12 +147,26 @@ def test_default_headless_build_takes_the_hosts_tool_provider_and_forwards_the_l
     assert isinstance(bare._tools, DefaultToolProvider)  # noqa: SLF001
 
 
-def test_a_stage_override_replaces_only_that_stage() -> None:
-    """A host or test may swap one stage; the other two keep the port-driven default.
+def test_default_headless_build_forwards_tool_events_to_the_default_provider() -> None:
+    from core.agent_harness.tools.tool_provider import DefaultToolProvider
 
-    This is the seam every turn test drives (98 sites inject a single stage);
-    it is part of the host contract, so it lives on the agent explicitly.
-    """
+    session = SessionCore(store=InMemorySessionStore())
+
+    def observer(_kind: str, _data: dict[str, object]) -> None:
+        """Observe default-provider tool events."""
+
+    tools = DefaultHeadlessBuild(
+        session=session,
+        output=BufferOutputSink(),
+        tool_event_observer=observer,
+    ).tools()
+
+    assert isinstance(tools, DefaultToolProvider)
+    assert tools._observer_factory is not None  # noqa: SLF001
+    assert tools._observer_factory("investigate") is observer  # noqa: SLF001
+
+
+def test_a_stage_override_replaces_the_agent_stage() -> None:
     calls: list[str] = []
 
     def _fake_execute(text: str, *, confirm_fn=None, is_tty=None, turn_plan=None):  # type: ignore[no-untyped-def]
@@ -174,8 +186,57 @@ def test_a_stage_override_replaces_only_that_stage() -> None:
     agent.bind_stages(execute_actions=_fake_execute)
     result = agent.dispatch("hello")
 
-    # Assert — the override ran and handled the turn; answer/gather defaults untouched
+    # Assert — the override ran and handled the turn.
     assert calls == ["execute:hello"]
     assert isinstance(result, TurnResult)
-    assert agent._answer_override is None  # noqa: SLF001
-    assert agent._gather_override is None  # noqa: SLF001
+
+
+def test_resolve_agent_ports_uses_hooks_when_present() -> None:
+    """Each provided build hook is called with the session/console and returned."""
+    # Arrange
+    from core.agent_harness.agent_build_config import AgentBuildConfig
+    from core.agent_harness.turns.headless_build import resolve_agent_ports
+
+    tools_obj, prompts_obj = object(), object()
+    console = object()
+    seen: dict[str, object] = {}
+
+    def build_tools(session, console_, _logger, observer):  # noqa: ANN001, ANN202
+        seen["tools_args"] = (session, console_, observer)
+        return tools_obj
+
+    config = AgentBuildConfig(
+        build_tools=build_tools,
+        build_prompts=lambda _session: prompts_obj,
+    )
+
+    # Act
+    tools, prompts = resolve_agent_ports(
+        config, session="S", console=console, logger=logging.getLogger("t")
+    )
+
+    # Assert
+    assert (tools, prompts) == (tools_obj, prompts_obj)
+    assert seen["tools_args"] == ("S", console, None)
+
+
+def test_resolve_agent_ports_falls_back_when_hooks_omitted() -> None:
+    """An empty config yields the caller's default tools and no prompts."""
+    # Arrange
+    from core.agent_harness.agent_build_config import AgentBuildConfig
+    from core.agent_harness.turns.headless_build import resolve_agent_ports
+
+    default_tools_obj = object()
+
+    # Act
+    tools, prompts = resolve_agent_ports(
+        AgentBuildConfig(),
+        session="S",
+        console=object(),
+        logger=logging.getLogger("t"),
+        default_tools=lambda: default_tools_obj,
+    )
+
+    # Assert
+    assert tools is default_tools_obj
+    assert prompts is None

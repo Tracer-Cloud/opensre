@@ -16,8 +16,6 @@ def _snapshot(setup_state: str) -> TurnSnapshot:
         conversation_messages=(),
         configured_integrations=("slack",),
         configured_integrations_known=True,
-        last_state=None,
-        last_synthetic_observation_path=None,
         reasoning_effort=None,
         setup_state=setup_state,
     )
@@ -57,8 +55,6 @@ def test_gateway_surface_omits_setup_state_from_snapshot() -> None:
         cli_agent_messages: list[tuple[str, str]] = []
         configured_integrations = ("slack",)
         configured_integrations_known = True
-        last_state = None
-        last_synthetic_observation_path = None
         reasoning_effort = None
 
     # Act

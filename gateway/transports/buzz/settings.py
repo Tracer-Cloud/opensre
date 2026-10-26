@@ -45,7 +45,7 @@ class BuzzGatewayEnv(BaseSettings):
     ``private_key``/``relay_url``/``auth_tag``/``buzz_path`` are resolved via
     :func:`infrastructure.scheduling.scheduler.credentials.resolve_buzz_credentials` instead of
     duplicated here, so the store > env > keyring precedence stays identical
-    to the delivery-tier (watchdog/cron) code path.
+    to the shared delivery configuration path.
     """
 
     model_config = SettingsConfigDict(env_prefix="BUZZ_", extra="ignore")

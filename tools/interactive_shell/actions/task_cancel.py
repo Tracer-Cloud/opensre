@@ -8,32 +8,31 @@ from typing import Any
 from rich.markup import escape
 
 from core.agent_harness.tools import (
-    ActionToolContext,
+    ActionToolScope,
     capability_available_from_sources,
     execute_with_action_context,
 )
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema
-from infrastructure.scheduling.task_types import TaskKind, TaskStatus
+from infrastructure.scheduling.task_types import TaskStatus
+from tools.interactive_shell.actions.slash import execute_slash_tool
 from tools.interactive_shell.shared import plan_foreground_tool
 
 
-def _running_task_matches(ctx: ActionToolContext, target: str) -> Sequence[object]:
+def _running_task_matches(ctx: ActionToolScope, target: str) -> Sequence[object]:
     running = [
         task
         for task in ctx.session.task_registry.list_recent(n=50)
         if task.status == TaskStatus.RUNNING
     ]
-    if target == "synthetic_test":
-        return [task for task in running if task.kind == TaskKind.SYNTHETIC_TEST]
     if target == "task":
         return running
     return []
 
 
-def _resolve_task_cancel_target(ctx: ActionToolContext, target: str) -> str | None:
-    if target in {"synthetic_test", "task"}:
+def _resolve_task_cancel_target(ctx: ActionToolScope, target: str) -> str | None:
+    if target == "task":
         matches = _running_task_matches(ctx, target)
         if not matches:
             ctx.console.print(
@@ -66,15 +65,15 @@ def _resolve_task_cancel_target(ctx: ActionToolContext, target: str) -> str | No
     return str(candidates[0].task_id)
 
 
-def execute_task_cancel_tool(args: dict[str, Any], ctx: ActionToolContext) -> bool:
+def execute_task_cancel_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dict[str, Any]:
     target = str(args.get("target", "")).strip()
     if not target:
         return False
-    if ctx.task_cancel_ports is None:
-        raise RuntimeError("task cancel tool requires cancellation runtime ports")
     task_id = _resolve_task_cancel_target(ctx, target)
     if task_id is None:
         return True
+    if ctx.task_cancel_ports is None:
+        return execute_slash_tool({"command": "/cancel", "args": [task_id]}, ctx)
     command = f"/cancel {task_id}"
     plan = plan_foreground_tool("slash", "slash")
     if not ctx.task_cancel_ports.execution_allowed(
@@ -110,13 +109,12 @@ task_cancel_tool = RegisteredTool(
         properties={
             "target": {
                 "oneOf": [
-                    {"type": "string", "enum": ["synthetic_test", "task"]},
+                    {"type": "string", "enum": ["task"]},
                     {"type": "string", "pattern": "^[A-Za-z0-9_-]{3,}$"},
                 ],
                 "description": (
-                    "Task selector: `synthetic_test` to cancel the one running synthetic task, "
-                    "`task` to cancel a single running task of any kind, or a task id/prefix "
-                    "for `/cancel <id>` resolution."
+                    "Task selector: `task` to cancel a single running task of any kind, "
+                    "or a task id/prefix for `/cancel <id>` resolution."
                 ),
             }
         },
@@ -125,7 +123,6 @@ task_cancel_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_task_cancel,
     is_available=lambda sources: capability_available_from_sources(

@@ -1,7 +1,8 @@
 """Live installer e2e: real CDN / GitHub / Homebrew (no curl shim).
 
-Not in GitHub Actions (``ci.yml`` e2e-general ignores this path) and not in
-default pytest (``norecursedirs = tests/e2e``). Opt-in only:
+Ignored by ``ci.yml`` (PR/push gate) and skipped by default pytest
+(``norecursedirs = tests/e2e``). Opt-in locally, and run post-publish by
+``.github/workflows/installer-canary.yml``:
 
     OPENSRE_LIVE_INSTALL=1 uv run pytest tests/e2e/install/ -q
     ./trace smoke --suite all --only 'install.live_*'
@@ -20,7 +21,12 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.github import OPENSRE_INSTALL_GITHUB_TOKEN_ENV
 from config.constants.paths import REPO_ROOT
+from tests.e2e.install._shared import assert_binary_smoke, assert_checksum_verified
+
+# Remove the canary token from the test process and add it only to installer subprocesses.
+_CANARY_GITHUB_TOKEN = os.environ.pop(OPENSRE_INSTALL_GITHUB_TOKEN_ENV, None)
 
 pytestmark = [
     pytest.mark.e2e,
@@ -58,6 +64,8 @@ def test_live_cdn_serves_install_sh() -> None:
 def _sanitized_install_env(home: Path, *, extra_path: str = "") -> dict[str, str]:
     """PATH without repo ``.venv/bin`` so ensure_on_path cannot clobber editable installs."""
     env = os.environ.copy()
+    if _CANARY_GITHUB_TOKEN:
+        env[OPENSRE_INSTALL_GITHUB_TOKEN_ENV] = _CANARY_GITHUB_TOKEN
     env["HOME"] = str(home)
     env["OPENSRE_AUTO_LAUNCH"] = "0"
     env["OPENSRE_SKIP_GH_INSTALL"] = "1"
@@ -117,12 +125,58 @@ def test_live_install_sh_main_to_temp_dir(tmp_path: Path) -> None:
     )
     assert version.returncode == 0, version.stderr
     assert "opensre" in version.stdout.lower() or "0." in version.stdout
-    assert "opensre onboard" in combined
     if venv_before is not None:
         assert venv_opensre.exists(), "live install must not remove .venv/bin/opensre"
         assert venv_opensre.resolve() == venv_before, (
             "live install must not replace the editable .venv/bin/opensre console script"
         )
+
+
+def test_live_install_sh_release_channel(tmp_path: Path) -> None:
+    """Real ``bash install.sh --release`` (checksum-verified) then ``--help`` / ``_package-smoke``.
+
+    ``OPENSRE_LIVE_INSTALL_TAG`` pins a specific release tag (set by the
+    installer-canary workflow right after a release publishes); unset, the
+    installer resolves the latest release itself, exercising GitHub release
+    resolution the way a real user's first install does.
+    """
+    install_dir = tmp_path / "bin"
+    install_dir.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    env = _sanitized_install_env(home)
+
+    installer_args = ["--release", "--install-dir", str(install_dir)]
+    requested_tag = os.environ.get("OPENSRE_LIVE_INSTALL_TAG", "").strip()
+    if requested_tag:
+        installer_args += ["--version", requested_tag.removeprefix("v")]
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-o",
+            "pipefail",
+            "-c",
+            f'curl -fsSL {INSTALL_CDN} | bash -s -- "$@"',
+            "opensre-installer",
+            *installer_args,
+        ],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert_checksum_verified(combined)
+
+    binary = install_dir / "opensre"
+    assert binary.is_file(), combined
+    assert bool(binary.stat().st_mode & stat.S_IXUSR)
+
+    assert_binary_smoke(binary, help_flag="--help", requested_tag=requested_tag)
 
 
 @pytest.mark.skipif(shutil.which("brew") is None, reason="Homebrew not installed")

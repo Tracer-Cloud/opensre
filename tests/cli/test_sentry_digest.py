@@ -45,6 +45,11 @@ def test_schedule_add_requires_delivery_provider(monkeypatch) -> None:
 
 
 def test_uptime_watch_add_sends_activation_notice(monkeypatch, tmp_path) -> None:
+    import infrastructure.scheduling.scheduler.delivery_bundle as delivery_bundle
+
+    # Start with no bundle so this pins that the command installs it before it
+    # delivers, rather than resolving one another test happened to leave behind.
+    monkeypatch.setattr(delivery_bundle, "_installed", None)
     runner = CliRunner()
     monkeypatch.setattr(
         "integrations.sentry.digest_prerequisites.configured_integration_services",
@@ -55,18 +60,25 @@ def test_uptime_watch_add_sends_activation_notice(monkeypatch, tmp_path) -> None
         lambda _provider: True,
     )
     monkeypatch.setattr(
-        "infrastructure.scheduling.scheduler.store._default_store_path",
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
         lambda: tmp_path / "tasks.json",
+    )
+    # Exercise the real delivery path (bundle -> Telegram adapter), stubbing only
+    # the vendor transport. The command must install the adapter bundle first —
+    # without it this resolves no adapter and the notice fails "Unsupported provider".
+    monkeypatch.setattr(
+        "integrations.telegram.scheduled_delivery.resolve_telegram_credentials",
+        lambda _params: {"bot_token": "x"},
     )
     delivered: list[str] = []
 
-    def _fake_deliver(task, message: str):
-        delivered.append(message)
+    def _fake_post(chat_id, text, bot_token, parse_mode="", **_kwargs):
+        delivered.append(text)
         return True, "", "1"
 
     monkeypatch.setattr(
-        "infrastructure.scheduling.scheduler.executor.deliver_scheduled_message",
-        _fake_deliver,
+        "integrations.telegram.scheduled_delivery.post_telegram_message",
+        _fake_post,
     )
 
     result = runner.invoke(

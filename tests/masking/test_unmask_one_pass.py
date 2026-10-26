@@ -7,13 +7,13 @@ text that appears inside an original value.
 
 from __future__ import annotations
 
-from infrastructure.safety.masking.context import MaskingContext
 from infrastructure.safety.masking.policy import ALL_KINDS, MaskingPolicy
+from infrastructure.safety.masking.rules import MaskingRules
 
 
-def _ctx(placeholder_map: dict[str, str] | None = None) -> MaskingContext:
+def _ctx(placeholder_map: dict[str, str] | None = None) -> MaskingRules:
     policy = MaskingPolicy.model_validate({"enabled": True, "kinds": ALL_KINDS})
-    return MaskingContext(policy=policy, placeholder_map=placeholder_map)
+    return MaskingRules(policy=policy, placeholder_map=placeholder_map)
 
 
 def test_unmask_prefers_full_token_over_numeric_prefix() -> None:

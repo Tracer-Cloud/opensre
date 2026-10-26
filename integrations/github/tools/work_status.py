@@ -3,18 +3,29 @@
 from __future__ import annotations
 
 import math
+import re
+import time
+from http import HTTPStatus
 from typing import Any, Literal, cast
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
 )
+from integrations.github.repair_outcomes import attach_ci_scan_outcome
+from integrations.github.repo_scope import parse_github_repository_reference
 from integrations.github.tools.workflow import (
     GitHubIssueMutationProposal,
     PullRequestStatus,
@@ -33,15 +44,14 @@ _FAILED_CHECK_CONCLUSIONS = {
     "startup_failure",
 }
 _TERMINAL_CHECK_CONCLUSIONS = _FAILED_CHECK_CONCLUSIONS | {"success", "skipped", "neutral"}
+_OWNER_PROPERTY: dict[str, str] = {"type": "string", "description": "Repository owner."}
+_REPO_PROPERTY: dict[str, str] = {"type": "string", "description": "Repository name."}
 
 
 def _github_available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        (github_source_available(sources) or resolve_github_token(None))
-        and gh.get("owner")
-        and gh.get("repo")
-    )
+    if sources.get("github", {}).get("connection_selection_error"):
+        return False
+    return bool(github_source_available(sources))
 
 
 def _github_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -101,6 +111,44 @@ def _count_work_items(items: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _map_list_github_work_items(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    items = output.get("items")
+    if not isinstance(items, list) or not items:
+        return
+    counts = output.get("counts") or {}
+    record_evidence_entry(
+        evidence,
+        source="list_github_work_items",
+        label="GitHub Work Items",
+        summary=(
+            f"{len(items)} items: {counts.get('taken', 0)} taken, "
+            f"{counts.get('up_for_grabs', 0)} up for grabs, "
+            f"{counts.get('unassigned', 0)} unassigned"
+        ),
+    )
+
+
+def _map_summarize_github_pr_status(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    prs = output.get("pull_requests")
+    if not isinstance(prs, list) or not prs:
+        return
+    counts = output.get("counts") or {}
+    record_evidence_entry(
+        evidence,
+        source="summarize_github_pr_status",
+        label="GitHub PR Status",
+        summary=(
+            f"{len(prs)} PRs: {counts.get('mergeable', 0)} mergeable, "
+            f"{counts.get('blocked', 0)} blocked, "
+            f"{counts.get('unknown', 0)} unknown"
+        ),
+    )
+
+
 @tool(
     name="list_github_work_items",
     source="github",
@@ -112,13 +160,15 @@ def _count_work_items(items: list[dict[str, Any]]) -> dict[str, int]:
     ],
     anti_examples=["Creating, editing, or closing GitHub issues"],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    evidence_mapper=_map_list_github_work_items,
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "state": {"type": "string", "enum": ["open", "closed", "all"]},
             "labels": {"type": "string"},
             "include_prs": {"type": "boolean"},
@@ -127,10 +177,11 @@ def _count_work_items(items: list[dict[str, Any]]) -> dict[str, int]:
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def list_github_work_items(
     owner: str,
     repo: str,
@@ -214,6 +265,15 @@ def _normalize_pull_request(
             reasons.append("mergeable=false")
     else:
         status = "mergeable"
+    head_repo = _repository_name(pr.get("head"))
+    base_repo = _repository_name(pr.get("base"))
+    # Matches what fix_github_pr_ci refuses: a fork head, or a deleted fork with no head repo.
+    repairable = (
+        str(pr.get("state") or "").lower() == "open"
+        and not pr.get("draft")
+        and bool(head_repo)
+        and head_repo.casefold() == base_repo.casefold()
+    )
     return PullRequestStatus(
         number=pr.get("number") if isinstance(pr.get("number"), int) else None,
         title=str(pr.get("title", "")),
@@ -229,6 +289,63 @@ def _normalize_pull_request(
         mergeability=status,
         blocking_reasons=reasons,
         updated_at=str(pr.get("updated_at", "")),
+        head_repo=head_repo,
+        repairable=repairable,
+    )
+
+
+#: Re-reads of a PR whose mergeability GitHub is still computing, and the wait between them.
+_MERGEABILITY_REREADS = 2
+_MERGEABILITY_WAIT_SECONDS = 2.0
+
+
+def _settled_mergeability(client: GitHubRestClient, path: str, detail_pr: Any) -> Any:
+    """Re-read a PR until GitHub reports its mergeability, a few seconds at most."""
+    for _ in range(_MERGEABILITY_REREADS):
+        if not isinstance(detail_pr, dict) or isinstance(detail_pr.get("mergeable"), bool):
+            return detail_pr
+        time.sleep(_MERGEABILITY_WAIT_SECONDS)
+        detail_pr = client.request("GET", path)
+    return detail_pr
+
+
+def _repository_name(ref: Any) -> str:
+    """``owner/name`` of a PR head or base, or "" when GitHub reports no repository."""
+    repository = ref.get("repo") if isinstance(ref, dict) else None
+    return str(repository.get("full_name") or "") if isinstance(repository, dict) else ""
+
+
+#: One owner or repository name as GitHub allows it; anything else would 404 or change the path.
+_REPO_COMPONENT_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def _repository_scope(owner: Any, repo: Any) -> tuple[str, str] | None:
+    """``(owner, repo)`` from the arguments, or ``None`` when they cannot name one repository.
+
+    A full name or URL in ``repo`` (``owner/name``, ``https://github.com/owner/name``)
+    is split rather than appended to ``owner``, which would request a path GitHub 404s.
+    """
+    owner_text = str(owner or "").strip()
+    repo_text = str(repo or "").strip()
+    if "/" in repo_text:
+        reference = parse_github_repository_reference(repo_text)
+        if reference is None:
+            return None
+        owner_text, repo_text = reference
+    for part in (owner_text, repo_text):
+        if not _REPO_COMPONENT_RE.fullmatch(part) or part in {".", ".."}:
+            return None
+    return owner_text, repo_text
+
+
+def _pull_request_listing_error(exc: GitHubApiError, owner: str, repo: str) -> str:
+    """GitHub's error, and for a 404 what it means here: no such repository, or no access."""
+    if exc.status_code != HTTPStatus.NOT_FOUND:
+        return str(exc)
+    return (
+        f"{exc}. GitHub answers 404 when {owner}/{repo} does not exist or the GitHub "
+        "token cannot see it (a private repository needs a token or app installation "
+        "with access to it). Check the owner and repository name, or the token's access."
     )
 
 
@@ -252,49 +369,91 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
         "Preparing engineering status updates without changing GitHub state",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    evidence_mapper=_map_summarize_github_pr_status,
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "state": {"type": "string", "enum": ["open", "closed", "all"]},
             "per_page": {"type": "integer"},
             "include_checks": {"type": "boolean"},
+            "conflicts_only": {
+                "type": "boolean",
+                "description": (
+                    "Judge only merge conflicts: skips check runs, and reports nothing to "
+                    "repair when no open same-repository PR conflicts with its base."
+                ),
+            },
             "github_token": {"type": "string"},
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def summarize_github_pr_status(
     owner: str,
     repo: str,
     state: str = "open",
     per_page: int = 30,
     include_checks: bool = True,
+    conflicts_only: bool = False,
     github_token: str | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
+    scope = _repository_scope(owner, repo)
+    if scope is None:
+        return tool_unavailable(
+            "github",
+            f"owner={owner!r} and repo={repo!r} do not name one GitHub repository. Pass the "
+            "owner (user or organization) and the repository name separately, for example "
+            "owner='octocat', repo='hello-world'.",
+            pull_requests=[],
+            counts=_count_prs([]),
+            side_effects=[],
+        )
+    owner, repo = scope
     client = GitHubRestClient(github_token)
+    # A conflict scan needs only each PR's mergeability, not its check runs.
+    include_checks = include_checks and not conflicts_only
+    fully_inspected = state == "open" and (include_checks or conflicts_only)
     try:
         raw_prs = client.paginate(
             f"/repos/{owner}/{repo}/pulls",
             params={"state": state, "per_page": max(1, min(per_page, 100))},
         )
+    except GitHubApiError as exc:
+        return tool_unavailable(
+            "github",
+            _pull_request_listing_error(exc, owner, repo),
+            pull_requests=[],
+            counts=_count_prs([]),
+            side_effects=[],
+        )
+    try:
         prs: list[dict[str, Any]] = []
         for list_pr in raw_prs:
             number = list_pr.get("number")
             if not isinstance(number, int):
+                fully_inspected = False
                 continue
             detail_pr = client.request("GET", f"/repos/{owner}/{repo}/pulls/{number}")
+            if conflicts_only:
+                detail_pr = _settled_mergeability(
+                    client, f"/repos/{owner}/{repo}/pulls/{number}", detail_pr
+                )
             if not isinstance(detail_pr, dict):
+                fully_inspected = False
                 detail_pr = list_pr
             sha = str((detail_pr.get("head") or {}).get("sha", ""))
             check_runs: list[dict[str, Any]] = []
+            complete_checks = False
             if include_checks and sha:
                 check_payload = client.request(
                     "GET",
@@ -307,12 +466,14 @@ def summarize_github_pr_status(
                     check_runs = [
                         run for run in check_payload["check_runs"] if isinstance(run, dict)
                     ]
+                    complete_checks = check_payload.get("total_count") == len(check_runs)
+            fully_inspected = fully_inspected and (complete_checks or conflicts_only)
             prs.append(_normalize_pull_request(detail_pr, check_runs).to_dict())
     except GitHubApiError as exc:
         return tool_unavailable(
             "github", str(exc), pull_requests=[], counts=_count_prs([]), side_effects=[]
         )
-    return {
+    output = {
         "source": "github",
         "available": True,
         "owner": owner,
@@ -321,6 +482,9 @@ def summarize_github_pr_status(
         "counts": _count_prs(prs),
         "side_effects": [],
     }
+    return attach_ci_scan_outcome(
+        output, fully_inspected=fully_inspected, conflicts_only=conflicts_only
+    )
 
 
 def _normalize_security_alert(alert_type: str, item: dict[str, Any]) -> SecurityAlert:
@@ -338,6 +502,21 @@ def _normalize_security_alert(alert_type: str, item: dict[str, Any]) -> Security
         summary=summary,
         url=str(item.get("html_url", "")),
     )
+
+
+def _map_list_github_security_alerts(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    alerts = output.get("alerts", [])
+    if alerts:
+        count = len(alerts)
+        word = "alert" if count == 1 else "alerts"
+        record_evidence_entry(
+            evidence,
+            source="list_github_security_alerts",
+            label="GitHub Security Alerts",
+            summary=f"{count} {word}",
+        )
 
 
 _ALERT_ENDPOINTS = {
@@ -359,13 +538,14 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
         "Building a read-only engineering status report with security context",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "alert_type": {
                 "type": "string",
                 "enum": ["all", "dependabot", "secret_scanning", "code_scanning"],
@@ -375,10 +555,12 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_list_github_security_alerts,
 )
+@require_webapp_github
 def list_github_security_alerts(
     owner: str,
     repo: str,
@@ -434,11 +616,18 @@ def list_github_security_alerts(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
-            "operation": {"type": "string", "enum": ["create", "update", "close"]},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
+            "operation": {
+                "type": "string",
+                "enum": ["create", "update", "close"],
+                "description": "Issue mutation to propose.",
+            },
             "issue_number": {"type": "integer"},
-            "slack_text": {"type": "string"},
+            "slack_text": {
+                "type": "string",
+                "description": "Slack message text the proposal is derived from.",
+            },
             "slack_url": {"type": "string"},
             "title": {"type": "string"},
             "labels": {"type": "array", "items": {"type": "string"}},
@@ -446,10 +635,11 @@ def list_github_security_alerts(
         },
         "required": ["owner", "repo", "operation", "slack_text"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def propose_github_issue_mutation_from_slack(
     owner: str,
     repo: str,
@@ -638,17 +828,23 @@ def _marker_exists_on_issue(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
-            "proposal": {"type": "object"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
+            "proposal": {
+                "type": "object",
+                "description": (
+                    "Proposal object returned by propose_github_issue_mutation_from_slack."
+                ),
+            },
             "github_token": {"type": "string"},
         },
         "required": ["owner", "repo", "proposal"],
     },
-    is_available=_github_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def execute_github_issue_mutation(
     owner: str,
     repo: str,

@@ -54,6 +54,9 @@ def test_litellm_agent_client_invokes_openai_compatible_endpoint() -> None:
     assert captured["api_key"] == "ds-key"
     assert captured["max_tokens"] == 123
     assert captured["tool_choice"] == "auto"
+    # Multi-call responses are allowed: no parallel_tool_calls restriction.
+    assert "parallel_tool_calls" not in captured
+    assert "drop_params" not in captured
     assert captured["messages"][0] == {"role": "system", "content": "system prompt"}
 
 

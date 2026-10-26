@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.config_models import KubernetesIntegrationConfig
-from integrations.kubernetes.client import _RESOURCE_DISPATCH, KubernetesClient
+from integrations.kubernetes.resources import RESOURCE_DISPATCH
 
-_RESOURCE_TYPE_ENUM: list[str] = sorted(_RESOURCE_DISPATCH.keys())
+if TYPE_CHECKING:
+    from integrations.kubernetes.client import KubernetesClient
+
+_RESOURCE_TYPE_ENUM: list[str] = sorted(RESOURCE_DISPATCH.keys())
 
 
 def _make_client(sources: dict[str, Any]) -> KubernetesClient | None:
@@ -19,6 +22,10 @@ def _make_client(sources: dict[str, Any]) -> KubernetesClient | None:
     kubeconfig_path = k8s.get("kubeconfig_path", "")
     if not kubeconfig and not kubeconfig_path:
         return None
+    # The SDK loads with the first client, not with the tool definitions the
+    # registry imports at launch.
+    from integrations.kubernetes.client import KubernetesClient
+
     try:
         cfg = KubernetesIntegrationConfig.model_validate(
             {
@@ -65,6 +72,8 @@ class KubernetesListPodsTool(BaseTool):
 
     name = "kubernetes_list_pods"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List pods in a Kubernetes namespace. Returns pod phase, container readiness, "
         "restart counts, and node assignment. Use to detect crash-looping or pending pods."
@@ -75,7 +84,7 @@ class KubernetesListPodsTool(BaseTool):
         "Filtering pods by label selector to scope investigation",
         "Verifying that a deployment's pods are running after a rollout",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = ["kubeconfig"]
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -161,6 +170,8 @@ class KubernetesGetPodLogsTool(BaseTool):
 
     name = "kubernetes_get_pod_logs"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch recent log lines from one Kubernetes pod (optionally one container). "
         "Require the exact pod_name from kubernetes_list_pods; do not guess names."
@@ -175,7 +186,7 @@ class KubernetesGetPodLogsTool(BaseTool):
         "Do not use for CloudWatch or Datadog log search — wrong backend.",
         "Do not use to exec into a pod or mutate cluster state.",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = ["pod_name"]
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -276,6 +287,8 @@ class KubernetesListDeploymentsTool(BaseTool):
 
     name = "kubernetes_list_deployments"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List deployments in a Kubernetes namespace with their desired, ready, "
         "available, and unavailable replica counts. Use to detect degraded rollouts."
@@ -285,7 +298,7 @@ class KubernetesListDeploymentsTool(BaseTool):
         "Verifying deployment replica health across a namespace",
         "Identifying deployments stuck in a partial-rollout state",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -362,6 +375,8 @@ class KubernetesGetEventsTool(BaseTool):
 
     name = "kubernetes_get_events"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List Kubernetes events for a namespace. Events capture crash loops, "
         "OOM kills, image pull failures, and scheduling issues. "
@@ -373,7 +388,7 @@ class KubernetesGetEventsTool(BaseTool):
         "Understanding scheduling failures (Insufficient CPU/Memory)",
         "Correlating event timestamps with incident timeline",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -462,6 +477,8 @@ class KubernetesDescribePodTool(BaseTool):
 
     name = "kubernetes_describe_pod"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch the full spec and status for a single pod: containers, images, resource "
         "requests/limits, environment variables (values redacted, keys only), volume "
@@ -483,7 +500,7 @@ class KubernetesDescribePodTool(BaseTool):
         + "kubernetes_get_resource)",
         "Listing many pods at once (use kubernetes_list_pods)",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = ["pod_name"]
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -554,6 +571,8 @@ class KubernetesListNodesTool(BaseTool):
 
     name = "kubernetes_list_nodes"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List all nodes in the Kubernetes cluster with their readiness conditions, "
         "CPU/memory capacity and allocatable resources, and taints. "
@@ -565,7 +584,7 @@ class KubernetesListNodesTool(BaseTool):
         "Identifying nodes with taints that prevent pod scheduling",
         "Correlating pod scheduling failures with node capacity",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []
     injected_params = ["kubeconfig", "kubeconfig_path", "context"]
     input_schema = {
@@ -649,6 +668,8 @@ class KubernetesListServicesTool(BaseTool):
 
     name = "kubernetes_list_services"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List services in a Kubernetes namespace with their type (ClusterIP/NodePort/LoadBalancer), "
         "clusterIP, external IPs, port mappings, and pod selector. "
@@ -660,7 +681,7 @@ class KubernetesListServicesTool(BaseTool):
         "Diagnosing port mismatches between services and pods",
         "Finding services exposed via NodePort for debugging",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -746,6 +767,8 @@ class KubernetesListStatefulSetsTool(BaseTool):
 
     name = "kubernetes_list_statefulsets"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List StatefulSets in a Kubernetes namespace with desired, ready, current, "
         "and updated replica counts. Use to detect degraded or stalled StatefulSet rollouts."
@@ -755,7 +778,7 @@ class KubernetesListStatefulSetsTool(BaseTool):
         "Diagnosing stuck StatefulSet rolling updates",
         "Verifying database or stateful service replica health",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -832,6 +855,8 @@ class KubernetesListDaemonSetsTool(BaseTool):
 
     name = "kubernetes_list_daemonsets"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List DaemonSets in a Kubernetes namespace with desired, current, ready, "
         "up-to-date, and available counts per node. "
@@ -842,7 +867,7 @@ class KubernetesListDaemonSetsTool(BaseTool):
         "Diagnosing nodes where a DaemonSet pod is not scheduled or not ready",
         "Verifying a DaemonSet update has rolled out to all nodes",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -919,6 +944,8 @@ class KubernetesListIngressesTool(BaseTool):
 
     name = "kubernetes_list_ingresses"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List Ingress resources in a Kubernetes namespace with their host rules, "
         "path-to-service mappings, TLS configuration, and load balancer status. "
@@ -930,7 +957,7 @@ class KubernetesListIngressesTool(BaseTool):
         "Finding load balancer IPs or hostnames assigned to an ingress",
         "Diagnosing 404 or routing issues in HTTP-based services",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -1007,6 +1034,8 @@ class KubernetesListConfigMapsTool(BaseTool):
 
     name = "kubernetes_list_configmaps"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List ConfigMaps in a Kubernetes namespace with their full key-value data. "
         "Use to inspect application configuration, verify environment variable sources, "
@@ -1017,7 +1046,7 @@ class KubernetesListConfigMapsTool(BaseTool):
         "Verifying a ConfigMap has the expected keys and values after a deploy",
         "Diagnosing misconfigured endpoints, feature flags, or environment settings",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = []
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {
@@ -1094,6 +1123,8 @@ class KubernetesGetResourceTool(BaseTool):
 
     name = "kubernetes_get_resource"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch the raw spec and status of a single named Kubernetes resource, "
         "equivalent to `kubectl get <type> <name> -o json`. Supports: pod, deployment, "
@@ -1118,7 +1149,7 @@ class KubernetesGetResourceTool(BaseTool):
         "Listing multiple resources or filtering by label/field selector (use the "
         + "matching kubernetes_list_* tool instead)",
     ]
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = ["resource_type", "name"]
     injected_params = ["kubeconfig", "kubeconfig_path", "context", "namespace"]
     input_schema = {

@@ -35,12 +35,13 @@ def test_metering_off_by_default_makes_no_network_call(monkeypatch: pytest.Monke
         raise AssertionError("metering is off — no HTTP call may be made")
 
     monkeypatch.setattr("gateway.core.billing.credits_client.httpx.post", explode)
+    monkeypatch.setattr("gateway.core.billing.credits_client.agent_bearer_token", explode)
 
     # Act
     outcome = consume_credits(reason="smoke")
 
-    # Assert: UNCONFIGURED, which every gateway seam treats as allow (fail-open).
-    assert outcome is CreditsOutcome.UNCONFIGURED
+    # Assert: local/self-hosted mode is explicitly disabled without a webapp URL.
+    assert outcome is CreditsOutcome.DISABLED
 
 
 @pytest.mark.usefixtures("clean_env")

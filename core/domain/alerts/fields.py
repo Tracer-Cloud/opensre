@@ -39,14 +39,6 @@ def first_present(*values: Any) -> Any:
     return None
 
 
-def first_text(*values: Any, default: str = "") -> str:
-    """Return the first present value coerced to stripped text."""
-    value = first_present(*values)
-    if value is None:
-        return default
-    return str(value).strip()
-
-
 def first_mapping_value(source: Mapping[str, Any], keys: tuple[str, ...]) -> Any:
     """Return the first present value for ``keys`` from ``source``."""
     return first_present(*(source.get(key) for key in keys))

@@ -2,8 +2,10 @@
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.mariadb import (
     MariaDBConfig,
@@ -13,14 +15,44 @@ from integrations.mariadb import (
 )
 
 
+def _map_get_mariadb_global_status(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite uptime, connected threads, and InnoDB deadlock count."""
+    if not output.get("available"):
+        return
+    metrics = output.get("metrics") or {}
+    if not metrics:
+        return
+    parts = []
+    if (uptime := metrics.get("Uptime")) is not None:
+        parts.append(f"uptime {uptime}s")
+    if (connected := metrics.get("Threads_connected")) is not None:
+        parts.append(f"{connected} thread(s) connected")
+    deadlocks = int(metrics.get("Innodb_deadlocks") or 0)
+    if deadlocks:
+        parts.append(f"{deadlocks} InnoDB deadlock(s)")
+    if not parts:
+        return
+    record_evidence_entry(
+        evidence,
+        source="get_mariadb_global_status",
+        label="MariaDB Global Status",
+        summary=", ".join(parts),
+    )
+
+
 @tool(
     name="get_mariadb_global_status",
     description="Retrieve key MariaDB server metrics including connections, threads, slow queries, InnoDB buffer pool stats, and uptime from SHOW GLOBAL STATUS.",
     source="mariadb",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     is_available=mariadb_is_available,
     injected_params=("host", "password", "username"),
     extract_params=mariadb_extract_params,
+    evidence_mapper=_map_get_mariadb_global_status,
 )
 def get_mariadb_global_status(
     host: str,

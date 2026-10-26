@@ -27,13 +27,13 @@ def _intro_text(bot_user_id: str) -> str:
     me = f"<@{bot_user_id}>" if bot_user_id else "me"
     return (
         f"👋 Hi, I'm {me} — an SRE teammate.\n"
-        f"• Mention {me} with a question or an incident and I'll investigate "
+        f"• Mention {me} with a question or an incident and I'll help "
         "in a thread: this channel's history, Sentry, Grafana, Kubernetes, "
         "logs.\n"
         "• Once you mention me in a thread, I follow the conversation — no "
         "need to re-tag every message.\n"
-        "• Anything that writes (posting messages, joining channels, code "
-        "fixes) asks for your approval first."
+        "• High-impact actions such as joining channels or applying code "
+        "fixes ask for your approval first."
     )
 
 

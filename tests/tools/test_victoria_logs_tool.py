@@ -42,12 +42,10 @@ class TestMetadata:
         assert "query" not in schema["required"]
 
     def test_surfaces_includes_chat(self) -> None:
-        # The registry default for class-based tools without an explicit
-        # ``surfaces`` is investigation-only. As a log-query tool, this should
-        # be visible in chat too — mirrors SplunkSearchTool. Asserting both
-        # surfaces guards against accidental removal during refactors.
+        # As a log-query tool, this should be visible in chat — mirrors
+        # SplunkSearchTool. Asserting guards against accidental removal
+        # during refactors.
         surfaces = VictoriaLogsTool().surfaces
-        assert "investigation" in surfaces
         assert "chat" in surfaces
 
 

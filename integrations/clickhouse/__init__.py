@@ -17,6 +17,27 @@ from pydantic import Field, field_validator
 from config.strict_config import StrictConfigModel
 from core.tool_framework.utils import tool_unavailable
 from integrations._validation_helpers import report_validation_failure
+from integrations.clickhouse.telemetry import ClickHouseEvidenceConfig, ClickHouseEvidenceReader
+
+__all__ = [
+    "ClickHouseConfig",
+    "ClickHouseValidationResult",
+    "ClickHouseEvidenceConfig",
+    "ClickHouseEvidenceReader",
+    "DEFAULT_CLICKHOUSE_PORT",
+    "DEFAULT_CLICKHOUSE_DATABASE",
+    "DEFAULT_CLICKHOUSE_USER",
+    "DEFAULT_CLICKHOUSE_TIMEOUT_SECONDS",
+    "DEFAULT_CLICKHOUSE_MAX_RESULTS",
+    "clickhouse_is_available",
+    "clickhouse_extract_params",
+    "build_clickhouse_config",
+    "clickhouse_config_from_env",
+    "validate_clickhouse_config",
+    "get_query_activity",
+    "get_system_health",
+    "get_table_stats",
+]
 
 logger = logging.getLogger(__name__)
 

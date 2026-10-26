@@ -24,6 +24,7 @@ from config.constants.filestorage import (
 )
 from infrastructure.filestorage import engine as sync_module
 from infrastructure.filestorage.config import load_remote_sync_config, remote_sync_enabled
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.engine import (
     ProgressCallback,
     SyncProgress,
@@ -35,7 +36,6 @@ from infrastructure.filestorage.engine import (
 )
 from infrastructure.filestorage.enums import SyncDirection, SyncRootName
 from infrastructure.filestorage.errors import RemoteSyncConfigError, UnsyncablePathError
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.syncable import SyncRoot, is_syncable
 
 # Planted in the credential files. If sync ever widens, this string shows up in
@@ -80,11 +80,8 @@ def home(tmp_path: Path) -> Path:
     """A laptop ~/.opensre with sessions, memory, and credential files."""
     (tmp_path / "sessions").mkdir()
     (tmp_path / "memory").mkdir()
-    # newline="" keeps the bytes on disk exactly as written. The engine syncs in
-    # binary, so tests assert on read_bytes(); without this, Windows stores CRLF
-    # here and those assertions compare \r\n against \n.
-    (tmp_path / "sessions" / "abc.jsonl").write_text('{"turn": 1}\n', encoding="utf-8", newline="")
-    (tmp_path / "memory" / "a-fact.md").write_text("remembered\n", encoding="utf-8", newline="")
+    (tmp_path / "sessions" / "abc.jsonl").write_bytes(b'{"turn": 1}\n')
+    (tmp_path / "memory" / "a-fact.md").write_bytes(b"remembered\n")
     # Credentials live beside them and must not move.
     (tmp_path / "integrations.json").write_text(
         f'{{"datadog": {{"api_key": "{LEAKED_SECRET}"}}}}', encoding="utf-8"

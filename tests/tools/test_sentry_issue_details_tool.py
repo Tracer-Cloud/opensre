@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.sentry.tools.sentry_issue_details_tool import get_sentry_issue_details
+from integrations.sentry.tools.sentry_issue_details_tool import (
+    _map_get_sentry_issue_details,
+    get_sentry_issue_details,
+)
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -50,3 +54,61 @@ def test_run_happy_path() -> None:
         )
     assert result["available"] is True
     assert result["issue"]["id"] == "123"
+
+
+class TestMapGetSentryIssueDetails:
+    def test_records_entry_with_level_status_and_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_sentry_issue_details(
+            evidence,
+            {
+                "available": True,
+                "issue": {
+                    "title": "TypeError: cannot read property",
+                    "culprit": "app/views.py",
+                    "level": "error",
+                    "status": "unresolved",
+                    "count": "42",
+                },
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_sentry_issue_details"
+        assert (
+            entries[0]["summary"]
+            == "'TypeError: cannot read property', level error, unresolved, 42 event(s)"
+        )
+
+    def test_truncates_long_multiline_title(self) -> None:
+        """Regression: a raw exception message can be long and multi-line —
+        collapse and cap it so it can't produce a malformed report line."""
+        evidence: dict[str, Any] = {}
+        long_title = "TypeError: boom\n  at foo (bar.ts:1)\n" + "x" * 200
+
+        _map_get_sentry_issue_details(
+            evidence,
+            {"available": True, "issue": {"title": long_title, "level": "error"}},
+            {},
+        )
+
+        summary = evidence["catalog_entries"][0]["summary"]
+        assert "\n" not in summary
+        assert len(summary) < len(long_title)
+
+    def test_records_nothing_when_issue_empty(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_sentry_issue_details(evidence, {"available": True, "issue": {}}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_sentry_issue_details(evidence, {"available": False, "error": "not configured"}, {})
+
+        assert "catalog_entries" not in evidence

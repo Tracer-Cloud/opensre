@@ -8,7 +8,7 @@ from typing import Any
 from config.constants.slack import SLACK_WEBHOOK_URL_ENV
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.slack.tools.slack_send_message_tool.constants import SOURCE
 from integrations.slack.tools.slack_send_message_tool.delivery import (
     dispatch_message,
@@ -32,7 +32,9 @@ class SlackSendMessageTool(BaseTool):
         "Send a plain-text message to Slack. Uses the configured incoming webhook "
         "when one exists, otherwise posts to channel_id with the bot token. Use this "
         "for explicit user-requested Slack notifications, status updates, or on-demand "
-        "alerts. Credentials are resolved internally and never returned."
+        "alerts. Credentials are resolved internally and never returned. Put the real "
+        "content in `message`: run any lookup first and send its actual result. When "
+        "the user names a channel or thread, prefer slack_reply_message."
     )
     use_cases = [
         "Sending a user-requested notification to the configured Slack channel",
@@ -45,8 +47,6 @@ class SlackSendMessageTool(BaseTool):
     ]
     requires = ["slack"]
     side_effect_level = SideEffectLevel.EXTERNAL
-    requires_approval = True
-    approval_reason = "Sends a message to Slack on your behalf."
     input_schema = {
         "type": "object",
         "properties": {
@@ -166,5 +166,5 @@ class SlackSendMessageTool(BaseTool):
 
 slack_send_message = tool(
     SlackSendMessageTool(),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+    surfaces=(ToolSurface.ACTION,),
 )

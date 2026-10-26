@@ -1,8 +1,8 @@
 """Core session state shared by every surface.
 
 The surface-agnostic half of the REPL session: identity, persistence, integration
-resolution, token accounting, conversational agent state, and grounding caches —
-everything ``core``, ``gateway``, and ``tools`` consumers depend on. The interactive
+resolution, token accounting, and conversational agent state — everything
+``core``, ``gateway``, and ``tools`` consumers depend on. The interactive
 shell extends this with its own UI state in
 :class:`~surfaces.interactive_shell.session.session.Session`.
 """
@@ -17,10 +17,7 @@ from typing import TYPE_CHECKING, Any
 from core.agent_harness.session.history_entry import build_history_entry
 
 if TYPE_CHECKING:
-    from core.agent_harness.grounding.context import GroundingContext
     from core.agent_harness.session.integration_resolution import IntegrationResolutionResult
-else:
-    GroundingContext = Any
 
 from config.llm_reasoning_effort import ReasoningEffortChoice
 from core.agent_harness.accounting.token_usage import TokenUsage
@@ -28,13 +25,14 @@ from core.agent_harness.session.integration_resolution import IntegrationState
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.session.pending_offer import (
     PendingIntegrationSetupOffer,
-    PendingInvestigationOffer,
     PendingScheduleOffer,
 )
+from core.agent_harness.session.persistence.contracts import SessionStore
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
-from core.agent_harness.session.persistence.ports import SessionStore
 from core.agent_harness.session_goal.goal import SessionGoal
-from core.state import MutableAgentState
+from core.agent_harness.task_plan.plan import TaskPlan
+from core.state import MutableAgentState, ShownTools, TurnEvidence
+from infrastructure.harness_providers import integration_sources_stamp
 from infrastructure.scheduling.task_registry import TaskRegistry
 
 #: How many recent history rows keep their full response body. Sized above
@@ -43,24 +41,12 @@ from infrastructure.scheduling.task_registry import TaskRegistry
 RESPONSE_TEXT_WINDOW = 20
 
 
-def _default_grounding() -> GroundingContext:
-    """Build a fresh per-session grounding cache bundle.
-
-    Imported lazily so the session package can expose the state model without
-    eagerly constructing grounding caches.
-    """
-    from core.agent_harness.grounding.context import GroundingContext
-
-    return GroundingContext()
-
-
 @dataclass
 class SessionCore:
     """Surface-agnostic session state accumulated across REPL turns.
 
-    Carries everything we want to persist across individual investigations
-    within the same session: previous investigation state (for follow-up
-    questions), accumulated infra context (service names, clusters observed),
+    Carries everything we want to persist across individual turns within the
+    same session: accumulated infra context (service names, clusters observed)
     and a short interaction history for /status.
     """
 
@@ -84,16 +70,10 @@ class SessionCore:
     history: list[dict[str, Any]] = field(default_factory=list)
     """Each entry has type, text, and ok fields for shell, slash, alert, and chat turns."""
 
-    last_state: dict[str, Any] | None = None
-    """The final AgentState from the most recent investigation, used by follow-ups."""
-
-    last_investigation_id: str = ""
-    """Most recent investigation lifecycle id for joining terminal turns to PostHog."""
-
     last_assistant_intent: str | None = None
     """Intent label set by the runtime after each handled turn.
 
-    Values: "slash", "investigation", "follow_up", and the three
+    Values: "slash", "follow_up", and the three
     shell action-agent turn paths: "cli_agent_summarized" (a successful action's
     discovery output was summarized into an answer), "cli_agent_handled" (the
     action fully handled the turn; no LLM answer), and "cli_agent_fallback"
@@ -111,7 +91,7 @@ class SessionCore:
 
     accumulated_context: dict[str, Any] = field(default_factory=dict)
     """Reusable infra context — service names, clusters, regions — learned from
-    earlier investigations that should seed future ones."""
+    earlier turns that should seed future ones."""
 
     runtime_metadata: dict[str, Any] = field(default_factory=dict)
     """Read-only process facts (version, build, env) exposed to prompts and sandboxed tools."""
@@ -129,28 +109,14 @@ class SessionCore:
     a persistent registry); only the shell surface reads it today."""
 
     agent: MutableAgentState = field(default_factory=MutableAgentState)
-    """Dedicated conversational-agent state (transcript + per-turn observation).
+    """Dedicated conversational-agent state (transcript + turn evidence).
 
     Owns the assistant conversation history (alternating
-    (\"user\"|\"assistant\", text)) and the per-turn read-only discovery
-    observation, kept in one place rather than as loose session fields."""
-
-    grounding: GroundingContext = field(
-        default_factory=_default_grounding, repr=False, compare=False
-    )
-    """Per-session LLM grounding caches (CLI help, docs, AGENTS.md).
-
-    Injected so the grounding caches have a process-scoped lifetime with no
-    module-level mutable globals; tests can supply a fresh ``GroundingContext``."""
-
-    last_synthetic_observation_path: str | None = None
-    """Absolute path to ``latest.json`` for the last finished synthetic run (set on failure)."""
+    (\"user\"|\"assistant\", text)) and each recorded turn's tool evidence,
+    kept in one place rather than as loose session fields."""
 
     pending_schedule_offer: PendingScheduleOffer | None = None
     """Structured schedule awaiting bare yes — set by propose_scheduled_delivery."""
-
-    pending_investigation_offer: PendingInvestigationOffer | None = None
-    """Structured investigation awaiting bare yes — armed after Want-me-to closer."""
 
     session_goal: SessionGoal | None = None
     """Outer cross-turn goal (multi-step / keep-going). Distinct from ReAct Goal."""
@@ -165,6 +131,65 @@ class SessionCore:
     """Structured multiple-choice question queued for the ``/choose`` selection
     menu — set by the ``ask_user_choice`` action tool, consumed once by the
     ``/choose`` handler."""
+
+    ask_user_rounds: int = 0
+    """Ask-User clarification rounds asked this workload; caps repeated batches.
+    Reset on a genuine user turn."""
+
+    skill_discovery_enabled: bool = True
+    """Host-owned policy for the skill index and skill_view; never restored from history."""
+
+    long_term_memory_enabled: bool = True
+    """Host-owned policy for memory prompt blocks, memory tools and extraction; never restored."""
+
+    active_skill: str | None = None
+    """Skill loaded by ``skill_view`` in the current flow; cleared on a genuine user turn."""
+
+    questions_already_answered: set[str] = field(default_factory=set)
+    """Menu questions this session has answered, normalized for comparison.
+
+    A question the user has settled must not be asked again later in the
+    session, whether it comes back through a skill's entry hook or because the
+    model calls the menu tool itself. ``/new`` starts clean; resume restores the
+    keys so a multi-round workflow does not repeat an earlier blocker.
+    """
+
+    skill_question_keys: dict[str, set[str]] = field(default_factory=dict)
+    """Queued question keys by owning skill, for explicit workflow restarts."""
+
+    skills_already_prompted: set[str] = field(default_factory=set)
+    """Skills whose entry menu this session has already opened.
+
+    The host may reopen one on request (startup, ``/demo``); the model may not,
+    or a later message that routes back to the skill asks the same question
+    again.
+    """
+
+    skill_value_notes: dict[str, tuple[str, str]] = field(default_factory=dict)
+    """``label -> (kind, summary)`` a tool left for the skill-value recorder.
+
+    A report bullet names its insight by label; the recorder records the summary
+    stored under that label, which names no repository, instead of the reply text.
+    """
+
+    task_plan: TaskPlan | None = None
+    """Live execution checklist for the current workload, rendered above the
+    prompt and persisted so it survives transcript compaction."""
+
+    task_plan_work: list[list[str]] = field(default_factory=list)
+    """Host-owned work lines per plan step index (not model-writable)."""
+
+    task_plan_work_step_texts: tuple[str, ...] | None = None
+    """Checklist identity for ``task_plan_work`` — step texts, ignoring status."""
+
+    task_plan_breakdown_emitted: bool = False
+    """True after the post-execution breakdown was printed for this checklist."""
+
+    plan_only_until_authorized: bool = False
+    """Set when the user asked for a plan without running it; the execution gate
+    keeps mutating steps behind confirmation until a step is confirmed. Set-only
+    here — cleared only at the gate on a confirmed mutating step."""
+
     pending_recovery_note: str | None = None
     """WAL recovery note for the next action turn — set on ``/resume`` when the
     resumed session log holds tool intents that never committed (the process
@@ -176,16 +201,6 @@ class SessionCore:
     gather_unreachable_sources: dict[str, str] = field(default_factory=dict)
     """Source id → connectivity failure summary carried across SessionGoal gathers."""
 
-    # Infra keys pulled from a completed investigation state and carried into the
-    # next investigation. A class-level tuple so callers have a single source for
-    # "what counts as accumulated context".
-    _ACCUMULATED_KEYS: tuple[str, ...] = (
-        "service",
-        "cluster_name",
-        "region",
-        "environment",
-    )
-
     @property
     def cli_agent_messages(self) -> list[tuple[str, str]]:
         """Compatibility view used by the surface-agnostic agent turn engine."""
@@ -196,13 +211,18 @@ class SessionCore:
         self.agent.messages = value
 
     @property
-    def last_command_observation(self) -> str | None:
-        """Latest command/tool observation for the current turn."""
-        return self.agent.last_observation
+    def turn_evidence(self) -> list[TurnEvidence]:
+        """Structured records of recent turns (tool calls and bounded results)."""
+        return self.agent.turn_evidence
 
-    @last_command_observation.setter
-    def last_command_observation(self, value: str | None) -> None:
-        self.agent.last_observation = value
+    @turn_evidence.setter
+    def turn_evidence(self, value: list[TurnEvidence]) -> None:
+        self.agent.turn_evidence = value
+
+    @property
+    def shown_tools(self) -> ShownTools:
+        """The tool list this conversation has seen, kept in place across turns."""
+        return self.agent.shown_tools
 
     def record(
         self,
@@ -277,21 +297,6 @@ class SessionCore:
                 latest["response_text"] = response_text.strip()
             return
 
-    def accumulate_from_state(self, state: dict[str, Any] | None) -> None:
-        """Extract reusable infra hints from a completed investigation state.
-
-        Called after every successful investigation (whether triggered by
-        free-text input or by the ``/investigate`` slash command) so that
-        subsequent investigations within the same REPL session inherit the
-        service / cluster / region context discovered earlier.
-        """
-        if not state:
-            return
-        for key in self._ACCUMULATED_KEYS:
-            value = state.get(key)
-            if value:
-                self.accumulated_context[key] = value
-
     # ── integration state: public fields re-exposed from the composed IntegrationState ──
 
     @property
@@ -320,6 +325,10 @@ class SessionCore:
     @resolved_integrations_cache.setter
     def resolved_integrations_cache(self, value: dict[str, Any] | None) -> None:
         self.integrations.resolved_cache = value
+        # Every writer stamps the sources the cache came from, so a rewritten
+        # store or a changed remote set invalidates it on the next turn no
+        # matter who filled it.
+        self.integrations.store_stamp = integration_sources_stamp() if value else None
 
     @property
     def vcs_repo_scopes(self) -> dict[str, tuple[str, ...]]:
@@ -329,6 +338,27 @@ class SessionCore:
     @vcs_repo_scopes.setter
     def vcs_repo_scopes(self, value: dict[str, tuple[str, ...]]) -> None:
         self.integrations.vcs_repo_scopes = value
+
+    @property
+    def active_vcs_repositories(self) -> dict[str, str]:
+        """Stable identities for the active per-vendor repository scopes."""
+        return self.integrations.active_vcs_repositories
+
+    @active_vcs_repositories.setter
+    def active_vcs_repositories(self, value: dict[str, str]) -> None:
+        self.integrations.active_vcs_repositories = value
+
+    @property
+    def known_vcs_repo_scopes(self) -> dict[str, dict[str, tuple[str, ...]]]:
+        """All repositories remembered during this session, grouped by vendor."""
+        return self.integrations.known_vcs_repo_scopes
+
+    @known_vcs_repo_scopes.setter
+    def known_vcs_repo_scopes(
+        self,
+        value: dict[str, dict[str, tuple[str, ...]]],
+    ) -> None:
+        self.integrations.known_vcs_repo_scopes = value
 
     def refresh_runtime_metadata(self) -> None:
         """Rebuild :attr:`runtime_metadata`, including merged capability warnings."""
@@ -360,22 +390,6 @@ class SessionCore:
         """Re-resolve integration state after the local store changes."""
         self.integrations.refresh()
 
-    def apply_investigation_result(
-        self,
-        state: dict[str, Any],
-        *,
-        trigger: str = "",
-    ) -> None:
-        """Record a completed investigation result.
-
-        Replaces the inline ``session.last_state = …`` +
-        ``session.accumulate_from_state(…)`` pattern at every call site so the
-        last-state update and accumulated-context update stay in one place.
-        """
-        self.last_state = state
-        self.accumulate_from_state(state)
-        self.store.append_investigation_result(self.session_id, state, trigger=trigger)
-
     def clear(self, *, rotate_identity: bool = True) -> None:
         """Reset core session state to fresh (used by /new and /resume).
 
@@ -384,7 +398,6 @@ class SessionCore:
         """
         self.history.clear()
         self.resumed_from_name = ""
-        self.last_state = None
         self.last_assistant_intent = None
         self.integrations.reset()
         self.available_capabilities.clear()
@@ -401,16 +414,24 @@ class SessionCore:
             if persist_path is not None
             else TaskRegistry()
         )
-        self.last_synthetic_observation_path = None
         self.pending_schedule_offer = None
-        self.pending_investigation_offer = None
         self.pending_integration_setup_offer = None
         self.session_goal = None
         self.offered_upgrade_ctas.clear()
         self.pending_user_choice = None
+        self.ask_user_rounds = 0
+        self.task_plan = None
+        self.task_plan_work = []
+        self.task_plan_work_step_texts = None
+        self.task_plan_breakdown_emitted = False
+        self.plan_only_until_authorized = False
         self.pending_recovery_note = None
         self.gather_unreachable_tools.clear()
         self.gather_unreachable_sources.clear()
+        self.questions_already_answered.clear()
+        self.skill_question_keys.clear()
+        self.skills_already_prompted.clear()
+        self.skill_value_notes.clear()
         if rotate_identity:
             # Rotate session identity so the new post-reset session gets its own ID and file.
             self.session_id = str(uuid.uuid4())

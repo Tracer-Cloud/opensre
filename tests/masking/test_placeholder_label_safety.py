@@ -11,20 +11,20 @@ from __future__ import annotations
 
 import re
 
-from infrastructure.safety.masking.context import MaskingContext
 from infrastructure.safety.masking.policy import MaskingPolicy
+from infrastructure.safety.masking.rules import MaskingRules
 
 _SINGLE_TOKEN = re.compile(r"^<[A-Z0-9_]+>$")
 
 PLANTED_SECRET = "value-that-must-round-trip-7d1"
 
 
-def _context_with_extra(label: str) -> MaskingContext:
+def _context_with_extra(label: str) -> MaskingRules:
     policy = MaskingPolicy(
         enabled=True,
         extra_patterns={label: re.escape(PLANTED_SECRET)},
     )
-    return MaskingContext(policy=policy)
+    return MaskingRules(policy=policy)
 
 
 def test_hostile_label_still_mints_a_single_bracket_token() -> None:
@@ -74,9 +74,9 @@ def test_restored_context_does_not_reuse_indices_for_sanitized_labels(
 
     monkeypatch.setenv("OPENSRE_MASK_ENABLED", "1")
     monkeypatch.setenv("OPENSRE_MASK_EXTRA_REGEX", _json.dumps({"jira-key": r"AAA-\d+"}))
-    first = MaskingContext(policy=MaskingPolicy.from_env())
+    first = MaskingRules(policy=MaskingPolicy.from_env())
     masked_one = first.mask("see AAA-111")
-    restored = MaskingContext.from_state({"masking_map": first.to_state()})
+    restored = MaskingRules.from_state({"masking_map": first.to_state()})
 
     # Act: the restored context masks a second, different value.
     masked_two = restored.mask("see AAA-222")
@@ -95,7 +95,7 @@ def test_kinds_that_sanitize_alike_do_not_clobber_each_other() -> None:
         enabled=True,
         extra_patterns={"a-b": r"S1VALUE", "a.b": r"S2VALUE"},
     )
-    context = MaskingContext(policy=policy)
+    context = MaskingRules(policy=policy)
 
     # Act
     masked = context.mask("first S1VALUE then S2VALUE")

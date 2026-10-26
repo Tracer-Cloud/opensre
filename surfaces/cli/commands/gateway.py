@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import click
@@ -14,6 +15,7 @@ from gateway.core.process import (
     start_gateway_daemon,
     stop_gateway_daemon,
 )
+from infrastructure.process.runtime_flags import is_json_output
 from surfaces.cli.host import cli_host
 from surfaces.shared.gateway_entrypoint import gateway_entry_argv
 
@@ -57,6 +59,14 @@ def gateway_start_command(ctx: click.Context, foreground: bool) -> None:
     click.echo("Stop: opensre gateway stop · Status: opensre gateway status")
 
 
+@gateway_command.command("web")
+def gateway_web_command() -> None:
+    """Serve the health and alert HTTP app in the foreground."""
+    from surfaces.gateway_entry import serve_web
+
+    serve_web()
+
+
 @gateway_command.command("stop")
 def gateway_stop_command() -> None:
     """Stop the background gateway daemon."""
@@ -70,8 +80,22 @@ def gateway_stop_command() -> None:
 def gateway_status_command() -> None:
     """Show the gateway daemon and its components (web, telegram, scheduler)."""
     pid = gateway_daemon_pid()
+    components = read_component_status()
+    if is_json_output():
+        click.echo(
+            json.dumps(
+                {
+                    "running": pid is not None,
+                    "pid": pid,
+                    "components": components,
+                    "log_file": str(GATEWAY_LOG_FILE),
+                }
+            )
+        )
+        return
     click.echo(f"OpenSRE gateway: {f'running (pid {pid})' if pid else 'stopped'}")
-    _echo_components()
+    for name, detail in components.items():
+        click.echo(f"  {name}: {detail}")
     click.echo(f"Logs: {GATEWAY_LOG_FILE}")
 
 

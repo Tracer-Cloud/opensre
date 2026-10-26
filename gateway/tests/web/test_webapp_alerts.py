@@ -8,6 +8,7 @@ from http import HTTPStatus
 import pytest
 from fastapi.testclient import TestClient
 
+from config.constants.http import MAX_REQUEST_BODY_BYTES
 from core.domain.alerts.inbox import AlertInbox, set_current_inbox
 from gateway.web import webapp
 
@@ -26,7 +27,7 @@ def inbox(monkeypatch: pytest.MonkeyPatch) -> Iterator[AlertInbox]:
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(webapp.app, client=_LOOPBACK)
+    return TestClient(webapp.app, client=_LOOPBACK, base_url="http://127.0.0.1")
 
 
 def test_healthz_is_ok(client: TestClient) -> None:
@@ -84,7 +85,7 @@ def test_rejected_alert_does_not_leak_exception_detail(client: TestClient) -> No
 
 
 def test_oversized_body_returns_413(client: TestClient, inbox: AlertInbox) -> None:
-    resp = client.post("/alerts", json={"text": "x" * (webapp.MAX_ALERT_BODY_BYTES + 1)})
+    resp = client.post("/alerts", json={"text": "x" * (MAX_REQUEST_BODY_BYTES + 1)})
     assert resp.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
     assert resp.json() == {"error": "payload too large"}
     assert inbox.pop_nowait() is None

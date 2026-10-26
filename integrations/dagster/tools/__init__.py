@@ -5,7 +5,8 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.dagster import (
     DagsterConfig,
     dagster_extract_params,
@@ -18,7 +19,9 @@ from integrations.dagster import (
     name="list_dagster_assets",
     description="List Dagster assets and their latest materialization status.",
     source="dagster",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
     injected_params=("api_token", "endpoint"),
     extract_params=dagster_extract_params,
@@ -39,7 +42,7 @@ def list_dagster_assets(
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.dagster import (
     dagster_extract_params,
     dagster_is_available,
@@ -67,7 +70,9 @@ from integrations.dagster import (
         "the fetch early; the failures shown are a partial set."
     ),
     source="dagster",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
     injected_params=("api_token", "endpoint"),
     extract_params=dagster_extract_params,
@@ -89,7 +94,7 @@ def get_dagster_run_logs(
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.dagster import (
     dagster_extract_params,
     dagster_is_available,
@@ -111,7 +116,9 @@ from integrations.dagster import (
         "incident investigations."
     ),
     source="dagster",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
     injected_params=("api_token", "endpoint"),
     extract_params=dagster_extract_params,
@@ -134,7 +141,7 @@ def list_dagster_runs(
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.dagster import (
     dagster_extract_params,
     dagster_is_available,
@@ -150,7 +157,9 @@ from integrations.dagster import (
         "location name, repository name, and schedule name."
     ),
     source="dagster",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
     injected_params=("api_token", "endpoint"),
     extract_params=dagster_extract_params,
@@ -181,7 +190,7 @@ def list_dagster_schedule_ticks(
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.dagster import (
     dagster_extract_params,
     dagster_is_available,
@@ -197,7 +206,9 @@ from integrations.dagster import (
         "location name, repository name, and sensor name."
     ),
     source="dagster",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
     injected_params=("api_token", "endpoint"),
     extract_params=dagster_extract_params,

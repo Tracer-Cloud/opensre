@@ -8,6 +8,8 @@ import threading
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from config.constants.gateway import DEFAULT_STOP_TIMEOUT_SECONDS
+
 
 class PollingBackground:
     """Control handle for a poll transport's background thread."""
@@ -21,7 +23,7 @@ class PollingBackground:
         self._thread = thread
         self._stop_event = stop_event
 
-    def stop(self, *, timeout: float = 8.0) -> bool:
+    def stop(self, *, timeout: float = DEFAULT_STOP_TIMEOUT_SECONDS) -> bool:
         """Request shutdown and return whether the thread stopped."""
         self._stop_event.set()
         self._thread.join(timeout=timeout)

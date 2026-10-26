@@ -8,12 +8,12 @@ from typing import Literal
 from tools.interactive_shell.action_names import ToolKind
 
 ActionSource = Literal["deterministic", "llm"]
-TargetSurface = Literal["slash", "terminal", "investigation", "implementation"]
+TargetSurface = Literal["slash", "terminal", "implementation"]
 
 
 def default_target_surface(kind: ToolKind) -> TargetSurface | None:
     """Return the canonical execution surface for a given action kind."""
-    if kind == "assistant_handoff":
+    if kind == "session_goal":
         return None
     if kind in {"slash", "llm_provider", "task_cancel"}:
         return "slash"
@@ -21,7 +21,7 @@ def default_target_surface(kind: ToolKind) -> TargetSurface | None:
         return "terminal"
     if kind == "implementation":
         return "implementation"
-    return "investigation"
+    return None
 
 
 @dataclass(frozen=True)

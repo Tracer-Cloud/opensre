@@ -12,15 +12,15 @@ from core.llm.providers.azure_openai import (
     resolve_azure_openai_api_version,
 )
 from infrastructure.terminal.theme import ERROR, WARNING
-from surfaces.cli.wizard._ui import (
-    _CUSTOM_MODEL_SENTINEL,
+from surfaces.cli.wizard.components import (
+    CUSTOM_MODEL_SENTINEL,
     Choice,
     WizardBack,
-    _choose,
-    _choose_model,
-    _console,
-    _prompt_value,
-    _step,
+    choose,
+    choose_model,
+    console,
+    prompt_value,
+    step,
 )
 
 if TYPE_CHECKING:
@@ -40,9 +40,9 @@ def prompt_endpoint_settings(provider: ProviderOption) -> dict[str, str] | None:
     if not provider.endpoint_env or not provider.api_version_env:
         return {}
 
-    _step("Azure endpoint")
+    step("Azure endpoint")
     try:
-        base_url = _prompt_value(
+        base_url = prompt_value(
             f"Azure OpenAI resource URL ({provider.endpoint_env})",
             default=os.getenv(provider.endpoint_env, provider.credential_default),
             secret=False,
@@ -53,7 +53,7 @@ def prompt_endpoint_settings(provider: ProviderOption) -> dict[str, str] | None:
 
     normalized_base = normalize_azure_openai_base_url(base_url)
     if not normalized_base:
-        _console.print(f"[{ERROR}]Azure OpenAI resource URL is required.[/]")
+        console.print(f"[{ERROR}]Azure OpenAI resource URL is required.[/]")
         return None
     return {
         provider.endpoint_env: normalized_base,
@@ -79,16 +79,16 @@ def choose_azure_deployment(
     back_on_cancel: bool = False,
 ) -> str:
     """Prompt for an Azure OpenAI deployment name from the user's resource."""
-    _step("Deployment")
+    step("Deployment")
 
     resolved_default = (default or "").strip()
     deployments = discover_azure_openai_deployments_from_env()
     if not deployments:
-        _console.print(
+        console.print(
             f"[{WARNING}]Could not list deployments from your Azure resource. "
             "Enter the deployment name from the Azure portal.[/]"
         )
-        return _prompt_value(
+        return prompt_value(
             f"Azure OpenAI deployment name ({model_env})",
             default=resolved_default,
             allow_empty=False,
@@ -103,7 +103,7 @@ def choose_azure_deployment(
         extra_choices.append(Choice(value=resolved_default, label=resolved_default, hint="current"))
 
     custom_choice = Choice(
-        value=_CUSTOM_MODEL_SENTINEL,
+        value=CUSTOM_MODEL_SENTINEL,
         label="Enter custom deployment name",
         hint="type deployment name from Azure portal",
     )
@@ -112,16 +112,16 @@ def choose_azure_deployment(
     if default_value and not any(choice.value == default_value for choice in choices):
         default_value = deployments[0]
 
-    selection = _choose(
+    selection = choose(
         "Choose Azure OpenAI deployment",
         choices,
         default=default_value or None,
         back_on_cancel=back_on_cancel,
     )
-    if selection != _CUSTOM_MODEL_SENTINEL:
+    if selection != CUSTOM_MODEL_SENTINEL:
         return selection
 
-    return _prompt_value(
+    return prompt_value(
         f"Custom Azure OpenAI deployment name ({model_env})",
         default=resolved_default,
         allow_empty=False,
@@ -131,7 +131,6 @@ def choose_azure_deployment(
 
 def choose_provider_model(
     provider: ProviderOption,
-    model_provider: ProviderOption,
     *,
     default: str | None,
     prompt_label: str | None = None,
@@ -141,11 +140,11 @@ def choose_provider_model(
     if is_azure_openai_provider(provider.value):
         return choose_azure_deployment(
             default=default,
-            model_env=model_provider.model_env,
+            model_env=provider.model_env,
             back_on_cancel=back_on_cancel,
         )
-    return _choose_model(
-        model_provider,
+    return choose_model(
+        provider,
         default=default,
         prompt_label=prompt_label,
         back_on_cancel=back_on_cancel,

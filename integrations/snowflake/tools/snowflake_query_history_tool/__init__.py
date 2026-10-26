@@ -6,9 +6,10 @@ from typing import Any
 
 import httpx
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 
 _DEFAULT_MAX_RESULTS = 50
@@ -93,11 +94,25 @@ def _normalize_rows(response_payload: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _map_query_snowflake_history(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    rows = output.get("rows", [])
+    if output.get("available", True) and isinstance(rows, list) and rows:
+        record_evidence_entry(
+            evidence,
+            source="query_snowflake_history",
+            label="Snowflake Query History",
+            summary=f"{len(rows)} queries",
+        )
+
+
 @tool(
     name="query_snowflake_history",
     description="Query Snowflake query history using a read-only bounded statement.",
     source="snowflake",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
+    evidence_mapper=_map_query_snowflake_history,
     requires=["account_identifier"],
     input_schema={
         "type": "object",

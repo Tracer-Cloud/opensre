@@ -1,4 +1,4 @@
-"""Rocket.Chat delivery helper - posts investigation findings via the REST API."""
+"""Rocket.Chat delivery helper - posts messages via the REST API."""
 
 from __future__ import annotations
 
@@ -8,14 +8,9 @@ from typing import Any
 
 from infrastructure.delivery.notifications.delivery_errors import extract_http_error
 from infrastructure.delivery.notifications.delivery_transport import post_json
-from infrastructure.delivery.notifications.limits import MAX_MESSAGE_SIZE
 from infrastructure.delivery.notifications.redaction import redact_token
-from infrastructure.text.truncation import truncate
 
 logger = logging.getLogger(__name__)
-
-_ATTACHMENT_TEXT_LIMIT = MAX_MESSAGE_SIZE
-_REPORT_COLOR = "#E74C3C"
 
 
 def _rocketchat_auth_headers(auth_token: str, user_id: str) -> dict[str, str]:
@@ -83,32 +78,3 @@ def post_rocketchat_webhook(
         logger.warning("[rocketchat] webhook post failed: %s", safe_error)
         return False, safe_error
     return True, ""
-
-
-def send_rocketchat_report(report: str, rocketchat_ctx: dict[str, Any]) -> tuple[bool, str]:
-    """Deliver an investigation report via webhook when configured, else PAT."""
-    attachment = {
-        "title": "Investigation Complete",
-        "text": truncate(report, _ATTACHMENT_TEXT_LIMIT, suffix="…"),
-        "color": _REPORT_COLOR,
-    }
-    webhook_url: str = str(rocketchat_ctx.get("webhook_url") or "")
-    if webhook_url:
-        posted, error = post_rocketchat_webhook(
-            webhook_url, "OpenSRE Investigation", attachments=[attachment]
-        )
-        return (True, "") if posted else (False, error)
-
-    server_url: str = str(rocketchat_ctx.get("server_url") or "")
-    channel: str = str(rocketchat_ctx.get("channel") or "")
-    auth_token: str = str(rocketchat_ctx.get("auth_token") or "")
-    user_id: str = str(rocketchat_ctx.get("user_id") or "")
-    posted, error, _ = post_rocketchat_message(
-        server_url,
-        channel,
-        "OpenSRE Investigation",
-        auth_token,
-        user_id,
-        attachments=[attachment],
-    )
-    return (True, "") if posted else (False, error)

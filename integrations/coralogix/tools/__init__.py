@@ -6,8 +6,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.domain.types.evidence import record_evidence_entry
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
+from infrastructure.text.truncation import truncate
 from integrations.config_models import CoralogixIntegrationConfig
 from integrations.coralogix.client import (
     CoralogixClient,
@@ -23,6 +25,54 @@ _ERROR_KEYWORDS = (
     "panic",
     "timeout",
 )
+
+#: Scope fields (app/subsystem/trace) echoed into a report summary are
+#: caller-supplied and not bounded by the input schema.
+_SCOPE_SUMMARY_TRUNCATE_LEN = 60
+
+
+def _map_query_coralogix_logs(
+    evidence: dict[str, Any], output: dict[str, Any], tool_input: dict[str, Any]
+) -> None:
+    """Cite the log count, keyword-matched error count, and query scope.
+
+    ``client.query_logs`` sends the caller's own ``limit`` straight into the
+    DataPrime query with no server-side clamp, so a returned ``total`` at
+    that ceiling may understate the true match count -- use the "N+"
+    convention against the caller's requested limit.
+    """
+    if not output.get("available"):
+        return
+    logs = output.get("logs") or []
+    if not logs:
+        return
+    total = output.get("total", len(logs))
+    requested_limit = tool_input.get("limit", 50)
+    count_label = f"{total}+" if total >= max(requested_limit, 1) else str(total)
+    parts = [f"{count_label} log(s)"]
+    error_count = len(output.get("error_logs") or [])
+    if error_count:
+        parts.append(f"{error_count} matching an error keyword")
+
+    def _safe(value: str) -> str:
+        return truncate(value.replace("\n", " "), _SCOPE_SUMMARY_TRUNCATE_LEN)
+
+    scope = []
+    if output.get("application_name"):
+        scope.append(f"app '{_safe(str(output['application_name']))}'")
+    if output.get("subsystem_name"):
+        scope.append(f"subsystem '{_safe(str(output['subsystem_name']))}'")
+    if output.get("trace_id"):
+        scope.append(f"trace '{_safe(str(output['trace_id']))}'")
+    if scope:
+        parts.append(", ".join(scope))
+
+    record_evidence_entry(
+        evidence,
+        source="query_coralogix_logs",
+        label="Coralogix Logs",
+        summary=", ".join(parts),
+    )
 
 
 def _coralogix_available(sources: dict) -> bool:
@@ -41,6 +91,9 @@ class CoralogixLogsTool(BaseTool):
 
     name = "query_coralogix_logs"
     source = "coralogix"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper = _map_query_coralogix_logs
     description = "Query Coralogix DataPrime logs for error signatures and incident context."
     use_cases = [
         "Searching Coralogix logs for a failing service or subsystem",

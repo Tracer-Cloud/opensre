@@ -16,12 +16,14 @@ permanently non-functional from the executor path. See
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
+from core.domain.types.evidence import EvidenceMapper
 from core.domain.types.tools import ToolSurface
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.victoria_logs.client import make_victoria_logs_client
+from integrations.victoria_logs.tools._evidence import map_victoria_logs_query
 
 
 class VictoriaLogsTool(BaseTool):
@@ -29,6 +31,9 @@ class VictoriaLogsTool(BaseTool):
 
     name = "victoria_logs_query"
     source = "victoria_logs"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
+    evidence_mapper: ClassVar[EvidenceMapper | None] = map_victoria_logs_query
     description = (
         "Query structured logs from VictoriaLogs using LogsQL to investigate "
         "application errors, request anomalies, or other log-correlated signals."
@@ -42,7 +47,7 @@ class VictoriaLogsTool(BaseTool):
     # tools without an explicit ``surfaces`` is investigation-only, which would
     # hide this from chat-mode investigations where log queries are a common
     # follow-up. Mirrors SplunkSearchTool, the closest log-query analog.
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    surfaces = (ToolSurface.CHAT,)
     requires = ["base_url"]
     injected_params = ["base_url"]
     input_schema = {

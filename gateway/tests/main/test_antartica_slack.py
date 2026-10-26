@@ -5,7 +5,9 @@ We want to have a very specific tests that validates wether the agent is working
 The test goes like this:
 - We start the gateway and get the agent
 - We send a message to the agent: "send a message to slack with the temperature in antartica, compute the temperature first and then send the message"
-- We expect the agent to produce two or three turns (1: create temperature, 2: send message via slack that includes the temperature)
+- We expect the agent to produce four action turns (plan+compute, Slack tool
+  discovery, Slack send with the plan closed in that same response, finalize). The ReAct same-LLM
+  reviewer is off by default.
 """
 
 from __future__ import annotations
@@ -38,6 +40,20 @@ _USER_MESSAGE = (
 _COMPUTED_C = -20 + -20
 _COMPUTE_COMMAND = f"python3 -c \"print('Antarctica:', {-20} + {-20}, 'C')\""
 _SLACK_WEBHOOK = "https://hooks.slack.test/abc"
+_STEP_COMPUTE = "Compute Antarctica temperature"
+_STEP_SLACK = "Send the temperature to Slack"
+_PLAN_COMPUTE = [
+    {"step": _STEP_COMPUTE, "status": "in_progress"},
+    {"step": _STEP_SLACK, "status": "pending", "verifies": True},
+]
+_PLAN_SLACK = [
+    {"step": _STEP_COMPUTE, "status": "completed"},
+    {"step": _STEP_SLACK, "status": "in_progress", "verifies": True},
+]
+_PLAN_DONE = [
+    {"step": _STEP_COMPUTE, "status": "completed"},
+    {"step": _STEP_SLACK, "status": "completed", "verifies": True},
+]
 
 
 class _ComputeThenSlackLLM:
@@ -46,20 +62,16 @@ class _ComputeThenSlackLLM:
     This mirrors a real model handling the compound request as a short sequence
     of turns:
 
-    * Turn 1 emits ``shell_run`` to compute the Antarctica temperature.
-    * Turn 2 (once the compute step has run) emits ``slack_send_message`` with the
-      temperature embedded in the message body.
-    * Turn 3 concludes with a plain reply and no tool call.
-
-    The action driver additionally asks the same LLM one goal-review question
-    at conclusion time (``build_goal_reviewer``); that call is answered with
-    structured ``{"verdict": "GOAL_REACHED"}`` and tracked separately so the
-    loop-turn counter keeps asserting the "two or three turns" expectation.
+    * Turn 1 writes the plan and emits ``shell_run`` to compute the temperature.
+    * Turn 2 discovers ``slack_send_message`` through ``tool_search``.
+    * Turn 3 promotes the Slack step, emits ``slack_send_message``, then marks
+      the plan complete once that send has returned (the Slack step verifies).
+    * Turn 4 concludes with a plain reply and no tool call.
     """
 
     def __init__(self) -> None:
         self.turns = 0
-        self.review_calls = 0
+        self.slack_activated = False
         self.sent_slack_message: str | None = None
 
     def tool_schemas(self, _tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
@@ -73,19 +85,33 @@ class _ComputeThenSlackLLM:
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
         _ = tools
-        if system is not None and "GOAL_REACHED" in system:
-            self.review_calls += 1
-            return AgentLLMResponse(content='{"verdict": "GOAL_REACHED"}')
         self.turns += 1
+        # Goal review reuses this client with a "User goal:" prompt; answer it
+        # as reached so the action loop does not treat the review as a new plan.
+        if self._is_goal_review(messages, system):
+            return AgentLLMResponse(content='{"verdict": "GOAL_REACHED"}')
         shell_output = self._shell_output(messages)
         if not shell_output:
             return AgentLLMResponse(
                 content="",
                 tool_calls=[
+                    ToolCall(id="call_plan", name="update_plan", input={"plan": _PLAN_COMPUTE}),
                     ToolCall(
                         id="call_compute",
                         name="shell_run",
                         input={"command": _COMPUTE_COMMAND},
+                    ),
+                ],
+            )
+        if not self.slack_activated:
+            self.slack_activated = True
+            return AgentLLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="call_find_slack",
+                        name="tool_search",
+                        input={"names": ["slack_send_message"]},
                     )
                 ],
             )
@@ -97,14 +123,26 @@ class _ComputeThenSlackLLM:
             return AgentLLMResponse(
                 content="",
                 tool_calls=[
+                    ToolCall(id="call_plan_slack", name="update_plan", input={"plan": _PLAN_SLACK}),
                     ToolCall(
                         id="call_slack",
                         name="slack_send_message",
                         input={"message": message},
-                    )
+                    ),
+                    ToolCall(id="call_plan_done", name="update_plan", input={"plan": _PLAN_DONE}),
                 ],
             )
         return AgentLLMResponse(content="Done — sent the Antarctica temperature to Slack.")
+
+    @staticmethod
+    def _is_goal_review(messages: list[dict[str, Any]], system: str | None) -> bool:
+        if system and "completed the user's goal" in system:
+            return True
+        for message in messages:
+            content = message.get("content")
+            if isinstance(content, str) and content.startswith("User goal:"):
+                return True
+        return False
 
     @staticmethod
     def _shell_output(messages: list[dict[str, Any]]) -> str:
@@ -189,12 +227,13 @@ def test_agent_computes_temperature_then_sends_it_to_slack(
     action_tools = provider.action_tools(confirm_fn=None, is_tty=True)
     tool_names = action_tool_names(action_tools)
     assert "shell_run" in tool_names
-    assert "slack_send_message" in tool_names
+    assert "slack_send_message" not in tool_names
+    assert "tool_search" in tool_names
+    assert "update_plan" in tool_names
 
     provider = DefaultToolProvider(
         session,
         console,
-        precomputed_action_tools=action_tools,
         subprocess_presenter_factory=headless_subprocess_presenter_factory,
     )
     llm = _ComputeThenSlackLLM()
@@ -210,12 +249,8 @@ def test_agent_computes_temperature_then_sends_it_to_slack(
         is_tty=True,
     )
 
-    # The agent ran the compound request as a sequence of turns: compute, send,
-    # finalize. "Two or three turns" — the final no-tool reply is the third.
-    assert llm.turns == 3
-    # The conclusion triggered exactly one bounded goal-review call.
-    assert llm.review_calls == 1
-
+    # Plan+compute → discover Slack → send and close the plan → finalize.
+    assert llm.turns == 4
     # Turn 1 actually executed a shell command to compute the temperature.
     shell_entries = [entry for entry in session.history if entry.get("type") == "shell"]
     assert shell_entries, "expected the compute turn to run a shell command"

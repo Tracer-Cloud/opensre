@@ -86,6 +86,14 @@ def test_railway_is_registered_as_a_configurable_verified_integration() -> None:
     assert "railway" not in SKIP_CLASSIFIED_SERVICES
 
 
+def test_google_docs_has_a_dedicated_setup_command() -> None:
+    google_docs = next(spec for spec in INTEGRATION_SPECS if spec.service == "google_docs")
+
+    assert google_docs.has_verifier is True
+    assert google_docs.setup_order is not None
+    assert "google_docs" in SUPPORTED_SETUP_SERVICES
+
+
 def test_prefect_is_registered_as_a_directly_effective_integration() -> None:
     # prefect's classify() resolves store credentials into a config object
     # just like dagster/temporal, but its spec was missing direct_effective=True

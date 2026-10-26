@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from core.domain.types.evidence import EvidenceSource
+from core.domain.types.evidence import EvidenceSource, record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
+from infrastructure.text.truncation import truncate
 from integrations.config_models import RailwayIntegrationConfig
 from integrations.railway.client import (
     RailwayClient,
@@ -13,12 +14,47 @@ from integrations.railway.client import (
     railway_config_from_sources,
 )
 
+#: git commit messages are free-form and unbounded; cap the length used in a
+#: report summary so one long or multi-line message can't produce a
+#: malformed or oversized report line.
+_COMMIT_MESSAGE_TRUNCATE_LEN = 100
+_COMMIT_HASH_DISPLAY_LEN = 12
+
+
+def _map_inspect_railway_deployment(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the deployment's status and source commit."""
+    if output.get("status") != "ok":
+        return
+    deployment = output.get("deployment") or {}
+    if not deployment:
+        return
+    parts = [f"status {deployment.get('status') or 'unknown'}"]
+    commit_hash = deployment.get("commit_hash")
+    if commit_hash:
+        parts.append(f"commit {str(commit_hash)[:_COMMIT_HASH_DISPLAY_LEN]}")
+    commit_message = deployment.get("commit_message")
+    if commit_message:
+        safe_message = truncate(
+            str(commit_message).replace("\r\n", " ").replace("\r", " ").replace("\n", " "),
+            _COMMIT_MESSAGE_TRUNCATE_LEN,
+        )
+        parts.append(f"'{safe_message}'")
+    record_evidence_entry(
+        evidence,
+        source="inspect_railway_deployment",
+        label="Railway Deployment",
+        summary=", ".join(parts),
+    )
+
 
 class InspectRailwayDeploymentTool(BaseTool):
     name = "inspect_railway_deployment"
     source: ClassVar[EvidenceSource] = "railway"
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION)
+    surfaces = (ToolSurface.CHAT, ToolSurface.ACTION)
     side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Show the latest successful Railway deployment and source commit metadata for a service."
     )
@@ -73,5 +109,6 @@ class InspectRailwayDeploymentTool(BaseTool):
 inspect_railway_deployment = InspectRailwayDeploymentTool()
 tool(
     inspect_railway_deployment,
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+    surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
+    evidence_mapper=_map_inspect_railway_deployment,
 )

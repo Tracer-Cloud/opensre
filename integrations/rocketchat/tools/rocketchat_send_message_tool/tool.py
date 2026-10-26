@@ -6,7 +6,7 @@ from typing import Any
 
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.rocketchat.tools.rocketchat_send_message_tool.constants import SOURCE
 from integrations.rocketchat.tools.rocketchat_send_message_tool.delivery import (
     dispatch_message,
@@ -29,19 +29,17 @@ class RocketChatSendMessageTool(BaseTool):
     source = SOURCE
     description = (
         "Send a plain-text message via the configured Rocket.Chat integration. "
-        "Use this for explicit user-requested Rocket.Chat message actions and for "
-        "incident notifications. The tool resolves credentials internally and "
-        "returns structured delivery status without exposing secrets."
+        "Use it only when the user asks to send something to Rocket.Chat; do not send "
+        "alerts or turn results there on your own. The tool resolves credentials "
+        "internally and returns structured delivery status without exposing secrets."
     )
     use_cases = [
         "Sending a user-requested message to the configured Rocket.Chat default channel",
-        "Posting a concise incident notification to a Rocket.Chat channel or user",
-        "Following up after an investigation with a short status update",
+        "Posting an incident notification the user asked for to a Rocket.Chat channel or user",
+        "Sending a short status update the user asked for after an investigation",
     ]
     requires = ["rocketchat"]
     side_effect_level = SideEffectLevel.EXTERNAL
-    requires_approval = True
-    approval_reason = "Sends a message via Rocket.Chat on your behalf."
     input_schema = {
         "type": "object",
         "properties": {
@@ -127,5 +125,5 @@ class RocketChatSendMessageTool(BaseTool):
 
 rocketchat_send_message = tool(
     RocketChatSendMessageTool(),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+    surfaces=(ToolSurface.ACTION,),
 )

@@ -7,10 +7,7 @@ from typing import Any
 import pytest
 
 from infrastructure.delivery.notifications.delivery_transport import DeliveryResponse
-from integrations.whatsapp.delivery import (
-    post_whatsapp_message_twilio,
-    send_whatsapp_report,
-)
+from integrations.whatsapp.delivery import post_whatsapp_message_twilio
 
 
 def _success_response(**kwargs: Any) -> DeliveryResponse:
@@ -121,59 +118,6 @@ def test_post_whatsapp_message_twilio_prefixes_whatsapp(
 
     assert captured["data"]["To"] == "whatsapp:+1234567890"
     assert captured["data"]["From"] == "whatsapp:+14155238886"
-
-
-def test_send_whatsapp_report_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "integrations.whatsapp.delivery.post_form",
-        lambda *_a, **_kw: _success_response(data={"sid": "SM456"}),
-    )
-
-    success, error = send_whatsapp_report(
-        report="Investigation summary",
-        whatsapp_ctx={
-            "account_sid": "AC123",
-            "auth_token": "tok",
-            "from_number": "whatsapp:+14155238886",
-            "to": "+123",
-        },
-    )
-
-    assert success is True
-    assert error == ""
-
-
-def test_send_whatsapp_report_missing_credentials() -> None:
-    success, error = send_whatsapp_report(
-        report="Test",
-        whatsapp_ctx={"account_sid": "AC123"},
-    )
-
-    assert success is False
-    assert "Missing" in error
-
-
-def test_send_whatsapp_report_truncates_long_report(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
-
-    def _fake_post_form(url: str, data: dict[str, str], **kwargs: Any) -> DeliveryResponse:
-        captured["data"] = data
-        return _success_response()
-
-    monkeypatch.setattr("integrations.whatsapp.delivery.post_form", _fake_post_form)
-
-    send_whatsapp_report(
-        report="X" * 5000,
-        whatsapp_ctx={
-            "account_sid": "AC123",
-            "auth_token": "tok",
-            "from_number": "whatsapp:+14155238886",
-            "to": "+123",
-        },
-    )
-
-    assert len(captured["data"]["Body"]) <= 4096
-    assert captured["data"]["Body"].endswith("…")
 
 
 class TestWhatsAppDelegatesToSharedTransport:

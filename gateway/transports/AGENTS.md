@@ -3,7 +3,7 @@
 One package per inbound chat platform. Peers: **none imports another**.
 
 In API-framework terms, transports are the ingress adapters: platform inbound that
-authorizes, resolves a session, builds turn output, and calls the turn handler. The
+authorizes, resolves a session, builds turn output, and calls the turn runner. The
 turn contract they implement is `infrastructure.turn_host.turn_callback` /
 `infrastructure.turn_host.turn_output`; the registry they register with is
 `gateway.transports.startup`; the shared per-turn steps they compose are

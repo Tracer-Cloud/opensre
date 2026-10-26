@@ -57,7 +57,7 @@ def test_create_llm_client_dispatches_registry_provider(
         ollama_host="http://localhost:11434",
         **{f"{provider}_toolcall_model": "stub-model"},
     )
-    monkeypatch.setattr("config.config.resolve_llm_settings", lambda: settings)
+    monkeypatch.setattr("config.llm_settings.resolve_llm_settings", lambda: settings)
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env_var: "test-key"
     )
@@ -84,7 +84,7 @@ def test_create_llm_client_dispatches_registry_provider_to_litellm_when_transpor
         ollama_host="http://localhost:11434",
         **{f"{provider}_toolcall_model": "stub-model"},
     )
-    monkeypatch.setattr("config.config.resolve_llm_settings", lambda: settings)
+    monkeypatch.setattr("config.llm_settings.resolve_llm_settings", lambda: settings)
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env_var: "test-key"
     )
@@ -106,7 +106,7 @@ def test_create_llm_client_uses_sdk_without_transport_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = SimpleNamespace(provider="deepseek", deepseek_toolcall_model="deepseek-v4-flash")
-    monkeypatch.setattr("config.config.resolve_llm_settings", lambda: settings)
+    monkeypatch.setattr("config.llm_settings.resolve_llm_settings", lambda: settings)
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env_var: "test-key"
     )

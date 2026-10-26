@@ -2,7 +2,7 @@
 
 The gateway prepends a ``[Slack channel_id=… thread_ts=…]`` context line to
 raw message text before core turn/prompt helpers see it. Registered with
-:func:`infrastructure.harness_ports.register_message_context_prefix_stripper` from
+:func:`infrastructure.harness_providers.register_message_context_prefix_stripper` from
 ``integrations/harness_adapters.py`` so core can strip it without importing
 this module directly.
 """

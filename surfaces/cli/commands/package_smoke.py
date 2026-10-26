@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import os
+import sys
+from typing import TYPE_CHECKING
 
 import click
 
+from config.constants import SSL_CERT_DIR_ENV
+
+if TYPE_CHECKING:
+    from core.tool import RegisteredTool
+
 _REQUIRED_TOOL_NAMES = frozenset(
     {
-        "call_x_tool",
+        "call_sentry_tool",
         "execute_python_code",
         "generate_work_status_report",
         "kubernetes_list_pods",
@@ -19,17 +28,59 @@ _REQUIRED_TOOL_NAMES = frozenset(
 )
 _REQUIRED_ACTION_SKILL_NAMES = frozenset(
     {
-        "architecture-audit",
-        "github-ci-fix",
-        "github-ci-fix-onboarding",
-        "github-cli",
-        "github-security-fix",
-        "morning-report",
+        # Nested onboarding tree: the router plus one child prove that frozen
+        # builds bundle and discover skills/<package>/<child>/SKILL.md.
+        "analyzing-github-ci-performance",
+        "repair-github-ci",
+        "fixing-github-security-alerts",
+        "delivering-morning-briefings",
+        "onboarding-github-ci",
     }
 )
-_REQUIRED_INTEGRATION_VERIFIER_NAMES = frozenset({"datadog", "grafana", "x_mcp"})
+_REQUIRED_INTEGRATION_VERIFIER_NAMES = frozenset({"datadog", "grafana", "sentry_mcp"})
 _GUIDED_TOOL_NAMES = frozenset({"execute_python_code", "generate_work_status_report"})
-_ACTION_SKILL_BODY_MARKERS = {"architecture-audit": "REPORT TEMPLATE from"}
+# Proves the frozen build ships the fat skill body, not just the index entry.
+_ACTION_SKILL_BODY_MARKERS = {"repair-github-ci": "fix_github_pr_ci"}
+
+
+def _load_required_tools() -> tuple[dict[str, RegisteredTool], int]:
+    """Import only modules that define the smoke-required tools.
+
+    Catalog size comes from the descriptor index (baked or AST) so release
+    smoke still proves hundreds of tools are discoverable without importing
+    every vendor module.
+    """
+    from tools.registry_discovery import collect_registered_tools_from_module
+    from tools.registry_index import build_descriptor_index
+    from tools.registry_skill_guidance import apply_skill_guidance
+
+    index = build_descriptor_index()
+    modules = sorted({index[name].module for name in _REQUIRED_TOOL_NAMES if name in index})
+    tools_by_name: dict[str, RegisteredTool] = {}
+    for dotted in modules:
+        module = importlib.import_module(dotted)
+        for tool in collect_registered_tools_from_module(module):
+            if tool.name in _REQUIRED_TOOL_NAMES:
+                tools_by_name.setdefault(tool.name, tool)
+    apply_skill_guidance(tools_by_name, known_tool_names=frozenset(index))
+    return tools_by_name, len(index)
+
+
+def _ca_certificates_found() -> bool:
+    """Whether the artifact's default TLS context trusts a CA it found on its own.
+
+    After boot every frozen build has loaded one: the system CA file, Windows'
+    store, or certifi's bundle. A CA directory in ``SSL_CERT_DIR`` is the
+    user's own choice, which OpenSSL reads only while verifying, so it is
+    taken as configured rather than inspected; this smoke checks the
+    artifact, not the user's CA setup. Without a CA, every ``urllib`` HTTPS
+    call fails verification.
+    """
+    import ssl
+
+    if os.environ.get(SSL_CERT_DIR_ENV):
+        return True
+    return bool(ssl.create_default_context().cert_store_stats().get("x509_ca"))
 
 
 @click.command(name="_package-smoke", hidden=True)
@@ -38,10 +89,20 @@ def package_smoke_command() -> None:
     from core.agent_harness.spi.grounding import list_action_skills, load_skill_body
     from integrations._verifiers_loader import register_all_verifiers
     from integrations.verification import list_verifiers
-    from tools.registry import get_registered_tool_map
+    from tools.registry_index import BAKED_INDEX_RELATIVE_PATH, baked_index_available
+
+    # Frozen builds silently fall back to importing every vendor module when
+    # the bake is missing. Fail before the slow path so release smoke cannot
+    # pass on an artifact that restored the first-turn delay.
+    frozen = bool(getattr(sys, "frozen", False))
+    if frozen and not baked_index_available():
+        baked_failures = {"missing_baked_descriptor_index": [BAKED_INDEX_RELATIVE_PATH.as_posix()]}
+        raise click.ClickException(
+            f"PyInstaller package smoke failed: {json.dumps(baked_failures)}"
+        )
 
     register_all_verifiers()
-    tool_map = get_registered_tool_map()
+    tool_map, catalog_size = _load_required_tools()
     tool_names = set(tool_map)
     action_skill_names = {skill.name for skill in list_action_skills()}
     integration_verifier_names = set(list_verifiers())
@@ -62,6 +123,9 @@ def package_smoke_command() -> None:
         if name not in tool_map or not tool_map[name].skill_guidance
     )
     failures = {
+        "missing_ca_certificates": ["default TLS context"]
+        if frozen and not _ca_certificates_found()
+        else [],
         "missing_tools": missing_tools,
         "missing_action_skills": missing_action_skills,
         "missing_action_skill_data": missing_action_skill_data,
@@ -71,17 +135,16 @@ def package_smoke_command() -> None:
     if any(failures.values()):
         raise click.ClickException(f"PyInstaller package smoke failed: {json.dumps(failures)}")
 
-    click.echo(
-        json.dumps(
-            {
-                "action_skills": len(action_skill_names),
-                "integration_verifiers": len(integration_verifier_names),
-                "registered_tools": len(tool_names),
-                "status": "ok",
-            },
-            sort_keys=True,
-        )
-    )
+    payload: dict[str, object] = {
+        "action_skills": len(action_skill_names),
+        "checked_tools": len(tool_names),
+        "integration_verifiers": len(integration_verifier_names),
+        "registered_tools": catalog_size,
+        "status": "ok",
+    }
+    if frozen:
+        payload["baked_descriptor_index"] = True
+    click.echo(json.dumps(payload, sort_keys=True))
 
 
 __all__ = ["package_smoke_command"]

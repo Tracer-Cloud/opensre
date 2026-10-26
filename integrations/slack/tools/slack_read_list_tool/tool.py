@@ -6,9 +6,10 @@ import os
 import re
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.slack.tools.slack_read_list_tool.constants import (
     DEFAULT_ITEM_LIMIT,
@@ -84,11 +85,30 @@ def _matched(row: dict[str, str], candidates: list[dict[str, str]]) -> _ListReso
     return row["list_id"], row.get("title") or row.get("name") or "", candidates, ""
 
 
+def _map_slack_read_list(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Record the rows read from a Slack List as citeable evidence."""
+    items = output.get("items")
+    if not isinstance(items, list) or not items:
+        return
+    name = str(output.get("list_title") or output.get("list_id") or "").strip()
+    scope = f" in {name}" if name else ""
+    truncated = " (truncated)" if output.get("truncated") else ""
+    record_evidence_entry(
+        evidence,
+        source="slack_read_list",
+        label="Slack List",
+        summary=f"{len(items)} rows{scope}{truncated}",
+    )
+
+
 class SlackReadListTool(BaseTool):
     """Find Slack Lists by name and/or read their rows (lists:read + files:read)."""
 
     name = "slack_read_list"
     source = SOURCE
+    evidence_mapper = _map_slack_read_list
     description = (
         "Find and/or read a Slack *List* (the Lists product — e.g. a shared "
         "'OpenSRE Team Tasks' board), NOT channel message history and NOT the "
@@ -111,6 +131,7 @@ class SlackReadListTool(BaseTool):
     ]
     requires = ["slack"]
     side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     requires_approval = False
     input_schema = {
         "type": "object",
@@ -255,5 +276,5 @@ def _extract_list_id(raw: str) -> str:
 
 slack_read_list = tool(
     SlackReadListTool(),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+    surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
 )

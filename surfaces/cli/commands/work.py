@@ -7,21 +7,26 @@ from collections.abc import Sequence
 
 import click
 from rich.console import Console
-from rich.table import Table
 
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
+    AmbiguousWorkItemDatetimeError,
+    WorkItem,
     WorkItemChannelTarget,
     add_work_item,
     complete_work_items,
-    cron_from_datetime,
     list_work_items,
     parse_work_item_datetime,
     prioritize_work_items,
+    resolve_work_item_datetime,
     work_items_path,
 )
-from infrastructure.scheduling.scheduler.store import add_task as add_scheduled_task
+from infrastructure.process.runtime_flags import is_json_output
+from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
+from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from surfaces.shared.terminal.tables.work_items import next_work_table, work_items_table
 
 _console = Console(highlight=False)
 
@@ -55,7 +60,7 @@ def work_list(status: str, project: str, owner: str, json_out: bool) -> None:
         rows = list_work_items(
             status=None if status == "all" else status, project=project, owner=owner
         )
-    if json_out:
+    if json_out or is_json_output():
         click.echo(json.dumps([item.to_dict() for item in rows], indent=2, ensure_ascii=False))
         return
     _render_items(rows)
@@ -105,9 +110,30 @@ def work_add(
 ) -> None:
     """Add a work item."""
     title_text = " ".join(title).strip()
+    if not title_text:
+        raise click.BadParameter("title must not be blank", param_hint="TITLE")
     _validate_datetime("due-at", due_at)
     _validate_datetime("remind-at", remind_at)
+    reminder_timezone = timezone.strip() or "UTC"
+    if remind_at:
+        try:
+            if resolve_work_item_datetime(remind_at, reminder_timezone) is None:
+                raise click.BadParameter(
+                    "remind-at does not exist in the selected timezone",
+                    param_hint="--remind-at",
+                )
+        except AmbiguousWorkItemDatetimeError:
+            raise click.BadParameter(
+                "remind-at is ambiguous in the selected timezone; include an explicit UTC offset",
+                param_hint="--remind-at",
+            ) from None
+        except ValueError:
+            raise click.BadParameter(
+                "timezone must be a valid IANA timezone", param_hint="--tz"
+            ) from None
     delivery_targets = _parse_delivery_targets(provider, chat_id, targets)
+    if remind_at and not delivery_targets:
+        raise click.BadParameter("--remind-at requires --target or --provider/--chat-id")
     item = add_work_item(
         title=title_text,
         project=project,
@@ -123,16 +149,15 @@ def work_add(
     )
     scheduled_id = ""
     if remind_at:
-        if not delivery_targets:
-            raise click.BadParameter("--remind-at requires --target or --provider/--chat-id")
-        remind_dt = parse_work_item_datetime(remind_at)
-        if remind_dt is not None:
+        parsed_remind_at = parse_work_item_datetime(remind_at)
+        remind_dt = resolve_work_item_datetime(remind_at, reminder_timezone)
+        if remind_dt is not None and parsed_remind_at is not None:
             primary = delivery_targets[0]
-            schedule_timezone = "UTC" if remind_dt.tzinfo is not None else timezone
+            schedule_timezone = "UTC" if parsed_remind_at.tzinfo is not None else reminder_timezone
             scheduled = add_scheduled_task(
                 ScheduledTask(
                     kind=TaskKind.WORK_ITEM_REMINDER,
-                    cron=cron_from_datetime(remind_dt),
+                    cron="",
                     timezone=schedule_timezone,
                     provider=Provider(primary.provider),
                     chat_id=primary.chat_id,
@@ -140,6 +165,7 @@ def work_add(
                         "work_item_id": item.id,
                         "store_path": str(work_items_path()),
                         "disable_after_success": "true",
+                        WORK_ITEM_REMINDER_RUN_AT_PARAM: remind_dt.isoformat(),
                         "delivery_targets": json.dumps(
                             [target.to_dict() for target in delivery_targets],
                             separators=(",", ":"),
@@ -186,21 +212,7 @@ def work_next(project: str, owner: str, limit: int) -> None:
     if not ranked:
         _console.print("[dim]No open work items found.[/dim]")
         return
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Rank", justify="right")
-    table.add_column("ID", style="cyan")
-    table.add_column("Score", justify="right")
-    table.add_column("Title")
-    table.add_column("Why")
-    for index, scored in enumerate(ranked, start=1):
-        table.add_row(
-            str(index),
-            scored.item.display_id,
-            str(scored.score),
-            scored.item.title,
-            ", ".join(scored.reasons),
-        )
-    _console.print(table)
+    _console.print(next_work_table(ranked))
 
 
 @work_command.command(name="schedule-checkin")
@@ -261,31 +273,11 @@ def work_path() -> None:
     _console.print(str(work_items_path()))
 
 
-def _render_items(rows: Sequence[object]) -> None:
-    from core.domain.work_items import WorkItem
-
+def _render_items(rows: Sequence[WorkItem]) -> None:
     if not rows:
-        _console.print(f"[dim]No matching work items. Store: {work_items_path()}[/dim]")
+        _console.print("[dim]No matching work items. Add one with opensre work add <title>.[/dim]")
         return
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", style="cyan")
-    table.add_column("Priority")
-    table.add_column("Status")
-    table.add_column("Project")
-    table.add_column("Title")
-    table.add_column("Due")
-    for row in rows:
-        item = row if isinstance(row, WorkItem) else row.item  # type: ignore[attr-defined]
-        table.add_row(
-            item.display_id,
-            item.priority.value,
-            item.status.value,
-            item.project,
-            item.title,
-            item.due_at[:16],
-        )
-    _console.print(table)
-    _console.print(f"[dim]Store: {work_items_path()}[/dim]")
+    _console.print(work_items_table(rows))
 
 
 def _validate_datetime(label: str, value: str) -> None:
@@ -339,10 +331,8 @@ def _validate_cron(cron_expr: str, timezone: str) -> None:
     if len(cron_expr.split()) != 5:
         raise click.BadParameter("cron must have exactly 5 fields")
     try:
-        from apscheduler.triggers.cron import CronTrigger
-
-        CronTrigger.from_crontab(cron_expr, timezone=timezone)
-    except (KeyError, TypeError, ValueError) as exc:
+        build_cron_trigger(cron_expr, timezone)
+    except ValueError as exc:
         raise click.BadParameter(str(exc)) from None
 
 

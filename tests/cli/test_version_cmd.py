@@ -33,3 +33,19 @@ def test_version_flag_uses_fast_path(monkeypatch, capsys) -> None:
 
     assert rc == 0
     assert capsys.readouterr().out.strip() == f"opensre, version {get_opensre_version()}"
+
+
+def test_help_flag_skips_full_startup(monkeypatch, capsys) -> None:
+    def fail_bootstrap(*_args, **_kwargs) -> None:
+        raise AssertionError("--help should not bootstrap the full CLI")
+
+    monkeypatch.setattr("infrastructure.observability.errors.sentry.init_sentry", fail_bootstrap)
+    monkeypatch.setattr(
+        "surfaces.shared.terminal.output.boundary.install_product_adapters",
+        fail_bootstrap,
+    )
+
+    rc = main(["--help"])
+
+    assert rc == 0
+    assert "Usage:" in capsys.readouterr().out

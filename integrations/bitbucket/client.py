@@ -99,6 +99,7 @@ def list_commits(
                 "available": True,
                 "repo": f"{config.workspace}/{repo_slug}",
                 "total_returned": len(commits),
+                "effective_limit": effective_limit,
                 "commits": commits,
             }
         finally:
@@ -181,6 +182,7 @@ def search_code(
                 "available": True,
                 "query": query,
                 "total_returned": len(results),
+                "effective_limit": effective_limit,
                 "results": results,
             }
         finally:

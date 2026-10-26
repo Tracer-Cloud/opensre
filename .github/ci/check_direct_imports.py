@@ -167,8 +167,8 @@ def main(argv: list[str] | None = None) -> int:
         if module_violations:
             print()
         print(f"FAIL: {len(nested_violations)} forbidden nested direct import edge(s):")
-        for violation in nested_violations:
-            print(f"  {violation.edge} (line {violation.lineno})")
+        for nested_violation in nested_violations:
+            print(f"  {nested_violation.edge} (line {nested_violation.lineno})")
 
     print(
         "\nFix by moving shared code to a lower layer (a job-named infrastructure.* package, core/contracts) "

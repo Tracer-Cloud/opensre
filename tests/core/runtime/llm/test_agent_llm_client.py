@@ -11,8 +11,10 @@ from core.llm.transports.sdk.agent_clients import (
     AnthropicAgentClient,
     BedrockAgentClient,
     OpenAIAgentClient,
+    _cli_tool_call_input,
     _try_parse_tool_call_json,
 )
+from tests.utils.anthropic_streams import streaming_messages
 
 
 def _install_fake_anthropic(monkeypatch: pytest.MonkeyPatch) -> types.SimpleNamespace:
@@ -42,11 +44,11 @@ def _install_fake_anthropic(monkeypatch: pytest.MonkeyPatch) -> types.SimpleName
 
     class Anthropic:
         def __init__(self, **_: object) -> None:
-            self.messages = types.SimpleNamespace(create=lambda **_: None)
+            self.messages = streaming_messages(lambda **_: None)
 
     class AnthropicBedrock:
         def __init__(self, **_: object) -> None:
-            self.messages = types.SimpleNamespace(create=lambda **_: None)
+            self.messages = streaming_messages(lambda **_: None)
 
     fake_module.AuthenticationError = AuthenticationError
     fake_module.BadRequestError = BadRequestError
@@ -79,7 +81,7 @@ def test_bedrock_auth_error_message_references_aws_credentials(
     def raise_auth_error(**_: object) -> object:
         raise fake_anthropic.AuthenticationError("expired")
 
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_auth_error))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_auth_error))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -103,9 +105,7 @@ def test_bedrock_permission_denied_is_not_retried_and_mentions_marketplace(
         calls += 1
         raise fake_anthropic.PermissionDeniedError("marketplace denied")
 
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_permission_denied)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_permission_denied))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -135,9 +135,7 @@ def test_internal_server_error_with_model_billing_fails_fast(
         )
 
     client = AnthropicAgentClient(model="claude-opus-4-7")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_billing_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_billing_error))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -163,9 +161,7 @@ def test_internal_server_error_without_model_data_is_retried(
         raise fake_anthropic.InternalServerError("Internal server error", body={})
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_transient_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_transient_error))
 
     with pytest.raises(RuntimeError, match="API failed after 3 attempts"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -177,7 +173,7 @@ def test_anthropic_rate_limit_error_is_retried_then_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rate-limit is transient by design — retry with backoff like 500s do.
-    Without retry, a single 429 mid-investigation kills the whole case.
+    Without retry, a single 429 mid-turn kills the whole turn.
     """
     from core.llm.shared.openai_chat_completions import _RETRY_MAX_ATTEMPTS
 
@@ -193,7 +189,7 @@ def test_anthropic_rate_limit_error_is_retried_then_raises(
         raise fake_anthropic.RateLimitError("slow down")
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_rate_limit))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_rate_limit))
 
     with pytest.raises(RuntimeError, match="Anthropic rate limit exceeded"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -219,7 +215,7 @@ def test_anthropic_invoke_strips_internal_message_markers(
         )
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=capture_create))
+    client._client = types.SimpleNamespace(messages=streaming_messages(capture_create))
 
     messages = [
         {"role": "user", "content": "alert"},
@@ -266,7 +262,7 @@ def test_anthropic_invoke_marks_system_and_last_tool_for_prompt_cache(
         )
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=capture_create))
+    client._client = types.SimpleNamespace(messages=streaming_messages(capture_create))
 
     tools = [
         {"type": "custom", "name": "a", "description": "a", "input_schema": {"type": "object"}},
@@ -289,6 +285,8 @@ def test_anthropic_invoke_marks_system_and_last_tool_for_prompt_cache(
     assert api_tools[1]["cache_control"] == {"type": "ephemeral"}
     # Caller-owned tool dicts must not be mutated.
     assert "cache_control" not in tools[1]
+    # Multi-call responses are allowed: no single-call tool_choice override.
+    assert "tool_choice" not in captured
 
 
 def test_openai_agent_client_invoke_strips_internal_message_markers(
@@ -356,9 +354,7 @@ def test_anthropic_credit_balance_too_low_raises_LLMCreditExhaustedError(
         )
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_credit_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_credit_error))
 
     with pytest.raises(LLMCreditExhaustedError, match="credit exhausted"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -405,6 +401,74 @@ def test_openai_insufficient_quota_raises_LLMCreditExhaustedError(
     assert call_count == 1
 
 
+def test_opensre_payment_required_raises_upgrade_error_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hosted proxy returns HTTP 402 as a generic SDK status error."""
+    from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
+
+    _install_fake_openai(monkeypatch)
+    call_count = 0
+    upgrade_url = "https://app.opensre.dev/usage"
+
+    class HostedPaymentRequired(Exception):
+        code = "opensre_credits_exhausted"
+        body = {
+            "code": "opensre_credits_exhausted",
+            "upgrade_url": "https://app.opensre.dev/usage",
+        }
+
+    def raise_payment_required(**_: object) -> object:
+        nonlocal call_count
+        call_count += 1
+        raise HostedPaymentRequired("Payment required")
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=raise_payment_required))
+    )
+    client._model = "gpt-4o"
+    client._max_tokens = 512
+
+    with pytest.raises(OpenSRECreditsExhaustedError) as excinfo:
+        client.invoke(messages=[{"role": "user", "content": "hi"}])
+
+    assert call_count == 1
+    assert excinfo.value.upgrade_url == upgrade_url
+
+
+def test_openai_agent_client_rebuilds_when_the_account_token_rotates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _install_fake_openai(monkeypatch)
+    keys: list[str] = []
+
+    class TrackingOpenAI:
+        def __init__(
+            self, *, api_key: str, base_url: str | None, timeout: float, max_retries: int
+        ) -> None:
+            _ = base_url, timeout, max_retries
+            keys.append(api_key)
+            self.chat = types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=lambda **_: _make_fake_openai_response(content="ok")
+                )
+            )
+
+    fake.OpenAI = TrackingOpenAI
+    tokens = iter(["osre_pat_one", "osre_pat_two"])
+    client = OpenAIAgentClient(
+        model="gpt-5.4-mini",
+        api_key_env="OPENSRE_ACCOUNT_TOKEN",
+        credential_resolver=lambda _name: next(tokens),
+        base_url="https://app.opensre.com/api/llm/v1",
+    )
+
+    assert keys == ["osre_pat_one"]
+    client.invoke(messages=[{"role": "user", "content": "hi"}])
+    assert keys == ["osre_pat_one", "osre_pat_two"]
+
+
 def test_anthropic_rate_limit_honors_retry_after_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -433,7 +497,7 @@ def test_anthropic_rate_limit_honors_retry_after_header(
         raise err
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_with_header))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_with_header))
 
     with pytest.raises(RuntimeError, match="Anthropic rate limit exceeded"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -467,7 +531,7 @@ def test_bedrock_rate_limit_error_is_retried_then_raises(
         raise fake_anthropic.RateLimitError("slow down")
 
     client = BedrockAgentClient(model="us.anthropic.claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_rate_limit))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_rate_limit))
 
     with pytest.raises(RuntimeError, match="Bedrock rate limit exceeded"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -650,8 +714,10 @@ def test_openai_agent_client_enables_parallel_tool_calls_for_openai(
     assert captured["parallel_tool_calls"] is True
 
 
-def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
+@pytest.mark.parametrize("model", ["gpt-5.6", "gpt-6", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol"])
+def test_openai_reasoning_agent_uses_responses_api_and_replays_reasoning(
     monkeypatch: pytest.MonkeyPatch,
+    model: str,
 ) -> None:
     _install_fake_openai(monkeypatch)
     monkeypatch.setenv("OPENSRE_REASONING_EFFORT", "high")
@@ -694,11 +760,11 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
         responses=types.SimpleNamespace(create=responses_create),
         chat=types.SimpleNamespace(
             completions=types.SimpleNamespace(
-                create=lambda **_: pytest.fail("GPT-5.6 must not use Chat Completions")
+                create=lambda **_: pytest.fail("This model must use Responses")
             )
         ),
     )
-    client._model = "gpt-5.6"
+    client._model = model
     client._max_tokens = 4096
     client._api_key_env = "OPENAI_API_KEY"
     tools = [
@@ -729,6 +795,7 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
     assert first.tool_calls[0].input == {"service": "api"}
     assert second.content == "done"
     assert captured[0]["max_output_tokens"] == 4096
+    assert captured[0]["parallel_tool_calls"] is True
     assert captured[0]["reasoning"] == {"effort": "high"}
     assert captured[0]["tools"] == [
         {
@@ -754,6 +821,117 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
         "call_id": "call_1",
         "output": '{"ok":true}',
     }
+
+
+def test_gpt_6_1_sol_sends_extra_high_when_effort_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_openai(monkeypatch)
+    monkeypatch.delenv("OPENSRE_REASONING_EFFORT", raising=False)
+    captured: dict[str, Any] = {}
+
+    def responses_create(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return types.SimpleNamespace(output=[], output_text="ok", usage=None)
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        responses=types.SimpleNamespace(create=responses_create),
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(
+                create=lambda **_: pytest.fail("GPT-6.1 tool calls must use Responses")
+            )
+        ),
+    )
+    client._model = "gpt-6.1-sol"
+    client._max_tokens = 4096
+    client._api_key_env = "OPENAI_API_KEY"
+
+    client.invoke(messages=[{"role": "user", "content": "hi"}])
+
+    assert captured["reasoning"] == {"effort": "xhigh"}
+
+
+def _responses_client(create: Any) -> OpenAIAgentClient:
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(responses=types.SimpleNamespace(create=create))
+    client._model = "gpt-5.6"
+    client._max_tokens = 4096
+    client._api_key_env = "OPENAI_API_KEY"
+    return client
+
+
+def test_responses_requests_key_the_prompt_cache_by_their_system_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calls sharing a cached prefix share a routing key; other prompts never do."""
+    _install_fake_openai(monkeypatch)
+    captured: list[dict[str, Any]] = []
+    usage = types.SimpleNamespace(
+        input_tokens=29_000,
+        output_tokens=300,
+        input_tokens_details=types.SimpleNamespace(cached_tokens=26_000),
+        output_tokens_details=types.SimpleNamespace(reasoning_tokens=120),
+    )
+
+    def create(**kwargs: Any) -> object:
+        captured.append(kwargs)
+        return types.SimpleNamespace(output=[], output_text="ok", usage=usage)
+
+    client = _responses_client(create)
+    turn = [{"role": "user", "content": "hi"}]
+    first = client.invoke(turn, system="You plan actions. repo=a")
+    client.invoke([*turn, {"role": "user", "content": "more"}], system="You plan actions. repo=a")
+    client.invoke(turn, system="You plan actions. repo=b")
+    client.invoke(turn)
+
+    same_prefix, same_prefix_later, other_prefix, no_system = (
+        call.get("prompt_cache_key") for call in captured
+    )
+    assert same_prefix == same_prefix_later
+    assert other_prefix != same_prefix
+    assert same_prefix is not None and len(same_prefix) <= 128
+    assert no_system is None
+    assert (first.cache_read_tokens, first.reasoning_tokens) == (26_000, 120)
+
+
+def test_chat_completions_requests_carry_no_prompt_cache_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OpenAI-compatible providers may reject the Responses-only field."""
+    _install_fake_openai(monkeypatch)
+    captured: dict[str, object] = {}
+
+    def capture_create(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _make_fake_openai_response(content="ok")
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=capture_create))
+    )
+    client._model = "deepseek-chat"
+    client._max_tokens = 4096
+    client._api_key_env = "DEEPSEEK_API_KEY"
+
+    client.invoke([{"role": "user", "content": "hi"}], system="You plan actions.")
+
+    assert "prompt_cache_key" not in captured
+
+
+def test_prewarm_loads_the_responses_path_without_sending_a_request() -> None:
+    """The warm-up runs before the user has asked anything; it must not spend credits."""
+    client = OpenAIAgentClient(
+        model="gpt-5.6",
+        max_tokens=16,
+        # Nothing listens here: any request would raise a connection error.
+        base_url="http://127.0.0.1:9/v1",
+        credential_resolver=lambda _env: "test-key",
+    )
+
+    client.prewarm()
+
+    assert "responses" in vars(client._client)
 
 
 def test_openai_agent_client_omits_parallel_tool_calls_for_compat_provider(
@@ -786,7 +964,11 @@ def test_openai_agent_client_omits_parallel_tool_calls_for_compat_provider(
 def test_openai_o_series_uses_max_completion_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """o-series and gpt-5 series models must receive max_completion_tokens, not max_tokens."""
+    """Models on Chat Completions must receive max_completion_tokens, not max_tokens.
+
+    Bare ``gpt-6`` names are not listed here: they take the Responses API, which
+    is covered by ``test_openai_reasoning_agent_uses_responses_api_and_replays_reasoning``.
+    """
     _install_fake_openai(monkeypatch)
 
     captured: dict = {}
@@ -813,6 +995,9 @@ def test_openai_o_series_uses_max_completion_tokens(
         "gpt-5",
         "gpt-5o",
         "gpt-5o-mini",
+        # Vendor-prefixed routes do not match the Responses prefix check, so they
+        # stay on Chat Completions and must still carry max_completion_tokens.
+        "openai/gpt-6-luna",
     ):
         captured.clear()
         client._model = model
@@ -853,7 +1038,7 @@ def test_openai_rate_limit_error_is_retried_then_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rate-limit is transient by design — retry with backoff like 500s do.
-    Without retry, a single 429 mid-investigation kills the whole case (matters
+    Without retry, a single 429 mid-turn kills the whole turn (matters
     especially on tight OpenAI tiers like gpt-4o's 30k TPM).
     """
     from core.llm.shared.openai_chat_completions import _RETRY_MAX_ATTEMPTS
@@ -1020,9 +1205,7 @@ def test_sdk_type_error_for_missing_api_key_fails_fast(
         )
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_auth_type_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_auth_type_error))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1048,9 +1231,7 @@ def test_unrelated_type_error_is_retried_and_wrapped(
         raise TypeError("unexpected argument 'foo'")
 
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=raise_unrelated_type_error)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_unrelated_type_error))
 
     with pytest.raises(RuntimeError, match="API failed after 3 attempts"):
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1078,9 +1259,6 @@ def test_build_openai_tool_specs_preserves_additional_properties_false() -> None
 
 def test_build_openai_tool_specs_normalizes_anyof_optional_parameters() -> None:
     from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
-    from tests.core.runtime.llm.investigation_tool_schema_contract import (
-        assert_strict_tool_schema_node,
-    )
 
     tool = types.SimpleNamespace(
         name="optional_field_tool",
@@ -1098,9 +1276,8 @@ def test_build_openai_tool_specs_normalizes_anyof_optional_parameters() -> None:
     specs = build_openai_tool_specs([tool])
     parameters = specs[0]["function"]["parameters"]
     assert parameters["type"] == "object"
-    assert "anyOf" not in parameters["properties"]["optional_field"]
-    assert parameters["properties"]["optional_field"]["type"] == "string"
-    assert_strict_tool_schema_node(parameters, path="optional_field_tool")
+    optional_field = parameters["properties"]["optional_field"]
+    assert optional_field == {"type": "string"}, "anyOf/nullable must be flattened away"
 
 
 def test_get_llm_agent_routes_deepseek_to_openai_compatible_client(
@@ -1205,42 +1382,20 @@ def test_get_llm_agent_returns_cli_backed_client_for_cli_providers(
     )
 
 
-def test_get_llm_agent_openai_oauth_routes_to_codex_cli(monkeypatch: pytest.MonkeyPatch) -> None:
-    from core.llm.transports.sdk.agent_clients import (
-        CLIBackedAgentClient,
-    )
+def test_get_llm_agent_openai_ignores_legacy_oauth_auth_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.llm.transports.sdk.agent_clients import OpenAIAgentClient
 
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_AUTH_METHOD", "oauth")
-    monkeypatch.setenv("CODEX_MODEL", "gpt-5.5")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_REASONING_MODEL", "gpt-5.4")
 
     reset_llm_clients()
     client = get_llm(LLMRole.AGENT)
 
-    assert isinstance(client, CLIBackedAgentClient)
-    assert client._adapter.name == "codex"
-    assert client._model == "gpt-5.5"
-
-
-def test_get_llm_agent_anthropic_oauth_routes_to_claude_code_cli(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from core.llm.transports.sdk.agent_clients import (
-        CLIBackedAgentClient,
-    )
-
-    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
-    monkeypatch.setenv("LLM_AUTH_METHOD", "oauth")
-    monkeypatch.setenv("CLAUDE_CODE_MODEL", "claude-opus-4-7")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    reset_llm_clients()
-    client = get_llm(LLMRole.AGENT)
-
-    assert isinstance(client, CLIBackedAgentClient)
-    assert client._adapter.name == "claude-code"
-    assert client._model == "claude-opus-4-7"
+    assert isinstance(client, OpenAIAgentClient)
 
 
 def test_cli_backed_agent_client_tool_call_parsing() -> None:
@@ -1289,6 +1444,24 @@ def test_cli_backed_agent_client_tool_call_parsing() -> None:
     assert result.content == ""
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        {"name": "shell_run", "input": {"command": "ls"}},
+        {"name": "shell_run", "input": '{"command": "ls"}'},
+        {"name": "shell_run", "arguments": '{"command": "ls"}'},
+        {"name": "shell_run", "arguments": {"command": "ls"}},
+    ],
+)
+def test_cli_tool_call_input_reads_openai_style_envelopes(call: dict[str, Any]) -> None:
+    """A JSON-string or ``arguments`` envelope must not drop the call's args to ``{}``."""
+    assert _cli_tool_call_input(call) == {"command": "ls"}
+
+
+def test_cli_tool_call_input_unparseable_arguments_stay_empty() -> None:
+    assert _cli_tool_call_input({"name": "shell_run", "input": '{"command": "ls'}) == {}
+
+
 def test_cli_backed_agent_client_build_assistant_message_includes_tool_json() -> None:
     """Assistant history must retain tool_calls JSON for multi-turn CLI prompts."""
     from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
@@ -1324,80 +1497,43 @@ def test_try_parse_tool_call_json_recovers_when_unfenced_preamble_precedes_json(
     assert parsed["tool_calls"][0]["name"] == "t1"
 
 
-def test_cli_backed_agent_client_streamed_initial_prose_becomes_assistant_handoff() -> None:
-    """A CLI planner that starts writing the answer should hand off instead of running long."""
-
+def test_cli_backed_agent_client_accepts_plain_text_as_final_answer() -> None:
     from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
 
-    class _ClosingChunkStream:
-        def __init__(self) -> None:
-            self.closed = False
-            self.yield_count = 0
-
-        def __iter__(self) -> _ClosingChunkStream:
-            return self
-
-        def __next__(self) -> str:
-            if self.closed:
-                raise StopIteration
-            self.yield_count += 1
-            if self.yield_count > 20:
-                pytest.fail("plain-text handoff guard did not stop the CLI stream")
-            return "OpenSRE is a command-line SRE assistant for operational work. "
-
-        def close(self) -> None:
-            self.closed = True
-
     class _FakeCLI:
-        def __init__(self, stream: _ClosingChunkStream) -> None:
-            self.stream = stream
-
-        def invoke_stream(self, prompt: str) -> _ClosingChunkStream:
-            _ = prompt
-            return self.stream
-
         def invoke(self, prompt: str) -> object:
             _ = prompt
-            pytest.fail("handoff guard should use streaming invocation")
+            return type("Response", (), {"content": "Direct answer"})()
 
-    stream = _ClosingChunkStream()
     client = CLIBackedAgentClient.__new__(CLIBackedAgentClient)
-    client._cli_client = _FakeCLI(stream)
-    result = client.invoke(
-        [{"role": "user", "content": "what is this tool and how do i use it in 10k words"}],
-        tools=[{"name": "assistant_handoff", "input_schema": {"type": "object"}}],
-    )
+    client._cli_client = _FakeCLI()
+    result = client.invoke([{"role": "user", "content": "what is this tool?"}], tools=[])
 
-    assert stream.closed
-    assert stream.yield_count < 20
-    assert result.content == ""
-    assert len(result.tool_calls) == 1
-    assert result.tool_calls[0].name == "assistant_handoff"
-    assert result.tool_calls[0].input == {"content": "chat:conversation"}
+    assert result.content == "Direct answer"
+    assert result.tool_calls == []
 
 
-def test_cli_backed_agent_client_streamed_tool_json_with_handoff_available() -> None:
-    """The prose guard must not swallow valid JSON tool calls."""
-
+def test_cli_backed_agent_client_parses_tool_json() -> None:
     from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
 
     class _FakeCLI:
-        def invoke_stream(self, prompt: str) -> object:
-            _ = prompt
-            return iter([('{"tool_calls": [{"id": "c1", "name": "my_tool", "input": {"x": 1}}]}')])
-
         def invoke(self, prompt: str) -> object:
             _ = prompt
-            pytest.fail("handoff guard should use streaming invocation")
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"tool_calls": [{"id": "c1", "name": "my_tool", "input": {"x": 1}}]}'
+                    )
+                },
+            )()
 
     client = CLIBackedAgentClient.__new__(CLIBackedAgentClient)
     client._cli_client = _FakeCLI()
     result = client.invoke(
         [{"role": "user", "content": "investigate"}],
-        tools=[
-            {"name": "assistant_handoff", "input_schema": {"type": "object"}},
-            {"name": "my_tool", "input_schema": {"type": "object"}},
-        ],
+        tools=[{"name": "my_tool", "input_schema": {"type": "object"}}],
     )
 
     assert result.content == ""
@@ -1571,7 +1707,7 @@ def test_bedrock_bad_request_cross_region_inference_gives_helpful_message(
     def raise_bad_request(**_: object) -> object:
         raise fake_anthropic.BadRequestError(bedrock_error_body)
 
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_bad_request))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_bad_request))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1593,7 +1729,7 @@ def test_bedrock_bad_request_generic_error_uses_default_message(
     def raise_bad_request(**_: object) -> object:
         raise fake_anthropic.BadRequestError("content policy violation")
 
-    client._client = types.SimpleNamespace(messages=types.SimpleNamespace(create=raise_bad_request))
+    client._client = types.SimpleNamespace(messages=streaming_messages(raise_bad_request))
 
     with pytest.raises(RuntimeError) as exc:
         client.invoke(messages=[{"role": "user", "content": "hi"}])
@@ -1825,7 +1961,7 @@ def test_anthropic_unexpected_response_shape_raises_runtime_error(
     client = AnthropicAgentClient(
         model="claude-opus-4-7",
         client=types.SimpleNamespace(
-            messages=types.SimpleNamespace(create=lambda **_: "unexpected string response")
+            messages=streaming_messages(lambda **_: "unexpected string response")
         ),
     )
 
@@ -1835,7 +1971,7 @@ def test_anthropic_unexpected_response_shape_raises_runtime_error(
 
 def test_anthropic_agent_client_emits_provider_usage(monkeypatch: pytest.MonkeyPatch) -> None:
     """Successful agent invokes must report provider token usage via the usage hook
-    so investigation-turn telemetry can carry real token counts (issue #3698)."""
+    so agent-turn telemetry can carry real token counts (issue #3698)."""
     from core.llm.shared.usage import set_usage_hook
 
     _install_fake_anthropic(monkeypatch)
@@ -1846,9 +1982,7 @@ def test_anthropic_agent_client_emits_provider_usage(monkeypatch: pytest.MonkeyP
         usage=types.SimpleNamespace(input_tokens=123, output_tokens=45),
     )
     client = AnthropicAgentClient(model="claude-sonnet-4-6")
-    client._client = types.SimpleNamespace(
-        messages=types.SimpleNamespace(create=lambda **_: response)
-    )
+    client._client = types.SimpleNamespace(messages=streaming_messages(lambda **_: response))
 
     usage: list[tuple[str, int, int]] = []
     set_usage_hook(

@@ -4,14 +4,21 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, date, datetime, time, timedelta
+from http import HTTPStatus
 from math import ceil
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -27,16 +34,10 @@ _STAR_ACCEPT_HEADER = "application/vnd.github.star+json"
 
 
 def _github_star_history_available(sources: dict[str, dict]) -> bool:
+    if sources.get("github", {}).get("connection_selection_error"):
+        return False
     gh = sources.get("github", {})
-    return bool(
-        (
-            github_source_available(sources)
-            or gh.get("public_repository")
-            or resolve_github_token(None)
-        )
-        and gh.get("owner")
-        and gh.get("repo")
-    )
+    return bool((github_source_available(sources)) and gh.get("owner") and gh.get("repo"))
 
 
 def _github_star_history_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -83,18 +84,37 @@ def _daily_rows(start_day: date, days: int, counts: Counter[date]) -> list[dict[
 
 def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
     message = str(exc)
-    if exc.status_code == 401:
+    if exc.status_code == HTTPStatus.UNAUTHORIZED:
         return (
             "GitHub authentication is required to read timestamped stargazer history; "
             "the current repository star count is still available from public metadata."
         )
-    if exc.status_code in {403, 404, 422}:
+    if exc.status_code in {
+        HTTPStatus.FORBIDDEN,
+        HTTPStatus.NOT_FOUND,
+        HTTPStatus.UNPROCESSABLE_ENTITY,
+    }:
         return (
             f"{message}. GitHub stargazer timestamp listings may require repository "
             "admin/collaborator access or token access for this endpoint; current "
             "repository star count can still be available from metadata."
         )
     return message
+
+
+def _map_get_github_star_history(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    daily = output.get("daily", [])
+    if daily:
+        count = len(daily)
+        word = "day" if count == 1 else "days"
+        record_evidence_entry(
+            evidence,
+            source="get_github_star_history",
+            label="GitHub Star History",
+            summary=f"{count} {word} recorded",
+        )
 
 
 @tool(
@@ -120,8 +140,9 @@ def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
         "stars_in_window": "Total stars gained during the returned window",
         "complete": "Whether the requested window was fully scanned before the page cap",
     },
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     input_schema={
         "type": "object",
         "properties": {
@@ -138,15 +159,18 @@ def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_star_history_available,
-    extract_params=_github_star_history_extract_params,
+    is_available=github_tool_available(_github_star_history_available),
+    extract_params=github_tool_params(_github_star_history_extract_params),
     injected_params=(
+        "github_connection_origin",
         *GITHUB_INJECTED_PARAMS,
         "owner",
         "repo",
         "public_repository",
     ),
+    evidence_mapper=_map_get_github_star_history,
 )
+@require_webapp_github
 def get_github_star_history(
     owner: str,
     repo: str,

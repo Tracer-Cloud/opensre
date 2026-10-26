@@ -1,8 +1,0 @@
-base: 000-healthy
-scenario_id: 003-storage-full
-instance_class: db.r6g.xlarge
-db_instance_identifier: orders-prod
-db_cluster: ""
-failure_mode: storage_full
-severity: critical
-scenario_difficulty: 1

@@ -1,8 +1,0 @@
-base: 000-healthy
-scenario_id: 004-cpu-saturation-bad-query
-region: us-west-2
-db_instance_identifier: catalog-prod
-db_cluster: ""
-failure_mode: cpu_saturation
-severity: critical
-scenario_difficulty: 1

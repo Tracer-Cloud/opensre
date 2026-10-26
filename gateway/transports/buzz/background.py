@@ -25,7 +25,7 @@ from gateway.transports.buzz.runtime import (
 from gateway.transports.buzz.session_rotation import conversation_key
 from gateway.transports.buzz.settings import BuzzInboundMessage, GatewaySettings
 from infrastructure.turn_host.turn_callback import TurnCallback
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
 
 logger = logging.getLogger(__name__)
 

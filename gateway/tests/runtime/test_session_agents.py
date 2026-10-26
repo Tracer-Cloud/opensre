@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from rich.console import Console
 
+from config.constants.runtime_events import PARTIAL_MESSAGE_KEY
 from core.agent_harness.session import SessionCore
+from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from infrastructure.turn_host.bindable_output import BindableOutput
 from infrastructure.turn_host.session_agents import SessionAgentPool
-from infrastructure.turn_host.turn_handler import TurnHandler
+from infrastructure.turn_host.session_lock import (
+    retain_session_execution_lock,
+    retained_session_execution_locks,
+    session_execution_lock,
+)
+from infrastructure.turn_host.turn_runner import TurnRunner
 from tests.shared.default_headless_build_stub import default_headless_build_stub
 from tests.shared.fake_agent import fake_agent
 
@@ -22,13 +30,13 @@ from tests.shared.fake_agent import fake_agent
 @pytest.fixture(autouse=True)
 def _stub_gateway_turn_analytics(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.turn_host.turn_handler.capture_gateway_turn_started", lambda **_: None
+        "infrastructure.turn_host.turn_runner.capture_gateway_turn_started", lambda **_: None
     )
     monkeypatch.setattr(
-        "infrastructure.turn_host.turn_handler.capture_gateway_turn_completed", lambda **_: None
+        "infrastructure.turn_host.turn_runner.capture_gateway_turn_completed", lambda **_: None
     )
     monkeypatch.setattr(
-        "infrastructure.turn_host.turn_handler.capture_gateway_turn_failed", lambda **_: None
+        "infrastructure.turn_host.turn_runner.capture_gateway_turn_failed", lambda **_: None
     )
 
 
@@ -93,6 +101,114 @@ def test_pool_reuses_agent_for_same_session(monkeypatch: pytest.MonkeyPatch) -> 
     assert session.session_id in pool.cached_session_ids
 
 
+def test_hosted_prompt_records_compact_activity_and_chat_keeps_its_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shell feed gets a checklist; a chat sink still gets the one-line status."""
+    from gateway.core.prompt_intake.output import CollectingTurnOutput
+
+    seen: dict[str, Any] = {}
+
+    def _fake_build(**kwargs: Any) -> Any:
+        seen.update(kwargs)
+        agent = MagicMock()
+        agent.bind_session = MagicMock()
+        agent.bind_turn = MagicMock()
+        return agent
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.DefaultHeadlessBuild",
+        default_headless_build_stub(_fake_build),
+    )
+    recorded: list[tuple[str, str]] = []
+
+    def on_status(text: str, kind: str = "note") -> None:
+        recorded.append((kind, text))
+
+    pool = SessionAgentPool(console=Console(force_terminal=False))
+    session = SessionCore(store=InMemorySessionStore())
+    logger = logging.getLogger("test.pool")
+    pool.agent_for(
+        session=session,
+        output=CollectingTurnOutput(on_status=on_status),
+        logger=logger,
+    )
+    observer = seen["tools"].observer(message="probe")
+    observer(
+        "tool_start",
+        {"name": "github_cli", "input": {"args": ["api", "user", "--include"]}},
+    )
+    observer(
+        "tool_start",
+        {
+            "name": "update_plan",
+            "input": {
+                "plan": [
+                    {"step": "Inspect authenticated user", "status": "completed"},
+                    {"step": "List organization memberships", "status": "in_progress"},
+                ]
+            },
+        },
+    )
+
+    assert recorded[0] == (
+        "tool",
+        "GitHub CLI · gh api user --include",
+    )
+    assert recorded[1][0] == "plan"
+    assert "✓ Inspect authenticated user" in recorded[1][1]
+    assert "{'step'" not in recorded[1][1]
+
+    chat = MagicMock()
+    pool.agent_for(session=session, output=chat, logger=logger)
+    observer("tool_start", {"name": "shell_run", "input": {"command": "pwd"}})
+    status = chat.set_tool_status.call_args.args[0]
+    assert status.startswith("⏳")
+    assert "pwd" in status
+    assert len(recorded) == 2
+
+
+def test_chat_placeholder_previews_each_model_calls_streaming_reply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def _fake_build(**kwargs: Any) -> Any:
+        seen.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.DefaultHeadlessBuild",
+        default_headless_build_stub(_fake_build),
+    )
+    # Every delta lands after the rejoin interval, so none is held back.
+    clock = iter(range(1, 100))
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.time.monotonic", lambda: float(next(clock))
+    )
+    chat = MagicMock()
+    pool = SessionAgentPool(console=Console(force_terminal=False))
+    pool.agent_for(
+        session=SessionCore(store=InMemorySessionStore()),
+        output=chat,
+        logger=logging.getLogger("test.pool"),
+    )
+    observer = seen["tools"].observer(message="probe")
+
+    observer("llm_start", {"iteration": 0})
+    observer("message_update", {"content": "Checking ", PARTIAL_MESSAGE_KEY: True})
+    observer("message_update", {"content": "the pods", PARTIAL_MESSAGE_KEY: True})
+    observer("message_update", {"content": "Checking the pods", "has_tool_calls": True})
+    observer("llm_start", {"iteration": 1})
+    observer("message_update", {"content": "All pods ready", PARTIAL_MESSAGE_KEY: True})
+
+    assert [call.args[0] for call in chat.preview_reply.call_args_list] == [
+        "Checking ",
+        "Checking the pods",
+        "All pods ready",
+    ]
+
+
 def test_pool_builds_separate_agents_per_session(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeAgent:
         def __init__(self, **_kwargs: Any) -> None:
@@ -142,7 +258,7 @@ def test_pool_rebinds_current_session_on_cache_hit(monkeypatch: pytest.MonkeyPat
     assert agent_b.session is second
 
 
-def test_turn_handler_reuses_headless_agent_across_turns(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_turn_runner_reuses_headless_agent_across_turns(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = fake_agent(dispatch_result=_empty_result())
     factory = MagicMock(return_value=agent)
     monkeypatch.setattr(
@@ -151,7 +267,7 @@ def test_turn_handler_reuses_headless_agent_across_turns(monkeypatch: pytest.Mon
     )
 
     session = SessionCore(store=InMemorySessionStore())
-    handler = TurnHandler(console=Console(force_terminal=False))
+    handler = TurnRunner(console=Console(force_terminal=False))
     logger = logging.getLogger("test.reuse")
     handler("one", session, MagicMock(), logger)
     handler("two", session, MagicMock(), logger)
@@ -222,6 +338,165 @@ def test_same_session_turns_do_not_interleave(monkeypatch: pytest.MonkeyPatch) -
     assert order.index("first-exit") < order.index("second-enter"), order
 
 
+def test_pool_waits_for_a_session_lease_held_by_another_host(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Gateway and CLI turns must share the same whole-session lease."""
+    import threading
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    pool = _fake_agent_pool(monkeypatch)
+    logger = logging.getLogger("test.pool.cross-host")
+    session = SessionCore(store=InMemorySessionStore())
+    attempted = threading.Event()
+    entered = threading.Event()
+
+    def _enter_pool() -> None:
+        attempted.set()
+        with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+            entered.set()
+
+    with session_execution_lock(session.session_id):
+        thread = threading.Thread(target=_enter_pool)
+        thread.start()
+        assert attempted.wait(timeout=1)
+        assert not entered.wait(timeout=0.2)
+
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert entered.is_set()
+
+
+def test_session_execution_lock_is_reentrant_on_one_thread(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A host and its pool can hold the same session lease without deadlocking."""
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    session = SessionCore(store=InMemorySessionStore())
+
+    # A zero timeout proves this reuses the held physical lock rather than
+    # taking a second contending lock instance.
+    with (
+        session_execution_lock(session.session_id),
+        session_execution_lock(session.session_id, timeout=0, reentrant=True),
+    ):
+        pass
+
+
+def test_retained_reentrant_lease_releases_before_its_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A same-session /resume cannot fail while the turn unwinds its leases."""
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    session = SessionCore(store=InMemorySessionStore())
+
+    # This is the same nesting order as TurnRunner: the retained reentrant
+    # target lease exits first, while the source's physical lease is still
+    # registered with the current thread.
+    with session_execution_lock(session.session_id), retained_session_execution_locks():
+        assert retain_session_execution_lock(session.session_id, timeout=0, reentrant=True)
+
+
+def test_pool_claims_session_lease_before_its_process_local_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct pool callers use the same lock order as TurnRunner."""
+    from contextlib import contextmanager
+
+    pool = _fake_agent_pool(monkeypatch)
+    session = SessionCore(store=InMemorySessionStore())
+    logger = logging.getLogger("test.pool.lock-order")
+    entered: list[str] = []
+
+    @contextmanager
+    def _lease(_session_id: str, **_kwargs: object):
+        entered.append("lease")
+        yield
+
+    class _LocalLock:
+        def __enter__(self) -> None:
+            entered.append("local")
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.session_execution_lock",
+        _lease,
+    )
+    monkeypatch.setattr(pool, "_lock_for", lambda _session_id: _LocalLock())
+
+    with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+        assert entered == ["lease", "local"]
+
+
+def test_pool_refreshes_session_after_acquiring_external_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A host waiting behind CLI resume must not run with stale session state."""
+    import threading
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    pool = _fake_agent_pool(monkeypatch)
+    logger = logging.getLogger("test.pool.refresh-after-lease")
+    session = SessionCore(store=InMemorySessionStore())
+    session.cli_agent_messages = [("user", "stale request")]
+    session.pending_user_choice = PendingUserChoice(
+        title="Stale choice",
+        options=("old",),
+    )
+    attempted = threading.Event()
+    refreshed = threading.Event()
+
+    def refresh_from_storage(_manager: object, target: SessionCore) -> SessionCore:
+        target.cli_agent_messages = [("user", "resumed request")]
+        target.pending_user_choice = PendingUserChoice(
+            title="Fresh choice",
+            options=("new",),
+        )
+        refreshed.set()
+        return target
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.SessionManager.refresh_from_storage",
+        refresh_from_storage,
+    )
+
+    def _enter_pool() -> None:
+        attempted.set()
+        with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+            return
+
+    with session_execution_lock(session.session_id):
+        thread = threading.Thread(target=_enter_pool)
+        thread.start()
+        assert attempted.wait(timeout=1)
+        assert not refreshed.wait(timeout=0.2)
+
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert refreshed.is_set()
+    assert session.cli_agent_messages == [("user", "resumed request")]
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == "Fresh choice"
+
+
 def test_different_sessions_still_run_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serialization is per session — unrelated conversations must not queue."""
     # Arrange
@@ -268,7 +543,7 @@ def test_drop_session_removes_cached_agent_and_output(monkeypatch: pytest.Monkey
 def test_retain_only_current_session_drops_stale_ids_after_rotation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Shell /new and /resume rotate session_id; the REPL keeps one TurnHandler."""
+    """Shell /new and /resume rotate session_id; the REPL keeps one TurnRunner."""
     constructed: list[str] = []
 
     class _FakeAgent:
@@ -300,7 +575,7 @@ def test_retain_only_current_session_drops_stale_ids_after_rotation(
 def test_gateway_default_retains_multiple_session_agents(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Chat hosts many conversations on one TurnHandler — do not cull peers."""
+    """Chat hosts many conversations on one TurnRunner — do not cull peers."""
     pool = _fake_agent_pool(monkeypatch)
     assert pool._retain_only_current_session is False
     logger = logging.getLogger("test.pool.gateway")
@@ -309,3 +584,132 @@ def test_gateway_default_retains_multiple_session_agents(
     pool.agent_for(session=a, output=MagicMock(), logger=logger)
     pool.agent_for(session=b, output=MagicMock(), logger=logger)
     assert pool.cached_session_ids == frozenset({a.session_id, b.session_id})
+
+
+def _capped_pool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cap: int
+) -> tuple[SessionAgentPool, logging.Logger]:
+    monkeypatch.setenv("OPENSRE_MAX_CACHED_SESSION_AGENTS", str(cap))
+    monkeypatch.setattr("infrastructure.turn_host.session_lock.sessions_dir", lambda: tmp_path)
+    return _fake_agent_pool(monkeypatch), logging.getLogger("test.pool.cap")
+
+
+def _turn(pool: SessionAgentPool, session: SessionCore, logger: logging.Logger) -> Any:
+    with pool.session_agent(session=session, output=MagicMock(), logger=logger) as agent:
+        return agent
+
+
+def test_cap_evicts_the_least_recently_used_idle_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pool, logger = _capped_pool(monkeypatch, tmp_path, cap=2)
+    a, b, c = (SessionCore(store=InMemorySessionStore()) for _ in range(3))
+    agent_a = _turn(pool, a, logger)
+    agent_b = _turn(pool, b, logger)
+    _turn(pool, a, logger)  # A is now more recent than B.
+
+    _turn(pool, c, logger)
+
+    assert pool.cached_session_ids == frozenset({a.session_id, c.session_id})
+    assert _turn(pool, a, logger) is agent_a
+    assert _turn(pool, b, logger) is not agent_b
+
+
+def test_a_session_mid_turn_is_never_evicted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Evicting a busy session would rebuild its agent while the turn still uses it."""
+    import threading
+
+    pool, logger = _capped_pool(monkeypatch, tmp_path, cap=1)
+    busy = SessionCore(store=InMemorySessionStore())
+    inside = threading.Event()
+    finish = threading.Event()
+    agents: list[Any] = []
+
+    def _long_turn() -> None:
+        with pool.session_agent(session=busy, output=MagicMock(), logger=logger) as agent:
+            agents.append(agent)
+            inside.set()
+            finish.wait(timeout=5)
+
+    thread = threading.Thread(target=_long_turn)
+    thread.start()
+    assert inside.wait(timeout=5)
+
+    # Over the cap while the busy session runs: only idle sessions go.
+    _turn(pool, SessionCore(store=InMemorySessionStore()), logger)
+    _turn(pool, SessionCore(store=InMemorySessionStore()), logger)
+    cached_mid_turn = pool.cached_session_ids
+    finish.set()
+    thread.join(timeout=5)
+
+    assert cached_mid_turn == frozenset({busy.session_id})
+    assert _turn(pool, busy, logger) is agents[0]
+
+
+class _LockPausedBeforeAcquire:
+    """A session lock whose taker stops after fetching it, before acquiring it."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self._lock = threading.Lock()
+        self.paused = threading.Event()
+        self.proceed = threading.Event()
+
+    def __enter__(self) -> None:
+        self.paused.set()
+        self.proceed.wait(timeout=5)
+        self._lock.acquire()
+
+    def __exit__(self, *_args: object) -> None:
+        self._lock.release()
+
+
+def test_a_turn_about_to_take_the_session_lock_keeps_its_session_cached(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The fetched-but-not-acquired window must pin the session too.
+
+    Evicting there drops the lock the waiting turn holds a reference to; the
+    next turn for that session would create a second lock and the two turns
+    would no longer serialize on one agent.
+    """
+    import threading
+
+    pool, logger = _capped_pool(monkeypatch, tmp_path, cap=1)
+    waiting = SessionCore(store=InMemorySessionStore())
+    first_agent = _turn(pool, waiting, logger)
+    paused_lock = _LockPausedBeforeAcquire()
+    pool._session_locks[waiting.session_id] = paused_lock  # type: ignore[assignment]
+    agents: list[Any] = []
+
+    def _turn_on_waiting_session() -> None:
+        agents.append(_turn(pool, waiting, logger))
+
+    thread = threading.Thread(target=_turn_on_waiting_session)
+    thread.start()
+    assert paused_lock.paused.wait(timeout=5)
+
+    # Another session's turn pushes the pool over the cap; the waiting
+    # session is the least recently used, but it is not idle.
+    _turn(pool, SessionCore(store=InMemorySessionStore()), logger)
+    cached_while_waiting = pool.cached_session_ids
+    lock_while_waiting = pool._session_locks.get(waiting.session_id)
+    paused_lock.proceed.set()
+    thread.join(timeout=5)
+
+    assert cached_while_waiting == frozenset({waiting.session_id})
+    assert lock_while_waiting is paused_lock
+    assert agents == [first_agent]
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("5", 5), ("0", 64), ("lots", 64)])
+def test_session_agent_cap_ignores_a_value_that_would_disable_reuse(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: int
+) -> None:
+    from infrastructure.turn_host.session_agents import configured_session_agent_cap
+
+    monkeypatch.setenv("OPENSRE_MAX_CACHED_SESSION_AGENTS", raw)
+    assert configured_session_agent_cap() == expected

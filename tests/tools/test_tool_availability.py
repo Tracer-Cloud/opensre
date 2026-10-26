@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from core.tool_framework.utils.tool_availability import (
+    envelope_failure_state,
     envelope_source_id,
     is_tool_unavailable_envelope,
+    tool_access_denied,
+    tool_missing_config,
+    tool_missing_data,
+    tool_no_match,
+    tool_transport_failure,
     tool_unavailable,
 )
 
@@ -16,6 +22,7 @@ def test_tool_unavailable_base_shape() -> None:
         "source": "helm",
         "available": False,
         "error": "helm integration is not configured.",
+        "failure_state": "missing_config",
     }
     assert is_tool_unavailable_envelope(payload) is True
     assert envelope_source_id(payload) == "helm"
@@ -43,6 +50,7 @@ def test_tool_unavailable_merges_extra_fields() -> None:
         "source": "groundcover",
         "available": False,
         "error": "query failed",
+        "failure_state": "missing_config",
         "data": [],
         "summary": {},
         "truncated": False,
@@ -56,6 +64,20 @@ def test_tool_unavailable_unrelated_extra_field_preserved() -> None:
     assert payload["available"] is False
     assert payload["error"] == "not configured"
     assert payload["tool"] == "list_flags"
+
+
+def test_tool_failure_states_are_distinct_and_typed() -> None:
+    failures = (
+        (tool_no_match("github", "none"), "no_match"),
+        (tool_missing_config("github", "configure it"), "missing_config"),
+        (tool_access_denied("github", "forbidden"), "denied"),
+        (tool_transport_failure("github", "timed out"), "transport_failure"),
+        (tool_missing_data("github", "empty"), "missing_data"),
+    )
+
+    assert [envelope_failure_state(payload) for payload, _state in failures] == [
+        state for _payload, state in failures
+    ]
 
 
 def test_tool_unavailable_extra_can_override_base_fields() -> None:

@@ -25,7 +25,7 @@ from gateway.core.middleware.approvals import (
     arguments_preview,
 )
 from gateway.transports.buzz.pending_approvals import PendingApprovals
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
 
 logger = logging.getLogger("gateway")
 

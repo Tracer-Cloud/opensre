@@ -3,7 +3,8 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.redis import (
     RedisConfig,
     get_server_info,
@@ -19,7 +20,9 @@ from integrations.redis import (
         "keyspace statistics, and hit/miss and eviction counters."
     ),
     source="redis",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Assess Redis health during an incident: memory pressure, eviction, and client load.",
         "Check used vs. max memory and the maxmemory-policy when investigating OOM or latency.",

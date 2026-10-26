@@ -7,6 +7,30 @@
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)** — required for `make install` (locked deps from `uv.lock`)
 - **Make** — standard on macOS/Linux; Windows options below
 
+## Supported platforms and architectures
+
+Release availability is separate from default CI coverage. Use the install path for your platform below, then follow the matching install guide for the first-run flow. The [Quickstart](docs/getting-started/quickstart.mdx) has the same flow with screenshots.
+
+Install the published CLI with curl, then run `opensre`:
+
+```bash
+curl -fsSL https://install.opensre.com | bash
+```
+
+```bash
+opensre
+```
+
+| OS | Architecture | Install guide | Notes |
+| --- | --- | --- | --- |
+| macOS | arm64, x86_64 | [macOS](https://www.opensre.com/docs/install/macos) | The installer selects the matching binary. |
+| Linux | x86_64, arm64 | [Linux](https://www.opensre.com/docs/install/linux-local) | Requires glibc 2.35+ (Ubuntu 22.04+ or comparable); Alpine/musl is unsupported. |
+| Windows | x86_64 | [Windows](https://www.opensre.com/docs/install/windows-local) | In PowerShell: `irm https://install.opensre.com/install.ps1 \| iex` |
+
+The curl installer uses the rolling `main` build by default. The steps below are for contributors working from a source checkout.
+
+Main CI runs mostly on `ubuntu-24.04`. Windows CI is optional and runs only when a PR has the `ci:windows` label, so it is useful signal rather than a guarantee that every platform is covered by default.
+
 ## Quick setup (all platforms)
 
 1. Fork and clone:
@@ -100,10 +124,7 @@ uv run mypy config core gateway integrations infrastructure surfaces tools
 
 uv run pytest -n auto -v \
   --cov=config --cov=core --cov=gateway --cov=integrations \
-  --cov=infrastructure --cov=surfaces --cov=tools --cov-report=term-missing \
-  --ignore=tests/e2e/kubernetes_local_alert_simulation \
-  --ignore=tests/synthetic \
-  -m "not synthetic"
+  --cov=infrastructure --cov=surfaces --cov=tools --cov-report=term-missing
 ```
 
 ---
@@ -144,7 +165,7 @@ Boot logs non-fatal warnings when a `PATH` tool is missing or a sandbox probe fa
 
 | Boot warning | Cause | Impact | What to do |
 | :--- | :--- | :--- | :--- |
-| **`curl is not on PATH`** | `curl` is not on `PATH`. | The agent is told not to shell out to `curl`. | **macOS:** `brew install curl`<br />**Linux:** `sudo apt-get install -y curl`<br />**Windows:** `winget install cURL.cURL` |
+| **`curl is not on PATH`** | `curl` is not on `PATH`. | The agent is told not to shell out to `curl`. | **macOS:** use the built-in `/usr/bin/curl`<br />**Linux:** `sudo apt-get install -y curl`<br />**Windows:** `winget install cURL.cURL` |
 | **`no interactive shell (bash/sh) on PATH`** | Neither `bash` nor `sh` is on `PATH`. | The agent is told it cannot run shell commands. | **Linux:** `sudo apt-get install -y bash`<br />**macOS:** keep `/bin` on `PATH`.<br />**Windows:** Git Bash (`winget install Git.Git`) or WSL. |
 | **`network egress is blocked for sandboxed code by default`** | Default sandbox policy blocks outbound sockets. | Sandboxed Python cannot open raw sockets. | Expected. Ignore it. Use configured integrations for outbound HTTP. Do **not** set `OPENSRE_ALLOW_NETWORK=1` — that only hides the warning. |
 | **`network requests is unavailable in this environment`** | The sandbox network probe uses the same default block. | Same as the previous row. | Expected. Same as the previous row. |
@@ -170,58 +191,3 @@ make lint && make format-check && make typecheck && make test-cov
 If those pass, you are ready to develop. Contribution flow: **[CONTRIBUTING.md](CONTRIBUTING.md)**. Deeper contributor topics (benchmark, deployment, telemetry detail): **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
 
 ---
-
-## Connecting OpenClaw
-
-OpenSRE no longer exposes a separate `opensre-mcp` server. Instead, OpenSRE connects to the OpenClaw bridge directly to read recent conversation context and write RCA findings back into OpenClaw.
-
-### 1. Configure observability
-
-Run the full wizard once (**recommended**):
-
-```bash
-uv run opensre onboard
-```
-
-To add or reconfigure a **single** integration non-interactively:
-
-```bash
-uv run opensre integrations setup <service>
-```
-
-### 2. Configure the OpenClaw bridge
-
-Use the wizard or the direct setup flow:
-
-```bash
-uv run opensre integrations setup openclaw
-uv run opensre integrations verify openclaw
-```
-
-Recommended local settings:
-
-```bash
-OPENCLAW_MCP_MODE=stdio
-OPENCLAW_MCP_COMMAND=openclaw
-OPENCLAW_MCP_ARGS="mcp serve"
-```
-
-### 3. Run a test
-
-```bash
-uv run opensre investigate -i tests/fixtures/openclaw_test_alert.json
-```
-
-### 4. Optional: OpenSRE calls OpenClaw during RCA
-
-```bash
-export OPENCLAW_MCP_MODE=stdio
-export OPENCLAW_MCP_COMMAND=openclaw
-export OPENCLAW_MCP_ARGS="mcp serve"
-```
-
-Keep the OpenClaw gateway running while you investigate, then verify:
-
-```bash
-opensre integrations verify openclaw
-```

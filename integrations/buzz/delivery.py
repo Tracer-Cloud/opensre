@@ -1,19 +1,14 @@
-"""Buzz delivery helper - posts investigation findings via ``buzz-cli``."""
+"""Buzz delivery helper - posts messages via ``buzz-cli``."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from infrastructure.delivery.notifications.limits import MAX_MESSAGE_SIZE
 from infrastructure.delivery.notifications.redaction import redact_token
-from infrastructure.text.truncation import truncate
 from integrations.buzz.client import BuzzClient
 from integrations.config_models import BuzzConfig
 
 logger = logging.getLogger(__name__)
-
-_REPORT_TEXT_LIMIT = MAX_MESSAGE_SIZE
 
 
 def post_buzz_message(
@@ -45,24 +40,4 @@ def post_buzz_message(
     return True, "", str(result["event_id"])
 
 
-def send_buzz_report(report: str, buzz_ctx: dict[str, Any]) -> tuple[bool, str]:
-    """Deliver an investigation report to the configured Buzz channel."""
-    relay_url = str(buzz_ctx.get("relay_url") or "http://localhost:3000")
-    channel = str(buzz_ctx.get("channel") or "")
-    private_key = str(buzz_ctx.get("private_key") or "")
-    auth_tag = str(buzz_ctx.get("auth_tag") or "")
-    buzz_path = str(buzz_ctx.get("buzz_path") or "buzz")
-
-    text = truncate(f"OpenSRE Investigation\n\n{report}", _REPORT_TEXT_LIMIT, suffix="…")
-    ok, error, _event_id = post_buzz_message(
-        relay_url,
-        channel,
-        text,
-        private_key,
-        auth_tag=auth_tag,
-        buzz_path=buzz_path,
-    )
-    return (True, "") if ok else (False, error)
-
-
-__all__ = ["post_buzz_message", "send_buzz_report"]
+__all__ = ["post_buzz_message"]

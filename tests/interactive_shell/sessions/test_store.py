@@ -440,7 +440,6 @@ def test_flush_writes_session_end(tmp_path: Path) -> None:
     assert leaf["type"] == "leaf"
     assert leaf["total_turns"] == 2
     assert leaf["chat_turns"] == 1
-    assert leaf["investigation_turns"] == 1
 
 
 def test_flush_counts_cli_agent_turns_as_chat(tmp_path: Path) -> None:
@@ -456,7 +455,6 @@ def test_flush_counts_cli_agent_turns_as_chat(tmp_path: Path) -> None:
     records = _read_lines(tmp_path / f"{session.session_id}.jsonl")
     leaf = records[-1]
     assert leaf["chat_turns"] == 3
-    assert leaf["investigation_turns"] == 0
 
 
 def test_flush_writes_conversation_snapshot_when_messages_present(tmp_path: Path) -> None:
@@ -620,7 +618,6 @@ def test_load_recent_counts_turns_for_in_progress_session(tmp_path: Path) -> Non
     assert len(results) == 1
     assert results[0]["total_turns"] == 3
     assert results[0]["chat_turns"] == 2
-    assert results[0]["investigation_turns"] == 1
     assert results[0]["duration_secs"] is None
     assert results[0]["is_ended"] is False
 
@@ -705,6 +702,28 @@ def test_load_recent_respects_n_limit(tmp_path: Path) -> None:
 
     with _patch_dir(tmp_path):
         assert len(SessionStore.load_recent(n=3)) == 3
+
+
+def test_load_recent_conversations_does_not_count_command_only_sessions(
+    tmp_path: Path,
+) -> None:
+    conversation = _make_session()
+    command_only = _make_session()
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(conversation)
+        SessionStore.append_turn_detail(
+            conversation.session_id,
+            "chat",
+            "investigate latency",
+            response="Checking now.",
+        )
+        time.sleep(0.01)
+        SessionStore.open_session(command_only)
+        SessionStore.append_turn(command_only, "slash", "/choose")
+
+        results = SessionStore.load_recent(n=1, require_conversation=True)
+
+    assert [result["session_id"] for result in results] == [conversation.session_id]
 
 
 # ── load_session ──────────────────────────────────────────────────────────────
@@ -997,101 +1016,45 @@ def test_session_rotates_id_on_clear() -> None:
     assert s.started_at <= time.time()
 
 
-# ── investigation_result / RCA history ───────────────────────────────────────
+# ── Session list titles ───────────────────────────────────────────────────
 
 
-def test_append_investigation_result_writes_record(tmp_path: Path) -> None:
+def test_a_menu_answer_titles_the_session_with_the_picked_label(tmp_path: Path) -> None:
+    """A menu-driven session's first message is a menu answer, stored as wire format.
+
+    ``conversation_title`` names the session in ``/sessions`` and the
+    ``/resume`` picker; unparsed, those rows read
+    ``1. Which demo…? @json:"Explore a repo…"``.
+    """
+    from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
+
     session = _make_session()
-    state = {
-        "root_cause": "connection pool exhausted",
-        "problem_md": "## Summary\nPool leak in checkout-api",
-        "root_cause_category": "resource",
-        "alert_name": "checkout latency",
-    }
-    with _patch_dir(tmp_path):
-        SessionStore.open_session(session)
-        inv_id = SessionStore.append_investigation_result(
-            session.session_id,
-            state,
-            trigger="/investigate generic",
-        )
-
-    records = _read_lines(tmp_path / f"{session.session_id}.jsonl")
-    inv = next(r for r in records if r["type"] == "investigation_result")
-    assert inv["investigation_id"] == inv_id
-    assert inv["root_cause"] == "connection pool exhausted"
-    assert "Pool leak" in inv["report"]
-    assert inv["trigger"] == "/investigate generic"
-
-
-def test_append_investigation_result_uses_report_fallback(tmp_path: Path) -> None:
-    session = _make_session()
-    with _patch_dir(tmp_path):
-        SessionStore.open_session(session)
-        SessionStore.append_investigation_result(
-            session.session_id,
-            {"root_cause": "api error", "report": "report-only payload"},
-            trigger="/investigate generic",
-        )
-
-    records = _read_lines(tmp_path / f"{session.session_id}.jsonl")
-    inv = next(r for r in records if r["type"] == "investigation_result")
-    assert inv["report"] == "report-only payload"
-
-
-def test_load_investigation_history_returns_newest_first(tmp_path: Path) -> None:
-    session_a = _make_session()
-    session_b = Session()
-    with _patch_dir(tmp_path):
-        SessionStore.open_session(session_a)
-        SessionStore.append_investigation_result(
-            session_a.session_id,
-            {"root_cause": "older issue", "problem_md": "old report"},
-            trigger="/investigate generic",
-        )
-        SessionStore.open_session(session_b)
-        SessionStore.append_investigation_result(
-            session_b.session_id,
-            {"root_cause": "newer issue", "problem_md": "new report"},
-            trigger="/investigate datadog",
-        )
-
-        history = SessionStore.load_investigation_history()
-
-    assert len(history) == 2
-    assert history[0]["root_cause"] == "newer issue"
-    assert history[1]["root_cause"] == "older issue"
-
-
-def test_load_investigation_by_prefix(tmp_path: Path) -> None:
-    session = _make_session()
-    with _patch_dir(tmp_path):
-        SessionStore.open_session(session)
-        inv_id = SessionStore.append_investigation_result(
-            session.session_id,
-            {"root_cause": "disk full", "problem_md": "report body"},
-            trigger="/investigate alert.json",
-        )
-        loaded = SessionStore.load_investigation(inv_id[:4])
-
-    assert loaded is not None
-    assert loaded["investigation_id"] == inv_id
-    assert loaded["root_cause"] == "disk full"
-
-
-def test_apply_investigation_result_persists_record(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("config.constants.OPENSRE_HOME_DIR", tmp_path)
-    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
-    session = Session()
-    SessionStore.open_session(session)
-    session.apply_investigation_result(
-        {"root_cause": "OOM killer", "problem_md": "memory spike"},
-        trigger="sample:generic",
+    answer = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Which demo would you like me to run?", options=()),),
+        ("Explore a repo and analyze its CI/CD performance",),
     )
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(session)
+        SessionStore.append_message(session.session_id, role="user", content=answer)
+        SessionStore.flush(session)
 
-    history = SessionStore.load_investigation_history()
-    assert len(history) == 1
-    assert history[0]["root_cause"] == "OOM killer"
-    assert history[0]["trigger"] == "sample:generic"
+        results = SessionStore.load_recent()
+
+    assert results[0]["conversation_title"] == "Explore a repo and analyze its CI/CD performance"
+
+
+def test_a_multiline_numbered_request_keeps_its_own_words_as_the_title(tmp_path: Path) -> None:
+    """Legacy unframed parsing would title this ``Check the payment logs``."""
+    session = _make_session()
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(session)
+        SessionStore.append_message(
+            session.session_id,
+            role="user",
+            content="1. Investigate the outage\nCheck the payment logs",
+        )
+        SessionStore.flush(session)
+
+        results = SessionStore.load_recent()
+
+    assert results[0]["conversation_title"] == "1. Investigate the outage Check the payment logs"

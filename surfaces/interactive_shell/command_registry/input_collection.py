@@ -1,0 +1,34 @@
+"""Eligibility checks for missing-argument collection in terminal commands."""
+
+from __future__ import annotations
+
+from rich.console import Console
+
+from config.command_inputs import CommandInput
+from config.interactive_override import interactive_override_env
+from core.agent_harness.spi.session_state import exclusive_stdin_active
+from surfaces.interactive_shell.runtime import Session
+from surfaces.shared.terminal.components.choice_menu import (
+    console_output_is_tty,
+    repl_tty_interactive,
+)
+
+
+def can_collect_input(session: Session, spec: CommandInput, args: list[str]) -> bool:
+    """Collect only registered missing inputs while this interactive turn owns stdin."""
+    return (
+        spec.matches(spec.command, args)
+        and not interactive_override_env()
+        and exclusive_stdin_active(session)
+        and repl_tty_interactive()
+    )
+
+
+def can_browse_records(session: Session, console: Console) -> bool:
+    """Browse only with an interactive output and explicitly reserved stdin."""
+    return (
+        console_output_is_tty(console)
+        and not interactive_override_env()
+        and exclusive_stdin_active(session)
+        and repl_tty_interactive()
+    )

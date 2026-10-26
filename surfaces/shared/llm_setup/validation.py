@@ -29,7 +29,7 @@ def _load_anthropic_client() -> tuple[Any, type[Exception]]:
 def _get_provider_base_url(provider_value: str) -> str | None:
     """Get the base_url for OpenAI-compatible non-OpenAI providers, or None for native OpenAI."""
     # Lazy imports keep config loading out of the validation module import graph.
-    from config import config as llm_config
+    from config import llm_models
 
     # custom-openai's base URL is user-supplied: read + normalize it from the env
     # rather than a static default, so the probe hits the configured gateway.
@@ -38,13 +38,13 @@ def _get_provider_base_url(provider_value: str) -> str | None:
 
         return normalize_custom_base_url(os.getenv(CUSTOM_OPENAI_BASE_URL_ENV, "")) or None
     base_urls = {
-        "openrouter": llm_config.OPENROUTER_BASE_URL,
-        "trustedrouter": llm_config.TRUSTEDROUTER_BASE_URL,
-        "deepseek": llm_config.DEEPSEEK_BASE_URL,
-        "gemini": llm_config.GEMINI_BASE_URL,
-        "nvidia": llm_config.NVIDIA_BASE_URL,
-        "groq": llm_config.GROQ_BASE_URL,
-        "minimax": llm_config.MINIMAX_BASE_URL,
+        "openrouter": llm_models.OPENROUTER_BASE_URL,
+        "trustedrouter": llm_models.TRUSTEDROUTER_BASE_URL,
+        "deepseek": llm_models.DEEPSEEK_BASE_URL,
+        "gemini": llm_models.GEMINI_BASE_URL,
+        "nvidia": llm_models.NVIDIA_BASE_URL,
+        "groq": llm_models.GROQ_BASE_URL,
+        "minimax": llm_models.MINIMAX_BASE_URL,
     }
     return base_urls.get(provider_value)
 
@@ -60,28 +60,17 @@ def _check_ollama(host: str, model: str) -> ValidationResult:
     """Check Ollama server connectivity and verify model responds to inference."""
     import httpx
 
-    tags_url = f"{host.rstrip('/')}/api/tags"
-    try:
-        r = httpx.get(tags_url, timeout=5.0)
-        r.raise_for_status()
-    except Exception as err:
-        return ValidationResult(
-            ok=False,
-            detail=f"Cannot reach Ollama at {host}. Is it running? Try: ollama serve\n({err})",
-        )
-    available = [m["name"] for m in r.json().get("models", [])]
-    from surfaces.shared.llm_setup.ollama import normalize_model_tag
-
-    normalized_model = normalize_model_tag(model)
-    base_name = model.split(":")[0]
-    # An explicit tag must match exactly: asking for llama3.1:8b and silently
-    # accepting llama3.1:latest would validate a different model than the one
-    # that then gets used. Only an untagged request falls back to the base name.
-    asked_for_a_tag = ":" in model
-    matched = normalized_model in available or (
-        not asked_for_a_tag and any(m.split(":")[0] == base_name for m in available)
+    from surfaces.shared.llm_setup.ollama import (
+        OllamaModelDiscoveryError,
+        list_available_models,
+        model_is_available,
     )
-    if not matched:
+
+    try:
+        available = list_available_models(host)
+    except OllamaModelDiscoveryError as exc:
+        return ValidationResult(ok=False, detail=str(exc))
+    if not model_is_available(model, available):
         listed = ", ".join(available) or "none pulled yet"
         return ValidationResult(
             ok=False,
@@ -141,7 +130,7 @@ def validate_provider_credentials(
             anthropic_kwargs: dict[str, Any] = {"api_key": api_key, "timeout": 30.0}
             if provider.value == "custom-anthropic":
                 # Point the probe at the user's gateway, not api.anthropic.com,
-                # so a "validated" result reflects the endpoint investigate uses.
+                # so a "validated" result reflects the endpoint the agent uses.
                 from core.llm.providers.custom_endpoints import custom_anthropic_probe_base_url
 
                 anthropic_base_url = custom_anthropic_probe_base_url()
@@ -170,7 +159,7 @@ def validate_provider_credentials(
         base_url = _get_provider_base_url(provider.value)
         openai_client = openai_client_cls(api_key=api_key, base_url=base_url, timeout=30.0)
         # Only native OpenAI reasoning models use max_completion_tokens; others use max_tokens
-        if provider.value == "openai" and model.startswith(("o1", "o3", "o4", "gpt-5")):
+        if provider.value == "openai" and model.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6")):
             openai_response = openai_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],

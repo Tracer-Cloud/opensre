@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from difflib import get_close_matches
 from typing import Literal
@@ -85,7 +86,10 @@ def resolve_literal_slash_typo(
     if not stripped.startswith("/"):
         return None
 
-    parts = stripped.split()
+    try:
+        parts = shlex.split(stripped, posix=True)
+    except ValueError:
+        parts = stripped.split()
     if not parts:
         return None
 
@@ -103,8 +107,14 @@ def resolve_literal_slash_typo(
     if cmd.validate_args is not None:
         validation_error = cmd.validate_args(args)
         if validation_error is not None and args:
+            hints = subcommand_hints(cmd)
+            message = (
+                format_invalid_subcommand_message(cmd, args)
+                if hints and args[0].lower() not in hints
+                else validation_error
+            )
             return LiteralSlashTypo(
-                message=format_invalid_subcommand_message(cmd, args),
+                message=message,
                 outcome="invalid_subcommand",
             )
 

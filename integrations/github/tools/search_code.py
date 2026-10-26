@@ -4,14 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    normalize_github_tool_result,
     resolve_github_mcp_config,
 )
 from integrations.github.mcp import (
@@ -35,9 +42,26 @@ def _search_github_code_available(sources: dict[str, dict]) -> bool:
     return bool(github_source_available(sources) and gh.get("owner") and gh.get("repo"))
 
 
+def _map_search_github_code(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    matches = output.get("matches")
+    if not isinstance(matches, list) or not matches:
+        return
+    query = output.get("query", "")
+    record_evidence_entry(
+        evidence,
+        source="search_github_code",
+        label="GitHub Code Search",
+        summary=f"{len(matches)} matches: {query}" if query else f"{len(matches)} matches",
+    )
+
+
 @tool(
     name="search_github_code",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Search GitHub repository code through the configured GitHub MCP server.",
     use_cases=[
         "Investigating alerts that mention a repository, branch, or commit",
@@ -45,7 +69,8 @@ def _search_github_code_available(sources: dict[str, dict]) -> bool:
         "Tracing config, workflow, or application code that may explain an incident",
     ],
     requires=["owner", "repo", "query"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
+    evidence_mapper=_map_search_github_code,
     input_schema={
         "type": "object",
         "properties": {
@@ -58,10 +83,11 @@ def _search_github_code_available(sources: dict[str, dict]) -> bool:
         },
         "required": ["owner", "repo", "query"],
     },
-    is_available=_search_github_code_available,
-    extract_params=_search_github_code_extract_params,
+    is_available=github_tool_available(_search_github_code_available),
+    extract_params=github_tool_params(_search_github_code_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def search_github_code(
     owner: str,
     repo: str,

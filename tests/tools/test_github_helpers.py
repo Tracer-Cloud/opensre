@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     github_creds,
-    normalize_github_tool_result,
     resolve_github_mcp_config,
 )
 from integrations.github.mcp import DEFAULT_GITHUB_MCP_MODE
@@ -15,6 +15,7 @@ from integrations.github.mcp import DEFAULT_GITHUB_MCP_MODE
 def test_github_creds_maps_classified_integration_fields() -> None:
     creds = github_creds(
         {
+            "connection_origin": "webapp",
             "url": "https://api.githubcopilot.com/mcp/",
             "mode": "streamable-http",
             "auth_token": "ghp_test",
@@ -23,6 +24,7 @@ def test_github_creds_maps_classified_integration_fields() -> None:
         }
     )
     assert creds == {
+        "github_connection_origin": "webapp",
         "github_url": "https://api.githubcopilot.com/mcp/",
         "github_mode": "streamable-http",
         "github_token": "ghp_test",
@@ -33,6 +35,7 @@ def test_github_creds_prefers_legacy_tool_field_names() -> None:
     creds = github_creds(
         {
             "github_url": "http://github.example.com/mcp",
+            "connection_origin": "webapp",
             "github_mode": "sse",
             "github_token": "legacy-token",
             "github_command": "gh-mcp",
@@ -40,6 +43,7 @@ def test_github_creds_prefers_legacy_tool_field_names() -> None:
         }
     )
     assert creds == {
+        "github_connection_origin": "webapp",
         "github_url": "http://github.example.com/mcp",
         "github_mode": "sse",
         "github_token": "legacy-token",

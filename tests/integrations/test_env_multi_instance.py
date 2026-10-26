@@ -37,8 +37,7 @@ def _clear_env(monkeypatch) -> None:
 def test_grafana_instances_json_produces_single_record_with_multiple_instances(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PR #527 bug #2 regression: env multi-instance must NOT split into N
-    records, which the merge_integrations_by_service chokepoint would collapse."""
+    """One multi-instance env setting remains one connection record."""
     _clear_env(monkeypatch)
     monkeypatch.setenv(
         "GRAFANA_INSTANCES",

@@ -1,8 +1,4 @@
-"""Lightweight GitHub identity helpers for UI, analytics, and public sources.
-
-Kept separate from :mod:`integrations.github.login` so callers can read saved
-identity data or derive public repository scope without importing GitHub MCP.
-"""
+"""Read saved GitHub identity without running authentication."""
 
 from __future__ import annotations
 
@@ -14,6 +10,16 @@ from urllib.parse import urlsplit
 _GITHUB_REPOSITORY_PART_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _GITHUB_HOSTS = frozenset({"github.com", "www.github.com"})
 _SCP_REPOSITORY_RE = re.compile(r"^(?:[^@/]+@)?(?P<host>[A-Za-z0-9._-]+):(?P<path>.+)$")
+_PATH_DOTS = frozenset({".", ".."})
+
+
+def is_github_repository_part(value: str) -> bool:
+    """True when *value* is one GitHub owner or repository name, not a path."""
+    return (
+        bool(value)
+        and value not in _PATH_DOTS
+        and _GITHUB_REPOSITORY_PART_RE.fullmatch(value) is not None
+    )
 
 
 def _workspace_repository_path(value: str) -> str:
@@ -28,6 +34,15 @@ def _workspace_repository_path(value: str) -> str:
     return value.strip("/")
 
 
+def is_github_remote_url(value: str) -> bool:
+    """Recognize a GitHub transport host, excluding bare names and local paths."""
+    if "://" in value:
+        parsed = urlsplit(value)
+        return (parsed.hostname or "").lower() in _GITHUB_HOSTS and parsed.scheme != "file"
+    match = _SCP_REPOSITORY_RE.fullmatch(value)
+    return match is not None and match.group("host").lower() in _GITHUB_HOSTS
+
+
 def workspace_public_repository_source(
     runtime_metadata: Mapping[str, Any],
 ) -> dict[str, dict[str, str | bool]]:
@@ -36,9 +51,9 @@ def workspace_public_repository_source(
         str(runtime_metadata.get("workspace_repo") or "").strip()
     ).removesuffix(".git")
     owner, separator, repo = workspace_repo.partition("/")
-    if not separator or not _GITHUB_REPOSITORY_PART_RE.fullmatch(owner):
+    if not separator or not is_github_repository_part(owner):
         return {}
-    if not _GITHUB_REPOSITORY_PART_RE.fullmatch(repo):
+    if not is_github_repository_part(repo):
         return {}
     return {
         "github": {

@@ -241,6 +241,74 @@ def test_build_omits_env_without_openai_platform_vars(mock_which: MagicMock) -> 
 
 
 @patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
+def test_build_uses_the_hosted_account_route_when_no_openai_key_is_set(
+    mock_which: MagicMock,
+) -> None:
+    """On a hosted gateway the account token is Codex's key and the webapp its base URL."""
+    from config.account import AccountLLMRoute
+
+    base = {k: v for k, v in os.environ.items() if not k.startswith("OPENAI_")}
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    with (
+        patch.dict(os.environ, base, clear=True),
+        patch("config.account.account_llm_route", return_value=route),
+        patch("integrations.llm_cli.codex.account_llm_route", return_value=route),
+        patch("config.account.resolve_account_token", return_value="osre_gw_org.tok"),
+    ):
+        inv = CodexAdapter().build(prompt="p", model=None, workspace="")
+
+    mock_which.assert_called()
+    assert inv.env == {
+        "OPENAI_API_KEY": "osre_gw_org.tok",
+        "OPENAI_BASE_URL": "https://app.example/api/llm/v1",
+    }
+    idx = inv.argv.index("-m")
+    assert inv.argv[idx + 1] == "gpt-5.6-sol"
+    # Codex ignores OPENAI_BASE_URL for its built-in provider: a named provider is passed.
+    assert "model_provider=opensre" in inv.argv
+    assert 'model_providers.opensre.base_url="https://app.example/api/llm/v1"' in inv.argv
+    assert 'model_providers.opensre.env_key="OPENAI_API_KEY"' in inv.argv
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
+def test_build_never_pairs_the_account_token_with_another_base_url(mock_which: MagicMock) -> None:
+    """A base URL of the user's own, without a key, gets no account token and no hosted model."""
+    from config.account import AccountLLMRoute
+
+    base = {k: v for k, v in os.environ.items() if not k.startswith("OPENAI_")}
+    base["OPENAI_BASE_URL"] = "https://proxy.example/v1"
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    with (
+        patch.dict(os.environ, base, clear=True),
+        patch("config.account.account_llm_route", return_value=route),
+        patch("integrations.llm_cli.codex.account_llm_route", return_value=route),
+        patch("config.account.resolve_account_token", return_value="osre_gw_org.tok"),
+    ):
+        inv = CodexAdapter().build(prompt="p", model=None, workspace="")
+
+    mock_which.assert_called()
+    assert inv.env == {"OPENAI_BASE_URL": "https://proxy.example/v1"}
+    assert "-m" not in inv.argv
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
+def test_build_prefers_explicit_openai_env_over_the_hosted_route(mock_which: MagicMock) -> None:
+    from config.account import AccountLLMRoute
+
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    with (
+        patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=False),
+        patch("integrations.llm_cli.codex.account_llm_route", return_value=route),
+    ):
+        inv = CodexAdapter().build(prompt="p", model=None, workspace="")
+
+    mock_which.assert_called()
+    assert inv.env is not None and inv.env["OPENAI_API_KEY"] == "sk-test"
+    assert "OPENAI_BASE_URL" not in inv.env
+    assert "-m" not in inv.argv
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_build_adds_model_flag_when_not_default(mock_which: MagicMock) -> None:
     inv = CodexAdapter().build(prompt="p", model="o3", workspace="")
     assert inv.stdin == "p"
@@ -258,6 +326,19 @@ def test_build_adds_reasoning_effort_override(mock_which: MagicMock) -> None:
     assert "-c" in inv.argv
     idx = inv.argv.index("-c")
     assert inv.argv[idx + 1] == 'model_reasoning_effort="xhigh"'
+    mock_which.assert_called()
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
+def test_build_defaults_gpt_6_1_to_extra_high(mock_which: MagicMock) -> None:
+    defaulted = CodexAdapter().build(prompt="p", model="gpt-6.1-sol", workspace="")
+    overridden = CodexAdapter().build(
+        prompt="p", model="gpt-6.1-sol", workspace="", reasoning_effort="low"
+    )
+
+    assert 'model_reasoning_effort="xhigh"' in defaulted.argv
+    assert 'model_reasoning_effort="low"' in overridden.argv
+    assert 'model_reasoning_effort="xhigh"' not in overridden.argv
     mock_which.assert_called()
 
 
@@ -286,7 +367,7 @@ def test_cli_backed_client_invoke(mock_run: MagicMock) -> None:
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
     with (
-        patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr,
+        patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr,
         patch.dict(
             os.environ,
             {
@@ -335,7 +416,7 @@ def test_cli_backed_client_passes_reasoning_effort_to_adapter(mock_run: MagicMoc
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
     with (
-        patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr,
+        patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr,
         patch.dict(os.environ, {"OPENSRE_REASONING_EFFORT": "high"}, clear=False),
     ):
         gr.return_value.is_active = False
@@ -370,7 +451,7 @@ def test_cli_backed_client_codex_merge_openai_platform_env(
     mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
 
     with (
-        patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr,
+        patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr,
         patch.dict(
             os.environ,
             {
@@ -415,7 +496,7 @@ def test_cli_backed_client_caches_probe_between_invokes(mock_run: MagicMock) -> 
 
     mock_run.return_value = MagicMock(returncode=0, stdout="answer\n", stderr="")
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model="codex", max_tokens=256)
         client.invoke("a")
@@ -452,7 +533,7 @@ def test_cli_backed_client_failure_mentions_unclear_auth_probe(mock_run: MagicMo
 
     mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="unauthorized")
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model="claude-code", max_tokens=256)
         import pytest
@@ -482,7 +563,7 @@ def test_cli_backed_client_invoke_raises_cli_authentication_required_when_logged
         detail="Not logged in.",
     )
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model=None, max_tokens=256)
         with pytest.raises(CLIAuthenticationRequired, match="not authenticated"):
@@ -525,7 +606,7 @@ def test_cli_backed_client_unclear_auth_no_double_period_when_explain_failure_tr
 
     mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="")
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine") as gr:
+    with patch("infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator") as gr:
         gr.return_value.is_active = False
         client = CLIBackedLLMClient(mock_adapter, model="claude-code", max_tokens=256)
         import pytest
@@ -783,3 +864,24 @@ def test_parse_raises_on_empty_stdout_surfaces_stderr() -> None:
     adapter = CodexAdapter()
     with pytest.raises(RuntimeError, match="some stderr detail"):
         adapter.parse(stdout="", stderr="some stderr detail", returncode=0)
+
+
+def test_the_probe_and_the_build_agree_on_when_the_hosted_route_applies() -> None:
+    """With only OPENAI_BASE_URL set, neither the probe nor the build uses the account token."""
+    from config.account import AccountLLMRoute
+    from integrations.llm_cli import codex
+
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    base = {k: v for k, v in os.environ.items() if not k.startswith("OPENAI_")}
+    with (
+        patch.dict(os.environ, {**base, "OPENAI_BASE_URL": "https://proxy.example/v1"}, clear=True),
+        patch("config.account.account_llm_route", return_value=route),
+        patch("config.account.resolve_account_token", return_value="osre_gw_org.tok"),
+    ):
+        assert codex._hosted_route_applies() is False
+    with (
+        patch.dict(os.environ, base, clear=True),
+        patch("config.account.account_llm_route", return_value=route),
+        patch("config.account.resolve_account_token", return_value="osre_gw_org.tok"),
+    ):
+        assert codex._hosted_route_applies() is True

@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import subprocess
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
+from http import HTTPStatus
 from urllib.parse import quote
 
 import httpx
 
 from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.enums import BucketExposure, BuiltInProvider, RemoteSyncField
 from infrastructure.filestorage.errors import RemoteSyncUnavailableError
 from infrastructure.filestorage.exposure import PublicAccessStatus
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.providers.registry import SetupExtraField, register_object_store
 
 PROVIDER_NAME = BuiltInProvider.AZURE
@@ -164,9 +167,26 @@ def _parse_last_modified(props: ET.Element | None) -> datetime:
 
 
 def _parse_etag(props: ET.Element | None) -> str:
+    """Extracts a valid MD5 hex hash, or an empty string if unavailable."""
     if props is None:
         return ""
-    return (props.findtext("Etag") or "").strip('"')
+
+    md5_b64 = props.findtext("Content-MD5")
+    if md5_b64:
+        try:
+            digest = base64.b64decode(md5_b64, validate=True)
+            if len(digest) == 16:
+                return digest.hex()
+        except (ValueError, binascii.Error):
+            # Malformed Base64 or non-MD5 content degrades to an unavailable
+            # fingerprint instead of crashing the listing.
+            pass
+
+    # Missing or invalid Content-MD5 degrades to an unavailable fingerprint ("").
+    # Returning Azure's opaque Etag here would place unchanged blobs on an
+    # incompatible fingerprint path, because the sync engine compares remote
+    # tags with a local MD5 hex.
+    return ""
 
 
 def _get_azure_access_token() -> str:
@@ -242,7 +262,7 @@ def check_public_access(
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code in (401, 403):
+        if exc.response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
             return PublicAccessStatus(
                 BucketExposure.UNKNOWN, "missing permission to read container properties"
             )

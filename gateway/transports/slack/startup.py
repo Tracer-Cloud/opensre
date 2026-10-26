@@ -96,6 +96,7 @@ def _start_events_api_http(
         handled_events=_build_handled_event_repository(logger),
         submit_turn=_submit_turn,
         gate=gate,
+        stop_turn=stack.dispatcher.stop,
     )
     handle = serve_slack_http_in_thread(
         app=app, port=settings.http_port, workers=stack.executor, gate=gate

@@ -61,13 +61,14 @@ def test_embedded_session_boots_adapters_so_integrations_resolve() -> None:
     ``start_embedded_session`` is the documented headless entry that does.
     """
     from bootstrap.process import reset_process_runtime_for_tests
-    from infrastructure.harness_ports import (
-        get_investigation_tools,
-        reset_harness_ports,
+    from core.domain.types.tools import ToolSurface
+    from infrastructure.harness_providers import (
+        reset_harness_providers,
         resolve_integrations,
+        resolve_surface_tools,
     )
 
-    reset_harness_ports()
+    reset_harness_providers()
     reset_process_runtime_for_tests()
     assert resolve_integrations() == {}
 
@@ -75,7 +76,5 @@ def test_embedded_session_boots_adapters_so_integrations_resolve() -> None:
         SessionConfig(open_store=False, persistent_tasks=False, warm_integrations=True)
     )
 
-    grafana_tools = list(
-        get_investigation_tools({"grafana": {"endpoint": "http://g", "connection_verified": True}})
-    )
-    assert any(t.name.startswith("query_grafana") for t in grafana_tools)
+    chat_tools = resolve_surface_tools(ToolSurface.CHAT)
+    assert any(tool.name.startswith("query_grafana") for tool in chat_tools)

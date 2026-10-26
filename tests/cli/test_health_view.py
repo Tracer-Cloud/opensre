@@ -1,4 +1,5 @@
 import json
+import re
 from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -130,19 +131,41 @@ def test_render_health_json(capsys) -> None:
 
 
 @patch("infrastructure.safety.guardrails.rules.get_default_rules_path")
-def test_render_health_report_action_messages(mock_rules_path: MagicMock) -> None:
+def test_render_health_report_folds_long_detail(mock_rules_path: MagicMock) -> None:
     mock_rules_path.return_value = Path("/nonexistent/rules")
-
-    # Case 1: All healthy
-    console = Console(file=StringIO(), force_terminal=False, width=100)
+    long_detail = (
+        "Datasource discovery failed: could not reach http://172.29.15.185:3001 "
+        "(HTTPConnectionPool(host='172.29.15.185', port=3001): Max retries exceeded "
+        "with url: /api/datasources (Caused by ConnectTimeoutError(...)))"
+    )
+    console = Console(file=StringIO(), force_terminal=True, width=80)
     render_health_report(
         console=console,
         environment="test",
         integration_store_path="/tmp",
-        results=[{"service": "s1", "status": "passed"}],
+        results=[
+            {
+                "service": "grafana",
+                "source": "local store",
+                "status": "failed",
+                "detail": long_detail,
+            }
+        ],
     )
     output = console.file.getvalue()
-    assert "All configured integrations look healthy." in output
+    assert "grafana" in output
+    assert "FAILED" in output
+    # Detail column is folded so no visible row spans the full dump. Measure the
+    # visible width (strip ANSI colors, which vary with theme state) against the
+    # 80-column terminal, not the raw byte length.
+    strip_ansi = re.compile(r"\x1b\[[0-9;]*m")
+    lines = [
+        strip_ansi.sub("", line)
+        for line in output.splitlines()
+        if "172.29" in line or "ConnectTimeout" in line
+    ]
+    assert lines, output
+    assert all(len(line) <= 80 for line in lines), lines
 
     # Case 2: Some missing
     console = Console(file=StringIO(), force_terminal=False, width=100)

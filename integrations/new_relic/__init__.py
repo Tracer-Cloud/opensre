@@ -7,8 +7,12 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.new_relic.config import NewRelicIntegrationConfig
+from integrations.new_relic.setup import NEW_RELIC_SETUP
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["NEW_RELIC_SETUP", "classify"]
 
 
 def classify(

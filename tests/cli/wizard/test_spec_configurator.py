@@ -59,12 +59,12 @@ def run(monkeypatch: pytest.MonkeyPatch) -> _Run:
         state.asked.append(
             {"label": label, "default": default, "secret": secret, "allow_empty": allow_empty}
         )
-        # Mirror the real _prompt_value: a blank answer falls back to the default.
+        # Mirror the real prompt_value: a blank answer falls back to the default.
         return state.answers.get(label, "") or default
 
-    monkeypatch.setattr(spec_configurator, "_prompt_value", _fake_prompt_value)
-    monkeypatch.setattr(spec_configurator, "_integration_defaults", lambda _s: ({}, state.stored))
-    monkeypatch.setattr(spec_configurator, "_render_integration_result", lambda *_a: None)
+    monkeypatch.setattr(spec_configurator, "prompt_value", _fake_prompt_value)
+    monkeypatch.setattr(spec_configurator, "integration_defaults", lambda _s: ({}, state.stored))
+    monkeypatch.setattr(spec_configurator, "render_integration_result", lambda *_a: None)
     monkeypatch.setattr(setup_flow, "upsert_integration", lambda *_a: None)
     monkeypatch.setattr(setup_flow, "sync_env_secret", lambda *_a: None)
     monkeypatch.setattr(setup_flow, "sync_env_values", lambda *_a, **_kw: _ENV_PATH)
@@ -181,7 +181,7 @@ def test_mode_gate_can_steer_to_a_different_mode_before_fields_are_asked(
 ) -> None:
     """A vendor may swap the picked mode when its prerequisite is missing."""
     # Arrange — user picks "token"; the gate finds it unusable and steers to "basic"
-    monkeypatch.setattr(spec_configurator, "_choose", lambda *_a, **_k: "token")
+    monkeypatch.setattr(spec_configurator, "choose", lambda *_a, **_k: "token")
     gated_with: list[str] = []
 
     def steer_to_basic(mode: str) -> str:
@@ -203,7 +203,7 @@ def test_without_a_mode_gate_the_picked_mode_is_used_unchanged(
     run: _Run, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Arrange
-    monkeypatch.setattr(spec_configurator, "_choose", lambda *_a, **_k: "token")
+    monkeypatch.setattr(spec_configurator, "choose", lambda *_a, **_k: "token")
     run.answers = {"Demo token": "t"}
 
     # Act
@@ -222,7 +222,7 @@ def test_a_field_required_by_the_chosen_mode_may_not_be_left_empty(
     config-model "requires either role_arn or credentials" validation error.
     """
     # Arrange — user picks "token"; the spec says token is required in that mode
-    monkeypatch.setattr(spec_configurator, "_choose", lambda *_a, **_k: "token")
+    monkeypatch.setattr(spec_configurator, "choose", lambda *_a, **_k: "token")
     run.answers = {"Demo token": "t"}
 
     # Act
@@ -237,7 +237,7 @@ def test_the_same_field_stays_optional_when_another_mode_is_chosen(
     run: _Run, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Arrange — "basic" is chosen; its fields are optional at every level
-    monkeypatch.setattr(spec_configurator, "_choose", lambda *_a, **_k: "basic")
+    monkeypatch.setattr(spec_configurator, "choose", lambda *_a, **_k: "basic")
     run.answers = {"Demo user": "u", "Demo password": "p"}
 
     # Act

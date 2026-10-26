@@ -37,7 +37,7 @@ _SENSITIVE_SUBSTRINGS: tuple[str, ...] = (
 
 
 def is_sensitive_env_key(key: str) -> bool:
-    """True when an env var name should not be persisted in plain ``.env``."""
+    """True when an env var name is a secret (credentials file + ``.env``)."""
     if key in _NON_SECRET_ENV_KEYS:
         return False
     lowered = key.lower()

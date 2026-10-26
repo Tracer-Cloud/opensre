@@ -13,12 +13,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.tools import ActionToolContext, execute_with_action_context
+from core.agent_harness.tools import ActionToolScope, execute_with_action_context
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from tools.cross_vendor.fix_sentry_issue import fix_sentry_issue
 from tools.cross_vendor.fix_sentry_issue.runner import is_issue_fix_enabled
+from tools.interactive_shell.shared import allow_tool
+from tools.interactive_shell.subprocess import require_subprocess_presenter
 
 
 def _render_result(console: Any, out: dict[str, Any]) -> None:
@@ -69,11 +71,20 @@ def _render_result(console: Any, out: dict[str, Any]) -> None:
         console.print("[dim]Diff left in your working tree (no PR requested).[/]")
 
 
-def execute_sentry_fix_tool(args: dict[str, Any], ctx: ActionToolContext) -> bool:
+def execute_sentry_fix_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool:
     sentry_url = str(args.get("sentry_url", "")).strip()
     if not sentry_url:
         return False
     open_pr = bool(args.get("open_pr", False))
+    presenter = require_subprocess_presenter(ctx)
+    summary = f"fix Sentry issue {sentry_url}"
+    if open_pr:
+        summary += " and open a pull request"
+    if not presenter.execution_allowed(
+        allow_tool("sentry_issue_fix"),
+        action_summary=summary,
+    ):
+        return True
 
     ctx.console.print(
         f"[bold]Fixing Sentry issue[/] {sentry_url}"
@@ -100,8 +111,8 @@ fix_sentry_issue_start_tool = RegisteredTool(
         "request for a Sentry issue and provides a Sentry issue URL — e.g. 'fix this sentry "
         "issue <url>' or 'fix <url> and open a PR'. Set open_pr=true when they ask to "
         "open/create/raise a PR or to ship the fix; otherwise false to only produce a diff. "
-        "Do NOT use for investigate/RCA/diagnose/analyze requests (use investigation_start), "
-        "for non-Sentry URLs, or when no Sentry issue URL is provided."
+        "Do NOT use for diagnose/analyze-only requests (answer with the read-only "
+        "Sentry tools), for non-Sentry URLs, or when no Sentry issue URL is provided."
     ),
     input_schema=object_schema(
         properties={
@@ -122,7 +133,6 @@ fix_sentry_issue_start_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     is_available=lambda _sources: is_issue_fix_enabled(),
     run=run_sentry_fix,

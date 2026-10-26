@@ -9,7 +9,8 @@ from typing import Any
 
 import click
 
-from infrastructure.analytics.cli import (
+from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
+from infrastructure.analytics.capture import (
     capture_onboard_completed,
     capture_onboard_failed,
     capture_onboard_started,
@@ -19,7 +20,6 @@ ConfigLoader = Callable[[], dict[str, Any]]
 RunCommand = Callable[[], int]
 
 OPENSRE_AUTO_LAUNCH_ENV = "OPENSRE_AUTO_LAUNCH"
-OPENSRE_PARENT_INTERACTIVE_SHELL_ENV = "OPENSRE_PARENT_INTERACTIVE_SHELL"
 _DISABLED_ENV_VALUES = {"0", "false", "no", "off"}
 
 
@@ -90,7 +90,9 @@ def _launch_interactive_shell(ctx: click.Context | None) -> int:
     launch_shell = cli_host(ctx).launch_shell if ctx is not None else None
     if launch_shell is None:
         return 0
-    return launch_shell(ReplConfig.load(cli_enabled=True), None)
+    # A subcommand initialised error reporting in line: nothing is held back.
+    # Auto-opening the REPL after onboard must not count as a shell render.
+    return launch_shell(ReplConfig.load(cli_enabled=True), None, None, False)
 
 
 @click.group(name="onboard", invoke_without_command=True)

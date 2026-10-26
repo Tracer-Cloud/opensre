@@ -1,23 +1,21 @@
-"""Shell command runner: execute builtins and record results."""
+"""Shell command runner: apply policy, execute, and record results."""
 
 from __future__ import annotations
 
-import os
-import shlex
-from pathlib import Path
+import threading
 from typing import Any
 
-import config.constants.platform as _platform
-from infrastructure.terminal.theme import ERROR, GLYPH_ERROR, GLYPH_SUCCESS, HIGHLIGHT
+from config.constants.tool_output import TOOL_OUTPUT_BYTES_PER_TOKEN
+from core.tool import tool_output_byte_budget
+from infrastructure.terminal.theme import DIM, ERROR, GLYPH_ERROR
 from tools.interactive_shell.shell import execution as shell_execution
-from tools.interactive_shell.shell.display import format_shell_command_for_display
-from tools.interactive_shell.shell.parsing import (
-    argv_for_repl_builtin_detection,
-    parse_shell_command,
+from tools.interactive_shell.shell.display import (
+    format_shell_command_for_display,
+    summarize_shell_command,
 )
+from tools.interactive_shell.shell.parsing import parse_shell_command
 from tools.interactive_shell.shell.policy import plan_shell_execution
 from tools.interactive_shell.subprocess import (
-    MAX_COMMAND_OUTPUT_CHARS,
     SHELL_COMMAND_TIMEOUT_SECONDS,
     SubprocessPresenter,
 )
@@ -35,6 +33,7 @@ def _shell_payload(
     truncated: bool = False,
     executed_with_shell: bool | None = None,
     cancelled: bool = False,
+    output: str = "",
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "ok": ok,
@@ -50,6 +49,8 @@ def _shell_payload(
         payload["executed_with_shell"] = executed_with_shell
     if response_text:
         payload["response_text"] = response_text.strip()
+    if output:
+        payload["output"] = output
     return payload
 
 
@@ -57,11 +58,12 @@ def run_shell_command(
     command: str,
     presenter: SubprocessPresenter,
     *,
-    argv: list[str] | None = None,
     quiet: bool = False,
+    cancel_event: threading.Event | None = None,
+    max_output_tokens: int | None = None,
 ) -> dict[str, Any]:
     session = presenter.session
-    parsed = parse_shell_command(command, is_windows=_platform.IS_WINDOWS)
+    parsed = parse_shell_command(command)
     plan = plan_shell_execution(parsed)
     display_command = format_shell_command_for_display(command)
     if not presenter.execution_allowed(
@@ -76,31 +78,28 @@ def run_shell_command(
             cancelled=plan.policy.verdict != "deny",
         )
 
-    if not quiet:
+    if quiet:
+        # Quiet hides the output, not the fact that a command ran.
+        presenter.print(f"[{DIM}]$ {summarize_shell_command(display_command)}[/]")
+    else:
         presenter.print_bold_command(display_command)
 
-    argv_builtin = argv_for_repl_builtin_detection(parsed=parsed, is_windows=_platform.IS_WINDOWS)
-
-    if argv_builtin is not None and argv_builtin[0].lower() == "cd":
-        return run_cd_command(parsed.command, presenter, quiet=quiet)
-    if argv_builtin is not None and argv_builtin[0].lower() == "pwd":
-        return run_pwd_command(parsed.command, presenter, quiet=quiet)
-
-    use_shell = parsed.use_shell
     if parsed.passthrough and not quiet:
         presenter.print("[dim]explicit shell passthrough enabled[/]")
-
-    exec_argv = argv if argv is not None else parsed.argv
 
     response_text: str | None = None
 
     try:
+        output_budget = tool_output_byte_budget()
+        if max_output_tokens is not None:
+            output_budget = min(
+                output_budget, max(max_output_tokens, 0) * TOOL_OUTPUT_BYTES_PER_TOKEN
+            )
         result = shell_execution.execute_shell_command(
             command=parsed.command,
-            argv=exec_argv,
-            use_shell=use_shell,
             timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS,
-            max_output_chars=MAX_COMMAND_OUTPUT_CHARS,
+            max_output_bytes=output_budget,
+            cancel_event=cancel_event,
         )
     except Exception as exc:
         presenter.report_exception(exc, context="surfaces.interactive_shell.shell_command.start")
@@ -115,12 +114,29 @@ def run_shell_command(
             ok=False,
             response_text=response_text,
             stderr=str(exc),
-            executed_with_shell=use_shell,
+            executed_with_shell=True,
         )
 
     if not quiet:
         presenter.print_command_output(result.stdout)
         presenter.print_command_output(result.stderr, style=ERROR)
+    if result.cancelled:
+        response_text = "command cancelled"
+        if not quiet:
+            presenter.print(f"[{ERROR}]command cancelled[/]")
+        session.record("shell", command, ok=False, response_text=response_text)
+        return _shell_payload(
+            command=command,
+            ok=False,
+            response_text=response_text,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            exit_code=result.exit_code,
+            truncated=result.truncated,
+            executed_with_shell=result.executed_with_shell,
+            cancelled=True,
+            output=result.combined_output,
+        )
     if result.timed_out:
         response_text = f"command timed out after {SHELL_COMMAND_TIMEOUT_SECONDS} seconds"
 
@@ -139,6 +155,7 @@ def run_shell_command(
             timed_out=True,
             truncated=result.truncated,
             executed_with_shell=result.executed_with_shell,
+            output=result.combined_output,
         )
     ok = result.exit_code == 0
     had_stdout = bool((result.stdout or "").strip())
@@ -148,8 +165,6 @@ def run_shell_command(
             response_text = (result.stdout or "").strip()
         elif had_stderr:
             response_text = (result.stderr or "").strip()
-        elif not quiet:
-            presenter.print(f"[{HIGHLIGHT}]{GLYPH_SUCCESS}[/]")
     else:
         code = result.exit_code if result.exit_code is not None else "?"
         exit_text = f"{GLYPH_ERROR} exit {code}"
@@ -176,92 +191,8 @@ def run_shell_command(
         timed_out=False,
         truncated=result.truncated,
         executed_with_shell=result.executed_with_shell,
+        output=result.combined_output,
     )
 
 
-def run_cd_command(
-    command: str,
-    presenter: SubprocessPresenter,
-    *,
-    quiet: bool = False,
-) -> dict[str, Any]:
-    session = presenter.session
-
-    def _strip_outer_quotes(value: str) -> str:
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            return value[1:-1]
-        return value
-
-    try:
-        tokens = shlex.split(command, posix=not _platform.IS_WINDOWS)
-        if _platform.IS_WINDOWS and len(tokens) > 1:
-            tokens = [tokens[0], *(_strip_outer_quotes(token) for token in tokens[1:])]
-    except ValueError as exc:
-        response_text = f"cd failed: {str(exc)}"
-
-        if not quiet:
-            presenter.print_error(f"cd failed: {exc}")
-        session.record("shell", command, ok=False, response_text=response_text)
-        return _shell_payload(command=command, ok=False, response_text=response_text)
-
-    if len(tokens) > 2:
-        response_text = "cd failed: too many arguments"
-
-        if not quiet:
-            presenter.print("[error]cd failed:[/] too many arguments")
-        session.record("shell", command, ok=False, response_text=response_text)
-        return _shell_payload(command=command, ok=False, response_text=response_text)
-
-    target = Path(tokens[1]).expanduser() if len(tokens) == 2 else Path.home()
-    try:
-        os.chdir(target)
-    except Exception as exc:
-        presenter.report_exception(exc, context="surfaces.interactive_shell.shell_cd")
-
-        response_text = f"cd failed: {str(exc)}"
-
-        if not quiet:
-            presenter.print_error(f"cd failed: {exc}")
-        session.record("shell", command, ok=False, response_text=response_text)
-        return _shell_payload(command=command, ok=False, response_text=response_text)
-
-    cwd = str(Path.cwd())
-    if not quiet:
-        presenter.print_plain(cwd)
-    session.record("shell", command)
-    return _shell_payload(command=command, ok=True, response_text=cwd)
-
-
-def run_pwd_command(
-    command: str,
-    presenter: SubprocessPresenter,
-    *,
-    quiet: bool = False,
-) -> dict[str, Any]:
-    session = presenter.session
-    try:
-        tokens = shlex.split(command, posix=not _platform.IS_WINDOWS)
-    except ValueError as exc:
-        response_text = f"pwd failed: {str(exc)}"
-
-        if not quiet:
-            presenter.print_error(f"pwd failed: {exc}")
-        session.record("shell", command, ok=False, response_text=response_text)
-        return _shell_payload(command=command, ok=False, response_text=response_text)
-
-    if len(tokens) != 1:
-        response_text = "pwd failed: too many arguments"
-
-        if not quiet:
-            presenter.print("[error]pwd failed:[/] too many arguments")
-        session.record("shell", command, ok=False, response_text=response_text)
-        return _shell_payload(command=command, ok=False, response_text=response_text)
-
-    cwd = str(Path.cwd())
-    if not quiet:
-        presenter.print_plain(cwd)
-    session.record("shell", command)
-    return _shell_payload(command=command, ok=True, response_text=cwd, stdout=cwd)
-
-
-__all__ = ["run_cd_command", "run_pwd_command", "run_shell_command"]
+__all__ = ["run_shell_command"]

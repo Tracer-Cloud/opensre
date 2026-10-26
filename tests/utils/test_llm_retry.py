@@ -204,6 +204,42 @@ def test_maybe_raise_credit_exhausted_offers_provider_switch_recovery() -> None:
     assert "Anthropic console" in message
 
 
+def test_opensre_credit_exhaustion_preserves_stripe_upgrade_url() -> None:
+    upgrade_url = "https://app.opensre.dev/usage"
+    err = _FakeOpenAIAPIError(
+        "Payment required",
+        code="opensre_credits_exhausted",
+        body={
+            "message": "OpenSRE credits are exhausted",
+            "code": "opensre_credits_exhausted",
+            "upgrade_url": upgrade_url,
+        },
+    )
+
+    with pytest.raises(llm_retry.OpenSRECreditsExhaustedError) as excinfo:
+        llm_retry.maybe_raise_credit_exhausted("OpenAI", err)
+
+    assert excinfo.value.upgrade_url == upgrade_url
+    assert upgrade_url in str(excinfo.value)
+
+
+def test_opensre_credit_exhaustion_rejects_unsafe_upgrade_url() -> None:
+    err = _FakeOpenAIAPIError(
+        "Payment required",
+        code="opensre_credits_exhausted",
+        body={
+            "code": "opensre_credits_exhausted",
+            "upgrade_url": "javascript:alert(1)",
+        },
+    )
+
+    with pytest.raises(llm_retry.OpenSRECreditsExhaustedError) as excinfo:
+        llm_retry.maybe_raise_credit_exhausted("OpenAI", err)
+
+    assert excinfo.value.upgrade_url is None
+    assert "javascript:" not in str(excinfo.value)
+
+
 # --------------------------------------------------------------------------- #
 # retry_on_rate_limit — control flow                                          #
 # --------------------------------------------------------------------------- #

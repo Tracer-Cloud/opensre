@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from config.scope_handoff import hand_off_scope
 from infrastructure.scheduling.task_types import TaskKind
 from tools.interactive_shell.shared import (
     ExecutionPolicyResult,
@@ -38,24 +39,34 @@ READ_ONLY_OPENSRE_SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "health",
         "version",
+        "--version",
+        "--help",
         "list",
         "status",
         "show",
     }
 )
 
-INVESTIGATION_OPENSRE_SUBCOMMANDS: frozenset[str] = frozenset({"investigate"})
+# ``opensre integrations <sub>`` — probes and listings must not background, or
+# the action turn ends on "started — task …" while verify still runs and the
+# plan hangs on Invoking tools with "1 task running".
+_READ_ONLY_INTEGRATIONS_SUBCOMMANDS: frozenset[str] = frozenset(
+    {
+        "list",
+        "show",
+        "verify",
+        "status",
+    }
+)
 
 
 class OpensreCommandClass(StrEnum):
     READ_ONLY = "read_only"
-    INVESTIGATION = "investigation"
     MUTATING = "mutating"
 
 
 class OpensreExecutionMode(StrEnum):
     FOREGROUND = "foreground"
-    FOREGROUND_STREAMING = "foreground_streaming"
     BACKGROUND = "background"
 
 
@@ -81,6 +92,7 @@ class OpensreRunResult:
     outcome: OpensreRunOutcome
     attempted: bool
     display_command: str | None = None
+    foreground: ForegroundCliResult | None = None
 
 
 @dataclass(frozen=True)
@@ -139,27 +151,25 @@ def interactive_wizard_handoff_response_text(command_str: str) -> str:
     )
 
 
+def _integrations_subcommand(tokens: list[str]) -> str | None:
+    """Return the integrations subcommand, or ``None`` when not an integrations call."""
+    if not tokens or tokens[0].lower() != "integrations":
+        return None
+    return tokens[1].lower() if len(tokens) > 1 else "list"
+
+
+def _is_read_only_integrations(tokens: list[str]) -> bool:
+    sub = _integrations_subcommand(tokens)
+    return sub is not None and sub in _READ_ONLY_INTEGRATIONS_SUBCOMMANDS
+
+
 def classify_opensre_command(tokens: list[str]) -> str:
     first_token = tokens[0].lower()
     if first_token in READ_ONLY_OPENSRE_SUBCOMMANDS:
         return OpensreCommandClass.READ_ONLY.value
-    if first_token in INVESTIGATION_OPENSRE_SUBCOMMANDS:
-        return OpensreCommandClass.INVESTIGATION.value
-    if first_token == "fleet":
-        subcommand = tokens[1].lower() if len(tokens) > 1 else "list"
-        if subcommand in {"list"}:
-            return OpensreCommandClass.READ_ONLY.value
-        if subcommand == "scan" and "--register" not in tokens[2:]:
-            return OpensreCommandClass.READ_ONLY.value
+    if _is_read_only_integrations(tokens):
+        return OpensreCommandClass.READ_ONLY.value
     return OpensreCommandClass.MUTATING.value
-
-
-def opensre_confirmation_reason(tokens: list[str]) -> str:
-    if tokens[:2] == ["fleet", "scan"] and "--register" in tokens[2:]:
-        return "register discovered local AI-agent processes"
-    if tokens and tokens[0] == "fleet":
-        return "this updates the local AI-agent registry"
-    return "this opensre subcommand may change local config or infrastructure"
 
 
 def build_opensre_execution_plan(tokens: list[str]) -> OpensreExecutionPlan:
@@ -170,16 +180,14 @@ def build_opensre_execution_plan(tokens: list[str]) -> OpensreExecutionPlan:
     execution_mode = OpensreExecutionMode.BACKGROUND
     if first_token in READ_ONLY_OPENSRE_SUBCOMMANDS:
         execution_mode = OpensreExecutionMode.FOREGROUND
-    elif first_token == "fleet":
-        subcommand = tokens[1].lower() if len(tokens) > 1 else "list"
-        if subcommand == "watch":
-            execution_mode = OpensreExecutionMode.FOREGROUND_STREAMING
-        elif subcommand in {"list", "register", "forget", "scan"}:
-            execution_mode = OpensreExecutionMode.FOREGROUND
+    elif _is_read_only_integrations(tokens):
+        # Wait for verify/list/show so the tool observation includes pass/fail
+        # and the plan can leave Invoking tools instead of parking on a task id.
+        execution_mode = OpensreExecutionMode.FOREGROUND
 
     requires_confirmation = classification is OpensreCommandClass.MUTATING
     reason = (
-        opensre_confirmation_reason([token.lower() for token in tokens])
+        "this opensre subcommand may change local config or infrastructure"
         if requires_confirmation
         else None
     )
@@ -195,8 +203,6 @@ def to_tool_execution_plan(plan: OpensreExecutionPlan) -> ToolExecutionPlan:
     mode = ToolExecutionMode.BACKGROUND
     if plan.execution_mode is OpensreExecutionMode.FOREGROUND:
         mode = ToolExecutionMode.FOREGROUND
-    elif plan.execution_mode is OpensreExecutionMode.FOREGROUND_STREAMING:
-        mode = ToolExecutionMode.FOREGROUND_STREAMING
     if not plan.requires_confirmation:
         policy = ExecutionPolicyResult(
             verdict="allow",
@@ -210,7 +216,7 @@ def to_tool_execution_plan(plan: OpensreExecutionPlan) -> ToolExecutionPlan:
             verdict="ask",
             tool_type="cli_command",
             reason=plan.confirmation_reason,
-            hint="Use a read-only subcommand (health, version, list, status, show)",
+            hint="Use a read-only subcommand (health, version, integrations verify/list/show)",
             shell_classification=plan.classification.value,
         )
     return ToolExecutionPlan(
@@ -225,7 +231,14 @@ def run_foreground_cli(
     argv_list: list[str],
     *,
     timeout_seconds: int = SHELL_COMMAND_TIMEOUT_SECONDS,
+    env: dict[str, str] | None = None,
 ) -> ForegroundCliResult:
+    """Run an opensre CLI child to completion, capturing both streams.
+
+    Pass the presenter's ``subprocess_env()`` as ``env``: the child's stdout is
+    a pipe, so without ``COLUMNS`` Rich renders at 80 and ellipsizes table cells
+    the action agent needs whole (task ids).
+    """
     try:
         completed = subprocess.run(
             argv_list,
@@ -235,6 +248,7 @@ def run_foreground_cli(
             errors="replace",
             timeout=timeout_seconds,
             check=False,
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         return ForegroundCliResult(
@@ -262,17 +276,6 @@ def run_foreground_cli(
     )
 
 
-def spawn_streaming_cli(argv_list: list[str]) -> subprocess.Popen[str]:
-    return subprocess.Popen(
-        argv_list,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-
-
 def _print_wizard_handoff(presenter: SubprocessPresenter, command_str: str) -> None:
     presenter.print(
         f"[warning]`opensre {command_str}` is an interactive wizard that needs a full terminal.[/]"
@@ -282,14 +285,25 @@ def _print_wizard_handoff(presenter: SubprocessPresenter, command_str: str) -> N
     )
 
 
+def _child_env(presenter: SubprocessPresenter) -> dict[str, str]:
+    """The presenter's child environment plus the turn's organization scope."""
+    env = presenter.subprocess_env()
+    hand_off_scope(env)
+    return env
+
+
 def _run_foreground_via_presenter(
     presenter: SubprocessPresenter,
     *,
     argv_list: list[str],
     display_command: str,
-) -> None:
+) -> ForegroundCliResult:
     presenter.print_bold_command(display_command)
-    result = run_foreground_cli(argv_list, timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS)
+    result = run_foreground_cli(
+        argv_list,
+        timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS,
+        env=_child_env(presenter),
+    )
     if result.start_failed:
         if result.start_error:
             presenter.report_exception(
@@ -298,7 +312,7 @@ def _run_foreground_via_presenter(
             )
             presenter.print_error(f"failed to start: {result.start_error}")
         presenter.session.record("cli_command", display_command, ok=False)
-        return
+        return result
     presenter.print_command_output(result.stdout)
     presenter.print_command_output(result.stderr, style=_ERROR_STYLE)
     if result.timed_out:
@@ -306,45 +320,22 @@ def _run_foreground_via_presenter(
             f"[error]command timed out after {SHELL_COMMAND_TIMEOUT_SECONDS} seconds[/]"
         )
         presenter.session.record("cli_command", display_command, ok=False)
-        return
+        return result
     ok = result.exit_code == 0
     if not ok:
         presenter.print(f"[error]command failed (exit {result.exit_code}):[/]")
     presenter.session.record("cli_command", display_command, ok=ok)
 
-
-def _run_streaming_via_presenter(
-    presenter: SubprocessPresenter,
-    *,
-    argv_list: list[str],
-    display_command: str,
-) -> None:
-    presenter.print_bold_command(display_command)
-    try:
-        proc = spawn_streaming_cli(argv_list)
-    except Exception as exc:  # noqa: BLE001
-        presenter.report_exception(
-            exc,
-            context="surfaces.interactive_shell.opensre_cli.start",
-        )
-        presenter.print_error(f"failed to start: {exc}")
-        presenter.session.record("cli_command", display_command, ok=False)
-        return
-    if proc.stdout is not None:
-        for line in proc.stdout:
-            presenter.print_command_output(line)
-    code = proc.wait()
-    ok = code == 0
-    if not ok:
-        presenter.print(f"[error]command failed (exit {code}):[/]")
-    presenter.session.record("cli_command", display_command, ok=ok)
+    return result
 
 
 def run_opensre_cli_command_result(
     args: str,
     presenter: SubprocessPresenter,
+    *,
+    prefer_foreground: bool = False,
 ) -> OpensreRunResult:
-    """Run an opensre subcommand (not agent) via the injected presenter."""
+    """Run a CLI command; headless hosts may request bounded foreground execution."""
     try:
         tokens = shlex.split(args)
     except ValueError:
@@ -388,26 +379,17 @@ def run_opensre_cli_command_result(
         )
 
     argv_list = build_opensre_cli_argv(tokens)
-    if execution_plan.execution_mode in {
-        ToolExecutionMode.FOREGROUND,
-        ToolExecutionMode.FOREGROUND_STREAMING,
-    }:
-        if execution_plan.execution_mode is ToolExecutionMode.FOREGROUND_STREAMING:
-            _run_streaming_via_presenter(
-                presenter,
-                argv_list=argv_list,
-                display_command=display_command,
-            )
-        else:
-            _run_foreground_via_presenter(
-                presenter,
-                argv_list=argv_list,
-                display_command=display_command,
-            )
+    if prefer_foreground or execution_plan.execution_mode is ToolExecutionMode.FOREGROUND:
+        foreground = _run_foreground_via_presenter(
+            presenter,
+            argv_list=argv_list,
+            display_command=display_command,
+        )
         return OpensreRunResult(
             outcome=OpensreRunOutcome.EXECUTED_FOREGROUND,
             attempted=True,
             display_command=display_command,
+            foreground=foreground,
         )
 
     presenter.session.record("cli_command", display_command)
@@ -432,7 +414,6 @@ def run_opensre_cli_command(args: str, presenter: SubprocessPresenter) -> bool:
 __all__ = [
     "ForegroundCliResult",
     "INTERACTIVE_OPENSRE_COMMAND_PATHS",
-    "INVESTIGATION_OPENSRE_SUBCOMMANDS",
     "OPENSRE_BLOCKED_SUBCOMMANDS",
     "READ_ONLY_OPENSRE_SUBCOMMANDS",
     "OpensreCommandClass",
@@ -441,16 +422,13 @@ __all__ = [
     "OpensreRunOutcome",
     "OpensreRunResult",
     "_run_foreground_via_presenter",
-    "_run_streaming_via_presenter",
     "build_opensre_cli_argv",
     "build_opensre_execution_plan",
     "classify_opensre_command",
     "interactive_wizard_handoff_response_text",
     "is_interactive_wizard",
-    "opensre_confirmation_reason",
     "run_foreground_cli",
     "run_opensre_cli_command",
     "run_opensre_cli_command_result",
-    "spawn_streaming_cli",
     "to_tool_execution_plan",
 ]

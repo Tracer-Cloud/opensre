@@ -1,6 +1,6 @@
 """The host-capability seams state what they return, and cannot drift back to ``Any``.
 
-These four seams carry a capability from a host down to a tool. ``core`` calls
+These seams carry a capability from a host down to a tool. ``core`` calls
 each factory and hands the result straight to the tool context without reading
 an attribute, so the return is ``object``: honest about what ``core`` knows, and
 still enough for a type checker to reject a typo.
@@ -15,7 +15,6 @@ from __future__ import annotations
 import typing
 
 from core.agent_harness.ports import (
-    InvestigationPortsFactory,
     LlmFactory,
     LlmProviderPortsFactory,
     SlashPortsFactory,
@@ -25,7 +24,6 @@ from core.llm.types import AgentLLMClient
 
 #: The seams that hand a host capability to a tool. ``core`` forwards these.
 _FORWARDED_SEAMS = {
-    "InvestigationPortsFactory": InvestigationPortsFactory,
     "LlmProviderPortsFactory": LlmProviderPortsFactory,
     "SlashPortsFactory": SlashPortsFactory,
     "TaskCancelPortsFactory": TaskCancelPortsFactory,

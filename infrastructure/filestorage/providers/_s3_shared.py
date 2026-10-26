@@ -17,10 +17,10 @@ from typing import TYPE_CHECKING, Any
 from botocore.exceptions import BotoCoreError, ClientError
 
 from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.enums import BucketExposure
 from infrastructure.filestorage.errors import RemoteSyncUnavailableError
 from infrastructure.filestorage.exposure import PublicAccessStatus
-from infrastructure.filestorage.ports import RemoteObject
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

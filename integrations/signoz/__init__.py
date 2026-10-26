@@ -140,6 +140,39 @@ def signoz_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     }
 
 
+def signoz_count_label(count: int, requested_limit: int) -> str:
+    """Format a list count, appending "+" when the page may be truncated.
+
+    Every SigNoz query tool (logs/metrics/traces) applies its ``limit`` as
+    the query spec's own row cap (``_clamp_limit`` in
+    ``integrations/signoz/client.py``) and reports ``total`` as
+    ``len(<rows>)`` from that already-capped response -- there is no
+    separate unbounded total. A returned count that reaches the requested
+    limit may not be every matching row.
+    """
+    effective_limit = max(requested_limit, 1)
+    return f"{count}+" if count >= effective_limit else str(count)
+
+
+def signoz_effective_limit(
+    output: dict[str, Any], tool_input: dict[str, Any], default: int = 50
+) -> int:
+    """Resolve the row cap that actually bounded a SigNoz query result.
+
+    ``_clamp_limit`` in ``integrations/signoz/client.py`` clamps the
+    caller's requested ``limit`` down to ``SigNozConfig.max_results``, a
+    config-level ceiling the tool caller never sees -- comparing a count
+    against the *requested* limit alone can miss truncation the config
+    imposed at a lower bound. The client's own query methods echo the
+    ``effective_limit`` they actually used back in ``output``; prefer that,
+    and fall back to the caller's requested ``limit`` only when it's absent
+    (e.g. a pluggable ``signoz_backend`` that doesn't report it).
+    """
+    if "effective_limit" in output:
+        return int(output["effective_limit"])
+    return int(tool_input.get("limit", default))
+
+
 def classify(credentials: dict[str, Any], record_id: str) -> tuple[SigNozConfig | None, str | None]:
     try:
         cfg = build_signoz_config(

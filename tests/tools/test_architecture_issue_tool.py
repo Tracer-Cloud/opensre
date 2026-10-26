@@ -67,6 +67,8 @@ def test_architecture_tools_are_action_surface_only() -> None:
 
 def test_architecture_clone_repo_local_path(tmp_path: Path) -> None:
     result = architecture_clone_repo(
+        github_connection_origin="webapp",
+        github_token="app-token",
         owner="org",
         repo="repo",
         local_path=str(tmp_path),
@@ -86,54 +88,33 @@ def test_architecture_clone_repo_prefers_injected_token_over_env(
     )
 
     # Act
-    architecture_clone_repo(owner="org", repo="repo", github_token="store-token")
+    architecture_clone_repo(
+        github_connection_origin="webapp", owner="org", repo="repo", github_token="store-token"
+    )
 
     # Assert: the configured-source token reaches the clone, not the env token
     assert clone_mock.call_args.kwargs["token"] == "store-token"
 
 
-def test_architecture_clone_repo_falls_back_to_env_token(
+def test_architecture_clone_repo_env_token_does_not_allow_a_clone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Arrange: no injected token, env-only local setup
     monkeypatch.setenv("GITHUB_TOKEN", "env-token")
-    monkeypatch.delenv("GH_TOKEN", raising=False)
-    monkeypatch.delenv("GITHUB_MCP_AUTH_TOKEN", raising=False)
-    clone_mock = MagicMock(side_effect=WorkspaceError("stop before network"))
+    clone_mock = MagicMock(side_effect=AssertionError("unauthorized clone"))
     monkeypatch.setattr(
         "integrations.github.tools.architecture_issue_tool.tool.clone_github_repo", clone_mock
     )
-
-    # Act
-    architecture_clone_repo(owner="org", repo="repo")
-
-    # Assert: the env token is used for the clone
-    assert clone_mock.call_args.kwargs["token"] == "env-token"
-
-
-def test_architecture_clone_repo_no_token_clones_unauthenticated(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Arrange: neither an injected token nor env vars
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.delenv("GH_TOKEN", raising=False)
-    monkeypatch.delenv("GITHUB_MCP_AUTH_TOKEN", raising=False)
-    clone_mock = MagicMock(side_effect=WorkspaceError("stop before network"))
-    monkeypatch.setattr(
-        "integrations.github.tools.architecture_issue_tool.tool.clone_github_repo", clone_mock
-    )
-
-    # Act
-    architecture_clone_repo(owner="org", repo="repo")
-
-    # Assert: clone proceeds with no token (public-repo path)
-    assert clone_mock.call_args.kwargs["token"] is None
+    result = architecture_clone_repo(owner="org", repo="repo")
+    assert result["work_outcome"]["status"] == "blocked"
+    clone_mock.assert_not_called()
 
 
 def test_architecture_cleanup_refuses_outside_path(tmp_path: Path) -> None:
-    result = architecture_cleanup_repo(workspace_root=str(tmp_path))
+    result = architecture_cleanup_repo(
+        github_connection_origin="webapp", github_token="app-token", workspace_root=str(tmp_path)
+    )
     assert result["ok"] is False
-    assert "outside" in result["error"]
+    assert "not an audit directory" in result["error"]
 
 
 def test_sanitize_repo_name() -> None:
@@ -179,6 +160,8 @@ def test_architecture_save_observations_tool_uses_explicit_session(
         partial(save_architecture_observations, home_dir=tmp_path),
     )
     result = architecture_save_observations(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo_name="opensre",
         observations="- placement: tools under wrong tree",
         session_id="ae4c7934-747e-4ffc-9f62-3143cd1ad5af",
@@ -196,7 +179,7 @@ def test_architecture_save_observations_tool_reads_session_from_context(
 ) -> None:
     from core.agent_harness.tools.tool_context import (
         ACTION_TOOL_CONTEXT_RESOURCE_KEY,
-        ActionToolContext,
+        ActionToolScope,
     )
     from core.tool.contracts import AgentToolContext
 
@@ -208,13 +191,15 @@ def test_architecture_save_observations_tool_reads_session_from_context(
     context = AgentToolContext(
         resolved_integrations={},
         resources={
-            ACTION_TOOL_CONTEXT_RESOURCE_KEY: ActionToolContext(
+            ACTION_TOOL_CONTEXT_RESOURCE_KEY: ActionToolScope(
                 session=session,
                 console=SimpleNamespace(),
             )
         },
     )
     result = architecture_save_observations(
+        github_connection_origin="webapp",
+        github_token="app-token",
         repo_name="envoy",
         observations="- size: abi.h (14255)",
         context=context,
@@ -222,3 +207,76 @@ def test_architecture_save_observations_tool_reads_session_from_context(
     assert result["ok"] is True
     assert result["session_id"] == "ctx-session-id"
     assert Path(result["path"]).exists()
+
+
+class _CancelledTurnConsole:
+    """A console whose turn was cancelled; counts how often the tool asked."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    @property
+    def cancel_requested(self) -> bool:
+        self.reads += 1
+        return True
+
+
+def test_architecture_clone_waiting_on_a_full_heavy_work_gate_ends_with_the_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cancelled turn must not sit out the slot wait; the tool still answers with an error."""
+    from config.constants.turn_concurrency import OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV
+    from core.agent_harness.tools.tool_context import (
+        ACTION_TOOL_CONTEXT_RESOURCE_KEY,
+        ActionToolScope,
+    )
+    from core.tool.contracts import AgentToolContext
+    from infrastructure.process.turn_capacity import (
+        HEAVY_WORK_BUSY_MESSAGE,
+        process_heavy_work_gate,
+        reset_process_heavy_work_gate_for_tests,
+    )
+    from infrastructure.process.turn_capacity import heavy_work as heavy_work_module
+    from integrations.github.tools.architecture_issue_tool import repo_workspace
+
+    # Arrange: both slots held, a long wait, and a turn that has been cancelled.
+    monkeypatch.setenv(OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV, "2")
+    monkeypatch.setattr(heavy_work_module, "HEAVY_WORK_WAIT_SECONDS", 30.0)
+    workspace = tmp_path / "workspace"
+    monkeypatch.setattr(repo_workspace, "architecture_workspace_dir", lambda: workspace)
+
+    def _no_clone(**_kwargs: object) -> None:
+        pytest.fail("cloned without a heavy-work slot")
+
+    monkeypatch.setattr(repo_workspace, "_shallow_clone", _no_clone)
+    console = _CancelledTurnConsole()
+    context = AgentToolContext(
+        resolved_integrations={},
+        resources={
+            ACTION_TOOL_CONTEXT_RESOURCE_KEY: ActionToolScope(
+                session=SimpleNamespace(), console=console
+            )
+        },
+    )
+    reset_process_heavy_work_gate_for_tests()
+    gate = process_heavy_work_gate()
+    assert gate.try_acquire() and gate.try_acquire()
+
+    try:
+        # Act
+        result = architecture_clone_repo(
+            github_connection_origin="webapp",
+            github_token="app-token",
+            owner="org",
+            repo="repo",
+            ref="main",
+            context=context,
+        )
+    finally:
+        reset_process_heavy_work_gate_for_tests()
+
+    # Assert: the tool's error result, the cancel flag was consulted, and no audit dir is left.
+    assert result["ok"] is False
+    assert result["error"] == HEAVY_WORK_BUSY_MESSAGE
+    assert console.reads > 0
+    assert list(workspace.iterdir()) == []

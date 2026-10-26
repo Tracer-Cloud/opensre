@@ -7,6 +7,10 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import TelegramBotConfig
+from integrations.telegram.credentials import TelegramCredentials, load_credentials_from_env
+from integrations.telegram.delivery import post_telegram_message
+
+__all__ = ["classify", "TelegramCredentials", "load_credentials_from_env", "post_telegram_message"]
 
 logger = logging.getLogger(__name__)
 

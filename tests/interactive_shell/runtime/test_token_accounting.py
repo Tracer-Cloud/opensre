@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import io
 import time
-from collections.abc import Iterator
-from typing import Any
-
-from rich.console import Console
 
 from core.agent_harness.accounting.token_accounting import (
     build_llm_run_info,
@@ -15,10 +10,8 @@ from core.agent_harness.accounting.token_accounting import (
     format_token_total,
     record_llm_turn,
 )
-from core.agent_harness.ports import AnswerRequest
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.streaming import _CHARS_PER_TOKEN
-from tests.interactive_shell.shell_answer_gather import stream_shell_answer
 
 
 def test_estimate_tokens_uses_chars_per_token_ratio() -> None:
@@ -102,8 +95,10 @@ def test_build_llm_run_info_records_tokens_and_metadata() -> None:
     )
     assert run.model == "claude-test"
     assert run.provider == "anthropic"
-    assert run.input_tokens == 10
-    assert run.output_tokens == 5
+    assert run.input_tokens is None
+    assert run.output_tokens is None
+    assert session.tokens.totals["input_estimated"] == 10
+    assert session.tokens.totals["output_estimated"] == 5
     assert run.response_text == "b" * 20
     assert run.latency_ms is not None and run.latency_ms >= 0
 
@@ -125,24 +120,31 @@ def test_record_token_usage_skips_zero_counts() -> None:
     assert session.tokens.call_count == 0
 
 
-class _FakeLLMClient:
-    def __init__(self, content: str) -> None:
-        self._content = content
-        self.last_prompt: str | None = None
+def test_provider_usage_tap_records_each_model_call_and_skips_unreported_ones() -> None:
+    # Arrange: a session and the runtime-event tap wrapping an inner observer.
+    from core.agent_harness.accounting.token_accounting import tap_provider_usage
+    from core.agent_harness.session.session_core import SessionCore
+    from core.events import ProviderRequestEndEvent
 
-    def invoke_stream(self, prompt: object) -> Iterator[str]:
-        from integrations.llm_cli.text import flatten_messages_to_prompt
+    session = SessionCore()
+    seen: list[object] = []
+    callback = tap_provider_usage(seen.append, session)
 
-        self.last_prompt = flatten_messages_to_prompt(prompt)
-        yield self._content
+    # Act: two model calls with usage, one without, and an unrelated event.
+    callback(
+        ProviderRequestEndEvent(
+            iteration=1, has_tool_calls=True, data={"input_tokens": 120, "output_tokens": 30}
+        )
+    )
+    callback(ProviderRequestEndEvent(iteration=2, has_tool_calls=False, data={}))
+    callback(
+        ProviderRequestEndEvent(
+            iteration=3, has_tool_calls=False, data={"input_tokens": 200, "output_tokens": 50}
+        )
+    )
 
-
-def test_shell_answer_records_session_token_usage(monkeypatch: Any) -> None:
-    client = _FakeLLMClient("assistant reply")
-    monkeypatch.setattr("core.llm.factory.get_llm", lambda _role: client)
-    session = Session()
-    console = Console(file=io.StringIO(), force_terminal=False)
-    stream_shell_answer("hello", session, console, request=AnswerRequest())
-    assert session.tokens.totals["input"] > 0
-    assert session.tokens.totals["output"] == estimate_tokens("assistant reply")
-    assert session.tokens.has_estimates is True
+    # Assert: exact counts land per call, nothing estimated, every event still forwarded.
+    assert session.tokens.io_totals() == (320, 80)
+    assert session.tokens.call_count == 2
+    assert session.tokens.has_estimates is False
+    assert len(seen) == 3

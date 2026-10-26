@@ -10,6 +10,25 @@ ROOT = Path(__file__).resolve().parents[3]
 _VERSION_LINE = re.compile(r'(?m)^version = "[^"]+"')
 
 
+def canonical_release_version(version: str) -> str:
+    """Return the PEP 440 canonical form hatchling writes into dist metadata.
+
+    All-digit local segments (a 7-char SHA that happens to be numeric, e.g.
+    ``0273802``) lose their leading zeros, so ``--version`` reports
+    ``+main.273802``. The release smoke test and release notes must use this
+    same string.
+    """
+    stripped = version.strip().removeprefix("v")
+    if "+" not in stripped:
+        return stripped
+    public, local = stripped.split("+", 1)
+    parts = [
+        str(int(part)) if part.isdigit() else part.lower()
+        for part in local.replace("_", ".").replace("-", ".").split(".")
+    ]
+    return f"{public}+{'.'.join(parts)}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -17,7 +36,7 @@ def main() -> None:
     group.add_argument("--version", help="Explicit version, e.g. 0.1.2026.6.26+main.abc1234")
     args = parser.parse_args()
 
-    version = (args.version or args.tag).strip().removeprefix("v")
+    version = canonical_release_version(args.version or args.tag)
     pyproject = ROOT / "pyproject.toml"
     updated, count = _VERSION_LINE.subn(
         f'version = "{version}"',

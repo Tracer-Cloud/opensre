@@ -19,6 +19,8 @@ def test_is_available_requires_owner_repo_path() -> None:
         rt.is_available(
             {
                 "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
                     "connection_verified": True,
                     "owner": "org",
                     "repo": "repo",
@@ -29,7 +31,17 @@ def test_is_available_requires_owner_repo_path() -> None:
         is True
     )
     assert (
-        rt.is_available({"github": {"connection_verified": True, "owner": "org", "repo": "repo"}})
+        rt.is_available(
+            {
+                "github": {
+                    "connection_origin": "webapp",
+                    "auth_token": "app-token",
+                    "connection_verified": True,
+                    "owner": "org",
+                    "repo": "repo",
+                }
+            }
+        )
         is False
     )
     assert rt.is_available({}) is False
@@ -40,17 +52,6 @@ def test_extract_params_maps_fields() -> None:
     sources = mock_agent_state()
     params = rt.extract_params(sources)
     assert params["path"] == "src/main.py"
-
-
-def test_run_returns_unavailable_when_no_config() -> None:
-    with patch("integrations.github.helpers.github_mcp_config_from_env", return_value=None):
-        result = get_github_file_contents(owner="org", repo="repo", path="README.md")
-    assert result == {
-        "source": "github",
-        "available": False,
-        "error": "GitHub MCP integration is not configured.",
-        "file": {},
-    }
 
 
 def test_run_happy_path() -> None:
@@ -74,6 +75,7 @@ def test_run_happy_path() -> None:
         ),
     ):
         result = get_github_file_contents(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             path="main.py",
@@ -117,6 +119,7 @@ def test_run_falls_back_to_resource_text_when_structured_content_absent() -> Non
         ),
     ):
         result = get_github_file_contents(
+            github_connection_origin="webapp",
             owner="org",
             repo="repo",
             path="main.py",

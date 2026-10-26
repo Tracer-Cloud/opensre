@@ -5,7 +5,8 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterable
 
-from core.domain.types.tools import ToolSurface
+from config.constants.tooling import ToolBlockedBy
+from core.agent_harness.tools import registered_single_turn_tool_names
 from core.tool import (
     BeforeToolCallResult,
     RuntimeTool,
@@ -13,7 +14,6 @@ from core.tool import (
     ToolExecutionHooks,
     ToolExecutionRequest,
 )
-from infrastructure.harness_ports import get_surface_tool_map
 
 _GATED_SIDE_EFFECTS = frozenset({SideEffectLevel.MUTATING, SideEffectLevel.EXTERNAL})
 
@@ -49,10 +49,7 @@ def approval_required(tool: RuntimeTool) -> bool:
 
 def registered_ask_tool_names() -> frozenset[str]:
     """Return every registered tool name the ask action or gather phases can reach."""
-    names: set[str] = set()
-    for surface in (ToolSurface.ACTION, ToolSurface.INVESTIGATION):
-        names.update(get_surface_tool_map(surface))
-    return frozenset(names)
+    return registered_single_turn_tool_names()
 
 
 def unknown_allowed_tools(allowed_tools: Iterable[str]) -> tuple[str, ...]:
@@ -88,7 +85,7 @@ def build_approval_hooks(
                 f"--allowed-tool {tool_name}, or use "
                 "--dangerously-bypass-approvals in a trusted environment."
             ),
-            metadata={"ask_approval": "denied"},
+            metadata={"ask_approval": "denied", ToolBlockedBy.APPROVAL_DECLINED: True},
         )
 
     return ToolExecutionHooks(before_tool_call=before_tool_call)

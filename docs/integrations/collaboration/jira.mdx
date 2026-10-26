@@ -1,0 +1,120 @@
+---
+title: "Jira"
+description: "Connect Jira so OpenSRE can create and update incident tickets automatically"
+---
+
+## Overview
+
+OpenSRE connects to Jira to create incident tickets, update existing issues, and add the agent's findings as comments — keeping your team's workflow in sync.
+
+## Prerequisites
+
+- Jira Cloud account (Jira Server/Data Center also supported)
+- API token and project access
+
+## Setup
+
+There is no dedicated `opensre integrations setup jira` command today. Configure Jira through environment variables or the persistent store.
+
+### Option 1: Environment variables
+
+```bash
+JIRA_BASE_URL=https://your-org.atlassian.net
+JIRA_EMAIL=you@example.com
+JIRA_API_TOKEN=your-api-token
+JIRA_PROJECT_KEY=OPS
+```
+
+| Variable | Description |
+| --- | --- |
+| `JIRA_BASE_URL` | **Required.** Your Jira instance URL (for example `https://your-org.atlassian.net`) |
+| `JIRA_EMAIL` | **Required.** Email address associated with the API token |
+| `JIRA_API_TOKEN` | **Required.** Jira API token |
+| `JIRA_PROJECT_KEY` | Default project key for new issues (for example `OPS`, `SRE`) |
+
+### Option 2: Persistent store
+
+Add to `~/.opensre/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "jira-prod",
+      "service": "jira",
+      "status": "active",
+      "credentials": {
+        "base_url": "https://your-org.atlassian.net",
+        "email": "you@example.com",
+        "api_token": "your-api-token",
+        "project_key": "OPS"
+      }
+    }
+  ]
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `base_url` | **Required.** Your Jira instance URL |
+| `email` | **Required.** Email address associated with the API token |
+| `api_token` | **Required.** Jira API token |
+| `project_key` | **Required** for create flows. Default project key for new issues |
+
+## Credentials
+
+### Creating a Jira API token
+
+1. Go to [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+2. Click **Create API token**
+3. Give it a label (for example `opensre`)
+4. Copy the token
+
+<Info>
+For Jira Data Center/Server, use a personal access token from **Profile** → **Personal Access Tokens** instead.
+</Info>
+
+Auth uses REST API v3 with Basic auth (email + API token). Issue descriptions use Atlassian Document Format (ADF) on create.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `jira_create_issue` | Create an issue in the configured (or specified) project |
+| `jira_add_comment` | Add a comment with investigation findings |
+| `jira_issue_detail` | Fetch details for an existing issue |
+| `jira_search_issues` | Search issues with JQL |
+
+`project_key` is required for create (from config or the tool call).
+
+## Verify
+
+```bash
+opensre integrations verify jira
+```
+
+Expected output on success:
+
+```
+Service: jira
+Status:  passed
+Detail:  Configured for Jira at https://your-org.atlassian.net.
+```
+
+CLI verify is a **configuration-presence** check (`base_url`, `email`, and `api_token` are all set) rather than a live API call. The onboard wizard performs a live validation when you configure interactively.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check email and API token combination |
+| **404 Not Found** | Verify `base_url` (include `https://`) and `project_key` |
+| **403 Forbidden** | The user may lack permission to create issues in the project |
+| **Create fails without project** | Set `JIRA_PROJECT_KEY` / store `project_key`, or pass a project key on the tool call |
+
+## Security
+
+- Use a **dedicated Jira user** for OpenSRE with only the permissions it needs (create and comment on issues).
+- Prefer storing credentials in `~/.opensre/integrations.json` or a secret manager — not in source control.
+- Rotate the API token periodically.

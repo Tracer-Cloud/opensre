@@ -5,6 +5,8 @@ from __future__ import annotations
 ERR_INVALID_INPUT = "invalid_input"
 ERR_GITHUB_UNAVAILABLE = "github_unavailable"
 ERR_ALERT_NOT_FOUND = "alert_not_found"
+#: Automatic selection found nothing left to fix; a verified no-op, not a failure.
+ERR_NO_ELIGIBLE_ALERT = "no_eligible_alert"
 ERR_NO_AUTOFIXABLE_FINDING = "no_autofixable_finding"
 ERR_UNSUPPORTED_ALERT_TYPE = "unsupported_alert_type"
 ERR_REPO_SCOPE = "repo_scope_unresolved"

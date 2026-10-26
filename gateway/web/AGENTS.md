@@ -1,7 +1,7 @@
 # gateway/web/ — web surface
 
-FastAPI app for health probes, alert intake, and investigations.
-Not a chat transport — does not bind a turn handler or turn output.
+FastAPI app for health probes and alert intake.
+Not a chat transport — does not bind a turn runner or turn output.
 
 | May import | Must not |
 |------------|----------|
@@ -17,16 +17,8 @@ Pinned by `gateway/tests/test_package_borders.py`.
 Importing `gateway.web.webapp` (uvicorn or in-process via
 `serve_webapp_in_thread`) runs `configure_process(WEB_PROFILE)` — env, Sentry
 (`webapp`), and harness adapters. That is intentional so `MODE=web` and
-embedded web both register `AgentSession.investigate` without a CLI/manager boot. Do
+embedded web boot the same way without a CLI/manager boot. Do
 **not** add a second harness-registration site in `web/`; adapters stay in
 `bootstrap.adapters` only. In a full gateway process, `GATEWAY_PROFILE` already
 ran; `WEB_PROFILE` may still run (separate idempotency key) — steps must stay
 safe to re-enter, not invent a divergent registry.
-
-## Capacity
-
-`POST /investigate` and `InvestigationWorker` take
-:func:`~infrastructure.turn_host.concurrency.process_turn_gate` — the same
-process gate as chat/scheduler (`OPENSRE_SIZE_PROFILE`). Sync HTTP
-`try_acquire` → 503 when full; the worker `acquire`s (blocking) after claim.
-Capacity is process gate + transport pools + Fargate fleet (same rules as the gateway package).

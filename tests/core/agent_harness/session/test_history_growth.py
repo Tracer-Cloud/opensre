@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.session.persistence.ports import SessionStore
+from core.agent_harness.session.persistence.contracts import SessionStore
 from core.agent_harness.session.session_core import RESPONSE_TEXT_WINDOW, SessionCore
 
 

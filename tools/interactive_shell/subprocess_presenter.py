@@ -15,7 +15,7 @@ import threading
 from typing import Any
 
 from tools.interactive_shell.shared import ExecutionPolicyResult
-from tools.interactive_shell.subprocess import subprocess_env_with_width
+from tools.interactive_shell.subprocess import headless_subprocess_env
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class HeadlessSubprocessPresenter:
         log.exception("subprocess exception (%s)", context, exc_info=exc)
 
     def subprocess_env(self) -> dict[str, str]:
-        return subprocess_env_with_width(columns=120)
+        return headless_subprocess_env()
 
     def start_task_output_streams(
         self,

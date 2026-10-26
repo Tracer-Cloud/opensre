@@ -28,14 +28,10 @@ Driving the agent from Python instead of the CLI::
         print(result.primary_response_text)
     follow = session.chat("what should we check next?")  # same agent, next turn
 
-    report = session.investigate({"alert_name": "HighLatency"})
-    print(report.report)
-
 ``configure_process`` comes first and is what registers the harness adapters
-tools resolve through (and the investigation payload runner);
-``AgentSession.start()`` only loads the environment, so on its own the agent
-starts but no tool is available. It cannot self-bootstrap — ``core`` sits below
-``bootstrap`` in the layer contract, so the caller wires it.
+tools resolve through; ``AgentSession.start()`` only loads the environment, so
+on its own the agent starts but no tool is available. It cannot self-bootstrap —
+``core`` sits below ``bootstrap`` in the layer contract, so the caller wires it.
 ``EMBEDDED_PROFILE`` deliberately leaves Sentry and LLM preloading to the host
 process.
 
@@ -47,7 +43,7 @@ sink, a REPL console — build a ``HeadlessAgent`` (or
 ``DefaultHeadlessBuild(...).agent(...)``) and call ``attach_agent``, then ``chat``.
 
 Construct **one** agent per logical session (or scheduled loop), then many
-``chat`` / ``investigate`` turns — do not rebuild every message. Gateway does
+``chat`` turns — do not rebuild every message. Gateway does
 this via ``SessionAgentPool`` + ``bind_turn``. There is no
 ``dispatch_message_to_headless_agent`` free function, and no ``AgentHarness``
 alias — ``AgentSession`` is the only name.

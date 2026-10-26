@@ -15,34 +15,34 @@ def apply_guardrails_to_messages(
     content (e.g. multimodal blocks) is passed through unchanged.
     Returns inputs unchanged when the engine is inactive.
     """
-    from infrastructure.safety.guardrails.engine import get_guardrail_engine
+    from infrastructure.safety.guardrails.evaluator import get_guardrail_evaluator
 
-    engine = get_guardrail_engine()
-    if not engine.is_active:
+    evaluator = get_guardrail_evaluator()
+    if not evaluator.is_active:
         return messages, system
 
     guarded: list[dict[str, Any]] = []
     for msg in messages:
         content = msg.get("content")
         if isinstance(content, str) and content:
-            msg = {**msg, "content": engine.apply(content)}
+            msg = {**msg, "content": evaluator.apply(content)}
         guarded.append(msg)
 
-    guarded_system = engine.apply(system) if system else system
+    guarded_system = evaluator.apply(system) if system else system
     return guarded, guarded_system
 
 
 def apply_guardrails_to_text(text: str) -> str:
     """Apply active guardrails to a plain string.
 
-    Returns text unchanged when the engine is inactive.
+    Returns text unchanged when the evaluator is inactive.
     """
-    from infrastructure.safety.guardrails.engine import get_guardrail_engine
+    from infrastructure.safety.guardrails.evaluator import get_guardrail_evaluator
 
-    engine = get_guardrail_engine()
-    if not engine.is_active:
+    evaluator = get_guardrail_evaluator()
+    if not evaluator.is_active:
         return text
-    return engine.apply(text)
+    return evaluator.apply(text)
 
 
 def apply_guardrails_to_converse_payload(
@@ -52,12 +52,12 @@ def apply_guardrails_to_converse_payload(
 ) -> tuple[list[dict[str, Any]], str | None]:
     """Apply active guardrails to Bedrock Converse format messages (string or text-block content).
 
-    Returns inputs unchanged when the engine is inactive.
+    Returns inputs unchanged when the evaluator is inactive.
     """
-    from infrastructure.safety.guardrails.engine import get_guardrail_engine
+    from infrastructure.safety.guardrails.evaluator import get_guardrail_evaluator
 
-    engine = get_guardrail_engine()
-    if not engine.is_active:
+    evaluator = get_guardrail_evaluator()
+    if not evaluator.is_active:
         return messages, system
 
     guarded_messages: list[dict[str, Any]] = []
@@ -65,7 +65,7 @@ def apply_guardrails_to_converse_payload(
         role = message["role"]
         content = message.get("content", "")
         if isinstance(content, str):
-            guarded_messages.append({"role": role, "content": [{"text": engine.apply(content)}]})
+            guarded_messages.append({"role": role, "content": [{"text": evaluator.apply(content)}]})
             continue
         if not isinstance(content, list):
             guarded_messages.append(message)
@@ -76,10 +76,10 @@ def apply_guardrails_to_converse_payload(
                 blocks.append(block)
                 continue
             if "text" in block and isinstance(block["text"], str):
-                blocks.append({"text": engine.apply(block["text"])})
+                blocks.append({"text": evaluator.apply(block["text"])})
             else:
                 blocks.append(block)
         guarded_messages.append({"role": role, "content": blocks})
 
-    guarded_system = engine.apply(system) if system is not None else None
+    guarded_system = evaluator.apply(system) if system is not None else None
     return guarded_messages, guarded_system

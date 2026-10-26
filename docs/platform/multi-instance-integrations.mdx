@@ -1,0 +1,113 @@
+---
+title: "Multi-instance integrations"
+description: "Configure multiple accounts, regions, or clusters for the same provider."
+---
+
+Use multiple **named instances** when you have more than one of the same
+provider — for example prod and staging Grafana, two AWS accounts, or several
+Kubernetes clusters. Each instance can carry **tags** for filtering.
+
+Single-instance setups keep working. You do not need to change them.
+
+## Configure instances
+
+### Environment variable
+
+Set `<SERVICE>_INSTANCES` to a JSON array:
+
+```bash
+export GRAFANA_INSTANCES='[
+  {"name":"prod", "tags":{"env":"prod"}, "endpoint":"https://prod.grafana.net", "api_key":"..."},
+  {"name":"staging", "tags":{"env":"staging"}, "endpoint":"https://staging.grafana.net", "api_key":"..."}
+]'
+```
+
+Supported variables:
+
+| Variable | Provider |
+| --- | --- |
+| `GRAFANA_INSTANCES` | Grafana |
+| `DD_INSTANCES` | Datadog |
+| `GROUNDCOVER_INSTANCES` | Groundcover |
+| `HONEYCOMB_INSTANCES` | Honeycomb |
+| `CORALOGIX_INSTANCES` | Coralogix |
+| `AWS_INSTANCES` | AWS |
+| `ARGOCD_INSTANCES` | Argo CD |
+| `SPLUNK_INSTANCES` | Splunk |
+
+When `<SERVICE>_INSTANCES` is set, the legacy single-instance variables for that
+service (for example `GRAFANA_INSTANCE_URL`, `GRAFANA_READ_TOKEN`) are ignored.
+If the JSON is invalid, OpenSRE logs a warning and falls back to the legacy
+variables.
+
+### Store file
+
+You can also define instances in `~/.opensre/integrations.json` (schema v2):
+
+```json
+{
+  "version": 2,
+  "integrations": [
+    {
+      "id": "grafana-prod-staging",
+      "service": "grafana",
+      "status": "active",
+      "instances": [
+        {"name": "prod", "tags": {"env": "prod"}, "credentials": {"endpoint": "...", "api_key": "..."}},
+        {"name": "staging", "tags": {"env": "staging"}, "credentials": {"endpoint": "...", "api_key": "..."}}
+      ]
+    }
+  ]
+}
+```
+
+Older v1 store files are migrated automatically on first load.
+
+If both the store and environment variables configure the same service, the
+**store takes precedence**. To use multi-instance env vars, remove that
+service from the store or add the instances in the store instead.
+
+## Select an instance during a chat turn
+
+### Alert hint (Grafana)
+
+Grafana alerts can include a `grafana_instance` field at the top level or in
+`annotations`:
+
+```json
+{
+  "alert_source": "grafana",
+  "grafana_instance": "staging"
+}
+```
+
+OpenSRE uses the matching instance when the hint is set. If it is missing or
+unknown, the default (first) instance is used.
+
+### Default for other providers
+
+Other multi-instance providers use the default (first) instance unless a
+selector is applied in code. Extending alert-based selection beyond Grafana is
+planned.
+
+## Provider support
+
+| Provider | `*_INSTANCES` env | Alert-based selection |
+| --- | --- | --- |
+| Grafana | Yes | Yes (`grafana_instance`) |
+| Datadog | Yes | Default instance |
+| Groundcover | Yes | Default instance |
+| Honeycomb | Yes | Default instance |
+| Coralogix | Yes | Default instance |
+| AWS | Yes | Default instance |
+| Argo CD | Yes | Default instance |
+| Splunk | Yes | Default instance |
+| Others | — | Default instance |
+
+## Limitations
+
+- Only Grafana honors an alert-provided instance hint in this release.
+- The CLI setup wizard is not instance-aware yet. Configure multi-instance via
+  env vars or by editing the store JSON.
+- `opensre integrations verify` validates only the default instance of a
+  multi-instance record.

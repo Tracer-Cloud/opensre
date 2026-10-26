@@ -8,6 +8,20 @@ from enum import StrEnum
 class ToolSurface(StrEnum):
     """Closed set of surfaces a registered tool can be exposed on."""
 
-    INVESTIGATION = "investigation"
     CHAT = "chat"
     ACTION = "action"
+
+
+class ToolRole(StrEnum):
+    """What one tool call is to the model response that requested it.
+
+    ``ACTION`` and ``BOOKKEEPING`` calls (plan, memory, goal ticks) may be
+    batched in one response and run in provider order; consecutive calls to
+    concurrency-safe ``ACTION`` tools run together. A ``TURN_ENDING`` call
+    hands control to the user; only ``BOOKKEEPING`` calls may share its
+    response, and they run first.
+    """
+
+    ACTION = "action"
+    BOOKKEEPING = "bookkeeping"
+    TURN_ENDING = "turn_ending"

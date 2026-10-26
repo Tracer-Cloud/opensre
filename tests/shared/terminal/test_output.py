@@ -205,23 +205,23 @@ def test_repl_display_buffers_subtext_until_step_complete(
     monkeypatch.setattr(output_tracker, "get_output_format", lambda: "rich")
     monkeypatch.setattr(output_tracker, "_repl_progress_active", lambda: True)
     display = output_repl._ReplEventLogDisplay()
-    display.step_start("investigate")
+    display.step_start("plan_actions")
     out_after_start = _strip_ansi(capsys.readouterr().out)
-    assert "Gathering evidence" in out_after_start
+    assert "Planning" in out_after_start
     assert "↳" not in out_after_start
 
-    display.step_subtext("investigate", "Hermes: log poll")
-    display.step_subtext("investigate", "Hermes: log poll x2")
+    display.step_subtext("plan_actions", "Planner: log poll")
+    display.step_subtext("plan_actions", "Planner: log poll x2")
     assert "↳" not in _strip_ansi(capsys.readouterr().out)
 
     display.step_complete(
-        "investigate",
-        output.ProgressEvent(node_name="investigate", elapsed_ms=1200, status="completed"),
+        "plan_actions",
+        output.ProgressEvent(node_name="plan_actions", elapsed_ms=1200, status="completed"),
     )
     out = _strip_ansi(capsys.readouterr().out)
     assert out.count("↳") == 1
-    assert "Hermes: log poll x2" in out
-    assert "Hermes: log poll\n" not in out
+    assert "Planner: log poll x2" in out
+    assert "Planner: log poll\n" not in out
 
 
 @pytest.mark.asyncio
@@ -237,10 +237,10 @@ def test_tracker_start_prints_node_label_in_text_mode(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     tracker = ProgressTracker()
-    tracker.start("investigate")
+    tracker.start("resolve_integrations")
 
     out = _strip_ansi(capsys.readouterr().out)
-    assert "Gathering evidence" in out
+    assert "Loading integrations" in out
     assert "…" in out
 
 
@@ -292,13 +292,13 @@ def test_tracker_complete_appends_humanised_message_when_present(
     clock = iter([0.0, 1.25, 1.25])
     monkeypatch.setattr(output_tracker.time, "monotonic", lambda: next(clock))
 
-    tracker.start("diagnose_root_cause")
-    tracker.complete("diagnose_root_cause", message="validity:75%")
+    tracker.start("review_findings")
+    tracker.complete("review_findings", message="validity:75%")
 
     out = _strip_ansi(capsys.readouterr().out)
     last = [line for line in out.splitlines() if line.strip()][-1]
 
-    assert "Diagnosing" in last
+    assert "Review Findings" in last
     assert "1.2s" in last
     assert "confidence 75%" in last
 
@@ -321,12 +321,12 @@ def test_tracker_complete_records_event_with_status_and_fields() -> None:
 @pytest.mark.usefixtures("force_text_mode")
 def test_tracker_error_path_uses_x_marker(capsys: pytest.CaptureFixture[str]) -> None:
     tracker = ProgressTracker()
-    tracker.start("investigate")
-    tracker.error("investigate", "boom")
+    tracker.start("plan_actions")
+    tracker.error("plan_actions", "boom")
 
     last = [line for line in _strip_ansi(capsys.readouterr().out).splitlines() if line.strip()][-1]
     assert "✗" in last
-    assert "Gathering evidence" in last
+    assert "Planning" in last
     assert tracker.events[-1].status == "error"
     assert tracker.events[-1].message == "boom"
 
@@ -593,6 +593,28 @@ def test_repl_tracker_skips_per_tool_call_lines(
     tracker.complete("investigation_agent")
 
 
+def test_record_tool_start_sets_invoking_tools_on_turn_spinner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """While tools run, the line under the plan is Droid's 'Invoking tools…'."""
+    from surfaces.interactive_shell.runtime.core.state import SpinnerState
+    from surfaces.shared.terminal.output.console_state import set_turn_spinner
+
+    monkeypatch.setattr(output_tracker, "get_output_format", lambda: "rich")
+    monkeypatch.setattr(output_tracker, "_repl_progress_active", lambda: True)
+    spinner = SpinnerState()
+    spinner.start()
+    spinner.set_phase("Investigation")
+    set_turn_spinner(spinner)
+    try:
+        tracker = ProgressTracker()
+        tracker.start("investigation_agent")
+        tracker.record_tool_start("query_datadog_logs", event_key="call-1")
+        assert spinner.phase == SpinnerState.INVOKING_TOOLS_PHASE
+    finally:
+        set_turn_spinner(None)
+
+
 class TestReplHintAnimation:
     """Tests for _ReplEventLogDisplay lap hints and prompt-spinner phase drive."""
 
@@ -623,13 +645,13 @@ class TestReplHintAnimation:
         from surfaces.interactive_shell.runtime.core.state import SpinnerState
 
         spinner = SpinnerState()
-        monkeypatch.setattr(output_repl_console_state, "_investigation_spinner", spinner)
+        monkeypatch.setattr(output_repl_console_state, "_turn_spinner", spinner)
         display = self._make_display()
         display._emit = lambda _line: None  # type: ignore[method-assign]
 
-        display.step_start("investigation_agent")
+        display.step_start("plan_actions")
         assert spinner.streaming
-        assert spinner.phase == "Investigation"
+        assert spinner.phase == "Planning"
 
         display.stop()
         assert not spinner.streaming

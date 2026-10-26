@@ -1,15 +1,15 @@
 ---
-name: github-cli
+name: operating-github-cli
 description: >
   Default GitHub skill for the action agent. Use github_cli for any GitHub
   request — create/list/view/close issues and PRs, assign, labels, repos, releases,
   checks, github.com/owner/repo URLs, or gh api. Prefer over shell_run/!gh.
-  Never assistant_handoff these to gather — github_cli is action-only.
+  Run these with github_cli in the current agent turn.
 tools:
   - github_cli
 ---
 
-# github-cli
+# operating-github-cli
 
 Authenticated `gh` for OpenSRE. Reads and writes — no approval gate. Prefer over
 `shell_run` / `!gh`. Pass `args` after `gh`; optional `repo` as `owner/name` → `-R`.
@@ -40,7 +40,6 @@ Use `summary` when present. Reply short and chat-like.
 ## Prefer dedicated tools when they clearly fit
 
 Slack propose/execute; workflow digests; investigation code/commit search.
-Multi-source RCA (sentry + github issues + posthog) → investigation_start.
 PR CI fix-and-push → fix_github_pr_ci. Security/quality alerts →
 fix_github_security_alert.
 

@@ -89,7 +89,7 @@ def find_identifiers(
     ``_apply_replacements``.
 
     ``compiled_extras`` may be passed by callers that want to compile the
-    policy's extra regex patterns once per investigation instead of on
+    policy's extra regex patterns once per run instead of on
     every call.
     """
     if not policy.enabled or not text:

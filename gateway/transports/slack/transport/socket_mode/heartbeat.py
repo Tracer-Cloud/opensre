@@ -13,6 +13,8 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from config.constants.slack import SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS
+
 DEFAULT_HEARTBEAT_PATH = "/workspace/scratch/gateway.heartbeat"
 
 _logger = logging.getLogger(__name__)
@@ -65,7 +67,7 @@ class ConnectionHeartbeat:
             if self._is_alive():
                 self.touch()
 
-    def stop(self, *, timeout: float = 2.0) -> None:
+    def stop(self, *, timeout: float = SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS) -> None:
         """Stop the refresh ticker."""
         self._stop.set()
         if self._thread is not None:

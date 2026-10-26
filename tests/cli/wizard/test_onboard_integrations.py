@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import questionary
 
-from surfaces.cli.wizard._ui import Choice, _group_header_label, _grouped_questionary_choices
+from surfaces.cli.wizard.components import Choice, group_header_label, grouped_questionary_choices
 from surfaces.cli.wizard.onboard_integrations import (
     ONBOARD_INTEGRATION_CHOICES,
     ONBOARD_INTEGRATION_GROUP_ORDER,
@@ -14,13 +14,13 @@ from surfaces.cli.wizard.prompts import _SelectControl
 
 
 def test_group_header_label_formats_category_title() -> None:
-    assert _group_header_label("Observability") == "── Observability ──"
+    assert group_header_label("Observability") == "── Observability ──"
 
 
 def test_select_control_renders_group_headers_with_highlight_style() -> None:
     ic = _SelectControl(
         [
-            questionary.Separator(_group_header_label("Observability")),
+            questionary.Separator(group_header_label("Observability")),
             questionary.Choice("Datadog", value="datadog"),
         ],
         None,
@@ -49,7 +49,7 @@ def _expected_grouped_choice_values(
     group_order: tuple[str, ...],
     trailing_choices: list[Choice] | None = None,
 ) -> list[str]:
-    """Build selectable values in the same order as ``_grouped_questionary_choices``."""
+    """Build selectable values in the same order as ``grouped_questionary_choices``."""
     grouped_values: dict[str, list[str]] = {group: [] for group in group_order}
     for choice in choices:
         if choice.group in grouped_values:
@@ -64,7 +64,7 @@ def _expected_grouped_choice_values(
 
 
 def test_grouped_questionary_choices_renders_category_separators() -> None:
-    rendered = _grouped_questionary_choices(
+    rendered = grouped_questionary_choices(
         list(ONBOARD_INTEGRATION_CHOICES),
         group_order=ONBOARD_INTEGRATION_GROUP_ORDER,
         trailing_choices=[ONBOARD_SKIP_CHOICE],
@@ -72,7 +72,7 @@ def test_grouped_questionary_choices_renders_category_separators() -> None:
 
     separator_titles = [item.title for item in rendered if isinstance(item, questionary.Separator)]
     assert separator_titles[: len(ONBOARD_INTEGRATION_GROUP_ORDER)] == [
-        _group_header_label(group) for group in ONBOARD_INTEGRATION_GROUP_ORDER
+        group_header_label(group) for group in ONBOARD_INTEGRATION_GROUP_ORDER
     ]
     assert len(separator_titles) == len(ONBOARD_INTEGRATION_GROUP_ORDER) + 1
 
@@ -89,7 +89,7 @@ def test_grouped_questionary_choices_renders_category_separators() -> None:
 
 
 def test_grouped_questionary_choices_labels_unknown_groups_as_other() -> None:
-    rendered = _grouped_questionary_choices(
+    rendered = grouped_questionary_choices(
         [
             Choice(value="datadog", label="Datadog", group="Observability"),
             Choice(value="custom", label="Custom", group="Unknown"),
@@ -99,8 +99,8 @@ def test_grouped_questionary_choices_labels_unknown_groups_as_other() -> None:
 
     separator_titles = [item.title for item in rendered if isinstance(item, questionary.Separator)]
     assert separator_titles == [
-        _group_header_label("Observability"),
-        _group_header_label("Other"),
+        group_header_label("Observability"),
+        group_header_label("Other"),
     ]
     selectable_values = [
         item.value

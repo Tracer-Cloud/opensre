@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
 from infrastructure.safety.sandbox.runner import SandboxResult
 from tests.tools.conftest import BaseToolContract
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map
 from tools.system.python_execution_tool import execute_python_code
+from tools.system.python_execution_tool._evidence import map_execute_python_code
 
 
 class TestPythonExecutionToolContract(BaseToolContract):
@@ -22,8 +24,37 @@ class TestPythonExecutionToolMetadata:
     def test_registered_on_interactive_surfaces(self) -> None:
         clear_tool_registry_cache()
         registered = get_registered_tool_map("chat")["execute_python_code"]
-        assert "investigation" in registered.surfaces
         assert "chat" in registered.surfaces
+
+    def test_not_advertised_without_a_python_interpreter(self, monkeypatch) -> None:
+        def _unavailable() -> str:
+            raise FileNotFoundError("Python 3 is not available on PATH")
+
+        monkeypatch.setattr(
+            "infrastructure.safety.sandbox.runner._python_executable",
+            _unavailable,
+        )
+
+        clear_tool_registry_cache()
+        registered = get_registered_tool_map("chat")["execute_python_code"]
+
+        assert execute_python_code.is_available({}) is False
+        assert registered.is_available({}) is False
+
+    def test_guidance_does_not_require_bundled_dependencies(self) -> None:
+        clear_tool_registry_cache()
+        registered = get_registered_tool_map("chat")["execute_python_code"]
+        guidance = " ".join(
+            [
+                registered.description,
+                *registered.use_cases,
+                *registered.anti_examples,
+                registered.skill_guidance,
+            ]
+        )
+
+        assert "psutil" not in guidance
+        assert "opensre_runtime" in guidance
 
     def test_github_token_hidden_from_public_schema(self) -> None:
         clear_tool_registry_cache()
@@ -50,7 +81,7 @@ class TestPythonExecutionToolMetadata:
         registered = get_registered_tool_map("chat")["execute_python_code"]
         marker = "Stargazers are returned **oldest first**"
         assert "Workflow guidance:" in registered.description
-        assert '<skill name="github-star-velocity"' in registered.skill_guidance
+        assert '<tool_guidance name="measuring-github-star-velocity"' in registered.skill_guidance
         assert marker in registered.skill_guidance
         assert marker in registered.description
 
@@ -133,15 +164,15 @@ class TestPythonExecutionToolRestrictions:
 
 
 class TestPythonExecutionToolCredentials:
-    def test_github_token_from_env_is_available_and_redacted(self, monkeypatch) -> None:
+    def test_github_token_from_env_is_not_available(self, monkeypatch) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret_token")
         result = execute_python_code.run(
             code=("import os\nprint('token=' + str(os.environ.get('GITHUB_TOKEN')))\n")
         )
         assert result["success"] is True
-        assert result["credentials_available"] == ["github"]
+        assert result["credentials_available"] == []
         assert "ghp_secret_token" not in result["stdout"]
-        assert "[redacted]" in result["stdout"]
+        assert "ghp_env_secret" not in result["stdout"]
 
     def test_explicit_github_token_is_available_and_redacted(self, monkeypatch) -> None:
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
@@ -154,3 +185,51 @@ class TestPythonExecutionToolCredentials:
         assert result["credentials_available"] == ["github"]
         assert "ghp_explicit_secret" not in result["stdout"]
         assert "[redacted]" in result["stdout"]
+
+
+class TestMapExecutePythonCode:
+    def test_records_stdout_on_success(self) -> None:
+        evidence: dict[str, Any] = {}
+        map_execute_python_code(evidence, {"success": True, "stdout": "42\n"}, {})
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "execute_python_code"
+        assert entries[0]["summary"] == "42"
+
+    def test_skips_successful_run_with_no_output(self) -> None:
+        evidence: dict[str, Any] = {}
+        map_execute_python_code(evidence, {"success": True, "stdout": ""}, {})
+        assert "catalog_entries" not in evidence
+
+    def test_records_failure_reason_even_without_output(self) -> None:
+        """A failure is diagnostic information by itself -- unlike an empty
+        successful run, it must not be silently dropped."""
+        evidence: dict[str, Any] = {}
+        map_execute_python_code(
+            evidence, {"success": False, "timed_out": True, "stdout": "", "stderr": ""}, {}
+        )
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["summary"] == "execution failed (timed out)"
+
+    def test_records_failure_with_stderr_detail(self) -> None:
+        evidence: dict[str, Any] = {}
+        map_execute_python_code(
+            evidence,
+            {"success": False, "exit_code": 1, "stderr": "ZeroDivisionError: division by zero"},
+            {},
+        )
+        summary = evidence["catalog_entries"][0]["summary"]
+        assert summary.startswith("execution failed (exit code 1)")
+        assert "ZeroDivisionError" in summary
+
+    def test_disambiguates_repeat_calls(self) -> None:
+        """Regression: this tool can be called many times per investigation
+        with different code -- record_evidence_entry lets the first entry
+        for a source win, so reusing one source key would silently drop
+        every call after the first."""
+        evidence: dict[str, Any] = {}
+        map_execute_python_code(evidence, {"success": True, "stdout": "1"}, {})
+        map_execute_python_code(evidence, {"success": True, "stdout": "2"}, {})
+        sources = [e["source"] for e in evidence["catalog_entries"]]
+        assert sources == ["execute_python_code", "execute_python_code#2"]

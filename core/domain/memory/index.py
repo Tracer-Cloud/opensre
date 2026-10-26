@@ -1,13 +1,23 @@
-"""Generated views over the memory directory: MEMORY.md and the prompt block."""
+"""Generated views over the memory directory: ``MEMORY.md`` and the two prompt blocks.
+
+The prompt sees memory twice:
+
+- the **index** — every memory as one ``[type] name — description`` line, by
+  kind and then most recently updated first, plus ``memory_summary.md`` above
+  it. It is a pure function of the memory files, so a session sends it once and
+  again only after a memory or the summary changes;
+- **relevant memories** — full bodies of the few memories that match the
+  current request, rebuilt every turn.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
-from core.domain.memory.files import write_text_atomically
-from core.domain.memory.models import TRUNCATION_MARKER, MemoryRecord
+from core.domain.memory.files import INDEX_FILENAME, write_text_atomically
+from core.domain.memory.models import TRUNCATION_MARKER, MemoryRecord, MemoryType
 
-_INDEX_FILENAME = "MEMORY.md"
 _INDEX_HEADER = (
     "# Long-term memory index\n"
     "\n"
@@ -16,71 +26,176 @@ _INDEX_HEADER = (
     "\n"
 )
 
-DEFAULT_PROMPT_INDEX_CHARS = 8_000
-_MAX_PROMPT_ENTRIES = 50
-_MAX_BODY_CHARS_PER_ENTRY = 600
+DEFAULT_PROMPT_INDEX_CHARS = 2_000
+"""Budget for the index lines in the cached prompt (the summary is budgeted separately)."""
+INDEX_DESCRIPTION_CHARS = 120
+DEFAULT_RELEVANT_MEMORY_ITEMS = 5
+DEFAULT_RELEVANT_MEMORY_CHARS = 4_000
+RELEVANT_BODY_CHARS = 1_200
+#: A memory is shortened to fit the remaining budget only when at least this much is left.
+_MIN_PARTIAL_ENTRY_CHARS = 400
+_ELLIPSIS = "…"
 
 
-def _index_line(record: MemoryRecord) -> str:
+def _memory_md_line(record: MemoryRecord) -> str:
     updated_day = record.updated_at[:10]
     return f"- [{record.memory_type}] {record.slug} — {record.description} (updated {updated_day})"
 
 
-def _prompt_entry(record: MemoryRecord) -> str:
-    """One memory for chat prompts: header line plus truncated body."""
-    body = record.body.strip()
-    if len(body) > _MAX_BODY_CHARS_PER_ENTRY:
-        body = body[: _MAX_BODY_CHARS_PER_ENTRY - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
-    return f"{_index_line(record)}\n{body}"
-
-
 def write_index(directory: Path, records: list[MemoryRecord]) -> Path:
     """Rewrite MEMORY.md from supplied records. May raise ``OSError``."""
-    lines = [_index_line(record) for record in records]
+    lines = [_memory_md_line(record) for record in records]
     body = "\n".join(lines) + "\n" if lines else "(no memories stored yet)\n"
-    path = directory / _INDEX_FILENAME
+    path = directory / INDEX_FILENAME
     write_text_atomically(path, _INDEX_HEADER + body)
     return path
 
 
+#: Index order by type; types not listed sort after these.
+_TYPE_RANK: dict[MemoryType, int] = {
+    MemoryType.ORGANIZATION: 0,
+    MemoryType.USER: 1,
+    MemoryType.PREFERENCE: 2,
+    MemoryType.INTEGRATION: 3,
+}
+
+
+def _type_rank(memory_type: MemoryType) -> int:
+    return _TYPE_RANK.get(memory_type, len(_TYPE_RANK))
+
+
+def index_order(records: Sequence[MemoryRecord]) -> list[MemoryRecord]:
+    """Most useful kinds first: ``organization``, ``user``, ``preference``, ``integration``, the rest.
+
+    A personal store holds only the person's types and a workspace store only
+    the organization's, so each sees its own lead types first.
+
+    Within a kind, the most recently updated memory comes first, then by name.
+    How often a memory reached the model never moves it: usage changes every
+    turn, and an index that reordered with it would have to be sent again.
+    """
+    # Stable sorts, least significant key first.
+    ordered = sorted(records, key=lambda record: record.slug)
+    ordered.sort(key=lambda record: record.updated_at, reverse=True)
+    ordered.sort(key=lambda record: _type_rank(record.memory_type))
+    return ordered
+
+
+def _clip(text: str, limit: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + _ELLIPSIS
+
+
+def _index_line(record: MemoryRecord) -> str:
+    description = _clip(record.description, INDEX_DESCRIPTION_CHARS)
+    return f"- [{record.memory_type}] {record.slug} — {description}"
+
+
+def render_index_lines(records: Sequence[MemoryRecord], *, max_chars: int) -> str:
+    """One line per memory in the given order, cut at ``max_chars`` with a recall pointer."""
+    lines: list[str] = []
+    used = 0
+    for record in records:
+        line = _index_line(record)
+        cost = len(line) + (1 if lines else 0)
+        if used + cost > max_chars:
+            break
+        lines.append(line)
+        used += cost
+    hidden = len(records) - len(lines)
+    if hidden > 0:
+        lines.append(f"… and {hidden} more (memory_recall)")
+    return "\n".join(lines)
+
+
 def render_prompt_index(
-    records: list[MemoryRecord],
+    records: Sequence[MemoryRecord],
     *,
+    summary: str = "",
     max_chars: int = DEFAULT_PROMPT_INDEX_CHARS,
 ) -> str:
-    """Memory facts for every chat/action prompt; ``""`` when nothing is stored.
+    """The memory block of the session context: the consolidated summary, then the index lines.
 
-    Most recently updated memories come first. Each entry includes the index
-    line and the truncated body so the agent can answer without a recall call.
-    When the entry or character budget runs out, a tail line points at
-    ``memory_recall``.
+    ``""`` when there is neither a summary nor a memory to list.
     """
-    if not records:
-        return ""
+    lines = render_index_lines(index_order(records), max_chars=max(max_chars, 0))
+    summary = summary.strip()
+    if not summary:
+        return lines
+    parts = [
+        "Summary (consolidated from these memories and recent sessions; a memory "
+        "below wins where they differ):",
+        summary,
+    ]
+    if lines:
+        parts.extend(("", "Index:", lines))
+    return "\n".join(parts)
 
-    blocks: list[str] = []
+
+def _provenance_note(record: MemoryRecord) -> str:
+    if record.source is None:
+        return ""
+    note = f"; from {record.source}"
+    if record.verified:
+        note += ", verified"
+    if record.evidence:
+        note += f": {_clip(record.evidence, 120)}"
+    return note
+
+
+def _relevant_entry(record: MemoryRecord, *, body_chars: int) -> str:
+    header = (
+        f"[{record.memory_type}] {record.slug} — {_clip(record.description, 200)} "
+        f"(updated {record.updated_at[:10]}{_provenance_note(record)})"
+    )
+    body = record.body.strip()
+    if len(body) > body_chars:
+        body = body[: max(body_chars - len(TRUNCATION_MARKER), 0)].rstrip() + TRUNCATION_MARKER
+    return f"{header}\n{body}" if body else header
+
+
+def render_relevant_entries(
+    ranked: Sequence[MemoryRecord],
+    *,
+    max_items: int = DEFAULT_RELEVANT_MEMORY_ITEMS,
+    max_chars: int = DEFAULT_RELEVANT_MEMORY_CHARS,
+) -> tuple[str, list[str]]:
+    """Full entries for ``ranked`` (already in priority order) within the budgets.
+
+    Returns the text and the slugs it includes. An entry that does not fit is
+    shortened when enough budget remains, otherwise skipped for a smaller one.
+    """
+    entries: list[str] = []
+    slugs: list[str] = []
     remaining = max(max_chars, 0)
-    shown = 0
-    for record in records[:_MAX_PROMPT_ENTRIES]:
-        block = _prompt_entry(record)
-        # +2 for the blank line between entries
-        cost = len(block) + (2 if blocks else 0)
-        if cost > remaining:
-            if not blocks and remaining > 0:
-                # Always surface at least a truncated slice of the newest memory.
-                blocks.append(block[:remaining].rstrip() + TRUNCATION_MARKER)
-                shown = 1
+    for record in ranked:
+        if len(entries) >= max_items:
             break
-        blocks.append(block)
-        remaining -= cost
-        shown += 1
-    if not blocks:
-        return ""
-    hidden = len(records) - shown
-    text = "\n\n".join(blocks)
-    if hidden > 0:
-        text = f"{text}\n… and {hidden} more memories (use memory_recall)"
-    return text
+        separator = 2 if entries else 0
+        entry = _relevant_entry(record, body_chars=RELEVANT_BODY_CHARS)
+        if len(entry) + separator > remaining:
+            room = remaining - separator
+            if room < _MIN_PARTIAL_ENTRY_CHARS:
+                continue
+            shown_body = min(len(record.body.strip()), RELEVANT_BODY_CHARS)
+            entry = _relevant_entry(record, body_chars=shown_body - (len(entry) - room))
+            if len(entry) > room:
+                continue
+        entries.append(entry)
+        slugs.append(record.slug)
+        remaining -= len(entry) + separator
+    return "\n\n".join(entries), slugs
 
 
-__all__ = ["DEFAULT_PROMPT_INDEX_CHARS", "render_prompt_index", "write_index"]
+__all__ = [
+    "DEFAULT_PROMPT_INDEX_CHARS",
+    "DEFAULT_RELEVANT_MEMORY_CHARS",
+    "DEFAULT_RELEVANT_MEMORY_ITEMS",
+    "INDEX_DESCRIPTION_CHARS",
+    "RELEVANT_BODY_CHARS",
+    "index_order",
+    "render_index_lines",
+    "render_prompt_index",
+    "render_relevant_entries",
+    "write_index",
+]

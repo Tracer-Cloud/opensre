@@ -14,7 +14,6 @@ from core.tool.contracts import REGISTERED_TOOL_ATTR, BaseTool, RegisteredTool
 from core.tool_framework.tool_decorator import tool
 from tools import registry as registry_module
 from tools import registry_discovery
-from tools.investigation_registry.actions import get_available_actions
 
 _V2_TOOL_CONTRACT_NAMES = frozenset(
     {
@@ -42,7 +41,7 @@ def test_tool_decorator_registers_function_tool_with_inferred_schema() -> None:
         description="Lookup incident metadata.",
         display_name="Incident metadata",
         source="knowledge",
-        surfaces=("investigation", "chat"),
+        surfaces=("action", "chat"),
     )
     def lookup_incident(incident_id: str, limit: int = 10) -> dict[str, object]:
         return {"incident_id": incident_id, "limit": limit}
@@ -58,7 +57,7 @@ def test_tool_decorator_registers_function_tool_with_inferred_schema() -> None:
     assert registered.input_schema["properties"]["limit"]["type"] == "integer"
     assert registered.display_name == "Incident metadata"
     assert registered.input_schema["required"] == ["incident_id"]
-    assert registered.surfaces == ("investigation", "chat")
+    assert registered.surfaces == ("action", "chat")
 
 
 def test_tool_decorator_supports_minimal_single_file_function_tool() -> None:
@@ -81,7 +80,7 @@ def test_tool_decorator_supports_minimal_single_file_function_tool() -> None:
     assert registered.input_schema["properties"]["run_id"]["type"] == "string"
     assert registered.input_schema["properties"]["include_history"]["type"] == "boolean"
     assert registered.input_schema["required"] == ["run_id"]
-    assert registered.surfaces == ("investigation",)
+    assert registered.surfaces == ("chat",)
     assert registered.run(run_id="r-1", include_history=True) == {
         "run_id": "r-1",
         "include_history": True,
@@ -109,7 +108,7 @@ def test_function_and_class_tools_share_the_same_runtime_contract() -> None:
             },
             "required": ["incident_id"],
         },
-        surfaces=("investigation", "chat"),
+        surfaces=("action", "chat"),
         is_available=_available,
         extract_params=_extract,
         outputs={"incident_id": "Incident identifier"},
@@ -121,7 +120,7 @@ def test_function_and_class_tools_share_the_same_runtime_contract() -> None:
         name = "lookup_incident_class"
         description = "Lookup incident metadata."
         source = "knowledge"
-        surfaces = ("investigation", "chat")
+        surfaces = ("action", "chat")
         input_schema = {
             "type": "object",
             "properties": {
@@ -163,7 +162,7 @@ def test_tool_decorator_allows_retrieval_controls_override_for_base_tool() -> No
         name = "lookup_incident_class"
         description = "Lookup incident metadata."
         source = "knowledge"
-        surfaces = ("investigation", "chat")
+        surfaces = ("action", "chat")
         retrieval_controls = RetrievalControls(limit=True)
         input_schema = {
             "type": "object",
@@ -219,7 +218,7 @@ def test_tool_decorator_preserves_tags_for_base_tool_instances() -> None:
     assert registered.tags == ("safe", "fast")
 
 
-def test_auto_discovery_populates_investigation_and_chat_surfaces(
+def test_auto_discovery_populates_action_and_chat_surfaces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module: Any = ModuleType("tools.fake_discovered_tool")
@@ -228,7 +227,7 @@ def test_auto_discovery_populates_investigation_and_chat_surfaces(
         name="get_incident_metadata",
         description="Return normalized incident metadata.",
         source="knowledge",
-        surfaces=("investigation", "chat"),
+        surfaces=("action", "chat"),
     )
     def get_incident_metadata(incident_id: str) -> dict[str, str]:
         return {"incident_id": incident_id}
@@ -246,9 +245,7 @@ def test_auto_discovery_populates_investigation_and_chat_surfaces(
     # Surface-scoped loads read the on-disk descriptor index; assert surface
     # assignment on the mocked full snapshot instead.
     snapshot = registry_module.get_registered_tools()
-    assert [t.name for t in snapshot if "investigation" in (t.surfaces or ())] == [
-        "get_incident_metadata"
-    ]
+    assert [t.name for t in snapshot if "action" in (t.surfaces or ())] == ["get_incident_metadata"]
     assert [t.name for t in snapshot if "chat" in (t.surfaces or ())] == ["get_incident_metadata"]
     assert registry_module.get_registered_tool_map()["get_incident_metadata"].run("inc-1") == {
         "incident_id": "inc-1"
@@ -281,11 +278,10 @@ def test_action_surface_is_filtered_separately(monkeypatch: pytest.MonkeyPatch) 
     # filtering on the mocked full snapshot instead.
     snapshot = registry_module.get_registered_tools()
     assert [t.name for t in snapshot if "action" in (t.surfaces or ())] == ["perform_action"]
-    assert [t.name for t in snapshot if "investigation" in (t.surfaces or ())] == []
     assert [t.name for t in snapshot if "chat" in (t.surfaces or ())] == []
 
 
-def test_github_workflow_skill_guidance_is_attached_to_chat_and_investigation_tools() -> None:
+def test_github_workflow_skill_guidance_is_attached_to_chat_tools() -> None:
     marker = "Use this workflow when the user asks about GitHub engineering status"
     shared_guided_tool_names = {
         "list_github_work_items",
@@ -295,7 +291,7 @@ def test_github_workflow_skill_guidance_is_attached_to_chat_and_investigation_to
         "summarize_community_followups",
     }
 
-    for surface in (ToolSurface.CHAT, ToolSurface.INVESTIGATION):
+    for surface in (ToolSurface.CHAT,):
         tools_by_name = {
             tool_def.name: tool_def for tool_def in registry_module.get_registered_tools(surface)
         }
@@ -316,6 +312,29 @@ def test_github_workflow_skill_guidance_is_attached_to_chat_and_investigation_to
         assert marker in tool_def.description
         assert "Workflow guidance:" in tool_def.description
         assert marker in tool_def.skill_guidance
+
+
+def test_every_registered_skill_guidance_file_exists() -> None:
+    """A renamed SKILL.md directory must fail here, not silently drop tool guidance."""
+    from tools.registry_skill_guidance import _skill_guidance_files
+
+    paths = _skill_guidance_files()
+    assert paths
+    missing = [str(path) for path in paths if not path.is_file()]
+    assert missing == []
+
+
+def test_sentry_and_posthog_summary_guidance_attach_through_the_registry() -> None:
+    tools_by_name = {tool_def.name: tool_def for tool_def in registry_module.get_registered_tools()}
+
+    assert (
+        '<tool_guidance name="summarizing-sentry-issues"'
+        in tools_by_name["search_sentry_issues"].skill_guidance
+    )
+    assert (
+        '<tool_guidance name="summarizing-posthog-analytics"'
+        in tools_by_name["call_posthog_tool"].skill_guidance
+    )
 
 
 def test_github_workflow_skill_guidance_does_not_attach_to_unrelated_github_tools() -> None:
@@ -343,8 +362,8 @@ def test_architecture_audit_action_tools_are_registered() -> None:
     assert "find_architecture_violations" not in tools_by_name
 
 
-def test_architecture_audit_not_on_chat_or_investigation() -> None:
-    for surface in (ToolSurface.CHAT, ToolSurface.INVESTIGATION):
+def test_architecture_audit_not_on_chat() -> None:
+    for surface in (ToolSurface.CHAT,):
         names = {tool_def.name for tool_def in registry_module.get_registered_tools(surface)}
         assert "find_architecture_violations" not in names
         assert "architecture_clone_repo" not in names
@@ -358,7 +377,7 @@ def test_architecture_audit_skill_guidance_does_not_attach_to_unrelated_tools() 
 
     assert "Required reply template" not in tool_def.skill_guidance
     assert "Propose, do not execute" not in tool_def.skill_guidance
-    assert tool_def.skill_guidance == "" or "architecture-audit" not in tool_def.skill_guidance
+    assert tool_def.skill_guidance == "" or "architecture" not in tool_def.skill_guidance
 
 
 def test_python_execution_skill_guidance_does_not_attach_to_unrelated_tools() -> None:
@@ -366,20 +385,18 @@ def test_python_execution_skill_guidance_does_not_attach_to_unrelated_tools() ->
 
     tool_def = tools_by_name["get_github_file_contents"]
 
-    assert "github-star-velocity" not in tool_def.skill_guidance
+    assert "measuring-github-star-velocity" not in tool_def.skill_guidance
 
 
 def test_github_issue_mutation_execution_remains_chat_only() -> None:
     chat_tools = {
         tool_def.name: tool_def for tool_def in registry_module.get_registered_tools("chat")
     }
-    investigation_tools = {
-        tool_def.name for tool_def in registry_module.get_registered_tools("investigation")
-    }
+    action_tools = {tool_def.name for tool_def in registry_module.get_registered_tools("action")}
 
     tool_def = chat_tools["execute_github_issue_mutation"]
 
-    assert "execute_github_issue_mutation" not in investigation_tools
+    assert "execute_github_issue_mutation" not in action_tools
     assert tool_def.surfaces == ("chat",)
     assert tool_def.requires_approval is False
     assert "never an investigation action" in tool_def.description
@@ -607,13 +624,17 @@ def test_resolve_tool_display_name_falls_back_for_unknown_tools() -> None:
 
 
 def test_real_registry_discovers_migrated_sre_guidance_tool() -> None:
-    action_names = {tool_def.name for tool_def in get_available_actions()}
-    assert "get_sre_guidance" in action_names
+    chat_names = {
+        tool_def.name for tool_def in registry_module.get_registered_tools(ToolSurface.CHAT)
+    }
+    assert "get_sre_guidance" in chat_names
 
 
 def test_real_registry_discovers_honeycomb_and_coralogix_tools() -> None:
-    action_names = {tool_def.name for tool_def in get_available_actions()}
-    assert {"query_honeycomb_traces", "query_coralogix_logs"} <= action_names
+    chat_names = {
+        tool_def.name for tool_def in registry_module.get_registered_tools(ToolSurface.CHAT)
+    }
+    assert {"query_honeycomb_traces", "query_coralogix_logs"} <= chat_names
 
 
 def test_real_registry_preserves_existing_chat_tool_surface() -> None:
@@ -839,29 +860,6 @@ def test_v2_registry_tools_define_output_schema() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_register_external_tool_package_adds_tools_to_registry() -> None:
-    """A package registered via :func:`register_external_tool_package` has
-    its top-level submodules walked the same way as ``tools.*``. This
-    is the mechanism that lets bench-only tool modules live outside ``config/``
-    while still being discoverable by the agent loop when the bench is
-    actively running."""
-    # Importing the cloudopsbench package side-effects registration on its
-    # own (see tests/benchmarks/cloudopsbench/__init__.py), so by the time
-    # this test runs the package is already registered.
-    import tests.benchmarks.cloudopsbench  # noqa: F401 — side-effect import
-    import tests.benchmarks.cloudopsbench.tools as cob_tools_pkg
-
-    # The registered list contains the bench tools package.
-    assert cob_tools_pkg in registry_module._external_tool_packages
-
-    # And the registry actually discovers the bench's GetResources tool.
-    tools = registry_module.get_registered_tools()
-    tool_names = {t.name for t in tools}
-    assert "GetResources" in tool_names, (
-        "bench tools package was registered but its tools didn't surface in the registry"
-    )
-
-
 def test_register_external_tool_package_is_thread_safe_under_concurrent_calls() -> None:
     """Greptile P2: the check-then-append used to be a race window — two
     threads could both pass the ``not in`` check and both append the same
@@ -907,40 +905,17 @@ def test_register_external_tool_package_is_thread_safe_under_concurrent_calls() 
 
 def test_register_external_tool_package_is_idempotent() -> None:
     """Registering the same package twice doesn't add duplicates."""
-    import tests.benchmarks.cloudopsbench.tools as cob_tools_pkg
+    fake_pkg: Any = ModuleType("synthetic.idempotent_registration_pkg")
+    fake_pkg.__path__ = []  # type: ignore[attr-defined] — empty walk, no tools
 
-    initial_count = len(registry_module._external_tool_packages)
-    registry_module.register_external_tool_package(cob_tools_pkg)
-    registry_module.register_external_tool_package(cob_tools_pkg)
-    final_count = len(registry_module._external_tool_packages)
-
-    # First call may add (or no-op if already registered); second call must
-    # never add anything beyond the first.
-    assert final_count <= initial_count + 1
-    assert registry_module._external_tool_packages.count(cob_tools_pkg) == 1
-
-
-def test_production_registry_does_not_include_bench_tools_without_import() -> None:
-    """Sanity-check separation: with the bench package *not* imported,
-    only ``tools.*`` modules contribute to the registry. The bench
-    tools must be invisible.
-
-    We can't fully un-import the bench in a single test process (other
-    tests in this run may have imported it), but we can verify the
-    registry walks only the canonical package when external registrations
-    are cleared."""
     saved = list(registry_module._external_tool_packages)
     try:
-        registry_module._external_tool_packages.clear()
-        registry_module.clear_tool_registry_cache()
-        tools = registry_module.get_registered_tools()
-        tool_names = {t.name for t in tools}
-        # GetResources, GetAlerts, etc. are bench-only; not in tools.
-        assert "GetResources" not in tool_names
-        assert "GetAlerts" not in tool_names
+        registry_module.register_external_tool_package(fake_pkg)
+        registry_module.register_external_tool_package(fake_pkg)
+
+        assert registry_module._external_tool_packages.count(fake_pkg) == 1
     finally:
-        # Restore so subsequent tests in this module see the bench package.
-        registry_module._external_tool_packages.extend(saved)
+        registry_module._external_tool_packages[:] = saved
         registry_module.clear_tool_registry_cache()
 
 

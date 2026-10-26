@@ -16,7 +16,7 @@ from integrations.posthog.verifier import verify_posthog
 def test_build_posthog_config_defaults() -> None:
     config = build_posthog_config({})
 
-    assert config.base_url == "https://us.i.posthog.com"
+    assert config.base_url == "https://us.posthog.com"
     assert config.project_id == ""
     assert config.personal_api_key == ""
     assert config.timeout_seconds == 15.0
@@ -25,7 +25,7 @@ def test_build_posthog_config_defaults() -> None:
 def test_posthog_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POSTHOG_PROJECT_ID", "123")
     monkeypatch.setenv("POSTHOG_PERSONAL_API_KEY", "phx_test")
-    monkeypatch.setenv("POSTHOG_BASE_URL", "https://eu.i.posthog.com")
+    monkeypatch.setenv("POSTHOG_BASE_URL", "https://eu.posthog.com")
     monkeypatch.setenv("POSTHOG_TIMEOUT_SECONDS", "20")
 
     config = posthog_config_from_env()
@@ -33,7 +33,7 @@ def test_posthog_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config is not None
     assert config.project_id == "123"
     assert config.personal_api_key == "phx_test"
-    assert config.base_url == "https://eu.i.posthog.com"
+    assert config.base_url == "https://eu.posthog.com"
     assert config.timeout_seconds == 20.0
 
 
@@ -67,12 +67,12 @@ def test_validate_posthog_config_unauthorized(monkeypatch: pytest.MonkeyPatch) -
         personal_api_key="bad_key",
     )
 
-    request = httpx.Request("GET", "https://us.i.posthog.com/api/projects/123/")
+    request = httpx.Request("GET", "https://us.posthog.com/api/projects/123/")
     response = httpx.Response(401, request=request)
 
     def fake_request_json(*args, **kwargs):
         raise httpx.HTTPStatusError(
-            "Client error '401 Unauthorized' for url 'https://us.i.posthog.com/api/projects/123/'",
+            "Client error '401 Unauthorized' for url 'https://us.posthog.com/api/projects/123/'",
             request=request,
             response=response,
         )
@@ -91,7 +91,7 @@ def test_validate_posthog_config_forbidden(monkeypatch: pytest.MonkeyPatch) -> N
         personal_api_key="restricted_key",
     )
 
-    request = httpx.Request("GET", "https://us.i.posthog.com/api/projects/123/")
+    request = httpx.Request("GET", "https://us.posthog.com/api/projects/123/")
     response = httpx.Response(
         403, text='{"detail": "You do not have permission."}', request=request
     )
@@ -118,7 +118,7 @@ def test_validate_posthog_config_not_found(monkeypatch: pytest.MonkeyPatch) -> N
         personal_api_key="phx_test",
     )
 
-    request = httpx.Request("GET", "https://us.i.posthog.com/api/projects/999/")
+    request = httpx.Request("GET", "https://us.posthog.com/api/projects/999/")
     response = httpx.Response(404, text='{"detail": "Not found."}', request=request)
 
     def fake_request_json(*args, **kwargs):
@@ -141,7 +141,7 @@ def test_validate_posthog_config_http_error_detail_starts_with_http(
 ) -> None:
     """detail always starts with 'HTTP <status_code>' for HTTPStatusError."""
     config = PostHogConfig(project_id="123", personal_api_key="phx_test")
-    request = httpx.Request("GET", "https://us.i.posthog.com/api/projects/123/")
+    request = httpx.Request("GET", "https://us.posthog.com/api/projects/123/")
     response = httpx.Response(401, request=request)
 
     monkeypatch.setattr(

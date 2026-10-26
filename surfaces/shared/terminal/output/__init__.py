@@ -14,11 +14,9 @@ from surfaces.shared.terminal.output.environment import (
 )
 from surfaces.shared.terminal.output.events import ProgressEvent
 from surfaces.shared.terminal.output.renderers import (
-    render_completed_investigation_footer,
     render_divider,
     render_event,
     render_footer,
-    render_investigation_header,
 )
 from surfaces.shared.terminal.output.toggles import (
     ToolDetailToggleWatcher,
@@ -43,11 +41,9 @@ __all__ = [
     "set_tracker_console",
     "set_silent_tracker",
     # Rendering
-    "render_completed_investigation_footer",
     "render_divider",
     "render_event",
     "render_footer",
-    "render_investigation_header",
     # Console lifecycle
     "set_live_console",
     "stop_display",

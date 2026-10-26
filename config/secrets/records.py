@@ -2,12 +2,12 @@
 
 A record is a handful of related fields (endpoint + tenant + token, say) that
 belong together. It is stored as one JSON value under a ``record:``-prefixed
-key, so it inherits the keyring/fallback policy in :mod:`config.secrets.store`
+key, so it inherits the env-then-file policy in :mod:`config.secrets.store`
 rather than repeating it.
 
 Not to be confused with ``config.llm_auth.records``, which holds deliberately
 non-secret provider status metadata in a plain file so ``opensre auth status``
-can answer without touching a keychain.
+can answer without reading stored secrets.
 """
 
 from __future__ import annotations

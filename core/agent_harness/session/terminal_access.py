@@ -2,9 +2,9 @@
 
 Gateway and other headless surfaces use :class:`~core.agent_harness.session.SessionCore`,
 which has no REPL terminal facet. Slash dispatch and delegated CLI commands still
-need the small slice of terminal state those paths touch (outcome hints,
-background-mode flags). These helpers read the shell terminal when present and fall
-back to lightweight per-session state on headless sessions.
+need the small slice of terminal state those paths touch (outcome hints).
+These helpers read the shell terminal when present and fall back to
+lightweight per-session state on headless sessions.
 """
 
 from __future__ import annotations
@@ -21,29 +21,6 @@ def exclusive_stdin_active(session: Any) -> bool:
     if terminal is not None:
         return bool(terminal.exclusive_stdin_active)
     return False
-
-
-def background_mode_enabled(session: Any) -> bool:
-    terminal = session_terminal(session)
-    if terminal is not None:
-        return bool(terminal.background_mode_enabled)
-    return False
-
-
-def background_investigations(session: Any) -> dict[str, Any]:
-    terminal = session_terminal(session)
-    if terminal is not None:
-        records: dict[str, Any] = terminal.background_investigations
-        return records
-    return {}
-
-
-def background_notification_channels(session: Any) -> tuple[str, ...]:
-    terminal = session_terminal(session)
-    if terminal is not None:
-        channels: tuple[str, ...] = terminal.background_notification_preferences.channels
-        return channels
-    return ()
 
 
 def trust_mode_enabled(session: Any) -> bool:
@@ -78,6 +55,9 @@ def set_turn_outcome_hint(session: Any, hint: str) -> None:
     hints.append(hint)
 
 
+_ONBOARD_SLASH = "/onboard"
+
+
 def set_auto_command(session: Any, command: str) -> None:
     terminal = session_terminal(session)
     if terminal is not None:
@@ -87,6 +67,46 @@ def set_auto_command(session: Any, command: str) -> None:
         session,
         f"Run `{command}` in the interactive shell (`uv run opensre`).",
     )
+
+
+def execute_cli_onboard_on_missing_key(
+    session: Any | None,
+    message: str,
+    *,
+    provider: str | None = None,
+) -> str | None:
+    """Setup guidance for a missing-key or missing-endpoint *message*, else ``None``.
+
+    The interactive shell (a session with a terminal facet) gets slash commands
+    and ``/onboard`` queued for its next prompt. Every other session — ``opensre
+    ask``, the gateway — gets ``opensre`` commands, plus account sign-in when the
+    process is signed out; nothing is queued, since it has no prompt to run it.
+    """
+    from core.llm_invoke_errors import CommandSurface, remediate_llm_setup_failure
+
+    if session is None or session_terminal(session) is None:
+        from config.account import account_llm_route
+
+        return remediate_llm_setup_failure(
+            message,
+            surface=CommandSurface.CLI,
+            provider=provider,
+            offer_account_login=account_llm_route() is None,
+        )
+    text = remediate_llm_setup_failure(message, surface=CommandSurface.SHELL, provider=provider)
+    if text is None or exclusive_stdin_active(session):
+        return text
+    set_auto_command(session, _ONBOARD_SLASH)
+    return text
+
+
+def pending_autosubmit(session: Any) -> str:
+    """The command queued to submit itself as the next turn; empty when none or headless."""
+    terminal = session_terminal(session)
+    if terminal is None or not getattr(terminal, "pending_prompt_autosubmit", False):
+        return ""
+    pending = getattr(terminal, "pending_prompt_default", None)
+    return pending.strip() if isinstance(pending, str) else ""
 
 
 def clear_pending_autosubmit(session: Any) -> None:
@@ -103,14 +123,15 @@ def clear_pending_autosubmit(session: Any) -> None:
         terminal.pending_prompt_default = None
     if hasattr(terminal, "pending_prompt_autosubmit"):
         terminal.pending_prompt_autosubmit = False
+    if hasattr(terminal, "pending_prompt_plain_turn"):
+        terminal.pending_prompt_plain_turn = False
 
 
 __all__ = [
-    "background_investigations",
-    "background_mode_enabled",
-    "background_notification_channels",
     "clear_pending_autosubmit",
     "exclusive_stdin_active",
+    "execute_cli_onboard_on_missing_key",
+    "pending_autosubmit",
     "pop_turn_outcome_hint",
     "session_terminal",
     "set_auto_command",

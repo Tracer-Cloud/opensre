@@ -47,35 +47,6 @@ def validate_slack_webhook(*, webhook_url: str) -> IntegrationHealthResult:
     )
 
 
-def validate_notion_integration(*, api_key: str, database_id: str) -> IntegrationHealthResult:
-    """Validate Notion connectivity by querying the target database."""
-    try:
-        resp = httpx.get(
-            f"https://api.notion.com/v1/databases/{database_id}",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Notion-Version": "2022-06-28",
-            },
-            timeout=10,
-        )
-        if resp.status_code == HTTPStatus.OK:
-            return IntegrationHealthResult(
-                ok=True, detail="Notion database reachable and token valid."
-            )
-        if resp.status_code == HTTPStatus.UNAUTHORIZED:
-            return IntegrationHealthResult(ok=False, detail="Notion API key is invalid or expired.")
-        if resp.status_code == HTTPStatus.NOT_FOUND:
-            return IntegrationHealthResult(
-                ok=False,
-                detail="Notion database not found. Check the database ID and sharing settings.",
-            )
-        return IntegrationHealthResult(
-            ok=False, detail=f"Notion returned unexpected status {resp.status_code}."
-        )
-    except Exception as err:
-        return IntegrationHealthResult(ok=False, detail=f"Notion validation failed: {err}")
-
-
 def validate_jira_integration(
     *, base_url: str, email: str, api_token: str, project_key: str
 ) -> IntegrationHealthResult:
@@ -129,7 +100,7 @@ def validate_servicenow_integration(
     *, instance_url: str, username: str, password: str
 ) -> IntegrationHealthResult:
     """Validate ServiceNow connectivity with a minimal authenticated table read."""
-    from integrations.servicenow.verifier import build_servicenow_config, validate_servicenow_config
+    from integrations.servicenow import build_servicenow_config, validate_servicenow_config
 
     outcome = validate_servicenow_config(
         build_servicenow_config(

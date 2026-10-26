@@ -22,6 +22,10 @@ from urllib.parse import parse_qs
 
 from gateway.core.storage.events.repository import HandledSlackEventRepository
 from gateway.transports.slack.processing.events import SlackInboundMessage, parse_events_api_payload
+from gateway.transports.slack.processing.stop_requests import (
+    SlackStopRequest,
+    parse_agent_session_stopped_payload,
+)
 from gateway.transports.slack.transport.events_api.signature import verify_slack_signature
 
 SIGNATURE_HEADER = "x-slack-signature"
@@ -45,7 +49,8 @@ class SlackHttpStatus(StrEnum):
     REJECTED = "rejected"
     #: Verified, but no turn to run (already handled, or not a chat event).
     IGNORED = "ignored"
-    #: Verified and parsed — hand ``message`` to a worker, then answer 200.
+    #: Verified and parsed — hand ``message`` to a worker (or run ``stop``
+    #: after answering), then answer 200.
     ACCEPTED = "accepted"
 
 
@@ -56,6 +61,7 @@ class SlackHttpOutcome:
     status: SlackHttpStatus
     challenge: str = ""
     message: SlackInboundMessage | None = None
+    stop: SlackStopRequest | None = None
     #: Set on ACCEPTED so a caller that fails to start the turn can release
     #: the claim; otherwise the retry is refused and the event is lost.
     event_id: str = ""
@@ -173,6 +179,9 @@ def admit_slack_http_request(
     if not handled_events.claim(event_id):
         return SlackHttpOutcome(SlackHttpStatus.IGNORED, reason="duplicate delivery")
 
+    stop = parse_agent_session_stopped_payload(payload)
+    if stop is not None:
+        return SlackHttpOutcome(SlackHttpStatus.ACCEPTED, stop=stop, event_id=event_id)
     message = parse_events_api_payload(payload)
     if message is None:
         return SlackHttpOutcome(SlackHttpStatus.IGNORED, reason="not a chat event")

@@ -8,6 +8,7 @@ Rich adapters), do not reorder the shared path casually.
 
 from __future__ import annotations
 
+import builtins
 import logging
 from typing import Any
 
@@ -15,10 +16,63 @@ import pytest
 
 from bootstrap.process import (
     CLI_PROFILE,
+    EMBEDDED_PROFILE,
     GATEWAY_PROFILE,
+    SCHEDULED_COMMAND_PROFILE,
+    SCHEDULER_WORKER_PROFILE,
     WEB_PROFILE,
     configure_process,
 )
+from infrastructure.observability.trace.observations import (
+    get_observation_sink,
+    is_observation_sink_active,
+    set_observation_sink,
+)
+from tests.utils.observations import RecordingObservationSink
+
+
+@pytest.mark.parametrize("custom_sink", [False, True], ids=["default", "custom"])
+def test_boot_preserves_observation_sink_with_legacy_credentials(
+    monkeypatch: pytest.MonkeyPatch, custom_sink: bool
+) -> None:
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    monkeypatch.setenv("OPENSRE_LANGFUSE_DISABLED", "0")
+    monkeypatch.setattr("bootstrap.process.bootstrap_opensre_env_once", lambda **_kw: None)
+    monkeypatch.setattr(
+        "infrastructure.observability.errors.sentry.init_sentry", lambda **_kw: None
+    )
+    monkeypatch.setattr("bootstrap.process.install_harness_adapters", lambda: None)
+    monkeypatch.setattr("bootstrap.process.install_cli_auth_checker", lambda: None)
+    monkeypatch.setattr("bootstrap.process.install_scheduled_delivery_adapters", lambda: None)
+    monkeypatch.setattr(
+        "infrastructure.safety.sandbox.capabilities.boot_capability_warnings", lambda: []
+    )
+    monkeypatch.setattr("core.llm.internal.preload.preload_llm_clients", lambda: None)
+    set_observation_sink(RecordingObservationSink() if custom_sink else None)
+    original_sink = get_observation_sink()
+    sdk_imports: list[str] = []
+    original_import = builtins.__import__
+
+    def _guard_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "langfuse" or name.startswith("langfuse."):
+            sdk_imports.append(name)
+            raise AssertionError("Process boot must not import the removed tracing SDK")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _guard_import)
+    for profile in (
+        CLI_PROFILE,
+        GATEWAY_PROFILE,
+        WEB_PROFILE,
+        SCHEDULER_WORKER_PROFILE,
+        SCHEDULED_COMMAND_PROFILE,
+        EMBEDDED_PROFILE,
+    ):
+        configure_process(profile)
+        assert get_observation_sink() is original_sink
+        assert is_observation_sink_active() is custom_sink
+    assert sdk_imports == []
 
 
 def test_configure_process_gateway_order(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -36,7 +90,7 @@ def test_configure_process_gateway_order(monkeypatch: pytest.MonkeyPatch) -> Non
         lambda: order.append("adapters"),
     )
     monkeypatch.setattr(
-        "bootstrap.process.install_scheduler_runners",
+        "bootstrap.process.install_scheduled_delivery_adapters",
         lambda: order.append("runners"),
     )
     monkeypatch.setattr(
@@ -53,7 +107,7 @@ def test_configure_process_gateway_order(monkeypatch: pytest.MonkeyPatch) -> Non
     assert order == ["env", "sentry", "adapters", "caps", "preload"], order
 
 
-def test_configure_process_cli_only_boots_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configure_process_cli_boots_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """CLI_PROFILE leaves Sentry and Rich adapters to surfaces/cli/startup."""
     order: list[str] = []
     monkeypatch.setattr(
@@ -69,7 +123,7 @@ def test_configure_process_cli_only_boots_env(monkeypatch: pytest.MonkeyPatch) -
         lambda: order.append("adapters"),
     )
     monkeypatch.setattr(
-        "bootstrap.process.install_scheduler_runners",
+        "bootstrap.process.install_scheduled_delivery_adapters",
         lambda: order.append("runners"),
     )
 
@@ -93,7 +147,7 @@ def test_configure_process_web_skips_llm_preload(monkeypatch: pytest.MonkeyPatch
         lambda: order.append("adapters"),
     )
     monkeypatch.setattr(
-        "bootstrap.process.install_scheduler_runners",
+        "bootstrap.process.install_scheduled_delivery_adapters",
         lambda: order.append("runners"),
     )
     monkeypatch.setattr(
@@ -119,7 +173,7 @@ def test_configure_process_is_idempotent_per_profile(monkeypatch: pytest.MonkeyP
         lambda **_kw: None,
     )
     monkeypatch.setattr("bootstrap.process.install_harness_adapters", lambda: None)
-    monkeypatch.setattr("bootstrap.process.install_scheduler_runners", lambda: None)
+    monkeypatch.setattr("bootstrap.process.install_scheduled_delivery_adapters", lambda: None)
 
     configure_process(WEB_PROFILE)
     configure_process(WEB_PROFILE)
@@ -143,7 +197,7 @@ class TestEmbeddedProfile:
             return _step
 
         monkeypatch.setattr(process, "install_harness_adapters", _record("adapters"))
-        monkeypatch.setattr(process, "install_scheduler_runners", _record("runners"))
+        monkeypatch.setattr(process, "install_scheduled_delivery_adapters", _record("runners"))
         monkeypatch.setattr(process, "bootstrap_opensre_env_once", lambda **_kw: None)
 
         # Act
@@ -209,7 +263,7 @@ def test_scheduler_worker_profile_boots_runners_with_scheduler_sentry(
 
     monkeypatch.setattr(process, "bootstrap_opensre_env_once", lambda **_kw: ran.append("env"))
     monkeypatch.setattr(process, "install_harness_adapters", _record("adapters"))
-    monkeypatch.setattr(process, "install_scheduler_runners", _record("runners"))
+    monkeypatch.setattr(process, "install_scheduled_delivery_adapters", _record("runners"))
     monkeypatch.setattr(
         "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kw: ran.append(f"sentry:{_kw.get('entrypoint')}"),
@@ -236,7 +290,7 @@ def test_scheduled_command_profile_dispatches_without_touching_sentry(monkeypatc
 
     monkeypatch.setattr(process, "bootstrap_opensre_env_once", lambda **_kw: ran.append("env"))
     monkeypatch.setattr(process, "install_harness_adapters", _record("adapters"))
-    monkeypatch.setattr(process, "install_scheduler_runners", _record("runners"))
+    monkeypatch.setattr(process, "install_scheduled_delivery_adapters", _record("runners"))
     monkeypatch.setattr(
         "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kw: ran.append("sentry"),

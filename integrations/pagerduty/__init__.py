@@ -7,8 +7,12 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import PagerDutyIntegrationConfig
+from integrations.pagerduty.setup import PAGERDUTY_SETUP
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["PAGERDUTY_SETUP", "classify"]
 
 
 def classify(

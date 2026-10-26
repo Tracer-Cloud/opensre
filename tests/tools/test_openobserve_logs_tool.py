@@ -14,7 +14,10 @@ from typing import Any
 
 import pytest
 
-from integrations.openobserve.tools.openobserve_logs_tool import query_openobserve_logs
+from integrations.openobserve.tools.openobserve_logs_tool import (
+    _map_query_openobserve_logs,
+    query_openobserve_logs,
+)
 from tests.tools.conftest import BaseToolContract, MockHttpxResponse
 
 # ---------------------------------------------------------------------------
@@ -567,3 +570,76 @@ def test_no_stream_and_no_query_is_unavailable(monkeypatch: pytest.MonkeyPatch) 
     assert result["available"] is False
     assert "OPENOBSERVE_STREAM" in result["error"]
     assert result["records"] == []
+
+
+# ---------------------------------------------------------------------------
+# Evidence mapper
+# ---------------------------------------------------------------------------
+
+
+class TestMapQueryOpenobserveLogs:
+    def test_records_entry_with_stream_and_query(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(
+            evidence,
+            {
+                "available": True,
+                "total_returned": 2,
+                "effective_limit": 50,
+                "stream": "app_logs",
+                "query": "SELECT * FROM \"app_logs\" WHERE level = 'error'",
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "query_openobserve_logs"
+        assert (
+            entries[0]["summary"]
+            == "2 record(s), stream 'app_logs', query 'SELECT * FROM \"app_logs\" WHERE level = 'error''"
+        )
+
+    def test_qualifies_count_when_page_is_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(
+            evidence,
+            {"available": True, "total_returned": 50, "effective_limit": 50},
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"].startswith("50+ record(s)")
+
+    def test_strips_carriage_returns_from_query(self) -> None:
+        """Regression: a query with bare \\r or \\r\\n line endings must not
+        leave a literal carriage return in the report summary."""
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(
+            evidence,
+            {
+                "available": True,
+                "total_returned": 1,
+                "effective_limit": 50,
+                "query": "SELECT *\r\nFROM logs\r",
+            },
+            {},
+        )
+
+        assert "\r" not in evidence["catalog_entries"][0]["summary"]
+
+    def test_records_nothing_when_no_records(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(evidence, {"available": True, "total_returned": 0}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(evidence, {"available": False, "error": "HTTP 502"}, {})
+
+        assert "catalog_entries" not in evidence

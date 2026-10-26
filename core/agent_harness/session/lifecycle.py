@@ -23,9 +23,9 @@ re-implementing bootstrap + persistence wiring:
   resources (cancel warm task, drop background references).
 
 Surface-specific concerns stay with the surface: the shell layers terminal UI
-state (theme, grounding providers, prompt history) on top of a manager-created
-session; the gateway injects per-chat metadata. Neither re-implements the core
-bootstrap, and neither reaches across surfaces to do it.
+state (theme, prompt history) on top of a manager-created session; the gateway
+injects per-chat metadata. Neither re-implements the core bootstrap, and
+neither reaches across surfaces to do it.
 """
 
 from __future__ import annotations
@@ -35,7 +35,14 @@ import logging
 from datetime import datetime
 from typing import Any, TypeVar
 
-from core.agent_harness.session.persistence.ports import SessionRepo, SessionStore
+from core.agent_harness.session.persistence.contracts import (
+    CARRIED_MESSAGE_METADATA_KEY,
+    TURN_EVIDENCE_CUSTOM_TYPE,
+    RestoreContextKey,
+    SessionRepo,
+    SessionStore,
+)
+from core.agent_harness.session.persistence.wal_recovery import format_recovery_note
 
 # Import from submodules (not the package __init__) so the session package can
 # re-export SessionManager without a circular import.
@@ -151,6 +158,11 @@ class SessionManager:
         self._store.open_session(session)
         return session
 
+    def has_session(self, session_id: str) -> bool:
+        """Return whether an exact session id names a readable persisted conversation."""
+        data = self._repo.load_session(session_id)
+        return data is not None and data.get("session_id") == session_id
+
     def resolve(
         self,
         session_id: str,
@@ -214,7 +226,46 @@ class SessionManager:
         self._flush(session)
         self._schedule_memory_extraction(session)
         session.clear()
+        from infrastructure.turn_host.session_lock import retain_session_execution_lock
+
+        retain_session_execution_lock(session.session_id, timeout=0)
         self._store.open_session(session)
+        return session
+
+    def carry_forward(
+        self,
+        session: _S,
+        *,
+        messages: list[tuple[str, str]],
+        evidence: list[Any],
+    ) -> _S:
+        """Restore the conversation into a rotated session and record it in its new file.
+
+        ``/new`` keeps the conversation going in a fresh session file. Writing
+        the carried transcript and turn evidence there means resuming the new
+        session later restores what the live one had, not only the turns taken
+        after the rotation. Carried messages are flagged
+        (``CARRIED_MESSAGE_METADATA_KEY``): the old session owns those turns.
+        """
+        session.agent.messages = messages
+        session.agent.turn_evidence = evidence
+        append_message = getattr(session.store, "append_message", None)
+        append_custom = getattr(session.store, "append_custom_message", None)
+        with contextlib.suppress(Exception):
+            if callable(append_message):
+                metadata = {"kind": "chat", CARRIED_MESSAGE_METADATA_KEY: True}
+                for role, content in session.agent.messages:
+                    append_message(
+                        session.session_id, role=role, content=content, metadata=metadata
+                    )
+            if callable(append_custom):
+                for record in session.agent.turn_evidence:
+                    append_custom(
+                        session.session_id,
+                        custom_type=TURN_EVIDENCE_CUSTOM_TYPE,
+                        content=record.to_json(),
+                        display=False,
+                    )
         return session
 
     def rebind_for_resume(
@@ -255,7 +306,7 @@ class SessionManager:
         """
         if not data:
             return session
-        messages = data.get("cli_agent_messages")
+        messages = data.get(RestoreContextKey.CLI_AGENT_MESSAGES)
         if isinstance(messages, list):
             restored: list[tuple[str, str]] = []
             for item in messages:
@@ -266,19 +317,69 @@ class SessionManager:
                 if role in {"user", "assistant"} and isinstance(content, str) and content:
                     restored.append((role, content))
             session.cli_agent_messages = restored
-        context = data.get("accumulated_context")
+        evidence = data.get(RestoreContextKey.TURN_EVIDENCE)
+        if isinstance(evidence, list) and hasattr(session, "turn_evidence"):
+            from core.state import ShownTools, TurnEvidence
+
+            records = (TurnEvidence.from_json(item) for item in evidence)
+            session.turn_evidence = [record for record in records if record is not None]
+            # The replayed turns name the tools they used; keep showing them in
+            # place so the rebuilt session's requests extend the cached prefix.
+            shown = getattr(session, "shown_tools", None)
+            if isinstance(shown, ShownTools):
+                shown.restore_from(session.turn_evidence)
+        context = data.get(RestoreContextKey.ACCUMULATED_CONTEXT)
         if isinstance(context, dict):
             session.accumulated_context = dict(context)
-        goal_state = data.get("session_goal_state")
+            integrations = getattr(session, "integrations", None)
+            saved_connection = context.get("_github_connection_id")
+            if (
+                integrations is not None
+                and integrations.github_connection_id is None
+                and isinstance(saved_connection, str)
+            ):
+                integrations.github_connection_id = saved_connection
+        goal_state = data.get(RestoreContextKey.SESSION_GOAL_STATE)
         if isinstance(goal_state, dict):
             from core.agent_harness.session_goal.persist import (
                 apply_session_goal_state,
             )
 
             apply_session_goal_state(session, goal_state)
-        history = data.get("history")
+        plan_state = data.get(RestoreContextKey.TASK_PLAN_STATE)
+        if plan_state is not None:
+            from core.agent_harness.task_plan.persist import apply_task_plan_state
+
+            apply_task_plan_state(session, plan_state)
+        choice_state = data.get(RestoreContextKey.PENDING_USER_CHOICE_STATE)
+        if choice_state is not None:
+            from core.agent_harness.session.pending_choice import (
+                apply_pending_user_choice_state,
+            )
+
+            apply_pending_user_choice_state(session, choice_state)
+        goal_controls = data.get(RestoreContextKey.SESSION_GOAL_CONTROLS)
+        if isinstance(goal_controls, list):
+            self._restore_session_goal_controls(session, goal_controls)
+        history = data.get(RestoreContextKey.HISTORY)
         if isinstance(history, list):
             session.history = [dict(item) for item in history if isinstance(item, dict)]
+        raw_dangling_intents = data.get("dangling_tool_intents")
+        dangling_intents = raw_dangling_intents if isinstance(raw_dangling_intents, list) else []
+        recovery_note = format_recovery_note(dangling_intents)
+        session.pending_recovery_note = recovery_note
+        return session
+
+    def refresh_from_storage(self, session: _S) -> _S:
+        """Refresh persisted state on a live handle without recreating its ports.
+
+        A gateway may resolve a session before waiting for another host's
+        whole-turn lease. Once it acquires that lease, refresh the transcript
+        and resumable workflow state before the next turn mutates or flushes it.
+        """
+        data = self._repo.load_session(session.session_id)
+        if data is not None:
+            self.restore_context(session, data)
         return session
 
     def close(
@@ -298,24 +399,29 @@ class SessionManager:
 
         Persisting is best-effort (a failed flush must not crash teardown);
         the session releases its own resources (:meth:`SessionCore.release_resources`)
-        to prevent per-session leaks. Long-term memory extraction also runs after
-        every recorded turn; this close path runs it again after release when
-        ``extract_memory`` is true. Process exit (default) waits for extraction
-        to finish so durable facts are not dropped; gateway rotation passes
-        ``wait_for_memory_extraction=False`` so inbound handling stays
-        responsive, and skips extraction entirely unless gateway memory is opted in.
+        to prevent per-session leaks. Long-term memory extraction also runs in
+        the background every few recorded turns; this close path runs a final
+        pass after release when ``extract_memory`` is true. That pass is an LLM
+        call, so ``wait_for_memory_extraction`` decides whether the caller is
+        held for it: the interactive shell and gateway rotation pass False to
+        keep teardown and inbound handling responsive, which leaves the pass to
+        the daemon worker and loses it if the process exits first. Gateway
+        rotation also skips extraction entirely unless gateway memory is opted
+        in.
         """
         self._flush(session)
         # Snapshot messages before release/clear; the background extractor must
         # not retain a reference to the live session object.
         messages = list(getattr(session, "cli_agent_messages", []) or [])
+        session_id = session.session_id
         from infrastructure.observability.trace.spans import emit_thread_boundary
 
-        emit_thread_boundary(session.session_id, name="session_end", phase="session_end")
+        emit_thread_boundary(session_id, name="session_end", phase="session_end")
         session.release_resources()
         if extract_memory:
             self._schedule_memory_extraction_from_messages(
                 messages,
+                session_id=session_id,
                 wait_for_completion=wait_for_memory_extraction,
             )
 
@@ -330,6 +436,40 @@ class SessionManager:
         Failures are logged, never raised.
         """
         self._flush(session)
+
+    def persist_session_goal_control(self, session: SessionCore, reason: str) -> str:
+        """Durably preserve goal intent while another owner finishes the turn."""
+        return session.store.append_session_goal_control(session.session_id, reason)
+
+    @staticmethod
+    def _restore_session_goal_controls(
+        session: SessionCore,
+        controls: list[Any],
+    ) -> None:
+        """Apply and acknowledge durable controls left by a forced host exit."""
+        from core.agent_harness.session_goal.control import apply_session_goal_control
+        from core.agent_harness.turns.host_cancel import HostCancelReason
+
+        for control in controls:
+            if not isinstance(control, dict):
+                continue
+            control_id = control.get("control_id")
+            raw_reason = control.get("reason")
+            if not isinstance(control_id, str) or not isinstance(raw_reason, str):
+                continue
+            try:
+                reason = HostCancelReason(raw_reason)
+            except ValueError:
+                logger.warning("Ignoring unknown persisted session-goal control")
+                continue
+            try:
+                apply_session_goal_control(session, reason)
+                session.store.flush_session_goal_control_state(session)
+                session.store.complete_session_goal_control(session.session_id, control_id)
+            except Exception:
+                # Leave the request unacknowledged so a later resume retries it.
+                logger.warning("Could not finalize persisted session-goal control", exc_info=True)
+                break
 
     @staticmethod
     def _flush(session: SessionCore) -> None:
@@ -346,19 +486,25 @@ class SessionManager:
 
     @staticmethod
     def _schedule_memory_extraction(session: SessionCore) -> None:
+        if not session.long_term_memory_enabled:
+            return
         messages = list(getattr(session, "cli_agent_messages", []) or [])
-        SessionManager._schedule_memory_extraction_from_messages(messages)
+        SessionManager._schedule_memory_extraction_from_messages(
+            messages, session_id=session.session_id
+        )
 
     @staticmethod
     def _schedule_memory_extraction_from_messages(
         messages: list[tuple[str, str]],
         *,
+        session_id: str,
         wait_for_completion: bool = False,
     ) -> None:
         from core.agent_harness.session.memory_extraction import schedule_memory_extraction
 
         schedule_memory_extraction(
             messages,
+            session_id=session_id,
             wait_for_completion=wait_for_completion,
         )
 

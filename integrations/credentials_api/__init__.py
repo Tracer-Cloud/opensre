@@ -4,9 +4,12 @@ from integrations.credentials_api.client import (
     CredentialsApiClient,
     CredentialsApiError,
     IntegrationInstanceV2,
+    IntegrationOwner,
     IntegrationRecordV2,
     IntegrationStoreV2,
+    connection_visible,
     hydrate_integration_store,
+    materialize_integration_store,
     validate_integration_store_v2,
 )
 
@@ -14,8 +17,11 @@ __all__ = [
     "CredentialsApiClient",
     "CredentialsApiError",
     "IntegrationInstanceV2",
+    "IntegrationOwner",
     "IntegrationRecordV2",
     "IntegrationStoreV2",
+    "connection_visible",
     "hydrate_integration_store",
+    "materialize_integration_store",
     "validate_integration_store_v2",
 ]

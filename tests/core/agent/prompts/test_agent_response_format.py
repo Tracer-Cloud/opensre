@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from core.agent_harness.prompts.rules import (
-    AGENT_RESPONSE_THREE_TIER_RULE,
     format_agent_response,
     normalize_three_tier_spacing,
 )
@@ -31,39 +30,9 @@ def test_format_agent_response_compact_single_line() -> None:
     assert "**I found:**" not in text
 
 
-def test_agent_response_rule_is_in_assistant_system_prompt() -> None:
-    from core.agent_harness.prompts.assistant import _build_system_prompt
-
-    prompt = _build_system_prompt("ref", "history")
-
-    assert AGENT_RESPONSE_THREE_TIER_RULE.split("\n", maxsplit=1)[0] in prompt
-    assert "connecting another integration" in prompt
-
-
 def test_format_agent_response_rejects_empty_found_with_detail() -> None:
     with pytest.raises(ValueError, match="found is required"):
         format_agent_response("", "Host: prod-api-3  CPU: 94%", "restart the pod?")
-
-
-def test_observation_block_on_screen_requires_want_me_to() -> None:
-    from core.agent_harness.prompts.assistant import _build_observation_block
-
-    block = _build_observation_block("grafana: passed", on_screen=True)
-
-    assert "**Want me to:**" in block
-    assert "connect another integration" in block
-
-
-def test_observation_block_omits_want_me_to_when_session_goal_active() -> None:
-    from core.agent_harness.prompts.assistant import _build_observation_block
-
-    on_screen = _build_observation_block("grafana: passed", on_screen=True, omit_want_me_to=True)
-    off_screen = _build_observation_block("grafana: passed", on_screen=False, omit_want_me_to=True)
-
-    assert "Still end with **Want me to:**" not in on_screen
-    assert "Do NOT close with **Want me to:**" in on_screen
-    assert "Do NOT close with **Want me to:**" in off_screen
-    assert "with a specific next step" not in off_screen
 
 
 def test_normalize_three_tier_spacing_splits_want_me_to() -> None:

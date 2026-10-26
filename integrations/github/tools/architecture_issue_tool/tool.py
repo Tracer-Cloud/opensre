@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import resolve_github_token
 from integrations.github.tools.architecture_issue_tool.repo_workspace import (
     WorkspaceError,
-    architecture_workspace_dir,
     cleanup_architecture_workspace,
     clone_github_repo,
 )
@@ -22,12 +28,13 @@ from integrations.github.tools.github_cli.credentials import (
     GITHUB_CLI_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    resolve_github_token,
 )
 
 
 def _github_clone_available(sources: dict[str, dict]) -> bool:
-    return bool(github_source_available(sources) or resolve_github_token(None))
+    if sources.get("github", {}).get("connection_selection_error"):
+        return False
+    return bool(github_source_available(sources))
 
 
 def _github_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -44,6 +51,17 @@ def _github_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 def _always_available(_sources: dict[str, dict]) -> bool:
     return True
+
+
+def _turn_cancelled(context: Any) -> Callable[[], bool] | None:
+    """The running turn's cancel flag, so a wait for a clone slot ends with the turn."""
+    if context is None:
+        return None
+    try:
+        console = action_context_from_agent_context(context).console
+    except RuntimeError:
+        return None
+    return lambda: bool(getattr(console, "cancel_requested", False))
 
 
 def _session_id_from_runtime(context: Any, explicit: str = "") -> str:
@@ -64,15 +82,15 @@ def _session_id_from_runtime(context: Any, explicit: str = "") -> str:
     name="architecture_clone_repo",
     source="github",
     description=(
-        "Shallow-clone a GitHub repository into "
-        "opensre/workspace under the system temp directory "
+        "Shallow-clone a GitHub repository into a fresh directory under "
+        "opensre/workspace in the system temp directory "
         "for an architecture audit. "
-        "Always call architecture_cleanup_repo when finished, then "
-        "architecture_save_observations before the final report."
+        "Always call architecture_cleanup_repo with the returned workspace_root "
+        "when finished, then architecture_save_observations before the final report."
     ),
     use_cases=[
         "Preparing a local clone before architecture shell heuristic passes",
-        "Architecture audit skill: clone then shell passes then cleanup",
+        "Architecture audit workflow: clone then shell passes then cleanup",
     ],
     anti_examples=[
         "Leaving the clone on disk after the audit",
@@ -81,6 +99,7 @@ def _session_id_from_runtime(context: Any, explicit: str = "") -> str:
     requires=["owner", "repo"],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
+    accepts_runtime_context=True,
     input_schema={
         "type": "object",
         "properties": {
@@ -104,19 +123,21 @@ def _session_id_from_runtime(context: Any, explicit: str = "") -> str:
         "required": ["owner", "repo"],
         "additionalProperties": False,
     },
-    is_available=_github_clone_available,
-    extract_params=_github_extract_params,
+    is_available=github_tool_available(_github_clone_available),
+    extract_params=github_tool_params(_github_extract_params),
     injected_params=GITHUB_CLI_INJECTED_PARAMS,
 )
+@require_webapp_github
 def architecture_clone_repo(
     owner: str,
     repo: str,
     ref: str = "",
     github_token: str | None = None,
     local_path: str | None = None,
+    context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Clone owner/repo into the fixed architecture workspace."""
+    """Clone owner/repo into a fresh directory for this audit."""
     try:
         workspace = clone_github_repo(
             owner,
@@ -124,6 +145,8 @@ def architecture_clone_repo(
             ref=ref,
             token=resolve_github_token(github_token) or None,
             local_path=local_path,
+            stop=_turn_cancelled(context),
+            audit_owner=_session_id_from_runtime(context),
         )
     except WorkspaceError as exc:
         return {
@@ -148,12 +171,14 @@ def architecture_clone_repo(
     name="architecture_cleanup_repo",
     source="github",
     description=(
-        "Delete opensre/workspace under the system temp directory "
-        "after an architecture audit. "
-        "Refuses paths outside that directory."
+        "Delete this audit's clone after an architecture audit. Pass the "
+        "workspace_root that architecture_clone_repo returned in this session; any "
+        "other path, including the shared opensre/workspace directory and another "
+        "session's audit, is refused."
     ),
     use_cases=["Cleanup after architecture_clone_repo"],
     anti_examples=["Deleting arbitrary paths outside the architecture workspace"],
+    requires=["workspace_root"],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
     input_schema={
@@ -161,22 +186,27 @@ def architecture_clone_repo(
         "properties": {
             "workspace_root": {
                 "type": "string",
-                "description": "Optional path; must be under the architecture workspace.",
+                "description": "The workspace_root returned by architecture_clone_repo.",
             }
         },
-        "required": [],
+        "required": ["workspace_root"],
         "additionalProperties": False,
     },
-    is_available=_always_available,
+    is_available=github_tool_available(_always_available),
+    accepts_runtime_context=True,
+    extract_params=github_tool_params(),
+    injected_params=("github_token", "github_connection_origin", "github_connection_id"),
 )
+@require_webapp_github
 def architecture_cleanup_repo(
-    workspace_root: str = "",
+    workspace_root: str,
+    context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Remove the architecture clone workspace."""
+    """Remove the clone directory of this session's audit at *workspace_root*."""
     try:
         removed = cleanup_architecture_workspace(
-            path=workspace_root or architecture_workspace_dir()
+            workspace_root, audit_owner=_session_id_from_runtime(context)
         )
     except WorkspaceError as exc:
         return {"ok": False, "removed_path": "", "error": str(exc)}
@@ -230,8 +260,11 @@ def architecture_cleanup_repo(
         "required": ["repo_name", "observations"],
         "additionalProperties": False,
     },
-    is_available=_always_available,
+    is_available=github_tool_available(_always_available),
+    extract_params=github_tool_params(),
+    injected_params=("github_token", "github_connection_origin", "github_connection_id"),
 )
+@require_webapp_github
 def architecture_save_observations(
     repo_name: str,
     observations: str,

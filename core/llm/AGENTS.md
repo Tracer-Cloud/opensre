@@ -8,9 +8,10 @@ agent loop. Subprocess-backed LLM CLIs live under `integrations/llm_cli/`.
 | File | Role |
 | --- | --- |
 | `config/llm_models.py` | Canonical per-provider model-tier defaults, base URLs, and `*_LLM_CONFIG` shapes. |
-| `config/config.py` | Declares `LLMProvider`, `LLMSettings` validation, and env-backed resolution. |
+| `config/llm_settings.py` | Declares `LLMProvider`, `LLMSettings` validation, and env-backed resolution. |
 | `config/llm_auth/provider_catalog.py` | Canonical `ProviderSpec` metadata shared by wizard, auth, and runtime checks. |
 | `core/llm/factory.py` | Single routing entrypoint: `resolve_llm_route()`, `get_llm(role)`, `reset_llm_clients()`. |
+| `core/llm/readiness.py` | `llm_ready()` preflight: does the route (account, else configured provider) have its settings and key, without building a client. |
 | `core/llm/client_builders.py` | Construct the client for a resolved route: `build_agent_client()`, `build_reasoning_client()`. |
 | `core/llm/providers/provider_registry.py` | `FIRST_PARTY_PROVIDERS` table (models, max_tokens, LiteLLM prefix, api-key env) the builders read. |
 | `core/llm/transport_mode.py` | `OPENSRE_LLM_TRANSPORT` (`sdk` vs `litellm`) and `use_litellm_for_provider()`. |
@@ -26,7 +27,7 @@ agent loop. Subprocess-backed LLM CLIs live under `integrations/llm_cli/`.
 | `surfaces/shared/llm_setup/catalog.py` | Onboarding metadata (`SUPPORTED_PROVIDERS`) and model choices. |
 | `surfaces/shared/llm_setup/env_sync.py` | `.env` synchronization when provider/model choices change. |
 
-User-facing setup and env var tables: [`docs/llm-providers.mdx`](../../docs/llm-providers.mdx).
+User-facing setup and env var tables: [`docs/platform/llm-providers.mdx`](../../docs/platform/llm-providers.mdx).
 
 ## Transport: native SDK vs LiteLLM
 
@@ -61,7 +62,7 @@ and wizard env sync call `reset_llm_clients()` directly.
 
 ## Adding a Hosted API Provider
 
-1. Add the provider literal to `LLMProvider` and normalization/validation paths in `config/config.py`.
+1. Add the provider literal to `LLMProvider` and normalization/validation paths in `config/llm_settings.py`.
 2. Add a `ProviderModelDefaults` row in `config/llm_models.py` (model-tier defaults / base URL).
 3. Add `ProviderSpec` in `config/llm_auth/provider_catalog.py` and matching `ProviderOption` in
    `surfaces/shared/llm_setup/catalog.py` (model env vars, defaults, `endpoint_env` if needed).
@@ -102,6 +103,3 @@ Do not add a separate Vertex client class — extend `transports/litellm/routing
 `providers/vertex_ai.py`. Like Bedrock, `credential_kind="ambient"`: OpenSRE never stores a
 Vertex secret and does not enforce a required-field precondition — a missing project surfaces
 as a LiteLLM/google-auth error at request time.
-
-For investigation tool calling details, see
-[`docs/investigation-tool-calling.md`](../../docs/investigation-tool-calling.md).

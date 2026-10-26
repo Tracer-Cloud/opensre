@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from infrastructure.analytics.cli import (
+from infrastructure.analytics.capture import (
     capture_integration_removed,
     capture_integration_setup_completed,
     capture_integration_setup_started,
@@ -52,7 +52,7 @@ class IntegrationServiceChoice(click.Choice):
 
 @click.group(name="integrations")
 def integrations() -> None:
-    """Manage local integration credentials."""
+    """Manage integration connections."""
 
 
 @integrations.command(name="setup")
@@ -60,20 +60,22 @@ def integrations() -> None:
     "service", required=False, default=None, type=IntegrationServiceChoice("SETUP_SERVICES")
 )
 def setup_integration(service: str | None) -> None:
-    """Set up credentials for a service."""
-    from integrations.cli import cmd_setup, cmd_verify
+    """Set up a service locally or continue setup in the app."""
+    from integrations.cli import cmd_setup
+    from integrations.setup import SetupPending
 
     normalized_service = service or "prompt"
     capture_integration_setup_started(normalized_service)
     resolved_service = cmd_setup(service)
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
+    if isinstance(resolved_service, SetupPending):
+        return
     capture_integration_setup_completed(resolved_service)
 
     if resolved_service in constants.VERIFY_SERVICES:
-        click.echo(f"  Verifying {resolved_service}...\n")
-        exit_code = cmd_verify(resolved_service)
-        if exit_code == 0:
-            capture_integration_verified(resolved_service)
-        raise SystemExit(exit_code)
+        capture_integration_verified(resolved_service)
 
 
 @integrations.command(name="list")
@@ -86,7 +88,7 @@ def list_integrations() -> None:
 
 
 @integrations.command(name="show")
-@click.argument("service", type=IntegrationServiceChoice("MANAGED_INTEGRATION_SERVICES"))
+@click.argument("service")
 def show_integration(service: str) -> None:
     """Show details for a configured integration."""
     from integrations.cli import cmd_show
@@ -95,13 +97,16 @@ def show_integration(service: str) -> None:
 
 
 @integrations.command(name="remove")
-@click.argument("service", type=IntegrationServiceChoice("MANAGED_INTEGRATION_SERVICES"))
+@click.argument("service")
 def remove_integration(service: str) -> None:
     """Remove a configured integration."""
     from integrations.cli import cmd_remove
 
     cmd_remove(service)
     capture_integration_removed(service)
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
 
 
 @integrations.command(name="verify")
@@ -124,4 +129,7 @@ def verify_integration(
     )
     if exit_code == 0:
         capture_integration_verified(service or "all")
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
     raise SystemExit(exit_code)

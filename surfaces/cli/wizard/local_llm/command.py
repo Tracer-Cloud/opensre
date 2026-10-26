@@ -5,8 +5,8 @@ from __future__ import annotations
 import questionary
 from rich.console import Console
 
-from config.config import DEFAULT_OLLAMA_HOST
 from config.env_file import sync_env_values
+from config.llm_models import DEFAULT_OLLAMA_HOST
 from config.setup_store import get_store_path, save_local_config
 from infrastructure.terminal.theme import DIM, ERROR, HIGHLIGHT, WARNING
 from surfaces.cli.wizard.local_llm.hardware import detect_hardware, recommend_model
@@ -14,13 +14,13 @@ from surfaces.cli.wizard.local_llm.ollama import (
     install,
     is_installed,
     is_server_running,
-    normalize_model_tag,
     pull_model,
     start_server,
     wait_for_server,
 )
 from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 from surfaces.shared.llm_setup.env_sync import sync_provider_env
+from surfaces.shared.llm_setup.ollama import normalize_model_tag
 from surfaces.shared.llm_setup.validation import _check_ollama
 
 _console = Console()
@@ -106,8 +106,6 @@ def run_local_llm_setup() -> int:
     _console.print(f"Config:    [{DIM}]{env_path}[/]")
     _console.print(f"Store:     [{DIM}]{store_path}[/]")
     _console.print("\nTry it now:")
-    _console.print(
-        "  [bold]opensre investigate[/bold]   — launches interactive mode, try a sample alert"
-    )
-    _console.print("  [bold]opensre onboard[/bold]       — configure observability integrations")
+    _console.print("  [bold]opensre[/bold]   — launches interactive mode")
+    _console.print("  [bold]opensre integrations setup[/bold] — add tools when you need them")
     return 0

@@ -1,336 +1,422 @@
-"""Splash screen and agent ready-state box for the REPL launch banner.
+"""Launch banner shared by the CLI landing page and REPL.
 
-Two exported entry points
--------------------------
-render_splash(console, first_run=False)
-    Branded startup screen with the Braille logomark and optional security gate.
-    Called once when the CLI starts.
-
-render_ready_box(console, session=None)
-    DIM-bordered two-column welcome panel:
-      left  → ◉ OpenSRE · provider · model · mode · cwd
-      right → "Tips for getting started" + "What's new"
-    Called after the splash and on /clear, /welcome, and greeting aliases.
-
-Rendered output legend (colour roles)
---------------------------------------
-# [HIGHLIGHT]  ◉ glyph · OpenSRE brand name
-# [BRAND]      version string · model name · section headers
-# [SECONDARY]  Braille logomark · "opensre" product name label · cwd · tip / note body
-# [DIM]        subtitle description · rule lines · box chrome · dividers
-# [TEXT]       provider/model values · greeting
-# [WARNING]    read-only or trust-mode notice · incomplete-integration marker
+Droid-style centered hero: each row is centered independently (a single
+``Align.center`` on a multi-line block left-aligns short lines inside the
+widest line). Bold block wordmark + version + welcome + capability chips.
 """
 
 from __future__ import annotations
 
-import getpass
+import enum
 import math
-import os
 import sys
+import threading
+import time
+from dataclasses import dataclass
 
-from rich import box
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.rule import Rule
-from rich.table import Table
+from rich.align import Align
+from rich.cells import cell_len
+from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
+from rich.padding import Padding
 from rich.text import Text
 
-from config.repl_config import WHATS_NEW
+from config.constants import (
+    CI_FIX_COUNT_LABEL,
+    PRODUCT_DISPLAY_NAME,
+    WELCOME_DESCRIPTION,
+    WELCOME_TITLE,
+)
 from config.version import get_opensre_version
+from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
+    BOLD_SKILL,
     BRAND,
     DIM,
+    ERROR,
     HIGHLIGHT,
     SECONDARY,
     TEXT,
-    WARNING,
 )
-from surfaces.shared.terminal.banner.banner_state import _build_ambient_right_column
-from surfaces.shared.terminal.banner.splash_layout import build_splash_layout
-from surfaces.shared.terminal.tables.provider import detect_provider_model
+from surfaces.shared.terminal.banner.banner_state import LaunchStatus, load_launch_status
+from surfaces.shared.terminal.components.rendering import _console_is_capturing
+from surfaces.shared.terminal.prompt_layout import clip_prompt_text
+
+_BANNER_VERTICAL_PADDING = 1
+
+#: Version prefix under the wordmark.
+_VERSION_PREFIX = "v"
+#: Capability-status glyphs: present/usable vs. absent.
+_STATUS_OK_GLYPH = "✓"
+_STATUS_MISSING_GLYPH = "✗"
+#: Spacing between status items.
+_STATUS_ITEM_GAP = "     "
+
+#: Minimum console width to paint the ring mark (its cell width + margin);
+#: narrower terminals get the compact text title instead.
+_WORDMARK_MIN_WIDTH = 24
 
 
-def _is_first_run() -> bool:
-    """True when the wizard has never been completed on this machine."""
-    try:
-        from config.constants import get_store_path
+class LaunchStatusLabel(enum.StrEnum):
+    """Labels for the launch banner's capability status line."""
 
-        return not get_store_path().exists()
-    except Exception:
-        return False
+    SKILLS = "Skills"
+    CI_CD_FIXES = CI_FIX_COUNT_LABEL
 
 
-# ── Splash screen ─────────────────────────────────────────────────────────────
-
-
-def render_splash(console: Console | None = None, *, first_run: bool | None = None) -> None:
-    """Print the branded startup splash.
-
-    Responsive layout (see splash_layout.select_splash_mode):
-    ≥ 90 cols — large Braille logo beside the splash content:
-    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ [DIM divider]
-      ⣠⣶⡿…⢶⣄     opensre  ·  v<version>          [SECONDARY logo · BRAND]
-      …            open-source SRE agent …          [DIM]
-    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ [DIM divider]
-    60–89 cols — small Braille logo beside the same condensed content.
-    < 60 cols — stacked subtitle + description only, no logo.
-
-    If first_run (or not set and wizard has never run):
-      ⚠  This tool runs AI-powered commands …      [WARNING]
-         Press Enter to continue…                   [SECONDARY]
-    """
-    console = console or Console(
-        highlight=False,
-        force_terminal=True,
-        color_system="truecolor",
-        legacy_windows=False,
-    )
-    if first_run is None:
-        first_run = _is_first_run()
-
-    version = get_opensre_version()
-
-    console.print()
-    console.print(Rule(style=DIM))
-    console.print()
-    console.print(build_splash_layout(console.width, version))
-    console.print()
-    console.print(Rule(style=DIM))
-
-    if first_run:
-        console.print()
-        notice = Text()
-        notice.append("  ")
-        notice.append("⚠  ", style=f"bold {WARNING}")
-        notice.append(
-            "This tool executes AI-powered commands against your infrastructure.\n"
-            "     Review the documentation before connecting production systems.\n"
-            "     Source: https://github.com/opensre-dev/opensre",
-            style=SECONDARY,
-        )
-        console.print(notice)
-        console.print()
-        if sys.stdin.isatty():
-            try:
-                console.print(f"  [{SECONDARY}]Press Enter to continue…[/]", end="")
-                sys.stdin.readline()
-            except (EOFError, KeyboardInterrupt, OSError):
-                # Non-interactive stdin or user abort — skip blocking and continue startup.
-                pass
-        console.print()
-
-
-# ── Agent ready-state box ─────────────────────────────────────────────────────
-
-# Static copy for the right column (first-run only). Keep entries terse.
-_TIPS: tuple[str, ...] = (
-    "Paste alert JSON or describe an incident",
-    "Type /help to list slash commands",
-    "Run /doctor for environment diagnostics",
-    "Use /investigate for runnable demos/templates",
+#: The canonical overlapping-ring OpenSRE mark (docs/images/opensre-mark.svg),
+#: rendered in braille — the "loops" logo.
+_WORDMARK_ROWS: tuple[str, ...] = (
+    "⠀⠀⠀⢀⣤⣶⣾⣿⣿⣿⣿⣶⣦⣄⡈⠒⢦⣄⡀⠀⠀⠀",
+    "⠀⢀⣴⣿⠿⠋⢁⣤⣶⠖⠂⠉⠙⢿⣿⣦⠀⠙⣿⣦⡀⠀",
+    "⢀⣾⣿⠋⠀⣴⣿⡟⠁⠀⠀⠀⠀⠀⠹⣿⣷⠀⠘⣿⣷⡀",
+    "⣼⣿⡇⠀⣼⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⢹⣿⡇⠀⢹⣿⣇",
+    "⣿⣿⠀⠀⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⠀⢸⣿⣿",
+    "⣿⣿⠀⠀⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⠀⢸⣿⣿",
+    "⢻⣿⣇⠀⢻⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⣼⣿⡇⠀⣸⣿⡏",
+    "⠈⢿⣿⣄⠀⠻⣿⣧⡀⠀⠀⠀⠀⠀⣰⣿⡟⠀⢠⣿⡿⠁",
+    "⠀⠈⠻⣿⣷⣄⣈⠛⠻⠶⠄⣀⣤⣾⣿⠟⠀⣰⣿⠟⠀⠀",
+    "⠀⠀⠀⠈⠙⠻⠿⣿⣿⣿⡿⠿⠟⠋⠀⠴⠞⠋⠁⠀⠀⠀",
 )
 
-# Panel geometry. The body switches to a stacked layout on narrow terminals,
-# and otherwise expands to fill the full console width while keeping the left
-# identity column readable and the right notes column roomy.
-_MIN_LEFT_COL_WIDTH = 34
-_MAX_LEFT_COL_WIDTH = 48
-_MIN_RIGHT_COL_WIDTH = 40
-_DIVIDER_WIDTH = 3
-_PANEL_PADDING_X = 2
-_PANEL_FRAME_WIDTH = 2 + (_PANEL_PADDING_X * 2)
-_MIN_TWO_COLUMN_CONTENT_WIDTH = _MIN_LEFT_COL_WIDTH + _DIVIDER_WIDTH + _MIN_RIGHT_COL_WIDTH
-
-# OpenSRE brand mark — single "O" from oh-my-logo tiny font (half-block chars).
-_LOGO_MARK_ROWS: tuple[tuple[str, str], ...] = (
-    ("█▀█", ""),
-    ("█▄█", ""),
-)
-
-
-def _github_username() -> str:
-    """Return the saved GitHub login for the configured GitHub integration, or "".
-
-    Best-effort and never raises: the welcome greeting must render even when the
-    integration store is unreadable or GitHub is not configured.
-    """
-    try:
-        from integrations.github.identity import saved_github_username
-
-        return saved_github_username()
-    except Exception:
-        return ""
+# A short 60 FPS startup turn; animation stops before the prompt becomes live.
+_WORDMARK_SPIN_FRAME_COUNT = 48
+_WORDMARK_SPIN_FRAME_INTERVAL_SECONDS = 1 / 60
+# When the spin runs under startup work and is asked to stop, it still shows
+# at least this many frames so it always reads as a turn, never a flicker.
+_WORDMARK_SPIN_MIN_FRAMES = 24
+_MIN_PROJECTED_SCALE = 0.08
+_BRAILLE_BASE = 0x2800
+_BRAILLE_LIMIT = 0x28FF
+_HIDE_CURSOR = "\x1b[?25l"
+_SHOW_CURSOR = "\x1b[?25h"
+_ERASE_LINE = "\x1b[2K"
+_COLUMN_ONE = "\x1b[1G"
+_SYNCED_OUTPUT_START = "\x1b[?2026h"
+_SYNCED_OUTPUT_END = "\x1b[?2026l"
 
 
-def _get_username() -> str:
-    # Prefer the authenticated GitHub handle once it is known, so the greeting
-    # reflects the user's GitHub identity rather than the local system account.
-    github = _github_username()
-    if github:
-        return github
-    try:
-        return getpass.getuser()
-    except Exception:
-        return "there"
+@dataclass(frozen=True, slots=True)
+class WordmarkSpinFrame:
+    """One projected frame of the terminal wordmark's Y-axis turn."""
+
+    rows: tuple[str, ...]
+    scale: float
+    back_facing: bool
 
 
-def _build_logo_mark() -> Text:
-    """Return the brand mark left-aligned (flush with the column's 2-space indent)."""
-    logo = Text(no_wrap=True)
-    for index, (body, _echo) in enumerate(_LOGO_MARK_ROWS):
-        if index:
-            logo.append("\n")
-        logo.append(body, style=f"bold {HIGHLIGHT}")
-    return logo
+def _center(renderable: RenderableType) -> Align:
+    """Center one row/block on its own — do not bundle unequal-width lines."""
+    return Align.center(renderable)
 
 
-def _format_cwd(path: str) -> str:
-    """Collapse the user's home directory to ~ for a tidier identity line."""
-    home = os.path.expanduser("~")
-    if home and (path == home or path.startswith(home + os.sep)):
-        return "~" + path[len(home) :]
-    return path
+def _braille_dot_columns(row: str) -> list[int]:
+    """Decode braille cells into four-bit vertical dot columns."""
+    columns: list[int] = []
+    for cell in row:
+        codepoint = ord(cell)
+        dots = codepoint - _BRAILLE_BASE if _BRAILLE_BASE <= codepoint <= _BRAILLE_LIMIT else 0
+        left = dots & 0x07 | ((dots & 0x40) >> 3)
+        right = ((dots & 0x38) >> 3) | ((dots & 0x80) >> 4)
+        columns.extend((left, right))
+    return columns
 
 
-def _build_identity_block(provider: str, model: str, *, trust_mode: bool, first_run: bool) -> Text:
-    """Left column: mascot · blank · greeting · blank · identity line (all left-aligned)."""
-    logo = _build_logo_mark()
+def _encode_braille_columns(columns: list[int]) -> str:
+    """Encode four-bit vertical dot columns back into braille cells."""
+    cells: list[str] = []
+    for index in range(0, len(columns), 2):
+        left = columns[index]
+        right = columns[index + 1] if index + 1 < len(columns) else 0
+        dots = (left & 0x07) | ((left & 0x08) << 3) | ((right & 0x07) << 3) | ((right & 0x08) << 4)
+        cells.append(chr(_BRAILLE_BASE + dots))
+    return "".join(cells)
 
-    greeting = Text()
-    salutation = "Welcome" if first_run else "Welcome back"
-    greeting.append(f"{salutation} {_get_username()}!", style=f"bold {TEXT}")
 
-    # Single flowing line: model · tier · workspace
-    cwd = _format_cwd(os.getcwd())
-    tier = "trust mode" if trust_mode else provider
-    identity = Text(overflow="fold")
-    identity.append(model, style=f"bold {BRAND}")
-    identity.append("  ·  ", style=DIM)
-    if trust_mode:
-        identity.append(tier, style=f"bold {WARNING}")
-        identity.append("  ·  ", style=DIM)
+def _turn_wordmark_row(row: str, *, scale: float, mirrored: bool) -> str:
+    """Project one logo row onto a narrower plane for a 3D turn frame."""
+    source = _braille_dot_columns(row)
+    if mirrored:
+        source.reverse()
+    # A braille cell is two dot columns wide. An odd projected width cannot be
+    # centered on the even-width source canvas, so its extra dot alternates
+    # sides as the logo turns and makes the mark appear to wobble.
+    target_width = max(2, 2 * round(len(source) * scale / 2))
+    if target_width >= len(source):
+        projected = source
     else:
-        identity.append(tier, style=SECONDARY)
-        identity.append("  ·  ", style=DIM)
-    identity.append(cwd, style=SECONDARY)
-
-    return Text("\n").join([logo, Text(), Text(), greeting, Text(), Text(), identity])
-
-
-def _build_notes_block(header_text: str, items: tuple[str, ...]) -> Text:
-    """Right column section: bold header followed by dim list items."""
-    parts: list[Text] = [Text(header_text, style=f"bold {BRAND}")]
-    for item in items:
-        parts.append(Text(item, style=SECONDARY, overflow="fold"))
-    return Text("\n").join(parts)
-
-
-def _visual_line_count(block: Text, width: int) -> int:
-    """Estimate how many terminal lines a Text block will occupy at ``width``."""
-    safe_width = max(width, 1)
-    total = 0
-    for raw_line in block.plain.split("\n"):
-        total += max(1, math.ceil(max(len(raw_line), 1) / safe_width))
-    return total
+        last_source_index = len(source) - 1
+        last_target_index = target_width - 1
+        projected = [
+            source[round(index * last_source_index / last_target_index)]
+            for index in range(target_width)
+        ]
+    # Keep the encoded row width fixed. Re-centering a shorter string on every
+    # frame moves it by whole terminal cells, producing a visible side-to-side
+    # jump even though the dot projection itself changes smoothly.
+    canvas = [0] * len(source)
+    start = (len(canvas) - len(projected)) // 2
+    canvas[start : start + len(projected)] = projected
+    return _encode_braille_columns(canvas)
 
 
-def _vertical_divider(height: int) -> Text:
-    """Build a padded vertical rule with ``height`` lines."""
-    return Text("\n".join(" │ " for _ in range(max(height, 1))), style=DIM, no_wrap=True)
+def build_wordmark_spin_frames() -> tuple[WordmarkSpinFrame, ...]:
+    """Build one full Y-axis revolution of the terminal wordmark."""
+    frames: list[WordmarkSpinFrame] = []
+    for frame_index in range(_WORDMARK_SPIN_FRAME_COUNT):
+        angle = math.tau * frame_index / _WORDMARK_SPIN_FRAME_COUNT
+        cosine = math.cos(angle)
+        scale = max(abs(cosine), _MIN_PROJECTED_SCALE)
+        mirrored = cosine < 0
+        frames.append(
+            WordmarkSpinFrame(
+                rows=tuple(
+                    _turn_wordmark_row(row, scale=scale, mirrored=mirrored)
+                    for row in _WORDMARK_ROWS
+                ),
+                scale=scale,
+                back_facing=mirrored,
+            )
+        )
+    return tuple(frames)
 
 
-def _two_column_widths(console_width: int) -> tuple[int, int]:
-    """Return responsive left/right widths for the ready panel body."""
-    content_width = max(console_width - _PANEL_FRAME_WIDTH, _MIN_TWO_COLUMN_CONTENT_WIDTH)
-    left_width = int((content_width - _DIVIDER_WIDTH) * 0.42)
-    left_width = max(_MIN_LEFT_COL_WIDTH, min(left_width, _MAX_LEFT_COL_WIDTH))
-    right_width = content_width - _DIVIDER_WIDTH - left_width
-    if right_width < _MIN_RIGHT_COL_WIDTH:
-        right_width = _MIN_RIGHT_COL_WIDTH
-        left_width = content_width - _DIVIDER_WIDTH - right_width
-    return left_width, right_width
+def _frame_style(frame: WordmarkSpinFrame) -> str:
+    if frame.scale <= 0.18:
+        return ui_theme.DIM_ANSI
+    if frame.back_facing:
+        return ui_theme.SECONDARY_ANSI
+    return ui_theme.HIGHLIGHT_ANSI
 
 
-def build_ready_panel(
-    console: Console | None = None,
+def _animation_frame(
+    frame: WordmarkSpinFrame,
     *,
-    session: object = None,
-) -> Panel:
-    """Build the responsive welcome panel shared by startup and CLI help."""
-    console = console or Console(
-        highlight=False,
-        force_terminal=True,
-        color_system="truecolor",
-        legacy_windows=False,
-    )
-    provider, model = detect_provider_model()
-    version = get_opensre_version()
-    trust_mode: bool = bool(getattr(session, "trust_mode", False))
+    width: int,
+    rewind: bool,
+) -> str:
+    """Paint one frame in the temporary startup region."""
+    style = _frame_style(frame)
+    rows = [""]
+    for row in frame.rows:
+        left_pad = max((width - cell_len(row)) // 2, 0)
+        rows.append(f"{' ' * left_pad}{style}\x1b[1m{row}{ui_theme.ANSI_RESET}")
+    frame_text = f"{_COLUMN_ONE}{_ERASE_LINE}" + (f"\r\n{_COLUMN_ONE}{_ERASE_LINE}".join(rows))
+    move_to_top = f"{_COLUMN_ONE}\x1b[{len(rows) - 1}A" if rewind else ""
+    return f"{_SYNCED_OUTPUT_START}{move_to_top}{frame_text}{_SYNCED_OUTPUT_END}"
 
-    panel_title = Text()
-    panel_title.append(" OpenSRE", style=f"bold {HIGHLIGHT}")
-    panel_title.append(" · ", style=DIM)
-    panel_title.append(f"v{version} ", style=BRAND)
 
-    first_run = _is_first_run()
-    left = _build_identity_block(provider, model, trust_mode=trust_mode, first_run=first_run)
-    if first_run:
-        right = Text("\n").join(
-            [
-                _build_notes_block("Tips for getting started", _TIPS),
-                Text("───", style=DIM),
-                _build_notes_block("What's new", WHATS_NEW),
-            ]
-        )
-    else:
-        right = _build_ambient_right_column(session=session)
-
-    body: Group | Table
-    if console.width - _PANEL_FRAME_WIDTH >= _MIN_TWO_COLUMN_CONTENT_WIDTH:
-        left_width, right_width = _two_column_widths(console.width)
-        height = max(
-            _visual_line_count(left, left_width),
-            _visual_line_count(right, right_width),
-        )
-        divider = _vertical_divider(height)
-
-        grid = Table.grid(padding=0, expand=False)
-        grid.add_column(justify="left", vertical="top", width=left_width)
-        grid.add_column(justify="center", vertical="top", width=_DIVIDER_WIDTH)
-        grid.add_column(justify="left", vertical="top", width=right_width)
-        grid.add_row(left, divider, right)
-        body = grid
-    else:
-        body = Group(
-            left,
-            Rule(style=DIM),
-            right,
-        )
-
-    return Panel(
-        body,
-        title=panel_title,
-        title_align="left",
-        border_style=DIM,
-        padding=(1, _PANEL_PADDING_X),
-        expand=True,
-        box=box.ROUNDED,
+def _clear_animation(frame: WordmarkSpinFrame) -> str:
+    row_count = len(frame.rows) + 1
+    move_to_top = f"{_COLUMN_ONE}\x1b[{row_count - 1}A"
+    clear_rows = _ERASE_LINE + (f"\x1b[1B{_COLUMN_ONE}{_ERASE_LINE}" * (row_count - 1))
+    return (
+        f"{_SYNCED_OUTPUT_START}{move_to_top}{clear_rows}"
+        f"\x1b[{row_count - 1}A{_COLUMN_ONE}{_SYNCED_OUTPUT_END}"
     )
 
 
-def render_ready_box(
-    console: Console | None = None,
+def animate_launch_wordmark(
+    console: Console,
     *,
-    session: object = None,
+    stop: threading.Event | None = None,
+    abort: threading.Event | None = None,
+    min_frames: int = _WORDMARK_SPIN_MIN_FRAMES,
 ) -> None:
-    """Print the two-column welcome panel with an embedded title bar."""
+    """Turn the terminal wordmark once before the interactive prompt starts.
+
+    With ``stop``, the turn ends early once the event is set and at least
+    ``min_frames`` have shown — so the runtime can boot under the animation and
+    the prompt appears as soon as it is ready instead of after a fixed delay.
+    A turn that completes before ``stop`` is set rests on the front face until
+    it is, so a slow launch never leaves the screen blank. ``abort`` ends the
+    animation at the next frame regardless of ``min_frames``. Either way the
+    rows it drew are erased before it returns.
+    """
+    if (
+        console.file is not sys.stdout
+        or not sys.stdout.isatty()
+        or _console_is_capturing(console)
+        or console.width <= _wordmark_cell_width()
+    ):
+        return
+
+    def ended(shown: int) -> bool:
+        if abort is not None and abort.is_set():
+            return True
+        return stop is not None and stop.is_set() and shown >= min_frames
+
+    frames = build_wordmark_spin_frames()
+    stream = sys.stdout
+    shown = 0
+    try:
+        stream.write(_HIDE_CURSOR)
+        for frame in (*frames, frames[0]) if stop is not None else frames:
+            if ended(shown):
+                break
+            stream.write(_animation_frame(frame, width=console.width, rewind=shown > 0))
+            shown += 1
+            stream.flush()
+            time.sleep(_WORDMARK_SPIN_FRAME_INTERVAL_SECONDS)
+        while stop is not None and not ended(shown):
+            time.sleep(_WORDMARK_SPIN_FRAME_INTERVAL_SECONDS)
+    finally:
+        # Nothing to erase when an abort came before the first frame; the
+        # rewind would otherwise wipe rows above the cursor.
+        if shown:
+            stream.write(_clear_animation(frames[0]))
+        stream.write(_SHOW_CURSOR)
+        stream.flush()
+
+
+def _build_wordmark(*, console_width: int) -> Text:
+    """Return the bold ring "loops" mark, or a compact title on narrow terminals."""
+    if console_width < _WORDMARK_MIN_WIDTH:
+        return Text(PRODUCT_DISPLAY_NAME, style=f"bold {HIGHLIGHT}", no_wrap=True)
+    return Text("\n".join(_WORDMARK_ROWS), style=f"bold {HIGHLIGHT}", no_wrap=True)
+
+
+def _append_status_item(
+    line: Text,
+    label: str,
+    count: int | None,
+    *,
+    available: bool,
+    mark_unavailable: bool = True,
+) -> None:
+    if line:
+        line.append(_STATUS_ITEM_GAP, style=DIM)
+    muted = not available and not mark_unavailable
+    line.append(label, style=DIM if muted else f"bold {TEXT}")
+    if count is not None:
+        line.append(f" ({count})", style=DIM if muted else SECONDARY)
+    if muted:
+        return
+    glyph = _STATUS_OK_GLYPH if available else _STATUS_MISSING_GLYPH
+    # Green success / red missing — same signal language as Droid's chips.
+    line.append(f" {glyph}", style=BOLD_SKILL if available else ERROR)
+
+
+def _build_version_line() -> Text:
+    return Text(
+        f"{_VERSION_PREFIX}{get_opensre_version()}",
+        style=f"bold {BRAND}",
+        no_wrap=True,
+    )
+
+
+def _build_welcome_title() -> Text:
+    """Accent title — same copy and style as the sign-in screen."""
+    return Text(WELCOME_TITLE, style=f"bold {HIGHLIGHT}", no_wrap=True)
+
+
+def _build_welcome_paragraph() -> Text:
+    """One-sentence product description, wrapped and centered (not clipped)."""
+    return Text(WELCOME_DESCRIPTION, style=str(TEXT), justify="center")
+
+
+def _build_capabilities(status: LaunchStatus, *, max_width: int) -> Text:
+    capabilities = Text(overflow="fold", no_wrap=True)
+    _append_status_item(
+        capabilities,
+        LaunchStatusLabel.SKILLS,
+        status.skill_count,
+        available=status.skill_count > 0,
+    )
+    _append_status_item(
+        capabilities,
+        LaunchStatusLabel.CI_CD_FIXES,
+        status.ci_fix_count,
+        available=status.ci_fix_count > 0,
+        mark_unavailable=False,
+    )
+    # Clip rather than soft-wrap — a wrapped chip row looks left-ragged.
+    plain = capabilities.plain
+    if cell_len(plain) > max_width:
+        return Text(
+            clip_prompt_text(plain, max_width),
+            style=str(TEXT),
+            no_wrap=True,
+        )
+    return capabilities
+
+
+def build_launch_banner(
+    console: Console | None = None,
+    *,
+    session: object = None,
+) -> RenderableType:
+    """Build the centered, borderless OpenSRE launch banner."""
+    del session  # Reserved for future session-scoped launch indicators.
     console = console or Console(
         highlight=False,
         force_terminal=True,
         color_system="truecolor",
         legacy_windows=False,
     )
-    console.print()
-    console.print(build_ready_panel(console, session=session))
-    console.print()
+    status = load_launch_status()
+    width = console.width
+    # Leave one column empty so the banner never soft-wraps on the last cell.
+    line_width = max(width - 1, 1)
+    # Rows top-to-bottom (``None`` is a blank spacer). Each is centered on its
+    # own axis in the loop below — one Align.center over a multi-line block
+    # would left-align the short lines inside the widest one.
+    rows: list[RenderableType | None] = [
+        _build_wordmark(console_width=width),
+        None,
+        _build_version_line(),
+        None,
+        _build_welcome_title(),
+        _build_welcome_paragraph(),
+        None,
+        _build_capabilities(status, max_width=line_width),
+    ]
+    body: RenderableType = Group(*(Text() if row is None else _center(row) for row in rows))
+    return Padding(body, (_BANNER_VERTICAL_PADDING, 0))
+
+
+class ResponsiveLaunchBanner:
+    """The launch banner, laid out for whatever width it is rendered at."""
+
+    def __init__(self, *, session: object = None) -> None:
+        self._session = session
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        yield build_launch_banner(console, session=self._session)
+
+
+def render_launch_banner(
+    console: Console | None = None,
+    *,
+    session: object = None,
+    animate: bool = True,
+) -> None:
+    """Print the OpenSRE launch banner.
+
+    ``animate=False`` skips the startup spin — used on terminal resize where the
+    banner must be reprinted instantly at the new width.
+    """
+    console = console or Console(
+        highlight=False,
+        force_terminal=True,
+        color_system="truecolor",
+        legacy_windows=False,
+    )
+    banner = build_launch_banner(console, session=session)
+    if animate:
+        animate_launch_wordmark(console)
+    console.print(banner)
+
+
+def _wordmark_cell_width() -> int:
+    """Widest wordmark row in terminal cells (for tests / narrow fallback)."""
+    return max(cell_len(row) for row in _WORDMARK_ROWS)
+
+
+__all__ = [
+    "ResponsiveLaunchBanner",
+    "WordmarkSpinFrame",
+    "animate_launch_wordmark",
+    "build_launch_banner",
+    "build_wordmark_spin_frames",
+    "render_launch_banner",
+]

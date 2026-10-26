@@ -1,0 +1,98 @@
+---
+title: "AWS Lambda"
+description: "Connect AWS Lambda so OpenSRE can inspect function configuration, invocation logs, and runtime errors."
+---
+
+## Overview
+
+OpenSRE integrates with AWS Lambda to inspect function configuration, retrieve recent invocation logs from CloudWatch, and investigate runtime failures during incident response. All operations are read-only.
+
+## Prerequisites
+
+- An AWS account with AWS Lambda functions
+- AWS credentials configured for the runtime (see [AWS](/integrations/cloud/aws))
+- Permission to access Lambda and CloudWatch Logs
+
+## Setup
+
+Lambda has no separate setup target. Configure the [AWS integration](/integrations/cloud/aws):
+
+```bash
+opensre integrations setup aws
+```
+
+### Environment variables
+
+Add the following to your `.env` (ambient credential chain used by Lambda tools):
+
+```bash
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_REGION=us-east-1
+AWS_SESSION_TOKEN=your-session-token    # optional
+```
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `AWS_ACCESS_KEY_ID` | Yes\* | AWS access key ID |
+| `AWS_SECRET_ACCESS_KEY` | Yes\* | AWS secret access key |
+| `AWS_REGION` | No | AWS region (defaults to `us-east-1`) |
+| `AWS_SESSION_TOKEN` | No | Session token when using temporary credentials |
+
+\*Or use an instance/task role / shared profile instead of static keys. There are no Lambda-specific environment variables.
+
+## Credentials
+
+Lambda tools build clients through the ambient boto3 credential chain. They do **not** assume `AWS_ROLE_ARN` for API calls — that role is used by `opensre integrations verify aws` when set.
+
+Give the running identity permission to:
+
+- Call Lambda read APIs (`lambda:List*`, `lambda:Get*`, and related describe/get actions your account uses)
+- Read CloudWatch Logs (`logs:FilterLogEvents`, `logs:GetLogEvents`) for invocation history
+
+If you already use the AWS managed `ReadOnlyAccess` policy on that identity, both are covered. See also the least-privilege example on the [AWS](/integrations/cloud/aws) page.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_lambda_configuration` | Inspect runtime, handler, timeout, memory, IAM role, environment variables, and deployed version |
+| `inspect_lambda_function` | Retrieve deployment package metadata and inspect function contents when available |
+| `get_lambda_invocation_logs` | Retrieve recent invocation logs from CloudWatch Logs |
+| `get_lambda_errors` | Investigate recent runtime failures and execution errors |
+
+### Gotcha
+
+Lambda invocation history is retrieved from **CloudWatch Logs**. Ensure the configured AWS credentials have permission to access both **AWS Lambda** and **CloudWatch Logs**, otherwise log retrieval may fail even if Lambda access succeeds.
+
+## Verify
+
+```bash
+opensre integrations verify aws
+```
+
+There is no separate `aws_lambda` verify target. A successful AWS verify confirms the account credentials OpenSRE uses; Lambda tools then use the ambient credential chain when called.
+
+Expected output (example):
+
+```text
+Service: aws
+Status: passed
+Detail: Connected to AWS STS via static-creds in us-east-1; caller identity account=123456789012 arn=arn:aws:iam::123456789012:user/opensre.
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Lambda tools fail after verify passes** | Verify assumes `AWS_ROLE_ARN` when set; Lambda tools use the ambient chain — attach Lambda and Logs permissions to that identity |
+| **Configuration works but logs/errors empty** | Grant CloudWatch Logs read access (`logs:FilterLogEvents`, `logs:GetLogEvents`) |
+| **Wrong region** | Set `AWS_REGION` to the region where the function is deployed |
+| **AccessDenied on Lambda APIs** | Attach `lambda:Get*` / `lambda:List*` (or broader read-only) to the ambient identity |
+
+## Security
+
+- All Lambda tools are read-only.
+- Prefer IAM roles over long-lived static keys.
+- Scope permissions to the functions and log groups you want OpenSRE to inspect.
+- Store credentials in `.env` or your secret manager — not in source control.

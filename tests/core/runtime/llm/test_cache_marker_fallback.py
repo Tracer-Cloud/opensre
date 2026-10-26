@@ -23,6 +23,7 @@ from core.llm.transports.sdk.anthropic_cache import (
     is_cache_unsupported_error,
     strip_cache_markers,
 )
+from tests.utils.anthropic_streams import FakeMessageStream
 
 _CACHE_REJECTION_MESSAGE = (
     "messages.0: Extra inputs are not permitted: cache_control is not supported for this model"
@@ -42,7 +43,7 @@ def _bad_request(message: str) -> Exception:
 
 
 class _FlakyMessages:
-    """messages.create that raises on the first call, then succeeds."""
+    """messages.create (or .stream) that raises on the first call, then succeeds."""
 
     def __init__(self, first_error: Exception) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -58,11 +59,14 @@ class _FlakyMessages:
             usage=SimpleNamespace(input_tokens=10, output_tokens=2),
         )
 
+    def stream(self, **kwargs: Any) -> FakeMessageStream:
+        return FakeMessageStream(self.create(**kwargs))
 
-class _InactiveGuardrailEngine:
+
+class _InactiveGuardrailEvaluator:
     is_active = False
 
-    def __call__(self) -> _InactiveGuardrailEngine:
+    def __call__(self) -> _InactiveGuardrailEvaluator:
         return self
 
 
@@ -147,8 +151,8 @@ class TestBedrockMessagesClientFallback:
     @pytest.fixture(autouse=True)
     def _inactive_guardrails(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-            _InactiveGuardrailEngine(),
+            "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+            _InactiveGuardrailEvaluator(),
         )
 
     def test_cache_rejection_retries_without_markers(self) -> None:
@@ -204,8 +208,8 @@ class TestAnthropicMessagesClientFallback:
     @pytest.fixture(autouse=True)
     def _inactive_guardrails(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "infrastructure.safety.guardrails.engine.get_guardrail_engine",
-            _InactiveGuardrailEngine(),
+            "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator",
+            _InactiveGuardrailEvaluator(),
         )
 
     def _client(self, messages: _FlakyMessages) -> sdk_llm.LLMClient:

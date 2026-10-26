@@ -79,7 +79,9 @@ def test_apply_guardrails_wraps_string_content_in_text_blocks() -> None:
     engine.is_active = True
     engine.apply.side_effect = lambda text: f"guarded:{text}"
 
-    with patch("infrastructure.safety.guardrails.engine.get_guardrail_engine", return_value=engine):
+    with patch(
+        "infrastructure.safety.guardrails.evaluator.get_guardrail_evaluator", return_value=engine
+    ):
         messages, system = apply_guardrails_to_converse_payload(
             messages=[{"role": "user", "content": "hello"}],
             system="sys",

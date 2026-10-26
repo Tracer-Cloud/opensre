@@ -1,0 +1,118 @@
+"""Tests for recurring skill scheduling contracts."""
+
+from __future__ import annotations
+
+import hashlib
+
+import pytest
+
+from core.agent_harness.prompts.skills import (
+    clear_skills_caches,
+    list_action_skills,
+    load_skill_body,
+)
+from core.agent_harness.prompts.skills.scheduling import (
+    find_action_skill,
+    is_recurring_skill,
+    pin_recurring_skill,
+    resolve_scheduled_skill,
+    skill_revision,
+    validate_skill_inputs,
+)
+
+
+def test_morning_report_is_recurring() -> None:
+    assert is_recurring_skill("delivering-morning-briefings") is True
+
+
+def test_non_recurring_skill_is_not_schedulable() -> None:
+    for skill in list_action_skills():
+        if not skill.recurring:
+            assert is_recurring_skill(skill.name) is False
+            with pytest.raises(RuntimeError, match="not marked recurring"):
+                pin_recurring_skill(skill.name)
+            return
+    pytest.skip("no non-recurring skills in tree")
+
+
+def test_resolve_scheduled_skill_pins_revision() -> None:
+    skill = find_action_skill("delivering-morning-briefings")
+    assert skill is not None
+    pinned = skill_revision(skill)
+    resolved = resolve_scheduled_skill("delivering-morning-briefings", pinned)
+    assert resolved.name == "delivering-morning-briefings"
+    assert resolved.body == load_skill_body("delivering-morning-briefings")
+    assert resolved.revision == pinned
+
+
+def test_resolve_scheduled_skill_rejects_missing_skill() -> None:
+    with pytest.raises(RuntimeError, match="not installed"):
+        resolve_scheduled_skill("missing-skill-xyz", "abc123")
+
+
+@pytest.mark.parametrize("pin", ["v2:99:" + "0" * 64, "0" * 64])
+def test_a_major_change_or_a_changed_legacy_pin_stops_the_schedule(pin: str) -> None:
+    """A legacy pin has no version, so any change to its approved body needs re-adding."""
+    with pytest.raises(RuntimeError, match="changed since it was scheduled"):
+        resolve_scheduled_skill("delivering-morning-briefings", pin)
+
+
+def test_an_unchanged_legacy_pin_is_repinned() -> None:
+    skill = find_action_skill("delivering-morning-briefings")
+    assert skill is not None
+    body = load_skill_body(skill.name)
+    legacy = hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+    resolved = resolve_scheduled_skill(skill.name, legacy)
+
+    assert resolved.repinned
+    assert resolved.revision == skill_revision(skill)
+
+
+def test_resolve_scheduled_skill_follows_edits_within_the_major_version() -> None:
+    skill = find_action_skill("delivering-morning-briefings")
+    assert skill is not None
+    pinned = f"v2:{skill.version.split('.')[0]}:" + "0" * 64
+    resolved = resolve_scheduled_skill("delivering-morning-briefings", pinned)
+    assert resolved.repinned
+    assert resolved.revision == skill_revision(skill)
+    assert resolved.body == load_skill_body("delivering-morning-briefings")
+
+
+def test_validate_skill_inputs_rejects_non_strings() -> None:
+    with pytest.raises(ValueError, match="must be a string"):
+        validate_skill_inputs({"city": 123})
+
+    with pytest.raises(ValueError, match="keys must be strings"):
+        validate_skill_inputs({1: "Paris"})
+
+
+def test_skill_revision_changes_when_body_changes() -> None:
+    skill = find_action_skill("delivering-morning-briefings")
+    assert skill is not None
+    before = skill_revision(skill)
+    original = skill.path.read_text(encoding="utf-8")
+    skill.path.write_text(original + "\n<!-- test pin -->\n", encoding="utf-8")
+    clear_skills_caches()
+    try:
+        refreshed = find_action_skill("delivering-morning-briefings")
+        assert refreshed is not None
+        assert skill_revision(refreshed) != before
+    finally:
+        skill.path.write_text(original, encoding="utf-8")
+        clear_skills_caches()
+
+
+def test_legacy_skill_names_resolve_to_their_renamed_successor() -> None:
+    """Persisted schedules still carry the pre-gerund slugs."""
+    for legacy, current in (
+        ("morning-report", "delivering-morning-briefings"),
+        ("github-ci-health", "reporting-github-ci-failures"),
+        ("github_ci_fix", "repair-github-ci"),
+        ("fixing-github-ci", "repair-github-ci"),
+        ("cicd-reliability-agent", "scheduling-github-ci-repairs"),
+        ("scheduling-github-ci-fixes", "scheduling-github-ci-repairs"),
+    ):
+        skill = find_action_skill(legacy)
+        assert skill is not None and skill.name == current
+        assert load_skill_body(legacy) == load_skill_body(current)

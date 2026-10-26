@@ -7,7 +7,7 @@ product should not treat PostHog as a preferred analytics source.
 
 from __future__ import annotations
 
-from infrastructure.harness_ports import register_preferred_evidence_source
+from infrastructure.harness_providers import register_preferred_evidence_source
 
 
 def register_posthog_mcp_evidence_sources() -> None:

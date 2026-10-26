@@ -290,8 +290,8 @@ def test_engine_push_restore_via_registry(tmp_path_factory: pytest.TempPathFacto
     memory = home / "memory"
     sessions.mkdir()
     memory.mkdir()
-    (sessions / "a.jsonl").write_text('{"turn": 1}\n', encoding="utf-8")
-    (memory / "fact.md").write_text("remembered\n", encoding="utf-8")
+    (sessions / "a.jsonl").write_bytes(b'{"turn": 1}\n')
+    (memory / "fact.md").write_bytes(b"remembered\n")
     roots = (
         SyncRoot(name=SyncRootName.SESSIONS, path=sessions),
         SyncRoot(name=SyncRootName.MEMORY, path=memory),

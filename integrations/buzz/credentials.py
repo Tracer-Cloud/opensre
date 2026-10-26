@@ -1,9 +1,8 @@
-"""Buzz credential resolution for alarm dispatch (watchdog, Hermes).
+"""Buzz credential resolution for gateway and message delivery.
 
-``private_key``/``relay_url``/``default_channel``/``auth_tag`` reuse the
-scheduler's resolver (:func:`infrastructure.scheduling.scheduler.credentials.resolve_buzz_credentials`)
-so task-params > integration-store > environment precedence stays identical
-across the cron provider and alarm dispatchers.
+``private_key``/``relay_url``/``default_channel``/``auth_tag`` reuse the shared
+scheduler credential resolver, so integration-store > environment precedence
+stays identical across gateway and message-delivery callers.
 
 This module adds channel resolution (explicit override -> store
 ``default_channel`` -> ``BUZZ_DEFAULT_CHANNEL`` env) and raises a setup-friendly
@@ -83,7 +82,7 @@ def load_credentials_from_env(
     *,
     channel_override: str | None = None,
 ) -> BuzzCredentials:
-    """Resolve Buzz credentials for alarm dispatch.
+    """Resolve Buzz credentials for message delivery.
 
     Raises :class:`OpenSREError` with a setup-friendly suggestion when either
     the private key or a channel is missing.

@@ -93,21 +93,27 @@ def list_work_items(
     project: str = "",
     owner: str = "",
     store_path: Path | None = None,
+    read_only: bool = False,
 ) -> list[WorkItem]:
     path = store_path or work_items_path()
+    if read_only and not path.exists():
+        return []
     with _store_lock(path):
-        _import_legacy_slack_tasks_once(path)
+        if not read_only:
+            _import_legacy_slack_tasks_once(path)
         items = _load_items_no_lock(path)
     filtered = _filter_items(items, status=status, project=project, owner=owner)
     filtered.sort(key=_sort_key)
     return filtered
 
 
-def get_work_item(item_id: str, store_path: Path | None = None) -> WorkItem | None:
+def get_work_item(
+    item_id: str, store_path: Path | None = None, *, read_only: bool = False
+) -> WorkItem | None:
     clean = item_id.strip()
     if not clean:
         return None
-    for item in list_work_items(status=None, store_path=store_path):
+    for item in list_work_items(status=None, store_path=store_path, read_only=read_only):
         if item.id == clean or item.display_id == clean:
             return item
     return None

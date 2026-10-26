@@ -1,0 +1,205 @@
+---
+title: "MariaDB"
+description: "Connect MariaDB so OpenSRE can diagnose database issues"
+---
+
+## Overview
+
+OpenSRE uses MariaDB diagnostics to investigate database issues — global status, process list, slow queries, InnoDB status, and replication. Operations are read-only.
+
+## Prerequisites
+
+- MariaDB instance reachable from OpenSRE
+- A user with monitoring privileges (`PROCESS`, `performance_schema` / InnoDB status as needed)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup mariadb
+```
+
+### Option 2: Environment variables
+
+```bash
+MARIADB_HOST=your-mariadb-host
+MARIADB_PORT=3306
+MARIADB_DATABASE=your-database
+MARIADB_USERNAME=opensre_readonly
+MARIADB_PASSWORD=your-password
+MARIADB_SSL=true
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MARIADB_HOST` | — | **Required.** Hostname or IP |
+| `MARIADB_PORT` | `3306` | Port |
+| `MARIADB_DATABASE` | — | Target database |
+| `MARIADB_USERNAME` | — | Username |
+| `MARIADB_PASSWORD` | — | Password |
+| `MARIADB_SSL` | `true` | Boolean TLS enable (unlike MySQL's mode strings) |
+
+### Option 3: Persistent store
+
+Add an active `mariadb` record to `~/.opensre/integrations.json` with host, port, database, username, password, and `ssl`.
+
+## Credentials
+
+### Recommended user setup
+
+```sql
+CREATE USER 'opensre_readonly'@'%' IDENTIFIED BY 'secure-password';
+GRANT PROCESS ON *.* TO 'opensre_readonly'@'%';
+GRANT SLAVE MONITOR ON *.* TO 'opensre_readonly'@'%';
+GRANT SELECT ON performance_schema.* TO 'opensre_readonly'@'%';
+GRANT SELECT ON your_database.* TO 'opensre_readonly'@'%';
+FLUSH PRIVILEGES;
+```
+
+Four notes on these grants, each confirmed against a real server:
+
+- `information_schema` needs no explicit grant -- MariaDB exposes it automatically based on
+  a user's other privileges. `GRANT SELECT ON information_schema.*` is rejected outright
+  (`ERROR 1044`) and aborts the script before later grants run.
+- The grant on the **target database** (`MARIADB_DATABASE`) is required -- the connector
+  selects it as the default schema on connect, and without it every tool call fails with
+  `Access denied ... to database`.
+- The replication-status tool (`SHOW ALL SLAVES STATUS`) needs `SLAVE MONITOR`
+  -- MySQL's `REPLICATION CLIENT` name doesn't carry the same privilege on MariaDB (`SHOW
+  GRANTS` reports it back as `BINLOG MONITOR`, a related but different privilege that does
+  not cover replica status). Without it, that one tool fails with `Access denied; you need
+  (at least one of) the SLAVE MONITOR privilege(s)` even though `integrations verify
+  mariadb` and the other four tools pass. `SLAVE MONITOR` requires **MariaDB 10.5.9+**
+  (the privilege didn't exist before then); on any older MariaDB, grant `SUPER` instead --
+  it has covered `SHOW SLAVE STATUS` across every MariaDB version.
+- Slow queries need `performance_schema`, which is enabled by default on the official
+  `mariadb` Docker image but often disabled in production `my.cnf` -- check `SELECT
+  @@performance_schema` if the slow-queries tool returns an empty note.
+
+### Quick local test with Docker
+
+```bash
+docker run -d --name mariadb-dev -p 127.0.0.1:3307:3306 \
+  -e MARIADB_ROOT_PASSWORD=rootpass \
+  -e MARIADB_DATABASE=app_db \
+  mariadb:11 --performance-schema=ON
+
+i=0
+until docker logs mariadb-dev 2>&1 | grep -q "port: 3306"; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: MariaDB never became ready" >&2; exit 1; }
+  sleep 2
+done
+```
+
+<Warning>
+Like MySQL, the official MariaDB image starts a **temporary** init-only server before the
+real one -- its own log line reports `port: 0`. A readiness check against the socket (e.g.
+`mariadb-admin ping`) can succeed against that temporary server and return moments before it
+shuts down and the real server restarts, causing the very next command to fail with `Access
+denied` or a socket error. Waiting for the final server's own log line (`port: 3306`) avoids
+the race.
+</Warning>
+
+```bash
+docker exec mariadb-dev mariadb -uroot -prootpass -e "
+CREATE USER 'opensre_readonly'@'%' IDENTIFIED BY 'verifypass';
+GRANT PROCESS ON *.* TO 'opensre_readonly'@'%';
+GRANT SLAVE MONITOR ON *.* TO 'opensre_readonly'@'%';
+GRANT SELECT ON performance_schema.* TO 'opensre_readonly'@'%';
+GRANT SELECT ON app_db.* TO 'opensre_readonly'@'%';
+FLUSH PRIVILEGES;
+"
+docker exec mariadb-dev mariadb -uroot -prootpass -D app_db -e "
+CREATE TABLE orders (id INT PRIMARY KEY, amount DECIMAL(10,2));
+INSERT INTO orders VALUES (1, 42.50), (2, 17.00);
+SELECT SLEEP(2);
+" > /dev/null
+```
+
+```bash
+export MARIADB_HOST=127.0.0.1
+export MARIADB_PORT=3307
+export MARIADB_DATABASE=app_db
+export MARIADB_USERNAME=opensre_readonly
+export MARIADB_PASSWORD=verifypass
+export MARIADB_SSL=false
+```
+
+Verify:
+
+```bash
+opensre integrations verify mariadb
+```
+
+```
+SERVICE  │ SOURCE    │ STATUS   │ DETAIL
+mariadb  │ local env │ ✓ passed │ Connected to MariaDB 11.8.8-MariaDB-ubu2404
+         │           │          │ target database: app_db.
+```
+
+Chat sessions (unlike `opensre integrations verify`) only fall through to env
+vars when the store has no records at all -- any existing record, for any service, blocks
+env-var resolution entirely. Point `OPENSRE_INTEGRATIONS_STORE_PATH` at a path inside a
+fresh empty directory instead, so your real config is never read or written and the
+`MARIADB_*` vars above are the only source of connection info:
+
+```bash
+export OPENSRE_DEMO_STORE_DIR="$(mktemp -d /tmp/opensre-mariadb-demo.XXXXXX)"
+export OPENSRE_INTEGRATIONS_STORE_PATH="$OPENSRE_DEMO_STORE_DIR/integrations.json"
+```
+
+Now ask the agent about the seeded slow query:
+
+```bash
+opensre
+```
+
+Ask: *Does the app_db MariaDB instance have any slow queries?*
+
+Against this exact local instance the agent calls all 5 registered tools — global
+status, process list, replication status, slow queries, and InnoDB status — and
+finds the one outlier: a `SELECT SLEEP(?)` statement at ~2001 ms in
+`performance_schema`, with every other engine, lock, and connection metric within
+normal bounds.
+
+Teardown:
+
+```bash
+docker rm -f mariadb-dev
+rm -rf "$OPENSRE_DEMO_STORE_DIR"
+unset OPENSRE_DEMO_STORE_DIR OPENSRE_INTEGRATIONS_STORE_PATH
+unset MARIADB_HOST MARIADB_PORT MARIADB_DATABASE MARIADB_USERNAME MARIADB_PASSWORD MARIADB_SSL
+```
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_mariadb_global_status` | Global status / health counters |
+| `get_mariadb_process_list` | Current process list |
+| `get_mariadb_slow_queries` | Slow query digests from `performance_schema` |
+| `get_mariadb_innodb_status` | InnoDB engine status |
+| `get_mariadb_replication_status` | Replication / slave status |
+
+## Verify
+
+```bash
+opensre integrations verify mariadb
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Check host, port, firewall |
+| **SSL errors** | Confirm `MARIADB_SSL` matches server TLS config (default is on) |
+| **Slow queries empty** | Enable `performance_schema` and grant SELECT |
+| **Replication empty** | Expected on standalone primary |
+
+## Security
+
+- Use a dedicated read-only user.
+- Keep TLS enabled (`MARIADB_SSL=true`) in production.
+- Store credentials out of source control.

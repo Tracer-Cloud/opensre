@@ -290,3 +290,39 @@ class TestReplModelPersistence:
         )
         stored = wizard_store.load_local_config(persistence_paths["store"])
         assert stored["targets"]["local"]["model"] == model
+
+    @pytest.mark.parametrize("model", ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"])
+    def test_model_set_accepts_and_persists_new_claude_models(
+        self,
+        model: str,
+        persistence_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+        console, buf = _capture()
+        dispatch_slash(f"/model set anthropic {model}", Session(), console)
+
+        assert "unknown model" not in buf.getvalue()
+        assert f"ANTHROPIC_REASONING_MODEL={model}" in persistence_paths["env"].read_text(
+            encoding="utf-8"
+        )
+        stored = wizard_store.load_local_config(persistence_paths["store"])
+        assert stored["targets"]["local"]["model"] == model
+
+    def test_unavailable_ollama_model_does_not_persist(
+        self,
+        persistence_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.model.ollama.list_available_models",
+            lambda _host: ("llama3.2:latest",),
+        )
+        console, output = _capture()
+
+        dispatch_slash("/model set ollama ghost-model", Session(), console)
+
+        assert "Ollama model is not available: ghost-model" in output.getvalue()
+        assert not persistence_paths["env"].exists()
+        assert not persistence_paths["store"].exists()

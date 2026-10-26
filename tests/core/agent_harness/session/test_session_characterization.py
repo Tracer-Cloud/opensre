@@ -22,13 +22,22 @@ _CORE_FIELDS = (
     "store",
     "resumed_from_name",
     "history",
-    "last_state",
-    "last_investigation_id",
     "last_assistant_intent",
-    "last_synthetic_observation_path",
     "pending_schedule_offer",
-    "pending_investigation_offer",
     "pending_user_choice",
+    "ask_user_rounds",
+    "skill_discovery_enabled",
+    "long_term_memory_enabled",
+    "active_skill",
+    "questions_already_answered",
+    "skill_question_keys",
+    "skills_already_prompted",
+    "skill_value_notes",
+    "task_plan",
+    "task_plan_work",
+    "task_plan_work_step_texts",
+    "task_plan_breakdown_emitted",
+    "plan_only_until_authorized",
     "pending_recovery_note",
     # Outer multi-turn goal, plus the evidence-tier upgrade CTA it can offer.
     "session_goal",
@@ -44,9 +53,7 @@ _CORE_FIELDS = (
     "tokens",
     "task_registry",
     "agent",
-    "grounding",
     "runtime_metadata",
-    "_ACCUMULATED_KEYS",
 )
 
 
@@ -76,18 +83,22 @@ class TestWarmCacheGeneration:
     def test_stale_generation_is_ignored(self) -> None:
         session = _session()
         session.integrations._warm_generation = 5
-        session.integrations._store({"datadog": {"connection_verified": True}}, generation=3)
+        session.integrations._store(
+            {"datadog": {"connection_verified": True}}, generation=3, stamp=0
+        )
         assert session.resolved_integrations_cache is None
 
     def test_empty_resolve_is_not_cached(self) -> None:
         session = _session()
-        session.integrations._store({}, generation=session.integrations._warm_generation)
+        session.integrations._store({}, generation=session.integrations._warm_generation, stamp=0)
         assert session.resolved_integrations_cache is None
 
     def test_current_generation_stores_the_cache(self) -> None:
         session = _session()
         gen = session.integrations._warm_generation
-        session.integrations._store({"datadog": {"connection_verified": True}}, generation=gen)
+        session.integrations._store(
+            {"datadog": {"connection_verified": True}}, generation=gen, stamp=0
+        )
         assert session.resolved_integrations_cache is not None
         assert "datadog" in session.resolved_integrations_cache
 

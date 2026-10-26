@@ -10,18 +10,30 @@ both start here, so neither loses the shell.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
+
+from config.constants.cli_handoff import CLI_HANDOFF_FLAG
 
 if TYPE_CHECKING:
     from config.repl_config import ReplConfig
-    from surfaces.cli.host import CliHost
+    from surfaces.cli.host import AfterBanner, CliHost
 
 
-def _launch_shell(config: ReplConfig, resume_session_id: str | None) -> int:
-    from surfaces.cli.app import cli
+def _launch_shell(
+    config: ReplConfig,
+    resume_session_id: str | None,
+    after_banner: AfterBanner,
+    capture_shell_rendered: bool = True,
+) -> int:
     from surfaces.interactive_shell import run_repl
 
-    return run_repl(config=config, resume_session_id=resume_session_id, cli_command_group=cli)
+    return run_repl(
+        config=config,
+        resume_session_id=resume_session_id,
+        after_banner=after_banner,
+        capture_shell_rendered=capture_shell_rendered and not resume_session_id,
+    )
 
 
 def _start_gateway_foreground() -> None:
@@ -41,6 +53,12 @@ def _host() -> CliHost:
 
 def main(argv: list[str] | None = None) -> int:
     """Run ``opensre`` with the shell and the gateway entry wired in; return the exit status."""
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == CLI_HANDOFF_FLAG:
+        from infrastructure.process.cli_handoff import run_cli_handoff
+
+        return run_cli_handoff(args[1:])
+
     from surfaces.cli.app import main as cli_main
 
     return cli_main(argv, host=_host())

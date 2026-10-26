@@ -11,32 +11,83 @@ Populated cluster-by-cluster as the #3690 split lands; theme is the first cluste
 
 from __future__ import annotations
 
-import threading
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from surfaces.interactive_shell.session.background_investigations import (
-    BackgroundInvestigationRecord,
-    BackgroundNotificationPreferences,
-)
+from config.constants.repl_autonomy import DEFAULT_AUTO_LEVEL, AutoLevel
+from core.agent_harness.spi.session_goal import GoalPaintSignature
 from surfaces.interactive_shell.session.terminal_metrics import TerminalMetrics
 
 if TYPE_CHECKING:
     from prompt_toolkit.history import History
+
+    from core.agent_harness.spi.session_state import PendingUserChoice, SetupResume
+    from surfaces.interactive_shell.session.connection_checks import (
+        ConnectionCheck,
+        ConnectionCheckKey,
+    )
+
+logger = logging.getLogger(__name__)
+
+
+#: How many capped tool peeks Ctrl+O can cycle through.
+COLLAPSED_OUTPUT_RING_SIZE = 5
+
+#: Bound each stashed peek so five ring slots cannot retain unbounded dumps.
+COLLAPSED_STASH_MAX_CHARS = 32_000
+
+#: Expand in-scrollback when the body fits; larger peeks open ``$PAGER`` / less.
+INLINE_EXPAND_MAX_CHARS = 8_000
+INLINE_EXPAND_MAX_LINES = 120
+
+
+@dataclass
+class ActionLogEntry:
+    """One buffered tool call for the grouped, collapsible action log.
+
+    ``kind`` is the section header (e.g. ``GitHub CLI``); ``concise`` is the
+    one-line status shown in the section (no inline arguments); ``detail`` is
+    the full call + result text revealed on Ctrl+O.
+    """
+
+    call_id: str
+    kind: str
+    concise: str
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class ClosedChoice:
+    """A ``/choose`` menu the user closed without answering, kept so ``/choose`` reopens it."""
+
+    pending: PendingUserChoice
+    skill: str | None
+    """The skill that asked it; reopening restores it so the answer resumes that flow."""
+
+
+def _autosubmit_label(text: str) -> str:
+    """Name a queued autosubmit for a log line without recording what the user wrote."""
+    stripped = text.strip()
+    if stripped.startswith("/"):
+        return stripped.split(maxsplit=1)[0]
+    return f"a {len(stripped)}-character message"
 
 
 @dataclass
 class TerminalSession:
     """Shell-surface session state, composed onto ``Session`` for the interactive shell."""
 
+    connection_checks: dict[str, ConnectionCheck] = field(
+        default_factory=dict, repr=False, kw_only=True
+    )
+    """Last explicit check results, shared by the connection lists for this session only."""
+
+    connection_check_key: ConnectionCheckKey | None = field(default=None, repr=False, kw_only=True)
+    """Scope/source snapshot that owns the cached display results."""
+
     active_theme_name: str = "green"
-
-    cli_command_group: Any = field(default=None, repr=False, compare=False)
-    """The ``opensre`` Click command group the shell documents to the model.
-
-    Handed in by the process entrypoint; ``None`` when the shell runs on its
-    own, in which case grounding covers slash commands only."""
     """Interactive shell palette name for this REPL session (``/theme``, prompts)."""
 
     pending_theme_refresh: bool = False
@@ -44,6 +95,12 @@ class TerminalSession:
 
     trust_mode: bool = False
     """When True, confirmation prompts for elevated REPL actions are skipped."""
+
+    auto_level: AutoLevel = DEFAULT_AUTO_LEVEL
+    """Auto (Off|Low|Med|High) shown above the input box."""
+
+    provider_model: tuple[str, str] = ("unknown", "unknown")
+    """Display route resolved at prompt setup and after turns, never during redraw."""
 
     prompt_history_backend: History | None = None
     """The live ``prompt_toolkit.History`` object backing the input prompt.
@@ -59,6 +116,12 @@ class TerminalSession:
     slash commands (e.g. ``/theme``) can refresh styles via ``call_soon_threadsafe`` on
     the main asyncio loop."""
 
+    transcript: Any = None
+    """The full-screen transcript store, when the shell runs full screen.
+
+    Screen resets (``/clear``, a theme change) reset it instead of clearing the
+    terminal, because the full-screen view draws from it."""
+
     main_loop: Any = None
     """The asyncio event loop for the main REPL coroutine.
 
@@ -68,15 +131,22 @@ class TerminalSession:
     prompt_refresh_fn: Callable[[], None] | None = field(default=None, repr=False)
     """Loop-owned hook to apply pending prefill and redraw the active prompt."""
 
-    fleet_sampler_starter: Callable[[], None] | None = field(default=None, repr=False)
-    """Loop-owned hook to lazily start the fleet sampler on first live ``/fleet`` use.
+    ci_fix_count_fn: Callable[[], int] | None = field(default=None, repr=False)
+    """Cached deployment repair count; reading it performs no disk or network I/O."""
 
-    Set by the interactive-shell controller so the sampler (and its ``psutil`` dependency)
-    stays out of base REPL startup and only runs when fleet monitoring is actually
-    requested. Thread-safe: the starter marshals task creation onto the REPL event loop."""
+    startup_work_release: Callable[[], None] | None = field(default=None, repr=False)
+    """Launch hook that starts work held back until the shell first waits on the user.
+
+    Set by the shell entry; ``/choose`` calls it as the first menu draws so
+    warm-ups and snapshots do not compete with that paint. Idempotent."""
 
     pending_prompt_default: str | None = None
     """When set, the next interactive prompt is pre-filled with this string (then cleared)."""
+
+    pending_prompt_plain_turn: bool = False
+    """When True alongside ``pending_prompt_autosubmit``, the submitted prefill runs
+    as an ordinary typed turn: the prompt bar (and its spinner) stays up and no
+    ``/goal`` work-turn label is painted. Set by :meth:`set_auto_prompt`."""
 
     pending_prompt_autosubmit: bool = False
     """When True alongside ``pending_prompt_default``, the prefilled prompt is
@@ -95,6 +165,79 @@ class TerminalSession:
     so the work turn can show a distinct ``↗ /goal`` marker above ``[N] ❯``.
     """
 
+    awaiting_handoff_answer: bool = False
+    """True when the next submitted line answers a human hand-off question.
+
+    Set by ``ask_user_choice`` (and the ``/choose`` pick). Cleared when the
+    submitted prompt is painted so the answer uses the brand colour."""
+
+    handoff_recap_text: str | None = None
+    """The auto-submitted ``/choose`` answer whose Ask User card is already painted.
+
+    ``/choose`` prints the recap of every question it asked, so the same answer
+    must not paint a second card when it is submitted. Matched by exact text and
+    cleared when the submitted prompt is painted."""
+
+    setup_resume: SetupResume | None = None
+    """The user turn parked behind an integration setup, resubmitted once setup succeeds.
+
+    Written through ``core.agent_harness.spi.session_state`` (``arm_setup_resume``);
+    dropped by a typed turn, a closed menu, a new demo, and ``/new``."""
+
+    closed_choice: ClosedChoice | None = None
+    """The menu last closed with Esc or Ctrl-C; a typed ``/choose`` reopens it.
+
+    Dropped by an answered or reopened menu, a typed request, and ``/new``."""
+
+    pending_choice_response: str | None = None
+    goal_paint_signature: GoalPaintSignature | None = None
+    """What the last session-goal block showed; unchanged goals repaint as one line."""
+
+    pending_inflight_goal_controls: dict[str, int] = field(default_factory=dict)
+    """Queued goal controls whose safe-boundary mutations were already applied."""
+
+    """Selected label while its synthetic answer turn awaits a response.
+
+    The response composer consumes the label to hide a pure acknowledgement
+    while preserving meaningful follow-up the selected option unlocks."""
+
+    collapsed_tool_outputs: list[str] = field(default_factory=list)
+    """Ring of the last N capped tool peeks (newest last). Ctrl+O cycles."""
+
+    _collapsed_expand_next: int = -1
+    """Index into :attr:`collapsed_tool_outputs` for the next Ctrl+O press."""
+
+    inline_tool_results: bool = False
+    """True when this turn already printed tool results under their call lines.
+
+    The closing reply must not repeat those results. The response composer
+    reads and clears the flag."""
+
+    live_reply: Any = None
+    """The model reply printing into the transcript while it streams (a ``ReplyStream``).
+
+    The action observer opens it on the first streamed text; the shell sink
+    finishes a closing with the rest of the turn's reply."""
+
+    streamed_replies: list[str] = field(default_factory=list)
+    """Replies of this run already in the transcript because they streamed.
+
+    The response composer does not show them a second time."""
+
+    action_log_entries: list[ActionLogEntry] = field(default_factory=list)
+    """Tool calls buffered for the current turn's grouped action log (call order).
+
+    The observer appends each call here instead of printing it live; the batch
+    flushes as bordered, collapsible sections above the reply (Ctrl+O expands
+    the detail)."""
+
+    pending_confirm_options: tuple[tuple[str, str], ...] | None = None
+    """Rows the next execution confirmation should offer, or None for Yes/No.
+
+    Set by the execution gate just before it calls the confirm function; the
+    REPL confirm path reads and clears it so the arrow-nav shows the same rows
+    (e.g. an "always allow" row for an auto-level gate)."""
+
     exclusive_stdin_active: bool = False
     """True while a turn is running with exclusive stdin reserved (no live prompt).
 
@@ -108,42 +251,11 @@ class TerminalSession:
     nesting another ``execute_shell_turn`` inside ``/goal set`` doubled the
     PostHog answer before the outer turn finished."""
 
-    background_mode_enabled: bool = False
-    """Whether new investigations should run as session-local background tasks."""
-
-    background_investigations: dict[str, BackgroundInvestigationRecord] = field(
-        default_factory=dict
-    )
-    """Completed or in-flight background RCA summaries, keyed by task id."""
-
-    background_notification_preferences: BackgroundNotificationPreferences = field(
-        default_factory=BackgroundNotificationPreferences.load
-    )
-    """Preferred notification channels for background RCA completion events.
-
-    Hydrated from the durable store, so channels chosen in an earlier shell still
-    apply. ``load`` never raises and costs one stat when the document is absent.
-    """
-
-    background_notices: list[str] = field(default_factory=list)
-    """Thread-safe queue of Rich markup messages drained by the REPL main loop."""
-
-    _background_notices_lock: threading.Lock = field(
-        default_factory=threading.Lock, repr=False, compare=False
-    )
-
     history_generation: int = 0
-    """Incremented on /new so background synthetic watchers can skip stale history writes."""
+    """Incremented on /new so background task watchers can skip stale history writes."""
 
     metrics: TerminalMetrics = field(default_factory=TerminalMetrics)
     """Interactive-shell turn/intervention analytics counters (see ``/status``)."""
-
-    submitted_turn_count: int = 0
-    """Prompts the user has submitted this session; drives the ``[N]`` prompt label.
-
-    Deliberately independent of ``session.history``: one submitted request may
-    append many history rows (shell commands, tool executions), but it occupies
-    exactly one numbered prompt line."""
 
     _turn_outcome_hint: str | None = field(default=None, repr=False, compare=False)
     """Optional structured outcome set by a terminal handler for analytics."""
@@ -160,10 +272,88 @@ class TerminalSession:
 
     # ── behavior over the fields above (Session delegates via ``session.terminal``) ──
 
-    def claim_turn_number(self) -> int:
-        """Advance and return the 1-based ``[N]`` number for a just-submitted prompt."""
-        self.submitted_turn_count += 1
-        return self.submitted_turn_count
+    def has_collapsed_tool_output(self) -> bool:
+        """True when Ctrl+O can expand at least one stashed peek."""
+        return bool(self.collapsed_tool_outputs)
+
+    @property
+    def collapsed_tool_output(self) -> str | None:
+        """Newest capped peek, or ``None`` when the ring is empty."""
+        return self.collapsed_tool_outputs[-1] if self.collapsed_tool_outputs else None
+
+    @collapsed_tool_output.setter
+    def collapsed_tool_output(self, value: str | None) -> None:
+        """Compat for direct assignment; ``None`` is a no-op (keeps the ring)."""
+        if value is None:
+            return
+        self.stash_collapsed_tool_output(value)
+
+    def stash_collapsed_tool_output(self, text: str | None) -> None:
+        """Push a size-bounded peek onto the ring.
+
+        ``None`` means the latest preview was not folded — leave earlier peeks
+        reachable via Ctrl+O. Bodies longer than ``COLLAPSED_STASH_MAX_CHARS``
+        are truncated so the ring cannot retain unbounded API dumps.
+        """
+        if text is None:
+            return
+        body = text
+        if len(body) > COLLAPSED_STASH_MAX_CHARS:
+            marker = "\n… (truncated for Ctrl+O stash)\n"
+            keep = max(0, COLLAPSED_STASH_MAX_CHARS - len(marker))
+            body = body[:keep].rstrip() + marker
+        self.collapsed_tool_outputs.append(body)
+        overflow = len(self.collapsed_tool_outputs) - COLLAPSED_OUTPUT_RING_SIZE
+        if overflow > 0:
+            del self.collapsed_tool_outputs[:overflow]
+        self._collapsed_expand_next = len(self.collapsed_tool_outputs) - 1
+
+    def next_collapsed_output_for_expand(self) -> str:
+        """Return the next peek for Ctrl+O and advance toward older entries.
+
+        First press after a stash shows the newest body; repeated presses cycle
+        older peeks, then wrap back to newest.
+        """
+        ring = self.collapsed_tool_outputs
+        if not ring:
+            return ""
+        idx = self._collapsed_expand_next
+        if idx < 0 or idx >= len(ring):
+            idx = len(ring) - 1
+        body = ring[idx]
+        self._collapsed_expand_next = idx - 1 if idx > 0 else len(ring) - 1
+        return body
+
+    def push_action_log(self, entry: ActionLogEntry) -> None:
+        """Buffer one tool call for the current turn's grouped action log."""
+        self.action_log_entries.append(entry)
+
+    def append_action_result(self, call_id: str, result: str) -> None:
+        """Attach a result line to the buffered call ``call_id`` (if present)."""
+        for entry in reversed(self.action_log_entries):
+            if entry.call_id == call_id:
+                entry.detail = f"{entry.detail}\n{result}" if entry.detail else result
+                return
+
+    def drop_action_log(self, call_id: str) -> None:
+        """Forget the buffered call ``call_id`` (if present).
+
+        A tool that painted its own output needs no row: the buffer flushes at
+        the end of the turn, so its label would land under that output.
+        """
+        self.action_log_entries = [
+            entry for entry in self.action_log_entries if entry.call_id != call_id
+        ]
+
+    def has_action_log(self) -> bool:
+        """True when at least one action is buffered for the current turn."""
+        return bool(self.action_log_entries)
+
+    def take_action_log(self) -> list[ActionLogEntry]:
+        """Return the buffered action entries and clear the buffer."""
+        entries = self.action_log_entries
+        self.action_log_entries = []
+        return entries
 
     def pop_pending_prompt_default(self) -> str:
         """Return pre-filled text for the next prompt line, if any, and clear it."""
@@ -177,6 +367,36 @@ class TerminalSession:
         self.pending_prompt_autosubmit = False
         return value
 
+    def pop_pending_plain_turn(self) -> bool:
+        """Return whether the pending autosubmit is a plain turn, and clear the flag."""
+        value = self.pending_prompt_plain_turn
+        self.pending_prompt_plain_turn = False
+        return value
+
+    def _note_replaced_autosubmit(self, text: str) -> None:
+        """Count and log a queued autosubmit that is about to be replaced before it ran."""
+        pending = self.pending_prompt_default
+        if not (self.pending_prompt_autosubmit and pending) or pending == text:
+            return
+        self.metrics.autosubmit_overwrite_count += 1
+        logger.debug(
+            "Replacing a queued autosubmit before it ran: %s -> %s",
+            _autosubmit_label(pending),
+            _autosubmit_label(text),
+        )
+
+    def set_auto_prompt(self, text: str) -> None:
+        """Queue *text* to be submitted as an ordinary turn, as if the user typed it.
+
+        Unlike :meth:`set_auto_command`, the controller does not suspend the
+        prompt for the turn, so the pinned-layout spinner keeps showing progress.
+        """
+        self._note_replaced_autosubmit(text)
+        self.pending_prompt_default = text
+        self.pending_prompt_autosubmit = True
+        self.pending_prompt_plain_turn = True
+        self.notify_prompt_changed()
+
     def set_auto_command(self, command: str) -> None:
         """Queue a command to run automatically on the next prompt iteration.
 
@@ -186,8 +406,10 @@ class TerminalSession:
         through the normal exclusive-stdin dispatch path rather than spawning it
         mid-turn, where it would fight the live prompt for stdin.
         """
+        self._note_replaced_autosubmit(command)
         self.pending_prompt_default = command
         self.pending_prompt_autosubmit = True
+        self.pending_prompt_plain_turn = False
         self.notify_prompt_changed()
 
     def notify_prompt_changed(self) -> None:
@@ -195,23 +417,10 @@ class TerminalSession:
         if self.prompt_refresh_fn is not None:
             self.prompt_refresh_fn()
 
-    def ensure_fleet_sampler_started(self) -> None:
-        """Request that the fleet sampler start (no-op if unwired or already running)."""
-        if self.fleet_sampler_starter is not None:
-            self.fleet_sampler_starter()
-
-    def enqueue_background_notice(self, message: str) -> None:
-        """Queue a background-thread status line for the main REPL loop to print."""
-        with self._background_notices_lock:
-            self.background_notices.append(message)
-        self.notify_prompt_changed()
-
-    def drain_background_notices(self) -> list[str]:
-        """Return and clear any queued background status lines."""
-        with self._background_notices_lock:
-            notices = list(self.background_notices)
-            self.background_notices.clear()
-        return notices
+    def release_startup_work(self) -> None:
+        """Start launch work held for the first wait on the user (no-op when unwired)."""
+        if self.startup_work_release is not None:
+            self.startup_work_release()
 
     def set_turn_outcome_hint(self, hint: str | None) -> None:
         """Attach a structured outcome for the current terminal handler."""

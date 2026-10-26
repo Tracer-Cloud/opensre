@@ -12,22 +12,29 @@ draining from the turn's action-routing and prompt-construction logic.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
 from rich.markup import escape
+from rich.text import Text
 
+from config.constants import SOUND_MIN_TURN_SECONDS
+from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
+from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.runtime.core.state import SpinnerState
-from surfaces.interactive_shell.runtime.utils.input_policy import turn_should_show_spinner
+from surfaces.interactive_shell.runtime.input_policy import turn_should_show_spinner
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import (
     DIM,
     ERROR,
+    HIGHLIGHT,
     WARNING,
 )
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
+from surfaces.shared.terminal.components.rendering import hyperlink
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,39 @@ def _reduce_agent_presentation(
     raise ValueError(f"Unknown agent event type: {event.type!r}")
 
 
+# The exception text carries the destination for surfaces that print plain
+# text; the shell shows it once, as a link, on its own line.
+_UPGRADE_SENTENCE_LEAD = " Upgrade or top up at"
+
+
+def _render_credits_exhausted(console: StreamingConsole, exc: Exception) -> None:
+    """One error line, then the way out: a clickable top-up link or ``/model``."""
+    message = str(exc).split(_UPGRADE_SENTENCE_LEAD, 1)[0].strip()
+    console.print(f"[{ERROR}]turn error:[/] {escape(message)}")
+    hint = Text("Top up or upgrade: ", style=str(DIM))
+    url = getattr(exc, "upgrade_url", None)
+    if isinstance(url, str) and url:
+        hint.append_text(hyperlink(url, style=f"underline {HIGHLIGHT}"))
+    else:
+        hint.append("the OpenSRE usage page", style=str(DIM))
+    hint.append(
+        " · /credits shows the balance · /account usage opens it · /model switches provider",
+        style=str(DIM),
+    )
+    console.print(hint)
+
+
+def _prompt_app_reads_stdin(session: Session) -> bool:
+    """True while the persistent prompt app owns stdin; exclusive-stdin turns own it themselves."""
+    terminal = session.terminal
+    app = terminal.prompt_app
+    return bool(
+        not terminal.exclusive_stdin_active
+        and app is not None
+        and getattr(app, "is_running", False)
+    )
+
+
 async def _render_agent_presentation_transition(
     *,
     previous: AgentPresentationState,
@@ -76,8 +116,13 @@ async def _render_agent_presentation_transition(
     event: AgentEvent,
     console: StreamingConsole,
     spinner: SpinnerState,
+    drain_stdin: bool,
 ) -> None:
-    """Perform the terminal side effects for one presentation transition."""
+    """Perform the terminal side effects for one presentation transition.
+
+    ``drain_stdin`` must be False while a prompt app reads stdin: the drain
+    would race it for bytes and split the escape sequences it is parsing.
+    """
     match event.type:
         case "turn_start":
             if current.show_spinner:
@@ -88,10 +133,13 @@ async def _render_agent_presentation_transition(
             exc = event.error
             if exc is None:
                 raise ValueError("turn_error event requires an error")
-            console.print(f"[{ERROR}]turn error:[/] {escape(str(exc))}")
             # On a credit/billing wall, add the in-tool recovery hint.
             from core.llm.shared.llm_retry import LLMCreditExhaustedError
 
+            if isinstance(exc, OpenSRECreditsExhaustedError):
+                _render_credits_exhausted(console, exc)
+                return
+            console.print(f"[{ERROR}]turn error:[/] {escape(str(exc))}")
             if isinstance(exc, LLMCreditExhaustedError):
                 console.print(f"[{DIM}]Run /model to switch to another provider.[/]")
                 console.print(
@@ -101,8 +149,9 @@ async def _render_agent_presentation_transition(
         case "turn_end":
             if previous.show_spinner:
                 spinner.stop()
-            await asyncio.sleep(0.05)
-            drain_stale_cpr_bytes()
+            if drain_stdin:
+                await asyncio.sleep(0.05)
+                drain_stale_cpr_bytes()
         case _:
             raise ValueError(f"Unknown agent event type: {event.type!r}")
 
@@ -126,8 +175,11 @@ class ConsoleAgentEventSink:
         self.spinner = spinner
         self.console = console
         self.state = AgentPresentationState()
+        self._turn_started_at: float | None = None
 
     async def __call__(self, event: AgentEvent) -> None:
+        if event.type == "turn_start":
+            self._turn_started_at = time.monotonic()
         previous = self.state
         self.state = _reduce_agent_presentation(
             previous,
@@ -140,7 +192,17 @@ class ConsoleAgentEventSink:
             event=event,
             console=self.console,
             spinner=self.spinner,
+            drain_stdin=not _prompt_app_reads_stdin(self.session),
         )
+        if event.type in {"turn_end", "turn_interrupted", "turn_error"}:
+            self._chime_if_long_turn()
+
+    def _chime_if_long_turn(self) -> None:
+        """Chime once a walk-away-length turn finishes; stay silent for quick ones."""
+        started = self._turn_started_at
+        self._turn_started_at = None
+        if started is not None and time.monotonic() - started >= SOUND_MIN_TURN_SECONDS:
+            play_notification(NotifyEvent.TURN_COMPLETE)
 
 
 __all__ = [

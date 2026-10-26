@@ -69,6 +69,7 @@ def mock_agent_state(overrides: dict | None = None) -> dict[str, Any]:
             "issue_id": "12345",
         },
         "github": {
+            "connection_origin": "webapp",
             "connection_verified": True,
             "owner": "my-org",
             "repo": "my-repo",

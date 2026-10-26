@@ -7,7 +7,7 @@ import json
 import click
 
 from infrastructure.safety.guardrails.audit import AuditLogger
-from infrastructure.safety.guardrails.engine import GuardrailEngine
+from infrastructure.safety.guardrails.evaluator import GuardrailEvaluator
 from infrastructure.safety.guardrails.rules import get_default_rules_path, load_rules
 
 _STARTER_CONFIG = """\
@@ -76,8 +76,8 @@ def cmd_test(text: str) -> None:
         click.echo("  No valid rules loaded from config.")
         return
 
-    engine = GuardrailEngine(rules)
-    result = engine.scan(text)
+    evaluator = GuardrailEvaluator(rules)
+    result = evaluator.scan(text)
 
     if not result.matches:
         click.echo("  No matches found.")

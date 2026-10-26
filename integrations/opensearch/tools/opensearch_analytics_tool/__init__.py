@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils import tool_unavailable
+from core.tool_framework import tool
+from infrastructure.text.truncation import truncate
 from integrations.elasticsearch.client import ElasticsearchClient, ElasticsearchConfig
+from integrations.elasticsearch.search_failures import not_configured, search_failed
 
 _DEFAULT_MAX_RESULTS = 100
 _MAX_HARD_LIMIT = 200
+_SUMMARY_FIELD_TRUNCATE_LEN = 80
 
 
 def _bounded_limit(limit: int, max_results: int) -> int:
@@ -21,6 +24,33 @@ def _bounded_limit(limit: int, max_results: int) -> int:
 def _opensearch_available(sources: dict[str, dict[str, Any]]) -> bool:
     source = sources.get("opensearch", {})
     return bool(source.get("connection_verified") and source.get("url"))
+
+
+def _map_query_opensearch_analytics(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the number of log entries retrieved for the query.
+
+    ``query`` and ``index_pattern`` are caller-supplied and unbounded in
+    length -- truncate both before embedding them in the summary so a long
+    or malformed value can't produce an oversized report line.
+    """
+    if not output.get("available"):
+        return
+    logs = output.get("logs") or []
+    if not logs:
+        return
+    query = truncate(str(output.get("query", "*")), _SUMMARY_FIELD_TRUNCATE_LEN)
+    index_pattern = truncate(str(output.get("index_pattern", "*")), _SUMMARY_FIELD_TRUNCATE_LEN)
+    record_evidence_entry(
+        evidence,
+        source="query_opensearch_analytics",
+        label="OpenSearch Analytics",
+        summary=(
+            f"{output.get('total_returned', len(logs))} log(s) for query "
+            f"'{query}' on '{index_pattern}'"
+        ),
+    )
 
 
 def _opensearch_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -43,7 +73,7 @@ def _opensearch_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, 
     name="query_opensearch_analytics",
     description="Query OpenSearch-compatible analytics indices with bounded retrieval.",
     source="opensearch",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     requires=["url"],
     input_schema={
         "type": "object",
@@ -64,6 +94,7 @@ def _opensearch_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, 
     is_available=_opensearch_available,
     injected_params=("url",),
     extract_params=_opensearch_extract_params,
+    evidence_mapper=_map_query_opensearch_analytics,
 )
 def query_opensearch_analytics(
     url: str,
@@ -81,7 +112,7 @@ def query_opensearch_analytics(
     """Fetch bounded logs from OpenSearch-compatible analytics endpoints."""
     endpoint = url.strip().rstrip("/")
     if not endpoint:
-        return tool_unavailable("opensearch", "Missing OpenSearch URL.", logs=[])
+        return not_configured("opensearch", vendor="OpenSearch")
 
     effective_limit = _bounded_limit(limit, max_results)
     client = ElasticsearchClient(
@@ -100,9 +131,7 @@ def query_opensearch_analytics(
         index_pattern=index_pattern or "*",
     )
     if not result.get("success"):
-        return tool_unavailable(
-            "opensearch", str(result.get("error", "Unknown OpenSearch error.")), logs=[]
-        )
+        return search_failed("opensearch", result, vendor="OpenSearch")
 
     logs = result.get("logs", []) if isinstance(result.get("logs"), list) else []
     logs = [log for log in logs if isinstance(log, dict)][:effective_limit]

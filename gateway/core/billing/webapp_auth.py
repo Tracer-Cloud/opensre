@@ -35,7 +35,8 @@ def webapp_shared_secret() -> str:
 
     ``/api/agent/integrations`` compares the bearer against
     ``AGENT_USAGE_SECRET`` alone, so a machine token there is a 401. Returns ""
-    when unset, which leaves the caller switched off.
+    when unset. Callers decide whether that means an intentionally disabled
+    self-hosted feature or a hosted configuration error.
     """
     return (os.getenv(USAGE_SECRET_ENV) or "").strip()
 
@@ -46,14 +47,15 @@ def webapp_machine_token() -> str:
     Returns "" when the machine secret is unset or the token cannot be
     obtained. Callers must not substitute the shared secret: routes requiring
     this credential reject it, and the 401 is indistinguishable from an empty
-    result. Never raises — a failure here degrades the caller, not the turn.
+    result. Never raises; hosted callers must treat an empty result as an
+    unavailable authentication path.
     """
     if not os.getenv(MACHINE_SECRET_ENV):
         return ""
     try:
         # Module attribute (not a from-import) so tests can patch the mint.
         return clerk_tokens.webapp_access_token()
-    except Exception as exc:  # noqa: BLE001 - never break a turn on auth mint
+    except Exception as exc:  # noqa: BLE001 - classify mint failure at the caller
         logger.warning("[webapp-auth] machine token mint raised (%s)", type(exc).__name__)
         return ""
 
@@ -62,6 +64,7 @@ def webapp_bearer_token() -> str:
     """Credential for routes that accept either credential.
 
     Prefers the org-scoped machine token and falls back to the shared secret.
-    Returns "" when neither is available, which leaves the caller switched off.
+    Returns "" when neither is available. A hosted credit caller must fail
+    closed rather than interpret that as authorization to run unmetered work.
     """
     return webapp_machine_token() or webapp_shared_secret()

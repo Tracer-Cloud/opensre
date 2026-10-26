@@ -10,6 +10,7 @@ from infrastructure.safety.sandbox.capabilities import (
     _file_grep_available,
     _file_read_available,
     _network_available,
+    _python_available,
     _shell_available,
     boot_capability_warnings,
     probe_capabilities,
@@ -23,6 +24,27 @@ def test_python_execution_is_detected() -> None:
 
     # Assert
     assert results[Capability.PYTHON].available is True
+
+
+def test_python_probe_requires_successful_execution(monkeypatch: Any) -> None:
+    def _failed_run(_code: str, **_kwargs: Any) -> Any:
+        return type(
+            "R",
+            (),
+            {
+                "success": False,
+                "stdout": "2\n",
+                "stderr": "",
+                "error": "Python interpreter is unavailable",
+            },
+        )()
+
+    monkeypatch.setattr(
+        "infrastructure.safety.sandbox.runner.run_python_sandbox",
+        _failed_run,
+    )
+
+    assert _python_available() is False
 
 
 def test_file_read_is_detected() -> None:
@@ -134,13 +156,38 @@ def test_network_probe_uses_default_sandbox_policy(monkeypatch: Any) -> None:
         return type(
             "R",
             (),
-            {"stdout": "", "stderr": "PermissionError: Network access is not permitted"},
+            {
+                "success": False,
+                "stdout": "",
+                "stderr": "PermissionError: Network access is not permitted",
+            },
         )()
 
     monkeypatch.setattr("infrastructure.safety.sandbox.runner.run_python_sandbox", _fake_run)
     assert _network_available() is False
     assert calls and calls[0].get("allow_network", False) is False
     assert "socket.socket" in calls[0]["code"]
+
+
+def test_network_probe_is_unavailable_when_sandbox_cannot_start(monkeypatch: Any) -> None:
+    def _failed_run(_code: str, **_kwargs: Any) -> Any:
+        return type(
+            "R",
+            (),
+            {
+                "success": False,
+                "stdout": "",
+                "stderr": "",
+                "error": "Python interpreter is unavailable",
+            },
+        )()
+
+    monkeypatch.setattr(
+        "infrastructure.safety.sandbox.runner.run_python_sandbox",
+        _failed_run,
+    )
+
+    assert _network_available() is False
 
 
 def test_boot_capability_warnings_merges_path_and_sandbox(monkeypatch: Any) -> None:

@@ -1,9 +1,7 @@
 """Telegram alarm dispatcher with per-key cooldown.
 
-Shared by features that need throttled Telegram alerts (watchdog thresholds,
-Hermes incident sinks, the Telegram send-message tool). The dispatcher takes
-a string key (e.g. a threshold name or incident fingerprint) and suppresses
-repeat deliveries for the same key within the cooldown window.
+Provides reusable throttled Telegram delivery. The dispatcher takes a string
+key and suppresses repeat deliveries for that key within the cooldown window.
 
 Credential resolution lives in
 :mod:`integrations.telegram.credentials`; raw transport in

@@ -109,6 +109,58 @@ class TestHistoryRetention:
         assert persisted == ["entry-3", "entry-4"]
         assert backend._max_entries == 2
 
+    def test_without_a_cap_asks_for_one_when_the_turn_owns_stdin(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """``/history retention`` must collect a cap, not close on usage text.
+
+        The same handler serves the typed command, the /history menu, and a
+        /help selection, so all three land on one picker.
+        """
+        from surfaces.interactive_shell.command_registry import privacy_cmds
+
+        backend = RedactingFileHistory(str(tmp_path / "history"))
+        session = Session()
+        session.terminal.prompt_history_backend = backend
+        session.terminal.exclusive_stdin_active = True
+        monkeypatch.setattr(privacy_cmds, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(privacy_cmds, "_prompt_retention_cap", lambda: "500")
+
+        console, buf = _capture()
+        dispatch_slash("/history retention", session, console)
+
+        assert backend._max_entries == 500
+        assert "usage:" not in buf.getvalue()
+
+    def test_dismissing_the_cap_picker_leaves_the_setting_alone(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from surfaces.interactive_shell.command_registry import privacy_cmds
+
+        backend = RedactingFileHistory(str(tmp_path / "history"), max_entries=10)
+        session = Session()
+        session.terminal.prompt_history_backend = backend
+        session.terminal.exclusive_stdin_active = True
+        monkeypatch.setattr(privacy_cmds, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(privacy_cmds, "_prompt_retention_cap", lambda: None)
+
+        console, buf = _capture()
+        assert dispatch_slash("/history retention", session, console) is True
+
+        assert backend._max_entries == 10
+        assert "usage:" not in buf.getvalue()
+
+    def test_without_exclusive_stdin_it_still_prints_usage(self, tmp_path: Path) -> None:
+        backend = RedactingFileHistory(str(tmp_path / "history"))
+        session = Session()
+        session.terminal.prompt_history_backend = backend
+        assert session.terminal.exclusive_stdin_active is False
+
+        console, buf = _capture()
+        dispatch_slash("/history retention", session, console)
+
+        assert "usage:" in buf.getvalue()
+
     def test_rejects_non_integer(self, tmp_path: Path) -> None:
         backend = RedactingFileHistory(str(tmp_path / "history"))
         session = Session()

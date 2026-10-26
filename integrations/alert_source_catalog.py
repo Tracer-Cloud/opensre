@@ -42,7 +42,6 @@ _ROUTING_TABLE: dict[str, AlertSourceRouting] = {
     "coralogix": routing(("coralogix",), ("coralogix",)),
     # tracer_web stays relevance-only — secondary web context, not pre-LLM seed.
     "airflow": routing(("airflow", "tracer_web"), ("airflow",)),
-    "hermes": routing(("hermes",), ("hermes",)),
     "kafka": routing(("kafka",), ("kafka",)),
     "postgresql": routing(("postgresql",), ("postgresql",)),
     "mysql": routing(("mysql",), ("mysql",)),

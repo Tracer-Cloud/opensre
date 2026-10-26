@@ -6,9 +6,14 @@ import logging
 from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
+from integrations.alertmanager.client import make_alertmanager_client
+from integrations.alertmanager.setup import ALERTMANAGER_SETUP
 from integrations.config_models import AlertmanagerIntegrationConfig
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["ALERTMANAGER_SETUP", "classify", "make_alertmanager_client"]
 
 
 def classify(

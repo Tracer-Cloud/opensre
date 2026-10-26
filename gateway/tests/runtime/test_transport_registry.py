@@ -5,9 +5,20 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock
 
+import pytest
+
+from gateway.core.process.shutdown_budget import ShutdownBudget
 from gateway.transports import startup
 from gateway.transports.names import TransportName
 from gateway.transports.registration import TransportRegistration
+
+
+class _Clock:
+    def __init__(self, now: float = 0.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
 
 
 def test_start_transports_skips_not_configured_and_failed(
@@ -67,5 +78,35 @@ def test_stop_transports_stops_every_handle() -> None:
     ]
 
     assert startup.stop_transports(handles=handles, timeout=1.5) is False
-    w1.stop.assert_called_once_with(timeout=1.5)
-    w2.stop.assert_called_once_with(timeout=1.5)
+    assert w1.stop.call_args.kwargs["timeout"] == pytest.approx(1.5, abs=0.05)
+    assert w2.stop.call_args.kwargs["timeout"] == pytest.approx(1.5, abs=0.05)
+
+
+def test_stop_transports_subtracts_elapsed_from_later_workers(
+    monkeypatch,
+) -> None:
+    """A stuck first worker must not get a fresh full timeout for the second."""
+    clock = _Clock()
+
+    def _budget(seconds: float) -> ShutdownBudget:
+        return ShutdownBudget(seconds, clock=clock)
+
+    monkeypatch.setattr("gateway.transports.startup.ShutdownBudget", _budget)
+    w1 = MagicMock()
+    w2 = MagicMock()
+
+    def _slow_stop(*, timeout: float) -> bool:
+        _ = timeout
+        clock.now += 2.0
+        return True
+
+    w1.stop.side_effect = _slow_stop
+    w2.stop.return_value = True
+    handles = [
+        startup.TransportHandle(TransportName.TELEGRAM, w1, "polling"),
+        startup.TransportHandle(TransportName.SLACK, w2, "connected"),
+    ]
+
+    assert startup.stop_transports(handles=handles, timeout=8.0) is True
+    w1.stop.assert_called_once_with(timeout=8.0)
+    w2.stop.assert_called_once_with(timeout=6.0)

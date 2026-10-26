@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+import requests
 
 
 @pytest.fixture(autouse=True)
@@ -436,6 +437,29 @@ def test_verify_grafana_passes_with_supported_datasource(monkeypatch: pytest.Mon
     assert result["status"] == "passed"
     assert "loki" in result["detail"]
     assert "prometheus" in result["detail"]
+
+
+def test_verify_grafana_connect_timeout_detail_is_compact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise_timeout(*_args: Any, **_kwargs: Any) -> None:
+        raise requests.exceptions.ConnectTimeout(
+            "HTTPConnectionPool(host='172.29.15.185', port=3001): Max retries "
+            "exceeded with url: /api/datasources (Caused by ConnectTimeoutError("
+            "'Connection to 172.29.15.185 timed out. (connect timeout=10)'))"
+        )
+
+    monkeypatch.setattr("integrations.grafana.verifier.requests.get", _raise_timeout)
+
+    result = _verify_grafana(
+        "local env",
+        {"endpoint": "http://172.29.15.185:3001", "api_key": "token"},
+    )
+
+    assert result["status"] == "failed"
+    assert "ConnectTimeout" in result["detail"]
+    assert "HTTPConnectionPool" not in result["detail"]
+    assert len(result["detail"]) < 120
 
 
 def test_verify_datadog_reports_api_failure(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,8 +16,8 @@ from config.constants.filestorage import (
 )
 from config.repl_config import ReplConfig
 from infrastructure.filestorage import operations as sync_operations
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.enums import SyncRootName
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.providers.registry import (
     register_object_store,
     unregister_object_store,

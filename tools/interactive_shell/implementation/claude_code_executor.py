@@ -2,7 +2,9 @@
 
 Spawns the Claude Code CLI to implement a requested change in the current
 repository, applies the execution policy, tracks the launch as a background
-task, and watches the subprocess lifecycle in a daemon thread.
+task, and watches the subprocess lifecycle in a daemon thread. The child holds
+a process-wide heavy-work slot: the launching thread takes it before the spawn
+and hands it to the watcher, which frees it once the child is reaped.
 
 Lives next to the agent-facing ``tools.interactive_shell.actions.implementation``.
 ``subprocess`` and ``threading`` are referenced as module globals so tests can
@@ -16,18 +18,20 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+from infrastructure.process.turn_capacity import HEAVY_WORK_BUSY_MESSAGE, heavy_work_slot
 from infrastructure.scheduling.task_types import TaskKind
-from integrations.llm_cli.claude_code import ClaudeCodeAdapter
-from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
+from integrations.llm_cli import ClaudeCodeAdapter, build_cli_subprocess_env
 from tools.interactive_shell.shared import allow_tool
 from tools.interactive_shell.subprocess import (
     CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS,
     MAX_COMMAND_OUTPUT_CHARS,
-    SYNTHETIC_DIAG_CHARS,
+    TASK_DIAG_CHARS,
     SubprocessPresenter,
     terminate_child_process,
 )
@@ -65,6 +69,19 @@ class ClaudeCodeRunResult:
     exit_code: int | None
     timed_out: bool
     cancelled: bool
+
+
+@dataclass(frozen=True)
+class ImplementationLaunch:
+    """Whether Claude Code was started as a background task, and why not otherwise."""
+
+    started: bool
+    task_id: str | None = None
+    detail: str = ""
+
+    @classmethod
+    def declined(cls, detail: str) -> ImplementationLaunch:
+        return cls(started=False, detail=detail)
 
 
 def is_context_dependent_implementation_request(request: str) -> bool:
@@ -170,10 +187,50 @@ def run_claude_code_to_completion(
 
 
 def format_claude_failure_diag(stdout: str, stderr: str) -> str:
-    return (stderr or stdout).strip()[:SYNTHETIC_DIAG_CHARS]
+    return (stderr or stdout).strip()[:TASK_DIAG_CHARS]
 
 
-def run_claude_code_implementation(request: str, presenter: SubprocessPresenter) -> None:
+class _HeldHeavyWorkSlot:
+    """A heavy-work slot taken on one thread and freed on another; a second release is a no-op."""
+
+    def __init__(self, held: ExitStack) -> None:
+        self._held = held
+        self._lock = threading.Lock()
+        self._released = False
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+        self._held.close()
+
+
+def _take_heavy_work_slot(stop: Callable[[], bool] | None) -> _HeldHeavyWorkSlot | None:
+    """Wait (bounded) for a heavy-work slot that outlives this call; ``None`` if none freed."""
+    held = ExitStack()
+    if held.enter_context(heavy_work_slot(stop=stop)):
+        return _HeldHeavyWorkSlot(held)
+    held.close()
+    return None
+
+
+def _end_child_and_free_slot(proc: subprocess.Popen[str], slot: _HeldHeavyWorkSlot) -> None:
+    """Make sure the child is gone, then free the heavy-work slot it held."""
+    try:
+        if proc.poll() is None:
+            terminate_child_process(proc)
+    finally:
+        slot.release()
+
+
+def run_claude_code_implementation(
+    request: str,
+    presenter: SubprocessPresenter,
+    *,
+    stop: Callable[[], bool] | None = None,
+) -> ImplementationLaunch:
+    """Start Claude Code as a background task; ``stop`` (the turn's cancel) ends the slot wait."""
     session = presenter.session
     policy = allow_tool("code_agent")
     if not presenter.execution_allowed(
@@ -181,7 +238,7 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
         action_summary=f"Claude Code implementation: {request}",
     ):
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined("The user declined the Claude Code run.")
 
     if is_context_dependent_implementation_request(request) and not session.agent.messages:
         presenter.print(
@@ -189,18 +246,20 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
             "describe what Claude Code should change."
         )
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined(
+            "The request is too vague; describe what Claude Code should change."
+        )
 
     adapter = ClaudeCodeAdapter()
     probe = adapter.detect()
     if not probe.installed or not probe.bin_path:
         presenter.print_error(f"Claude Code CLI not available: {probe.detail}")
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined(f"Claude Code CLI not available: {probe.detail}")
     if probe.logged_in is False:
         presenter.print_error(f"Claude Code is not authenticated: {probe.detail}")
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined(f"Claude Code is not authenticated: {probe.detail}")
 
     recent = session.agent.messages[-6:]
     prompt = build_claude_code_implementation_prompt(request, recent_messages=recent)
@@ -214,7 +273,7 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
         presenter.report_exception(exc, context="surfaces.interactive_shell.claude_code.build")
         presenter.print_error(f"Claude Code failed to prepare: {exc}")
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined("Claude Code failed to prepare.")
 
     display_command = "claude -p"
     presenter.print_bold_command(display_command)
@@ -222,14 +281,22 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
     task.mark_running()
     history_gen_when_started = session.terminal.history_generation
 
+    slot = _take_heavy_work_slot(stop)
+    if slot is None:
+        task.mark_failed(HEAVY_WORK_BUSY_MESSAGE)
+        presenter.print_error(HEAVY_WORK_BUSY_MESSAGE)
+        session.record("implementation", request, ok=False)
+        return ImplementationLaunch.declined(HEAVY_WORK_BUSY_MESSAGE)
+
     try:
         proc = spawn_claude_code(invocation)
     except Exception as exc:
+        slot.release()
         task.mark_failed(str(exc))
         presenter.report_exception(exc, context="surfaces.interactive_shell.claude_code.start")
         presenter.print_error(f"Claude Code failed to start: {exc}")
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined("Claude Code failed to start.")
 
     task.attach_process(proc)
     session.record("implementation", request, ok=True)
@@ -278,13 +345,23 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
             if session.terminal.history_generation == history_gen_when_started:
                 session.mark_latest(ok=False, kind="implementation")
             presenter.print_error(f"Claude Code watcher failed: {exc}")
+        finally:
+            _end_child_and_free_slot(proc, slot)
 
-    threading.Thread(target=_watch, daemon=True, name=f"claude-code-{task.task_id}").start()
+    watcher = threading.Thread(target=_watch, daemon=True, name=f"claude-code-{task.task_id}")
+    try:
+        watcher.start()
+    except Exception:
+        # No watcher will reap the child, so end it here.
+        _end_child_and_free_slot(proc, slot)
+        task.mark_failed("the Claude Code watcher did not start")
+        raise
     presenter.print(
         f"[dim]Claude Code started — task[/] [bold]{task.task_id}[/bold]. "
         "[highlight]/tasks[/] [dim]to monitor,[/] "
         f"[highlight]/cancel {task.task_id}[/] [dim]to stop.[/]"
     )
+    return ImplementationLaunch(started=True, task_id=str(task.task_id))
 
 
-__all__ = ["run_claude_code_implementation"]
+__all__ = ["ImplementationLaunch", "run_claude_code_implementation"]

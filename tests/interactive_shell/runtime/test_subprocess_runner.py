@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import errno
 import io
+import shlex
 import subprocess
+import sys
 import tempfile
-from pathlib import Path, PurePosixPath
+import threading
 from unittest.mock import MagicMock
 
 import pytest
 from rich.console import Console
 
+from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY, ActionToolScope
+from core.tool import AgentToolContext, ToolExecutionResult
 from infrastructure.scheduling.task_types import TaskKind, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from integrations.llm_cli.base import CLIInvocation, CLIProbe
@@ -28,6 +32,7 @@ from surfaces.interactive_shell.runtime.subprocess_runner import (
 )
 from surfaces.interactive_shell.runtime.subprocess_runner.repl_presenter import make_repl_presenter
 from surfaces.interactive_shell.session import Session
+from tools.interactive_shell.actions.shell import shell_run_tool
 from tools.interactive_shell.cli import is_interactive_wizard
 from tools.interactive_shell.implementation.claude_code_executor import (
     run_claude_code_implementation,
@@ -35,20 +40,11 @@ from tools.interactive_shell.implementation.claude_code_executor import (
 from tools.interactive_shell.shell.execution import (
     ShellExecutionResult,
 )
-from tools.interactive_shell.shell.runner import (
-    run_cd_command,
-    run_pwd_command,
-    run_shell_command,
-)
-from tools.interactive_shell.synthetic.runner import (
-    run_synthetic_test,
-    watch_synthetic_subprocess,
-)
+from tools.interactive_shell.shell.runner import run_shell_command
 
 _BACKGROUND_TASK_POPEN = "surfaces.interactive_shell.runtime.subprocess_runner.subprocess.Popen"
 _CLI_POPEN = "tools.interactive_shell.cli.subprocess.Popen"
 _CLI_RUN = "tools.interactive_shell.cli.subprocess.run"
-_SYNTHETIC_RUNNER_POPEN = "tools.interactive_shell.synthetic.runner.subprocess.Popen"
 
 
 def _presenter(
@@ -123,107 +119,6 @@ def test_read_task_output_returns_empty_for_closed_buffer() -> None:
         buf.write(b"data")
     # Buffer is closed once the ``with`` block exits.
     assert read_task_output(buf, limit=100) == ""
-
-
-def test_run_pwd_command_prints_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fake_cwd(_: type[Path]) -> PurePosixPath:
-        return PurePosixPath("/shown/pwd")
-
-    monkeypatch.setattr(Path, "cwd", classmethod(_fake_cwd))
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_pwd_command("pwd", _presenter(session, console))
-    assert "/shown/pwd" in buf.getvalue()
-    assert session.history[-1]["type"] == "shell"
-
-
-def test_run_pwd_command_rejects_multiple_tokens() -> None:
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_pwd_command("pwd extra", _presenter(session, console))
-    assert "too many arguments" in buf.getvalue().lower()
-    assert session.history[-1]["ok"] is False
-
-
-def test_run_cd_command_chdirs_to_target(monkeypatch: pytest.MonkeyPatch) -> None:
-    directories: list[Path] = []
-
-    def _chdir(target: Path) -> None:
-        directories.append(target)
-
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        _chdir,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_cd_command("cd /tmp/example", _presenter(session, console))
-    assert directories == [Path("/tmp/example")]
-    assert session.history[-1]["type"] == "shell"
-
-
-def test_run_shell_command_quiet_cd_hides_cwd(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        lambda _target: None,
-    )
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.Path.cwd",
-        classmethod(lambda _cls: Path("/tmp/example")),
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    result = run_shell_command("cd /tmp/example", _presenter(session, console), quiet=True)
-
-    assert "$" not in buf.getvalue()
-    assert "/tmp/example" not in buf.getvalue()
-    assert result["ok"] is True
-    assert result["response_text"] == "/tmp/example"
-
-
-def test_run_cd_command_reports_chdir_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_errors: list[BaseException] = []
-
-    def _chdir(_target: Path) -> None:
-        raise OSError("permission denied")
-
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        _chdir,
-    )
-    monkeypatch.setattr(
-        "surfaces.shared.error_handling.exception_reporting.capture_exception",
-        lambda exc, **_kwargs: captured_errors.append(exc),
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_cd_command("cd /root/blocked", _presenter(session, console))
-
-    assert "cd failed" in buf.getvalue()
-    assert len(captured_errors) == 1
-    assert isinstance(captured_errors[0], OSError)
-    assert session.history[-1] == {
-        "type": "shell",
-        "text": "cd /root/blocked",
-        "ok": False,
-        "response_text": "cd failed: permission denied",
-    }
 
 
 def test_run_shell_command_records_when_input_is_empty() -> None:
@@ -369,17 +264,18 @@ def test_run_claude_code_implementation_rejects_vague_request_without_context() 
     assert session.task_registry.list_recent(1) == []
 
 
-def test_run_shell_command_silent_success_prints_checkmark(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_shell_command_outputless_success_omits_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="true",
-            argv=["true"],
             stdout="",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -392,23 +288,24 @@ def test_run_shell_command_silent_success_prints_checkmark(monkeypatch: pytest.M
     console = Console(file=buf, force_terminal=False)
 
     run_shell_command("true", _presenter(session, console))
-    assert GLYPH_SUCCESS in buf.getvalue()
+    output = buf.getvalue()
+    assert "$ true" in output
+    assert GLYPH_SUCCESS not in output
     assert session.history[-1] == {"type": "shell", "text": "true", "ok": True}
 
 
-def test_run_shell_command_quiet_hides_command_and_stdout(
+def test_run_shell_command_quiet_prints_a_dim_command_line_and_no_stdout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="echo hi",
-            argv=["echo", "hi"],
             stdout="hi\n",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -422,8 +319,7 @@ def test_run_shell_command_quiet_hides_command_and_stdout(
 
     result = run_shell_command("echo hi", _presenter(session, console), quiet=True)
     out = buf.getvalue()
-    assert "$" not in out
-    assert "hi" not in out
+    assert out.strip() == "$ echo hi"
     assert GLYPH_SUCCESS not in out
     assert result["ok"] is True
     assert result["stdout"] == "hi"
@@ -431,27 +327,24 @@ def test_run_shell_command_quiet_hides_command_and_stdout(
     assert session.history[-1]["ok"] is True
 
 
-def test_run_shell_command_quiet_outputless_success_prints_nothing(
+def test_run_shell_command_quiet_outputless_success_prints_only_the_command_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Quiet ``touch`` must not print a live success glyph.
+    """Quiet ``touch`` prints the dim command line and no live success glyph.
 
-    Quiet hides ``$`` and stdout. Outputless success has neither; a live
-    marker would still leak intermediate probes before a composed closing.
-    Loud mode prints the glyph. Quiet leaves the terminal blank here — the
+    Quiet hides stdout and the glyph, not the fact that a command ran. The
     action closer (kept for quiet ``shell_run``) is the turn's display.
     """
 
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="touch file",
-            argv=["touch", "file"],
             stdout="",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -466,7 +359,7 @@ def test_run_shell_command_quiet_outputless_success_prints_nothing(
     result = run_shell_command("touch file", _presenter(session, console), quiet=True)
 
     out = buf.getvalue()
-    assert out == ""
+    assert out.strip() == "$ touch file"
     assert GLYPH_SUCCESS not in out
     assert result["ok"] is True
     assert "response_text" not in result
@@ -483,13 +376,12 @@ def test_run_shell_command_success_records_stdout_without_stderr_noise(
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="curl wttr.in/Hawaii?format=3",
-            argv=["curl", "wttr.in/Hawaii?format=3"],
             stdout="Hawaii: +25C\n",
             stderr="curl progress\n",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -515,17 +407,46 @@ def test_run_shell_command_success_records_stdout_without_stderr_noise(
     assert result["response_text"] == "Hawaii: +25C"
 
 
+def test_shell_tool_applies_requested_budget_once_and_preserves_both_streams() -> None:
+    session = Session()
+    console = Console(file=io.StringIO(), force_terminal=False)
+    presenter = _presenter(session, console, confirm_fn=lambda _prompt: "y", is_tty=True)
+    scope = ActionToolScope(session=session, console=console, subprocess_presenter=presenter)
+    context = AgentToolContext(
+        resolved_integrations={}, resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope}
+    )
+    script = (
+        "import sys; print('START', flush=True); print('x' * 30000, flush=True); "
+        "print('STDERR_WARNING', file=sys.stderr, flush=True)"
+    )
+
+    result = shell_run_tool.run(
+        command=shlex.join([sys.executable, "-c", script]),
+        context=context,
+        quiet=True,
+        max_output_tokens=1000,
+    )
+
+    assert isinstance(result, ToolExecutionResult)
+    visible = result.provider_content()
+    assert isinstance(visible, str)
+    assert "Process exited with code 0" in visible
+    assert "START" in visible
+    assert visible.endswith("STDERR_WARNING\n")
+    assert visible.count("tokens truncated") == 1
+    assert len(visible.encode("utf-8")) < 4200
+
+
 def test_run_shell_command_failure_prints_exit_line(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="false",
-            argv=["false"],
             stdout="",
             stderr="",
             exit_code=7,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -547,6 +468,45 @@ def test_run_shell_command_failure_prints_exit_line(monkeypatch: pytest.MonkeyPa
         "ok": False,
         "response_text": f"{GLYPH_ERROR} exit 7",
     }
+
+
+def test_run_shell_command_reports_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+    cancel = threading.Event()
+
+    def _fake_execute(**kwargs: object) -> ShellExecutionResult:
+        seen.update(kwargs)
+        return ShellExecutionResult(
+            command="sleep 30",
+            stdout="",
+            stderr="",
+            exit_code=-15,
+            timed_out=False,
+            truncated=False,
+            executed_with_shell=True,
+            cancelled=True,
+        )
+
+    monkeypatch.setattr(
+        "tools.interactive_shell.shell.execution.execute_shell_command",
+        _fake_execute,
+    )
+
+    session = Session()
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False)
+
+    result = run_shell_command(
+        "sleep 30",
+        _presenter(session, console),
+        cancel_event=cancel,
+    )
+    assert seen["cancel_event"] is cancel
+    assert result["ok"] is False
+    assert result["cancelled"] is True
+    assert result["response_text"] == "command cancelled"
+    assert "command cancelled" in buf.getvalue()
+    assert session.history[-1]["ok"] is False
 
 
 def test_run_shell_command_reports_start_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -578,132 +538,6 @@ def test_run_shell_command_reports_start_failure(monkeypatch: pytest.MonkeyPatch
         "text": "true",
         "ok": False,
         "response_text": "command failed to start: spawn failed",
-    }
-
-
-def test_run_opensre_agents_scan_prints_clean_foreground_output(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert command[-2:] == ["fleet", "scan"]
-        assert kwargs["capture_output"] is True
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout="agent scan\n777 claude-code-777 claude code\nNext: register\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.subprocess.run",
-        _fake_run,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    assert run_opensre_cli_command("fleet scan", session, console) is True
-
-    out = buf.getvalue()
-    assert "$ opensre fleet scan" in out
-    assert "agent scan" in out
-    assert "777 claude-code-777 claude code" in out
-    assert "started." not in out
-    assert "stdout │" not in out
-    assert session.history[-1] == {"type": "cli_command", "text": "opensre fleet scan", "ok": True}
-
-
-def test_run_opensre_agents_scan_register_explains_confirmation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout="registered 1 agent(s)\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.subprocess.run",
-        _fake_run,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    assert (
-        run_opensre_cli_command(
-            "fleet scan --register",
-            session,
-            console,
-            confirm_fn=lambda _prompt: "y",
-            is_tty=True,
-        )
-        is True
-    )
-
-    out = buf.getvalue()
-    assert "register discovered local AI-agent processes" in out
-    assert "registered 1 agent(s)" in out
-    assert "stdout │" not in out
-    assert session.history[-1] == {
-        "type": "cli_command",
-        "text": "opensre fleet scan --register",
-        "ok": True,
-    }
-
-
-def test_run_opensre_agents_watch_runs_in_foreground(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    popen_kwargs: list[dict[str, object]] = []
-
-    class _FakeProcess:
-        stdout = iter(["watching pid 1234; press Ctrl+C to stop\n", "pid 1234 exited\n"])
-
-        def wait(self) -> int:
-            return 0
-
-    def _fake_popen(command: list[str], **kwargs: object) -> _FakeProcess:
-        assert command[-3:] == ["fleet", "watch", "1234"]
-        popen_kwargs.append(kwargs)
-        return _FakeProcess()
-
-    monkeypatch.setattr(
-        _CLI_POPEN,
-        _fake_popen,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    assert (
-        run_opensre_cli_command(
-            "fleet watch 1234",
-            session,
-            console,
-            confirm_fn=lambda _prompt: "y",
-            is_tty=True,
-        )
-        is True
-    )
-
-    out = buf.getvalue()
-    assert "$ opensre fleet watch 1234" in out
-    assert "watching pid 1234" in out
-    assert "pid 1234 exited" in out
-    assert "started" not in out
-    assert "timeout" not in popen_kwargs[0]
-    assert popen_kwargs[0]["stderr"] is subprocess.STDOUT
-    assert session.task_registry.list_recent() == []
-    assert session.history[-1] == {
-        "type": "cli_command",
-        "text": "opensre fleet watch 1234",
-        "ok": True,
     }
 
 
@@ -763,11 +597,11 @@ def test_start_background_cli_task_uses_pty_for_live_terminal_output(
     console = Console(file=buf, force_terminal=True)
 
     task = start_background_cli_task(
-        display_command="opensre tests synthetic --scenario 001-replication-lag",
-        argv_list=["python", "-m", "cli", "tests", "synthetic"],
+        display_command="opensre cron list",
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
-        kind=TaskKind.SYNTHETIC_TEST,
+        kind=TaskKind.CLI_COMMAND,
         use_pty=True,
     )
 
@@ -820,11 +654,11 @@ def test_start_background_cli_task_falls_back_to_pipes_when_pty_unavailable(
     console = Console(file=buf, force_terminal=True)
 
     task = start_background_cli_task(
-        display_command="opensre tests synthetic --scenario 001-replication-lag",
-        argv_list=["python", "-m", "cli", "tests", "synthetic"],
+        display_command="opensre cron list",
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
-        kind=TaskKind.SYNTHETIC_TEST,
+        kind=TaskKind.CLI_COMMAND,
         use_pty=True,
     )
 
@@ -841,14 +675,14 @@ def test_start_background_cli_task_logs_failure_outcome_to_posthog(
 ) -> None:
     """A background CLI task that fails asynchronously must still send its real
     stderr/exit outcome to the prompt-log/PostHog sink. This is the regression
-    for ``opensre investigate`` errors arriving after the turn recorder flushed.
+    for background CLI errors arriving after the turn recorder flushed.
     """
     captured: list[dict[str, object]] = []
 
     monkeypatch.setenv("OPENSRE_PROMPT_LOG_REDACT", "0")
     monkeypatch.setenv("OPENSRE_PROMPT_LOG_LOCAL_DISABLED", "1")
     monkeypatch.setattr(
-        "surfaces.interactive_shell.utils.telemetry.recorder.capture_ai_generation",
+        "infrastructure.analytics.prompt_log.recorder.capture_ai_generation",
         lambda properties: captured.append(properties),
     )
 
@@ -874,8 +708,8 @@ def test_start_background_cli_task_logs_failure_outcome_to_posthog(
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
-        display_command="opensre investigate --service myportfolio",
-        argv_list=["python", "-m", "cli", "investigate", "--service", "myportfolio"],
+        display_command="opensre cron run task-1",
+        argv_list=["python", "-m", "cli", "cron", "run", "task-1"],
         session=session,
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -889,7 +723,7 @@ def test_start_background_cli_task_logs_failure_outcome_to_posthog(
     assert props["$ai_trace_id"] == task.task_id
     ai_input = props["$ai_input"]
     assert isinstance(ai_input, list)
-    assert ai_input[0]["content"] == "opensre investigate --service myportfolio"
+    assert ai_input[0]["content"] == "opensre cron run task-1"
     choices = props["$ai_output_choices"]
     assert isinstance(choices, list)
     content = choices[0]["content"]
@@ -906,13 +740,13 @@ def test_start_background_cli_task_logs_success_outcome_to_posthog(
     monkeypatch.setenv("OPENSRE_PROMPT_LOG_REDACT", "0")
     monkeypatch.setenv("OPENSRE_PROMPT_LOG_LOCAL_DISABLED", "1")
     monkeypatch.setattr(
-        "surfaces.interactive_shell.utils.telemetry.recorder.capture_ai_generation",
+        "infrastructure.analytics.prompt_log.recorder.capture_ai_generation",
         lambda properties: captured.append(properties),
     )
 
     class _FakeProcess:
         returncode = 0
-        stdout = io.StringIO("investigation complete: root cause identified\n")
+        stdout = io.StringIO("scan complete: 2 agents registered\n")
         stderr = io.StringIO("")
 
         def poll(self) -> int:
@@ -932,8 +766,8 @@ def test_start_background_cli_task_logs_success_outcome_to_posthog(
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
-        display_command="opensre investigate --service checkout",
-        argv_list=["python", "-m", "cli", "investigate", "--service", "checkout"],
+        display_command="opensre cron run task-1",
+        argv_list=["python", "-m", "cli", "cron", "run", "task-1"],
         session=session,
         console=console,
         kind=TaskKind.CLI_COMMAND,
@@ -944,7 +778,7 @@ def test_start_background_cli_task_logs_success_outcome_to_posthog(
     assert len(captured) == 1
     content = captured[0]["$ai_output_choices"][0]["content"]
     assert "command completed (exit 0)" in content
-    assert "investigation complete: root cause identified" in content
+    assert "scan complete: 2 agents registered" in content
 
 
 def test_task_output_stream_reports_unexpected_failure(
@@ -1036,11 +870,11 @@ def test_start_background_cli_task_reports_spawn_failure(
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
-        display_command="opensre tests synthetic --scenario 001-replication-lag",
-        argv_list=["python", "-m", "cli", "tests", "synthetic"],
+        display_command="opensre cron list",
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
-        kind=TaskKind.SYNTHETIC_TEST,
+        kind=TaskKind.CLI_COMMAND,
     )
 
     assert task is None
@@ -1088,11 +922,11 @@ def test_start_background_cli_task_reports_watcher_failure(
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
-        display_command="opensre tests synthetic --scenario 001-replication-lag",
-        argv_list=["python", "-m", "cli", "tests", "synthetic"],
+        display_command="opensre cron list",
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
-        kind=TaskKind.SYNTHETIC_TEST,
+        kind=TaskKind.CLI_COMMAND,
     )
 
     assert task is not None
@@ -1102,258 +936,13 @@ def test_start_background_cli_task_reports_watcher_failure(
     assert isinstance(captured_errors[0], RuntimeError)
 
 
-def test_start_background_cli_task_skips_follow_up_after_session_reset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _FakeProcess:
-        stdout = None
-        stderr = None
-        returncode = 1
-
-        def poll(self) -> int:
-            return 1
-
-    class _DeferredThread:
-        pending: list[object] = []
-
-        def __init__(
-            self,
-            group: object = None,
-            target: object = None,
-            name: object = None,
-            args: tuple[object, ...] = (),
-            kwargs: dict[str, object] | None = None,
-            *,
-            daemon: object = None,
-        ) -> None:
-            del group, name, daemon, args, kwargs
-            if callable(target):
-                _DeferredThread.pending.append(target)
-
-        def start(self) -> None:
-            return
-
-    def _fake_popen(_command: list[str], **_kwargs: object) -> _FakeProcess:
-        return _FakeProcess()
-
-    _DeferredThread.pending.clear()
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.threading.Thread",
-        _DeferredThread,
-    )
-    monkeypatch.setattr(
-        _BACKGROUND_TASK_POPEN,
-        _fake_popen,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    task = start_background_cli_task(
-        display_command="opensre tests synthetic --scenario 001-replication-lag",
-        argv_list=["python", "-m", "cli", "tests", "synthetic"],
-        session=session,
-        console=console,
-        kind=TaskKind.SYNTHETIC_TEST,
-    )
-    assert task is not None
-    assert len(_DeferredThread.pending) == 1
-    session.clear()
-    _DeferredThread.pending[0]()  # type: ignore[operator]
-    assert session.terminal.pending_prompt_default is None
-    _DeferredThread.pending.clear()
-
-
-def test_watch_synthetic_subprocess_reports_daemon_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_errors: list[BaseException] = []
-
-    class _FakeProcess:
-        stdout = None
-        stderr = None
-
-        def poll(self) -> int:
-            raise RuntimeError("poll broke")
-
-    monkeypatch.setattr(
-        "surfaces.shared.error_handling.exception_reporting.capture_exception",
-        lambda exc, **_kwargs: captured_errors.append(exc),
-    )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.threading.Thread",
-        _ImmediateThread,
-    )
-
-    session = Session()
-    task = session.task_registry.create(TaskKind.SYNTHETIC_TEST, command="suite")
-    task.mark_running()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    with tempfile.SpooledTemporaryFile() as stderr_buf:  # type: ignore[type-arg]
-        watch_synthetic_subprocess(
-            task,
-            _FakeProcess(),  # type: ignore[arg-type]
-            _presenter(session, console),
-            "suite:001-test",
-            stderr_buf,
-        )
-
-    assert task.status == TaskStatus.FAILED
-    assert "synthetic watcher failed" in buf.getvalue()
-    assert len(captured_errors) == 1
-    assert isinstance(captured_errors[0], RuntimeError)
-
-
-def test_run_synthetic_test_unknown_suite_records_failure() -> None:
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_synthetic_test("nonexistent_suite", _presenter(session, console))
-    assert "unknown synthetic" in buf.getvalue().lower()
-    entry = session.history[-1]
-    assert entry["type"] == "synthetic_test"
-    assert entry["ok"] is False
-
-
-def test_run_synthetic_test_streams_subprocess_output(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    popen_kwargs: list[dict[str, object]] = []
-    popen_commands: list[list[str]] = []
-
-    class _FakeProcess:
-        returncode = 0
-        stdout = io.StringIO("collecting fixtures\nrunning investigation\n")
-        stderr = io.StringIO("warning: slow cloudwatch response\n")
-
-        def poll(self) -> int:
-            return 0
-
-    def _fake_popen(command: list[str], **kwargs: object) -> _FakeProcess:
-        popen_commands.append(command)
-        popen_kwargs.append(kwargs)
-        return _FakeProcess()
-
-    monkeypatch.setattr(
-        _SYNTHETIC_RUNNER_POPEN,
-        _fake_popen,
-    )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.threading.Thread",
-        _ImmediateThread,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_synthetic_test(
-        "rds_postgres",
-        _presenter(session, console, confirm_fn=lambda _prompt: "y", is_tty=True),
-    )
-
-    assert popen_commands[0][1] == "-u"
-    assert popen_commands[0][-2:] == ["--scenario", "001-replication-lag"]
-    assert popen_kwargs[0]["stdout"] is not None
-    assert popen_kwargs[0]["stderr"] is not None
-    assert popen_kwargs[0]["text"] is True
-    out = buf.getvalue()
-    assert "collecting fixtures" in out
-    assert "running investigation" in out
-    assert "warning: slow cloudwatch response" in out
-    task = session.task_registry.list_recent(1)[0]
-    assert task.status == TaskStatus.COMPLETED
-
-
-def test_run_synthetic_test_honours_explicit_scenario(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    popen_commands: list[list[str]] = []
-
-    class _FakeProcess:
-        returncode = 0
-        stdout = io.StringIO("scenario run\n")
-        stderr = io.StringIO("")
-
-        def poll(self) -> int:
-            return 0
-
-    def _fake_popen(command: list[str], **_kwargs: object) -> _FakeProcess:
-        popen_commands.append(command)
-        return _FakeProcess()
-
-    monkeypatch.setattr(
-        _SYNTHETIC_RUNNER_POPEN,
-        _fake_popen,
-    )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.threading.Thread",
-        _ImmediateThread,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_synthetic_test(
-        "rds_postgres:005-failover",
-        _presenter(session, console, confirm_fn=lambda _prompt: "y", is_tty=True),
-    )
-
-    assert popen_commands[0][-2:] == ["--scenario", "005-failover"]
-    assert "opensre tests synthetic --scenario 005-failover" in buf.getvalue()
-
-
-def test_run_synthetic_test_all_launches_suite_alias(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    popen_commands: list[list[str]] = []
-
-    class _FakeProcess:
-        returncode = 0
-        stdout = io.StringIO("scenario run\n")
-        stderr = io.StringIO("")
-
-        def poll(self) -> int:
-            return 0
-
-    def _fake_popen(command: list[str], **_kwargs: object) -> _FakeProcess:
-        popen_commands.append(command)
-        return _FakeProcess()
-
-    monkeypatch.setattr(
-        _SYNTHETIC_RUNNER_POPEN,
-        _fake_popen,
-    )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.threading.Thread",
-        _ImmediateThread,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_synthetic_test(
-        "rds_postgres:all",
-        _presenter(session, console, confirm_fn=lambda _prompt: "y", is_tty=True),
-    )
-
-    assert popen_commands[0][-2:] == ["synthetic", "all"]
-    assert "opensre tests synthetic all" in buf.getvalue()
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Subprocess terminal width forwarding
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Regression: subprocess Rich output (synthetic suite panels and tables) used
-# to render at the default 80-column width because the subprocess's stdout is
-# a pipe. ``_print_task_output_line`` then prepended an 18-char ``<task_id>
+# Regression: subprocess Rich output (panels and tables) used to render at the
+# default 80-column width because the subprocess's stdout is a pipe.
+# ``_print_task_output_line`` then prepended an 18-char ``<task_id>
 # <stream> │ `` prefix, producing 98-char lines that wrapped mid-row in the
 # user's narrower terminal — the visible symptom was broken table headers and
 # panel borders. We forward ``user_width - prefix - 1`` via ``COLUMNS`` so the
@@ -1393,11 +982,11 @@ def _capture_popen_kwargs(
 
 def _start_one_task(console: Console) -> None:
     start_background_cli_task(
-        display_command="opensre tests synthetic --scenario 001-replication-lag",
-        argv_list=["opensre", "tests", "synthetic", "--scenario", "001-replication-lag"],
+        display_command="opensre cron list",
+        argv_list=["opensre", "cron", "list"],
         session=Session(),
         console=console,
-        kind=TaskKind.SYNTHETIC_TEST,
+        kind=TaskKind.CLI_COMMAND,
     )
 
 
@@ -1447,7 +1036,7 @@ def test_background_task_preserves_existing_environment(
     """The forwarded env must inherit ``os.environ`` so the subprocess sees PATH etc.
 
     We only inject COLUMNS/LINES; everything else (PATH, HOME, virtualenv,
-    auth tokens) must reach the synthetic suite unchanged.
+    auth tokens) must reach the subprocess unchanged.
     """
     monkeypatch.setenv("OPENSRE_TEST_MARKER", "preserved-value")
     captured = _capture_popen_kwargs(monkeypatch)
@@ -1458,33 +1047,6 @@ def test_background_task_preserves_existing_environment(
     env = captured[0].get("env")
     assert isinstance(env, dict)
     assert env.get("OPENSRE_TEST_MARKER") == "preserved-value"
-
-
-def test_run_synthetic_test_forwards_columns_to_subprocess(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``run_synthetic_test`` opens its own Popen — it must also forward COLUMNS.
-
-    Regression: this code path bypasses ``start_background_cli_task`` and so
-    was missed by the first iteration of the width-forwarding fix. The
-    visible symptom was that the synthetic suite's Rich Panel and Table
-    output (the per-scenario "Synthetic RDS Run" panel, the "Synthetic
-    Suite Report" table, and the "Level Summary" table) rendered at the
-    pipe-default 80 columns and then wrapped mid-row in the user's terminal
-    once the 18-char ``<task_id> stdout │ `` prefix had been prepended.
-    """
-    captured = _capture_popen_kwargs(monkeypatch, popen_target=_SYNTHETIC_RUNNER_POPEN)
-    console = Console(file=io.StringIO(), force_terminal=False, width=110)
-
-    run_synthetic_test(
-        "rds_postgres:005-failover",
-        _presenter(Session(), console, confirm_fn=lambda _prompt: "y", is_tty=True),
-    )
-
-    assert captured, "run_synthetic_test must spawn at least one subprocess"
-    env = captured[0].get("env")
-    assert isinstance(env, dict)
-    assert env.get("COLUMNS") == str(110 - _TASK_OUTPUT_PREFIX_WIDTH - 1)
 
 
 @pytest.mark.parametrize(
@@ -1504,7 +1066,7 @@ def test_run_synthetic_test_forwards_columns_to_subprocess(
         # Other subcommands — must NOT match.
         (["health"], False),
         (["version"], False),
-        (["fleet", "list"], False),
+        (["cron", "list"], False),
         # Edge: empty.
         ([], False),
     ],
@@ -1627,65 +1189,34 @@ def test_run_opensre_cli_command_refuses_integrations_setup_with_helpful_message
     assert "full terminal" in str(session.history[-1].get("response_text", ""))
 
 
-def test_run_opensre_cli_command_skips_confirmation_for_investigate(
+def test_run_opensre_cli_command_runs_integrations_list_in_foreground(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``opensre investigate`` is the primary REPL purpose — no Proceed? prompt."""
-    confirm_calls: list[str] = []
-    start_calls: list[list[str]] = []
-
-    def _fake_confirm(prompt: str) -> str:
-        confirm_calls.append(prompt)
-        return "n"
-
-    def _fake_start_background_cli_task(*, argv_list: list[str], **_kw: object) -> None:
-        start_calls.append(argv_list)
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.subprocess_runner.start_background_cli_task",
-        _fake_start_background_cli_task,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    assert (
-        run_opensre_cli_command(
-            "investigate -i alert.json",
-            session,
-            console,
-            confirm_fn=_fake_confirm,
-            is_tty=True,
-        )
-        is True
-    )
-
-    assert confirm_calls == []
-    assert start_calls
-    assert "investigate" in start_calls[0]
-    assert "-i" in start_calls[0]
-    assert "alert.json" in start_calls[0]
-    assert "Proceed?" not in buf.getvalue()
-    assert "may change local config" not in buf.getvalue()
-
-
-def test_run_opensre_cli_command_allows_integrations_list_without_blocking(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Only the ``setup`` subcommand under ``integrations`` is the wizard.
-    Other ``integrations`` subcommands like ``integrations list`` must
-    not get caught by the interactive-wizard block — guard against an
-    over-broad refusal.
+    """``integrations list`` is read-only: it runs foreground so the action turn
+    observes the result, and is not caught by the interactive-wizard block (only
+    ``integrations setup`` is the wizard). Backgrounding it left the plan parked
+    on a task id while the turn ended.
     """
     start_calls: list[list[str]] = []
 
     def _fake_start_background_cli_task(*, argv_list: list[str], **_kw: object) -> None:
         start_calls.append(argv_list)
 
+    def _fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout="SERVICE  STATUS  ID\ngithub   active  github-c943a332\n",
+            stderr="",
+        )
+
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.subprocess_runner.start_background_cli_task",
         _fake_start_background_cli_task,
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.subprocess_runner.subprocess.run",
+        _fake_run,
     )
 
     session = Session()
@@ -1704,12 +1235,54 @@ def test_run_opensre_cli_command_allows_integrations_list_without_blocking(
     )
 
     out = buf.getvalue()
-    assert "needs a full terminal" not in out
-    # The dispatcher should have reached the background-task path
-    # (proving the wizard block didn't fire).
-    assert start_calls, "background task starter was not invoked"
-    assert "integrations" in start_calls[0]
-    assert "list" in start_calls[0]
+    assert "needs a full terminal" not in out  # wizard block did not fire
+    assert "$ opensre integrations list" in out
+    assert "github-c943a332" in out
+    # Read-only integrations runs foreground, not as a background task, so the
+    # turn observes pass/fail instead of ending on a task id.
+    assert start_calls == []
+
+
+def test_foreground_cli_child_renders_to_terminal_width_minus_replay_gutter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Foreground ``cli_exec`` children get the same env contract as slash parity.
+
+    The child's stdout is a pipe: with no ``COLUMNS`` Rich rendered at 80 and
+    ellipsized ids (``ecf7c2580b…``) the action agent then failed to chain; its
+    output is replayed under the 4-cell ``↳`` gutter, so it must render exactly
+    ``width − gutter − 1`` wide to fit without folding. The width is only
+    honoured on a capable ``TERM``, and the replay parses ANSI, so colour is
+    forced and a dumb ``TERM`` is lifted exactly as ``_captured_child_env`` does.
+    """
+    from surfaces.interactive_shell.ui import COMMAND_OUTPUT_GUTTER_WIDTH
+
+    monkeypatch.setenv("TERM", "dumb")
+    seen_env: list[dict[str, str] | None] = []
+
+    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs.get("env")
+        seen_env.append(env if isinstance(env, dict) else None)
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(_CLI_RUN, _fake_run)
+    console = Console(file=io.StringIO(), force_terminal=False, width=134)
+
+    assert (
+        run_opensre_cli_command(
+            "integrations list",
+            Session(),
+            console,
+            confirm_fn=lambda _prompt: "y",
+            is_tty=True,
+        )
+        is True
+    )
+
+    assert seen_env and seen_env[0] is not None
+    assert seen_env[0]["COLUMNS"] == str(134 - COMMAND_OUTPUT_GUTTER_WIDTH - 1)
+    assert seen_env[0]["TERM"] == "xterm-256color"
+    assert seen_env[0]["FORCE_COLOR"] == "1"
 
 
 def test_start_background_cli_task_echoes_command_markup_literally(
@@ -1735,17 +1308,31 @@ def test_start_background_cli_task_echoes_command_markup_literally(
         _ImmediateThread,
     )
 
-    display_command = 'opensre investigate --alert "[error] 5xx spike on [/api/checkout]"'
+    display_command = 'opensre cron list --note "[error] 5xx spike on [/api/checkout]"'
     session = Session()
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 
     task = start_background_cli_task(
         display_command=display_command,
-        argv_list=["python", "-m", "cli", "investigate"],
+        argv_list=["python", "-m", "cli", "cron", "list"],
         session=session,
         console=console,
     )
 
     assert task is not None
     assert f"$ {display_command}" in buf.getvalue().replace("\n", "")
+
+
+def test_highlight_command_leaves_argument_keywords_plain() -> None:
+    """``done`` after ``echo`` is an argument, not the bash loop keyword — a shell
+    lexer mis-colours it. Command words are highlighted; ``done`` stays plain."""
+    from surfaces.interactive_shell.runtime.subprocess_runner.repl_presenter import (
+        _highlight_command,
+    )
+
+    text = _highlight_command("sleep 8 && echo done")
+    styled = {text.plain[s.start : s.end].strip() for s in text.spans}
+    assert "sleep" in styled  # first command highlighted
+    assert "echo" in styled  # command after the operator highlighted
+    assert "done" not in styled  # argument left in the base style, not recoloured

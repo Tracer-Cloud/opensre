@@ -1,0 +1,79 @@
+name: Skills sync
+
+# Publishes skills merged to main to the live skills registry, so every
+# OpenSRE install picks them up within minutes without a new binary. Only
+# skills whose metadata.version is newer than the live one are sent, so a
+# fast-lane `opensre skills push` that is not yet in git is never overwritten.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - core/agent_harness/prompts/skills/**/*.md
+      - core/agent_harness/prompts/skills/**/scripts/*.py
+      - .github/workflows/skills-sync.yml
+
+permissions:
+  contents: read
+
+env:
+  OPENSRE_CICD: "1"
+
+concurrency:
+  group: skills-sync
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Off until the registry can sign releases: set the repository variable
+    # SKILLS_SYNC_ENABLED=true once the webapp's signing key is configured.
+    if: github.repository == 'Tracer-Cloud/opensre' && vars.SKILLS_SYNC_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      OPENSRE_DISABLE_KEYRING: "1"
+      OPENSRE_SENTRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Request the registry's OIDC token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://app.opensre.com/skills/sync" \
+            | jq -r .value)"
+          echo "::add-mask::${token}"
+          echo "SKILLS_SYNC_TOKEN=${token}" >> "$GITHUB_ENV"
+      - name: Publish newer skills
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          skills_dir=core/agent_harness/prompts/skills
+          # The whole pushed range, not just its last commit. Only a manual run or a
+          # new branch (no "before") uses the previous commit; if the range start
+          # cannot be fetched, fail rather than publish a partial set of edits.
+          base=HEAD~1
+          if [[ -n "${BEFORE_SHA}" && ! "${BEFORE_SHA}" =~ ^0+$ ]]; then
+            git fetch --quiet --depth=1 origin "${BEFORE_SHA}"
+            base="${BEFORE_SHA}"
+          fi
+          args=(--runner-token-env SKILLS_SYNC_TOKEN)
+          # Shared files carry no version: publish exactly the ones this push changed,
+          # so a newer fast-lane edit to another shared file is never reverted.
+          # --no-renames lists a rename as delete + add, so the old path is removed too.
+          while IFS= read -r path; do
+            [[ -n "${path}" ]] && args+=(--shared-file "${path#"${skills_dir}"/}")
+          done < <(git diff --name-only --no-renames "${base}" HEAD -- "${skills_dir}/common")
+          uv run opensre skills push "${args[@]}"

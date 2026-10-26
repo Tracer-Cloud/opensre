@@ -12,18 +12,27 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
+import functools
 import logging
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, cast
 
 from rich.console import Console
 
-if TYPE_CHECKING:
-    from infrastructure.turn_host.turn_handler import TurnHandler
+from surfaces.shared.terminal.tables.provider import detect_provider_model
 
-from infrastructure.analytics.repl_context import bound_repl_turn_context
+if TYPE_CHECKING:
+    from infrastructure.turn_host.turn_runner import TurnRunner
+
+from core.agent_harness.spi.cancel import (
+    HostCancelReason,
+    is_goal_control_reason,
+    turn_cancel_reason,
+)
+from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.observability.trace.spans import (
     bind_session_trace,
@@ -35,32 +44,142 @@ from surfaces.interactive_shell.runtime.agent_presentation import (
     ConsoleAgentEventSink,
 )
 from surfaces.interactive_shell.runtime.background.workers import (
-    BackgroundTaskManager,
+    BackgroundTaskPool,
 )
+from surfaces.interactive_shell.runtime.core.confirm_keys import read_confirm_answer
 from surfaces.interactive_shell.runtime.core.confirmation import (
     DispatchCancelled,
     request_confirmation_via_prompt,
 )
-from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
+from surfaces.interactive_shell.runtime.core.state import (
+    DEFAULT_CONFIRM_OPTIONS,
+    ReplState,
+    SpinnerState,
+)
+from surfaces.interactive_shell.runtime.credit_wall import queue_credits_exhausted_menu
 from surfaces.interactive_shell.runtime.input import PromptInputReader
 from surfaces.interactive_shell.runtime.input.actions import (
     InputAction,
     ShellInputSnapshot,
     decide_input_action,
 )
-from surfaces.interactive_shell.runtime.utils.input_policy import (
+from surfaces.interactive_shell.runtime.input_policy import (
     turn_needs_exclusive_stdin,
 )
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
-from surfaces.interactive_shell.utils.telemetry import PromptRecorder
 from surfaces.shared.error_handling.exception_reporting import report_exception
-from surfaces.shared.terminal.output.console_state import set_investigation_spinner
+from surfaces.shared.terminal.output.console_state import set_repl_state, set_turn_spinner
 from surfaces.shared.terminal.output.repl_progress import repl_safe_progress_scope
 
 _logger = logging.getLogger(__name__)
+_TURN_SLOT_POLL_SECONDS = 0.05
 
-_AGENT_TURN_KIND = "agent"
+
+class _DaemonTurnSlot:
+    """Allow at most one live blocking worker per interactive runtime."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._available = True
+        self._release_callbacks: list[Callable[[], None]] = []
+
+    async def claim(self) -> None:
+        """Wait interruptibly until no earlier worker remains alive."""
+        while True:
+            with self._lock:
+                if self._available:
+                    self._available = False
+                    return
+            await asyncio.sleep(_TURN_SLOT_POLL_SECONDS)
+
+    def release(self) -> None:
+        """Allow the next queued turn to create its worker."""
+        with self._lock:
+            self._available = True
+            callbacks = tuple(self._release_callbacks)
+            self._release_callbacks.clear()
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                _logger.warning("Deferred turn cleanup failed", exc_info=True)
+
+    def run_when_available(self, callback: Callable[[], None]) -> None:
+        """Run ``callback`` now or after the current blocking worker exits."""
+        callback_context = contextvars.copy_context()
+
+        def _run_in_registration_context() -> None:
+            callback_context.run(callback)
+
+        with self._lock:
+            run_now = self._available
+            if not run_now:
+                self._release_callbacks.append(_run_in_registration_context)
+        if run_now:
+            try:
+                _run_in_registration_context()
+            except Exception:
+                _logger.warning("Immediate turn cleanup failed", exc_info=True)
+
+    def is_occupied(self) -> bool:
+        """Return whether a blocking worker currently owns the slot."""
+        with self._lock:
+            return not self._available
+
+
+def _complete_daemon_turn(
+    future: asyncio.Future[None],
+    error: Exception | None,
+) -> None:
+    """Complete ``future`` unless its awaiting task was already cancelled."""
+    if future.done():
+        return
+    if error is not None:
+        future.set_exception(error)
+    else:
+        future.set_result(None)
+
+
+async def _run_daemon_turn(
+    work: Callable[[], object],
+    slot: _DaemonTurnSlot,
+) -> None:
+    """Run blocking turn work without making event-loop shutdown wait for it."""
+    await slot.claim()
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[None] = loop.create_future()
+    context = contextvars.copy_context()
+
+    def _worker() -> None:
+        completed = False
+        error: Exception | None = None
+        try:
+            context.run(work)
+            completed = True
+        except Exception as exc:
+            error = exc
+        finally:
+            slot.release()
+            if not completed and error is None:
+                error = RuntimeError("Interactive turn worker stopped unexpectedly")
+            # A forced shell exit may close the event loop while detached work
+            # is still unwinding. There is no waiter left to notify in that case.
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(_complete_daemon_turn, future, error)
+
+    worker = threading.Thread(
+        target=_worker,
+        name="opensre-interactive-turn",
+        daemon=True,
+    )
+    try:
+        worker.start()
+    except Exception:
+        slot.release()
+        raise
+    # Widen the empty future so waiting on it is an assignment, not a bare await.
+    _ = await cast(asyncio.Future[object], future)
 
 
 @dataclass(frozen=True)
@@ -77,7 +196,86 @@ class AgentTurnResources:
     #: tool output land in the same stream as the startup renders.
     console: Console | None = None
     #: Session-scoped turn host; each turn binds its own streaming console.
-    turn_handler: TurnHandler | None = None
+    turn_handler: TurnRunner | None = None
+    _turn_slot: _DaemonTurnSlot = field(
+        default_factory=_DaemonTurnSlot,
+        repr=False,
+        compare=False,
+    )
+
+    def run_after_turn_worker(self, callback: Callable[[], None]) -> None:
+        """Run cleanup once the blocking worker no longer owns turn state."""
+        self._turn_slot.run_when_available(callback)
+
+    def has_live_turn_worker(self) -> bool:
+        """Return whether blocking turn work remains alive outside asyncio."""
+        return self._turn_slot.is_occupied()
+
+
+def _confirm_via_prompt(runtime: AgentTurnResources, prompt: str) -> str:
+    """Park for a y/n answer; hide the free-text box via ReplState confirmation phase.
+
+    ``begin_confirmation`` flips ``state.is_awaiting_confirmation()``, which
+    ``typing_box_hidden`` / ``render_prompt_region`` already honor. ``redraw``
+    invalidates the live prompt immediately so the box hides and restores
+    without waiting for the next refresh tick. ``prepare_ui`` clears any
+    typeahead that landed in the (hidden) composer before the gate opened.
+    """
+    # The execution gate stashes the rows it wants (e.g. an "always allow" row)
+    # on the terminal just before calling this; consume them for the choice.
+    terminal = runtime.session.terminal
+    options = terminal.pending_confirm_options
+    terminal.pending_confirm_options = None
+    app = terminal.prompt_app
+    prompt_running = app is not None and getattr(app, "is_running", False)
+    if terminal.exclusive_stdin_active or not prompt_running:
+        # Exclusive-stdin / subprocess turns own the TTY (and ``is_running`` can
+        # still be true). Parking on the prompt app hangs while the cooked
+        # terminal echoes the arrow keys, so read a plain line instead.
+        return _confirm_via_readline(prompt, options)
+    return request_confirmation_via_prompt(
+        runtime.state,
+        prompt,
+        options=options,
+        redraw=runtime.invalidate_prompt,
+        prepare_ui=lambda: _reset_prompt_buffer(runtime.session),
+    )
+
+
+def _confirm_via_readline(prompt: str, options: tuple[tuple[str, str], ...] | None) -> str:
+    """Confirmation for when the arrow-nav prompt app is unavailable.
+
+    On a TTY this reads one keypress in cbreak mode — echo off, so arrow keys no
+    longer leak as raw ``^[[A`` — resolving a row tag, digit, answer key, or
+    Enter (cancel); off a TTY it falls back to a cooked one-line read.
+    """
+    rows = options or DEFAULT_CONFIRM_OPTIONS
+    return read_confirm_answer(prompt, rows)
+
+
+def _reset_prompt_buffer(session: Session) -> None:
+    """Empty the live prompt buffer so hidden typeahead cannot submit later.
+
+    Confirmation parks on a worker thread; prompt-toolkit buffer mutations must
+    run on the UI loop (same rule as ``invalidate_prompt`` / refresh prefill).
+    """
+    terminal = getattr(session, "terminal", None)
+    if terminal is None:
+        return
+    app = getattr(terminal, "prompt_app", None)
+    if app is None:
+        return
+
+    def _reset() -> None:
+        buffer = getattr(app, "current_buffer", None)
+        if buffer is not None:
+            buffer.reset()
+
+    loop = getattr(terminal, "main_loop", None)
+    if loop is not None:
+        loop.call_soon_threadsafe(_reset)
+        return
+    _reset()
 
 
 def _streaming_console(
@@ -111,25 +309,22 @@ def _streaming_console(
 
 async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
     """Set up shell presentation for one turn and drive its lifecycle."""
-    dispatch_cancel = threading.Event()
+    dispatch_cancel = runtime.state.ensure_current_cancel_event()
     console = _streaming_console(runtime, dispatch_cancel)
     emit = ConsoleAgentEventSink(
         session=runtime.session,
         spinner=runtime.spinner,
         console=console,
     )
-    recorder = PromptRecorder.start(
-        session=runtime.session,
-        text=text,
-        turn_kind=_AGENT_TURN_KIND,
-    )
     exclusive_stdin = turn_needs_exclusive_stdin(text, runtime.session)
     progress_scope = contextlib.nullcontext() if exclusive_stdin else repl_safe_progress_scope()
     runtime.session.terminal.exclusive_stdin_active = exclusive_stdin
     # Blocks nested validate_and_handle from set_auto_command (e.g. /goal set).
     runtime.session.terminal.dispatch_active = True
-    # Expose this turn's spinner so investigation stages can animate phase labels.
-    set_investigation_spinner(runtime.spinner)
+    # Expose this turn's spinner and repl state so rendering helpers can animate
+    # phase labels and pin the hosted-gateway checklist.
+    set_turn_spinner(runtime.spinner)
+    set_repl_state(runtime.state)
     emit_thread_boundary(
         runtime.session.session_id,
         name="turn_boundary",
@@ -144,15 +339,24 @@ async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
                 runtime=runtime,
                 text=text,
                 output=console,
-                recorder=recorder,
-                confirm=lambda prompt: request_confirmation_via_prompt(runtime.state, prompt),
+                confirm=lambda prompt: _confirm_via_prompt(runtime, prompt),
                 emit=emit,
                 dispatch_cancel=dispatch_cancel,
             )
     finally:
-        set_investigation_spinner(None)
+        set_turn_spinner(None)
+        set_repl_state(None)
+        runtime.state.gateway_plan = None
         runtime.session.terminal.exclusive_stdin_active = False
         runtime.session.terminal.dispatch_active = False
+        # ``set_auto_command`` deliberately avoids submitting while a turn is
+        # active. If the input prompt was already open, wake it again now that
+        # the turn is idle so deferred commands such as ``/choose`` can run.
+        if (
+            runtime.session.terminal.pending_prompt_default
+            and runtime.session.terminal.pending_prompt_autosubmit
+        ):
+            runtime.session.terminal.notify_prompt_changed()
         emit_thread_boundary(
             runtime.session.session_id,
             name="turn_boundary",
@@ -165,7 +369,6 @@ async def _run_agent_turn_loop(
     runtime: AgentTurnResources,
     text: str,
     output: StreamingConsole,
-    recorder: PromptRecorder | None,
     confirm: Callable[[str], str],
     emit: AgentEventSink,
     dispatch_cancel: threading.Event,
@@ -177,6 +380,9 @@ async def _run_agent_turn_loop(
         runtime.state.attach_cancel_event(dispatch_cancel)
 
     await emit(AgentEvent(type="turn_start", text=text))
+    # Repaint the prompt now so the spinner shows the turn is in flight
+    # immediately, instead of waiting for the ticker's next 100 ms tick.
+    runtime.invalidate_prompt()
     try:
         # Imported lazily so constructing the controller (and importing this
         # module) does not pull the harness/turn-execution stack
@@ -188,22 +394,19 @@ async def _run_agent_turn_loop(
                 surface=UsageSurface.CLI,
                 session_id=runtime.session.session_id,
             ),
-            bound_repl_turn_context(
-                session_id=runtime.session.session_id,
-                turn_kind=_AGENT_TURN_KIND,
-                prompt_turn_id=recorder.turn_id if recorder is not None else None,
-            ),
         ):
-            await asyncio.to_thread(
-                execute_shell_turn,
-                text,
-                runtime.session,
-                output,
-                recorder=recorder,
-                confirm_fn=confirm,
-                is_tty=None,
-                request_exit=runtime.request_exit,
-                handler=runtime.turn_handler,
+            await _run_daemon_turn(
+                functools.partial(
+                    execute_shell_turn,
+                    text,
+                    runtime.session,
+                    output,
+                    confirm_fn=confirm,
+                    is_tty=None,
+                    request_exit=runtime.request_exit,
+                    handler=runtime.turn_handler,
+                ),
+                runtime._turn_slot,
             )
     except asyncio.CancelledError:
         await emit(AgentEvent(type="turn_interrupted"))
@@ -212,20 +415,26 @@ async def _run_agent_turn_loop(
         await emit(AgentEvent(type="turn_interrupted"))
     except Exception as exc:
         report_exception(exc, context="surfaces.interactive_shell.turn")
+        if isinstance(exc, OpenSRECreditsExhaustedError):
+            queue_credits_exhausted_menu(runtime.session)
         await emit(AgentEvent(type="turn_error", error=exc))
     finally:
         runtime.state.finish_dispatch(dispatch_cancel)
-        await emit(AgentEvent(type="turn_end"))
+        try:
+            runtime.session.terminal.provider_model = await asyncio.to_thread(detect_provider_model)
+        finally:
+            await emit(AgentEvent(type="turn_end"))
 
 
 async def run_input_loop(
     *,
     state: ReplState,
     session: Session,
-    background: BackgroundTaskManager | None,
+    background: BackgroundTaskPool | None,
     input_reader: PromptInputReader,
     echo_console: Console,
     handle_input_action: Callable[[InputAction], Awaitable[bool]],
+    has_live_turn_worker: Callable[[], bool] | None = None,
 ) -> None:
     """Run the interactive session's main input loop until exit or close.
 
@@ -250,6 +459,9 @@ async def run_input_loop(
                 exit_requested=state.exit_requested,
                 dispatch_running=state.is_dispatch_running(),
                 awaiting_confirmation=state.is_awaiting_confirmation(),
+                worker_running=(
+                    has_live_turn_worker() if has_live_turn_worker is not None else False
+                ),
             ),
             needs_exclusive_stdin=lambda text: turn_needs_exclusive_stdin(
                 text,
@@ -265,6 +477,7 @@ async def run_agent_turn_queue(
     *,
     state: ReplState,
     run_turn: Callable[[str], Coroutine[Any, Any, None]],
+    on_goal_control: Callable[[HostCancelReason], Awaitable[None]] | None = None,
 ) -> None:
     """Consume queued turns and run each one until exit."""
     while not state.exit_requested:
@@ -278,6 +491,7 @@ async def run_agent_turn_queue(
 
         turn_task = asyncio.create_task(run_turn(text))
         state.attach_turn_task(turn_task)
+        turn_cancel = state.current_cancel_event
         try:
             await turn_task
         except asyncio.CancelledError:
@@ -285,8 +499,36 @@ async def run_agent_turn_queue(
         except Exception as exc:
             _logger.debug("Queued turn task ended with exception: %s", exc)
         finally:
-            state.clear_current_task()
-            state.queue.task_done()
+            goal_control_cancel = None
+            try:
+                current_cancel = state.current_cancel_event
+                candidates = tuple(
+                    cancel
+                    for cancel in (turn_cancel, current_cancel)
+                    if is_goal_control_reason(turn_cancel_reason(cancel))
+                )
+                reason = next(
+                    (
+                        candidate
+                        for candidate in (
+                            HostCancelReason.GOAL_CLEAR,
+                            HostCancelReason.GOAL_PAUSE,
+                        )
+                        if any(turn_cancel_reason(cancel) is candidate for cancel in candidates)
+                    ),
+                    None,
+                )
+                goal_control_cancel = next(
+                    (cancel for cancel in candidates if turn_cancel_reason(cancel) is reason),
+                    None,
+                )
+                if reason is not None and on_goal_control is not None:
+                    await on_goal_control(reason)
+            finally:
+                if state.exit_requested and goal_control_cancel is not None:
+                    state.attach_cancel_event(goal_control_cancel)
+                state.clear_current_task()
+                state.queue.task_done()
 
 
 __all__ = [

@@ -37,3 +37,10 @@ def test_redact_sensitive_skips_non_containers() -> None:
     """Scalars are returned as-is — no copy, no walk."""
     for scalar in (None, True, 0, 3.14, "plain", b"bytes"):
         assert redact_sensitive(scalar) is scalar
+
+
+def test_a_token_count_is_kept_beside_a_redacted_token() -> None:
+    """A count named after tokens is not a credential; hiding it rewrote replayed tool calls."""
+    redacted = redact_sensitive({"command": "ls", "max_output_tokens": 4000, "auth_token": "s3"})
+
+    assert redacted == {"command": "ls", "max_output_tokens": 4000, "auth_token": "[redacted]"}

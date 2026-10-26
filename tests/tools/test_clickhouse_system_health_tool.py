@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.clickhouse.tools.clickhouse_system_health_tool import get_clickhouse_system_health
+from integrations.clickhouse.tools.clickhouse_system_health_tool import (
+    _map_get_clickhouse_system_health,
+    get_clickhouse_system_health,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -174,3 +178,53 @@ def test_run_error_path() -> None:
         result = get_clickhouse_system_health(host="ch.example.com")
     assert result["available"] is False
     assert "error" in result
+
+
+class TestMapGetClickhouseSystemHealth:
+    def test_records_entry_with_version_uptime_and_table_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_clickhouse_system_health(
+            evidence,
+            {
+                "available": True,
+                "version": "23.8.1.2992",
+                "uptime_seconds": 86400,
+                "metrics": {"Query": 5},
+                "table_stats": [{"table": "events"}, {"table": "users"}],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_clickhouse_system_health"
+        assert entries[0]["summary"] == "version 23.8.1.2992, uptime 86400s, 2 table(s) surveyed"
+
+    def test_records_entry_without_table_count_when_table_stats_empty(self) -> None:
+        """A failed table_stats sub-call (falls back to []) must not add a "0 tables" clause."""
+        evidence: dict[str, Any] = {}
+
+        _map_get_clickhouse_system_health(
+            evidence,
+            {"available": True, "version": "23.8.1", "uptime_seconds": 3600, "table_stats": []},
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "version 23.8.1, uptime 3600s"
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_clickhouse_system_health(
+            evidence, {"available": False, "error": "connection refused"}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_when_version_and_uptime_both_missing(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_clickhouse_system_health(evidence, {"available": True, "metrics": {}}, {})
+
+        assert "catalog_entries" not in evidence

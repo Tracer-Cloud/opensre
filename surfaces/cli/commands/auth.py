@@ -7,17 +7,11 @@ import webbrowser
 from collections.abc import Iterable
 
 import click
-import questionary
-from rich import box
 from rich.console import Console
-from rich.table import Table
 from rich.text import Text
 
-from infrastructure.terminal.prompt_support import (
-    QUESTIONARY_QMARK,
-    questionary_prompt_style,
-)
 from infrastructure.terminal.theme import BOLD_BRAND, ERROR, HIGHLIGHT, SECONDARY, WARNING
+from surfaces.shared.llm_setup.auth_menu import prompt_auth_provider
 from surfaces.shared.llm_setup.auth_profiles import (
     ProviderAuthProfile,
     iter_auth_profiles,
@@ -25,13 +19,12 @@ from surfaces.shared.llm_setup.auth_profiles import (
 )
 from surfaces.shared.llm_setup.auth_service import (
     AuthSetupError,
-    cli_subscription_install_error,
     configure_api_key_provider,
-    configure_cli_subscription_provider,
     logout_provider,
     provider_status,
     verify_provider,
 )
+from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
 def _provider_choices() -> str:
@@ -47,59 +40,6 @@ def _resolve_or_raise(provider: str) -> ProviderAuthProfile:
         ) from exc
 
 
-def _provider_choice(profile: ProviderAuthProfile) -> questionary.Choice:
-    return questionary.Choice(f"{profile.name} ({profile.label})", value=profile.name)
-
-
-def _configured_profile_name() -> str | None:
-    """The auth-profile name matching the install's active LLM provider, if any."""
-    from config.config import get_configured_llm_provider
-
-    configured = get_configured_llm_provider()
-    for profile in iter_auth_profiles():
-        if configured == profile.provider_value or configured in profile.all_names:
-            return profile.name
-    return None
-
-
-def _prompt_provider() -> ProviderAuthProfile:
-    choices: list[questionary.Choice | questionary.Separator] = [
-        questionary.Separator(" "),
-        questionary.Separator("Subscription logins"),
-    ]
-    choices.extend(
-        _provider_choice(profile)
-        for profile in iter_auth_profiles()
-        if profile.kind == "cli_subscription"
-    )
-    choices.append(questionary.Separator(" "))
-    choices.append(questionary.Separator("API-key providers"))
-    choices.extend(
-        _provider_choice(profile) for profile in iter_auth_profiles() if profile.kind == "api_key"
-    )
-
-    configured = _configured_profile_name()
-    default = next(
-        (
-            choice
-            for choice in choices
-            if isinstance(choice, questionary.Choice) and choice.value == configured
-        ),
-        None,
-    )
-    provider = questionary.select(
-        "Choose a provider:",
-        choices=choices,
-        default=default,
-        qmark=QUESTIONARY_QMARK,
-        style=questionary_prompt_style(),
-        instruction="(use arrow keys)",
-    ).ask()
-    if provider is None:
-        raise click.Abort()
-    return _resolve_or_raise(provider)
-
-
 def _maybe_open_setup_page(profile: ProviderAuthProfile, *, enabled: bool) -> None:
     if not enabled or not profile.setup_url:
         return
@@ -107,7 +47,13 @@ def _maybe_open_setup_page(profile: ProviderAuthProfile, *, enabled: bool) -> No
         click.echo(f"Setup page: {profile.setup_url}")
         return
     if click.confirm(f"Open {profile.label} setup page in your browser?", default=True):
-        webbrowser.open(profile.setup_url)
+        opened = False
+        try:
+            opened = bool(webbrowser.open(profile.setup_url))
+        finally:
+            from infrastructure.analytics.capture import capture_browser_open_requested
+
+            capture_browser_open_requested(target="provider_setup", opened=opened)
 
 
 # Mirrors render_health_report's table style (surfaces/shared/terminal/health) so
@@ -128,16 +74,49 @@ def _status_badge(state: str) -> Text:
 
 
 def _render_status_table(providers: Iterable[ProviderAuthProfile]) -> None:
-    table = Table(title="Auth status", box=box.SIMPLE_HEAVY, show_lines=False)
-    table.add_column("Provider", style=BOLD_BRAND)
-    table.add_column("Status")
-    table.add_column("Source", style=SECONDARY)
-    table.add_column("Detail")
+    import os
+
+    from config.account import load_account_record
+    from config.constants.account import OPENSRE_ACCOUNT_TOKEN_ENV
+    from config.constants.billing import WEBAPP_URL_ENV
+    from config.constants.llm import OPENSRE_LLM_CONNECTION_ENV
+    from config.llm_settings import get_configured_llm_provider
+
+    # Prompt-safe selection hints never resolve the account's stored bearer token.
+    local = os.getenv(OPENSRE_LLM_CONNECTION_ENV, "").strip().lower() == "local"
+    account_hint = load_account_record() is not None or (
+        os.getenv(OPENSRE_ACCOUNT_TOKEN_ENV) and os.getenv(WEBAPP_URL_ENV)
+    )
+    active = (
+        "OpenSRE account (hosted openai)"
+        if account_hint and not local
+        else get_configured_llm_provider()
+    )
+    rows = []
     for profile in providers:
         status = provider_status(profile.name)
         state = "stale" if status.stale else "ok" if status.authenticated else "missing"
-        table.add_row(profile.name, _status_badge(state), status.source, status.detail)
-    _console.print(table)
+        rows.append(
+            RecordRow(
+                cells=(
+                    Text(profile.name, style=BOLD_BRAND),
+                    _status_badge(state),
+                    Text(profile.kind, style=SECONDARY),
+                    Text(status.source, style=SECONDARY),
+                ),
+                details=(Text(status.detail),),
+            )
+        )
+    _console.print(
+        RecordTable(
+            title="Auth status",
+            subtitle=f"Active provider: {active}",
+            columns=tuple(
+                RecordColumn(name) for name in ("Provider", "Status", "Method", "Source")
+            ),
+            rows=tuple(rows),
+        )
+    )
 
 
 @click.group(name="auth", invoke_without_command=True)
@@ -168,14 +147,10 @@ def auth_command(ctx: click.Context) -> None:
     "--open-browser/--no-open-browser",
     default=True,
     show_default=True,
-    help="Offer to open the provider setup page for API-key flows.",
+    help="Open the provider setup page or subscription authorization in your browser.",
 )
-@click.option(
-    "--launch-login/--no-launch-login",
-    default=True,
-    show_default=True,
-    help="Launch the vendor CLI login command for subscription flows when needed.",
-)
+@click.option("--profile", "profile_id", help="Saved ChatGPT registration ID from auth status.")
+@click.option("--new-account", is_flag=True, help="Register another ChatGPT account or workspace.")
 def auth_login(
     provider: str | None,
     api_key: str | None,
@@ -183,12 +158,49 @@ def auth_login(
     set_provider: bool,
     validate: bool,
     open_browser: bool,
-    launch_login: bool,
+    profile_id: str | None,
+    new_account: bool,
 ) -> None:
     """Configure one LLM provider auth path."""
-    profile = _resolve_or_raise(provider) if provider else _prompt_provider()
+    profile = _resolve_or_raise(provider) if provider else prompt_auth_provider()
+    if profile is None:
+        raise click.Abort()
+    if profile_id and new_account:
+        raise click.UsageError("Use --profile or --new-account, not both.")
+    if profile.kind != "subscription" and (profile_id or new_account):
+        raise click.UsageError("--profile and --new-account apply to subscription login.")
     try:
-        if profile.kind == "api_key":
+        if profile.kind == "subscription":
+            from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
+
+            spec = SUBSCRIPTION_BY_VALUE[profile.provider_value]
+            if api_key is not None and spec.auth_method != "api_key":
+                raise click.UsageError(
+                    f"{profile.label} uses {spec.auth_method} authorization, not an API key."
+                )
+            from surfaces.cli.commands.subscription_auth import (
+                choose_subscription_model,
+                present_authorization,
+            )
+            from surfaces.shared.llm_setup.subscription_service import configure_subscription
+
+            result = configure_subscription(
+                profile=profile,
+                model=model,
+                set_provider=set_provider,
+                present=present_authorization(
+                    open_browser=open_browser, provider=profile.provider_value
+                ),
+                choose_model=lambda models: choose_subscription_model(
+                    models, provider=profile.provider_value
+                ),
+                credential=(api_key or click.prompt(f"{profile.label} key", hide_input=True))
+                if spec.auth_method == "api_key"
+                else None,
+                profile_id=profile_id,
+                new_account=new_account,
+            )
+        else:
             _maybe_open_setup_page(profile, enabled=open_browser)
             resolved_key = api_key
             if resolved_key is None:
@@ -204,18 +216,6 @@ def auth_login(
                 model=model,
                 set_provider=set_provider,
                 validate=validate,
-            )
-        else:
-            install_error = cli_subscription_install_error(profile)
-            if install_error:
-                # Fail before the browser question — it cannot fix a missing binary.
-                raise AuthSetupError(install_error)
-            _maybe_open_setup_page(profile, enabled=open_browser)
-            result = configure_cli_subscription_provider(
-                profile=profile,
-                model=model,
-                set_provider=set_provider,
-                launch_login=launch_login,
             )
     except AuthSetupError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -259,16 +259,11 @@ def auth_verify(provider: str) -> None:
 
 @auth_command.command(name="logout")
 @click.argument("provider")
-@click.option(
-    "--vendor",
-    is_flag=True,
-    help="Also run the vendor CLI logout command for subscription providers.",
-)
-def auth_logout(provider: str, vendor: bool) -> None:
+def auth_logout(provider: str) -> None:
     """Clear OpenSRE-managed auth for a provider."""
     _resolve_or_raise(provider)
     try:
-        detail = logout_provider(provider, vendor=vendor)
+        detail = logout_provider(provider)
     except AuthSetupError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(detail)

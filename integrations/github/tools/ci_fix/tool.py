@@ -1,4 +1,4 @@
-"""Action tool for fixing failing GitHub PR CI and pushing the PR branch."""
+"""Action tool for fixing failing GitHub CI and pushing a repair branch."""
 
 from __future__ import annotations
 
@@ -7,13 +7,19 @@ from typing import Any
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
-from integrations.github.client import resolve_github_token
+from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
 )
+from integrations.github.repair_outcomes import attach_repair_outcome
+from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
 
 _INPUT_SCHEMA: dict[str, Any] = {
@@ -35,9 +41,28 @@ _INPUT_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "Optional GitHub pull request URL.",
         },
+        "branch": {
+            "type": "string",
+            "description": (
+                "Optional branch whose failing GitHub Actions checks should be fixed "
+                "(e.g. 'main'). Use only when the user asks to fix a branch's CI "
+                "itself; mutually exclusive with the PR selectors. OpenSRE pushes a "
+                "fresh repair branch unless push_to_branch is true."
+            ),
+        },
+        "push_to_branch": {
+            "type": "boolean",
+            "description": (
+                "True only when the user explicitly asks to push the fix straight to "
+                "the named branch (e.g. 'push straight to main', 'commit directly to "
+                "main') or a remembered preference says so. Requires branch. The fix "
+                "is made in a fresh clone and never force-pushed; a branch rule that "
+                "requires a pull request refuses it."
+            ),
+        },
         "workspace": {
             "type": "string",
-            "description": "Absolute path to the local checkout to edit. Defaults to CODING_WORKSPACE or cwd.",
+            "description": "Explicit checkout to edit; its origin must match. Omit for an isolated checkout of the target repository.",
         },
         "model": {
             "type": "string",
@@ -53,12 +78,7 @@ _INPUT_SCHEMA: dict[str, Any] = {
 
 
 def _github_ci_fix_available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        github_source_available(sources)
-        or resolve_github_token(None)
-        or github_creds(gh).get("github_token")
-    )
+    return github_source_available(sources)
 
 
 def _github_ci_fix_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -76,30 +96,41 @@ def _github_ci_fix_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 
 def _confirm_fn(context: Any) -> Any:
+    return getattr(_action_scope(context), "confirm_fn", None)
+
+
+def _console(context: Any) -> Any:
+    return getattr(_action_scope(context), "console", None)
+
+
+def _action_scope(context: Any) -> Any:
     if context is None:
         return None
     try:
-        action_context = action_context_from_agent_context(context)
+        return action_context_from_agent_context(context)
     except RuntimeError:
         return None
-    return action_context.confirm_fn
 
 
 @tool(
     name="fix_github_pr_ci",
     source="github",
-    display_name="Fix GitHub PR CI",
+    display_name="Fix GitHub CI",
+    compact_description="Diagnose and repair failing GitHub CI, then push and verify the fix.",
     description=(
-        "Inspect failing GitHub Actions checks on a pull request, run an "
-        "auto-detected coding agent with the failing log context, commit the "
-        "result, push it to the pull request's existing head branch, and wait "
-        "for the new checks to finish. It does not open a new PR and refuses "
-        "fork PR branches."
+        "Inspect failing GitHub Actions checks on a pull request or branch, fix "
+        "them with a coding agent (an installed CLI, else OpenSRE's built-in "
+        "agent, so no setup is needed), commit, push the PR branch or a fresh "
+        "repair branch, and wait for the new checks. push_to_branch=true pushes "
+        "a branch target's fix straight onto that branch. It refuses fork PR branches."
     ),
     use_cases=[
         "Fix failing CI on a GitHub pull request and push to the PR branch",
+        "Fix failing CI on the main branch and push a repair branch",
         "Fix the CI failure for a PR URL",
         "Repair a failing GitHub Actions check on the current branch PR",
+        "Fix failing CI on main and push a repair branch",
+        "Fix failing CI on main and push the fix straight to main",
     ],
     anti_examples=[
         "Creating or closing ordinary GitHub issues (use github_cli)",
@@ -108,39 +139,43 @@ def _confirm_fn(context: Any) -> Any:
     ],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    requires_approval=True,
-    approval_reason=(
-        "Checks out the PR branch, edits files, commits, pushes to that branch, "
-        "and waits for the resulting checks."
-    ),
-    parallel_safe=False,
     accepts_runtime_context=True,
     input_schema=_INPUT_SCHEMA,
-    is_available=_github_ci_fix_available,
-    extract_params=_github_ci_fix_extract_params,
+    is_available=github_tool_available(_github_ci_fix_available),
+    extract_params=github_tool_params(_github_ci_fix_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
 )
+@require_webapp_github
 def fix_github_pr_ci(
     owner: str | None = None,
     repo: str | None = None,
     pr_number: int | None = None,
     pr_url: str | None = None,
+    branch: str | None = None,
     workspace: str | None = None,
     model: str | None = None,
+    push_to_branch: bool = False,
     github_token: str | None = None,
     context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Run the GitHub PR CI remediation flow."""
-    return run_ci_fix(
+    """Run the GitHub CI remediation flow for a PR or an explicit branch target."""
+    output = run_ci_fix(
         owner=owner,
         repo=repo,
         pr_number=pr_number,
         pr_url=pr_url,
+        branch=branch,
         workspace=workspace,
         model=model,
         github_token=github_token,
+        push_to_branch=push_to_branch,
         confirm_fn=_confirm_fn(context),
+        console=_console(context),
+    )
+    record_ci_fix_outcome(output)
+    return attach_repair_outcome(
+        output, operation=f"ci:{owner}/{repo}:{pr_url or pr_number or branch}"
     )
 
 

@@ -1,0 +1,16 @@
+name: "CodeQL PR benchmark config"
+
+# Keep the benchmark focused on shipped Python. A full cross-component scan,
+# including tests and quality queries, still runs after every merge and weekly.
+paths:
+  - "bootstrap/**"
+  - "config/**"
+  - "core/**"
+  - "gateway/**"
+  - "integrations/**"
+  - "infrastructure/**"
+  - "surfaces/**"
+  - "tools/**"
+
+paths-ignore:
+  - "**/tests/**"

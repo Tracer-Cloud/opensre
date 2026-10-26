@@ -5,10 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.bitbucket.client import get_file_contents
 from integrations.bitbucket.tools.availability import bitbucket_available_or_backend
+from integrations.bitbucket.tools.bitbucket_file_contents_tool._evidence import (
+    map_get_bitbucket_file_contents,
+)
 from integrations.bitbucket.tools.bitbucket_search_code_tool import (
     _bb_creds,
     _resolve_config,
@@ -38,7 +42,9 @@ def _get_bitbucket_file_contents_available(sources: dict[str, dict]) -> bool:
     name="get_bitbucket_file_contents",
     description="Retrieve the contents of a file from a Bitbucket repository at a specific revision.",
     source="bitbucket",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Reading configuration files that may explain a failure",
         "Comparing file contents between revisions during investigation",
@@ -61,6 +67,7 @@ def _get_bitbucket_file_contents_available(sources: dict[str, dict]) -> bool:
     },
     is_available=_get_bitbucket_file_contents_available,
     extract_params=_get_bitbucket_file_contents_extract_params,
+    evidence_mapper=map_get_bitbucket_file_contents,
 )
 def get_bitbucket_file_contents(
     repo_slug: str,

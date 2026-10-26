@@ -1,7 +1,7 @@
-"""Streaming redaction wrapper around :class:`GuardrailEngine`.
+"""Streaming redaction wrapper around :class:`GuardrailEvaluator`.
 
-Used by the local-agents fleet view (``/fleet trace <pid>``) to redact
-secrets from agent stdout before it reaches the user's terminal scrollback.
+Redacts secrets from streamed stdout before it reaches the user's terminal
+scrollback.
 
 The shipped engine assumes a single complete string (LLM input or output),
 so calling it on raw stdout chunks would miss any secret whose bytes
@@ -23,16 +23,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from infrastructure.analytics.cli import capture_agent_secret_detected
+from infrastructure.analytics.capture import capture_agent_secret_detected
 from infrastructure.safety.guardrails.audit import AuditLogger
-from infrastructure.safety.guardrails.engine import GuardrailEngine, ScanMatch
+from infrastructure.safety.guardrails.evaluator import GuardrailEvaluator, ScanMatch
 from infrastructure.safety.guardrails.rules import GuardrailAction
 
 _DEFAULT_MAX_CHUNK_LEN = 4096
 
 
 class GuardrailStream:
-    """Buffer agent stdout into safe windows and redact via :class:`GuardrailEngine`.
+    """Buffer agent stdout into safe windows and redact via :class:`GuardrailEvaluator`.
 
     Flushes whenever the buffer contains a newline (the natural boundary for
     most CLI output) and force-flushes once the buffer reaches
@@ -41,17 +41,17 @@ class GuardrailStream:
     ``replacement`` (default ``[REDACTED:<rule_name>]``) and logged via the
     optional audit logger so the original is quarantined. AUDIT-action
     matches are logged but pass through unchanged, mirroring
-    :meth:`GuardrailEngine.apply`.
+    :meth:`GuardrailEvaluator.apply`.
     """
 
     def __init__(
         self,
-        engine: GuardrailEngine,
+        evaluator: GuardrailEvaluator,
         *,
         max_chunk_len: int = _DEFAULT_MAX_CHUNK_LEN,
         audit_logger: AuditLogger | None = None,
     ) -> None:
-        self._engine = engine
+        self._evaluator = evaluator
         self._max_chunk_len = max_chunk_len
         self._audit = audit_logger
         self._buffer = ""
@@ -77,10 +77,10 @@ class GuardrailStream:
         return self._scan_and_redact(text)
 
     def _scan_and_redact(self, text: str) -> str:
-        if not self._engine.is_active:
+        if not self._evaluator.is_active:
             return text
 
-        result = self._engine.scan(text)
+        result = self._evaluator.scan(text)
         if not result.matches:
             return text
 
@@ -98,7 +98,7 @@ class GuardrailStream:
             count=len(result.matches),
             blocked=result.blocked,
         )
-        return _redact_intervals(text, result.matches, self._engine._get_replacement)
+        return _redact_intervals(text, result.matches, self._evaluator._get_replacement)
 
 
 def _split_at_boundary(buffer: str, max_chunk_len: int) -> tuple[str, str]:
@@ -125,13 +125,13 @@ def _redact_intervals(
     """Replace match ranges with their per-rule replacement, merging overlapping spans.
 
     AUDIT-action matches are filtered out here so the streaming path mirrors
-    :meth:`GuardrailEngine._redact`: AUDIT means "log only", not "replace".
+    :meth:`GuardrailEvaluator._redact`: AUDIT means "log only", not "replace".
     REDACT and BLOCK matches are processed; BLOCK is included because the
     streaming wrapper promotes BLOCK to REDACT to keep the stream open.
 
     The widest source match wins on rule-name selection, matching engine
     behavior so output looks consistent across the LLM and agent-stdout
-    code paths. ``get_replacement`` is :meth:`GuardrailEngine._get_replacement`
+    code paths. ``get_replacement`` is :meth:`GuardrailEvaluator._get_replacement`
     so custom ``rule.replacement`` values are honored.
     """
     redactable = [m for m in matches if m.action != GuardrailAction.AUDIT]

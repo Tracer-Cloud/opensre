@@ -7,6 +7,9 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "openai"
+        versions: [">=3.0.0"]
 
   - package-ecosystem: "npm"
     directory: "/docs"

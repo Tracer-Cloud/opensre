@@ -39,7 +39,6 @@ def test_state_stays_dependency_light() -> None:
     forbidden = (
         "core." + "orchestration",
         "integrations",
-        "core.domain.alerts.normalization",
     )
     offenders: list[str] = []
     for path in sorted((root / "core" / "state").rglob("*.py")):

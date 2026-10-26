@@ -14,7 +14,7 @@ from gateway.core.storage import SessionResolver
 from gateway.core.storage.session.binding_store import BindingStore, open_binding_store
 from gateway.transports.buzz.pending_approvals import PendingApprovals
 from gateway.transports.buzz.settings import GatewaySettings
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
 from integrations.config_models import BuzzConfig
 
 logger = logging.getLogger(__name__)

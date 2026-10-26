@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from rich.console import Console
-from rich.markup import escape
 
 from config.llm_reasoning_effort import display_reasoning_effort
-from core.agent_harness.spi.accounting import format_token_total
-from core.agent_harness.spi.session_state import trust_mode_enabled
+from core.agent_harness import PromptSurface
+from core.agent_harness.spi.accounting import format_token_total, measure_next_prompt
+from core.agent_harness.spi.session_state import should_compact, trust_mode_enabled
+from core.state.history_settings import history_token_budget, structured_history_enabled
 from surfaces.interactive_shell.command_registry.types import SlashCommand
-from surfaces.interactive_shell.grounding.cli_reference import session_cli_reference
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
     BOLD_BRAND,
@@ -17,11 +17,12 @@ from surfaces.interactive_shell.ui import (
     print_repl_table,
     repl_table,
 )
+from surfaces.interactive_shell.ui.next_model_call import render_next_model_call
 
 
 def _status_provider_display() -> str:
     """Render the active LLM provider, flagging a fallback away from configured."""
-    from config.config import get_configured_llm_provider, resolve_llm_settings_verbose
+    from config.llm_settings import get_configured_llm_provider, resolve_llm_settings_verbose
 
     try:
         resolution = resolve_llm_settings_verbose()
@@ -62,16 +63,9 @@ def _cmd_status(session: Session, console: Console, _args: list[str]) -> bool:
     alert_key, alert_value = _incoming_alerts_status(session)
     table.add_row(alert_key, alert_value)
 
-    table.add_row("last investigation", "yes" if session.last_state else "none")
     table.add_row("trust mode", "on" if trust_mode_enabled(session) else "off")
     table.add_row("reasoning effort", display_reasoning_effort(session.reasoning_effort))
     table.add_row("provider", _status_provider_display())
-    table.add_row(
-        "grounding cli cache",
-        session_cli_reference(session).stats().render(),
-    )
-    for source in session.grounding.iter_sources():
-        table.add_row(f"grounding {source.name} cache", source.stats_fn().render())
     acc = session.accumulated_context
     if acc:
         table.add_row("accumulated context", ", ".join(sorted(acc.keys())))
@@ -102,23 +96,21 @@ def _cmd_cost(session: Session, console: Console, _args: list[str]) -> bool:
 
 
 def _cmd_context(session: Session, console: Console, _args: list[str]) -> bool:
-    if not session.accumulated_context:
-        console.print(f"[{DIM}]no infra context accumulated yet.[/]")
-        return True
-
-    table = repl_table(title="Accumulated context\n", title_style=BOLD_BRAND, show_header=False)
-    table.add_column("key", style="bold")
-    table.add_column("value")
-    for k, v in sorted(session.accumulated_context.items()):
-        table.add_row(k, escape(str(v)))
-    print_repl_table(console, table)
+    """Show what the next model call will carry, measured without calling a model."""
+    size = measure_next_prompt(session, surface=PromptSurface.INTERACTIVE_SHELL)
+    render_next_model_call(
+        console,
+        size,
+        history_budget_tokens=history_token_budget() if structured_history_enabled() else None,
+        compacts_next=should_compact(session),
+    )
     return True
 
 
 COMMANDS: list[SlashCommand] = [
     SlashCommand("/status", "Show session status.", _cmd_status),
     SlashCommand("/cost", "Show token usage and session cost.", _cmd_cost),
-    SlashCommand("/context", "Show accumulated infra context.", _cmd_context),
+    SlashCommand("/context", "Show what the next model call will contain.", _cmd_context),
 ]
 
 __all__ = ["COMMANDS"]

@@ -3,39 +3,42 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
+from config.constants.google_docs import (
+    GOOGLE_CREDENTIALS_FILE_ENV,
+    GOOGLE_DRIVE_FOLDER_ID_ENV,
+)
 from config.constants.helm import OSRE_HELM_INTEGRATION_ENV
 from config.constants.new_relic import (
     NEW_RELIC_ACCOUNT_ID_ENV,
     NEW_RELIC_API_KEY_ENV,
     NEW_RELIC_INSTANCES_ENV,
 )
-from config.constants.yandex_cloud import (
-    YC_FOLDER_ID_ENV,
-    YC_IAM_TOKEN_ENV,
-    YC_SA_KEY_ENV,
-    YC_SA_KEY_FILE_ENV,
-    YC_TOKEN_ENV,
-    YC_USE_METADATA_ENV,
-)
-from integrations import _catalog_impl
+from integrations.registry import INTEGRATION_SPECS_BY_SERVICE, family_key, service_key
 from integrations.store import load_integrations
+
+
+def _load_catalog_impl() -> Any:
+    """Load classifiers only when a caller actually classifies or merges."""
+    from integrations import _catalog_impl as impl
+
+    return impl
 
 
 def _sync_overrides() -> None:
     """Keep monkeypatch-friendly facade attributes wired into the implementation module."""
-    _catalog_impl.load_integrations = load_integrations
+    _load_catalog_impl().load_integrations = load_integrations
 
 
 def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
     _sync_overrides()
-    return _catalog_impl.classify_integrations(integrations)
+    return cast("dict[str, Any]", _load_catalog_impl().classify_integrations(integrations))
 
 
 def load_env_integrations() -> list[dict[str, Any]]:
     _sync_overrides()
-    return _catalog_impl.load_env_integrations()
+    return cast("list[dict[str, Any]]", _load_catalog_impl().load_env_integrations())
 
 
 def merge_local_integrations(
@@ -43,24 +46,35 @@ def merge_local_integrations(
     env_integrations: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     _sync_overrides()
-    return _catalog_impl.merge_local_integrations(store_integrations, env_integrations)
+    return cast(
+        "list[dict[str, Any]]",
+        _load_catalog_impl().merge_local_integrations(store_integrations, env_integrations),
+    )
 
 
 def merge_integrations_by_service(
     *integration_groups: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     _sync_overrides()
-    return _catalog_impl.merge_integrations_by_service(*integration_groups)
+    return cast(
+        "list[dict[str, Any]]",
+        _load_catalog_impl().merge_integrations_by_service(*integration_groups),
+    )
 
 
 def resolve_effective_integrations(
     store_integrations: list[dict[str, Any]] | None = None,
     env_integrations: list[dict[str, Any]] | None = None,
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     _sync_overrides()
-    return _catalog_impl.resolve_effective_integrations(
-        store_integrations=store_integrations,
-        env_integrations=env_integrations,
+    return cast(
+        "dict[str, dict[str, Any]]",
+        _load_catalog_impl().resolve_effective_integrations(
+            store_integrations=store_integrations,
+            env_integrations=env_integrations,
+            remote_integrations=remote_integrations,
+        ),
     )
 
 
@@ -118,6 +132,10 @@ def load_env_integration_services() -> list[str]:
     )
     add("sentry", _all_env("SENTRY_ORG_SLUG", "SENTRY_AUTH_TOKEN"))
     add("gitlab", _env_is_set("GITLAB_ACCESS_TOKEN"))
+    add(
+        "google_docs",
+        _all_env(GOOGLE_CREDENTIALS_FILE_ENV, GOOGLE_DRIVE_FOLDER_ID_ENV),
+    )
     add("mongodb", _env_is_set("MONGODB_CONNECTION_STRING"))
     add(
         "argocd",
@@ -137,7 +155,6 @@ def load_env_integration_services() -> list[str]:
         or _all_env("RAILWAY_PROJECT", "RAILWAY_SERVICE", "RAILWAY_ENVIRONMENT"),
     )
     add("vercel", _env_is_set("VERCEL_API_TOKEN"))
-    add("opsgenie", _env_is_set("OPSGENIE_API_KEY"))
     add("pagerduty", _env_is_set("PAGERDUTY_API_KEY"))
     add("incident_io", _env_is_set("INCIDENT_IO_API_KEY"))
     add("jira", _all_env("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"))
@@ -167,55 +184,58 @@ def load_env_integration_services() -> list[str]:
             "MONGODB_ATLAS_PUBLIC_KEY", "MONGODB_ATLAS_PRIVATE_KEY", "MONGODB_ATLAS_PROJECT_ID"
         ),
     )
-    add(
-        "openclaw",
-        (
-            _env_is_set("OPENCLAW_MCP_COMMAND")
-            and os.getenv("OPENCLAW_MCP_MODE", "").strip().lower() == "stdio"
-        )
-        or _env_is_set("OPENCLAW_MCP_URL"),
-    )
     add("posthog_mcp", _any_env("POSTHOG_MCP_COMMAND", "POSTHOG_MCP_URL", "POSTHOG_MCP_AUTH_TOKEN"))
     add("sentry_mcp", _any_env("SENTRY_MCP_COMMAND", "SENTRY_MCP_URL", "SENTRY_MCP_AUTH_TOKEN"))
-    add("x_mcp", _any_env("X_MCP_COMMAND", "X_MCP_URL", "X_MCP_AUTH_TOKEN"))
     add("mariadb", _all_env("MARIADB_HOST", "MARIADB_DATABASE"))
     add("opensearch", _env_is_set("OPENSEARCH_URL"))
-    add(
-        "yandex_cloud",
-        # A folder plus one credential, or the instance metadata service, which
-        # needs neither. Mirrors the classifier's rule so the banner, health and
-        # verification agree on whether it is configured.
-        (
-            _env_is_set(YC_FOLDER_ID_ENV)
-            and _any_env(YC_SA_KEY_FILE_ENV, YC_SA_KEY_ENV, YC_TOKEN_ENV, YC_IAM_TOKEN_ENV)
-        )
-        or os.getenv(YC_USE_METADATA_ENV, "").strip().lower() in {"1", "true", "yes", "on"},
-    )
-
-    services.extend(_catalog_impl.external_env_presence_services())
 
     return list(dict.fromkeys(services))
 
 
 def configured_integration_services() -> list[str]:
-    """Return lowercase service keys for integrations configured via env or the local store.
+    """Return lowercase service keys for configured integrations, from any source.
 
     Single source of truth shared by the welcome banner and the REPL session so
-    they never disagree about which integrations are connected. Covers both
-    environment-variable configuration and integrations saved to ``~/.opensre``
-    (e.g. via ``opensre integrations setup ...`` or the first-launch GitHub
-    login). Never raises; returns an empty list on any failure so callers can
-    treat it as best-effort.
+    they never disagree about which integrations are connected. Covers
+    environment-variable configuration, integrations saved to ``~/.opensre``
+    (e.g. via ``opensre integrations setup ...``), and the signed-in account's
+    authorized personal and workspace integrations from the OpenSRE app. Never
+    raises; returns an empty list on any failure so callers can treat it as
+    best-effort.
     """
     try:
         store_records = load_integrations()
     except Exception:
         store_records = []
-    return _configured_service_names(store_records=store_records)
+    try:
+        from integrations.account_integrations import load_account_integrations
+
+        remote_records = load_account_integrations()
+    except Exception:
+        remote_records = []
+    # A silo hydrates GitHub and Slack from its secret, then asks the webapp
+    # which Pipedream apps (Linear, and so on) the workspace connected, and
+    # which (Gmail, Outlook, Drive, ...) the member taking this turn connected
+    # for themself. Those app ids have to be in this list or the model reports
+    # them as disconnected. Same cached records the tools resolve from.
+    try:
+        from integrations.member_integrations import turn_vault_records
+
+        vault_records = turn_vault_records() or []
+    except Exception:
+        vault_records = []
+    return _configured_service_names(
+        store_records=store_records,
+        remote_records=[*remote_records, *vault_records],
+    )
 
 
-def _configured_service_names(*, store_records: list[dict[str, Any]]) -> list[str]:
-    """Merge env-visible and active store services into one deduplicated list."""
+def _configured_service_names(
+    *,
+    store_records: list[dict[str, Any]],
+    remote_records: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Merge env-visible, active store, and active remote services into one list."""
     services: list[str] = []
 
     try:
@@ -227,14 +247,58 @@ def _configured_service_names(*, store_records: list[dict[str, Any]]) -> list[st
         if service:
             services.append(service)
 
-    for record in store_records:
+    for record in [*store_records, *(remote_records or [])]:
         if str(record.get("status", "active")).strip().lower() != "active":
             continue
         service = str(record.get("service", "")).strip().lower()
-        if service:
+        if service and _is_registered_service(service):
             services.append(service)
+        services.extend(_pipedream_app_services(record))
 
-    return list(dict.fromkeys(services))
+    from integrations.github import filter_github_connected_services
+
+    return filter_github_connected_services(list(dict.fromkeys(services)), remote_records or [])
+
+
+def _record_credentials(record: dict[str, Any]) -> dict[str, Any]:
+    """Credentials from a flat vault record or the first v2 instance."""
+    credentials = record.get("credentials")
+    if isinstance(credentials, dict):
+        return credentials
+    instances = record.get("instances")
+    if not isinstance(instances, list):
+        return {}
+    for instance in instances:
+        if not isinstance(instance, dict):
+            continue
+        instance_credentials = instance.get("credentials")
+        if isinstance(instance_credentials, dict):
+            return instance_credentials
+    return {}
+
+
+def _pipedream_app_services(record: dict[str, Any]) -> list[str]:
+    """App ids inside a Pipedream record, such as ``linear``.
+
+    Pipedream itself is not a registered integration, and neither are most of
+    its apps. The connected-integrations line still has to name them or a
+    Slack turn treats a workspace connection as missing.
+    """
+    if str(record.get("service") or "").strip().lower() != "pipedream":
+        return []
+    from integrations.pipedream.connect import parse_apps
+
+    names: list[str] = []
+    for app in parse_apps(_record_credentials(record).get("apps")):
+        service = app.service.strip().lower()
+        if service:
+            names.append(service)
+    return names
+
+
+def _is_registered_service(service: str) -> bool:
+    """Return whether ``service`` still has a registered integration implementation."""
+    return family_key(service_key(service)) in INTEGRATION_SPECS_BY_SERVICE
 
 
 # Hosted MCP integrations that strictly require a personal API token when not
@@ -284,7 +348,7 @@ def configured_integration_health() -> list[tuple[str, str]]:
         if str(record.get("status", "active")).strip().lower() != "active":
             continue
         service = str(record.get("service", "")).strip().lower()
-        if not service:
+        if not service or not _is_registered_service(service):
             continue
         credentials = record.get("credentials")
         if isinstance(credentials, dict):
@@ -320,13 +384,6 @@ def configured_integration_health() -> list[tuple[str, str]]:
     return health
 
 
-# Re-exported so an out-of-tree integration registers through this facade
-# instead of reaching into the private implementation module.
-register_classifier = _catalog_impl.register_classifier
-register_env_loader = _catalog_impl.register_env_loader
-register_env_presence = _catalog_impl.register_env_presence
-
-
 __all__ = [
     "classify_integrations",
     "configured_integration_health",
@@ -336,8 +393,5 @@ __all__ = [
     "load_integrations",
     "merge_integrations_by_service",
     "merge_local_integrations",
-    "register_classifier",
-    "register_env_loader",
-    "register_env_presence",
     "resolve_effective_integrations",
 ]

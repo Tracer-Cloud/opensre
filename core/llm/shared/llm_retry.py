@@ -8,6 +8,8 @@ import re
 import time
 from collections.abc import Callable
 
+from config.constants.analytics import LLMCreditErrorReason
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ATTEMPTS = 3
@@ -31,6 +33,7 @@ _CREDIT_EXHAUSTED_CODES: frozenset[str] = frozenset(
         "insufficient_quota",
         "billing_hard_limit_reached",
         "credit_balance_exhausted",
+        "opensre_credits_exhausted",
     }
 )
 
@@ -60,13 +63,31 @@ def _structured_error_code(exc: BaseException) -> str | None:
     return None
 
 
-class LLMCreditExhaustedError(Exception):
+class LLMCreditExhaustedError(RuntimeError):
     """Fatal provider billing/quota exhaustion; retries will not help."""
+
+
+class OpenSRECreditsExhaustedError(LLMCreditExhaustedError):
+    """OpenSRE hosted credits are exhausted; Stripe billing can restore service."""
+
+    def __init__(self, message: str, *, upgrade_url: str | None = None) -> None:
+        super().__init__(message)
+        self.upgrade_url = upgrade_url
 
 
 # Stable substring every credit-exhausted message carries. Surfaces match on it
 # to attach their own recovery hint (e.g. the shell's ``/model`` command).
 CREDIT_EXHAUSTED_MARKER = "credit exhausted (provider billing/quota)"
+
+
+def credit_exhaustion_reason(exc: BaseException) -> LLMCreditErrorReason | None:
+    """Identify hosted or provider credit exhaustion from exception types and codes."""
+    code = _structured_error_code(exc)
+    if isinstance(exc, OpenSRECreditsExhaustedError) or code == "opensre_credits_exhausted":
+        return LLMCreditErrorReason.OPENSRE
+    if isinstance(exc, LLMCreditExhaustedError) or code in _CREDIT_EXHAUSTED_CODES:
+        return LLMCreditErrorReason.PROVIDER
+    return None
 
 
 def is_rate_limit_error(exc: BaseException) -> bool:
@@ -135,13 +156,35 @@ def extract_retry_after_seconds(exc: BaseException) -> float | None:
 
 def maybe_raise_credit_exhausted(provider_name: str, err: BaseException) -> None:
     """Raise LLMCreditExhaustedError when billing/quota exhaustion is detected."""
-    if is_credit_exhausted_error(err):
-        raise LLMCreditExhaustedError(
-            f"{provider_name} {CREDIT_EXHAUSTED_MARKER}. "
-            f"To keep going, switch to another configured LLM provider — or top up "
-            f"your balance / raise the spending cap at the {provider_name} console. "
-            f"Original error: {err}"
+    if not is_credit_exhausted_error(err):
+        return
+
+    if _structured_error_code(err) == "opensre_credits_exhausted":
+        # The proxy is the authority: a cached funded balance is now wrong.
+        from config.account_credits import reset_hosted_credits_cache
+
+        reset_hosted_credits_cache()
+        body = getattr(err, "body", None)
+        error_obj = body.get("error") if isinstance(body, dict) else None
+        details = error_obj if isinstance(error_obj, dict) else body
+        raw_upgrade_url = details.get("upgrade_url") if isinstance(details, dict) else None
+        upgrade_url = (
+            raw_upgrade_url
+            if isinstance(raw_upgrade_url, str) and re.fullmatch(r"https?://\S+", raw_upgrade_url)
+            else None
+        )
+        destination = f" Upgrade or top up at {upgrade_url}." if upgrade_url else ""
+        raise OpenSRECreditsExhaustedError(
+            f"OpenSRE {CREDIT_EXHAUSTED_MARKER}. Your hosted credits are exhausted.{destination}",
+            upgrade_url=upgrade_url,
         ) from err
+
+    raise LLMCreditExhaustedError(
+        f"{provider_name} {CREDIT_EXHAUSTED_MARKER}. "
+        f"To keep going, switch to another configured LLM provider — or top up "
+        f"your balance / raise the spending cap at the {provider_name} console. "
+        f"Original error: {err}"
+    ) from err
 
 
 def rate_limit_sleep_seconds(err: BaseException, fallback_backoff: float) -> float:

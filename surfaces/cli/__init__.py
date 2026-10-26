@@ -1,5 +1,9 @@
-"""CLI helpers for the incident resolution agent."""
+"""CLI helpers.
 
-from surfaces.cli.args import parse_args, write_json
+Importing this package must stay cheap: ``python -m surfaces.cli`` loads it
+before ``--help`` / ``--version``. Public names resolve on first access.
+"""
 
-__all__ = ["parse_args", "write_json"]
+from surfaces.cli.exports import __all__ as __all__
+from surfaces.cli.exports import __dir__ as __dir__
+from surfaces.cli.exports import __getattr__ as __getattr__

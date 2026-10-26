@@ -11,6 +11,10 @@ _LEADING_MENTION = re.compile(r"^\s*<@[^>]+>\s*")
 
 _DM_CHANNEL_TYPE = "im"
 
+# Thread segment of a DM's conversation key. A DM is one ongoing conversation,
+# so every message in it (top-level or threaded) shares one session.
+_DM_CONVERSATION_SEGMENT = "dm"
+
 # Message subtypes that still carry a real user mention/message to answer.
 # Everything else with a subtype (edits, joins, channel bookkeeping) is ignored.
 _HANDLED_MESSAGE_SUBTYPES = frozenset({"file_share", "thread_broadcast"})
@@ -42,11 +46,27 @@ class SlackInboundMessage:
     # active in that thread.
     addressed: bool = True
     files: tuple[SlackInboundFile, ...] = ()
+    is_dm: bool = False
 
     @property
     def conversation_key(self) -> str:
-        """Session binding key: one conversation per Slack thread."""
-        return f"{self.team_id}:{self.channel_id}:{self.thread_ts}"
+        """Session binding key: one per channel thread, one per DM."""
+        return slack_conversation_key(
+            team_id=self.team_id,
+            channel_id=self.channel_id,
+            thread_ts=self.thread_ts,
+            is_dm=self.is_dm,
+        )
+
+
+def slack_conversation_key(*, team_id: str, channel_id: str, thread_ts: str, is_dm: bool) -> str:
+    """Session binding key: one per channel thread, one per DM.
+
+    ``thread_ts`` stays the reply target in a DM (Slack streaming needs a
+    thread), but it must not split the DM into one session per message.
+    """
+    segment = _DM_CONVERSATION_SEGMENT if is_dm else thread_ts
+    return f"{team_id}:{channel_id}:{segment}"
 
 
 def parse_events_api_payload(payload: Mapping[str, Any]) -> SlackInboundMessage | None:
@@ -101,6 +121,7 @@ def parse_events_api_payload(payload: Mapping[str, Any]) -> SlackInboundMessage 
         text=text,
         addressed=addressed,
         files=files,
+        is_dm=is_dm,
     )
 
 

@@ -1,181 +1,92 @@
-"""Live system state helpers for the agent ready-state banner.
+"""Offline status probes for the compact launch banner.
 
-Queries integration health and alert-listener config without making
-network calls — results are cached-once per banner render and used by
-:func:`surfaces.shared.terminal.banner.banner._build_ambient_right_column`.
+Counts only — no skill bodies, no vendor SDKs, no prompt_toolkit. The chips are
+decorative startup chrome; loading the action-skill harness or full catalog
+health graph here made first paint pay hundreds of milliseconds for two integers.
 """
 
 from __future__ import annotations
 
-from rich.text import Text
+import os
+from dataclasses import dataclass
+from pathlib import Path
 
-from infrastructure.terminal.theme import BRAND, DIM, HIGHLIGHT, SECONDARY, WARNING
-
-# Display-name overrides for known integration service slugs.
-_SERVICE_DISPLAY_NAMES: dict[str, str] = {
-    "grafana": "Grafana",
-    "datadog": "Datadog",
-    "honeycomb": "Honeycomb",
-    "coralogix": "Coralogix",
-    "aws": "AWS",
-    "github": "GitHub",
-    "sentry": "Sentry",
-    "prometheus": "Prometheus",
-    "loki": "Loki",
-    "elasticsearch": "Elasticsearch",
-    "bigquery": "BigQuery",
-    "pagerduty": "PagerDuty",
-    "slack": "Slack",
-    "telegram": "Telegram",
-    "signoz": "SigNoz",
-    "jira": "Jira",
-    "servicenow": "ServiceNow",
-    "gitlab": "GitLab",
-    "vercel": "Vercel",
-    "mongodb": "MongoDB",
-    "postgresql": "PostgreSQL",
-    "mysql": "MySQL",
-    "redis": "Redis",
-    "kafka": "Kafka",
-    "rabbitmq": "RabbitMQ",
-    "clickhouse": "ClickHouse",
-    "mariadb": "MariaDB",
-    "kubernetes": "Kubernetes",
-    "betterstack": "Better Stack",
-    "snowflake": "Snowflake",
-    "new_relic": "New Relic",
-    "opsgenie": "OpsGenie",
-    "linear": "Linear",
-    "supabase": "Supabase",
-}
+from config.constants.skills import SKILLS_DIR_ENV
+from integrations.github import count_ci_fixes
 
 
-def integration_display_name(service: str) -> str:
-    """Human-readable label for an integration service slug."""
-    return _SERVICE_DISPLAY_NAMES.get(service, service.replace("_", " ").title())
+@dataclass(frozen=True)
+class LaunchStatus:
+    """Counts displayed beside the OpenSRE mark."""
+
+    skill_count: int
+    ci_fix_count: int
 
 
-def _load_integration_health() -> list[tuple[str, str]]:
-    """Return ``(display_name, status)`` for each configured integration.
+# ``surfaces/shared/terminal/banner/banner_state.py`` → package root (opensre/).
+_PACKAGE_ROOT = Path(__file__).resolve().parents[4]
+_BUNDLED_SKILLS_DIR = _PACKAGE_ROOT / "core" / "agent_harness" / "prompts" / "skills"
 
-    ``status`` is ``"ok"`` or ``"incomplete"`` (e.g. a hosted MCP record saved
-    without an API token). Offline and best-effort: never raises and never makes
-    network calls, so the banner reflects health without slowing startup.
+
+_NOT_SKILLS = frozenset({"AGENTS.md", "README.md"})
+_REPORT_SUFFIX = "_report.md"
+
+
+def _has_card(directory: Path) -> bool:
+    return (directory / "SKILL.md").is_file() or (directory / f"{directory.name}.md").is_file()
+
+
+def _count_bundled_skill_files(directory: Path) -> int:
+    """Count discoverable skill recipes without importing the skill loader.
+
+    Mirrors ``catalog.discovery.iter_skill_paths``: package dirs, one level of
+    nested child packages, then top-level ``*.md`` cards — without reading file
+    bodies or importing harness package ``__init__`` graphs.
     """
-    try:
-        from integrations.catalog import (  # lazy — avoids circular deps
-            configured_integration_health,
+    if not directory.is_dir():
+        return 0
+    count = 0
+    for child in sorted(directory.iterdir()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        count += _has_card(child)
+        count += sum(
+            1
+            for nested in child.iterdir()
+            if nested.is_dir() and not nested.name.startswith(".") and _has_card(nested)
         )
+    count += sum(
+        1
+        for path in directory.glob("*.md")
+        if path.name not in _NOT_SKILLS and not path.name.endswith(_REPORT_SUFFIX)
+    )
+    return count
 
-        return [
-            (integration_display_name(service), status)
-            for service, status in configured_integration_health()
-        ]
-    except Exception:
-        return []
+
+def _skills_dir() -> Path:
+    """The catalog this process serves: ``OPENSRE_SKILLS_DIR`` when set, else the bundle."""
+    override = os.getenv(SKILLS_DIR_ENV, "").strip()
+    if override:
+        candidate = Path(override).expanduser()
+        if candidate.is_dir():
+            return candidate
+    return _BUNDLED_SKILLS_DIR
 
 
 def _count_loaded_skills() -> int:
-    """Return the number of discovered action-agent skills. Never raises."""
+    """Return the number of action-agent skills (filesystem only)."""
     try:
-        from core.agent_harness.spi.grounding import list_action_skills
-
-        return len(list_action_skills())
+        return _count_bundled_skill_files(_skills_dir())
     except Exception:
         return 0
 
 
-def _count_scheduled_tasks() -> int:
-    """Return the number of persisted scheduled tasks. Never raises."""
-    try:
-        from infrastructure.scheduling.scheduler.store import list_tasks
-
-        return len(list_tasks())
-    except Exception:
-        return 0
+def load_launch_status() -> LaunchStatus:
+    """Load the startup-safe status summary without network calls."""
+    return LaunchStatus(
+        skill_count=_count_loaded_skills(),
+        ci_fix_count=count_ci_fixes(),
+    )
 
 
-def _is_alert_listener_active() -> bool:
-    """Return True if the alert listener is enabled in config. Never raises."""
-    try:
-        from config.repl_config import ReplConfig
-
-        return ReplConfig.load(apply_active_theme=False).alert_listener_enabled
-    except Exception:
-        return False
-
-
-def _build_ambient_right_column(session: object = None) -> Text:
-    """Right column for returning users: live integration status and alert listener state."""
-    parts: list[Text] = []
-
-    # Integrations — annotate by offline health so the banner never implies a
-    # half-configured integration (e.g. a hosted MCP record with no API token)
-    # is connected. A "⚠" + dim name marks an integration missing credentials.
-    parts.append(Text("Integrations", style=f"bold {BRAND}"))
-    entries = _load_integration_health()
-    if entries:
-        _MAX_SHOWN = 6
-        shown = entries[:_MAX_SHOWN]
-        overflow = len(entries) - len(shown)
-        name_line = Text(overflow="fold")
-        for idx, (name, status) in enumerate(shown):
-            if idx:
-                name_line.append("  ·  ", style=DIM)
-            if status == "incomplete":
-                name_line.append(f"{name} ⚠", style=DIM)
-            else:
-                name_line.append(name, style=SECONDARY)
-        if overflow:
-            name_line.append(f"  +{overflow}", style=DIM)
-        parts.append(name_line)
-        if any(status == "incomplete" for _name, status in entries):
-            parts.append(Text("⚠ incomplete — run /integrations verify", style=WARNING))
-    else:
-        parts.append(Text("run /onboard to connect tools", style=DIM))
-
-    parts.append(Text("───", style=DIM))
-
-    # Alert listener
-    parts.append(Text("Alert listener", style=f"bold {BRAND}"))
-    if _is_alert_listener_active():
-        listener_line = Text()
-        listener_line.append("● ", style=f"bold {HIGHLIGHT}")
-        listener_line.append("active", style=SECONDARY)
-        parts.append(listener_line)
-    else:
-        parts.append(Text("○  not configured — /alerts for setup", style=DIM))
-
-    parts.append(Text("───", style=DIM))
-
-    # Skills and scheduled tasks.
-    skills_line = Text(overflow="fold")
-    skills_line.append("Skills", style=f"bold {BRAND}")
-    skills_line.append(f" ({_count_loaded_skills()}) loaded into cyberdeck", style=SECONDARY)
-    skills_line.append("  ·  ", style=DIM)
-    skills_line.append("Scheduled tasks", style=f"bold {BRAND}")
-    skills_line.append(f" ({_count_scheduled_tasks()})", style=SECONDARY)
-    parts.append(skills_line)
-
-    # Session summary — only shown when /clear is used mid-session with history
-    if session is not None:
-        history: list[object] = getattr(session, "history", [])
-        if history:
-            parts.append(Text("───", style=DIM))
-            parts.append(Text("This session", style=f"bold {BRAND}"))
-            count = len(history)
-            noun = "interaction" if count == 1 else "interactions"
-            parts.append(Text(f"{count} {noun}", style=SECONDARY))
-
-    return Text("\n").join(parts)
-
-
-__all__ = [
-    "_SERVICE_DISPLAY_NAMES",
-    "integration_display_name",
-    "_build_ambient_right_column",
-    "_count_loaded_skills",
-    "_count_scheduled_tasks",
-    "_is_alert_listener_active",
-    "_load_integration_health",
-]
+__all__ = ["LaunchStatus", "load_launch_status"]

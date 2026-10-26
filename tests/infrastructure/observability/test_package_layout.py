@@ -33,11 +33,10 @@ def test_trace_subpackage_exports_span_helpers() -> None:
 
 def test_render_and_errors_subpackages_import() -> None:
     from infrastructure.observability.errors import boundary, sentry, service
-    from infrastructure.observability.render import debug, display, progress
+    from infrastructure.observability.render import debug, progress
     from infrastructure.observability.trace import hook, process_stats, prompts, redaction
 
     assert callable(debug.debug_print)
-    assert callable(display.render_investigation_header)
     assert callable(progress.get_progress_tracker)
     assert callable(hook.traceable)
     assert callable(process_stats.sample_turn_boundary_stats)

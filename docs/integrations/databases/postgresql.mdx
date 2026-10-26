@@ -1,0 +1,219 @@
+---
+title: "PostgreSQL"
+description: "Connect PostgreSQL so OpenSRE can diagnose database issues"
+---
+
+## Overview
+
+OpenSRE uses PostgreSQL diagnostics to investigate database issues — checking server health, surfacing slow queries, monitoring replication status, and analyzing table statistics. All queries are read-only SELECTs.
+
+## Prerequisites
+
+- PostgreSQL 10+ (12+ recommended for full `pg_stat_statements` support)
+- Network access from the OpenSRE environment to your PostgreSQL instance
+- A read-only user with access to system views
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup postgresql
+```
+
+Provide your host, database, and credentials when prompted.
+
+### Option 2: Environment variables
+
+```bash
+POSTGRESQL_HOST=your-postgresql-host
+POSTGRESQL_PORT=5432
+POSTGRESQL_DATABASE=your-database
+POSTGRESQL_USERNAME=opensre_readonly
+POSTGRESQL_PASSWORD=your-password
+POSTGRESQL_SSL_MODE=prefer   # prefer, require, or disable
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `POSTGRESQL_HOST` | — | **Required.** PostgreSQL hostname or IP |
+| `POSTGRESQL_PORT` | `5432` | PostgreSQL port |
+| `POSTGRESQL_DATABASE` | — | **Required.** Target database |
+| `POSTGRESQL_USERNAME` | `postgres` | Username |
+| `POSTGRESQL_PASSWORD` | _(empty)_ | Password |
+| `POSTGRESQL_SSL_MODE` | `prefer` | libpq SSL mode: `prefer`, `require`, or `disable` |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "postgresql-prod",
+      "service": "postgresql",
+      "status": "active",
+      "credentials": {
+        "host": "prod-primary.postgres.example.com",
+        "port": 5432,
+        "database": "application_db",
+        "username": "opensre_readonly",
+        "password": "your-password",
+        "ssl_mode": "prefer"
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+### Creating a read-only user
+
+```sql
+CREATE USER opensre_readonly WITH PASSWORD 'secure-password';
+GRANT pg_monitor TO opensre_readonly;
+GRANT CONNECT ON DATABASE application_db TO opensre_readonly;
+\c application_db
+GRANT USAGE ON SCHEMA public TO opensre_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO opensre_readonly;
+```
+
+<Info>
+`pg_monitor` (PostgreSQL 10+) grants read access to monitoring views including `pg_stat_activity`, `pg_stat_replication`, and `pg_stat_statements` without superuser privileges.
+</Info>
+
+### Enabling slow query tracking
+
+Add to `postgresql.conf`:
+
+```ini
+shared_preload_libraries = 'pg_stat_statements'
+pg_stat_statements.track = all
+```
+
+Restart PostgreSQL, then:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+```
+
+### Quick local test with Docker
+
+```bash
+docker run -d --name postgres-dev -p 127.0.0.1:5433:5432 \
+  -e POSTGRES_PASSWORD=verifypass \
+  -e POSTGRES_DB=app_db \
+  postgres:16 -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all
+
+i=0
+until docker exec postgres-dev pg_isready -U postgres > /dev/null 2>&1; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: PostgreSQL never became ready" >&2; exit 1; }
+  sleep 2
+done
+
+docker exec postgres-dev psql -U postgres -d app_db -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+docker exec postgres-dev psql -U postgres -d app_db -c "
+CREATE TABLE orders (id INT PRIMARY KEY, amount DECIMAL(10,2));
+INSERT INTO orders VALUES (1, 42.50), (2, 17.00);
+"
+docker exec postgres-dev psql -U postgres -d app_db -c "SELECT pg_sleep(2);" > /dev/null
+```
+
+```bash
+export POSTGRESQL_HOST=127.0.0.1
+export POSTGRESQL_PORT=5433
+export POSTGRESQL_DATABASE=app_db
+export POSTGRESQL_USERNAME=postgres
+export POSTGRESQL_PASSWORD=verifypass
+export POSTGRESQL_SSL_MODE=disable
+```
+
+Verify:
+
+```bash
+opensre integrations verify postgresql
+```
+
+```
+SERVICE    │ SOURCE    │ STATUS   │ DETAIL
+postgresql │ local env │ ✓ passed │ Connected to PostgreSQL 16.15
+           │           │          │ target database: app_db.
+```
+
+Use a temporary integration-store path so saved integrations cannot override the demo environment variables:
+
+```bash
+export OPENSRE_DEMO_STORE_DIR="$(mktemp -d /tmp/opensre-postgresql-demo.XXXXXX)"
+export OPENSRE_INTEGRATIONS_STORE_PATH="$OPENSRE_DEMO_STORE_DIR/integrations.json"
+```
+
+The file does not need to exist. OpenSRE treats the missing temporary store as empty and resolves PostgreSQL from the exported variables above.
+
+Now ask the agent about the slow query:
+
+```bash
+opensre
+```
+
+Ask: *Does the app_db PostgreSQL instance have any slow queries?*
+
+Against this exact local instance the agent calls all 6 registered tools — slow
+queries, server status, current queries, lock status, table stats, and replication
+status — and correctly identifies the intentional `SELECT pg_sleep($1)` call
+(~2016 ms average) as the only slow query, with every other health indicator normal.
+
+Teardown:
+
+```bash
+docker rm -f postgres-dev
+rm -rf "$OPENSRE_DEMO_STORE_DIR"
+unset OPENSRE_DEMO_STORE_DIR OPENSRE_INTEGRATIONS_STORE_PATH
+unset POSTGRESQL_HOST POSTGRESQL_PORT POSTGRESQL_DATABASE
+unset POSTGRESQL_USERNAME POSTGRESQL_PASSWORD POSTGRESQL_SSL_MODE
+```
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_postgresql_server_status` | Version, uptime, connection counts, commit/rollback rates, buffer cache hit ratio |
+| `get_postgresql_current_queries` | Active queries longer than a threshold (default 1s), with PID, user, wait event, truncated SQL |
+| `get_postgresql_slow_queries` | Highest mean execution time from `pg_stat_statements` (needs the extension) |
+| `get_postgresql_table_stats` | Per-table insert/update/delete/live/dead tuples, scan ratios, vacuum/analyze times, sizes |
+| `get_postgresql_lock_status` | Lock / blocking information |
+| `get_postgresql_replication_status` | Primary vs replica (`pg_is_in_recovery()`), WAL position, per-replica lag |
+
+## Verify
+
+```bash
+opensre integrations verify postgresql
+```
+
+Alias: `postgres`. Expected output:
+
+```
+Service: postgresql
+Status: passed
+Detail: Connected to PostgreSQL 16.1; target database: application_db
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Check host, port, firewall, `listen_addresses`, and `pg_hba.conf` |
+| **Authentication failed** | Confirm username/password and `pg_hba.conf` auth method (`md5`, `scram-sha-256`) |
+| **SSL error** | Try `POSTGRESQL_SSL_MODE=disable` or `require` |
+| **Permission denied on pg_stat_activity** | Grant `pg_monitor` to the OpenSRE user |
+| **pg_stat_statements not found** | Add to `shared_preload_libraries`, restart, then `CREATE EXTENSION` |
+| **Replication shows replica, not primary** | Expected — connect to the primary for lag details |
+
+## Security
+
+- Use a **dedicated read-only user** with `pg_monitor` — avoid superuser credentials.
+- Enable **SSL** (`POSTGRESQL_SSL_MODE=require`) in production.
+- Prefer `scram-sha-256` in `pg_hba.conf`.
+- Store credentials in `.env` or your secret manager — not in source control.
+- Rotate credentials periodically.

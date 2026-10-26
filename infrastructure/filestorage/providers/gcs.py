@@ -20,10 +20,10 @@ from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import AuthorizedSession
 
 from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.contracts import RemoteObject
 from infrastructure.filestorage.enums import BucketExposure, BuiltInProvider
 from infrastructure.filestorage.errors import RemoteSyncUnavailableError
 from infrastructure.filestorage.exposure import PublicAccessStatus
-from infrastructure.filestorage.ports import RemoteObject
 from infrastructure.filestorage.providers.registry import register_object_store
 
 PROVIDER_NAME = BuiltInProvider.GCS

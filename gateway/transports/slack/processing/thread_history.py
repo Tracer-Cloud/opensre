@@ -12,7 +12,7 @@ import re
 
 from core.agent_harness import SessionCore
 from gateway.core.session import seed_session_history
-from integrations.slack.web_client import (
+from integrations.slack import (
     fetch_channel_messages,
     resolve_bot_token,
 )
@@ -26,16 +26,22 @@ _ASSISTANT_SHAPE_RE = re.compile(
 _THREAD_SEED_LIMIT = 40
 
 
-def session_needs_thread_seed(user_text: str, *, is_reply: bool = False) -> bool:
-    """True when follow-up resolution needs Slack thread history.
+def session_needs_thread_seed(
+    user_text: str, *, is_reply: bool = False, has_session_history: bool = False
+) -> bool:
+    """True when follow-up resolution needs a one-time Slack thread fetch.
 
-    The Slack thread is the source of truth for a conversation (gateway session
-    files are ephemeral across redeploys). So ANY threaded reply re-seeds from
-    the live thread — this covers every follow-up shape ("yes", "do that",
-    "the first one", "group by role") without maintaining a phrase list, and a
-    repeated affirmative resolves against the LATEST assistant offer. A brand-new
-    top-level mention (not a reply) starts fresh and needs no seed.
+    Seed only when the gateway session is empty (redeploy / ephemeral disk /
+    new binding). Once the session already holds prior turns, keep using it —
+    re-fetching ``conversations.replies`` on every reply re-runs the agent
+    against a freshly rebuilt history and burns Slack API quota for no gain.
+
+    When the session *is* empty, any threaded reply (or a bare affirmative)
+    seeds from the live thread so follow-ups like ``yes`` / ``do that`` still
+    resolve after a restart. A brand-new top-level mention needs no seed.
     """
+    if has_session_history:
+        return False
     if is_reply:
         return True
     bare = str(user_text or "").strip()
@@ -108,7 +114,9 @@ def seed_session_from_slack_thread(
         exclude_ts=exclude_ts,
         bot_user_id=bot_user_id,
     )
-    return seed_session_history(session, seeded, replace_existing=True)
+    # Never clobber an in-memory transcript the agent already built this
+    # process — callers gate on an empty session via session_needs_thread_seed.
+    return seed_session_history(session, seeded, replace_existing=False)
 
 
 def _is_assistant_message(text: str, *, user: str, bot_user_id: str) -> bool:

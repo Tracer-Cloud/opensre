@@ -12,6 +12,8 @@ from config.runtime_metadata import (
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
 from infrastructure.observability.trace.spans import component_span
+from infrastructure.safety.sandbox import python_interpreter_available
+from tools.system.python_execution_tool._evidence import map_execute_python_code
 from tools.system.python_execution_tool.credentials import execution_env, github_extract_params
 from tools.system.python_execution_tool.runner import run_python_execution
 
@@ -31,21 +33,23 @@ class PythonExecutionTool(BaseTool):
     name = "execute_python_code"
     display_name = "Python execution"
     source = "knowledge"
-    side_effect_level = SideEffectLevel.READ_ONLY
-    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT)
+    evidence_mapper = map_execute_python_code
+    side_effect_level = SideEffectLevel.EXTERNAL
+    requires_approval = True
+    approval_reason = "Runs model-written Python on this machine."
+    surfaces = (ToolSurface.CHAT,)
     injected_params = ["github_token"]
     description = (
         "Execute generated Python code in a restricted subprocess, capture stdout, stderr, "
-        "exceptions, and timeout state, and return the result to the agent. Network access is "
-        "blocked by default; opt in only for approved API-backed analysis. Subprocess spawning "
-        "is always blocked. Runtime facts "
+        "exceptions, and timeout state, and return the result to the agent. The user approves "
+        "every call. Network access is blocked by default; opt in only for approved API-backed "
+        "analysis. Launching other programs is blocked. Runtime facts "
         f"({_RUNTIME_FACT_KEYS}) are already stated in the conversation's environment block — "
         "answer them from there directly and never call this tool just to re-read them; code "
         "already running for another reason can reuse them via `inputs['opensre_runtime']` "
-        "(injected automatically). For filesystem introspection use pure "
-        "Python: `pathlib.Path(...).iterdir()` to list directories, "
-        "`Path('/etc/hostname').read_text()` for the pod name, `psutil.disk_usage('/')` and "
-        "`psutil.virtual_memory()` for disk/memory. "
+        "(injected automatically). For filesystem introspection, use "
+        "`pathlib.Path(...).iterdir()` to list directories and "
+        "`Path('/etc/hostname').read_text()` for the pod name. "
         f"Never run {_NEVER_RUN}, never probe cloud instance metadata over the network, "
         "and never use any other `subprocess` call. When workflow guidance lists skills, "
         "read each skill description and follow the one that matches the user's request."
@@ -55,7 +59,7 @@ class PythonExecutionTool(BaseTool):
         "Run a small API-backed calculation with approved credentials",
         "Parse logs or JSON payloads when a direct tool result needs post-processing",
         "Reuse inputs['opensre_runtime'] inside code that is already computing something else",
-        "List scratchpad files with pathlib; read disk/memory with psutil (no ls/df/free)",
+        "List scratchpad files with pathlib; reuse injected runtime facts for disk/memory",
     ]
     anti_examples = [
         _RUNTIME_FACTS_ANTI_EXAMPLE,
@@ -114,8 +118,8 @@ class PythonExecutionTool(BaseTool):
     }
 
     def is_available(self, _sources: dict[str, dict]) -> bool:
-        """The sandbox itself is local and always available."""
-        return True
+        """Return whether the sandbox has a Python interpreter to execute."""
+        return python_interpreter_available()
 
     def extract_params(self, sources: dict[str, dict]) -> dict[str, Any]:
         """Inject approved credentials from resolved integration sources."""

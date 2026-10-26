@@ -8,6 +8,10 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any, cast
 
+from config.constants.google_docs import (
+    GOOGLE_CREDENTIALS_FILE_ENV,
+    GOOGLE_DRIVE_FOLDER_ID_ENV,
+)
 from integrations.config_models import GoogleDocsIntegrationConfig
 from integrations.probes import ProbeResult
 
@@ -462,8 +466,8 @@ def build_google_docs_client_from_env() -> GoogleDocsClient | None:
     """Build a GoogleDocsClient from environment variables if available."""
     import os
 
-    credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "").strip()
-    folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "").strip()
+    credentials_file = os.getenv(GOOGLE_CREDENTIALS_FILE_ENV, "").strip()
+    folder_id = os.getenv(GOOGLE_DRIVE_FOLDER_ID_ENV, "").strip()
 
     if not credentials_file or not folder_id:
         return None

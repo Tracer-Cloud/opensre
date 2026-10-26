@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.tool import report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.config_models import GoogleDocsIntegrationConfig
 from integrations.google_docs.client import GoogleDocsClient
 

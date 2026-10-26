@@ -9,6 +9,9 @@ import time
 
 from botocore.exceptions import ClientError
 
+from config.constants.llm import ANTHROPIC_API_KEY_ENV, LLM_PROVIDER_ENV, OPENAI_API_KEY_ENV
+from config.constants.telegram import TELEGRAM_BOT_TOKEN_ENV
+from config.llm_auth.provider_catalog import require_provider_spec
 from infrastructure.deployment.ec2.config import (
     DEFAULT_REGION,
     GATEWAY_AMI_DESTROY_PURGE_ENV,
@@ -58,13 +61,38 @@ _EXTRA_ENV_KEYS_ENV = "OPENSRE_DEPLOY_EXTRA_ENV_KEYS"
 # SLACK_* is intentionally absent: Slack is deployed and operated separately,
 # not from this repo. Socket Mode is single-consumer — an EC2 gateway holding
 # Slack tokens would compete with the primary Slack gateway for events.
+
+
+def _hosted_model_env_keys() -> tuple[str, ...]:
+    """OpenAI/Anthropic model env names the runtime actually reads.
+
+    ``ANTHROPIC_MODEL`` / ``OPENAI_MODEL`` remain as legacy aliases. The current
+    names (``*_REASONING_MODEL``, ``*_TOOLCALL_MODEL``, ``*_CLASSIFICATION_MODEL``)
+    must ship too or a deploy silently falls back to catalog defaults.
+    """
+    keys: list[str] = []
+    seen: set[str] = set()
+    for provider in ("openai", "anthropic"):
+        spec = require_provider_spec(provider)
+        for key in (
+            spec.model_env,
+            spec.legacy_model_env,
+            spec.toolcall_model_env,
+            spec.classification_model_env,
+        ):
+            if key and key not in seen:
+                seen.add(key)
+                keys.append(key)
+    return tuple(keys)
+
+
 _CONTAINER_ENV_KEYS = (
-    "TELEGRAM_BOT_TOKEN",
+    TELEGRAM_BOT_TOKEN_ENV,
     "TELEGRAM_ALLOWED_USERS",
-    "LLM_PROVIDER",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_MODEL",
+    LLM_PROVIDER_ENV,
+    OPENAI_API_KEY_ENV,
+    ANTHROPIC_API_KEY_ENV,
+    *_hosted_model_env_keys(),
 )
 
 _ABORT_IF_EXISTS_ENV = "OPENSRE_DEPLOY_ABORT_IF_EXISTS"

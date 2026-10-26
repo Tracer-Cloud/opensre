@@ -1,0 +1,124 @@
+---
+title: "Runbook-guided investigations"
+description: "Configure trusted GitHub Markdown runbooks that steer OpenSRE incident investigations"
+---
+
+OpenSRE can load an organization-owned runbook before choosing diagnostic steps. The
+same behavior is available in the interactive shell and gateway chats, including
+Discord.
+
+The first release supports GitHub-hosted Markdown. Its source contract is
+provider-neutral so later providers can use the same selection and provenance rules.
+
+## V1 behavior
+
+OpenSRE selects a runbook in this order:
+
+1. An explicit runbook URL supplied by the user or returned by an alert tool.
+2. An exact manifest match using `alertname`, `service`, and labels.
+
+The selected document is fetched through the existing verified GitHub integration and
+pinned to the commit returned by GitHub. OpenSRE includes that immutable revision in the
+investigation evidence.
+
+Runbooks steer the investigation; they do not bypass safety policy. OpenSRE treats their
+contents as guidance, verifies claims with live tools, and keeps the normal approval path
+for mutations.
+
+## Configure a source
+
+Connect and verify GitHub first:
+
+```bash
+opensre integrations setup github
+opensre integrations verify github
+```
+
+Register the repository. A manifest is optional when you only use explicit URLs.
+
+```bash
+opensre runbooks add github \
+  --name platform-runbooks \
+  --repo acme/operations \
+  --ref main \
+  --manifest .opensre/runbooks.yaml
+
+opensre runbooks verify platform-runbooks
+opensre runbooks list
+```
+
+Use `opensre runbooks remove platform-runbooks` to remove it. The source settings
+are stored with other local OpenSRE settings, while credentials remain owned by the
+GitHub integration.
+
+## Add a manifest
+
+The V1 manifest is strict YAML. Document paths must be repository-relative Markdown
+files. Every entry needs an `alertname` or `service` match.
+
+```yaml
+version: 1
+runbooks:
+  - id: checkout-high-latency
+    title: Checkout high latency
+    document: runbooks/checkout-high-latency.md
+    match:
+      alertname: CheckoutHighLatency
+      service: checkout
+      labels:
+        severity: critical
+```
+
+Matching is exact and deterministic. Alert name plus labels outranks alert name alone,
+which outranks service alone. More matching labels win within the same tier. OpenSRE
+reports equally specific matches as ambiguous instead of guessing.
+
+## Try the bundled demo
+
+After this version is available on the repository's default branch, register its public
+demo runbook:
+
+```bash
+opensre runbooks add github \
+  --name opensre-demo \
+  --repo Tracer-Cloud/opensre \
+  --ref main \
+  --manifest docs/snippets/runbooks/demo-manifest.yaml
+
+opensre runbooks verify opensre-demo
+```
+
+Start `opensre` and ask:
+
+```text
+Investigate CheckoutHighLatency for service checkout with severity=critical.
+Use the configured runbook and tell me which checks you can verify.
+```
+
+The runbook should resolve to `checkout-high-latency`, show a commit-pinned GitHub URL,
+and guide the diagnostic sequence. With no monitoring integrations connected, OpenSRE
+should clearly report which live checks it could not perform instead of inventing data.
+
+To test explicit URL precedence, ask with this URL:
+
+```text
+Investigate using https://github.com/Tracer-Cloud/opensre/blob/main/docs/snippets/runbooks/checkout-high-latency.md
+```
+
+For Discord, run the gateway with GitHub and Discord connected, then send the same prompt
+in a DM, mention, or active thread. No Discord-specific runbook configuration is needed.
+
+## Verify a production rollout
+
+Test these cases before enabling a source for responders:
+
+- A valid explicit URL loads only from the configured repository and ref.
+- An untrusted repository, unsafe path, or non-Markdown document is rejected.
+- One exact manifest match loads the expected document and commit revision.
+- Equally specific entries return candidate IDs and do not choose one.
+- Missing GitHub access or an invalid manifest produces a safe, actionable failure.
+- The final investigation distinguishes runbook guidance from observed evidence.
+
+V1 does not crawl directories, semantically search documents, execute embedded commands,
+or support GitLab, local files, object stores, or knowledge bases. Those providers and
+discovery modes can be added behind the same source contract in later releases.

@@ -1,4 +1,0 @@
-{
-  "description": "payment-worker pods OOMKilled due to a memory leak in v2.4.1 — an unbounded in-memory cache introduced in PR #2847. Alert is sparse; root cause found in OpenClaw conversations.",
-  "expected_root_cause_keywords": ["memory", "oom", "leak", "cache", "oomkilled"]
-}

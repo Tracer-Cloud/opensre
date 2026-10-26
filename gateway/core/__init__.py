@@ -5,7 +5,7 @@ Subpackages:
 * ``lifecycle/`` — composition root, credential hydration, gateway errors
 * ``process/`` — daemon supervision, polling thread, readiness
 * ``middleware/`` — per-turn steps every transport runs
-* ``storage/`` — session bindings and investigation stores
+* ``storage/`` — session bindings and shared event stores
 * ``billing/`` — credits client
 * ``attachments/`` — attachment helpers
 * ``session/`` — gateway chat context helpers

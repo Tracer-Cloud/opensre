@@ -1,12 +1,11 @@
 """Guard: importing the webapp ASGI app registers the vendor registries.
 
 ``MODE=web`` (the Dockerfile default) runs ``uvicorn gateway.web.webapp:app``
-directly — no CLI boot, no gateway manager. ``POST /investigate`` then runs the
-full pipeline, which reads registries that integrations populate at startup
-(alert-source routing, incident anchors, root-cause taxonomy, alert detail
-fields). If the module stops registering them, nothing raises: every registry
-degrades to an empty-but-valid default and investigations silently lose anchors,
-seed tools, and vendor detail fields.
+directly — no CLI boot, no gateway manager. Alert intake then reads registries
+that integrations populate at startup (alert-source routing, incident anchors,
+alert detail fields). If the module stops registering them, nothing raises:
+every registry degrades to an empty-but-valid default and queued alerts silently
+lose anchors, seed tools, and vendor detail fields.
 
 This runs in a subprocess so the assertion reflects the real entrypoint. The
 gateway conftest registers adapters for every test, so an in-process check would
@@ -22,7 +21,7 @@ import sys
 import textwrap
 
 # Import the ASGI app exactly as uvicorn does, then probe one registry per
-# vendor extension point the investigation pipeline depends on.
+# vendor extension point alert intake depends on.
 _PROBE = textwrap.dedent(
     """
     import json
@@ -31,7 +30,6 @@ _PROBE = textwrap.dedent(
 
     from core.domain.alerts.alert_source import secondary_tool_sources
     from core.domain.alerts.extraction import alert_detail_field_names
-    from core.domain.diagnosis.taxonomy_registry import taxonomy_categories_for_alert_source
     from core.domain.types.incident_anchors import extract_anchor
 
     anchor = extract_anchor({"startsAt": "2026-01-01T00:00:00Z"})
@@ -39,8 +37,6 @@ _PROBE = textwrap.dedent(
         "secondary_sources": sorted(secondary_tool_sources()),
         "detail_fields": list(alert_detail_field_names()),
         "anchor_parsed": anchor is not None,
-        "hermes_category_count": len(taxonomy_categories_for_alert_source("hermes")),
-        "generic_category_count": len(taxonomy_categories_for_alert_source("datadog")),
     }))
     """
 )
@@ -79,7 +75,4 @@ def test_webapp_import_registers_vendor_registries() -> None:
         assert field in probe["detail_fields"]
 
     # Assert: generic fallback sources are known, so they are not ranked primary.
-    assert probe["secondary_sources"] == ["google_docs", "knowledge", "openclaw"]
-
-    # Assert: the scoped taxonomy applies instead of the generic catch-all.
-    assert probe["hermes_category_count"] < probe["generic_category_count"]
+    assert probe["secondary_sources"] == ["google_docs", "knowledge"]

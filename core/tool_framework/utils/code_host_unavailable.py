@@ -1,4 +1,4 @@
-"""Shared unavailable payload helper for code-host investigation tools."""
+"""Shared unavailable payload helper for code-host tools."""
 
 from __future__ import annotations
 

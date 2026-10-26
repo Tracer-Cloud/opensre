@@ -15,11 +15,6 @@ from gateway.core.storage.events.repository import (
     PostgresHandledSlackEventRepository,
     handled_slack_event_repository,
 )
-from gateway.core.storage.investigations.repository import (
-    InMemoryInvestigationRepository,
-    PostgresInvestigationRepository,
-    investigation_repository,
-)
 
 
 def _install_fake_psycopg2(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
@@ -72,21 +67,19 @@ def test_no_dsn_gives_process_local_repositories(monkeypatch: pytest.MonkeyPatch
     database = open_database()
 
     assert database is None
-    assert isinstance(investigation_repository(database), InMemoryInvestigationRepository)
     assert isinstance(handled_slack_event_repository(database), InMemoryHandledSlackEventRepository)
 
 
 def test_a_dsn_gives_postgres_repositories_over_one_shared_pool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both repositories sit on the same database, so the process opens one pool."""
+    """Every repository sits on the same database, so the process opens one pool."""
     pools = _install_fake_psycopg2(monkeypatch)
     monkeypatch.setenv(DATABASE_URL_ENV, "postgresql://example/db")
 
     database = open_database()
 
     assert database is not None
-    assert isinstance(investigation_repository(database), PostgresInvestigationRepository)
     assert isinstance(handled_slack_event_repository(database), PostgresHandledSlackEventRepository)
     assert len(pools) == 1  # migrations ran for every table through one pool
     assert pools[0].dsn == "postgresql://example/db"

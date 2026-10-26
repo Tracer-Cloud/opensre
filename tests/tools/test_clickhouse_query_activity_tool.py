@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
 from integrations.clickhouse.tools.clickhouse_query_activity_tool import (
+    _map_get_clickhouse_query_activity,
     get_clickhouse_query_activity,
 )
 from tests.tools.conftest import BaseToolContract
@@ -98,3 +100,56 @@ def test_run_error_path() -> None:
         result = get_clickhouse_query_activity(host="ch.example.com")
     assert result["available"] is False
     assert "error" in result
+
+
+class TestMapGetClickhouseQueryActivity:
+    def test_records_entry_with_failed_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_clickhouse_query_activity(
+            evidence,
+            {
+                "available": True,
+                "total_returned": 3,
+                "queries": [
+                    {"query_id": "1", "type": "QueryFinish"},
+                    {"query_id": "2", "type": "QueryFinish"},
+                    {"query_id": "3", "type": "ExceptionWhileProcessing"},
+                ],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_clickhouse_query_activity"
+        assert entries[0]["summary"] == "3 queries, 1 failed"
+
+    def test_records_entry_without_failed_suffix_when_all_succeeded(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_clickhouse_query_activity(
+            evidence,
+            {"available": True, "queries": [{"query_id": "1", "type": "QueryFinish"}]},
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "1 query"
+
+    def test_records_nothing_when_no_queries(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_clickhouse_query_activity(
+            evidence, {"available": True, "total_returned": 0, "queries": []}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_clickhouse_query_activity(
+            evidence, {"available": False, "error": "Not configured."}, {}
+        )
+
+        assert "catalog_entries" not in evidence

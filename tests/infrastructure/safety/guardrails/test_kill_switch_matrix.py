@@ -40,7 +40,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _posthog_is_disabled() -> bool:
-    return provider._is_opted_out()
+    return provider.analytics_opted_out()
 
 
 def _sentry_init_call_count(monkeypatch: pytest.MonkeyPatch) -> int:

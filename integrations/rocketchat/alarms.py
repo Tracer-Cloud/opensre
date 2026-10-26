@@ -1,7 +1,6 @@
 """Rocket.Chat alarm dispatcher with per-key cooldown.
 
-Shared by features that need throttled Rocket.Chat alerts (watchdog
-thresholds, Hermes incident sinks) — mirrors
+Provides reusable throttled Rocket.Chat delivery and mirrors
 :class:`integrations.telegram.alarms.AlarmDispatcher`.
 
 Credential resolution lives in :mod:`integrations.rocketchat.credentials`;

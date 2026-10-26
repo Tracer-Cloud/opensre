@@ -13,6 +13,9 @@ from core.agent_harness.session_goal.goal import SessionGoal, SessionGoalStatus
 
 # Persisted on flush as ``custom_message`` / ``custom_type`` (last write wins).
 SESSION_GOAL_STATE_CUSTOM_TYPE = "session_goal_state"
+SESSION_GOAL_CONTROL_RECORD_TYPE = "session_goal_control"
+SESSION_GOAL_CONTROL_REQUESTED = "requested"
+SESSION_GOAL_CONTROL_APPLIED = "applied"
 
 
 def session_goal_to_payload(goal: SessionGoal) -> dict[str, Any]:
@@ -24,11 +27,17 @@ def session_goal_to_payload(goal: SessionGoal) -> dict[str, Any]:
         "turns_used": int(goal.turns_used),
         "step_count": goal.step_count,
         "checklist": list(goal.checklist),
+        "checklist_explicit": goal.checklist_explicit,
         "completed": sorted(int(index) for index in goal.completed),
         "last_reason": goal.last_reason,
         "token_baseline_input": int(goal.token_baseline_input),
         "token_baseline_output": int(goal.token_baseline_output),
+        "token_baseline_cached": int(goal.token_baseline_cached),
         "host_owned": bool(goal.host_owned),
+        "last_progress_turns_used": int(goal.last_progress_turns_used),
+        "tool_evidence": list(goal.tool_evidence) if goal.tool_evidence is not None else None,
+        "tool_success_seen": goal.tool_success_seen,
+        "last_verdict": goal.last_verdict,
     }
     if goal.started_at is not None:
         payload["started_at"] = float(goal.started_at)
@@ -43,7 +52,7 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
     if not isinstance(condition, str) or not condition.strip():
         return None
     try:
-        max_outer = max(1, int(payload.get("max_outer_turns", 5)))
+        max_outer = max(0, int(payload.get("max_outer_turns", 0)))
         turns_used = max(0, int(payload.get("turns_used", 0)))
     except (TypeError, ValueError):
         return None
@@ -83,9 +92,13 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
     try:
         token_in = max(0, int(payload.get("token_baseline_input", 0) or 0))
         token_out = max(0, int(payload.get("token_baseline_output", 0) or 0))
+        token_cached = max(0, int(payload.get("token_baseline_cached", 0) or 0))
     except (TypeError, ValueError):
-        token_in, token_out = 0, 0
+        token_in, token_out, token_cached = 0, 0, 0
     host_owned = bool(payload.get("host_owned", False))
+    last_progress_turns_used = _restore_last_progress_turns_used(payload, turns_used)
+    verdict_raw = payload.get("last_verdict")
+    last_verdict = verdict_raw.strip() if isinstance(verdict_raw, str) else ""
     return SessionGoal(
         condition=condition.strip(),
         max_outer_turns=max_outer,
@@ -93,17 +106,44 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
         turns_used=turns_used,
         step_count=step_count,
         checklist=checklist,
+        checklist_explicit=payload.get("checklist_explicit") is True,
         completed=frozenset(completed),
         last_reason=last_reason,
         started_at=started_at,
         token_baseline_input=token_in,
         token_baseline_output=token_out,
+        token_baseline_cached=token_cached,
         host_owned=host_owned,
+        last_progress_turns_used=last_progress_turns_used,
+        tool_evidence=_restore_tool_evidence(payload),
+        tool_success_seen=payload.get("tool_success_seen") is True,
+        last_verdict=last_verdict,
     )
 
 
+def _restore_tool_evidence(payload: dict[str, Any]) -> tuple[str, ...] | None:
+    """Keep legacy goals empty and incomplete evidence explicitly unavailable."""
+    raw = payload.get("tool_evidence", [])
+    if isinstance(raw, list) and all(isinstance(item, str) for item in raw):
+        return tuple(raw)
+    return None
+
+
+def _restore_last_progress_turns_used(payload: dict[str, Any], turns_used: int) -> int:
+    """Stall watermark, or ``turns_used`` when the key is missing or unreadable."""
+    if "last_progress_turns_used" not in payload:
+        return turns_used
+    raw = payload.get("last_progress_turns_used")
+    if raw is None:
+        return turns_used
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return turns_used
+
+
 def session_goal_state_snapshot(session: Any) -> dict[str, Any]:
-    """Flush payload for session goal + L0 CTA dedupe / pending setup offer."""
+    """Flush payload for session goal + L0 CTA dedupe / pending setup and schedule offers."""
     goal = getattr(session, "session_goal", None)
     offered = getattr(session, "offered_upgrade_ctas", None)
     offered_keys = (
@@ -122,7 +162,55 @@ def session_goal_state_snapshot(session: Any) -> dict[str, Any]:
         "session_goal": (session_goal_to_payload(goal) if isinstance(goal, SessionGoal) else None),
         "offered_upgrade_ctas": offered_keys,
         "pending_integration_setup_offer": pending_payload,
+        "pending_schedule_offer": _pending_schedule_offer_payload(
+            getattr(session, "pending_schedule_offer", None)
+        ),
     }
+
+
+def _pending_schedule_offer_payload(offer: Any) -> dict[str, Any] | None:
+    """JSON-ready schedule offer, or ``None`` when no offer awaits a yes.
+
+    Gateway turns resolve a fresh session object each message, so an offer
+    that lives only in memory is gone by the time the user answers ``yes``.
+    """
+    from core.agent_harness.session.pending_offer import PendingScheduleOffer
+
+    if not isinstance(offer, PendingScheduleOffer):
+        return None
+    return {
+        "kind": offer.kind,
+        "cron": offer.cron,
+        "timezone": offer.timezone,
+        "provider": offer.provider,
+        "chat_id": offer.chat_id,
+        "prompt": offer.prompt,
+        "skill_name": offer.skill_name,
+        "skill_inputs": dict(offer.skill_inputs),
+    }
+
+
+def _pending_schedule_offer_from_payload(raw: Any) -> Any:
+    """Rebuild a persisted schedule offer; ``None`` for a missing or malformed one."""
+    if not isinstance(raw, dict):
+        return None
+    required = ("kind", "cron", "timezone", "provider")
+    optional = ("chat_id", "prompt", "skill_name")
+    if not all(isinstance(raw.get(key), str) and raw[key].strip() for key in required):
+        return None
+    inputs_raw = raw.get("skill_inputs")
+    skill_inputs = (
+        {str(k): str(v) for k, v in inputs_raw.items() if isinstance(v, str)}
+        if isinstance(inputs_raw, dict)
+        else {}
+    )
+    from core.agent_harness.session.pending_offer import PendingScheduleOffer
+
+    return PendingScheduleOffer(
+        **{key: raw[key] for key in required},
+        **{key: raw[key] for key in optional if isinstance(raw.get(key), str)},
+        skill_inputs=skill_inputs,
+    )
 
 
 def session_goal_state_is_empty(snapshot: dict[str, Any]) -> bool:
@@ -164,6 +252,38 @@ def should_persist_session_goal_state(
     return last is not None
 
 
+def pending_session_goal_controls(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    branch_entry_ids: set[str] | None = None,
+) -> list[dict[str, str]]:
+    """Return durable goal controls that have no matching applied record."""
+    pending: dict[str, tuple[str, str]] = {}
+    for record in records:
+        if record.get("type") != SESSION_GOAL_CONTROL_RECORD_TYPE:
+            continue
+        control_id = record.get("control_id")
+        if not isinstance(control_id, str) or not control_id:
+            continue
+        status = record.get("status")
+        if status == SESSION_GOAL_CONTROL_APPLIED:
+            pending.pop(control_id, None)
+            continue
+        reason = record.get("reason")
+        target_entry_id = record.get("target_entry_id")
+        if (
+            status == SESSION_GOAL_CONTROL_REQUESTED
+            and isinstance(reason, str)
+            and isinstance(target_entry_id, str)
+        ):
+            pending[control_id] = (reason, target_entry_id)
+    return [
+        {"control_id": control_id, "reason": reason}
+        for control_id, (reason, target_entry_id) in pending.items()
+        if branch_entry_ids is None or target_entry_id in branch_entry_ids
+    ]
+
+
 def apply_session_goal_state(session: Any, payload: Any) -> None:
     """Rehydrate session goal / CTA state from a flush snapshot."""
     if not isinstance(payload, dict):
@@ -192,11 +312,19 @@ def apply_session_goal_state(session: Any, payload: Any) -> None:
             session.pending_integration_setup_offer = PendingIntegrationSetupOffer(
                 service_id=service_id
             )
+    if hasattr(session, "pending_schedule_offer"):
+        session.pending_schedule_offer = _pending_schedule_offer_from_payload(
+            payload.get("pending_schedule_offer")
+        )
 
 
 __all__ = [
     "SESSION_GOAL_STATE_CUSTOM_TYPE",
+    "SESSION_GOAL_CONTROL_APPLIED",
+    "SESSION_GOAL_CONTROL_RECORD_TYPE",
+    "SESSION_GOAL_CONTROL_REQUESTED",
     "apply_session_goal_state",
+    "pending_session_goal_controls",
     "session_goal_from_payload",
     "session_goal_state_is_empty",
     "session_goal_state_snapshot",

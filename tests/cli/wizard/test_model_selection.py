@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from surfaces.cli.wizard import _ui, flow
+from surfaces.cli.wizard import components, flow
 from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
 
@@ -29,7 +29,7 @@ def _wire_prompts(
         m.ask.return_value = next(text_iter)
         return m
 
-    monkeypatch.setattr(_ui, "select_prompt", _mock_select)
+    monkeypatch.setattr(components, "select_prompt", _mock_select)
     monkeypatch.setattr(flow.questionary, "text", _mock_text)
 
 
@@ -37,7 +37,7 @@ def test_choose_model_returns_curated_default(monkeypatch: pytest.MonkeyPatch) -
     provider = PROVIDER_BY_VALUE["anthropic"]
     _wire_prompts(monkeypatch, select_values=[provider.default_model])
 
-    model = _ui._choose_model(provider, default=provider.default_model)
+    model = components.choose_model(provider, default=provider.default_model)
 
     assert model == provider.default_model
 
@@ -53,13 +53,13 @@ def test_choose_model_offers_full_curated_list(monkeypatch: pytest.MonkeyPatch) 
         m.ask.return_value = provider.default_model
         return m
 
-    monkeypatch.setattr(_ui, "select_prompt", _mock_select)
+    monkeypatch.setattr(components, "select_prompt", _mock_select)
 
-    _ui._choose_model(provider, default="")
+    components.choose_model(provider, default="")
 
     expected_curated = [opt.value for opt in provider.models]
     assert captured["values"][:-1] == expected_curated
-    assert captured["values"][-1] == _ui._CUSTOM_MODEL_SENTINEL
+    assert captured["values"][-1] == components.CUSTOM_MODEL_SENTINEL
 
 
 def test_choose_model_preserves_saved_model_not_in_curated(
@@ -75,9 +75,9 @@ def test_choose_model_preserves_saved_model_not_in_curated(
         m.ask.return_value = "my-tuned-gpt"
         return m
 
-    monkeypatch.setattr(_ui, "select_prompt", _mock_select)
+    monkeypatch.setattr(components, "select_prompt", _mock_select)
 
-    model = _ui._choose_model(provider, default="my-tuned-gpt")
+    model = components.choose_model(provider, default="my-tuned-gpt")
 
     assert model == "my-tuned-gpt"
     assert "my-tuned-gpt" in captured["values"]
@@ -87,11 +87,11 @@ def test_choose_model_accepts_custom_entry(monkeypatch: pytest.MonkeyPatch) -> N
     provider = PROVIDER_BY_VALUE["anthropic"]
     _wire_prompts(
         monkeypatch,
-        select_values=[_ui._CUSTOM_MODEL_SENTINEL],
+        select_values=[components.CUSTOM_MODEL_SENTINEL],
         text_values=["claude-future-preview"],
     )
 
-    model = _ui._choose_model(provider, default=provider.default_model)
+    model = components.choose_model(provider, default=provider.default_model)
 
     assert model == "claude-future-preview"
 
@@ -101,7 +101,7 @@ def test_choose_model_works_for_cli_provider(monkeypatch: pytest.MonkeyPatch) ->
     provider = PROVIDER_BY_VALUE["codex"]
     _wire_prompts(monkeypatch, select_values=["gpt-5.4"])
 
-    model = _ui._choose_model(provider, default="")
+    model = components.choose_model(provider, default="")
 
     assert model == "gpt-5.4"
 
@@ -142,4 +142,29 @@ class TestGpt56CatalogPresence:
         provider = PROVIDER_BY_VALUE["openai"]
         _wire_prompts(monkeypatch, select_values=["gpt-5.6-sol"])
 
-        assert _ui._choose_model(provider, default="") == "gpt-5.6-sol"
+        assert components.choose_model(provider, default="") == "gpt-5.6-sol"
+
+
+class TestGpt61CatalogPresence:
+    """The hosted default model stays selectable on the OpenAI-family pickers."""
+
+    def test_pickers_list_gpt_6_1_sol(self) -> None:
+        openai_values = {option.value for option in PROVIDER_BY_VALUE["openai"].models}
+        codex_values = {option.value for option in PROVIDER_BY_VALUE["codex"].models}
+        openrouter_values = {option.value for option in PROVIDER_BY_VALUE["openrouter"].models}
+        assert "gpt-6.1-sol" in openai_values
+        assert "gpt-6.1-sol" in codex_values
+        assert "openai/gpt-6.1-sol" in openrouter_values
+
+
+class TestClaudeNewModelsCatalogPresence:
+    """Onboarding must keep the Anthropic default and accept a curated 5.x pick."""
+
+    def test_anthropic_default_model_is_unchanged(self) -> None:
+        assert PROVIDER_BY_VALUE["anthropic"].default_model == "claude-opus-4-7"
+
+    def test_anthropic_picker_selects_sonnet_5_5(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        provider = PROVIDER_BY_VALUE["anthropic"]
+        _wire_prompts(monkeypatch, select_values=["claude-sonnet-5-5"])
+
+        assert components.choose_model(provider, default="") == "claude-sonnet-5-5"

@@ -56,12 +56,10 @@ htmlcov/
 .tox/
 .nox/
 .hypothesis/
-.pytest_cache/
 nosetests.xml
 coverage.xml
 *.cover
 *.log
-!tests/synthetic/hermes/**/*.log
 .turn-shard-logs/
 
 # Jupyter Notebook
@@ -194,3 +192,10 @@ factory-ai-extract/
 
 # Local checkout of opensre-infra-aws — separate repo, never track here
 infrastructure/deployment_multi_tenant/
+
+# Smoke-test temp home dirs — hold real credentials/keys, never commit
+.tmp-home-smoke/
+.tmp-opensre-home/
+
+# Dev scratch output (e.g. dev/cicd_epoch_observer.py)
+.tmp/

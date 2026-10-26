@@ -6,12 +6,11 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from http import HTTPStatus
 from typing import Any
 
-import httpx
 from pydantic import Field, field_validator
 
+import integrations.sentry.client as _sentry_client
 from config.constants.sentry import (
     DEFAULT_SENTRY_BASE_URL,
     SENTRY_AUTH_TOKEN_ENV,
@@ -170,38 +169,17 @@ def _sanitize_sentry_query(query: str) -> str:
 
 
 def describe_sentry_api_error(
-    err: httpx.HTTPStatusError,
+    err: _sentry_client.HTTPStatusError,
     *,
     query: str = "",
     project_slug: str = "",
 ) -> str:
     """Turn a Sentry HTTP failure into an operator- and agent-friendly message."""
-    detail = ""
-    try:
-        body = err.response.json()
-        if isinstance(body, dict):
-            detail = str(body.get("detail") or body.get("error") or "").strip()
-    except Exception:
-        detail = err.response.text.strip()
-    if not detail:
-        detail = str(err)
-
-    hints: list[str] = []
-    if err.response.status_code == HTTPStatus.BAD_REQUEST:
-        if _OR_SPLIT.search(query.split("\n", maxsplit=1)[0]):
-            hints.append(
-                "Sentry issue search does not support OR; use one keyword or phrase at a time."
-            )
-        if project_slug:
-            hints.append(f"Verify project slug {project_slug!r} exists in the organization.")
-        hints.append(
-            "Prefer short free-text keywords or field filters such as is:unresolved level:error."
-        )
-
-    message = f"Sentry API returned HTTP {err.response.status_code}: {detail}"
-    if hints:
-        message = f"{message} {' '.join(hints)}"
-    return message
+    return _sentry_client.describe_sentry_api_error(
+        err,
+        query_has_or=bool(_OR_SPLIT.search(query.split("\n", maxsplit=1)[0])),
+        project_slug=project_slug,
+    )
 
 
 def _build_issue_list_params(
@@ -223,25 +201,6 @@ def _build_issue_list_params(
     if config.project_slug:
         params.append(("project", config.project_slug))
     return params
-
-
-def _request_json(
-    config: SentryConfig,
-    method: str,
-    path: str,
-    *,
-    params: list[tuple[str, str | int | float | bool | None]] | None = None,
-) -> Any:
-    url = f"{config.api_base_url}{path}"
-    response = httpx.request(
-        method,
-        url,
-        headers=config.auth_headers,
-        params=params,
-        timeout=config.timeout_seconds,
-    )
-    response.raise_for_status()
-    return response.json()
 
 
 def validate_sentry_config(config: SentryConfig) -> SentryValidationResult:
@@ -273,7 +232,7 @@ def validate_sentry_config(config: SentryConfig) -> SentryValidationResult:
             ),
             issue_count=issue_count,
         )
-    except httpx.HTTPStatusError as err:
+    except _sentry_client.HTTPStatusError as err:
         detail = err.response.text.strip() or str(err)
         return SentryValidationResult(ok=False, detail=f"Sentry validation failed: {detail}")
     except Exception as err:
@@ -299,31 +258,20 @@ def list_sentry_issues(
     (e.g. ``24h``, ``14d``) defaults to ``SENTRY_STATS_PERIOD`` then ``24h``.
     """
 
-    path = f"/api/0/organizations/{config.organization_slug}/issues/"
-    last_error: httpx.HTTPStatusError | None = None
-    for candidate in _sentry_query_candidates(query):
-        try:
-            payload = _request_json(
-                config,
-                "GET",
-                path,
-                params=_build_issue_list_params(
-                    config,
-                    limit,
-                    query,
-                    stats_period,
-                    normalized_query=candidate,
-                ),
-            )
-            return payload if isinstance(payload, list) else []
-        except httpx.HTTPStatusError as err:
-            if err.response.status_code == HTTPStatus.BAD_REQUEST:
-                last_error = err
-                continue
-            raise
-    if last_error is not None:
-        raise last_error
-    return []
+    params_by_candidate = (
+        _build_issue_list_params(
+            config,
+            limit,
+            query,
+            stats_period,
+            normalized_query=candidate,
+        )
+        for candidate in _sentry_query_candidates(query)
+    )
+    return _sentry_client.list_sentry_issues(
+        config=config,
+        params_by_candidate=params_by_candidate,
+    )
 
 
 def get_sentry_issue(
@@ -333,12 +281,7 @@ def get_sentry_issue(
 ) -> dict[str, Any]:
     """Fetch full details for one Sentry issue."""
 
-    payload = _request_json(
-        config,
-        "GET",
-        f"/api/0/organizations/{config.organization_slug}/issues/{issue_id}/",
-    )
-    return payload if isinstance(payload, dict) else {}
+    return _sentry_client.get_sentry_issue(config=config, issue_id=issue_id)
 
 
 def list_sentry_issue_events(
@@ -349,13 +292,11 @@ def list_sentry_issue_events(
 ) -> list[dict[str, Any]]:
     """List recent events for a Sentry issue."""
 
-    payload = _request_json(
-        config,
-        "GET",
-        f"/api/0/organizations/{config.organization_slug}/issues/{issue_id}/events/",
-        params=[("limit", str(limit))],
+    return _sentry_client.list_sentry_issue_events(
+        config=config,
+        issue_id=issue_id,
+        limit=limit,
     )
-    return payload if isinstance(payload, list) else []
 
 
 def classify(credentials: dict[str, Any], record_id: str) -> tuple[SentryConfig | None, str | None]:
@@ -375,3 +316,21 @@ def classify(credentials: dict[str, Any], record_id: str) -> tuple[SentryConfig 
     if cfg.organization_slug and cfg.auth_token:
         return cfg, "sentry"
     return None, None
+
+
+__all__ = [
+    "DEFAULT_SENTRY_ISSUE_LIMIT",
+    "DEFAULT_SENTRY_STATS_PERIOD",
+    "DEFAULT_SENTRY_URL",
+    "SentryConfig",
+    "SentryValidationResult",
+    "build_sentry_config",
+    "classify",
+    "describe_sentry_api_error",
+    "get_sentry_auth_recommendations",
+    "get_sentry_issue",
+    "list_sentry_issue_events",
+    "list_sentry_issues",
+    "sentry_config_from_env",
+    "validate_sentry_config",
+]

@@ -22,8 +22,8 @@ _POSIX_ONLY_MODULES = ("resource", "fcntl", "termios", "pwd", "grp")
 
 # The exact boot chain __main__ runs at startup (see surfaces .../boundary.py).
 _BOOT_CALL = (
-    "from surfaces.shared.terminal.output.boundary import install_harness_ports\n"
-    "install_harness_ports()"
+    "from surfaces.shared.terminal.output.boundary import install_harness_providers\n"
+    "install_harness_providers()"
 )
 
 

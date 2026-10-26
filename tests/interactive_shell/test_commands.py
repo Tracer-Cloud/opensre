@@ -6,26 +6,29 @@ import io
 import json
 import subprocess
 import sys
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
-from core.agent_harness.session import SessionCore
-from core.agent_harness.session.persistence.memory import InMemorySessionStore
-from infrastructure.scheduling.task_types import TaskKind, TaskStatus
+from config.account import AccountLLMRoute
+from config.constants.conversation_history import (
+    HISTORY_COMPACT_AFTER_TURNS,
+    HISTORY_KEEP_MAX_TURNS,
+    OPENSRE_HISTORY_TOKEN_BUDGET_ENV,
+    OPENSRE_LLM_COMPACTION_ENV,
+    OPENSRE_STRUCTURED_HISTORY_ENV,
+)
+from config.constants.runtime_metadata import OPENSRE_WORKSPACE_REPO_ENV
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
-from surfaces.interactive_shell.command_registry.investigation import (
-    _validate_investigate_args,
-    _validate_save_args,
-)
 from surfaces.interactive_shell.command_registry.tasks_cmds import _validate_cancel_args
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.session.background_investigations import (
-    BackgroundInvestigationRecord,
-)
 from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 
 
@@ -34,10 +37,32 @@ def _capture() -> tuple[Console, io.StringIO]:
     return Console(file=buf, force_terminal=False, highlight=False), buf
 
 
+def _recording_dispatch(dispatched: list[str]) -> Callable[[str, Any, Any], bool]:
+    """Record the slash text a handler re-dispatches, and report success."""
+
+    def _dispatch(command: str, _session: Any, _console: Any) -> bool:
+        dispatched.append(command)
+        return True
+
+    return _dispatch
+
+
+def _signed_out() -> None:
+    return None
+
+
+def _signed_in() -> AccountLLMRoute:
+    return AccountLLMRoute(base_url="https://app.opensre.test/api/llm", model="gpt-5.4-mini")
+
+
+def _menu_must_not_open(**_kwargs: object) -> str:
+    raise AssertionError("an account-managed shell must refuse before opening a menu")
+
+
 class TestDispatchSlash:
     def test_exit_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "surfaces.interactive_shell.command_registry.system._flush_analytics_on_exit",
+            "surfaces.interactive_shell.runtime.exit_control._flush_analytics_on_exit",
             lambda _console: None,
         )
         session = Session()
@@ -52,7 +77,7 @@ class TestDispatchSlash:
             calls.append("flush")
 
         monkeypatch.setattr(
-            "surfaces.interactive_shell.command_registry.system._flush_analytics_on_exit",
+            "surfaces.interactive_shell.runtime.exit_control._flush_analytics_on_exit",
             _flush,
         )
         session = Session()
@@ -116,6 +141,35 @@ class TestDispatchSlash:
         assert "timed out" in buf.getvalue()
         assert session.history[-1]["ok"] is False
 
+    @pytest.mark.parametrize("command", ["/account logout", "/logout"])
+    def test_account_logout_closes_shell_before_another_model_turn(
+        self, monkeypatch: pytest.MonkeyPatch, command: str
+    ) -> None:
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        monkeypatch.setattr(m, "run_cli_command", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr("config.account.account_llm_route", lambda: None)
+        console, output = _capture()
+
+        assert dispatch_slash(command, Session(), console) is False
+        assert "Closing the interactive shell" in output.getvalue()
+
+    def test_logout_with_a_provider_does_not_sign_out(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        def _unexpected_cli(*_args: object, **_kwargs: object) -> bool:
+            raise AssertionError("provider arguments must not sign out of the account")
+
+        monkeypatch.setattr(m, "run_cli_command", _unexpected_cli)
+        console, output = _capture()
+
+        assert dispatch_slash("/logout deepseek", Session(), console) is True
+        text = output.getvalue()
+        assert "/auth logout deepseek" in text
+        assert "Closing the interactive shell" not in text
+
     def test_help_lists_all_commands(self) -> None:
         session = Session()
         console, buf = _capture()
@@ -148,7 +202,12 @@ class TestDispatchSlash:
         output = buf.getvalue()
         assert "Show or change active LLM settings." in output
         assert "/model set <provider>" in output
-        assert "In a TTY, bare /model opens an interactive menu." in output
+        assert "Typed bare /model opens an interactive menu" in output
+        from surfaces.interactive_shell.command_registry.model.command import COMMANDS as model_cmds
+
+        notes = " ".join(model_cmds[0].notes)
+        assert "slash_invoke" in notes
+        assert "shows current settings" in notes
 
     def test_help_category_shows_compact_section(self) -> None:
         session = Session()
@@ -169,13 +228,99 @@ class TestDispatchSlash:
         picker_called: list[bool] = []
         monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
         monkeypatch.setattr(
-            help_cmd, "choose_help_command", lambda _sections: picker_called.append(True)
+            help_cmd, "browse_help_commands", lambda _sections: picker_called.append(True)
         )
 
         assert dispatch_slash("/help", session, console) is True
 
         assert picker_called == [True]
         assert buf.getvalue() == ""
+
+    @pytest.mark.parametrize(
+        ("selected", "subcommand", "expected"),
+        [
+            ("/integrations", "list", "/integrations list"),
+            ("/mcp", "connect", "/mcp connect"),
+            ("/model", "restore", "/model restore"),
+            ("/work", "add", "/work add"),
+        ],
+    )
+    def test_tty_help_offers_subcommands_before_running_a_command(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        selected: str,
+        subcommand: str,
+        expected: str,
+    ) -> None:
+        """A command with subcommands must ask which one, not pick a default."""
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        dispatched: list[str] = []
+        offered: list[str] = []
+
+        def _pick(*, parent: str, options: tuple[tuple[str, str], ...]) -> str:
+            offered.append(parent)
+            assert subcommand in [name for name, _meta in options]
+            return subcommand
+
+        monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: selected)
+        monkeypatch.setattr(help_cmd, "repl_choose_subcommand", _pick)
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.dispatch_slash",
+            _recording_dispatch(dispatched),
+        )
+
+        assert dispatch_slash("/help", Session(), _capture()[0]) is True
+        assert offered == [selected]
+        assert dispatched == [expected]
+
+    def test_tty_help_runs_a_command_without_subcommands_directly(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        dispatched: list[str] = []
+        monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: "/status")
+        monkeypatch.setattr(
+            help_cmd,
+            "repl_choose_subcommand",
+            lambda **_kwargs: pytest.fail("/status has no subcommands to offer"),
+        )
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.dispatch_slash",
+            _recording_dispatch(dispatched),
+        )
+
+        assert dispatch_slash("/help", Session(), _capture()[0]) is True
+        assert dispatched == ["/status"]
+
+    def test_tty_help_escaping_the_subcommand_picker_runs_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Esc in the subcommand picker backs out; it must not run a default."""
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        dispatched: list[str] = []
+        monkeypatch.setattr(help_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(help_cmd, "browse_help_commands", lambda _sections: "/integrations")
+        monkeypatch.setattr(help_cmd, "repl_choose_subcommand", lambda **_kwargs: None)
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.dispatch_slash",
+            _recording_dispatch(dispatched),
+        )
+
+        assert dispatch_slash("/help", Session(), _capture()[0]) is True
+        assert dispatched == []
+
+    def test_a_flag_only_completion_list_opens_no_subcommand_picker(self) -> None:
+        # /rename completes "--reset", a flag rather than a subcommand; its
+        # normal use is "/rename <new name>", so a one-row picker is noise.
+        from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
+        from surfaces.interactive_shell.command_registry import help as help_cmd
+
+        assert help_cmd._subcommand_options(SLASH_COMMANDS["/rename"]) == ()
 
     def test_bare_slash_previews_all_commands(self) -> None:
         session = Session()
@@ -195,6 +340,24 @@ class TestDispatchSlash:
         assert session.terminal.trust_mode is True
         dispatch_slash("/trust off", session, console)
         assert session.terminal.trust_mode is False
+
+    def test_auto_sets_med(self) -> None:
+        session = Session()
+        console, buf = _capture()
+        dispatch_slash("/auto med", session, console)
+        assert session.terminal.auto_level == "med"
+        assert "Auto (Med)" in buf.getvalue()
+        assert "approve shell and mutating tools" in buf.getvalue()
+
+    def test_auto_bare_shows_default_and_levels(self) -> None:
+        session = Session()
+        console, buf = _capture()
+        dispatch_slash("/auto", session, console)
+        out = buf.getvalue()
+        assert "Auto (High)" in out
+        assert "default:" in out
+        assert "off" in out and "all actions require approval" in out
+        assert "/trust on skips approval" in out
 
     def test_effort_sets_session_preference(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class _FakeLLM:
@@ -241,14 +404,12 @@ class TestDispatchSlash:
     def test_new_clears_session(self) -> None:
         session = Session()
         session.record("alert", "test")
-        session.last_state = {"x": 1}
         session.terminal.trust_mode = True
         console, _ = _capture()
 
         dispatch_slash("/new", session, console)
 
         assert session.history == []
-        assert session.last_state is None
         assert session.terminal.trust_mode is True  # /new keeps trust mode
 
     def test_status_shows_session_fields(self) -> None:
@@ -261,341 +422,6 @@ class TestDispatchSlash:
         assert "interactions" in output
         assert "reasoning effort" in output
         assert "trust mode" in output
-        assert "grounding cli cache" in output
-        assert "grounding docs cache" in output
-
-    def test_background_toggle_and_status(self) -> None:
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/background on", session, console) is True
-        assert session.terminal.background_mode_enabled is True
-
-        assert dispatch_slash("/background status", session, console) is True
-        output = buf.getvalue()
-        assert "Background mode" in output
-        assert "notify channels" in output
-        assert "none" in output
-
-    def test_background_list_empty_message(self) -> None:
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/background list", session, console) is True
-        assert "no background investigations" in buf.getvalue().lower()
-
-    def test_background_show_and_use_completed_record(self) -> None:
-        session = Session()
-        session.terminal.background_investigations["bg123"] = BackgroundInvestigationRecord(
-            task_id="bg123",
-            status="completed",
-            command="free-text investigation",
-            root_cause="database connection pool exhausted",
-            top_analysis=("rds cpu saturation",),
-            next_steps=("scale the connection pool",),
-            final_state={"root_cause": "database connection pool exhausted", "service": "api"},
-        )
-        console, buf = _capture()
-
-        assert dispatch_slash("/background show bg123", session, console) is True
-        assert "database connection pool exhausted" in buf.getvalue()
-
-        assert dispatch_slash("/background use bg123", session, console) is True
-        assert session.last_state == {
-            "root_cause": "database connection pool exhausted",
-            "service": "api",
-        }
-        assert session.accumulated_context["service"] == "api"
-
-    def test_background_notify_set_rejects_invalid_channel(self) -> None:
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/background notify set pagerduty", session, console) is True
-        output = buf.getvalue()
-        assert "invalid channel" in output
-        assert session.terminal.background_notification_preferences.channels == ()
-
-    def test_background_notify_set_updates_channels(self) -> None:
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/background notify set email", session, console)
-        assert session.terminal.background_notification_preferences.channels == ("email",)
-        assert "background notify channels set" in buf.getvalue().lower()
-
-    def test_background_notify_set_accepts_telegram(self) -> None:
-        """AC-1: /background notify set telegram is accepted, stores ("telegram",)."""
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/background notify set telegram", session, console) is True
-        assert session.terminal.background_notification_preferences.channels == ("telegram",)
-        output = buf.getvalue()
-        assert "background notify channels set" in output.lower()
-        assert "invalid channel" not in output.lower()
-
-    def test_background_read_forms_survive_a_headless_session(self) -> None:
-        """Chat transports dispatch literal slashes against SessionCore, which has
-        no terminal facet; the read forms must report empty state, not raise."""
-        session = SessionCore(store=InMemorySessionStore())
-        console, buf = _capture()
-
-        assert dispatch_slash("/background list", session, console) is True
-        assert "no background investigations" in buf.getvalue().lower()
-
-    def test_background_status_survives_a_headless_session(self) -> None:
-        session = SessionCore(store=InMemorySessionStore())
-        console, buf = _capture()
-
-        assert dispatch_slash("/background status", session, console) is True
-        assert "background mode" in buf.getvalue().lower()
-
-    @pytest.mark.parametrize("form", ["on", "off", "notify set email"])
-    def test_background_write_forms_are_interactive_shell_only(self, form: str) -> None:
-        """Write forms have no headless equivalent: background_mode_enabled has no
-        setter and preferences live on the terminal facet. They must point at the
-        REPL rather than crashing or silently doing nothing."""
-        session = SessionCore(store=InMemorySessionStore())
-        console, buf = _capture()
-
-        assert dispatch_slash(f"/background {form}", session, console) is True
-        assert "uv run opensre" in buf.getvalue()
-
-    @pytest.mark.parametrize(
-        "form",
-        ["", "status", "list", "show bg123", "use bg123", "notify list", "bogus"],
-    )
-    def test_background_every_form_answers_on_a_headless_session(self, form: str) -> None:
-        """No form may raise on SessionCore: chat transports dispatch all of them."""
-        session = SessionCore(store=InMemorySessionStore())
-        console, buf = _capture()
-
-        assert dispatch_slash(f"/background {form}".strip(), session, console) is True
-        assert buf.getvalue().strip()
-
-    def test_background_notify_set_accepts_email_and_telegram_combined(self) -> None:
-        """AC-2: email,telegram combined -> both stored, first-seen order preserved."""
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/background notify set email,telegram", session, console) is True
-        assert session.terminal.background_notification_preferences.channels == (
-            "email",
-            "telegram",
-        )
-
-    def test_background_notify_set_invalid_channel_hint_lists_telegram(self) -> None:
-        """AC-3: invalid channels are still rejected; the (allowed: ...) hint now lists telegram."""
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/background notify set pagerduty", session, console) is True
-        output = buf.getvalue()
-        assert "invalid channel" in output
-        assert session.terminal.background_notification_preferences.channels == ()
-        # Listed individually, not as an adjacent pair: the hint now comes from the
-        # adapter registry, which reports capable channels sorted.
-        assert "email" in output
-        assert "telegram" in output
-
-    def test_background_notify_set_telegram_shows_in_list_and_status(self) -> None:
-        """AC-21: after setting telegram, /background notify list and the /background status
-        notify row both render it (both renderers are `', '.join(...channels)` with no
-        hardcoded literal).
-        """
-        session = Session()
-        set_console, _ = _capture()
-
-        assert dispatch_slash("/background notify set telegram", session, set_console) is True
-        assert session.terminal.background_notification_preferences.channels == ("telegram",)
-
-        list_console, list_buf = _capture()
-        assert dispatch_slash("/background notify list", session, list_console) is True
-        assert "telegram" in list_buf.getvalue().lower()
-
-        status_console, status_buf = _capture()
-        assert dispatch_slash("/background status", session, status_console) is True
-        assert "telegram" in status_buf.getvalue().lower()
-
-    def test_background_notify_set_dedupes_duplicate_telegram_channel(self) -> None:
-        """AC-27a (command layer): telegram,telegram collapses to a single stored channel."""
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/background notify set telegram,telegram", session, console) is True
-        assert session.terminal.background_notification_preferences.channels == ("telegram",)
-        assert "invalid channel" not in buf.getvalue().lower()
-
-    def test_background_list_reports_an_unreadable_store_without_leaking_the_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """dispatch_slash puts no try around the handler, so an escaping store error
-        reaches the transport's generic error path and logs a traceback. The message
-        also carries the absolute document path, and unlike the REPL terminal a chat
-        transport is an external sink, so the path must not reach the reply."""
-        document = tmp_path / "background" / "investigations.json"
-        document.parent.mkdir(parents=True)
-        document.write_text("{not json", encoding="utf-8")
-        monkeypatch.setattr(
-            "config.constants.paths.deployment_home", lambda: tmp_path, raising=False
-        )
-        session = SessionCore(store=InMemorySessionStore())
-        console, buf = _capture()
-
-        assert dispatch_slash("/background list", session, console) is True
-
-        output = buf.getvalue()
-        assert "background records" in output.lower()
-        assert str(tmp_path) not in output
-        assert "investigations.json" not in output
-
-    def test_background_notify_set_survives_into_the_next_session(self) -> None:
-        """Without hydration the document is write-only: the channels persist and
-        the next shell still reads none, so the setting silently never applies."""
-        session = Session()
-        console, _ = _capture()
-        assert dispatch_slash("/background notify set telegram,email", session, console) is True
-
-        fresh = Session()
-
-        assert fresh.terminal.background_notification_preferences.channels == (
-            "telegram",
-            "email",
-        )
-        listed, buf = _capture()
-        assert dispatch_slash("/background notify list", fresh, listed) is True
-        assert "telegram" in buf.getvalue()
-
-    def test_background_notify_list_reads_the_store_on_a_headless_session(self) -> None:
-        """A chat session has no terminal facet to hold preferences, so it would
-        answer "none" however the shell was configured."""
-        shell = Session()
-        console, _ = _capture()
-        assert dispatch_slash("/background notify set rocketchat", shell, console) is True
-
-        headless = SessionCore(store=InMemorySessionStore())
-        chat_console, buf = _capture()
-        assert dispatch_slash("/background notify list", headless, chat_console) is True
-
-        assert "rocketchat" in buf.getvalue()
-
-    def test_background_notify_set_validates_against_the_adapter_registry(self) -> None:
-        """AC-4 asks that adapters declare background support rather than a curated
-        list deciding it. Registering one makes its channel acceptable without any
-        edit here, which a hardcoded tuple cannot do."""
-        from bootstrap.adapters import install_notification_adapters
-        from infrastructure.delivery.notifications.outbound_registry import (
-            BACKGROUND_RCA,
-            clear_outbound_adapters,
-            get_outbound_adapter,
-            register_outbound_adapter,
-        )
-
-        class _StubAdapter:
-            name = "pagerduty"
-            capabilities = frozenset({BACKGROUND_RCA})
-
-            def deliver(self, record: BackgroundInvestigationRecord) -> str:
-                _ = record
-                return "sent"
-
-        session = Session()
-        console, buf = _capture()
-        register_outbound_adapter(_StubAdapter())
-        try:
-            assert dispatch_slash("/background notify set pagerduty", session, console) is True
-            assert session.terminal.background_notification_preferences.channels == ("pagerduty",)
-            assert "invalid channel" not in buf.getvalue().lower()
-        finally:
-            # Clearing alone would leave every later test in this worker with an
-            # empty registry, silently turning each channel into "unsupported".
-            clear_outbound_adapters()
-            install_notification_adapters()
-        assert get_outbound_adapter("pagerduty") is None
-        assert get_outbound_adapter("telegram") is not None
-
-    def test_background_show_renders_real_dispatcher_telegram_sent(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """AC-8: results come from the REAL deliver_background_notifications dispatcher
-        (mocked only at the telegram transport boundary), not a hand-constructed dict —
-        a hand-built notification_results would be vacuous per AC-30. On pristine code the
-        dispatcher's `channel != "email"` fallthrough yields "unsupported" for telegram, so
-        this assertion fails until the telegram branch is implemented.
-        """
-        from integrations.telegram.credentials import TelegramCredentials
-        from surfaces.interactive_shell.runtime.background.notifications import (
-            deliver_background_notifications,
-        )
-
-        monkeypatch.setattr(
-            "integrations.telegram.credentials.load_credentials_from_env",
-            lambda **_: TelegramCredentials(bot_token="tok", chat_id="chat-1"),
-        )
-        monkeypatch.setattr(
-            "integrations.telegram.delivery.send_telegram_report",
-            lambda *_args, **_kwargs: (True, ""),
-        )
-
-        record = BackgroundInvestigationRecord(
-            task_id="bg-show-telegram-sent",
-            status="completed",
-            command="free-text",
-            root_cause="AC8 sentinel root cause",
-        )
-        record.notification_results = deliver_background_notifications(
-            record=record, channels=("telegram",)
-        )
-
-        session = Session()
-        session.terminal.background_investigations["bg-show-telegram-sent"] = record
-        console, buf = _capture()
-
-        assert dispatch_slash("/background show bg-show-telegram-sent", session, console) is True
-        assert "telegram:sent" in buf.getvalue()
-
-    def test_background_show_renders_real_dispatcher_telegram_failed_bracketed_long_value(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """AC-29: same real-dispatcher route as AC-8, but the telegram transport reports
-        failure with a bracketed, very-long error string. /background show must render it
-        (via rich.markup.escape + overflow="fold") without raising rich.errors.MarkupError,
-        and the bracketed prefix must survive in the output. On pristine code the dispatcher
-        never reaches the transport mock (falls through to "unsupported"), so the bracketed
-        prefix never appears in notification_results and this assertion fails.
-        """
-        from integrations.telegram.credentials import TelegramCredentials
-        from surfaces.interactive_shell.runtime.background.notifications import (
-            deliver_background_notifications,
-        )
-
-        monkeypatch.setattr(
-            "integrations.telegram.credentials.load_credentials_from_env",
-            lambda **_: TelegramCredentials(bot_token="tok", chat_id="chat-1"),
-        )
-        hostile_error = "[oom-killer] " + "x" * 500
-        monkeypatch.setattr(
-            "integrations.telegram.delivery.send_telegram_report",
-            lambda *_args, **_kwargs: (False, hostile_error),
-        )
-
-        record = BackgroundInvestigationRecord(
-            task_id="bg-show-telegram-failed",
-            status="completed",
-            command="free-text",
-            root_cause="AC29 sentinel root cause",
-        )
-        record.notification_results = deliver_background_notifications(
-            record=record, channels=("telegram",)
-        )
-
-        session = Session()
-        session.terminal.background_investigations["bg-show-telegram-failed"] = record
-        console, buf = _capture()
-
-        assert dispatch_slash("/background show bg-show-telegram-failed", session, console) is True
-        assert "[oom-killer]" in buf.getvalue()
 
     def test_unknown_command_does_not_exit(self) -> None:
         session = Session()
@@ -615,26 +441,6 @@ class TestDispatchSlash:
     def test_local_llm_is_not_a_builtin_slash_action(self) -> None:
         assert "/local-llm" not in SLASH_COMMANDS
         assert "/local_llm" not in SLASH_COMMANDS
-
-    def test_hermes_slash_command_delegates_to_bare_cli(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from surfaces.interactive_shell.command_registry import cli_parity
-
-        calls: list[list[str]] = []
-
-        def _fake_run_cli_command(_console: Console, args: list[str], **kwargs: object) -> bool:
-            del kwargs
-            calls.append(args)
-            return True
-
-        monkeypatch.setattr(cli_parity, "run_cli_command", _fake_run_cli_command)
-
-        session = Session()
-        console, _ = _capture()
-
-        assert dispatch_slash("/hermes", session, console) is True
-        assert calls == [["hermes"]]
 
     def test_empty_input_is_noop(self) -> None:
         session = Session()
@@ -665,64 +471,14 @@ class TestDispatchSlash:
         assert "/integrations list" in output
         assert "current session only" not in output
 
-    def test_investigate_file_read_failure_is_reported(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        captured_errors: list[BaseException] = []
-
-        monkeypatch.setattr(Path, "exists", lambda _self: True)
-        monkeypatch.setattr(
-            Path,
-            "read_text",
-            lambda _self, **_kwargs: (_ for _ in ()).throw(RuntimeError("read broke")),
-        )
-        monkeypatch.setattr(
-            "surfaces.shared.error_handling.exception_reporting.capture_exception",
-            lambda exc, **_kwargs: captured_errors.append(exc),
-        )
-
-        session = Session()
-        console, buf = _capture()
-
-        assert dispatch_slash("/investigate incident.json", session, console) is True
-
-        assert "cannot read file" in buf.getvalue()
-        assert len(captured_errors) == 1
-        assert isinstance(captured_errors[0], RuntimeError)
-
-    def test_save_failure_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        captured_errors: list[BaseException] = []
-
-        monkeypatch.setattr(
-            Path,
-            "write_text",
-            lambda _self, *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("write broke")),
-        )
-        monkeypatch.setattr(
-            "surfaces.shared.error_handling.exception_reporting.capture_exception",
-            lambda exc, **_kwargs: captured_errors.append(exc),
-        )
-
-        session = Session()
-        session.last_state = {"root_cause": "cache issue", "problem_md": "details"}
-        console, buf = _capture()
-
-        assert dispatch_slash("/save report.md", session, console) is True
-
-        assert "save failed" in buf.getvalue()
-        assert len(captured_errors) == 1
-        assert isinstance(captured_errors[0], RuntimeError)
-
 
 class TestSpecificListCommands:
-    """Coverage for /integrations list, /mcp list, /model show, and /tools list."""
+    """Coverage for /integrations list, /mcp list, /model show, and /tools."""
 
     _FAKE_INTEGRATIONS = [
         {"service": "datadog", "source": "store", "status": "ok", "detail": "API ok"},
         {"service": "slack", "source": "env", "status": "failed", "detail": "No bot token"},
         {"service": "github", "source": "store", "status": "ok", "detail": "MCP ok"},
-        {"service": "openclaw", "source": "store", "status": "failed", "detail": "401 from server"},
     ]
 
     def _patch_verify(self, monkeypatch: object) -> None:
@@ -739,7 +495,6 @@ class TestSpecificListCommands:
         output = buf.getvalue()
         assert "datadog" in output
         assert "slack" in output
-        assert "openclaw" in output
         assert "github" in output
 
     def test_mcp_list_shows_only_mcp_services(self, monkeypatch: object) -> None:
@@ -747,7 +502,6 @@ class TestSpecificListCommands:
         console, buf = _capture()
         dispatch_slash("/mcp list", Session(), console)
         output = buf.getvalue()
-        assert "openclaw" in output
         assert "github" in output
         assert "datadog" not in output
 
@@ -766,10 +520,23 @@ class TestSpecificListCommands:
         console, buf = _capture()
         dispatch_slash("/model show", Session(), console)
         output = buf.getvalue()
-        assert "provider" in output
-        assert "reasoning model" in output
-        assert "toolcall model" in output
+        assert "local configuration" in output
+        assert "Provider" in output
+        assert "Reasoning model" in output
+        assert "Toolcall model" in output
         assert "anthropic" in output
+
+    def test_model_show_identifies_the_opensre_webapp_source(self, monkeypatch: object) -> None:
+        self._patch_llm(monkeypatch)
+        monkeypatch.setattr(
+            "config.account.account_llm_route",
+            object,
+        )
+        console, buf = _capture()
+
+        dispatch_slash("/model show", Session(), console)
+
+        assert "OpenSRE webapp" in buf.getvalue()
 
     def test_model_show_displays_ollama_model(self, monkeypatch: object) -> None:
         class _FakeLLM:
@@ -790,6 +557,23 @@ class TestSpecificListCommands:
         dispatch_slash("/model show", Session(), console)
         assert "LLM settings unavailable" in buf.getvalue()
 
+    def test_model_provider_menu_starts_focused_then_other(self, monkeypatch: object) -> None:
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+        from surfaces.shared.llm_setup.provider_choices import FOCUSED_SETUP_PROVIDER_VALUES
+
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+
+        primary_values = [value for value, _label in model_cmd._provider_menu_choices()]
+        other_values = [value for value, _label in model_cmd._other_provider_menu_choices()]
+
+        assert primary_values == [
+            *FOCUSED_SETUP_PROVIDER_VALUES,
+            model_cmd.OTHER_PROVIDER_SELECTION,
+        ]
+        assert "anthropic" not in primary_values
+        assert "anthropic" in other_values
+        assert not set(FOCUSED_SETUP_PROVIDER_VALUES).intersection(other_values)
+
     def test_integrations_list_empty_prints_onboarding_hint(self, monkeypatch: object) -> None:
         monkeypatch.setattr(
             repl_data_module,
@@ -798,7 +582,7 @@ class TestSpecificListCommands:
         )
         console, buf = _capture()
         dispatch_slash("/integrations list", Session(), console)
-        assert "opensre onboard" in buf.getvalue()
+        assert "opensre integrations setup" in buf.getvalue()
 
     def test_tools_list_prints_registered_tools(self, monkeypatch: object) -> None:
         from surfaces.interactive_shell.command_registry import tools_cmds as tools_cmd_module
@@ -809,7 +593,7 @@ class TestSpecificListCommands:
             lambda: [
                 ToolCatalogEntry(
                     name="search_github",
-                    surfaces=("investigation", "chat"),
+                    surfaces=("chat", "action"),
                     description="Search GitHub code.",
                     source_file="tools/search_github.py",
                     input_schema_summary="query: string",
@@ -818,10 +602,10 @@ class TestSpecificListCommands:
         )
 
         console, buf = _capture()
-        dispatch_slash("/tools list", Session(), console)
+        dispatch_slash("/tools", Session(), console)
         output = buf.getvalue()
         assert "search_github" in output
-        assert "investigation" in output
+        assert "chat" in output
         assert "Search GitHub code." in output
 
 
@@ -852,11 +636,12 @@ class TestIntegrationsCommand:
         assert "datadog" in output
         assert "github" in output
 
-    def test_list_is_default_when_no_subcommand(self, monkeypatch: object) -> None:
+    def test_bare_command_shows_list_usage(self, monkeypatch: object) -> None:
         self._patch(monkeypatch)
         console, buf = _capture()
         dispatch_slash("/integrations", Session(), console)
-        assert "datadog" in buf.getvalue()
+        assert "usage:" in buf.getvalue()
+        assert "/integrations list" in buf.getvalue()
 
     def test_verify_reports_issues(self, monkeypatch: object) -> None:
         self._patch(monkeypatch)
@@ -1013,7 +798,7 @@ class TestIntegrationsCommand:
         assert captured == [["integrations", "setup"]]
 
     def test_remove_uses_native_store_removal(self, monkeypatch: object) -> None:
-        import infrastructure.analytics.cli as analytics_cli
+        import infrastructure.analytics.capture as analytics_cli
         import integrations.store as store
         from surfaces.interactive_shell.command_registry import integrations as m
 
@@ -1040,7 +825,6 @@ class TestIntegrationsCommand:
 class TestMcpCommand:
     _FAKE = [
         {"service": "github", "source": "store", "status": "ok", "detail": "MCP ok"},
-        {"service": "openclaw", "source": "store", "status": "ok", "detail": "ok"},
     ]
 
     def _patch(self, monkeypatch: object) -> None:
@@ -1056,11 +840,12 @@ class TestMcpCommand:
         dispatch_slash("/mcp list", Session(), console)
         assert "github" in buf.getvalue()
 
-    def test_list_is_default_when_no_subcommand(self, monkeypatch: object) -> None:
+    def test_bare_command_shows_list_usage(self, monkeypatch: object) -> None:
         self._patch(monkeypatch)
         console, buf = _capture()
         dispatch_slash("/mcp", Session(), console)
-        assert "github" in buf.getvalue()
+        assert "usage:" in buf.getvalue()
+        assert "/mcp list" in buf.getvalue()
 
     def test_connect_delegates_to_cli(self, monkeypatch: object) -> None:
         from surfaces.interactive_shell.command_registry import integrations as m
@@ -1073,7 +858,7 @@ class TestMcpCommand:
         assert captured == [["integrations", "setup"]]
 
     def test_disconnect_uses_native_store_removal(self, monkeypatch: object) -> None:
-        import infrastructure.analytics.cli as analytics_cli
+        import infrastructure.analytics.capture as analytics_cli
         import integrations.store as store
         from surfaces.interactive_shell.command_registry import integrations as m
 
@@ -1138,12 +923,18 @@ class TestModelCommand:
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        selections = iter(["set", "anthropic", "__provider_default__"])
+        # The root list is the tray-styled subcommand picker; the provider and
+        # model submenus below it are still plain choice menus.
+        roots = iter(["set", None])
+        selections = iter([model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"])
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(roots))
         monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
 
         console, buf = _capture()
-        dispatch_slash("/model", Session(), console)
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+        dispatch_slash("/model", session, console)
 
         output = buf.getvalue()
         assert "switched LLM provider" in output
@@ -1160,10 +951,85 @@ class TestModelCommand:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        picks = iter(["show", "done"])
-        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(picks))
+        picks = iter(["show", None])
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(picks))
         console, buf = _capture()
-        dispatch_slash("/model", Session(), console)
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+        dispatch_slash("/model", session, console)
+        assert "anthropic" in buf.getvalue()
+
+    def test_toolcall_without_a_model_asks_instead_of_printing_usage(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A subcommand that needs a value collects it when the turn owns stdin.
+
+        ``/model toolcall`` reached from /help, from the menu, or typed must all
+        land on the same picker rather than closing on a usage line.
+        """
+        self._patch_llm(monkeypatch)
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        asked: list[bool] = []
+
+        def _collect(_console: object) -> bool:
+            asked.append(True)
+            return True
+
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(model_cmd, "_interactive_set_toolcall", _collect)
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        console, buf = _capture()
+        dispatch_slash("/model toolcall", session, console)
+
+        assert asked == [True]
+        assert "usage:" not in buf.getvalue()
+
+    def test_toolcall_without_exclusive_stdin_still_prints_usage(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Agent slash_invoke has no stdin to own, so a picker would race it."""
+        self._patch_llm(monkeypatch)
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(
+            model_cmd,
+            "_interactive_set_toolcall",
+            lambda _console: pytest.fail("no picker without exclusive stdin"),
+        )
+        session = Session()
+        assert session.terminal.exclusive_stdin_active is False
+
+        console, buf = _capture()
+        dispatch_slash("/model toolcall", session, console)
+
+        assert "usage:" in buf.getvalue()
+
+    def test_bare_model_without_exclusive_stdin_shows_table_not_menu(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Agent slash_invoke path: TTY but no exclusive stdin → show, not picker."""
+        self._patch_llm(monkeypatch)
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        menu_calls: list[str] = []
+        monkeypatch.setattr(
+            model_cmd,
+            "_interactive_model_menu",
+            lambda *_a, **_k: menu_calls.append("menu") or True,
+        )
+        console, buf = _capture()
+        session = Session()
+        assert session.terminal.exclusive_stdin_active is False
+        dispatch_slash("/model", session, console)
+        assert menu_calls == []
         assert "anthropic" in buf.getvalue()
 
     def test_model_interactive_escape_backs_out_without_changes(
@@ -1174,17 +1040,24 @@ class TestModelCommand:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        selections = iter(
+        roots = iter(
             [
                 "set",  # root -> set
-                "anthropic",  # provider selected
-                None,  # Esc from model selection -> back to provider list
-                None,  # Esc from provider list -> back to root action list
                 None,  # Esc at root -> close menu
             ]
         )
+        selections = iter(
+            [
+                model_cmd.OTHER_PROVIDER_SELECTION,  # provider submenu selected
+                "anthropic",  # provider selected
+                None,  # Esc from model selection -> back to provider list
+                None,  # Esc from provider list -> back to root action list
+            ]
+        )
+        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(roots))
         monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
         session = Session()
+        session.terminal.exclusive_stdin_active = True
         console, buf = _capture()
         dispatch_slash("/model", session, console)
 
@@ -1263,10 +1136,65 @@ class TestModelCommand:
 
         assert os.environ.get("LLM_PROVIDER") == "gemini"
 
-    def test_set_missing_provider_prints_usage(self) -> None:
+    def test_set_without_provider_lists_valid_providers_when_not_interactive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Agent ``slash_invoke`` (no exclusive stdin) gets the ids to retry with."""
+        monkeypatch.setattr("config.account.account_llm_route", _signed_out)
         console, buf = _capture()
-        dispatch_slash("/model set", Session(), console)
-        assert "usage" in buf.getvalue()
+        session = Session()
+
+        dispatch_slash("/model set", session, console)
+
+        output = buf.getvalue()
+        assert "usage: /model set <provider> [model] [--toolcall-model <model>]" in output
+        assert "valid providers:" in output
+        assert "custom-openai" in output
+        assert session.history[-1]["ok"] is False
+
+    def test_set_without_provider_opens_the_provider_picker_when_typed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        self._patch_llm(monkeypatch)
+        import surfaces.shared.llm_setup.env_sync as env_sync
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        env_path = tmp_path / ".env"
+        self._redirect_wizard_store(monkeypatch, tmp_path)
+        monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
+        monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
+        monkeypatch.setattr("config.account.account_llm_route", _signed_out)
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        selections = iter([model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"])
+        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        console, buf = _capture()
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        dispatch_slash("/model set", session, console)
+
+        assert "switched LLM provider" in buf.getvalue()
+        assert "LLM_PROVIDER=anthropic" in env_path.read_text(encoding="utf-8")
+
+    def test_set_without_provider_refuses_before_the_picker_when_account_managed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        monkeypatch.setattr("config.account.account_llm_route", _signed_in)
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(model_cmd, "repl_choose_one", _menu_must_not_open)
+        console, buf = _capture()
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        dispatch_slash("/model set", session, console)
+
+        assert "LLM settings are managed by your OpenSRE account" in buf.getvalue()
+        assert session.history[-1]["ok"] is False
 
     def test_set_unknown_reasoning_model_is_rejected(
         self,
@@ -1443,7 +1371,7 @@ class TestModelCommand:
 
         output = buf.getvalue()
         assert "switched LLM provider" in output
-        assert "toolcall model" in output
+        assert "Toolcall model" in output
         contents = env_path.read_text(encoding="utf-8")
         assert "LLM_PROVIDER=anthropic" in contents
         assert "ANTHROPIC_REASONING_MODEL=claude-opus-4-7" in contents
@@ -1599,422 +1527,6 @@ class TestVersionCommand:
         assert "os" in output
 
 
-class TestTemplateCommand:
-    def test_known_template_prints_json(self) -> None:
-        console, buf = _capture()
-        dispatch_slash("/template generic", Session(), console)
-        assert "alert_name" in buf.getvalue()
-
-    def test_unknown_template_prints_hint(self) -> None:
-        console, buf = _capture()
-        dispatch_slash("/template bogus", Session(), console)
-        assert "unknown template" in buf.getvalue()
-
-    def test_missing_arg_prints_usage(self) -> None:
-        console, buf = _capture()
-        dispatch_slash("/template", Session(), console)
-        assert "usage" in buf.getvalue()
-
-
-class TestInvestigateFileCommand:
-    def test_missing_arg_prints_usage(self) -> None:
-        console, buf = _capture()
-        dispatch_slash("/investigate", Session(), console)
-        assert "usage" in buf.getvalue()
-        assert "/investigate <file|template>" in buf.getvalue()
-
-    def test_missing_file_prints_error(self) -> None:
-        session = Session()
-        console, buf = _capture()
-        dispatch_slash("/investigate /nonexistent/path.json", session, console)
-        assert "file not found" in buf.getvalue()
-        latest = session.history[-1]
-        assert latest["type"] == "slash"
-        assert latest["ok"] is False
-        assert latest["response_text"] == "slash /investigate /nonexistent/path.json (failed)"
-
-    def test_missing_arg_analytics_reports_failure(self) -> None:
-        session = Session()
-        console, buf = _capture()
-        dispatch_slash("/investigate", session, console)
-        assert "usage" in buf.getvalue()
-        latest = session.history[-1]
-        assert latest["type"] == "slash"
-        assert latest["ok"] is False
-        assert latest["response_text"] == "slash /investigate (failed)"
-
-    def test_valid_file_runs_investigation(self, tmp_path: object, monkeypatch: object) -> None:
-        alert_file = tmp_path / "alert.json"  # type: ignore[operator]
-        alert_file.write_text('{"alert_name": "test"}', encoding="utf-8")  # type: ignore[union-attr]
-
-        captured: list[str] = []
-
-        def _fake(
-            alert_text: str,
-            context_overrides: object = None,
-            cancel_requested: object = None,
-            console: object = None,
-        ) -> dict:
-            captured.append(alert_text)
-            return {"root_cause": "test cause"}
-
-        # Patch REPL adapter used by slash handler lazy import.
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_investigation_for_session",
-            _fake,
-        )
-        session = Session()
-        console, _ = _capture()
-        dispatch_slash(f"/investigate {alert_file}", session, console)
-        assert session.last_state == {"root_cause": "test cause"}
-        assert '{"alert_name": "test"}' in captured[0]
-
-    def test_template_arg_runs_sample_alert(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        captured: list[str] = []
-
-        def _fake_sample(
-            *,
-            template_name: str,
-            context_overrides: object = None,
-            cancel_requested: object = None,
-            console: object = None,
-        ) -> dict[str, str]:
-            _ = (context_overrides, cancel_requested)
-            captured.append(template_name)
-            return {"root_cause": "sample cause"}
-
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_sample_alert_for_session",
-            _fake_sample,
-        )
-
-        session = Session()
-        console, _ = _capture()
-        dispatch_slash("/investigate generic", session, console)
-
-        assert captured == ["generic"]
-        assert session.last_state == {"root_cause": "sample cause"}
-
-    def test_template_arg_uses_background_launcher_when_mode_enabled(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        launches: list[str] = []
-
-        def _fake_start_background_template_investigation(
-            *,
-            template_name: str,
-            session: Session,
-            console: Console,
-            display_command: str,
-            investigation_target: str = "",
-        ) -> str:
-            _ = (session, console, display_command, investigation_target)
-            launches.append(template_name)
-            return "bg123"
-
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.command_registry.investigation.start_background_template_investigation",
-            _fake_start_background_template_investigation,
-        )
-
-        session = Session()
-        session.terminal.background_mode_enabled = True
-        console, _ = _capture()
-        dispatch_slash("/investigate generic", session, console)
-
-        assert launches == ["generic"]
-        assert session.last_state is None
-
-    def test_template_arg_tracks_cli_repl_file_source(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        track_calls: list[tuple[str, str, str | None]] = []
-
-        class _TrackContext:
-            def __enter__(self) -> None:
-                return None
-
-            def __exit__(self, exc_type, exc, tb) -> bool:
-                _ = (exc_type, exc, tb)
-                return False
-
-        def _fake_track(*, entrypoint, trigger_mode, input_path=None, **kwargs):  # type: ignore[no-untyped-def]
-            _ = kwargs
-            track_calls.append((entrypoint.value, trigger_mode.value, input_path))
-            return _TrackContext()
-
-        monkeypatch.setattr("infrastructure.analytics.cli.track_investigation", _fake_track)
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_sample_alert_for_session",
-            lambda **_kwargs: {"root_cause": "sample cause"},
-        )
-
-        session = Session()
-        console, _ = _capture()
-        dispatch_slash("/investigate generic", session, console)
-
-        assert track_calls == [("cli_repl_file", "file", "template:generic")]
-
-    def test_template_name_takes_precedence_over_local_same_name_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        (tmp_path / "generic").write_text('{"alert_name": "local-file"}', encoding="utf-8")
-        monkeypatch.chdir(tmp_path)
-        calls: list[str] = []
-
-        def _fake_sample(
-            *,
-            template_name: str,
-            context_overrides: object = None,
-            cancel_requested: object = None,
-            console: object = None,
-        ) -> dict[str, str]:
-            _ = (context_overrides, cancel_requested)
-            calls.append(template_name)
-            return {"root_cause": "template-wins"}
-
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_sample_alert_for_session",
-            _fake_sample,
-        )
-
-        session = Session()
-        console, _ = _capture()
-        dispatch_slash("/investigate generic", session, console)
-
-        assert calls == ["generic"]
-        assert session.last_state == {"root_cause": "template-wins"}
-
-    def test_missing_arg_in_tty_opens_interactive_menu(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from surfaces.interactive_shell.command_registry import (
-            investigation as investigation_cmd,
-        )
-
-        picks = iter(["generic"])
-        captured: list[str] = []
-
-        def _fake_sample(
-            *,
-            template_name: str,
-            context_overrides: object = None,
-            cancel_requested: object = None,
-            console: object = None,
-        ) -> dict[str, str]:
-            _ = (context_overrides, cancel_requested)
-            captured.append(template_name)
-            return {"root_cause": "sample from menu"}
-
-        monkeypatch.setattr(investigation_cmd, "repl_tty_interactive", lambda: True)
-        monkeypatch.setattr(investigation_cmd, "repl_choose_one", lambda **_: next(picks))
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_sample_alert_for_session",
-            _fake_sample,
-        )
-
-        session = Session()
-        console, buf = _capture()
-        dispatch_slash("/investigate", session, console)
-
-        assert session.terminal.pending_prompt_default == "/investigate generic"
-        assert session.terminal.pending_prompt_autosubmit is True
-        assert captured == []
-
-        dispatch_slash(session.terminal.pop_pending_prompt_default(), session, console)
-        assert session.terminal.pop_pending_autosubmit() is True
-
-        assert captured == ["generic"]
-        assert session.last_state == {"root_cause": "sample from menu"}
-        assert "usage" not in buf.getvalue().lower()
-
-    def test_tty_investigate_menu_browse_path_runs_custom_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from surfaces.interactive_shell.command_registry import (
-            investigation as investigation_cmd,
-        )
-
-        alert_file = tmp_path / "custom_alert.json"
-        alert_file.write_text('{"alert_name": "custom"}', encoding="utf-8")
-
-        picks = iter(["__browse__"])
-        captured: list[str] = []
-
-        def _fake(
-            alert_text: str,
-            context_overrides: object = None,
-            cancel_requested: object = None,
-            console: object = None,
-        ) -> dict[str, str]:
-            _ = (context_overrides, cancel_requested)
-            captured.append(alert_text)
-            return {"root_cause": "custom path run"}
-
-        monkeypatch.setattr(investigation_cmd, "repl_tty_interactive", lambda: True)
-        monkeypatch.setattr(investigation_cmd, "repl_choose_one", lambda **_: next(picks))
-        monkeypatch.setattr(
-            investigation_cmd,
-            "_prompt_investigate_path",
-            lambda _console: str(alert_file),
-        )
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_investigation_for_session",
-            _fake,
-        )
-
-        session = Session()
-        console, _ = _capture()
-        dispatch_slash("/investigate", session, console)
-
-        assert session.terminal.pop_pending_autosubmit() is True
-        queued = session.terminal.pop_pending_prompt_default()
-        assert queued.startswith("/investigate ")
-        assert captured == []
-
-        dispatch_slash(queued, session, console)
-
-        assert session.last_state == {"root_cause": "custom path run"}
-        assert '"alert_name": "custom"' in captured[0]
-
-    def test_investigate_file_tracks_cli_repl_file_source(
-        self, tmp_path: object, monkeypatch: object
-    ) -> None:
-        alert_file = tmp_path / "alert.json"  # type: ignore[operator]
-        alert_file.write_text('{"alert_name": "test"}', encoding="utf-8")  # type: ignore[union-attr]
-
-        track_calls: list[tuple[str, str]] = []
-
-        class _TrackContext:
-            def __enter__(self) -> None:
-                return None
-
-            def __exit__(self, exc_type, exc, tb) -> bool:
-                _ = (exc_type, exc, tb)
-                return False
-
-        def _fake_track(*, entrypoint, trigger_mode, **kwargs):  # type: ignore[no-untyped-def]
-            _ = kwargs
-            track_calls.append((entrypoint.value, trigger_mode.value))
-            return _TrackContext()
-
-        monkeypatch.setattr("infrastructure.analytics.cli.track_investigation", _fake_track)
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_investigation_for_session",
-            lambda **_kwargs: {"root_cause": "test cause"},
-        )
-        session = Session()
-        console, _ = _capture()
-
-        dispatch_slash(f"/investigate {alert_file}", session, console)
-
-        assert track_calls == [("cli_repl_file", "file")]
-
-    def test_investigate_accumulates_infra_context(
-        self, tmp_path: object, monkeypatch: object
-    ) -> None:
-        """Regression for Greptile P1 (PR #591): /investigate previously skipped
-        the context-accumulation step that free-text investigations perform, so
-        subsequent follow-up alerts lost the infra hints (service / cluster /
-        region) that /investigate just discovered."""
-
-        alert_file = tmp_path / "alert.json"  # type: ignore[operator]
-        alert_file.write_text('{"alert_name": "test"}', encoding="utf-8")  # type: ignore[union-attr]
-
-        def _fake(
-            alert_text: str,
-            context_overrides: object = None,
-            cancel_requested: object = None,
-            console: object = None,
-        ) -> dict:
-            return {
-                "root_cause": "disk full",
-                "service": "orders-api",
-                "cluster_name": "prod-us-east",
-                "region": "us-east-1",
-            }
-
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_investigation_for_session",
-            _fake,
-        )
-
-        session = Session()
-        console, _ = _capture()
-        dispatch_slash(f"/investigate {alert_file}", session, console)
-
-        # The next free-text alert must inherit these—proving accumulation ran.
-        assert session.accumulated_context == {
-            "service": "orders-api",
-            "cluster_name": "prod-us-east",
-            "region": "us-east-1",
-        }
-
-    def test_investigate_file_uses_background_launcher_when_mode_enabled(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        alert_file = tmp_path / "alert.json"
-        alert_file.write_text('{"alert_name": "test"}', encoding="utf-8")
-        launches: list[tuple[str, str]] = []
-
-        def _fake_start_background_text_investigation(
-            *,
-            alert_text: str,
-            session: Session,
-            console: Console,
-            display_command: str,
-            investigation_target: str = "",
-        ) -> str:
-            _ = (session, console, investigation_target)
-            launches.append((alert_text, display_command))
-            return "bg123"
-
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.command_registry.investigation.start_background_text_investigation",
-            _fake_start_background_text_investigation,
-        )
-
-        session = Session()
-        session.terminal.background_mode_enabled = True
-        console, _ = _capture()
-        dispatch_slash(f"/investigate {alert_file}", session, console)
-
-        assert len(launches) == 1
-        assert '"alert_name": "test"' in launches[0][0]
-        assert launches[0][1] == f"/investigate {alert_file}"
-        assert session.last_state is None
-
-    def test_investigate_opensre_error_marks_task_failed(
-        self, tmp_path: object, monkeypatch: object
-    ) -> None:
-        from surfaces.shared.error_handling.errors import OpenSREError
-
-        alert_file = tmp_path / "alert.json"  # type: ignore[operator]
-        alert_file.write_text('{"alert_name": "test"}', encoding="utf-8")  # type: ignore[union-attr]
-
-        def _raise(
-            alert_text: str,
-            context_overrides: object = None,
-            cancel_requested: object = None,
-            console: object = None,
-        ) -> dict[str, object]:
-            raise OpenSREError("bad config")
-
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.runtime.investigation_adapter.run_investigation_for_session",
-            _raise,
-        )
-        session = Session()
-        console, _ = _capture()
-        dispatch_slash(f"/investigate {alert_file}", session, console)
-        inv_tasks = [
-            t for t in session.task_registry.list_recent(10) if t.kind == TaskKind.INVESTIGATION
-        ]
-        assert len(inv_tasks) == 1
-        assert inv_tasks[0].status == TaskStatus.FAILED
-        assert inv_tasks[0].error == "bad config"
-
-
 # Task 4 — Session-state commands
 
 
@@ -2157,7 +1669,7 @@ class TestResumeCommand:
         assert session.agent.messages == [("user", "hello"), ("assistant", "hi")]
         assert session.accumulated_context == {"service": "redis"}
         output = buf.getvalue()
-        assert "resumed session" in output
+        assert "↩ " in output
         assert "old-abc" in output
 
     def test_apply_resume_noop_when_no_messages_or_context(self) -> None:
@@ -2182,6 +1694,155 @@ class TestResumeCommand:
 
         assert session.session_id == old_id
         assert "no conversation to resume" in buf.getvalue()
+
+    def test_apply_resume_does_not_rebind_while_the_target_session_is_busy(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """/resume must not wait for or rebind a session another host owns."""
+        from core.agent_harness.session import InMemorySessionStore
+        from infrastructure.turn_host.session_lock import session_execution_lock
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        monkeypatch.setattr(
+            "infrastructure.turn_host.session_lock.sessions_dir",
+            lambda: tmp_path,
+        )
+        target_id = "target-session-123"
+        data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "resume me")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        session.store = InMemorySessionStore()
+        old_id = session.session_id
+        console, _ = _capture()
+        attempted = threading.Event()
+        completed = threading.Event()
+        errors: list[Exception] = []
+        results: list[bool] = []
+
+        def _resume() -> None:
+            try:
+                attempted.set()
+                results.append(_apply_resume_data(data, session, console))
+                completed.set()
+            except Exception as exc:
+                errors.append(exc)
+
+        with session_execution_lock(target_id):
+            thread = threading.Thread(target=_resume)
+            thread.start()
+            assert attempted.wait(timeout=1)
+            assert completed.wait(timeout=1)
+            assert session.session_id == old_id
+
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert not errors, errors
+        assert completed.is_set()
+        assert results == [False]
+        assert session.session_id == old_id
+
+    def test_apply_resume_retains_target_lease_until_the_turn_scope_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A turn-hosted /resume keeps its target safe through final flush."""
+        from core.agent_harness.session import InMemorySessionStore
+        from infrastructure.turn_host.session_lock import (
+            SessionExecutionBusyError,
+            retained_session_execution_locks,
+            session_execution_lock,
+        )
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        monkeypatch.setattr(
+            "infrastructure.turn_host.session_lock.sessions_dir",
+            lambda: tmp_path,
+        )
+        target_id = "target-session-123"
+        data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "resume me")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        session.store = InMemorySessionStore()
+        console, _ = _capture()
+
+        def _try_target_lock(results: list[bool]) -> threading.Thread:
+            def _try_lock() -> None:
+                try:
+                    with session_execution_lock(target_id, timeout=0):
+                        results.append(True)
+                except SessionExecutionBusyError:
+                    results.append(False)
+
+            thread = threading.Thread(target=_try_lock)
+            thread.start()
+            return thread
+
+        with retained_session_execution_locks():
+            assert _apply_resume_data(data, session, console) is True
+            held_results: list[bool] = []
+            thread = _try_target_lock(held_results)
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+            assert held_results == [False]
+
+        released_results: list[bool] = []
+        thread = _try_target_lock(released_results)
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert released_results == [True]
+
+    def test_apply_resume_reloads_the_target_after_acquiring_its_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A resumed target is restored from the post-lease repository state."""
+        from core.agent_harness.session import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        target_id = "target-session-123"
+        stale_data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "stale")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        fresh_data = {**stale_data, "cli_agent_messages": [("user", "fresh")]}
+
+        class _Repo:
+            def load_session(self, session_id: str) -> dict:
+                assert session_id == target_id
+                return fresh_data
+
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.session_cmds.resume.default_session_repo",
+            _Repo,
+        )
+        session = Session()
+        session.store = InMemorySessionStore()
+        console, _ = _capture()
+
+        assert _apply_resume_data(stale_data, session, console, refresh_target=True) is True
+        assert session.agent.messages == [("user", "fresh")]
 
     def test_apply_resume_displays_history_in_repl_format(self, tmp_path: Path) -> None:
         """History display uses REPL turn order and includes slash commands."""
@@ -2217,13 +1878,37 @@ class TestResumeCommand:
             _apply_resume_data(data, session, console)
 
         output = buf.getvalue()
-        assert "❯" in output
-        assert "assistant" in output
-        assert "$ /status" in output
-        assert "you  " not in output
-        assert "sre  " not in output
-        assert "what is opensre?" in output
-        assert "OpenSRE is a tool" in output
+        # Replay uses the live renderers: ``❱`` for the user and ``●`` for the
+        # reply, the same pair a live turn draws. The replay-only ``$`` echo is
+        # gone, so a slash turn appears once rather than as a user row plus a
+        # shell-style duplicate.
+        assert "❱ what is opensre?" in output
+        assert "● OpenSRE is a tool" in output
+        assert "❱ /status" in output
+        assert "$ /status" not in output
+        assert output.count("/status") == 1
+
+    def test_apply_resume_names_the_session_it_came_from(self) -> None:
+        """``Session.clear`` wipes ``resumed_from_name`` and nothing set it again, so
+        the composer's ``resumed: <name>`` hint and ``/sessions``' ``↩`` marker both
+        had no value to show after a resume."""
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        data = {
+            "session_id": "named-session-abc123",
+            "name": "redis latency",
+            "cli_agent_messages": [("user", "why is redis slow?"), ("assistant", "pool")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        console, _ = _capture()
+
+        _apply_resume_data(data, session, console)
+
+        assert session.resumed_from_name == "redis latency"
 
     def test_apply_resume_no_history_keeps_user_assistant_pairs_with_duplicate_prompts(
         self,
@@ -2251,8 +1936,8 @@ class TestResumeCommand:
         _apply_resume_data(data, session, console)
 
         output = buf.getvalue()
-        assert output.count("❯ repeat") == 2
-        assert output.count("assistant") == 2
+        assert output.count("❱ repeat") == 2
+        assert output.count("●") == 2
         assert "first answer" in output
         assert "second answer" in output
 
@@ -2337,81 +2022,62 @@ class TestHistoryCommand:
         assert "bad input" not in output
 
 
-class TestLastCommand:
-    def test_no_investigation_says_so(self) -> None:
-        console, buf = _capture()
-        dispatch_slash("/last", Session(), console)
-        assert "no investigation" in buf.getvalue()
-
-    def test_shows_root_cause(self) -> None:
-        session = Session()
-        session.last_state = {"root_cause": "OOMKilled in orders-api"}
-        console, buf = _capture()
-        dispatch_slash("/last", session, console)
-        assert "OOMKilled in orders-api" in buf.getvalue()
-
-    def test_shows_problem_md_when_no_root_cause(self) -> None:
-        session = Session()
-        session.last_state = {"problem_md": "## Summary\n\nlatency spike"}
-        console, buf = _capture()
-        dispatch_slash("/last", session, console)
-        assert "latency spike" in buf.getvalue()
-
-    def test_empty_state_says_no_content(self) -> None:
-        session = Session()
-        session.last_state = {}
-        console, buf = _capture()
-        dispatch_slash("/last", session, console)
-        assert "no report content" in buf.getvalue()
-
-
-class TestSaveCommand:
-    def test_no_investigation_says_so(self) -> None:
-        console, buf = _capture()
-        dispatch_slash("/save out.md", Session(), console)
-        assert "nothing to save" in buf.getvalue()
-
-    def test_missing_arg_prints_usage(self) -> None:
-        session = Session()
-        session.last_state = {"root_cause": "x"}
-        console, buf = _capture()
-        dispatch_slash("/save", session, console)
-        assert "usage" in buf.getvalue()
-
-    def test_saves_markdown(self, tmp_path: object) -> None:
-        session = Session()
-        session.last_state = {"root_cause": "db timeout", "problem_md": "## Details\n\nlatency"}
-        dest = tmp_path / "report.md"  # type: ignore[operator]
-        console, buf = _capture()
-        dispatch_slash(f"/save {dest}", session, console)
-        assert "saved" in buf.getvalue()
-        content = dest.read_text()  # type: ignore[union-attr]
-        assert "db timeout" in content
-
-    def test_saves_json(self, tmp_path: object) -> None:
-        session = Session()
-        session.last_state = {"root_cause": "db timeout"}
-        dest = tmp_path / "report.json"  # type: ignore[operator]
-        console, _ = _capture()
-        dispatch_slash(f"/save {dest}", session, console)
-        data = json.loads(dest.read_text())  # type: ignore[union-attr]
-        assert data["root_cause"] == "db timeout"
-
-
 class TestContextCommand:
-    def test_empty_context_says_so(self) -> None:
-        console, buf = _capture()
-        dispatch_slash("/context", Session(), console)
-        assert "no infra context" in buf.getvalue()
-
-    def test_shows_accumulated_keys(self) -> None:
+    def test_lists_each_prompt_block_the_history_and_the_budget(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(OPENSRE_HISTORY_TOKEN_BUDGET_ENV, "8000")
         session = Session()
-        session.accumulated_context = {"service": "orders-api", "region": "us-east-1"}
+        session.agent.record_turn("is ci green?", "CI is green on main.")
         console, buf = _capture()
         dispatch_slash("/context", session, console)
         output = buf.getvalue()
-        assert "orders-api" in output
-        assert "us-east-1" in output
+        assert "action-agent-system-base" in output
+        assert "2 messages from 1 turn" in output
+        assert f"at 8,000 tokens or {HISTORY_COMPACT_AFTER_TURNS} turns" in output
+
+    def test_says_when_the_next_turn_compacts_first(self) -> None:
+        # Many short turns stay under the token budget; compaction's own
+        # verdict, not a token comparison, decides what the next call holds.
+        session = Session()
+        for index in range(HISTORY_COMPACT_AFTER_TURNS + 1):
+            session.agent.record_turn(f"question {index}", f"answer {index}")
+        console, buf = _capture()
+        dispatch_slash("/context", session, console)
+        output = buf.getvalue()
+        assert "older turns are summarized before the next turn" in output
+        # The breakdown is the call the model gets: the turns compaction keeps,
+        # not the transcript it is about to fold away.
+        assert "history after compaction" in output
+        assert f"from {HISTORY_KEEP_MAX_TURNS} turns" in output
+        kept = HISTORY_KEEP_MAX_TURNS * 2
+        assert f"folds {(HISTORY_COMPACT_AFTER_TURNS + 1) * 2 - kept} older messages" in output
+
+    def test_shows_the_repository_the_next_turn_targets(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(OPENSRE_WORKSPACE_REPO_ENV, "Tracer-Cloud/opensre")
+        session = Session()
+        console, buf = _capture()
+        dispatch_slash("/context", session, console)
+        assert "none active yet" in buf.getvalue()
+
+        session.resolved_integrations_cache = {"github": {"connection_verified": True}}
+        console, buf = _capture()
+        dispatch_slash("/context", session, console)
+        output = buf.getvalue()
+        assert "repository-context" in output
+        assert "AGENTS.md" not in output
+        assert "none active yet" not in output
+        assert session.active_vcs_repositories == {}
+
+    def test_leaves_a_pending_recovery_note_for_the_next_turn(self) -> None:
+        session = Session()
+        session.pending_recovery_note = "shell_run started and never finished"
+        console, buf = _capture()
+        dispatch_slash("/context", session, console)
+        assert "interrupted-turn-recovery" in buf.getvalue()
+        assert session.pending_recovery_note == "shell_run started and never finished"
 
 
 class TestCostCommand:
@@ -2480,7 +2146,12 @@ class TestVerboseCommand:
 
 
 class TestCompactCommand:
-    def test_nothing_to_compact_when_small(self) -> None:
+    @pytest.fixture(autouse=True)
+    def _no_model_summary(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(OPENSRE_LLM_COMPACTION_ENV, "0")
+
+    def test_nothing_to_compact_when_small(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
         session = Session()
         session.agent.messages = [("user", f"m{i}") for i in range(4)]
         console, buf = _capture()
@@ -2488,7 +2159,10 @@ class TestCompactCommand:
         assert "Nothing to compact yet." in buf.getvalue()
         assert len(session.agent.messages) == 4
 
-    def test_compacts_conversation_branch_when_over_keep_limit(self) -> None:
+    def test_compacts_conversation_branch_when_over_keep_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
         session = Session()
         session.agent.messages = [("user", f"message number {i}") for i in range(20)]
         console, buf = _capture()
@@ -2504,6 +2178,21 @@ class TestCompactCommand:
             for entry in session.history
         )
 
+    def test_compact_keeps_only_the_newest_turn_with_structured_history(self) -> None:
+        session = Session()
+        session.agent.messages = [
+            message
+            for index in range(5)
+            for message in (("user", f"question {index}"), ("assistant", f"answer {index}"))
+        ]
+        console, buf = _capture()
+
+        dispatch_slash("/compact", session, console)
+
+        assert session.agent.messages[0][1].startswith("Session summary:")
+        assert session.agent.messages[1:] == [("user", "question 4"), ("assistant", "answer 4")]
+        assert "compacted session context" in buf.getvalue()
+
 
 class TestCancelCommand:
     def test_usage_without_task_id(self) -> None:
@@ -2517,17 +2206,9 @@ class TestPrePolicyValidation:
     """Regression for #1712: ``validate_args`` runs before the policy gate, so
     invalid args never trigger the ``Proceed?`` confirmation prompt."""
 
-    @pytest.mark.parametrize(
-        "command,expected_usage_fragment",
-        [
-            ("/investigate", "/investigate <file|template>"),
-            ("/save", "/save <path>"),
-            ("/cancel", "/cancel <task_id>"),
-        ],
-    )
-    def test_missing_arg_skips_policy_prompt(
-        self, command: str, expected_usage_fragment: str
-    ) -> None:
+    def test_missing_arg_skips_policy_prompt(self) -> None:
+        command = "/cancel"
+        expected_usage_fragment = "/cancel <task_id>"
         confirm_calls: list[str] = []
 
         def _confirm(prompt: str) -> str:
@@ -2546,10 +2227,7 @@ class TestPrePolicyValidation:
         assert latest["text"] == command
         assert latest["ok"] is False
         assert latest["response_text"].startswith(f"slash {command} (failed)")
-        if command == "/investigate":
-            assert latest["response_text"] == f"slash {command} (failed)"
-        else:
-            assert expected_usage_fragment in latest["response_text"]
+        assert expected_usage_fragment in latest["response_text"]
 
     def test_validate_args_fires_in_trust_mode(self) -> None:
         """Trust mode bypasses the policy prompt but must not bypass arg validation."""
@@ -2563,64 +2241,22 @@ class TestPrePolicyValidation:
         session.terminal.trust_mode = True
 
         console, buf = _capture()
-        dispatch_slash("/investigate", session, console, confirm_fn=_confirm, is_tty=True)
+        dispatch_slash("/cancel", session, console, confirm_fn=_confirm, is_tty=True)
 
-        assert "/investigate <file|template>" in buf.getvalue()
+        assert "/cancel <task_id>" in buf.getvalue()
         assert confirm_calls == [], "trust mode must not skip arg validation"
-
-    def test_investigate_with_valid_arg_skips_policy_prompt(self, tmp_path: Path) -> None:
-        """RCA from a file is the primary REPL action — no Proceed? gate."""
-        alert_file = tmp_path / "alert.json"
-        alert_file.write_text('{"alert_name": "test"}', encoding="utf-8")
-
-        confirm_calls: list[str] = []
-
-        def _confirm(prompt: str) -> str:
-            confirm_calls.append(prompt)
-            return "n"
-
-        session = Session()
-        console, buf = _capture()
-        dispatch_slash(
-            f"/investigate {alert_file}",
-            session,
-            console,
-            confirm_fn=_confirm,
-            is_tty=True,
-        )
-
-        assert confirm_calls == []
-        assert "Proceed?" not in buf.getvalue()
 
 
 class TestSlashValidatorFunctions:
     """Direct unit tests for the per-command pre-policy validators."""
 
-    @pytest.mark.parametrize(
-        "validator,expected_usage_fragment",
-        [
-            (_validate_investigate_args, "/investigate <file|template>"),
-            (_validate_save_args, "/save <path>"),
-            (_validate_cancel_args, "/cancel <task_id>"),
-        ],
-    )
-    def test_returns_usage_when_args_empty(
-        self, validator: object, expected_usage_fragment: str
-    ) -> None:
-        result = validator([])  # type: ignore[operator]
+    def test_returns_usage_when_args_empty(self) -> None:
+        result = _validate_cancel_args([])
         assert isinstance(result, str)
-        assert expected_usage_fragment in result
+        assert "/cancel <task_id>" in result
 
-    @pytest.mark.parametrize(
-        "validator,args",
-        [
-            (_validate_investigate_args, ["alert.json"]),
-            (_validate_save_args, ["report.md"]),
-            (_validate_cancel_args, ["task-abc"]),
-        ],
-    )
-    def test_returns_none_when_args_present(self, validator: object, args: list[str]) -> None:
-        assert validator(args) is None  # type: ignore[operator]
+    def test_returns_none_when_args_present(self) -> None:
+        assert _validate_cancel_args(["task-abc"]) is None
 
 
 class TestRunCliCommand:
@@ -2696,8 +2332,8 @@ class TestRunCliCommand:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``capture_output=True`` must send child stdout through ``console`` even
-        when no timeout is set, so non-interactive slash commands like ``/tests
-        list`` do not lose their output to the parent stdout FD.
+        when no timeout is set, so non-interactive slash commands like
+        ``/guardrails list`` do not lose their output to the parent stdout FD.
         """
         from surfaces.interactive_shell.command_registry import cli_parity as m
 
@@ -2725,7 +2361,7 @@ class TestRunCliCommand:
 
         monkeypatch.setattr(m.subprocess, "run", _fake_run)
         console, buf = _capture()
-        assert m.run_cli_command(console, ["tests", "list"], capture_output=True) is True
+        assert m.run_cli_command(console, ["guardrails", "list"], capture_output=True) is True
         assert "catalog row one" in buf.getvalue()
         assert "catalog row two" in buf.getvalue()
 
@@ -2742,6 +2378,7 @@ class TestRunCliCommand:
             output: str,
             *,
             style: str | None = None,
+            on_collapse: object = None,
         ) -> None:
             replayed.append((output, style))
 
@@ -2828,10 +2465,111 @@ class TestRunCliCommand:
 
         monkeypatch.setattr(m.subprocess, "run", _fake_run)
         session = SessionCore(store=InMemorySessionStore())
-        session.record("slash", "/remote health", ok=True)
+        session.record("slash", "/config show", ok=True)
         console, _buf = _capture()
-        assert m.run_cli_command(console, ["remote", "health"], session=session) is False
+        assert m.run_cli_command(console, ["config", "show"], session=session) is False
         assert session.history[-1]["ok"] is False
+
+    @pytest.mark.parametrize("headless", [False, True])
+    def test_cron_run_keeps_its_tick_running_past_the_reply_window(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        headless: bool,
+    ) -> None:
+        """A gateway ``/cron run`` past the reply window must finish, not be killed.
+
+        Killing it took a CI repair's supervisor and worker down mid-verification
+        and left the tick's claim blocking the task's later ticks for its lease.
+        The child also writes more than a pipe buffer after the window, so it
+        only finishes if something keeps draining its output.
+        """
+        from core.agent_harness.session import SessionCore
+        from core.agent_harness.session.persistence.memory import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+        from surfaces.interactive_shell.command_registry import cron_cmds
+
+        finished = tmp_path / "finished"
+        child = (
+            "import pathlib, sys, time\n"
+            "time.sleep(0.5)\n"
+            "sys.stdout.write('x' * 200_000)\n"
+            f"pathlib.Path({str(finished)!r}).write_text('done')\n"
+        )
+        monkeypatch.setattr(
+            m, "build_opensre_cli_argv", lambda _args: [sys.executable, "-c", child]
+        )
+        monkeypatch.setattr(m, "_HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS", 0.1)
+        monkeypatch.setattr(cron_cmds, "_RUN_FOREGROUND_SECONDS", 0.1)
+        session = SessionCore(store=InMemorySessionStore()) if headless else Session()
+        session.record("slash", "/cron run abc123", ok=True)
+        console, buf = _capture()
+
+        assert m._cmd_cron(session, console, ["run", "abc123"]) is True
+        assert "/cron logs abc123" in buf.getvalue()
+        assert session.history[-1]["ok"] is False
+        assert session.history[-1]["slash_outcome"] == "still_running"
+        deadline = time.monotonic() + 15
+        while not finished.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert finished.read_text() == "done"
+        m.shutdown_kept_cli_commands()
+
+    def test_captured_child_renders_to_terminal_width_minus_replay_gutter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A captured child's Rich tables must fit the REPL once re-printed.
+
+        ``print_command_output`` prepends a 4-cell ``↳`` gutter and cannot
+        re-flow a table, so a child told it has 200 columns produced rows that
+        folded mid-border on every real terminal (``/cron list``). The child
+        must render at the real width minus the gutter, even when the user has
+        exported a wider ``COLUMNS``.
+        """
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+        from surfaces.interactive_shell.ui import COMMAND_OUTPUT_GUTTER_WIDTH
+
+        monkeypatch.setenv("COLUMNS", "200")
+        seen_env: list[dict[str, str]] = []
+
+        def _fake_run(
+            cmd: list[str], *, env: dict[str, str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            seen_env.append(env)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(m.subprocess, "run", _fake_run)
+        console = Console(file=io.StringIO(), force_terminal=False, width=134)
+        assert m.run_cli_command(console, ["cron", "list"], session=Session()) is True
+
+        assert seen_env[0]["COLUMNS"] == str(134 - COMMAND_OUTPUT_GUTTER_WIDTH - 1)
+        assert seen_env[0]["FORCE_COLOR"] == "1"
+
+    def test_headless_captured_child_renders_wide_so_ids_survive(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With no terminal, only the action agent reads the table: render wide."""
+        from core.agent_harness.session import SessionCore
+        from core.agent_harness.session.persistence.memory import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+        from tools.interactive_shell.subprocess import HEADLESS_SUBPROCESS_TERMINAL_WIDTH
+
+        seen_env: list[dict[str, str]] = []
+
+        def _fake_run(
+            cmd: list[str], *, env: dict[str, str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            seen_env.append(env)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(m.subprocess, "run", _fake_run)
+        session = SessionCore(store=InMemorySessionStore())
+        console = Console(file=io.StringIO(), force_terminal=False, width=80)
+        assert m.run_cli_command(console, ["cron", "list"], session=session) is True
+
+        assert seen_env[0]["COLUMNS"] == str(HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
 
     def test_frozen_binary_delegate_reexecs_opensre_without_module_flags(
         self,
@@ -2938,8 +2676,7 @@ class TestCliDelegatedCommands:
         "command,expected_args",
         [
             ("/config show", ["config", "show"]),
-            ("/remote health", ["remote", "health"]),
-            ("/tests list", ["tests", "list"]),
+            ("/runbooks list", ["runbooks", "list"]),
             ("/guardrails audit", ["guardrails", "audit"]),
             ("/update", ["update"]),
             ("/uninstall", ["uninstall"]),
@@ -2960,10 +2697,30 @@ class TestCliDelegatedCommands:
         dispatch_slash(command, Session(), Console())
         assert captured == [expected_args]
 
+    def test_remote_retired_prints_guidance_and_keeps_shell_alive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``/remote`` must not invoke a subprocess — it prints a retirement
+        message, records a failure, and returns True so the shell stays alive."""
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        def _fail_if_called(*args: object, **kwargs: object) -> object:
+            raise AssertionError("/remote must not spawn a subprocess")
+
+        monkeypatch.setattr(m.subprocess, "run", _fail_if_called)
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        session = Session()
+        result = dispatch_slash("/remote", session, console)
+        output = buf.getvalue()
+        assert result is True
+        assert "retired" in output.lower() or "unavailable" in output.lower()
+        assert "remote-sync" in output.lower()
+
     def test_slash_onboard_delegates_to_run_cli_command(self, monkeypatch: object) -> None:
         """``/onboard`` must delegate to ``run_cli_command`` so the wizard runs
         with inherited stdin. The REPL loop guarantees exclusive stdin for
-        ``/onboard`` via ``runtime.utils.input_policy``, so
+        ``/onboard`` via ``runtime.input_policy``, so
         the wizard's prompt_toolkit Application no longer conflicts with the
         shell's active one.
         """
@@ -2983,30 +2740,6 @@ class TestCliDelegatedCommands:
         dispatch_slash("/onboard", session, console)
 
         assert captured == [["onboard"]], "run_cli_command must be called with onboard args"
-
-    @pytest.mark.parametrize("slash_input", ["/tests list", "/tests --help"])
-    def test_slash_tests_subcommand_opts_into_output_capture(
-        self, monkeypatch: object, slash_input: str
-    ) -> None:
-        """Both the known-subcommand fall-through (e.g. ``/tests list``) and
-        the flag-style branch (e.g. ``/tests --help``) must inherit the
-        capturing default of ``run_cli_command`` (no ``capture_output=False``
-        opt-out) so the delegated CLI output is replayed through the REPL
-        console instead of vanishing onto the parent process's stdout FD.
-        """
-        from surfaces.interactive_shell.command_registry import cli_parity as m
-
-        captured_kwargs: list[dict[str, object]] = []
-
-        def _fake_run_cli_command(_console: Console, _args: list[str], **kwargs: object) -> bool:
-            captured_kwargs.append(kwargs)
-            return True
-
-        monkeypatch.setattr(m, "run_cli_command", _fake_run_cli_command)
-        session = Session()
-        dispatch_slash(slash_input, session, Console())
-
-        assert captured_kwargs == [{"session": session}]
 
     @pytest.mark.parametrize(
         "slash_input",
@@ -3049,7 +2782,7 @@ class TestCliDelegatedCommands:
 
     @pytest.mark.parametrize(
         "slash_input",
-        ["/cron", "/cron list", "/cron remove ecf7c2580b83"],
+        ["/cron", "/cron logs ecf7c2580b83", "/cron remove ecf7c2580b83"],
     )
     def test_slash_cron_printers_opt_into_output_capture(
         self, monkeypatch: object, slash_input: str
@@ -3105,137 +2838,17 @@ class TestCliDelegatedCommands:
 
         assert captured == [["onboard", "local_llm"]]
 
-    def test_tests_run_subcommand_starts_background_task(self, monkeypatch: object) -> None:
-        from surfaces.interactive_shell.command_registry import cli_parity as m
-
-        started: list[tuple[str, list[str], TaskKind, bool]] = []
-
-        def _fake_start_background_cli_task(
-            *,
-            display_command: str,
-            argv_list: list[str],
-            session: Session,
-            console: Console,
-            timeout_seconds: int,
-            kind: TaskKind,
-            use_pty: bool,
-        ) -> object:
-            del session, console, timeout_seconds
-            started.append((display_command, argv_list, kind, use_pty))
-            return object()
-
-        monkeypatch.setattr(m, "start_background_cli_task", _fake_start_background_cli_task)
-        dispatch_slash("/tests synthetic --scenario 001-replication-lag", Session(), Console())
-
-        assert started == [
-            (
-                "opensre tests synthetic --scenario 001-replication-lag",
-                [
-                    sys.executable,
-                    "-m",
-                    "surfaces.cli",
-                    "tests",
-                    "synthetic",
-                    "--scenario",
-                    "001-replication-lag",
-                ],
-                TaskKind.SYNTHETIC_TEST,
-                True,
-            )
-        ]
-
-    def test_tests_picker_closes_selection_file_before_subprocess(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
+    def test_headless_setup_keeps_dev_flag_in_fallback_command(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from surfaces.interactive_shell.command_registry import cli_parity as m
 
-        selection_path = tmp_path / "selection.json"
-
-        class _SelectionFile:
-            name = str(selection_path)
-            closed = False
-
-            def __init__(self) -> None:
-                selection_path.touch()
-
-            def close(self) -> None:
-                self.closed = True
-
-        handle = _SelectionFile()
-        started: list[str] = []
-
-        def _fake_run(_command: list[str], **kwargs: object) -> object:
-            assert handle.closed is True
-            env = kwargs["env"]
-            assert isinstance(env, dict)
-            selection_path.write_text(
-                '[{"command": ["opensre", "tests", "synthetic"], '
-                '"command_display": "opensre tests synthetic"}]',
-                encoding="utf-8",
-            )
-
-            class _Result:
-                returncode = 0
-
-            return _Result()
-
-        monkeypatch.setattr(m.tempfile, "NamedTemporaryFile", lambda **_kwargs: handle)
-        monkeypatch.setattr(m.subprocess, "run", _fake_run)
-        monkeypatch.setattr(
-            m,
-            "start_background_cli_task",
-            lambda **kwargs: started.append(kwargs["display_command"]),
-        )
-
-        dispatch_slash("/tests", Session(), Console())
-
-        assert started == ["opensre tests synthetic"]
-        assert not selection_path.exists()
-
-    def test_tests_flag_first_invocation_delegates_to_cli(self, monkeypatch: object) -> None:
-        from surfaces.interactive_shell.command_registry import cli_parity as m
-
-        delegated: list[list[str]] = []
-        monkeypatch.setattr(
-            m,
-            "run_cli_command",
-            lambda _console, args, **_kwargs: (delegated.append(args), True)[1],
-        )
-
-        dispatch_slash("/tests --help", Session(), Console())
-
-        assert delegated == [["tests", "--help"]]
-
-    def test_tests_subcommand_typo_suggests_synthetic(self, monkeypatch: object) -> None:
-        from surfaces.interactive_shell.command_registry import cli_parity as m
-
-        delegated: list[list[str]] = []
-        started: list[list[str]] = []
-
-        monkeypatch.setattr(
-            m,
-            "run_cli_command",
-            lambda _console, args, **_kwargs: (delegated.append(args), True)[1],
-        )
-        monkeypatch.setattr(
-            m,
-            "start_background_cli_task",
-            lambda **kwargs: started.append(kwargs["argv_list"]),
-        )
-
-        session = Session()
+        monkeypatch.setattr(m, "session_terminal", lambda _session: None)
         console, buf = _capture()
-        dispatch_slash("/tests synthetics", session, console)
+        session = Session()
 
-        output = buf.getvalue()
-        assert "unknown tests subcommand" in output
-        assert "Did you mean" in output
-        assert "/tests synthetic" in output
-        assert session.history[-1]["ok"] is False
-        assert delegated == []
-        assert started == []
+        assert m._cmd_setup(session, console, ["--dev"]) is True
+        assert "uv run opensre setup --dev" in buf.getvalue()
 
 
 def test_alerts_inactive_prints_enable_instructions(monkeypatch: pytest.MonkeyPatch) -> None:

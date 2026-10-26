@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import functools
 import json
 import logging
 import os
-import threading
 from collections.abc import Callable
 from typing import Any
 
-from config.config import get_tracer_base_url
 from config.constants.alertmanager import (
     ALERTMANAGER_BEARER_TOKEN_ENV,
     ALERTMANAGER_PASSWORD_ENV,
@@ -84,6 +81,10 @@ from config.constants.github import (
     GITHUB_MCP_URL_ENV,
 )
 from config.constants.gitlab import GITLAB_AUTH_TOKEN_ENV, GITLAB_BASE_URL_ENV
+from config.constants.google_docs import (
+    GOOGLE_CREDENTIALS_FILE_ENV,
+    GOOGLE_DRIVE_FOLDER_ID_ENV,
+)
 from config.constants.grafana import (
     GRAFANA_CA_BUNDLE_ENV,
     GRAFANA_INSTANCE_URL_ENV,
@@ -150,13 +151,6 @@ from config.constants.new_relic import (
     NEW_RELIC_API_KEY_ENV,
     NEW_RELIC_BASE_URL_ENV,
     NEW_RELIC_INSTANCES_ENV,
-)
-from config.constants.openclaw import (
-    OPENCLAW_MCP_ARGS_ENV,
-    OPENCLAW_MCP_AUTH_TOKEN_ENV,
-    OPENCLAW_MCP_COMMAND_ENV,
-    OPENCLAW_MCP_MODE_ENV,
-    OPENCLAW_MCP_URL_ENV,
 )
 from config.constants.opensearch import (
     OPENSEARCH_API_KEY_ENV,
@@ -243,17 +237,8 @@ from config.constants.twilio import (
     WHATSAPP_DEFAULT_TO_ENV,
 )
 from config.constants.vercel import VERCEL_API_TOKEN_ENV, VERCEL_TEAM_ID_ENV
-from config.constants.x_mcp import X_MCP_AUTH_TOKEN_ENV, X_MCP_URL_ENV
-from config.constants.yandex_cloud import (
-    YC_CLOUD_ID_ENV,
-    YC_FOLDER_ID_ENV,
-    YC_IAM_TOKEN_ENV,
-    YC_SA_KEY_ENV,
-    YC_SA_KEY_FILE_ENV,
-    YC_TOKEN_ENV,
-    YC_USE_METADATA_ENV,
-)
 from config.llm_credentials import resolve_env_credential
+from config.tracer_urls import get_tracer_base_url
 from infrastructure.observability.errors.boundary import report_exception
 from infrastructure.text.coercion import safe_int
 from integrations.airflow.config import airflow_config_from_env
@@ -277,12 +262,12 @@ from integrations.config_models import (
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
     DiscordBotConfig,
+    GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
     HelmIntegrationConfig,
     IncidentIoIntegrationConfig,
     JiraIntegrationConfig,
     KubernetesIntegrationConfig,
-    OpsGenieIntegrationConfig,
     PagerDutyIntegrationConfig,
     RailwayIntegrationConfig,
     RocketChatConfig,
@@ -326,12 +311,10 @@ from integrations.mysql import build_mysql_config
 from integrations.mysql import classify as _classify_mysql
 from integrations.new_relic import classify as _classify_new_relic
 from integrations.new_relic.config import NewRelicIntegrationConfig
-from integrations.openclaw import build_openclaw_config
-from integrations.openclaw import classify as _classify_openclaw
 from integrations.openobserve import classify as _classify_openobserve
 from integrations.opensearch import classify as _classify_opensearch
-from integrations.opsgenie import classify as _classify_opsgenie
 from integrations.pagerduty import classify as _classify_pagerduty
+from integrations.pipedream import classify as _classify_pipedream
 from integrations.postgresql import build_postgresql_config
 from integrations.postgresql import classify as _classify_postgresql
 from integrations.posthog import posthog_config_from_env
@@ -350,10 +333,8 @@ from integrations.registry import (
     DIRECT_CLASSIFIED_EFFECTIVE_SERVICES,
     INTEGRATION_SPECS_BY_SERVICE,
     SKIP_CLASSIFIED_SERVICES,
-    builtin_claimed_keys,
     external_integration_services,
     family_key,
-    normalize_service_key,
     service_key,
 )
 from integrations.rocketchat import classify as _classify_rocketchat
@@ -381,10 +362,6 @@ from integrations.vercel import classify as _classify_vercel
 from integrations.vercel.client import VercelConfig
 from integrations.victoria_logs import classify as _classify_victoria_logs
 from integrations.whatsapp import classify as _classify_whatsapp
-from integrations.x_mcp import build_x_mcp_config
-from integrations.x_mcp import classify as _classify_x_mcp
-from integrations.yandex_cloud import classify as _classify_yandex_cloud
-from integrations.yandex_cloud.config import YandexCloudIntegrationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -490,6 +467,9 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
             resolved[f"_all_{service}_instances"] = instances
 
     resolved["_all"] = active
+    from integrations.github.connections import classify_github_connections
+
+    classify_github_connections(integrations, resolved)
     return resolved
 
 
@@ -514,8 +494,8 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "mongodb_atlas": _classify_mongodb_atlas,
     "mariadb": _classify_mariadb,
     "vercel": _classify_vercel,
-    "opsgenie": _classify_opsgenie,
     "pagerduty": _classify_pagerduty,
+    "pipedream": _classify_pipedream,
     "incident_io": _classify_incident_io,
     "jira": _classify_jira,
     "servicenow": _classify_servicenow,
@@ -526,11 +506,9 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "slack": _classify_slack,
     "whatsapp": _classify_whatsapp,
     "twilio": _classify_twilio,
-    "openclaw": _classify_openclaw,
     "posthog": _classify_posthog,
     "posthog_mcp": _classify_posthog_mcp,
     "sentry_mcp": _classify_sentry_mcp,
-    "x_mcp": _classify_x_mcp,
     "mysql": _classify_mysql,
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
@@ -557,143 +535,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "prefect": _classify_prefect,
     "railway": _classify_railway,
     "new_relic": _classify_new_relic,
-    "yandex_cloud": _classify_yandex_cloud,
 }
-
-#: Classifiers contributed by out-of-tree integration packages.
-_EXTERNAL_CLASSIFIERS: dict[str, _ClassifyFn] = {}
-
-#: Environment loaders contributed by out-of-tree integration packages. Each
-#: returns an active record, or None when its variables are not set.
-_EXTERNAL_ENV_LOADERS: dict[str, Any] = {}
-
-#: Cheap "is this configured?" predicates for out-of-tree integrations, used by
-#: the startup-safe presence check that must not touch the keyring.
-_EXTERNAL_ENV_PRESENCE: dict[str, Callable[[], bool]] = {}
-
-
-#: Which package registered each hook, keyed by ``(hook, service)``. The hook
-#: maps themselves store only the callable, and the entry has to be attributable
-#: to decide whether a second registration is the same plugin reloading or a
-#: different one taking the key over.
-_EXTERNAL_HOOK_OWNERS: dict[tuple[str, str], str] = {}
-
-#: Serialises claiming a key with installing the callback. Reading the current
-#: owner and then writing is a check-then-act: two packages registering the same
-#: key concurrently could both see it free and the later one would win silently.
-_HOOK_REGISTRATION_LOCK = threading.Lock()
-
-
-def _hook_owner(callback: Any) -> str:
-    """Return the top-level package *callback* was defined in, or "" if unknown.
-
-    Owner is inferred rather than passed in so the hook signatures stay as they
-    are. A plugin that reloads produces a new function object from the same
-    package, which has to keep working; a different package must not.
-    """
-    target = callback
-    while isinstance(target, functools.partial):
-        target = target.func
-    module = str(getattr(target, "__module__", "") or "")
-    root = module.split(".", 1)[0]
-    # ``functools`` is what a partial reports through its type, and a builtin
-    # says nothing about who registered it - neither identifies a plugin.
-    return "" if root in {"functools", "builtins"} else root
-
-
-def _install_external_hook(
-    target: dict[str, Any], service: str, callback: Any, *, hook: str
-) -> None:
-    """Claim *service* for *callback* and install it into *target*, as one step.
-
-    Claiming and installing are a single critical section: read the owner, then
-    write, and two packages registering the same key concurrently would both see
-    it free and the later one would take it with nothing reported.
-    """
-    with _HOOK_REGISTRATION_LOCK:
-        target[_claim_external_hook(service, callback, hook=hook)] = callback
-
-
-def _claim_external_hook(service: str, callback: Any, *, hook: str) -> str:
-    """Return the key *hook* may be stored under, or raise if it is not allowed.
-
-    Callers reach this through :func:`_install_external_hook`, which holds the
-    registration lock across the check and the write.
-
-    ``register_integration_spec`` already refuses built-in keys and keys another
-    plugin holds, but each hook below can be called without ever registering a
-    spec. Two packages registering under the same key would otherwise be settled
-    by import order, with the later one classifying, loading or reporting
-    presence for the earlier one's integration.
-
-    Normalized for the same reason the registry normalizes: every lookup here is
-    by a stripped, lower-cased key, so storing ``"GitHub"`` verbatim would both
-    slip past this check and register under a name nothing ever queries.
-    """
-    key = normalize_service_key(service)
-    if not key:
-        raise ValueError(f"Cannot register {hook} without a service name.")
-    if key in builtin_claimed_keys():
-        raise ValueError(
-            f"Cannot register {hook} for {service!r}: a built-in integration already "
-            "answers to that key."
-        )
-
-    owner = _hook_owner(callback)
-    previous = _EXTERNAL_HOOK_OWNERS.get((hook, key))
-    if previous is not None and (not owner or previous != owner):
-        held_by = f"{previous!r}" if previous else "another package"
-        raise ValueError(
-            f"Cannot register {hook} for {key!r}: already registered by {held_by}. "
-            "Two packages cannot share one integration's hooks; pick a key unique to "
-            "this integration."
-        )
-
-    _EXTERNAL_HOOK_OWNERS[(hook, key)] = owner
-    return key
-
-
-def register_classifier(service: str, classify: _ClassifyFn) -> None:
-    """Register the classifier for an integration shipped outside this repo."""
-    _install_external_hook(_EXTERNAL_CLASSIFIERS, service, classify, hook="a classifier")
-
-
-def register_env_loader(service: str, loader: Any) -> None:
-    """Register an environment loader for an out-of-tree integration.
-
-    The loader is called with no arguments during ``load_env_integrations`` and
-    returns a record in the same shape ``_active_env_record`` produces, or None
-    when the integration is not configured in the environment. The record must
-    be for *service*: one naming a different integration is dropped, since the
-    merge that follows lets a later record replace an earlier one by service.
-    """
-    _install_external_hook(_EXTERNAL_ENV_LOADERS, service, loader, hook="an environment loader")
-
-
-def register_env_presence(service: str, is_configured: Callable[[], bool]) -> None:
-    """Register the startup-safe presence check for an out-of-tree integration.
-
-    ``load_env_integration_services`` runs before the first prompt and must not
-    resolve secrets, so it cannot call the full loader registered above. Without
-    a predicate here an integration configured purely from the environment stays
-    invisible to the welcome, REPL and health surfaces even though verification
-    and tool resolution both see it.
-    """
-    _install_external_hook(_EXTERNAL_ENV_PRESENCE, service, is_configured, hook="a presence check")
-
-
-def external_env_presence_services() -> list[str]:
-    """Return the out-of-tree services whose environment variables are set."""
-    present: list[str] = []
-    # Snapshot: a plugin registering from another thread would otherwise turn
-    # this into "dictionary changed size during iteration" mid-startup.
-    for service, is_configured in list(_EXTERNAL_ENV_PRESENCE.items()):
-        try:
-            if is_configured():
-                present.append(service)
-        except Exception as exc:  # a plugin predicate must not break startup
-            _report_env_loader_failure(exc, integration=service)
-    return present
 
 
 def _classify_service_instance(
@@ -706,7 +548,7 @@ def _classify_service_instance(
     ``key`` itself, but Grafana splits into ``grafana`` or ``grafana_local``
     based on its ``is_local`` property.
     """
-    handler = _CLASSIFIERS.get(key) or _EXTERNAL_CLASSIFIERS.get(key)
+    handler = _CLASSIFIERS.get(key)
     if handler is not None:
         return handler(credentials, record_id)
     # Fallback for unknown services: pass through credentials + record id.
@@ -723,9 +565,9 @@ def _parse_instances_env(env_name: str, service: str) -> dict[str, Any] | None:
     var is unset, empty, invalid JSON, or not a non-empty list (logs a
     warning on parse failure so callers can fall through to legacy vars).
 
-    Critical: always returns a SINGLE record with multiple instances inside,
-    never multiple records — otherwise ``merge_integrations_by_service``
-    would drop all but one (PR #527 bug #2).
+    Returns one record with multiple instances because one env var is one
+    connection source; hosted APIs may represent connections as separate
+    records and the merge layer preserves those too.
     """
     raw = os.getenv(env_name, "").strip()
     if not raw:
@@ -1230,25 +1072,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
-    opsgenie_api_key = resolve_env_credential("OPSGENIE_API_KEY")
-    if opsgenie_api_key:
-        try:
-            opsgenie_config = OpsGenieIntegrationConfig.model_validate(
-                {
-                    "api_key": opsgenie_api_key,
-                    "region": os.getenv("OPSGENIE_REGION", "us").strip() or "us",
-                }
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="opsgenie")
-        else:
-            integrations.append(
-                _active_env_record(
-                    "opsgenie",
-                    opsgenie_config.model_dump(exclude={"integration_id"}),
-                )
-            )
-
     pagerduty_api_key = resolve_env_credential(PAGERDUTY_API_KEY_ENV)
     if pagerduty_api_key:
         try:
@@ -1307,6 +1130,29 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 _active_env_record(
                     "jira",
                     jira_config.model_dump(exclude={"integration_id"}),
+                )
+            )
+
+    google_docs_credentials_file = os.getenv(GOOGLE_CREDENTIALS_FILE_ENV, "").strip()
+    google_docs_folder_id = os.getenv(GOOGLE_DRIVE_FOLDER_ID_ENV, "").strip()
+    if google_docs_credentials_file and google_docs_folder_id:
+        try:
+            google_docs_config = GoogleDocsIntegrationConfig.model_validate(
+                {
+                    "credentials_file": google_docs_credentials_file,
+                    "folder_id": google_docs_folder_id,
+                }
+            )
+        except Exception as exc:
+            _report_env_loader_failure(exc, integration="google_docs")
+        else:
+            integrations.append(
+                _active_env_record(
+                    "google_docs",
+                    {
+                        "credentials_file": google_docs_config.credentials_file,
+                        "folder_id": str(google_docs_config.folder_id).strip(),
+                    },
                 )
             )
 
@@ -1525,39 +1371,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
-    openclaw_url = os.getenv(OPENCLAW_MCP_URL_ENV, "").strip()
-    openclaw_command = os.getenv(OPENCLAW_MCP_COMMAND_ENV, "").strip()
-    openclaw_mode = os.getenv(OPENCLAW_MCP_MODE_ENV, "streamable-http").strip().lower()
-    openclaw_mode = openclaw_mode or "streamable-http"
-    if (openclaw_mode == "stdio" and openclaw_command) or (
-        openclaw_mode != "stdio" and openclaw_url
-    ):
-        try:
-            openclaw_config = build_openclaw_config(
-                {
-                    "url": openclaw_url,
-                    "mode": openclaw_mode,
-                    "command": openclaw_command,
-                    "args": [
-                        part
-                        for part in os.getenv(OPENCLAW_MCP_ARGS_ENV, "").strip().split()
-                        if part
-                    ],
-                    "auth_token": resolve_env_credential(OPENCLAW_MCP_AUTH_TOKEN_ENV),
-                }
-            )
-            integrations.append(
-                _active_env_record(
-                    "openclaw",
-                    {
-                        **openclaw_config.model_dump(exclude={"integration_id"}),
-                        "connection_verified": True,
-                    },
-                )
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="openclaw")
-
     try:
         posthog_config = posthog_config_from_env()
         if posthog_config is not None:
@@ -1647,36 +1460,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
         except Exception as exc:
             _report_env_loader_failure(exc, integration="sentry_mcp")
-
-    x_mcp_mode = os.getenv("X_MCP_MODE", "streamable-http").strip().lower()
-    x_mcp_mode = x_mcp_mode or "streamable-http"
-    x_mcp_command = os.getenv("X_MCP_COMMAND", "").strip()
-    x_mcp_token = resolve_env_credential(X_MCP_AUTH_TOKEN_ENV)
-    x_mcp_bearer_token = resolve_env_credential("X_BEARER_TOKEN")
-    x_mcp_url = os.getenv(X_MCP_URL_ENV, "").strip()
-    if (x_mcp_mode == "stdio" and x_mcp_command) or (x_mcp_mode != "stdio" and x_mcp_url):
-        try:
-            x_mcp_config = build_x_mcp_config(
-                {
-                    "url": x_mcp_url,
-                    "mode": x_mcp_mode,
-                    "command": x_mcp_command,
-                    "args": [part for part in os.getenv("X_MCP_ARGS", "").strip().split() if part],
-                    "auth_token": x_mcp_token,
-                    "bearer_token": x_mcp_bearer_token,
-                }
-            )
-            integrations.append(
-                _active_env_record(
-                    "x_mcp",
-                    {
-                        **x_mcp_config.model_dump(exclude={"integration_id"}),
-                        "connection_verified": True,
-                    },
-                )
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="x_mcp")
 
     mariadb_host = os.getenv(MARIADB_HOST_ENV, "").strip()
     mariadb_database = os.getenv(MARIADB_DATABASE_ENV, "").strip()
@@ -2089,60 +1872,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
-    yandex_cloud_folder = os.getenv(YC_FOLDER_ID_ENV, "").strip()
-    yandex_cloud_use_metadata = os.getenv(YC_USE_METADATA_ENV, "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    # A folder alone is not a configuration: every read is folder-scoped, but it
-    # still needs a credential. On an instance the metadata service is the
-    # credential, and it also knows the folder, so that flag stands on its own.
-    if yandex_cloud_folder or yandex_cloud_use_metadata:
-        try:
-            yandex_cloud_config = YandexCloudIntegrationConfig.model_validate(
-                {
-                    "folder_id": yandex_cloud_folder,
-                    "cloud_id": os.getenv(YC_CLOUD_ID_ENV, "").strip(),
-                    "sa_key_file": os.getenv(YC_SA_KEY_FILE_ENV, "").strip(),
-                    "sa_key": resolve_env_credential(YC_SA_KEY_ENV),
-                    "oauth_token": resolve_env_credential(YC_TOKEN_ENV),
-                    "iam_token": resolve_env_credential(YC_IAM_TOKEN_ENV),
-                    "use_metadata": yandex_cloud_use_metadata,
-                }
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="yandex_cloud")
-        else:
-            integrations.append(
-                _active_env_record(
-                    "yandex_cloud",
-                    yandex_cloud_config.model_dump(exclude={"integration_id"}),
-                )
-            )
-
-    for service, loader in list(_EXTERNAL_ENV_LOADERS.items()):
-        try:
-            record = loader()
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration=service)
-        else:
-            if not record:
-                continue
-            emitted = normalize_service_key(str(record.get("service", service)))
-            if emitted != service:
-                # The merge below replaces an earlier record with a later one of
-                # the same service, so an emitted name other than the registered
-                # one would let this loader stand in for another integration.
-                logger.warning(
-                    "load_env_integrations: loader registered for %r emitted %r; dropping it",
-                    service,
-                    emitted,
-                )
-                continue
-            integrations.append(record)
-
     return integrations
 
 
@@ -2157,14 +1886,26 @@ def merge_local_integrations(
 def merge_integrations_by_service(
     *integration_groups: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Merge integration records by service, letting later groups override earlier ones."""
-    merged_by_service: dict[str, dict[str, Any]] = {}
+    """Merge connection sets by service, letting later sources override earlier ones.
+
+    A source may contain several records for any service. Replacing happens at
+    the service boundary, while every connection in the winning source is kept.
+    """
+    merged_by_service: dict[str, list[dict[str, Any]]] = {}
     for integration_group in integration_groups:
+        grouped: dict[str, dict[str, dict[str, Any]]] = {}
         for integration in integration_group:
             service = str(integration.get("service", "")).strip()
-            if service:
-                merged_by_service[service] = integration
-    return list(merged_by_service.values())
+            if not service:
+                continue
+            record_id = str(integration.get("id", "")).strip() or service
+            grouped.setdefault(service, {})[record_id] = integration
+        for service, records in grouped.items():
+            merged_by_service[service] = list(records.values())
+    from integrations.github.connections import preserve_app_github_records
+
+    merged = [record for records in merged_by_service.values() for record in records]
+    return preserve_app_github_records(merged, *integration_groups)
 
 
 def _effective_entry(source: str, config: dict[str, Any]) -> dict[str, Any]:
@@ -2220,9 +1961,11 @@ def _publish_classified_effective_service(
 def _service_metadata(
     store_integrations: list[dict[str, Any]],
     env_integrations: list[dict[str, Any]],
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+    """Source labels and the winning raw record per service (remote > store > env)."""
     source_by_service: dict[str, str] = {}
-    store_integration_by_service: dict[str, dict[str, Any]] = {}
+    record_by_service: dict[str, dict[str, Any]] = {}
 
     for integration in env_integrations:
         service = str(integration.get("service", "")).strip().lower()
@@ -2233,9 +1976,15 @@ def _service_metadata(
         service = str(integration.get("service", "")).strip().lower()
         if service:
             source_by_service[service] = "local store"
-            store_integration_by_service.setdefault(service, integration)
+            record_by_service.setdefault(service, integration)
 
-    return source_by_service, store_integration_by_service
+    for integration in remote_integrations or []:
+        service = str(integration.get("service", "")).strip().lower()
+        if service:
+            source_by_service[service] = "remote"
+            record_by_service[service] = integration
+
+    return source_by_service, record_by_service
 
 
 def _raw_credentials(config: dict[str, Any]) -> dict[str, Any]:
@@ -2288,17 +2037,30 @@ def resolve_effective_integrations(
     *,
     store_integrations: list[dict[str, Any]] | None = None,
     env_integrations: list[dict[str, Any]] | None = None,
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Resolve effective local integrations from ~/.opensre and environment variables."""
+    """Resolve effective integrations from the signed-in account, ~/.opensre, and env.
+
+    Per service the remote (web app) record wins over the local store, which
+    wins over environment variables.
+    """
     store_records = (
         list(store_integrations) if store_integrations is not None else load_integrations()
     )
     env_records = (
         list(env_integrations) if env_integrations is not None else load_env_integrations()
     )
-    merged_integrations = merge_local_integrations(store_records, env_records)
+    if remote_integrations is not None:
+        remote_records = list(remote_integrations)
+    else:
+        from integrations.account_integrations import load_account_integrations
+
+        remote_records = load_account_integrations()
+    merged_integrations = merge_integrations_by_service(env_records, store_records, remote_records)
     classified_integrations = classify_integrations(merged_integrations)
-    source_by_service, store_integration_by_service = _service_metadata(store_records, env_records)
+    source_by_service, record_by_service = _service_metadata(
+        store_records, env_records, remote_records
+    )
 
     effective: dict[str, dict[str, Any]] = {}
 
@@ -2311,17 +2073,17 @@ def resolve_effective_integrations(
         )
 
     if "datadog" not in effective:
-        datadog_store_integration = store_integration_by_service.get("datadog")
-        if isinstance(datadog_store_integration, dict):
-            datadog_credentials = _raw_credentials(datadog_store_integration)
+        datadog_record = record_by_service.get("datadog")
+        if isinstance(datadog_record, dict):
+            datadog_credentials = _raw_credentials(datadog_record)
             effective["datadog"] = _effective_entry(
-                "local store",
+                source_by_service.get("datadog", "local store"),
                 {
                     "api_key": str(datadog_credentials.get("api_key", "")).strip(),
                     "app_key": str(datadog_credentials.get("app_key", "")).strip(),
                     "site": str(datadog_credentials.get("site", "datadoghq.com")).strip()
                     or "datadoghq.com",
-                    "integration_id": str(datadog_store_integration.get("id", "")).strip(),
+                    "integration_id": str(datadog_record.get("id", "")).strip(),
                 },
             )
 
@@ -2346,9 +2108,9 @@ def resolve_effective_integrations(
                 },
             )
 
-    slack_store_integration = store_integration_by_service.get("slack")
-    if isinstance(slack_store_integration, dict):
-        slack_credentials = _raw_credentials(slack_store_integration)
+    slack_record = record_by_service.get("slack")
+    if isinstance(slack_record, dict):
+        slack_credentials = _raw_credentials(slack_record)
         slack_config = _slack_effective_config(
             webhook_url=str(slack_credentials.get("webhook_url", "")).strip(),
             bot_token=str(slack_credentials.get("bot_token", "")).strip(),
@@ -2357,7 +2119,9 @@ def resolve_effective_integrations(
             webhook_label="Slack webhook URL from store",
         )
         if slack_config:
-            effective["slack"] = _effective_entry("local store", slack_config)
+            effective["slack"] = _effective_entry(
+                source_by_service.get("slack", "local store"), slack_config
+            )
     else:
         slack_config = _slack_effective_config(
             webhook_url=os.getenv(SLACK_WEBHOOK_URL_ENV, "").strip(),
@@ -2382,8 +2146,8 @@ def resolve_effective_integrations(
             },
         )
     else:
-        credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "").strip()
-        folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "").strip()
+        credentials_file = os.getenv(GOOGLE_CREDENTIALS_FILE_ENV, "").strip()
+        folder_id = os.getenv(GOOGLE_DRIVE_FOLDER_ID_ENV, "").strip()
         if credentials_file and folder_id:
             effective["google_docs"] = _effective_entry(
                 "local env",

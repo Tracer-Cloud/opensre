@@ -1,0 +1,41 @@
+---
+title: "Showcase"
+description: "See what OpenSRE looks like in practice — install, chat, and share."
+---
+
+Want to know what OpenSRE actually looks like when you run it? Here's a walkthrough of a first install, a first chat with the agent, and a way to put your own demos on the page.
+
+## Watch a first run
+
+Install, sign in, and ask your first question. Most people are done in under ten minutes.
+
+```bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
+opensre
+```
+
+The first prompt offers a demo: the recommended one analyzes a repository on your machine and reports CI/CD reliability and the developer time lost to it. Skip it with **E** to go straight to the prompt.
+
+<Frame>
+  ![The CI/CD reliability report the recommended demo produces](/images/onboarding-ci-analysis-report.png)
+</Frame>
+
+Ask: *Why is the payments-api pod in production crash-looping?* The agent calls your connected tools and answers in the shell.
+
+Prefer a step-by-step walkthrough with screenshots? Start at the [Quickstart](/getting-started/quickstart).
+
+<CardGroup cols={2}>
+  <Card title="Full quickstart" icon="rocket" href="/getting-started/quickstart">
+    Install, sign in, and ask your first question.
+  </Card>
+  <Card title="Install and start" icon="play" href="/getting-started/quickstart#step-1-install-and-start-opensre">
+    Start with the curl command and OpenSRE welcome screen.
+  </Card>
+</CardGroup>
+
+## Show us what you built
+
+Got a demo, a runbook, or a post-mortem that used OpenSRE?
+
+1. Post in [GitHub Discussions](https://github.com/Tracer-Cloud/opensre/discussions) with the **Showcase** tag — include the commands you ran, which tools were connected, and redacted output if you can.
+2. Join the [bi-weekly giveaway](/guides/bi-weekly-giveaway) when you share something — there's OpenSRE swag in the mix.

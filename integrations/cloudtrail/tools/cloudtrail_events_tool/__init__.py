@@ -18,8 +18,10 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.evidence import record_evidence_entry
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from infrastructure.text.truncation import truncate
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 from integrations.cloudtrail import (
     DEFAULT_CLOUDTRAIL_REGION,
@@ -34,6 +36,54 @@ DEFAULT_DURATION_MINUTES = 60
 MAX_DURATION_MINUTES = 90 * 24 * 60
 DEFAULT_MAX_RESULTS = 50
 MAX_RESULTS_LIMIT = 50
+
+#: Bound the filter value echoed into a report summary -- it is a caller-
+#: supplied lookup argument (resource name, username, or event source), not
+#: bounded by the input schema, and can be arbitrarily long.
+_FILTER_VALUE_SUMMARY_TRUNCATE_LEN = 80
+
+
+def _map_lookup_cloudtrail_events(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the event count, filter applied, and how many were writes or errors.
+
+    ``truncated`` reflects whether CloudTrail returned a ``NextToken`` (more
+    events exist beyond this page) -- an explicit signal from the API itself,
+    not an inferred page-size heuristic.
+    """
+    if not output.get("available"):
+        return
+    events = output.get("events") or []
+    if not events:
+        return
+    total = output.get("total_events", len(events))
+    truncated = bool(output.get("truncated"))
+    count_label = f"{total}+" if truncated else str(total)
+    write_count = sum(1 for e in events if e.get("read_only") is False)
+    error_count = sum(1 for e in events if e.get("error_code"))
+    parts = [f"{count_label} event(s)"]
+    if write_count:
+        # write_count/error_count are tallied over this page only (bounded by
+        # max_results) -- on a truncated page they are a floor, not a total.
+        write_label = f"{write_count}+" if truncated else str(write_count)
+        parts.append(f"{write_label} write")
+    if error_count:
+        error_label = f"{error_count}+" if truncated else str(error_count)
+        parts.append(f"{error_label} with error")
+    event_filter = output.get("filter")
+    if event_filter:
+        filter_key = event_filter.get("AttributeKey")
+        raw_value = str(event_filter.get("AttributeValue", ""))
+        collapsed_value = raw_value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+        filter_value = truncate(collapsed_value, _FILTER_VALUE_SUMMARY_TRUNCATE_LEN)
+        parts.append(f"filtered by {filter_key}={filter_value!r}")
+    record_evidence_entry(
+        evidence,
+        source="lookup_cloudtrail_events",
+        label="CloudTrail Events",
+        summary=", ".join(parts),
+    )
 
 
 def _build_lookup_attribute(
@@ -181,6 +231,7 @@ def _shape_event(raw: dict[str, Any]) -> dict[str, Any]:
     injected_params=("aws_backend",),
     is_available=cloudtrail_is_available,
     extract_params=cloudtrail_extract_params,
+    evidence_mapper=_map_lookup_cloudtrail_events,
 )
 def lookup_cloudtrail_events(
     resource_name: str = "",

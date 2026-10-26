@@ -1,4 +1,4 @@
-"""Classify LLM invoke failures for investigation and CLI error mapping."""
+"""Classify LLM invoke failures for CLI error mapping."""
 
 from __future__ import annotations
 
@@ -8,12 +8,11 @@ from enum import StrEnum
 
 @dataclass(frozen=True)
 class LLMInvokeFailure:
-    """User-facing investigation failure derived from an LLM invoke exception."""
+    """User-facing failure derived from an LLM invoke exception."""
 
     user_message: str
     tracker_message: str
     remediation_steps: list[str]
-    root_cause_category: str = "Configuration Error"
 
 
 def _timeout_remediation() -> list[str]:
@@ -27,12 +26,26 @@ def _timeout_remediation() -> list[str]:
             "API providers (Anthropic, OpenAI, etc.): each ReAct turn is limited to "
             + "~90s per HTTP request; retry or switch to a faster model if turns time out."
         ),
-        "Investigation runs many LLM and tool steps — total wall time can be several minutes.",
+        "Agent turns run many LLM and tool steps — total wall time can be several minutes.",
     ]
+
+
+_TIMEOUT_EXCEPTION_NAMES = frozenset(
+    {
+        "APITimeoutError",
+        "ConnectTimeout",
+        "PoolTimeout",
+        "ReadTimeout",
+        "TimeoutException",
+        "WriteTimeout",
+    }
+)
 
 
 def _looks_like_timeout(exc: BaseException) -> bool:
     if isinstance(exc, TimeoutError):
+        return True
+    if type(exc).__name__ in _TIMEOUT_EXCEPTION_NAMES:
         return True
     try:
         from anthropic import APITimeoutError as AnthropicTimeoutError
@@ -81,15 +94,15 @@ def is_cli_timeout_error(exc: BaseException) -> bool:
 # route for the user's input but the provider failed before a normal reply.
 # The prompt-log recorder uses this set to report a failed LLM turn (model
 # "unknown" plus ``ai_error_kind``) instead of a terminal-action turn
-# (``no_conversational_agent``). Terminal-path kinds (investigation failure
-# categories, background-task "timeout"/"cli_exit_nonzero", slash outcomes)
-# must never appear here.
+# (``no_conversational_agent``). Terminal-path kinds (background-task
+# "timeout"/"cli_exit_nonzero", slash outcomes) must never appear here.
+ACTION_AGENT_ERROR = "action_agent_error"  # action-selection LLM failed for conversational input
 LLM_PROVIDER_FAILURE_KINDS = frozenset(
     {
         "llm_unavailable",  # reasoning client import/creation failed
         "llm_timeout",  # conversational stream timed out
         "assistant_error",  # conversational stream failed mid-turn
-        "action_agent_error",  # action-selection LLM failed for conversational input
+        ACTION_AGENT_ERROR,
     }
 )
 
@@ -98,6 +111,7 @@ class ProviderFailureKind(StrEnum):
     """One verdict per provider failure message; every consumer derives from it."""
 
     MISSING_KEY = "missing_key"
+    MISSING_ENDPOINT = "missing_endpoint"
     REJECTED_KEY = "rejected_key"
     QUOTA = "quota"
     NOT_CONFIGURED = "not_configured"
@@ -106,7 +120,9 @@ class ProviderFailureKind(StrEnum):
 
 # First match wins, most specific first. MISSING_KEY holds absence phrasings
 # only — never a bare env-var-name match: rejected-key errors also cite
-# *_API_KEY names and must keep their real authentication message.
+# *_API_KEY names and must keep their real authentication message. A bare
+# "to be set" is not a key absence either: the settings validator also says it
+# about base URLs and AWS regions.
 _FAILURE_RULES: tuple[tuple[ProviderFailureKind, tuple[str, ...]], ...] = (
     (
         ProviderFailureKind.MISSING_KEY,
@@ -116,8 +132,12 @@ _FAILURE_RULES: tuple[tuple[ProviderFailureKind, tuple[str, ...]], ...] = (
             "missing api key",
             "no api key",
             "could not resolve authentication method",  # anthropic SDK, key/token both unset
-            "to be set",  # opensre wrapper: "requires ANTHROPIC_API_KEY to be set"
+            "api_key to be set",  # opensre wrapper: "requires ANTHROPIC_API_KEY to be set"
         ),
+    ),
+    (
+        ProviderFailureKind.MISSING_ENDPOINT,
+        ("base_url to be set",),  # settings: "requires CUSTOM_OPENAI_BASE_URL to be set"
     ),
     (
         ProviderFailureKind.REJECTED_KEY,
@@ -149,6 +169,7 @@ _FAILURE_RULES: tuple[tuple[ProviderFailureKind, tuple[str, ...]], ...] = (
             "no llm provider",
             "llm client unavailable",
             "billing is not enabled",
+            "to be set",  # any other required setting, e.g. "requires AWS_REGION ... to be set"
         ),
     ),
 )
@@ -165,27 +186,89 @@ def classify_llm_provider_failure(message: str) -> ProviderFailureKind:
     return ProviderFailureKind.PROVIDER_ERROR
 
 
-def remediate_missing_llm_credentials(message: str, *, provider: str | None = None) -> str | None:
-    """Actionable replacement text when an LLM call failed for lack of any API key.
+class CommandSurface(StrEnum):
+    """Where the reader runs OpenSRE commands, which decides how guidance spells them."""
 
-    Returns ``None`` for every other failure (rejected key, quota, timeout, …)
-    so callers fall back to their existing rendering.
+    #: Slash commands typed at the interactive shell prompt.
+    SHELL = "shell"
+    #: ``opensre`` subcommands run from a terminal, script or CI job.
+    CLI = "cli"
+
+
+_AUTH_LOGIN_COMMAND: dict[CommandSurface, str] = {
+    CommandSurface.SHELL: "/auth login",
+    CommandSurface.CLI: "opensre auth login",
+}
+_ONBOARD_COMMAND: dict[CommandSurface, str] = {
+    CommandSurface.SHELL: "/onboard",
+    CommandSurface.CLI: "opensre onboard",
+}
+_ACCOUNT_LOGIN_COMMAND: dict[CommandSurface, str] = {
+    CommandSurface.SHELL: "/account login",
+    CommandSurface.CLI: "opensre account login",
+}
+
+
+def remediate_llm_setup_failure(
+    message: str,
+    *,
+    surface: CommandSurface,
+    provider: str | None = None,
+    offer_account_login: bool = False,
+) -> str | None:
+    """Setup guidance that replaces *message* when an LLM call failed for missing setup.
+
+    A missing API key or endpoint base URL gets the commands that fix it, spelled
+    for *surface*. *provider* is named only as the catalog id those commands
+    accept. *offer_account_login* adds the OpenSRE-hosted model as an alternative
+    for a signed-out reader. Returns ``None`` for every other failure (rejected
+    key, quota, timeout, …) so callers fall back to their existing rendering.
     """
-    if classify_llm_provider_failure(message) is not ProviderFailureKind.MISSING_KEY:
+    kind = classify_llm_provider_failure(message)
+    if kind is ProviderFailureKind.MISSING_KEY:
+        guidance = _missing_key_guidance(provider, surface)
+    elif kind is ProviderFailureKind.MISSING_ENDPOINT:
+        guidance = _missing_endpoint_guidance(provider, surface)
+    else:
         return None
-    target = provider.strip() if provider else "<provider>"
-    subject = f"No API key is set for {target}" if provider else "No LLM API key is set"
+    if not offer_account_login:
+        return guidance
     return (
-        f"{subject}. Run `/auth login {target}` to add one, or `/onboard` to rerun "
-        f"setup (from a terminal: `opensre auth login {target}`). "
-        f"(Provider detail: {message.strip()})"
+        f"{guidance} To use the OpenSRE-hosted model instead, sign in with "
+        f"`{_ACCOUNT_LOGIN_COMMAND[surface]}`."
     )
+
+
+def _missing_key_guidance(provider: str | None, surface: CommandSurface) -> str:
+    from config.llm_auth.provider_catalog import provider_spec
+
+    spec = provider_spec(provider) if provider else None
+    # Only an OpenSRE-managed API-key provider has an ``auth login`` profile.
+    target = spec.value if spec is not None and spec.uses_open_sre_api_key else None
+    subject = f"No API key is set for {target}" if target else "No LLM API key is set"
+    return (
+        f"{subject}. Run `{_AUTH_LOGIN_COMMAND[surface]} {target or '<provider>'}` "
+        f"to add one, or `{_ONBOARD_COMMAND[surface]}` to rerun setup."
+    )
+
+
+def _missing_endpoint_guidance(provider: str | None, surface: CommandSurface) -> str:
+    from config.llm_auth.provider_catalog import provider_spec
+
+    spec = provider_spec(provider) if provider else None
+    subject = (
+        f"{spec.endpoint_env} is not set for {spec.value}"
+        if spec is not None and spec.endpoint_env
+        else "No LLM endpoint base URL is set"
+    )
+    return f"{subject}. Run `{_ONBOARD_COMMAND[surface]}` to configure the endpoint."
 
 
 # Analytics vocabulary predates the split of key failures into missing vs
 # rejected; dashboards filter on these four values.
 _ANALYTICS_KIND_BY_FAILURE: dict[ProviderFailureKind, str] = {
     ProviderFailureKind.MISSING_KEY: "not_configured",
+    ProviderFailureKind.MISSING_ENDPOINT: "not_configured",
     ProviderFailureKind.REJECTED_KEY: "auth",
     ProviderFailureKind.QUOTA: "quota",
     ProviderFailureKind.NOT_CONFIGURED: "not_configured",
@@ -223,8 +306,7 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
         provider = getattr(exc, "provider", None) or "unknown"
         return LLMInvokeFailure(
             user_message=(
-                f"The {provider} CLI is not authenticated, so the "
-                "investigation could not call the model."
+                f"The {provider} CLI is not authenticated, so the agent could not call the model."
             ),
             tracker_message="Failed: CLI not authenticated",
             remediation_steps=[
@@ -241,28 +323,24 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
     if is_cli_timeout_error(exc):
         detail = str(exc).strip() or "The CLI subprocess exceeded its time limit."
         return LLMInvokeFailure(
-            user_message=f"Investigation stopped: {detail}",
+            user_message=f"LLM call stopped: {detail}",
             tracker_message="Failed: LLM timed out",
             remediation_steps=_timeout_remediation(),
-            root_cause_category="Investigation Error",
         )
 
     if _is_llm_cli_error(exc, "CLIInterruptedError"):
         return LLMInvokeFailure(
-            user_message="Investigation was interrupted while waiting for the LLM CLI.",
+            user_message="The turn was interrupted while waiting for the LLM CLI.",
             tracker_message="Failed: LLM interrupted",
-            remediation_steps=["Retry the investigation when ready."],
-            root_cause_category="Investigation Error",
+            remediation_steps=["Retry when ready."],
         )
 
     if not isinstance(exc, RuntimeError):
         if _looks_like_timeout(exc):
-            detail = str(exc).strip() or "The LLM request timed out."
             return LLMInvokeFailure(
-                user_message=f"Investigation stopped: {detail}",
+                user_message="LLM call stopped: the LLM request timed out.",
                 tracker_message="Failed: LLM timed out",
                 remediation_steps=_timeout_remediation(),
-                root_cause_category="Investigation Error",
             )
         return None
 
@@ -277,8 +355,7 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
 
         if "anthropic" in err_msg and "was not found" in err_msg:
             return LLMInvokeFailure(
-                user_message=raw.strip()
-                or "Anthropic model was not found. Check your configured model name.",
+                user_message="Anthropic model was not found. Check your configured model name.",
                 tracker_message="Failed: Model not found",
                 remediation_steps=[
                     (
@@ -290,8 +367,7 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
             )
         if "azure openai deployment" in err_msg or is_azure_openai_failure_message(raw):
             return LLMInvokeFailure(
-                user_message=raw.strip()
-                or "The configured Azure OpenAI deployment was not found (404).",
+                user_message="The configured Azure OpenAI deployment was not found (404).",
                 tracker_message="Failed: Azure deployment not found",
                 remediation_steps=azure_deployment_not_found_remediation_steps(),
             )
@@ -313,7 +389,7 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
         return LLMInvokeFailure(
             user_message=(
                 "The configured model does not support tool calling. "
-                "The investigation agent requires a model with native tool-calling support."
+                "The agent requires a model with native tool-calling support."
             ),
             tracker_message="Failed: Model does not support tools",
             remediation_steps=[
@@ -325,13 +401,12 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
 
     if "rate limit" in err_msg:
         return LLMInvokeFailure(
-            user_message="The LLM provider rate-limited this investigation request.",
+            user_message="The LLM provider rate-limited this request.",
             tracker_message="Failed: LLM rate limited",
             remediation_steps=[
                 "Wait a few minutes and retry.",
                 "Reduce parallel load or switch to a higher quota tier if available.",
             ],
-            root_cause_category="Investigation Error",
         )
 
     if (
@@ -340,7 +415,7 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
         or ("api key" in err_msg and "invalid" in err_msg)
     ):
         return LLMInvokeFailure(
-            user_message=f"Investigation stopped: LLM authentication failed. {raw}",
+            user_message="LLM call stopped: LLM authentication failed.",
             tracker_message="Failed: LLM authentication",
             remediation_steps=[
                 "Verify API keys or CLI login for your LLM_PROVIDER.",
@@ -349,12 +424,10 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
         )
 
     if _looks_like_timeout(exc):
-        detail = raw.strip() or "The LLM request timed out."
         return LLMInvokeFailure(
-            user_message=f"Investigation stopped: {detail}",
+            user_message="LLM call stopped: the LLM request timed out.",
             tracker_message="Failed: LLM timed out",
             remediation_steps=_timeout_remediation(),
-            root_cause_category="Investigation Error",
         )
 
     return None

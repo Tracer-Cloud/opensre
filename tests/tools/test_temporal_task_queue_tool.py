@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
-from integrations.temporal.tools import TemporalTaskQueueTool
+from integrations.temporal.tools import TemporalTaskQueueTool, _map_temporal_task_queue
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -119,3 +120,63 @@ def test_run_returns_error_on_failure(monkeypatch) -> None:
     assert "404" in result["error"]
     assert result["pollers"] == []
     assert result["stats"] == {}
+
+
+class TestMapTemporalTaskQueue:
+    def test_records_entry_with_backlog(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_temporal_task_queue(
+            evidence,
+            {
+                "available": True,
+                "total": 2,
+                "pollers": [{"identity": "worker-1"}, {"identity": "worker-2"}],
+                "stats": {"approximateBacklogCount": "42"},
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "temporal_task_queue"
+        assert entries[0]["summary"] == "2 active poller(s), backlog 42"
+
+    def test_records_zero_pollers_as_the_primary_outage_signal(self) -> None:
+        """Regression: an empty poller list means workers are down -- this is
+        the tool's main signal, so it must be cited, not treated as noise."""
+        evidence: dict[str, Any] = {}
+
+        _map_temporal_task_queue(
+            evidence, {"available": True, "total": 0, "pollers": [], "stats": {}}, {}
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "0 active poller(s)"
+
+    def test_records_nothing_when_task_queue_name_missing(self) -> None:
+        """The 'task_queue_name is required' error path returns
+        available=True with no 'total' key -- must not be mistaken for a
+        genuine zero-poller result."""
+        evidence: dict[str, Any] = {}
+
+        _map_temporal_task_queue(
+            evidence,
+            {
+                "available": True,
+                "error": "task_queue_name is required.",
+                "pollers": [],
+                "stats": {},
+            },
+            {},
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_temporal_task_queue(
+            evidence, {"available": False, "error": "HTTP 404: Task queue not found."}, {}
+        )
+
+        assert "catalog_entries" not in evidence

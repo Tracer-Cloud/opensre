@@ -22,7 +22,6 @@ from config.constants import paths
 from config.constants.billing import ORGANIZATION_ID_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from config.principal import Principal
 from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
-from gateway.core.billing.credits_client import CreditsOutcome
 from gateway.core.storage import FileBindingStore, SessionResolver
 from gateway.transports.slack.processing.dispatcher import SlackTurnDispatcher
 from gateway.transports.slack.processing.events import SlackInboundMessage
@@ -147,10 +146,6 @@ def allow_all_security():
         patch(
             "gateway.transports.slack.processing.dispatcher.session_needs_thread_seed",
             return_value=False,
-        ),
-        patch(
-            "gateway.transports.slack.processing.dispatcher.consume_credits",
-            return_value=CreditsOutcome.UNCONFIGURED,
         ),
         patch("gateway.transports.slack.processing.dispatcher.mark_turn_working"),
         patch("gateway.transports.slack.processing.dispatcher.mark_turn_done"),

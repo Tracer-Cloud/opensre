@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.evidence import record_evidence_entry
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 from integrations.rds import (
@@ -17,6 +18,30 @@ from integrations.rds import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_DURATION_MINUTES = 60
+
+
+def _map_describe_rds_events(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite recent RDS events (failovers, maintenance, backups) as report evidence.
+
+    ``execute_aws_sdk_call`` makes one unpaginated ``describe_events`` call, so
+    ``events`` can be a partial page on a busy instance with a long lookback
+    window. The summary says how many were *reported*, not how many occurred,
+    so it never implies a completeness the underlying call doesn't guarantee.
+    """
+    if not output.get("available"):
+        return
+    events = output.get("events") or []
+    duration_minutes = output.get("duration_minutes")
+    if events:
+        window = f" in the last {duration_minutes} min" if duration_minutes else ""
+        record_evidence_entry(
+            evidence,
+            source="describe_rds_events",
+            label="RDS Events",
+            summary=f"{len(events)} event(s) reported{window}",
+        )
 
 
 @tool(
@@ -48,6 +73,7 @@ DEFAULT_DURATION_MINUTES = 60
     },
     is_available=rds_is_available,
     extract_params=rds_extract_params,
+    evidence_mapper=_map_describe_rds_events,
 )
 def describe_rds_events(
     db_instance_identifier: str,

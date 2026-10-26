@@ -11,18 +11,47 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.domain.types.evidence import record_evidence_entry
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.alertmanager.client import make_alertmanager_client
 
 _FIRING_STATES = {"active", "unprocessed"}
 
 
+def _map_alertmanager_alerts(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Record the alert landscape as one citeable entry, or nothing.
+
+    The firing count is always stated, including zero: "3 alerts, 0 firing" is a
+    finding, while omitting it leaves a reader unable to tell nothing-firing from
+    a count the tool never returned.
+
+    A failed call returns the unavailable envelope with ``alerts: []``, so the
+    emptiness check covers the error shape too — an entry reading "0 alerts"
+    would cost context on every later turn and support no claim.
+    """
+    alerts = output.get("alerts", [])
+    if not alerts:
+        return
+    firing = output.get("firing_alerts", [])
+    record_evidence_entry(
+        evidence,
+        source="alertmanager_alerts",
+        label="Alertmanager Alerts",
+        summary=f"{len(alerts)} alerts, {len(firing)} firing",
+    )
+
+
 class AlertmanagerAlertsTool(BaseTool):
     """Query Alertmanager for active, silenced, and inhibited alerts to correlate incident signals."""
 
     name = "alertmanager_alerts"
+    evidence_mapper = _map_alertmanager_alerts
     source = "alertmanager"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Query Alertmanager to list firing, silenced, and inhibited alerts. "
         "Use this to discover concurrent alerts that may share a root cause, "
@@ -182,11 +211,35 @@ Useful for understanding whether an alert was intentionally suppressed
 from core.tool import BaseTool
 
 
+def _map_alertmanager_silences(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Record the silence landscape as one citeable entry, or nothing.
+
+    Same contract as the alerts mapper: the active count is always stated, and
+    the unavailable envelope carries ``silences: []`` so a failed call records
+    nothing.
+    """
+    silences = output.get("silences", [])
+    if not silences:
+        return
+    active = output.get("active_silences", [])
+    record_evidence_entry(
+        evidence,
+        source="alertmanager_silences",
+        label="Alertmanager Silences",
+        summary=f"{len(silences)} silences, {len(active)} active",
+    )
+
+
 class AlertmanagerSilencesTool(BaseTool):
     """Query Alertmanager silences to detect suppressed alerts."""
 
     name = "alertmanager_silences"
+    evidence_mapper = _map_alertmanager_silences
     source = "alertmanager"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Query Alertmanager silences to see which alerts are currently suppressed and why. "
         "Helps distinguish planned maintenance windows from unexpected alert suppression."

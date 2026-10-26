@@ -18,8 +18,20 @@ def test_gateway_requires_subcommand(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["gateway"])
 
     assert result.exit_code != 0
-    for subcommand in ("start", "stop", "status", "logs"):
+    for subcommand in ("start", "stop", "status", "logs", "web"):
         assert subcommand in result.output
+
+
+def test_gateway_web_serves_in_the_foreground(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr("surfaces.gateway_entry.serve_web", lambda: calls.append("web"))
+
+    result = runner.invoke(cli, ["gateway", "web"])
+
+    assert result.exit_code == 0
+    assert calls == ["web"]
 
 
 def test_gateway_start_foreground_runs_the_host_runner(runner: CliRunner) -> None:

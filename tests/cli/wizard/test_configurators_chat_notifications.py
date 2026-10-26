@@ -104,14 +104,19 @@ def wizard(monkeypatch: pytest.MonkeyPatch) -> _Wizard:
             note="Delivering to Acme Alerts (channel).",
         )
 
-    monkeypatch.setattr(spec_configurator, "_console", run.console)
-    monkeypatch.setattr(spec_configurator, "_integration_defaults", lambda _s: ({}, {}))
-    monkeypatch.setattr(spec_configurator, "_prompt_value", _fake_prompt)
-    monkeypatch.setattr(spec_configurator, "_render_integration_result", lambda *_a: None)
+    monkeypatch.setattr(spec_configurator, "console", run.console)
+    monkeypatch.setattr(spec_configurator, "integration_defaults", lambda _s: ({}, {}))
+    monkeypatch.setattr(spec_configurator, "prompt_value", _fake_prompt)
+    monkeypatch.setattr(spec_configurator, "render_integration_result", lambda *_a: None)
     monkeypatch.setattr(
         chat_notifications,
         "TELEGRAM_SETUP",
-        replace(chat_notifications.TELEGRAM_SETUP, verify=_fake_verify, resolve=_fake_resolve),
+        replace(
+            chat_notifications.TELEGRAM_SETUP,
+            guide=None,
+            verify=_fake_verify,
+            resolve=_fake_resolve,
+        ),
     )
     monkeypatch.setattr(
         setup_flow,

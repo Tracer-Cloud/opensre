@@ -1,0 +1,112 @@
+---
+title: "ServiceNow"
+description: "Connect a ServiceNow instance so OpenSRE can check its configuration and credentials"
+---
+
+## Overview
+
+OpenSRE connects to ServiceNow so the CLI and interactive shell can answer
+configuration questions about your instance — for example
+`opensre integrations verify servicenow` and shell questions like
+*"Is ServiceNow configured?"*.
+
+ServiceNow today is a **config and verify** integration. It does not register
+agent query tools.
+
+## Prerequisites
+
+- A ServiceNow instance URL (a free [developer instance](https://developer.servicenow.com) works)
+- A user with read access to the `sys_user` table (used for the live connectivity check)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup servicenow
+```
+
+### Option 2: Environment variables
+
+```bash
+export SERVICENOW_INSTANCE_URL=https://dev12345.service-now.com
+export SERVICENOW_USERNAME=admin
+export SERVICENOW_PASSWORD=your-password
+```
+
+`SERVICENOW_PASSWORD` is also resolved from `~/.opensre/credentials.json` when the environment
+variable is not set (the wizard stores it there).
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "servicenow-prod",
+      "service": "servicenow",
+      "status": "active",
+      "credentials": {
+        "instance_url": "https://dev12345.service-now.com",
+        "username": "admin",
+        "password": "your-password"
+      }
+    }
+  ]
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `instance_url` | **Required.** Instance URL (for example `https://dev12345.service-now.com`). Must use `https://` — plain `http://` is accepted only for localhost/loopback. |
+| `username` | **Required.** ServiceNow username for HTTP Basic authentication |
+| `password` | **Required.** Password for the user |
+
+## Credentials
+
+Use a dedicated ServiceNow user with the minimum roles needed for a one-row read
+of `sys_user` (for example `itil`). Prefer `opensre integrations setup servicenow`
+so the password stays in `~/.opensre/credentials.json` instead of `.env`.
+
+## Tools
+
+None. ServiceNow is used for configuration and verification only. The interactive
+shell can still answer *"Is ServiceNow configured?"* by running the verifier.
+
+## Verify
+
+```bash
+opensre integrations verify servicenow
+```
+
+Verify is a **live** check: it validates the URL shape (HTTPS or loopback) and
+calls `GET …/api/now/table/sys_user?sysparm_limit=1`.
+
+Expected detail on success:
+
+```
+ServiceNow connected as <username> at https://dev12345.service-now.com.
+```
+
+You can also ask the interactive shell:
+
+```
+> Is ServiceNow configured?
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Status `missing`** | Set `instance_url`, `username`, and `password` via any setup option above |
+| **401 Unauthorized** | Check the username and password combination |
+| **403 Forbidden** | User authenticated but cannot read `sys_user` — grant a role with table read access (for example `itil`) |
+| **404 Not Found** | Verify the instance URL (include `https://`, no path) |
+| **Developer instance unreachable** | Free developer instances hibernate after inactivity — wake it from the developer portal and retry |
+
+## Security
+
+- Use a **dedicated ServiceNow user** with minimum read roles.
+- Prefer `opensre integrations setup servicenow` so the password stays in `~/.opensre/credentials.json`.
+- Rotate the password periodically and remove the integration when it is no longer needed.

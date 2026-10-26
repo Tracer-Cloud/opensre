@@ -8,8 +8,8 @@ Resolution rule:
 
 The store, env, and keyring fallbacks match the resolution order the scheduler
 and onboarding wizard use, so credentials saved via ``opensre onboard`` or
-``opensre integrations setup telegram`` work uniformly across the watchdog,
-Hermes incident sinks, the Telegram send-message tool, and any other caller.
+``opensre integrations setup telegram`` work uniformly across the Telegram
+send-message tool and any other caller.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def _telegram_store_config() -> dict[str, object]:
     """Return the Telegram integration's effective config, or ``{}``.
 
     Reads the merged integration store + environment view used everywhere else
-    (investigation pipeline, scheduler). Returns an empty mapping when the store
+    (agent turns, scheduler). Returns an empty mapping when the store
     is unavailable or has no Telegram integration so callers fall back to the
     environment / keyring. Resolution is wrapped defensively: a malformed or
     locked store must never crash the caller at startup.
@@ -99,7 +99,7 @@ def load_credentials_from_env(
             "TELEGRAM_BOT_TOKEN is not set.",
             suggestion=(
                 "Configure Telegram with `opensre integrations setup telegram` "
-                "(or `opensre onboard`), or export TELEGRAM_BOT_TOKEN=<your-bot-token>. "
+                "or export TELEGRAM_BOT_TOKEN=<your-bot-token>. "
                 "Get a token from @BotFather on Telegram."
             ),
         )

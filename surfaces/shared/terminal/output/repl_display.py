@@ -40,7 +40,7 @@ def _fit_hint_prefix(prefix: str, *, cols: int | None = None) -> str:
 
 
 class _ReplEventLogDisplay:
-    """Append-only investigation progress for the interactive REPL.
+    """Append-only progress for the interactive REPL.
 
     Live animation is delegated to the prompt spinner (``SpinnerState``): raw
     cursor-up frames cannot rewrite a row under ``patch_stdout(raw=True)``, so
@@ -67,10 +67,10 @@ class _ReplEventLogDisplay:
     def stop(self) -> None:
         from surfaces.shared.terminal.output.console_state import (
             _capture_footer_snapshot,
-            get_investigation_spinner,
+            get_turn_spinner,
         )
 
-        spinner = get_investigation_spinner()
+        spinner = get_turn_spinner()
         if spinner is not None:
             spinner.stop()
         _capture_footer_snapshot(self)
@@ -100,9 +100,9 @@ class _ReplEventLogDisplay:
         self._emit(t)
 
     def step_start(self, node_name: str) -> None:
-        from surfaces.shared.terminal.output.console_state import get_investigation_spinner
+        from surfaces.shared.terminal.output.console_state import get_turn_spinner
 
-        spinner = get_investigation_spinner()
+        spinner = get_turn_spinner()
         if spinner is not None:
             spinner.set_phase(_node_label(node_name))
         with self._lock:
@@ -158,12 +158,11 @@ class _ReplEventLogDisplay:
     def print_above(self, text: str) -> None:
         if not text.strip():
             return
-        from rich.markdown import Markdown
-
+        from infrastructure.terminal.markdown import ReplyMarkdown, UnpaddedRows
         from infrastructure.terminal.theme import MARKDOWN_THEME
 
         with self._console.use_theme(MARKDOWN_THEME):
-            self._emit(Markdown(text, code_theme="ansi_dark"))
+            self._emit(UnpaddedRows(ReplyMarkdown(text, code_theme="ansi_dark")))
 
     def print_above_renderable(self, renderable: Any) -> None:
         self._emit(renderable)

@@ -1,0 +1,149 @@
+---
+title: "Snowflake"
+description: "Connect Snowflake so OpenSRE can query data warehouse and investigate analytics issues"
+---
+
+## Overview
+
+OpenSRE connects to Snowflake to help investigate analytics pipeline issues — querying warehouse metadata and query history to surface failed queries, long-running statements, and warehouse usage patterns.
+
+Authentication uses a **programmatic access token** (Bearer). A password field may appear in config schemas but is ignored at runtime — `SNOWFLAKE_TOKEN` is required.
+
+## Prerequisites
+
+- A Snowflake account (trial or production)
+- A configured warehouse
+- A programmatic access token for API authentication
+- A database and schema to query
+- Network access from your OpenSRE environment to Snowflake
+
+## Setup
+
+There is no dedicated `opensre integrations setup snowflake` wizard today. Configure via environment variables or the persistent store, then verify.
+
+### Option 1: Environment variables
+
+```bash
+SNOWFLAKE_ACCOUNT_IDENTIFIER=xy12345.us-east-1
+SNOWFLAKE_USER=opensre_user
+SNOWFLAKE_TOKEN=your_programmatic_access_token
+SNOWFLAKE_PASSWORD=your_password
+SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+SNOWFLAKE_DATABASE=analytics
+SNOWFLAKE_SCHEMA=public
+SNOWFLAKE_ROLE=viewer
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SNOWFLAKE_ACCOUNT_IDENTIFIER` | — | **Required.** Snowflake account identifier |
+| `SNOWFLAKE_ACCOUNT` | — | Alternative account variable |
+| `SNOWFLAKE_USER` | — | Snowflake username |
+| `SNOWFLAKE_TOKEN` | — | **Required.** Programmatic access token |
+| `SNOWFLAKE_PASSWORD` | — | Optional; ignored for SQL API auth today |
+| `SNOWFLAKE_WAREHOUSE` | — | Warehouse name (for example `COMPUTE_WH`) |
+| `SNOWFLAKE_DATABASE` | — | Default database |
+| `SNOWFLAKE_SCHEMA` | — | Default schema |
+| `SNOWFLAKE_ROLE` | — | Role with appropriate permissions |
+
+<Info>
+OpenSRE requires `SNOWFLAKE_ACCOUNT_IDENTIFIER` (or `SNOWFLAKE_ACCOUNT`) and `SNOWFLAKE_TOKEN` to activate the integration. Generate a programmatic access token in Snowflake under your user's security settings.
+</Info>
+
+### Option 2: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "snowflake-prod",
+      "service": "snowflake",
+      "status": "active",
+      "credentials": {
+        "account": "xy12345.us-east-1",
+        "user": "opensre_user",
+        "token": "your_programmatic_access_token",
+        "password": "your_password",
+        "warehouse": "COMPUTE_WH",
+        "database": "analytics",
+        "schema": "public",
+        "role": "viewer"
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+### Finding your account identifier
+
+1. Open the Snowflake web interface
+2. Open your account or profile settings
+3. Locate your account identifier
+4. Use the full value for `SNOWFLAKE_ACCOUNT_IDENTIFIER`
+
+Examples:
+
+```text
+xy12345
+xy12345.us-east-1
+myorg-myaccount
+myorg-myaccount.eu-west-1
+```
+
+<Info>
+Use the full account identifier shown by Snowflake. Do not remove region or organization information unless your Snowflake deployment documentation explicitly instructs you to do so.
+</Info>
+
+### Best practice: dedicated role
+
+```sql
+CREATE ROLE opensre_viewer;
+
+GRANT SELECT ON ALL TABLES IN DATABASE analytics TO ROLE opensre_viewer;
+GRANT MONITOR ON WAREHOUSE COMPUTE_WH TO ROLE opensre_viewer;
+
+CREATE USER opensre_user PASSWORD = 'strong_secure_password';
+
+GRANT ROLE opensre_viewer TO USER opensre_user;
+```
+
+Then issue a programmatic access token for that user and use it in OpenSRE.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `query_snowflake_history` | Bounded, read-only query-history evidence (failed / long-running queries, warehouse usage) |
+
+## Verify
+
+```bash
+opensre integrations verify snowflake
+```
+
+Expected output:
+
+```
+Service: snowflake
+Status: passed
+Detail: Configured for Snowflake account xy12345.us-east-1
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Missing token credentials** | Set `SNOWFLAKE_TOKEN`. Password alone does not activate the integration |
+| **Invalid account identifier** | Use the full identifier from Snowflake (including region/org suffix if shown) |
+| **Warehouse suspended** | Resume the warehouse or grant `OPERATE` on the warehouse to the OpenSRE role |
+| **Insufficient privileges** | Grant `MONITOR` on the warehouse and `SELECT` on `ACCOUNT_USAGE.QUERY_HISTORY` |
+
+## Security
+
+- Use a dedicated Snowflake user for OpenSRE
+- Grant only the permissions the agent needs
+- Rotate credentials regularly
+- Monitor access through Snowflake audit logs

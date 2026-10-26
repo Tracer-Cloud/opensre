@@ -98,7 +98,7 @@ def test_machine_token_empty_when_mint_fails(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_empty_when_nothing_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Arrange: neither credential set — metering and vault stay switched off.
+    # Arrange: neither credential set — callers receive no usable bearer token.
     monkeypatch.delenv(MACHINE_SECRET_ENV, raising=False)
     monkeypatch.delenv(USAGE_SECRET_ENV, raising=False)
 

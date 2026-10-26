@@ -18,7 +18,7 @@ from config.constants.gateway import (
 from config.principal import StorageScope
 from config.scope_context import bound_storage_scope
 from core.agent_harness import SessionCore
-from gateway.core.billing.credits_client import CreditsOutcome, consume_credits
+from gateway.core.billing.turn_metering import bound_turn_metering
 from gateway.core.middleware.active_turns import ActiveTurnRegistry, is_stop_command
 from gateway.core.middleware.approvals import ApprovalBroker, approval_tool_hooks
 from gateway.core.middleware.attention import GateDecision, ThreadAttentionGate
@@ -192,14 +192,6 @@ class DiscordTurnDispatcher:
             if session is None:
                 return
 
-            if consume_credits(scope.principal.id, reason="discord_turn") is CreditsOutcome.DENIED:
-                self._logger.info(
-                    "[discord-gateway] turn denied: out of credits channel=%s",
-                    inbound.channel_id,
-                )
-                self._post(inbound, CREDITS_DENIED_MESSAGE)
-                return
-
             is_reply = not inbound.addressed
             self._logger.info(
                 "inbound platform=discord user=%s channel=%s thread=%s reply=%s "
@@ -271,6 +263,32 @@ class DiscordTurnDispatcher:
                     bot_token=self._bot_token,
                 )
 
+            def _on_credit_denied() -> None:
+                self._logger.info(
+                    "[discord-gateway] turn denied: out of credits channel=%s",
+                    inbound.channel_id,
+                )
+                if not terminal.claim():
+                    return
+                try:
+                    output.finalize(CREDITS_DENIED_MESSAGE)
+                except Exception:
+                    self._logger.debug(
+                        "[discord-gateway] credits-denied finalize failed", exc_info=True
+                    )
+                remove_reaction(
+                    channel_id=inbound.channel_id,
+                    message_id=inbound.message_id,
+                    emoji=_WORKING_EMOJI,
+                    bot_token=self._bot_token,
+                )
+                add_reaction(
+                    channel_id=inbound.channel_id,
+                    message_id=inbound.message_id,
+                    emoji=_FAILED_EMOJI,
+                    bot_token=self._bot_token,
+                )
+
             turn_started = time.monotonic()
             with terminal.timeout_after(self._settings.turn_timeout_seconds, _on_turn_timeout):
                 try:
@@ -301,6 +319,12 @@ class DiscordTurnDispatcher:
                             surface=UsageSurface.DISCORD,
                             session_id=session.session_id,
                             user_id=inbound.user_id or None,
+                        ),
+                        bound_turn_metering(
+                            organization_id=scope.principal.id,
+                            reason="discord_turn",
+                            idempotency_key=f"{UsageSurface.DISCORD.value}:{inbound.message_id}",
+                            on_denied=_on_credit_denied,
                         ),
                     ):
                         self._handler(agent_text, session, output, self._logger)

@@ -176,12 +176,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=20,
     ),
     IntegrationSpec(
-        service="opsgenie",
-        has_verifier=True,
-        direct_effective=True,
-        verify_order=21,
-    ),
-    IntegrationSpec(
         service="incident_io",
         aliases=("incident.io", "incidentio"),
         has_verifier=True,
@@ -247,13 +241,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=28,
     ),
     IntegrationSpec(
-        service="openclaw",
-        has_verifier=True,
-        direct_effective=True,
-        setup_order=12,
-        verify_order=39,
-    ),
-    IntegrationSpec(
         service="posthog_mcp",
         aliases=("posthog mcp", "posthog-mcp"),
         has_verifier=True,
@@ -268,14 +255,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         direct_effective=True,
         setup_order=34,
         verify_order=45,
-    ),
-    IntegrationSpec(
-        service="x_mcp",
-        aliases=("x mcp", "x-mcp", "twitter", "twitter_mcp", "twitter-mcp"),
-        has_verifier=True,
-        direct_effective=True,
-        setup_order=39,
-        verify_order=49,
     ),
     IntegrationSpec(
         service="mysql",
@@ -387,11 +366,15 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         setup_order=25,
         verify_order=9,
     ),
-    IntegrationSpec(service="google_docs", has_verifier=True, verify_order=19),
+    IntegrationSpec(
+        service="google_docs",
+        has_verifier=True,
+        setup_order=55,
+        verify_order=19,
+    ),
     IntegrationSpec(service="kafka", has_verifier=True, verify_order=37),
     IntegrationSpec(service="clickhouse", has_verifier=True, verify_order=23),
     IntegrationSpec(service="alicloud", direct_effective=True),
-    IntegrationSpec(service="notion"),
     IntegrationSpec(service="prefect", has_verifier=True, direct_effective=True, verify_order=51),
     IntegrationSpec(
         service="posthog",
@@ -452,16 +435,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         core_verify=True,
         setup_order=53,
         verify_order=59,
-    ),
-    IntegrationSpec(
-        service="yandex_cloud",
-        # ``yc`` is what the vendor's own CLI is called, so it is what people
-        # type; ``yandex`` catches the rest.
-        aliases=("yc", "yandex"),
-        has_verifier=True,
-        direct_effective=True,
-        setup_order=54,
-        verify_order=100,
     ),
 )
 

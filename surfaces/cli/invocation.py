@@ -4,13 +4,14 @@ Pure helpers used by ``surfaces.cli.app`` before the full CLI is
 bootstrapped. They take the Click command / argv explicitly so they carry no
 dependency on the root group and stay trivially testable.
 
-Fast paths (``--version``, ``investigate --print-template``) must stay cheap:
-they answer before :func:`surfaces.cli.startup.run` installs adapters.
+Fast paths (``--version``, ``--help``) must stay cheap: they answer before
+:func:`surfaces.cli.startup.run` installs adapters.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from contextlib import suppress
 
 import click
@@ -41,140 +42,90 @@ def option_value_count(command: click.Command, token: str) -> int:
     return 0
 
 
-def resolve_command_parts(command: click.Command, argv: list[str]) -> list[str]:
-    """Resolve nested Click command names without recording option values."""
-    parts: list[str] = []
+def _iter_argv_tokens(
+    command: click.Command, argv: list[str]
+) -> Iterator[tuple[click.Command, str]]:
+    """Yield ``(command_in_scope, token)`` skipping option values and ``--`` tails.
+
+    Tokens bound as values (``--allowed-tool --help``) are omitted so callers
+    see the same flags and words Click would treat as options or operands.
+    """
     current = command
     skip_values = 0
-
     for token in argv:
         if skip_values:
             skip_values -= 1
             continue
         if token == "--":
-            break
+            return
+        yield current, token
         if token.startswith("-") and token != "-":
             if "=" not in token:
                 skip_values = option_value_count(current, token)
+            continue
+        if isinstance(current, click.Group):
+            subcommand = current.get_command(click.Context(current), token)
+            if subcommand is not None:
+                current = subcommand
+
+
+def resolve_command_parts(command: click.Command, argv: list[str]) -> list[str]:
+    """Resolve nested Click command names without recording option values."""
+    parts: list[str] = []
+    for current, token in _iter_argv_tokens(command, argv):
+        if token.startswith("-") and token != "-":
             continue
         if not isinstance(current, click.Group):
             continue
 
         subcommand = current.get_command(click.Context(current), token)
         if subcommand is None:
-            continue
+            break
 
-        parts.append(token)
-        current = subcommand
+        parts.append(subcommand.name or token)
 
     return parts
+
+
+_HELP_FLAGS = frozenset({"-h", "--help"})
+
+#: CLI tokens for the version fast path, shared by the classifier and printer.
+_VERSION_FLAG = "--version"
+_VERSION_COMMAND = "version"
+_VERSION_JSON_FLAGS = frozenset({"--json", "-j"})
 
 
 def is_fast_version_invocation(argv: list[str]) -> bool:
     """Return whether argv can be answered before bootstrapping the full CLI."""
     return (
-        argv == ["--version"]
-        or argv == ["version"]
-        or argv in (["--json", "version"], ["-j", "version"])
+        argv == [_VERSION_FLAG]
+        or argv == [_VERSION_COMMAND]
+        or (len(argv) == 2 and argv[0] in _VERSION_JSON_FLAGS and argv[1] == _VERSION_COMMAND)
     )
 
 
-def _option_equals_value(token: str, option: str) -> str | None:
-    prefix = f"{option}="
-    if token.startswith(prefix):
-        return token[len(prefix) :]
-    return None
+def is_fast_help_invocation(command: click.Command, argv: list[str]) -> bool:
+    """Return whether argv only needs Click help, not product adapters.
 
+    Help must not import kubernetes/boto3 via :func:`surfaces.cli.startup.run`.
+    Subcommand help (``opensre doctor --help``) is the same: Click prints
+    usage without running the command body.
 
-def parse_investigate_print_template_argv(
-    argv: list[str],
-) -> tuple[str, str | None] | None:
-    """Parse ``investigate --print-template <name>`` with optional ``-o``/``--output``.
-
-    Returns ``(template_name, output_path)`` only when argv is exactly that
-    shape — any other investigate flag or positional falls through to the
-    full CLI (so Click keeps ownership of usage errors).
+    ``-h`` / ``--help`` bound as option values or after ``--`` are not help:
+    Click still runs the command, so startup must run too.
     """
-    if not argv or argv[0] != "investigate":
-        return None
-
-    template: str | None = None
-    output: str | None = None
-    i = 1
-    while i < len(argv):
-        token = argv[i]
-        equals = _option_equals_value(token, "--print-template")
-        if equals is not None:
-            template = equals
-            i += 1
-            continue
-        if token == "--print-template":
-            i += 1
-            if i >= len(argv) or argv[i].startswith("-"):
-                return None
-            template = argv[i]
-            i += 1
-            continue
-
-        equals = _option_equals_value(token, "--output")
-        if equals is not None:
-            output = equals
-            i += 1
-            continue
-        if token in {"--output", "-o"}:
-            i += 1
-            if i >= len(argv) or argv[i].startswith("-"):
-                return None
-            output = argv[i]
-            i += 1
-            continue
-
-        # Any other option or positional needs the full Click path.
-        return None
-
-    if template is None or not template.strip():
-        return None
-    return template.strip(), output
-
-
-def try_fast_investigate_print_template(argv: list[str]) -> int | None:
-    """Print an alert template without process boot; ``None`` means not this path.
-
-    ``--print-template`` is a pure JSON dump — installing harness adapters and
-    loading every integration verifier just to print a fixture is what pushed
-    the smoke subprocess past its 15s budget under a loaded ``test-cov`` run.
-    """
-    parsed = parse_investigate_print_template_argv(argv)
-    if parsed is None:
-        return None
-
-    template_name, output_path = parsed
-    from config.constants.investigation import ALERT_TEMPLATE_CHOICES
-    from surfaces.cli.args import write_json
-    from tools.investigation.alert_templates import build_alert_template
-
-    if template_name not in ALERT_TEMPLATE_CHOICES:
-        supported = ", ".join(ALERT_TEMPLATE_CHOICES)
-        click.echo(
-            f"Error: Invalid value for '--print-template': '{template_name}' "
-            f"is not one of {supported}.",
-            err=True,
-        )
-        return 2
-
-    write_json(build_alert_template(template_name), output_path)
-    return 0
+    return any(token in _HELP_FLAGS for _, token in _iter_argv_tokens(command, argv))
 
 
 def print_fast_version(argv: list[str]) -> None:
-    if argv == ["--version"]:
+    if argv == [_VERSION_FLAG]:
         click.echo(f"opensre, version {get_opensre_version()}")
         return
 
     import json
     import platform
 
-    json_output = argv[0] in {"--json", "-j"}
+    json_output = argv[0] in _VERSION_JSON_FLAGS
     payload = {
         "opensre": get_opensre_version(),
         "python": platform.python_version(),

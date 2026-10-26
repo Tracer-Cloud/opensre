@@ -224,7 +224,7 @@ def component_span(
 
 
 def stage_span(name: str) -> AbstractContextManager[dict[str, Any]]:
-    """Time one investigation pipeline stage."""
+    """Time one pipeline stage."""
     return timed_span(span_kind="stage", name=name)
 
 

@@ -15,6 +15,8 @@ from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.shared.terminal.components.rendering import (
     _repl_write_buffer,
     print_repl_json,
+    print_repl_renderable,
+    print_repl_text,
     repl_print,
     repl_table,
 )
@@ -44,8 +46,122 @@ def test_print_repl_json_tty_uses_single_buffered_write(monkeypatch: pytest.Monk
         def isatty(self) -> bool:
             return True
 
+    fake = _FakeStdout()
+    monkeypatch.setattr("surfaces.shared.terminal.components.rendering.sys.stdout", fake)
+    console = Console(file=fake, force_terminal=True, highlight=False)
+    print_repl_json(console, '{"ok": true}')
+    joined = "".join(fake.writes)
+    assert "\r\n" in joined
+    assert joined.count("\n") == joined.count("\r\n")
+
+
+def test_print_repl_text_uses_crlf_so_goal_checklists_do_not_staircase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under patch_stdout(raw=True), bare \\n staircases; progress must use CRLF."""
+
+    class _FakeStdout:
+        def __init__(self) -> None:
+            self.writes: list[str] = []
+
+        def write(self, text: str) -> int:
+            self.writes.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            return None
+
+        def isatty(self) -> bool:
+            return True
+
+    fake = _FakeStdout()
+    monkeypatch.setattr("surfaces.shared.terminal.components.rendering.sys.stdout", fake)
+    # Console.file must be the same object as sys.stdout for the TTY path.
+    console = Console(file=fake, force_terminal=True, highlight=False)
+    monkeypatch.setattr(console, "file", fake)
+    text = (
+        "◎ /goal active · working… · 14s · turn 1/6 · +0 tokens\n"
+        "  condition: Fully complete all three steps\n"
+        "  reason: working - starting session-goal turn 2/6\n"
+        "  Checklist:\n"
+        "    [ ] 1. Identify the checkout latency metric\n"
+        "  → [ ] 2. Run the three-step latency check\n"
+        "    [ ] 3. Verify and report all results"
+    )
+    print_repl_text(console, text, markup=False)
+    joined = "".join(fake.writes)
+    assert joined.startswith("\r")
+    assert "\r\n  Checklist:" in joined
+    assert "\r\n    [ ] 1. Identify" in joined
+    assert "\r\n  → [ ] 2. Run" in joined
+    # No bare LF left (would staircase under raw patch_stdout).
+    assert "\n" not in joined.replace("\r\n", "")
+
+
+def test_print_repl_renderable_keeps_truecolor_and_crlf(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rich.console import Group
+    from rich.style import Style
+    from rich.text import Text
+
+    class _FakeStdout:
+        def __init__(self) -> None:
+            self.writes: list[str] = []
+
+        def write(self, text: str) -> int:
+            self.writes.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            return None
+
+        def isatty(self) -> bool:
+            return True
+
+    fake = _FakeStdout()
+    monkeypatch.setattr("surfaces.shared.terminal.components.rendering.sys.stdout", fake)
+    # ``no_color=False`` pins the decision Rich would otherwise take from the
+    # developer's ``NO_COLOR`` env; the buffered path must inherit it.
+    console = Console(
+        file=fake,
+        force_terminal=True,
+        highlight=False,
+        color_system="truecolor",
+        no_color=False,
+    )
+    monkeypatch.setattr(console, "file", fake)
+
+    # Rich memoizes a style's ANSI codes at its first render and shares Style
+    # instances process-wide through the ``Style.parse`` and ``Style._add``
+    # lru caches. Another test on this xdist worker that already rendered this
+    # hex through a 256-colour console would otherwise fix it at ``38;5;…``
+    # here no matter what the buffered path does, so start from cold caches.
+    Style.parse.cache_clear()
+    Style._add.cache_clear()
+    print_repl_renderable(console, Group(Text("Plan complete"), Text("  ✓ step", style="#6E6E6E")))
+
+    joined = "".join(fake.writes)
+    assert "38;2;110;110;110" in joined
+    assert "\n" not in joined.replace("\r\n", "")
+
+
+def test_print_repl_json_records_column_zero_reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeStdout:
+        def __init__(self) -> None:
+            self.writes: list[str] = []
+
+        def write(self, text: str) -> int:
+            self.writes.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            return None
+
+        def isatty(self) -> bool:
+            return True
+
     fake_stdout = _FakeStdout()
     monkeypatch.setattr("sys.stdout", fake_stdout)
+    monkeypatch.setattr("surfaces.shared.terminal.components.rendering.sys.stdout", fake_stdout)
 
     console = Console(file=fake_stdout, force_terminal=True, width=80)
     print_repl_json(console, '{"ok": true}')
@@ -113,7 +229,7 @@ def test_render_integrations_table_empty_shows_hint() -> None:
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
     render_integrations_table(console, [])
-    assert "opensre onboard" in buf.getvalue()
+    assert "opensre integrations setup" in buf.getvalue()
 
 
 def test_repl_print_resets_before_each_line(monkeypatch) -> None:
@@ -206,7 +322,11 @@ def test_repl_render_launch_poster_uses_crlf_on_tty(monkeypatch: pytest.MonkeyPa
     fake_stdout = _FakeStdout()
     monkeypatch.setattr("sys.stdout", fake_stdout)
 
-    from infrastructure.terminal.theme import set_active_theme
+    from infrastructure.terminal.theme import THEME_REGISTRY, set_active_theme
+
+    def _rgb(hex_color: str) -> str:
+        h = hex_color.lstrip("#")
+        return f"{int(h[0:2], 16)};{int(h[2:4], 16)};{int(h[4:6], 16)}"
 
     set_active_theme("blue")
     console = Console(
@@ -221,13 +341,13 @@ def test_repl_render_launch_poster_uses_crlf_on_tty(monkeypatch: pytest.MonkeyPa
     written = "".join(fake_stdout.writes)
     assert "theme set:" in written
     assert "blue" in written
-    assert "38;2;168;212;255" in written
-    assert "185;237;175" not in written
-    assert "opensre" in written
-    # Greeting wording varies by first-run state; only the salutation root is stable.
-    assert "Welcome" in written
+    assert f"38;2;{_rgb(THEME_REGISTRY['blue'].HIGHLIGHT)}" in written
+    assert _rgb(THEME_REGISTRY["green"].HIGHLIGHT) not in written
+    # Canonical braille "loops" mark — do not assert a box-drawing wordmark.
+    assert "⣿⣿⠀⠀⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⠀⢸⣿⣿" in written
+    assert "Skills" in written
     assert "\r\n" in written
-    # REPL path must not emit bare \\n (causes double-spaced splash under patch_stdout).
+    # REPL path must not emit bare \\n (causes double-spaced output under patch_stdout).
     assert "\r" not in written.replace("\r\n", "")
 
 

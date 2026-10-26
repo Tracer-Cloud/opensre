@@ -3,7 +3,8 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.redis import (
     RedisConfig,
     get_client_list,
@@ -21,7 +22,9 @@ from integrations.redis import (
         "exhaustion and stuck or blocked clients."
     ),
     source="redis",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Diagnose connection-pool exhaustion when connected_clients is high or rising.",
         "Find clients blocked on BLPOP/BRPOP/XREAD during a stall or deadlock.",

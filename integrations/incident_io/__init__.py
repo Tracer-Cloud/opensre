@@ -7,8 +7,12 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import IncidentIoIntegrationConfig
+from integrations.incident_io.setup import INCIDENT_IO_SETUP
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["INCIDENT_IO_SETUP", "classify"]
 
 
 def classify(

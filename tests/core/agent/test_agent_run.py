@@ -48,6 +48,19 @@ def _tool() -> AgentTool:
     )
 
 
+@pytest.mark.parametrize("tokens", [None, 0, 12])
+def test_run_preserves_missing_and_measured_usage(tokens: int | None) -> None:
+    class MeasuredLLM(_NoToolLLM):
+        def invoke(self, *_args: Any, **_kwargs: Any) -> AgentLLMResponse:
+            return AgentLLMResponse(content="answer", input_tokens=tokens, output_tokens=tokens)
+
+    result = Agent(llm=MeasuredLLM(), system="test", tools=[], max_iterations=1).run(
+        [{"role": "user", "content": "hello"}]
+    )
+    assert result.input_tokens == tokens
+    assert result.output_tokens == tokens
+
+
 def _runtime_request() -> TurnSnapshot:
     tool = _tool()
     return TurnSnapshot(
@@ -55,8 +68,6 @@ def _runtime_request() -> TurnSnapshot:
         conversation_messages=(),
         configured_integrations=(),
         configured_integrations_known=True,
-        last_state=None,
-        last_synthetic_observation_path=None,
         reasoning_effort=None,
         system_prompt=PromptEnvelope.from_text("runtime system"),
         available_tools=(tool,),

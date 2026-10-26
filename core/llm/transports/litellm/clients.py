@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
+from config.llm_models import DEFAULT_MAX_TOKENS
 from core.llm.transports.litellm.frozen_tiktoken_bootstrap import (
     ensure_tiktoken_encodings_discoverable,
 )
@@ -34,8 +35,10 @@ from core.llm.shared.structured_output import StructuredOutputClient  # noqa: E4
 from core.llm.shared.tool_schema_normalize import build_openai_tool_specs  # noqa: E402
 from core.llm.types import (  # noqa: E402
     AgentLLMResponse,
+    CancelProbe,
     LLMResponse,
     SchemaDescribedTool,
+    TextDeltaCallback,
     ToolCall,
 )
 
@@ -43,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 class LiteLLMAgentClient:
-    """LiteLLM-backed tool-calling client for the investigation agent loop."""
+    """LiteLLM-backed tool-calling client for the agent ReAct loop."""
 
     provider_name = "LiteLLM"
     auth_error_hint = "Check the provider API key configured for this model."
@@ -55,7 +58,7 @@ class LiteLLMAgentClient:
         self,
         *,
         litellm_model: str,
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         api_base: str | None = None,
         api_version: str | None = None,
         api_key_env: str | None = None,
@@ -136,7 +139,13 @@ class LiteLLMAgentClient:
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
+        # Not streamed: providers behind LiteLLM differ in streamed tool-call
+        # deltas, and a rebuilt stream can drop provider fields (e.g. Gemini
+        # thought signatures) the unstreamed replay keeps.
+        _ = (on_text_delta, should_stop)
         kwargs = self._build_request_kwargs(messages, system=system, tools=tools)
         response = invoke_with_litellm_agent_retries(
             self._completion,

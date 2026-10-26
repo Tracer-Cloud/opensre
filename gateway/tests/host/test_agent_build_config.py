@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 from rich.console import Console
 
+from config.constants.capabilities import HOSTED_GATEWAY_CAPABILITY
 from core.agent_harness.runtime import AgentBuildConfig
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
@@ -47,11 +48,9 @@ def test_a_host_that_supplies_nothing_gets_the_chat_defaults() -> None:
     # Act
     agent = pool.agent_for(session=session, output=BindableOutput(), logger=_LOGGER)
 
-    # Assert — chat defaults include gateway withholds
+    # Assert — chat defaults withhold tools that need this machine's account token
     assert agent is not None
-    assert session.available_capabilities["investigation"] == ()
-    assert session.available_capabilities["llm_provider"] == ()
-    assert session.available_capabilities["task_cancel"] == ()
+    assert session.available_capabilities == {HOSTED_GATEWAY_CAPABILITY: ()}
 
 
 def test_a_host_supplies_its_own_tools_prompts_and_gather() -> None:
@@ -70,19 +69,11 @@ def test_a_host_supplies_its_own_tools_prompts_and_gather() -> None:
 
         return DefaultPromptContextProvider(session)
 
-    def build_gather(session: Any, console: Any) -> Any:
-        _ = (session, console)
-        used.append("gather")
-        from core.agent_harness.runtime import GatherPhase
-
-        return GatherPhase()
-
     pool = SessionAgentPool(
         console=Console(force_terminal=False),
         agent_build=AgentBuildConfig(
             build_tools=build_tools,
             build_prompts=build_prompts,
-            build_gather=build_gather,
         ),
     )
 
@@ -90,7 +81,7 @@ def test_a_host_supplies_its_own_tools_prompts_and_gather() -> None:
     pool.agent_for(session=_session(), output=BindableOutput(), logger=_LOGGER)
 
     # Assert — the channel's builders ran, not the gateway defaults
-    assert sorted(used) == ["gather", "prompts", "tools"]
+    assert sorted(used) == ["prompts", "tools"]
 
 
 def test_agent_reuse_stays_the_pool_decision() -> None:
@@ -118,23 +109,25 @@ def test_agent_reuse_stays_the_pool_decision() -> None:
     assert builds == ["build"]
 
 
-def test_default_path_applies_gateway_capability_policy() -> None:
+def test_default_path_preserves_existing_capabilities() -> None:
     session = _session()
+    session.available_capabilities["llm_provider"] = ("switch",)
     SessionAgentPool(console=Console(force_terminal=False)).agent_for(
         session=session, output=BindableOutput(), logger=_LOGGER
     )
-    assert session.available_capabilities["investigation"] == ()
-    assert session.available_capabilities["llm_provider"] == ()
-    assert session.available_capabilities["task_cancel"] == ()
+    assert session.available_capabilities == {
+        "llm_provider": ("switch",),
+        HOSTED_GATEWAY_CAPABILITY: (),
+    }
 
 
-def test_empty_config_does_not_inject_gateway_withholds() -> None:
+def test_empty_config_leaves_capabilities_unchanged() -> None:
     session = _session()
     SessionAgentPool(
         console=Console(force_terminal=False),
         agent_build=AgentBuildConfig(),
     ).agent_for(session=session, output=BindableOutput(), logger=_LOGGER)
-    assert "investigation" not in session.available_capabilities
+    assert "llm_provider" not in session.available_capabilities
 
 
 def test_host_can_replace_capability_policy() -> None:
@@ -145,7 +138,7 @@ def test_host_can_replace_capability_policy() -> None:
         agent_build=AgentBuildConfig(apply_capability_policy=seen.append),
     ).agent_for(session=session, output=BindableOutput(), logger=_LOGGER)
     assert seen == [session]
-    assert "investigation" not in session.available_capabilities
+    assert "llm_provider" not in session.available_capabilities
 
 
 def test_error_reporter_and_surface_reach_default_headless_build(

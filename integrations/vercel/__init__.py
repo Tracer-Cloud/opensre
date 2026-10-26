@@ -7,8 +7,12 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.vercel.client import VercelConfig
+from integrations.vercel.setup import VERCEL_SETUP
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["VERCEL_SETUP", "classify"]
 
 
 def classify(credentials: dict[str, Any], record_id: str) -> tuple[VercelConfig | None, str | None]:

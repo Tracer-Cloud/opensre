@@ -5,7 +5,7 @@ Two different keep-going shapes — do not collapse them:
 * **Local shell multi-step** — create/run/file side effects in *this* action
   turn via chained ``shell_run`` (data-dependent loop inside the planner).
 * **Conversational SessionGoal** — chat checklist / walkthrough with *no*
-  local side effects; ``assistant_handoff`` sets ``session_goal`` so the host
+  local side effects; ``session_goal_set`` attaches the goal so the host
   session-goal loop (``run_until_session_goal``) continues turns.
 
 Cross-wiring these caused live scenario 347 to invent ``/tmp`` state files
@@ -19,7 +19,7 @@ ACTION_LOCAL_SHELL_MULTI_STEP_RULE = """\
 Local multi-step workflows: an IMPERATIVE request to create, generate, write,
 build, or run something locally — a script, a file, or a local compute sequence
 with side effects — is shell_run work, NOT a handoff, even when the message
-contains no literal command text. Do NOT hand off just to describe commands
+contains no literal command text. Do NOT stop at describing commands
 the user could run themselves. HOW you execute depends on what the user asked
 for:
 * User asked for a SCRIPT ("create/write a script ... and run it") → one
@@ -56,16 +56,14 @@ Examples (all shell_run, executed in THIS turn):
 """
 
 ACTION_CONVERSATIONAL_SESSION_GOAL_RULE = """\
-Conversational keep-going checklists (assistant_handoff + session_goal — NOT
-shell_run): when the user wants a multi-step chat checklist / walkthrough
+Conversational keep-going checklists (session_goal_set — NOT shell_run): when
+the user wants a multi-step chat checklist / walkthrough
 with no local create/run/file work — "walk through these N steps in chat",
 "checklist without asking whether to continue", "keep going until every
-item is done" — emit ONE assistant_handoff and set the schema field
-session_goal=true (REQUIRED — omitting it leaves the host unable to continue
-across turns). Prefer session_goal_items with one string per checklist item
-in order. Do not invent shell side effects to "prove" progress; do not put
-session_goal only in content prose when the boolean field is available.
-Still assistant_handoff (no execution requested):
+item is done" — call session_goal_set with the condition and one string per
+checklist item in order, then answer the first step. Do not invent shell side
+effects to "prove" progress.
+Answer directly without session_goal_set:
 * capability questions — "do you support consecutive steps?", "can you loop?"
 * explicit plan-only requests — "do not write any code yet; first create a
   step-by-step plan"

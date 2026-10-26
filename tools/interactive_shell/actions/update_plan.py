@@ -1,0 +1,168 @@
+"""Create, revise, and mark steps on the agent's live task plan."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import Any
+
+from core.agent_harness.spi.grounding import list_action_skills
+from core.agent_harness.spi.handoff import parse_ask_user_answers
+from core.agent_harness.spi.task_plan import (
+    PLAN_ITEM_SCHEMA,
+    TaskPlan,
+    apply_update_plan_host_policy,
+    apply_update_plan_session,
+    demote_unevidenced_completions,
+    format_task_plan_plain,
+    format_update_plan_instruction,
+    mark_plan_written,
+    parse_task_plan,
+    plan_evidence_available,
+    record_blocked_this_turn,
+    task_plan_to_payload,
+)
+from core.agent_harness.tools import ActionToolScope, execute_with_action_context
+from core.domain.types.tools import ToolRole, ToolSurface
+from core.tool import RegisteredTool, SideEffectLevel
+from core.tool_framework.utils import object_schema, string_property
+from tools.interactive_shell.action_names import ActionToolName
+
+
+def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
+    plan, error = parse_task_plan(args)
+    if error is not None or plan is None:
+        return {"ok": False, "error": error or "invalid plan"}
+    turn_text = getattr(ctx, "turn_user_message", "") or ""
+    prior = getattr(ctx.session, "task_plan", None)
+    if not isinstance(prior, TaskPlan):
+        prior = None
+    checked = demote_unevidenced_completions(
+        plan,
+        prior=prior,
+        evidence=plan_evidence_available(ctx.session, prior=prior, turn_user_message=turn_text),
+    )
+    plan, plan_only_requested = apply_update_plan_host_policy(
+        checked.plan,
+        plan_only_requested=bool(args.get("plan_only")),
+        turn_user_message=turn_text,
+        session=ctx.session,
+    )
+    active_skill = getattr(ctx.session, "active_skill", None)
+    # The workflow writing the plan owns it; only its own menu answers continue it.
+    plan = replace(
+        plan, owner=active_skill if isinstance(active_skill, str) and active_skill else None
+    )
+    apply_update_plan_session(ctx.session, plan, plan_only=plan_only_requested)
+    if (
+        plan.is_settled
+        and active_skill
+        and any(skill.name == active_skill and skill.script_tools for skill in list_action_skills())
+    ):
+        ctx.session.active_skill = None
+    mark_plan_written(ctx.session)
+    record_blocked_this_turn(ctx.session, checked.newly_blocked)
+    payload = task_plan_to_payload(plan)
+    payload["ok"] = True
+    payload["summary"] = format_task_plan_plain(plan)
+    payload["instruction"] = format_update_plan_instruction(
+        plan,
+        plan_only=plan_only_requested,
+        ask_user_turn=bool(parse_ask_user_answers(turn_text)),
+        demoted=checked.demoted,
+        closed_unverified=checked.closed_unverified,
+    )
+    return payload
+
+
+def run_update_plan(
+    *,
+    plan: list[dict[str, Any]] | None = None,
+    explanation: str | None = None,
+    plan_only: bool = False,
+    context: Any,
+) -> dict[str, Any]:
+    args: dict[str, Any] = {"plan": plan or []}
+    if explanation is not None:
+        args["explanation"] = explanation
+    if plan_only:
+        args["plan_only"] = True
+    return execute_with_action_context(args, context, execute_update_plan_tool)
+
+
+update_plan_tool = RegisteredTool(
+    name=ActionToolName.UPDATE_PLAN,
+    compact_description="Create or revise the live execution plan for multi-step work.",
+    description=(
+        "Create or revise the live execution plan for this workload, mark a "
+        "step blocked, or settle the plan when the work is done. "
+        "Once you wrote the plan this turn, or when the turn answers the plan's "
+        "own menu (the CURRENT PLAN block says so), the host moves it forward: "
+        "when you call the next step's tool, ask_user_choice included, the "
+        "in_progress step that did its work is marked completed and the next "
+        "pending step in_progress, so do not send update_plan just to mark "
+        "progress. Otherwise send the status update with the step's tool. "
+        "Mark a step blocked (with the blocker in explanation) when the runtime cannot "
+        "perform it; never mark undone work completed. "
+        "At most one step may be in_progress. Send it in the same response as "
+        "a step's tool call; a response whose only call is update_plan spends "
+        "a model call without progress. Not for "
+        "durable human todos (use work_task_*) and not for /goal keep-going."
+    ),
+    use_cases=[
+        "A multi-step investigation, fix, and verify workload is about to start",
+        "The plan changed and the checklist must be revised",
+        "A step cannot be performed and must be marked blocked",
+        "The last step is done and the plan is settled",
+        "The user asked for a plan only, with no execution yet",
+    ],
+    anti_examples=[
+        "A single obvious lookup or one slash command",
+        "Only marking a step done and the next started (the host does it on the next tool)",
+        "Durable human todos / reminders (use work_task_add)",
+        "Session-goal keep-going checklists (use session_goal_set)",
+    ],
+    input_schema=object_schema(
+        properties={
+            "explanation": string_property(
+                description=(
+                    "Markdown rationale under the checklist. For incident/"
+                    "investigation workloads: Facts, what the signature tells "
+                    "us, hypothesis-ranking table. For ordinary implementation "
+                    "or plan-only with no incident signals: goal, approach, "
+                    "biggest risk — do not invent causal hypotheses. Do not "
+                    "repeat in assistant closing prose."
+                ),
+            ),
+            "plan": {
+                "type": "array",
+                "description": "Ordered steps. At most one status may be in_progress.",
+                "items": PLAN_ITEM_SCHEMA,
+                "minItems": 2,
+            },
+            "plan_only": {
+                "type": "boolean",
+                "description": (
+                    "Set true only when the user's original request asked for "
+                    "a plan without running it yet. Do not set this because "
+                    "Ask User was answered. Then leave every step pending "
+                    "and stop."
+                ),
+            },
+        },
+        required=("plan",),
+    ),
+    source="interactive_shell",
+    surfaces=(ToolSurface.ACTION,),
+    role=ToolRole.BOOKKEEPING,
+    accepts_runtime_context=True,
+    run=run_update_plan,
+    tags=("safe", "fast", "no-credentials"),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+)
+
+
+__all__ = [
+    "execute_update_plan_tool",
+    "run_update_plan",
+    "update_plan_tool",
+]

@@ -15,19 +15,36 @@ from core.agent_harness.session_goal.goal import (
     SessionGoalReason,
     SessionGoalStatus,
     derive_session_goal_reason,
+    session_goal_cached_tokens,
     session_goal_elapsed_seconds,
+    session_goal_has_turn_budget,
     session_goal_token_delta,
 )
 from infrastructure.evidence.evidence_compaction import truncate_message
 
 # Leading mark for user-visible ``/goal`` progress lines (REPL + gateway).
-SESSION_GOAL_PAINT_MARK = "◎"
-# User-facing slash name — paint never says ``SessionGoal``.
+SESSION_GOAL_PROGRESS_MARK = "◎"
+# User-facing slash name — progress text never says ``SessionGoal``.
 SESSION_GOAL_USER_WORD = "/goal"
 
 # Status-line condition shares a Slack/Telegram timeline row with status,
 # turn counter, and reason.
 _MAX_STATUS_LINE_CONDITION_CHARS = 60
+
+
+def _turn_label(goal: SessionGoal) -> str:
+    if session_goal_has_turn_budget(goal.max_outer_turns):
+        return f"turn {goal.turns_used}/{goal.max_outer_turns}"
+    return f"turn {goal.turns_used}"
+
+
+def _tokens_with_cached(goal: SessionGoal, session: Any | None) -> str:
+    """``342.8k tok`` or ``342.8k tok (280k cached)`` when part came from the cache."""
+    spent = format_token_count_compact(session_goal_token_delta(goal, session=session))
+    cached = session_goal_cached_tokens(goal, session=session)
+    if cached <= 0:
+        return f"{spent} tok"
+    return f"{spent} tok ({format_token_count_compact(cached)} cached)"
 
 
 def format_duration_compact(seconds: float) -> str:
@@ -60,7 +77,7 @@ def format_token_count_compact(count: int) -> str:
     return f"{text}M"
 
 
-def _progress_headline_active_or_paused(
+def _headline(
     goal: SessionGoal,
     *,
     label: str,
@@ -70,6 +87,7 @@ def _progress_headline_active_or_paused(
     output_tokens: int | None,
     reason: str,
 ) -> str:
+    """One status line with elapsed time and token spend, for every status."""
     elapsed = session_goal_elapsed_seconds(goal, now=now)
     duration = format_duration_compact(elapsed) if elapsed is not None else "—"
     tokens = session_goal_token_delta(
@@ -79,17 +97,58 @@ def _progress_headline_active_or_paused(
         output_tokens=output_tokens,
     )
     token_text = format_token_count_compact(tokens)
-    mark = SESSION_GOAL_PAINT_MARK
+    cached = session_goal_cached_tokens(goal, session=session)
+    cached_text = f" ({format_token_count_compact(cached)} cached)" if cached > 0 else ""
+    mark = SESSION_GOAL_PROGRESS_MARK
     word = SESSION_GOAL_USER_WORD
-    if label == "active" and SessionGoalReason.is_working(reason):
-        return (
-            f"{mark} {word} active · working… · {duration} · "
-            f"turn {goal.turns_used}/{goal.max_outer_turns} · +{token_text} tokens"
-        )
+    working = " · working…" if label == "active" and SessionGoalReason.is_working(reason) else ""
     return (
-        f"{mark} {word} {label} · {duration} · turn {goal.turns_used}/{goal.max_outer_turns} "
-        f"· +{token_text} tokens"
+        f"{mark} {word} {label}{working} · {duration} · {_turn_label(goal)} · "
+        f"+{token_text} tokens{cached_text}"
     )
+
+
+# Status, ticks, checklist length, condition, start stamp.
+GoalPaintSignature = tuple[str, frozenset[int], int, str, float | None]
+
+
+def goal_paint_signature(goal: SessionGoal) -> GoalPaintSignature:
+    """What a host repaints the full goal block for: status, ticks, checklist, identity."""
+    return (goal.status, goal.completed, len(goal.checklist), goal.condition, goal.started_at)
+
+
+def same_goal_identity(
+    previous: GoalPaintSignature | None,
+    current: GoalPaintSignature,
+) -> bool:
+    """True when both signatures describe the same attached goal (same start stamp)."""
+    return previous is not None and previous[3:] == current[3:]
+
+
+def _checklist_lines(goal: SessionGoal, *, indent: str, numbering_base: int) -> list[str]:
+    next_index = goal.next_checklist_item[0] if goal.next_checklist_item else None
+    lines: list[str] = []
+    for index, item in enumerate(goal.checklist):
+        done = index in goal.completed
+        mark = "[x]" if done else "[ ]"
+        prefix = "→ " if (not done and index == next_index) else "  "
+        lines.append(f"{indent}{prefix}{mark} {index + numbering_base}. {item}")
+    return lines
+
+
+def format_session_goal_brief(goal: SessionGoal) -> str:
+    """Condition, checklist and last verdict for the action prompt of a goal turn.
+
+    Checklist indices are 0-based to match ``session_goal_complete``.
+    """
+    lines = [f"condition: {goal.condition}"]
+    if goal.checklist:
+        lines.append("checklist (tick finished items with session_goal_complete, 0-based index):")
+        lines.extend(_checklist_lines(goal, indent="  ", numbering_base=0))
+    reason = goal.last_reason.strip()
+    if reason and not SessionGoalReason.is_working(reason):
+        lines.append(f"last verdict: {reason}")
+    return "\n".join(lines)
 
 
 def format_session_goal_progress(
@@ -99,50 +158,31 @@ def format_session_goal_progress(
     now: float | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
+    include_condition: bool = True,
 ) -> str:
-    """Multi-line progress paint for REPL mid-loop updates and ``/goal show``."""
+    """Multi-line progress text for REPL mid-loop updates and ``/goal show``.
+
+    ``include_condition`` is off for repaints of a goal the user has already
+    seen, so the condition prints once per goal, not once per turn.
+    """
     reason = goal.last_reason.strip() or derive_session_goal_reason(goal)
-    status = goal.status
-    if status == SessionGoalStatus.ACTIVE:
-        headline = _progress_headline_active_or_paused(
-            goal,
-            label="active",
-            session=session,
-            now=now,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            reason=reason,
-        )
-    elif status == SessionGoalStatus.PAUSED:
-        headline = _progress_headline_active_or_paused(
-            goal,
-            label="paused",
-            session=session,
-            now=now,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            reason=reason,
-        )
-    else:
-        headline = (
-            f"{SESSION_GOAL_PAINT_MARK} {SESSION_GOAL_USER_WORD} {status} · "
-            f"turn {goal.turns_used}/{goal.max_outer_turns}"
-        )
-    lines = [
-        headline,
-        f"  condition: {goal.condition}",
-        f"  reason: {reason}",
-    ]
+    headline = _headline(
+        goal,
+        label=goal.status,
+        session=session,
+        now=now,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        reason=reason,
+    )
+    lines = [headline]
+    if include_condition:
+        lines.append(f"  condition: {goal.condition}")
+    lines.append(f"  reason: {reason}")
     if not goal.checklist:
         return "\n".join(lines)
-
     lines.append("  Checklist:")
-    next_index = goal.next_checklist_item[0] if goal.next_checklist_item else None
-    for index, item in enumerate(goal.checklist):
-        done = index in goal.completed
-        mark = "[x]" if done else "[ ]"
-        prefix = "→ " if (not done and index == next_index) else "  "
-        lines.append(f"  {prefix}{mark} {index + 1}. {item}")
+    lines.extend(_checklist_lines(goal, indent="  ", numbering_base=1))
     return "\n".join(lines)
 
 
@@ -156,35 +196,32 @@ def format_session_goal_status_line(
     reason = goal.last_reason.strip() or derive_session_goal_reason(goal)
     condition = goal.condition.strip()
     condition = truncate_message(condition, _MAX_STATUS_LINE_CONDITION_CHARS)
-    mark = SESSION_GOAL_PAINT_MARK
+    mark = SESSION_GOAL_PROGRESS_MARK
     word = SESSION_GOAL_USER_WORD
     if goal.status == SessionGoalStatus.ACTIVE:
         elapsed = session_goal_elapsed_seconds(goal, now=now)
         duration = format_duration_compact(elapsed) if elapsed is not None else "—"
-        tokens = format_token_count_compact(session_goal_token_delta(goal, session=session))
+        tokens = _tokens_with_cached(goal, session)
         return (
-            f"{mark} {word} active · {duration} · turn {goal.turns_used}/{goal.max_outer_turns} "
-            f"· +{tokens} tok · {condition} · {reason}"
+            f"{mark} {word} active · {duration} · {_turn_label(goal)} "
+            f"· +{tokens} · {condition} · {reason}"
         )
     if goal.status == SessionGoalStatus.PAUSED:
         elapsed = session_goal_elapsed_seconds(goal, now=now)
         duration = format_duration_compact(elapsed) if elapsed is not None else "—"
-        tokens = format_token_count_compact(session_goal_token_delta(goal, session=session))
+        tokens = _tokens_with_cached(goal, session)
         return (
-            f"{mark} {word} paused · {duration} · turn {goal.turns_used}/{goal.max_outer_turns} "
-            f"· +{tokens} tok · {condition} · {reason}"
+            f"{mark} {word} paused · {duration} · {_turn_label(goal)} "
+            f"· +{tokens} · {condition} · {reason}"
         )
-    return (
-        f"{mark} {word} {goal.status} · turn {goal.turns_used}/{goal.max_outer_turns} · "
-        f"{condition} · {reason}"
-    )
+    return f"{mark} {word} {goal.status} · {_turn_label(goal)} · {condition} · {reason}"
 
 
-def is_session_goal_progress_paint(text: str) -> bool:
+def is_session_goal_progress_text(text: str) -> bool:
     """True when ``text`` is ``/goal`` status chrome, not an assistant answer.
 
     The ``/goal set`` attach turn may run ``slash_invoke`` (counts as tool
-    evidence) and capture the painted status block as the turn "reply". Host
+    evidence) and capture the progress status block as the turn "reply". Host
     evaluate must not treat that as a completed answer.
     """
     stripped = text.strip()
@@ -192,16 +229,20 @@ def is_session_goal_progress_paint(text: str) -> bool:
         return False
     if SessionGoalReason.WAITING_HOST_SIGNAL in stripped:
         return True
-    paint_lead = f"{SESSION_GOAL_PAINT_MARK} {SESSION_GOAL_USER_WORD}"
-    return paint_lead in stripped
+    progress_lead = f"{SESSION_GOAL_PROGRESS_MARK} {SESSION_GOAL_USER_WORD}"
+    return progress_lead in stripped
 
 
 __all__ = [
-    "SESSION_GOAL_PAINT_MARK",
+    "GoalPaintSignature",
+    "SESSION_GOAL_PROGRESS_MARK",
     "SESSION_GOAL_USER_WORD",
     "format_duration_compact",
+    "format_session_goal_brief",
     "format_session_goal_progress",
     "format_session_goal_status_line",
     "format_token_count_compact",
-    "is_session_goal_progress_paint",
+    "goal_paint_signature",
+    "is_session_goal_progress_text",
+    "same_goal_identity",
 ]

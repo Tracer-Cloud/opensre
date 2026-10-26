@@ -10,6 +10,7 @@ from surfaces.shared.terminal.components.loaders import DEFAULT_LOADER_LABEL, ll
 from surfaces.shared.terminal.components.rendering import (
     print_repl_json,
     print_repl_table,
+    print_repl_text,
     repl_print,
     repl_table,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "llm_loader",
     "print_repl_json",
     "print_repl_table",
+    "print_repl_text",
     "print_valid_choice_list",
     "repl_choose_one",
     "repl_print",

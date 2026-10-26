@@ -105,6 +105,46 @@ def test_classify_two_records_same_service_both_preserved() -> None:
     assert ids == ["a", "b"]
 
 
+def test_remote_connections_for_one_service_reach_the_effective_instance_list() -> None:
+    from integrations.catalog import resolve_effective_integrations
+
+    remote = [
+        {
+            "id": "grafana-personal",
+            "service": "grafana",
+            "status": "active",
+            "instances": [
+                {
+                    "name": "Personal",
+                    "tags": {"owner_kind": "user", "owner_id": "user_1"},
+                    "credentials": {"endpoint": "https://personal", "api_key": "personal-key"},
+                }
+            ],
+        },
+        {
+            "id": "grafana-team",
+            "service": "grafana",
+            "status": "active",
+            "instances": [
+                {
+                    "name": "Team",
+                    "tags": {"owner_kind": "organization", "owner_id": "org_1"},
+                    "credentials": {"endpoint": "https://team", "api_key": "team-key"},
+                }
+            ],
+        },
+    ]
+
+    effective = resolve_effective_integrations(
+        store_integrations=[], env_integrations=[], remote_integrations=remote
+    )
+
+    assert [instance["integration_id"] for instance in effective["grafana"]["instances"]] == [
+        "grafana-personal",
+        "grafana-team",
+    ]
+
+
 def test_classify_aws_with_role_arn_in_instance_credentials_works() -> None:
     """PR #527 bug #1 regression: AWS must read role_arn from instance.credentials,
     not from the record's top level."""

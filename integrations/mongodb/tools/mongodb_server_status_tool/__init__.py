@@ -2,8 +2,10 @@
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.mongodb import (
     MongoDBConfig,
     get_server_status,
@@ -12,19 +14,42 @@ from integrations.mongodb import (
 )
 
 
+def _map_get_mongodb_server_status(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite version and connection load."""
+    if not output.get("available"):
+        return
+    connections = output.get("connections") or {}
+    record_evidence_entry(
+        evidence,
+        source="get_mongodb_server_status",
+        label="MongoDB Server Status",
+        summary=(
+            f"MongoDB {output.get('version', 'unknown')}, "
+            f"{connections.get('current', 0)} connection(s) in use, "
+            f"{connections.get('available', 0)} available"
+        ),
+    )
+
+
 @tool(
     name="get_mongodb_server_status",
     description="Retrieve high-level MongoDB server status including connections, memory usage, and operation counters.",
     source="mongodb",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     is_available=mongodb_is_available,
     injected_params=("connection_string",),
     extract_params=mongodb_extract_params,
+    evidence_mapper=_map_get_mongodb_server_status,
 )
 def get_mongodb_server_status(
     connection_string: str,
     auth_source: str = "admin",
     tls: bool = True,
+    **_kwargs: Any,
 ) -> dict[str, Any]:
     """Fetch server status metrics from a MongoDB instance."""
     config = MongoDBConfig(

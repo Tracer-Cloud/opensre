@@ -167,7 +167,7 @@ class ProgressTracker(ToolTrackingMixin):
         )
         event = ProgressEvent(node_name, elapsed_ms, fields_updated, status, message)
         self.events.append(event)
-        # UI progress tracking only; stage spans are emitted in the investigation lifecycle.
+        # UI progress tracking only.
         if self._silent:
             return
         if self._rich:
@@ -195,9 +195,9 @@ _tracker_console: Console | None = None
 def set_tracker_console(console: Console | None) -> None:
     """Route the process tracker's progress to ``console``.
 
-    Investigation stages reach the tracker through :func:`get_tracker`, not
-    through the renderer, so an embedding caller's console has to be visible
-    here for stage progress to land in the same stream as the rest of the turn.
+    Progress reaches the tracker through :func:`get_tracker`, not through the
+    renderer, so an embedding caller's console has to be visible here for
+    stage progress to land in the same stream as the rest of the turn.
     """
     global _tracker_console
     _tracker_console = console

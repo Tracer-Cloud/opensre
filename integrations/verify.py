@@ -70,6 +70,10 @@ def _missing_integration_detail(current_service: str) -> str:
                 if store_record is not None:
                     break
     if store_record is None:
+        from config.account import load_account_record, resolve_account_token
+
+        if load_account_record() is not None and resolve_account_token():
+            return "Not configured in the OpenSRE app, local store, or environment variables."
         return "Not configured in local store or environment variables."
 
     endpoint = ""
@@ -169,7 +173,7 @@ def verify_integrations(
 def format_verification_results(results: list[dict[str, str]]) -> str:
     """Render verification results as a theme-consistent Rich table.
 
-    Long ``detail`` text (e.g. the multi-clause OpenClaw bridge hint) is
+    Long ``detail`` text (e.g. a multi-clause bridge hint) is
     folded within its own column instead of overflowing the terminal, which
     is what broke row alignment in the old fixed-width string formatting.
     Each ``"; "``/``" | "`` clause is put on its own line first (see

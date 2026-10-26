@@ -62,6 +62,14 @@ def _text(content: str) -> AgentLLMResponse:
     return AgentLLMResponse(content=content, tool_calls=[], raw_content=None)
 
 
+def _tool(name: str = "query_logs") -> AgentLLMResponse:
+    return AgentLLMResponse(
+        content="",
+        tool_calls=[ToolCall(id="1", name=name, input={})],
+        raw_content=None,
+    )
+
+
 def test_default_goal_requires_text_and_evidence() -> None:
     goal = Goal(description="count stars", success_criteria="numeric velocity")
     assert not goal_met(
@@ -119,8 +127,8 @@ def test_should_accept_nudges_until_ceiling() -> None:
         iteration=2,
         max_iterations=3,
     )
-    assert accept is True
-    assert nudge is None
+    assert accept is False
+    assert nudge is not None
 
 
 def test_should_accept_uses_goal_specific_nudge() -> None:
@@ -164,10 +172,10 @@ def test_missing_max_iterations_is_not_a_ceiling() -> None:
     assert nudge is not None
 
 
-def test_agent_goal_nudges_then_accepts_at_ceiling() -> None:
-    """Wired path: Agent._should_accept_conclusion consults goals until budget."""
+def test_agent_goal_does_not_block_a_no_tool_reply() -> None:
+    """A bare Goal without verify is not a stop gate; no-tool replies end the turn."""
     goal = Goal(description="count stars", success_criteria="numeric velocity")
-    llm = _FakeLLM(iter([_text("not yet"), _text("still not")]))
+    llm = _FakeLLM(iter([_text("not yet")]))
     tools = cast("list[RegisteredTool]", [_FakeTool()])
     agent: Agent[RegisteredTool] = Agent(
         llm=llm,
@@ -178,7 +186,39 @@ def test_agent_goal_nudges_then_accepts_at_ceiling() -> None:
         goal=goal,
     )
     result = agent.run([{"role": "user", "content": "stars?"}])
-    assert result.final_text == "still not"
+    assert result.final_text == "not yet"
+
+
+def test_agent_reviewed_goal_nudges_when_plan_incomplete() -> None:
+    """Reviewed goals (with verify) reject premature stop and inject a nudge."""
+
+    calls = {"n": 0}
+
+    def _verify(observation: GoalObservation) -> bool:
+        _ = observation
+        calls["n"] += 1
+        # Reject the first conclusion; accept after the nudge lap.
+        return calls["n"] > 1
+
+    goal = Goal(
+        description="finish the plan",
+        success_criteria="all steps done",
+        verify=_verify,
+        nudge=lambda _obs: "Keep going on the plan.",
+    )
+    llm = _FakeLLM(iter([_text("paused"), _tool("t1"), _text("done")]))
+    tools = cast("list[RegisteredTool]", [_FakeTool()])
+    agent: Agent[RegisteredTool] = Agent(
+        llm=llm,
+        system="sys",
+        tools=tools,
+        resolved_integrations={},
+        max_iterations=6,
+        goal=goal,
+    )
+    result = agent.run([{"role": "user", "content": "run the plan"}])
+    assert result.final_text == "done"
+    assert calls["n"] >= 2
 
 
 def test_agent_without_goal_accepts_first_conclusion() -> None:
@@ -196,12 +236,10 @@ def test_agent_without_goal_accepts_first_conclusion() -> None:
 
 
 def test_goal_ceiling_uses_the_runtime_requests_budget() -> None:
-    """The ceiling must match the budget the loop is actually running.
+    """The loop's run budget is what the goal observes, not construction-time max.
 
-    ``ReactLoop`` iterates ``run_input.max_iterations``. A ``runtime_request``
-    carries its own budget, so reading the construction-time value means the
-    goal never yields on the real last lap — the loop exhausts with the goal
-    still refusing to accept, and the ceiling escape hatch never fires.
+    An unmet goal still refuses at that last lap; the loop then emits an
+    incomplete handoff instead of accepting an unsupported conclusion.
     """
     # Arrange: constructed for 10 laps, this run is budgeted 3.
     from unittest.mock import MagicMock
@@ -228,4 +266,4 @@ def test_goal_ceiling_uses_the_runtime_requests_budget() -> None:
     )
 
     # Assert
-    assert accept is True
+    assert accept is False

@@ -15,6 +15,8 @@ from typing import Any
 
 import uvicorn
 
+from config.constants.gateway import WEB_STOP_TIMEOUT_SECONDS
+
 
 @dataclass
 class AsgiServerHandle:
@@ -29,7 +31,7 @@ class AsgiServerHandle:
     def bound_address(self) -> str:
         return f"{self.bound_host}:{self.bound_port}"
 
-    def stop(self, *, timeout: float = 5.0) -> None:
+    def stop(self, *, timeout: float = WEB_STOP_TIMEOUT_SECONDS) -> None:
         self.server.should_exit = True
         self.thread.join(timeout=timeout)
 

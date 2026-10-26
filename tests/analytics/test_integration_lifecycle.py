@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from infrastructure.analytics import cli as analytics_cli
+from infrastructure.analytics import capture as analytics_capture
 from infrastructure.analytics.repl_context import bind_cli_session_id, reset_cli_session_id
 
 
@@ -14,11 +14,11 @@ def test_integration_lifecycle_events_include_cli_session_id(monkeypatch: Any) -
     def _capture(event: object, properties: dict[str, object] | None = None) -> None:
         captured.append({"event": event, "properties": properties or {}})
 
-    monkeypatch.setattr(analytics_cli, "_capture", _capture)
+    monkeypatch.setattr(analytics_capture, "_capture", _capture)
 
     token = bind_cli_session_id("session-abc")
     try:
-        analytics_cli.capture_integration_verified("github")
+        analytics_capture.capture_integration_verified("github")
     finally:
         reset_cli_session_id(token)
 
@@ -35,9 +35,9 @@ def test_integration_lifecycle_events_omit_cli_session_id_outside_repl(
     def _capture(event: object, properties: dict[str, object] | None = None) -> None:
         captured.append({"event": event, "properties": properties or {}})
 
-    monkeypatch.setattr(analytics_cli, "_capture", _capture)
+    monkeypatch.setattr(analytics_capture, "_capture", _capture)
 
-    analytics_cli.capture_integration_removed("datadog")
+    analytics_capture.capture_integration_removed("datadog")
 
     assert captured
     assert captured[0]["properties"]["service"] == "datadog"

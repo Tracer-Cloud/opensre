@@ -54,8 +54,8 @@ Shared process setup (env → Sentry → harness adapters → capability warning
 LLM preload) is :func:`bootstrap.process.configure_process` with
 ``GATEWAY_PROFILE``. After logging and credentials,
 `GatewayController.start_gateway` configures the process, builds **one**
-`TurnHandler(gate=…)`, then `start_surfaces()` and `start_scheduler()`.
-Do not wrap the turn handler. Do not duplicate process boot in the controller.
+`TurnRunner(gate=…)`, then `start_surfaces()` and `start_scheduler()`.
+Do not wrap the turn runner. Do not duplicate process boot in the controller.
 Hosting is a thin call: `scheduler_runners().gated(turn_gate).install()` then
 :func:`infrastructure.scheduling.scheduler.runner.start_background_scheduler`. Reload is
 :func:`infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload` (shell/CLI

@@ -1,4 +1,0 @@
-2026-05-12 00:14:54,000 ERROR gateway.platforms.base: telegram: bot token already in use (PID 622). Stop the other gateway first.
-2026-05-12 00:14:54,050 ERROR gateway.platforms.base: feishu: bot token already in use (PID 622). Stop the other gateway first.
-2026-05-12 00:14:54,100 ERROR gateway.platforms.base: wechat: bot token already in use (PID 622). Stop the other gateway first.
-2026-05-12 00:14:54,200 WARNING gateway.run: Gateway running with 1 platform(s) (expected 4) — telegram/feishu/wechat refused PID lock at PID 622 (process name: com.apple.CloudDocs.iCloudDriveFileProvider)

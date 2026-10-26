@@ -1,0 +1,227 @@
+---
+title: "MySQL"
+description: "Connect MySQL so OpenSRE can diagnose database issues"
+---
+
+## Overview
+
+OpenSRE uses MySQL diagnostics to investigate database issues — checking server health, surfacing slow queries, monitoring replication status, and analyzing table statistics. Queries are wrapped as read-only.
+
+## Prerequisites
+
+- MySQL 5.7+ (8.0+ recommended for full `performance_schema` support)
+- Network access from the OpenSRE environment to your MySQL instance
+- A read-only user with access to `information_schema` and `performance_schema`
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup mysql
+```
+
+### Option 2: Environment variables
+
+```bash
+MYSQL_HOST=your-mysql-host
+MYSQL_PORT=3306
+MYSQL_DATABASE=your-database
+MYSQL_USERNAME=opensre_readonly
+MYSQL_PASSWORD=your-password
+MYSQL_SSL_MODE=preferred   # preferred, required, or disabled
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MYSQL_HOST` | — | **Required.** MySQL hostname or IP |
+| `MYSQL_PORT` | `3306` | MySQL port |
+| `MYSQL_DATABASE` | — | **Required.** Target database |
+| `MYSQL_USERNAME` | `root` | Username |
+| `MYSQL_PASSWORD` | _(empty)_ | Password |
+| `MYSQL_SSL_MODE` | `preferred` | `preferred` (no cert verify), `required`, or `disabled` |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "mysql-prod",
+      "service": "mysql",
+      "status": "active",
+      "credentials": {
+        "host": "prod-primary.mysql.example.com",
+        "port": 3306,
+        "database": "application_db",
+        "username": "opensre_readonly",
+        "password": "your-password",
+        "ssl_mode": "preferred"
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+### Creating a read-only user
+
+```sql
+CREATE USER 'opensre_readonly'@'%' IDENTIFIED BY 'secure-password';
+GRANT PROCESS ON *.* TO 'opensre_readonly'@'%';
+GRANT REPLICATION CLIENT ON *.* TO 'opensre_readonly'@'%';
+GRANT SELECT ON performance_schema.* TO 'opensre_readonly'@'%';
+GRANT SELECT ON your_database.* TO 'opensre_readonly'@'%';
+FLUSH PRIVILEGES;
+```
+
+Three notes on these grants, each confirmed against a real server:
+
+- `information_schema` needs no explicit grant — MySQL exposes it automatically based on a
+  user's other privileges. `GRANT SELECT ON information_schema.*` is rejected outright
+  (`ERROR 1044`) and aborts the script before later grants run.
+- The grant on the **target database** (`MYSQL_DATABASE`) is required — the connector
+  selects it as the default schema on connect, and without it every tool call fails with
+  `Access denied ... to database`.
+- `REPLICATION CLIENT` is required for `get_mysql_replication_status` (`SHOW REPLICA STATUS`
+  / `SHOW SLAVE STATUS`) — without it, that one tool returns an access-denied error even
+  though `integrations verify mysql` and the other four tools pass.
+
+<Info>
+`performance_schema` is enabled by default in MySQL 5.7+. Slow query data will not be available if it has been explicitly disabled in `my.cnf`.
+</Info>
+
+### Quick local test with Docker
+
+```bash
+docker run -d --name mysql-dev -p 127.0.0.1:3307:3306 \
+  -e MYSQL_ROOT_PASSWORD=rootpass \
+  -e MYSQL_DATABASE=app_db \
+  mysql:8.0
+```
+
+Wait for it to become healthy, then create the read-only user and a table to inspect:
+
+```bash
+i=0
+until docker logs mysql-dev 2>&1 | grep -q "ready for connections.*port: 3306"; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: MySQL never became ready" >&2; exit 1; }
+  sleep 2
+done
+```
+
+```bash
+docker exec mysql-dev mysql -uroot -prootpass -e "
+CREATE USER 'opensre_readonly'@'%' IDENTIFIED BY 'secure-password';
+GRANT PROCESS ON *.* TO 'opensre_readonly'@'%';
+GRANT REPLICATION CLIENT ON *.* TO 'opensre_readonly'@'%';
+GRANT SELECT ON performance_schema.* TO 'opensre_readonly'@'%';
+GRANT SELECT ON app_db.* TO 'opensre_readonly'@'%';
+FLUSH PRIVILEGES;
+CREATE TABLE app_db.orders (id INT PRIMARY KEY, amount DECIMAL(10,2));
+INSERT INTO app_db.orders VALUES (1, 42.50), (2, 17.00);
+"
+```
+
+```bash
+export MYSQL_HOST=127.0.0.1
+export MYSQL_PORT=3307
+export MYSQL_DATABASE=app_db
+export MYSQL_USERNAME=opensre_readonly
+export MYSQL_PASSWORD=secure-password
+export MYSQL_SSL_MODE=disabled
+```
+
+Verify:
+
+```bash
+opensre integrations verify mysql
+```
+
+```
+SERVICE │ SOURCE    │ STATUS   │ DETAIL
+mysql   │ local env │ ✓ passed │ Connected to MySQL 8.0.46
+        │           │          │ target database: app_db.
+```
+
+Chat sessions only treat an integration as active once the store resolution has *something* to fall through to env vars with -- an untouched `~/.opensre/integrations.json` with an unrelated integration in it blocks env-var fallback entirely. Point `OPENSRE_INTEGRATIONS_STORE_PATH` at an empty, valid store instead, so your real config is never read or written and the exported `MYSQL_*` vars above are the only source of credentials:
+
+```bash
+export OPENSRE_INTEGRATIONS_STORE_PATH=$(mktemp /tmp/opensre-mysql-demo.XXXXXX)
+echo '{"version": 2, "integrations": []}' > "$OPENSRE_INTEGRATIONS_STORE_PATH"
+```
+
+A literal zero-byte file does not work here -- the store loader expects valid JSON and raises on an empty read, so this writes an explicitly empty (but valid) store rather than just creating the file with `mktemp` alone.
+
+Kick off a long-running query so there is something real to investigate, then ask the agent:
+
+```bash
+docker exec -d mysql-dev mysql -uroot -prootpass -e "SELECT SLEEP(30);"
+
+opensre
+```
+
+Ask: *Is anything blocking connections on the app_db MySQL instance?*
+
+Against this exact local instance the agent calls all 5 registered tools — current
+processes, server status, slow queries, table stats, and replication status — and
+correctly identifies the synthetic `SELECT SLEEP(30)` probe as the only long-running
+query, with every other health signal clean. An empty store makes the session fall
+through to env-var resolution for *every* integration, not just MySQL -- if your shell
+already resolves another integration from its own env vars, it rides along too
+(harmless).
+
+Teardown -- remove the demo store file and unset every demo variable, so nothing lingers in the shell to affect a later command:
+
+```bash
+rm -f "$OPENSRE_INTEGRATIONS_STORE_PATH"
+unset OPENSRE_INTEGRATIONS_STORE_PATH
+unset MYSQL_HOST MYSQL_PORT MYSQL_DATABASE MYSQL_USERNAME MYSQL_PASSWORD MYSQL_SSL_MODE
+docker rm -f mysql-dev
+```
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_mysql_server_status` | Version, uptime, connections, query rates, InnoDB buffer pool / deadlock counts |
+| `get_mysql_current_processes` | Active queries longer than a threshold (default 1s) |
+| `get_mysql_slow_queries` | Highest average time from `performance_schema.events_statements_summary_by_digest` |
+| `get_mysql_table_stats` | Row estimates, data/index size from `information_schema.TABLES` |
+| `get_mysql_replication_status` | Replica IO/SQL health, seconds behind source (`SHOW REPLICA STATUS` with `SHOW SLAVE STATUS` fallback) |
+
+## Verify
+
+```bash
+opensre integrations verify mysql
+```
+
+Expected output:
+
+```
+Service: mysql
+Status: passed
+Detail: Connected to MySQL 8.0.32; target database: application_db
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Check host, port, firewall, `bind-address` |
+| **Authentication failed** | Confirm user host (`'user'@'%'` or specific IP) |
+| **SSL error** | Try `MYSQL_SSL_MODE=disabled` or `required` |
+| **Access denied on performance_schema** | Grant `SELECT ON performance_schema.*` |
+| **Access denied to database** on verify/tool calls | Grant `SELECT ON <your_database>.*` — the connector selects `MYSQL_DATABASE` as its default schema on connect |
+| **Slow query data empty** | Confirm `performance_schema=ON` and restart MySQL |
+| **Replication shows empty** | Expected on primary — other tools still work |
+
+## Security
+
+- Use a **dedicated read-only user** — avoid root credentials.
+- Prefer `MYSQL_SSL_MODE=required` in production.
+- Restrict the user to specific hosts rather than `'%'` where possible.
+- Store credentials in `.env` or your secret manager — not in source control.

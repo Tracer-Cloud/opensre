@@ -10,16 +10,23 @@ import pytest
 from rich.console import Console
 
 from core.agent_harness.session import InMemorySessionStore
+from core.agent_harness.session_goal.goal import (
+    SessionGoal,
+    SessionGoalStatus,
+    attach_session_goal,
+)
+from core.agent_harness.spi.session_goal import pause_active_session_goal
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
+from core.agent_harness.turns.host_cancel import HostCancelEvent, HostCancelReason
 from core.agent_harness.turns.orchestrator import run_turn
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
-from infrastructure.turn_host.turn_handler import TurnHandler
+from infrastructure.turn_host.turn_runner import TurnRunner
 from surfaces.interactive_shell.session import Session
 from tests.shared.default_headless_build_stub import default_headless_build_stub
 from tests.shared.fake_agent import fake_agent
 
 
-def test_gateway_turn_handler_delegates_to_agent_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gateway_turn_runner_delegates_to_agent_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = fake_agent()
     agent.dispatch.return_value = TurnResult(
         final_intent="cli_agent_handled",
@@ -41,7 +48,7 @@ def test_gateway_turn_handler_delegates_to_agent_dispatch(monkeypatch: pytest.Mo
 
     session = Session(store=InMemorySessionStore())
     sink = MagicMock()
-    handler = TurnHandler(console=Console(force_terminal=False))
+    handler = TurnRunner(console=Console(force_terminal=False))
     handler("hello gateway", session, sink, logging.getLogger("test.gateway.module"))
 
     # The message is dispatched per-turn; session-stable ports are wired once,
@@ -54,8 +61,7 @@ def test_gateway_turn_handler_delegates_to_agent_dispatch(monkeypatch: pytest.Mo
     assert ctor.kwargs["session"] is session
     assert isinstance(ctor.kwargs["output"], BindableOutput)
     assert ctor.kwargs["output"].bound is sink
-    # Gateway turns gather live evidence; the ports object carries that now.
-    assert ctor.kwargs["gather"].enabled is True
+    assert "gather" not in ctor.kwargs
     assert ctor.kwargs["surface"] == "gateway"
     tool_provider = DefaultToolProvider(
         ctor.kwargs["session"],
@@ -69,15 +75,22 @@ def test_gateway_turn_handler_delegates_to_agent_dispatch(monkeypatch: pytest.Mo
     sink.finalize.assert_called_once_with("gateway-ok")
 
 
-def test_gateway_turn_handler_does_not_finalize_answered_turn(
+def test_gateway_turn_runner_does_not_finalize_answered_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agent = fake_agent()
     agent.dispatch.return_value = TurnResult(
         final_intent="cli_agent_fallback",
-        action_result=ToolCallingTurnResult(0, 0, 0, False, False),
+        action_result=ToolCallingTurnResult(
+            0,
+            0,
+            0,
+            False,
+            False,
+            response_streamed=True,
+            hit_iteration_cap=True,
+        ),
         assistant_response_text="streamed answer",
-        llm_run=object(),
     )
     monkeypatch.setattr(
         "infrastructure.turn_host.session_agents.DefaultHeadlessBuild",
@@ -86,25 +99,49 @@ def test_gateway_turn_handler_does_not_finalize_answered_turn(
 
     session = Session(store=InMemorySessionStore())
     sink = MagicMock()
-    handler = TurnHandler(console=Console(force_terminal=False))
+    handler = TurnRunner(console=Console(force_terminal=False))
     handler("why", session, sink, logging.getLogger("test.gateway.module.answer"))
 
     sink.finalize.assert_not_called()
 
 
-def test_run_turn_routes_unhandled_action_to_answer_callback() -> None:
-    action = ToolCallingTurnResult(0, 0, 0, False, False)
-    answer_calls: list[str] = []
+def test_prestart_goal_pause_does_not_consume_admission_credit() -> None:
+    session = Session(store=InMemorySessionStore())
+    attach_session_goal(session, SessionGoal(condition="keep going", max_outer_turns=4))
+    pause_active_session_goal(session)
+    cancel = HostCancelEvent()
+    cancel.request(HostCancelReason.GOAL_PAUSE)
+    sink = MagicMock(turn_cancel=cancel)
+    admission = MagicMock(return_value=True)
+
+    result = TurnRunner(
+        console=Console(force_terminal=False),
+        admission_check=admission,
+    ).run(
+        "queued work",
+        session,
+        sink,
+        logging.getLogger("test.gateway.prestart-pause"),
+    )
+
+    assert result is None
+    admission.assert_not_called()
+    assert session.session_goal is not None
+    assert session.session_goal.status == SessionGoalStatus.PAUSED
+
+
+def test_run_turn_returns_agent_conclusion_directly() -> None:
+    action = ToolCallingTurnResult(
+        0,
+        0,
+        0,
+        False,
+        False,
+        response_text="answered",
+    )
 
     def execute_actions(_text: str, **_kwargs: object) -> ToolCallingTurnResult:
         return action
-
-    def answer(text: str, _request: object = None, **_kwargs: object) -> object:
-        answer_calls.append(text)
-        return type("Run", (), {"response_text": "answered"})()
-
-    def gather(_text: str, **_kwargs: object) -> None:
-        return None
 
     class _Accounting:
         def record_action_result(self, _result: ToolCallingTurnResult) -> None:
@@ -118,14 +155,74 @@ def test_run_turn_routes_unhandled_action_to_answer_callback() -> None:
         "question?",
         session,
         execute_actions=execute_actions,
-        answer=answer,
-        gather=gather,
         accounting=_Accounting(),
     )
 
-    assert answer_calls == ["question?"]
-    assert result.final_intent == "cli_agent_fallback"
+    assert result.final_intent == "agent_completed"
     assert result.answered is True
+
+
+def test_run_turn_surfaces_iteration_cap_as_incomplete() -> None:
+    def execute_actions(_text: str, **_kwargs: object) -> ToolCallingTurnResult:
+        return ToolCallingTurnResult(
+            1,
+            1,
+            1,
+            False,
+            True,
+            response_text="intermediate tool output",
+            hit_iteration_cap=True,
+        )
+
+    class _Accounting:
+        def record_action_result(self, _result: ToolCallingTurnResult) -> None:
+            return None
+
+        def finalize(self, result: TurnResult) -> TurnResult:
+            return result
+
+    result = run_turn(
+        "finish the task",
+        Session(store=InMemorySessionStore()),
+        execute_actions=execute_actions,
+        accounting=_Accounting(),
+    )
+
+    assert result.final_intent == "agent_incomplete"
+    assert "iteration limit reached" in result.primary_response_text
+
+
+def test_run_turn_does_not_duplicate_a_streamed_safety_handoff() -> None:
+    handoff = "Partial results are preserved; the repeated query is still blocked."
+
+    def execute_actions(_text: str, **_kwargs: object) -> ToolCallingTurnResult:
+        return ToolCallingTurnResult(
+            1,
+            1,
+            0,
+            False,
+            True,
+            response_text=handoff,
+            response_streamed=True,
+            hit_iteration_cap=True,
+        )
+
+    class _Accounting:
+        def record_action_result(self, _result: ToolCallingTurnResult) -> None:
+            return None
+
+        def finalize(self, result: TurnResult) -> TurnResult:
+            return result
+
+    result = run_turn(
+        "finish the task",
+        Session(store=InMemorySessionStore()),
+        execute_actions=execute_actions,
+        accounting=_Accounting(),
+    )
+
+    assert result.final_intent == "agent_incomplete"
+    assert result.primary_response_text == handoff
 
 
 def test_run_turn_builds_turn_plan_for_action_path(
@@ -145,12 +242,6 @@ def test_run_turn_builds_turn_plan_for_action_path(
         captured.append(turn_plan)
         return ToolCallingTurnResult(0, 0, 0, False, False)
 
-    def answer(_text: str, _request: object = None, **_kwargs: object) -> object:
-        return type("Run", (), {"response_text": "answered"})()
-
-    def gather(_text: str, **_kwargs: object) -> None:
-        return None
-
     class _Accounting:
         def record_action_result(self, _result: ToolCallingTurnResult) -> None:
             return None
@@ -160,101 +251,21 @@ def test_run_turn_builds_turn_plan_for_action_path(
 
     session = Session(store=InMemorySessionStore())
     run_turn(
-        "hi",
+        "check facebook/react",
         session,
         execute_actions=execute_actions,
-        answer=answer,
-        gather=gather,
         accounting=_Accounting(),
     )
 
     assert captured, "execute_actions was never called"
-    assert captured[0].resolved_integrations == resolved
-
-
-def test_run_turn_passes_turn_plan_to_gather(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """run_turn hands the gather phase the turn_plan carrying resolved integrations (no re-resolve)."""
-    resolved = {"github": {"configured": True}}
-    monkeypatch.setattr(
-        "core.agent_harness.turns.turn_plan.resolve_and_cache_integrations",
-        lambda _session: resolved,
-    )
-    gather_calls: list[Any] = []
-
-    def execute_actions(_text: str, **_kwargs: object) -> ToolCallingTurnResult:
-        return ToolCallingTurnResult(0, 0, 0, False, False)
-
-    def answer(_text: str, _request: object = None, **_kwargs: object) -> object:
-        return type("Run", (), {"response_text": "answered"})()
-
-    def gather(_text: str, *, turn_plan: Any = None, **_kwargs: object) -> None:
-        gather_calls.append(turn_plan.resolved_integrations if turn_plan is not None else None)
-        return None
-
-    class _Accounting:
-        def record_action_result(self, _result: ToolCallingTurnResult) -> None:
-            return None
-
-        def finalize(self, result: TurnResult) -> TurnResult:
-            return result
-
-    session = Session(store=InMemorySessionStore())
-    run_turn(
-        "hi",
-        session,
-        execute_actions=execute_actions,
-        answer=answer,
-        gather=gather,
-        accounting=_Accounting(),
-    )
-
-    assert gather_calls == [resolved]
-
-
-def test_run_turn_passes_turn_plan_to_answer(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The answer phase receives the same turn_plan (its snapshot grounds the prompt)."""
-    resolved = {"github": {"configured": True}}
-    monkeypatch.setattr(
-        "core.agent_harness.turns.turn_plan.resolve_and_cache_integrations",
-        lambda _session: resolved,
-    )
-    answer_plans: list[Any] = []
-
-    def execute_actions(_text: str, **_kwargs: object) -> ToolCallingTurnResult:
-        return ToolCallingTurnResult(0, 0, 0, False, False)
-
-    def answer(_text: str, request: Any = None, **_kwargs: object) -> object:
-        answer_plans.append(getattr(request, "turn_plan", None))
-        return type("Run", (), {"response_text": "answered"})()
-
-    def gather(_text: str, **_kwargs: object) -> None:
-        return None
-
-    class _Accounting:
-        def record_action_result(self, _result: ToolCallingTurnResult) -> None:
-            return None
-
-        def finalize(self, result: TurnResult) -> TurnResult:
-            return result
-
-    session = Session(store=InMemorySessionStore())
-    run_turn(
-        "why is it down?",
-        session,
-        execute_actions=execute_actions,
-        answer=answer,
-        gather=gather,
-        accounting=_Accounting(),
-    )
-
-    assert answer_plans, "answer was never called"
-    assert answer_plans[0] is not None
-    assert answer_plans[0].snapshot.text == "why is it down?"
-    assert answer_plans[0].resolved_integrations == resolved
+    assert captured[0].resolved_integrations == {
+        "github": {
+            "configured": True,
+            "owner": "facebook",
+            "repo": "react",
+        }
+    }
+    assert resolved == {"github": {"configured": True}}
 
 
 def test_action_tools_uses_passed_resolved_integrations(
@@ -268,7 +279,7 @@ def test_action_tools_uses_passed_resolved_integrations(
         return []
 
     monkeypatch.setattr(
-        "core.agent_harness.tools.tool_provider.get_action_tools_from_integrations_context",
+        "core.agent_harness.tools.tool_provider.get_action_tools_from_integrations_view",
         _fake_build,
     )
     provider = DefaultToolProvider(
@@ -293,7 +304,7 @@ def test_action_tools_falls_back_to_session_resolve_when_none(
         return []
 
     monkeypatch.setattr(
-        "core.agent_harness.tools.tool_provider.get_action_tools_from_integrations_context",
+        "core.agent_harness.tools.tool_provider.get_action_tools_from_integrations_view",
         _fake_build,
     )
     monkeypatch.setattr(

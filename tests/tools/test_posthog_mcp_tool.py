@@ -483,9 +483,8 @@ def test_list_tools_truncates_long_descriptions() -> None:
     assert description.endswith("\u2026")
 
 
-def test_query_values_survive_gather_truncation() -> None:
-    """Row values must outlive the gather loop's head-first result truncation."""
-    from core.agent_harness.turns.evidence_driver import _MAX_PER_TOOL_CHARS, _truncate
+def test_query_values_are_first_in_normalized_result() -> None:
+    """Row values stay at the front of the payload so later truncation cannot drop them."""
     from integrations.posthog_mcp.tools.posthog_mcp_tool import _normalize_tool_result
 
     long_sql = "SELECT countIf(timestamp >= now() - INTERVAL 7 DAY) AS current " + (
@@ -502,13 +501,7 @@ def test_query_values_survive_gather_truncation() -> None:
         }
     )
 
-    body = json.dumps(normalized, default=str)
-    observation = _truncate(body, _MAX_PER_TOOL_CHARS)
-
     assert list(normalized.keys())[0] == "results"
     assert normalized["results"] == [[4271, 3900]]
     assert "arguments" not in normalized
     assert "content" not in normalized
-    assert "investigations_started=4271" in observation
-    assert "4271" in observation
-    assert "padding to blow the per-tool budget" not in observation

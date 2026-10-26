@@ -42,7 +42,7 @@ class SessionBootstrapSpec(BaseModel):
 
         Core bootstrap (persistent task registry + integration hydration) is
         delegated to :class:`SessionManager`; the shell layers its own UI
-        concerns (theme, grounding providers, prompt history) on top.
+        concerns (theme, prompt history) on top.
         """
         SessionManager().bootstrap(
             self.session,
@@ -55,7 +55,7 @@ class SessionBootstrapSpec(BaseModel):
         return self
 
 
-class ReplRuntimeContext(BaseModel):
+class ReplRuntime(BaseModel):
     """Validated bundle shared by REPL entrypoints and the controller."""
 
     model_config = ConfigDict(
@@ -121,7 +121,7 @@ def prepare_repl_session(
     return spec.session
 
 
-def create_repl_runtime_context(
+def create_repl_runtime(
     session: Session | None = None,
     *,
     state: ReplState | None = None,
@@ -131,8 +131,8 @@ def create_repl_runtime_context(
     active_theme_name: str | None = None,
     hydrate_integrations: bool = True,
     persistent_tasks: bool = True,
-) -> ReplRuntimeContext:
-    """Create the canonical validated context for a REPL controller."""
+) -> ReplRuntime:
+    """Create the canonical validated runtime for a REPL controller."""
     prepared_session = prepare_repl_session(
         session,
         pt_session=pt_session,
@@ -144,7 +144,7 @@ def create_repl_runtime_context(
 
     set_session_trace_store(jsonl_trace_store_for_session(prepared_session))
     mutable_state = create_repl_mutable_state(state=state, spinner=spinner)
-    return ReplRuntimeContext(
+    return ReplRuntime(
         session=prepared_session,
         state=mutable_state.state,
         spinner=mutable_state.spinner,
@@ -154,8 +154,8 @@ def create_repl_runtime_context(
 
 
 __all__ = [
-    "ReplRuntimeContext",
+    "ReplRuntime",
     "SessionBootstrapSpec",
-    "create_repl_runtime_context",
+    "create_repl_runtime",
     "prepare_repl_session",
 ]

@@ -1,0 +1,123 @@
+---
+title: "Azure SQL"
+description: "Connect Azure SQL so OpenSRE can diagnose database issues and query performance"
+---
+
+## Overview
+
+OpenSRE connects to Azure SQL to diagnose database alerts — checking server health, finding slow queries, monitoring resource usage, and analyzing wait stats to pinpoint bottlenecks. Uses ODBC (`ODBC Driver 18 for SQL Server` by default).
+
+## Prerequisites
+
+- An Azure SQL Database instance
+- Network connectivity from your OpenSRE environment to your Azure SQL server (firewall / VNet)
+- SQL authentication username and password
+- Server hostname (for example `myserver.database.windows.net`)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup azure_sql
+```
+
+### Option 2: Environment variables
+
+```bash
+AZURE_SQL_SERVER=myserver.database.windows.net
+AZURE_SQL_DATABASE=mydb
+AZURE_SQL_USERNAME=sqladmin
+AZURE_SQL_PASSWORD=your_password
+AZURE_SQL_ENCRYPT=true
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AZURE_SQL_SERVER` | — | **Required.** Azure SQL server hostname |
+| `AZURE_SQL_DATABASE` | — | **Required.** Database name |
+| `AZURE_SQL_USERNAME` | — | **Required.** SQL authentication username |
+| `AZURE_SQL_PASSWORD` | — | **Required.** SQL authentication password |
+| `AZURE_SQL_ENCRYPT` | `true` | Encrypt the connection |
+| `AZURE_SQL_PORT` | `1433` | SQL Server port |
+| `AZURE_SQL_DRIVER` | `ODBC Driver 18 for SQL Server` | ODBC driver name |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "azure-sql-prod",
+      "service": "azure_sql",
+      "status": "active",
+      "credentials": {
+        "server": "myserver.database.windows.net",
+        "database": "mydb",
+        "username": "sqladmin",
+        "password": "your_password",
+        "encrypt": true
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+### Finding your connection details
+
+1. Open the Azure Portal
+2. Navigate to your SQL Database resource
+3. Copy **Server name** from the overview panel (add `.database.windows.net` if needed)
+
+### Network access: Firewall
+
+1. In Azure Portal, go to your SQL server → **Security** → **Firewalls and virtual networks**
+2. Add your OpenSRE environment's IP address
+3. Or enable **Allow Azure services and resources to access this server** if running in Azure
+
+<Tip>
+If you're not sure of your IP, start with a permissive rule temporarily, get OpenSRE working, then lock it down.
+</Tip>
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_azure_sql_server_status` | Service tier, resource utilization, connections, database size |
+| `get_azure_sql_current_queries` | Active sessions and running queries |
+| `get_azure_sql_slow_queries` | Top resource consumers from Query Store / DMVs |
+| `get_azure_sql_wait_stats` | Cumulative wait types (I/O, lock, CPU) |
+| `get_azure_sql_resource_stats` | CPU, memory, and I/O utilization |
+
+## Verify
+
+```bash
+opensre integrations verify azure_sql
+```
+
+Expected output:
+
+```
+Service: azure_sql
+Status: passed
+Detail: Connected to Azure SQL Database ...
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection timeout** | Add your OpenSRE IP to the Azure SQL firewall rules |
+| **Login failed** | Confirm username/password and that SQL authentication is enabled |
+| **SSL/certificate error** | Keep `AZURE_SQL_ENCRYPT=true`. Install `ODBC Driver 18 for SQL Server` |
+| **Permission denied on DMVs** | Grant `VIEW SERVER STATE` and `VIEW DATABASE STATE` to the OpenSRE user |
+
+## Security
+
+- Use a **dedicated read-only SQL user** for OpenSRE — avoid admin credentials.
+- Keep encryption enabled (`AZURE_SQL_ENCRYPT=true`) in production.
+- Restrict firewall rules to the OpenSRE environment's egress IP.
+- Store credentials in `.env` or the integration store, never in source code.

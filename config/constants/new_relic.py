@@ -32,6 +32,8 @@ NEW_RELIC_ALLOWED_BASE_URLS: Final[frozenset[str]] = frozenset(
 NEW_RELIC_NRQL_TIMEOUT_SECONDS: Final[int] = 5
 #: NerdGraph's own ceiling for a single NRQL ``LIMIT`` clause.
 NEW_RELIC_NRQL_LIMIT_MAX: Final[int] = 5_000
+#: NRQL's own ceiling on the number of buckets a ``TIMESERIES`` query returns.
+NEW_RELIC_TIMESERIES_MAX_BUCKETS: Final[int] = 366
 
 #: OpenSRE's own default incident-page size, well below the API ceiling.
 NEW_RELIC_DEFAULT_INCIDENT_LIMIT: Final[int] = 100
@@ -48,4 +50,5 @@ __all__ = [
     "NEW_RELIC_INSTANCES_ENV",
     "NEW_RELIC_NRQL_LIMIT_MAX",
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS",
+    "NEW_RELIC_TIMESERIES_MAX_BUCKETS",
 ]

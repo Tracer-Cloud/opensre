@@ -1,9 +1,0 @@
-{"timestamp":"2026-05-14T20:43:44.318Z","type":"session_meta","payload":{"id":"th_001","cwd":"/tmp/demo","originator":"codex_exec","cli_version":"0.130.0","model_provider":"openai"}}
-{"timestamp":"2026-05-14T20:43:58.766Z","type":"turn_context","payload":{"turn_id":"t_001","cwd":"/tmp/demo","model":"gpt-5-codex","approval_policy":"never"}}
-{"timestamp":"2026-05-14T20:43:59.136Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"plan_type":"plus"}}}
-{"timestamp":"2026-05-14T20:43:59.500Z","type":"response_item","payload":{"id":"item_0","type":"agent_message","text":"Looking at the file..."}}
-{"timestamp":"2026-05-14T20:44:00.123Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":120,"cached_input_tokens":0,"output_tokens":18,"reasoning_output_tokens":0,"total_tokens":138},"total_token_usage":{"input_tokens":120,"cached_input_tokens":0,"output_tokens":18,"reasoning_output_tokens":0,"total_tokens":138}}}}
-{"timestamp":"2026-05-14T20:44:01.000Z","type":"turn_context","payload":{"turn_id":"t_002","model":"gpt-5-codex"}}
-{"timestamp":"2026-05-14T20:44:02.985Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":250,"cached_input_tokens":100,"output_tokens":42,"reasoning_output_tokens":0,"total_tokens":292},"total_token_usage":{"input_tokens":370,"cached_input_tokens":100,"output_tokens":60,"reasoning_output_tokens":0,"total_tokens":430}}}}
-{"timestamp":"2026-05-14T20:44:04.000Z","type":"turn_context","payload":{"turn_id":"t_003","model":"gpt-5-codex"}}
-{"timestamp":"2026-05-14T20:44:05.500Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":315,"cached_input_tokens":0,"output_tokens":11,"reasoning_output_tokens":50,"total_tokens":326},"total_token_usage":{"input_tokens":685,"cached_input_tokens":100,"output_tokens":71,"reasoning_output_tokens":50,"total_tokens":806}}}}

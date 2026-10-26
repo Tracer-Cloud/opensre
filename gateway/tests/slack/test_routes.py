@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 
 from fastapi.testclient import TestClient
 
+from config.constants.http import MAX_REQUEST_BODY_BYTES
 from gateway.core.middleware.approvals import ApprovalBroker
 from gateway.core.storage.events.repository import InMemoryHandledSlackEventRepository
 from gateway.transports.slack.settings import SlackGatewaySettings, SlackInboundTransport
@@ -339,4 +340,21 @@ def test_a_closed_listener_acts_on_nothing_on_either_route() -> None:
     # Assert — both refused, and no turn was queued.
     assert event.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert click.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert submitted == []
+
+
+def test_oversized_event_body_is_rejected_before_signature_check() -> None:
+    """The listener binds 0.0.0.0 and cannot authenticate without reading the body.
+
+    Slack signs the raw bytes, so both routes must call ``request.body()``
+    before they know who is calling. Without a cap above routing, any
+    unauthenticated caller on the internet could make this host buffer a
+    payload of their choosing.
+    """
+    submitted: list[Any] = []
+    client = _client(submitted)
+
+    resp = client.post(EVENTS_PATH, content=b"x" * (MAX_REQUEST_BODY_BYTES + 1))
+
+    assert resp.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
     assert submitted == []

@@ -12,8 +12,8 @@ def default_headless_build_stub(build: Callable[..., Any]) -> type:
     Patch it over ``<module>.DefaultHeadlessBuild`` so a test that used to fake the
     agent factory keeps one hook: ``build`` sees the build's fields
     (``session``, ``output``, ``console``, ``logger``, ``surface``) merged
-    with the tools/prompts/gather the host passed to ``agent()`` (``tools``, ``prompts``,
-    ``gather``, ``deps``).
+    with the tools/prompts the host passed to ``agent()`` (``tools``, ``prompts``,
+    ``deps``).
     """
 
     class _DefaultHeadlessBuildStub:

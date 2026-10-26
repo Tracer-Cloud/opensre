@@ -7,18 +7,21 @@ from typing import Any
 
 from rich.markup import escape
 
+from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.spi.session_state import (
+    arm_setup_resume,
     exclusive_stdin_active,
     session_terminal,
     set_auto_command,
 )
 from core.agent_harness.tools import (
-    ActionToolContext,
+    ActionToolScope,
     capability_available_from_sources,
     execute_with_action_context,
 )
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
+from tools.interactive_shell.actions.skill_prerequisite_gate import resumable_setup
 from tools.interactive_shell.shared import plan_foreground_tool
 from tools.interactive_shell.shared.slash_catalog import (
     slash_invoke_input_schema,
@@ -34,14 +37,17 @@ from tools.interactive_shell.shared.slash_catalog import (
 # literal keystrokes. Defer them through ``set_auto_command`` so the loop
 # re-dispatches the command as a deterministic turn it runs with exclusive stdin.
 _INTERACTIVE_PICKER_MENUS: frozenset[str] = frozenset(
-    {"/auth", "/choose", "/login", "/integrations", "/mcp"}
+    {"/auth", "/choose", "/cron", "/login", "/messaging", "/sessions", "/tools"}
 )
 _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
         ("/auth", "login"),
         ("/auth", "logout"),
+        ("/integrations", "list"),
         ("/integrations", "setup"),
         ("/integrations", "remove"),
+        ("/loops", "show"),
+        ("/mcp", "list"),
         ("/mcp", "connect"),
         ("/mcp", "disconnect"),
     }
@@ -66,11 +72,32 @@ def _slash_drives_interactive_picker(
         return False
     if not ports.tty_interactive():
         return False
+    if ports.command_needs_input(name, slash_args):
+        return True
     if name == "/login":
         return True
     if not slash_args:
         return name in _INTERACTIVE_PICKER_MENUS
-    return (name, slash_args[0].lower()) in _INTERACTIVE_PICKER_SUBCOMMANDS
+    return (name, slash_args[0].lower()) in _INTERACTIVE_PICKER_SUBCOMMANDS and (
+        name != "/loops" or len(slash_args) == 1
+    )
+
+
+def _park_turn_for_setup(ctx: ActionToolScope, name: str, slash_args: list[str]) -> None:
+    """Park this turn's message when the agent queues ``/integrations setup <service>`` mid-skill.
+
+    The shell resubmits it once setup makes the service's prerequisite hold
+    (``arm_setup_resume``), so the skill continues from the same step. Only a
+    turn inside a skill whose prerequisite check can confirm that setup is
+    parked; a slash-command turn never is.
+    """
+    if name != "/integrations" or len(slash_args) < 2 or slash_args[0].lower() != "setup":
+        return
+    skill = getattr(ctx.session, "active_skill", None)
+    service = slash_args[1].lower()
+    if not skill or not resumable_setup(skill, service):
+        return
+    arm_setup_resume(ctx.session, ctx.turn_user_message, skill=skill, service=service)
 
 
 # Cap the failure excerpt fed back to the model: enough for a usage/typo
@@ -80,9 +107,16 @@ _MAX_OBSERVED_ERROR_CHARS = 700
 # survive so the model can chain a data-dependent follow-up call.
 _MAX_OBSERVED_OUTPUT_CHARS = 2000
 
+# Model-facing instruction when the execution gate refused a command: it never
+# ran, so the reply must say so instead of reporting it done or asking again.
+_DECLINED_INSTRUCTION = (
+    "Not run: this command was declined at confirmation or by the execution policy. "
+    "Do not retry it; tell the user it did not run."
+)
+
 
 def _dispatch_and_translate_exit(
-    command: str, ctx: ActionToolContext, **kwargs: Any
+    command: str, ctx: ActionToolScope, **kwargs: Any
 ) -> bool | dict[str, Any]:
     should_continue = ctx.slash_ports.dispatch(
         command,
@@ -97,7 +131,7 @@ def _dispatch_and_translate_exit(
     return _slash_observation(ctx, command)
 
 
-def _slash_observation(ctx: ActionToolContext, command: str) -> bool | dict[str, Any]:
+def _slash_observation(ctx: ActionToolScope, command: str) -> bool | dict[str, Any]:
     """Build the model-facing result from the slash row this dispatch recorded.
 
     ``dispatch_slash`` records a history row for the command with an outcome
@@ -178,7 +212,19 @@ def _slash_line_parts(stripped: str) -> list[str]:
         return stripped.split()
 
 
-def execute_slash_tool(args: dict[str, Any], ctx: ActionToolContext) -> bool | dict[str, Any]:
+def _user_typed_this_command(ctx: ActionToolScope, parts: list[str]) -> bool:
+    """True when this turn's user message *is* this command, so the prompt row shows it.
+
+    Compares tokens rather than raw text: the command line is rebuilt from the
+    parsed arguments, so a typed ``/rename "release candidate"`` comes back as
+    ``/rename 'release candidate'``. Byte equality would miss that, and every
+    other equivalent spelling (repeated spaces, swapped quote style).
+    """
+    typed = ctx.turn_user_message.strip()
+    return bool(typed) and _slash_line_parts(typed) == parts
+
+
+def execute_slash_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dict[str, Any]:
     if ctx.slash_ports is None:
         raise RuntimeError("slash tool requires slash runtime ports")
     command = str(args.get("command", "")).strip()
@@ -216,8 +262,22 @@ def execute_slash_tool(args: dict[str, Any], ctx: ActionToolContext) -> bool | d
         # Nothing is printed: set_auto_command prefills the prompt and submits it,
         # so the command is already echoed on the input line. Announcing it here
         # as well showed the same command twice before it had even run.
+        #
+        # The queued-command key ends the action turn (``with_menu_turn_end``):
+        # the command only runs once this turn is over.
         set_auto_command(ctx.session, stripped)
-        return True
+        _park_turn_for_setup(ctx, name, slash_args)
+        return {
+            "ok": True,
+            QUEUED_COMMAND_KEY: stripped,
+            "summary": f"Queued {stripped}; it opens for the user when this turn ends.",
+        }
+
+    # Control commands (exit/quit) never mutate state, so they run without the
+    # execution gate — a standing plan-only request must not trap the user in
+    # the shell.
+    if not ctx.slash_ports.command_is_mutating(name):
+        return _dispatch_and_translate_exit(stripped, ctx, policy_precleared=True)
 
     plan = plan_foreground_tool("slash", "slash")
     if not ctx.slash_ports.execution_allowed(
@@ -235,15 +295,28 @@ def execute_slash_tool(args: dict[str, Any], ctx: ActionToolContext) -> bool | d
             ok=False,
             response_text=ctx.slash_ports.format_turn_outcome(stripped, ok=False),
         )
-        return True
+        # No ``error`` key: the call itself completed, so the duplicate guard
+        # still refuses an identical re-ask, and ``ok: false`` keeps it from
+        # counting as plan evidence.
+        return {
+            "ok": False,
+            "not_run": True,
+            "command": stripped,
+            "instruction": _DECLINED_INSTRUCTION,
+        }
 
-    # Announce the command unless the input line already did. Exclusive stdin is
-    # only reserved for a *literally typed* slash command (see
-    # ``turn_needs_exclusive_stdin``), so when it is active the prompt above
-    # already shows this command and a banner would repeat it. On every other
-    # path the agent resolved free text into a slash — nothing was echoed, and
-    # this banner is the only indication of what is about to run.
-    if not exclusive_stdin_active(ctx.session):
+    # One row of air under the prompt row that asked for this, so the output does
+    # not butt up against it. Above the banner rather than below it, so banner
+    # and output stay one block (same rhythm as the ``$`` shell header).
+    ctx.console.print()
+    # Announce the command unless the user's own prompt row already shows it:
+    # either this turn reserved exclusive stdin, or the user typed this command.
+    # Exclusive stdin alone was too narrow — only a handful of commands reserve
+    # it, so every other typed command (``/rename``, ``/cron``, …) printed itself
+    # a second time one row below its own prompt. On every other path the agent
+    # resolved free text into a slash — nothing was echoed, and this banner is
+    # the only indication of what is about to run.
+    if not exclusive_stdin_active(ctx.session) and not _user_typed_this_command(ctx, parts):
         ctx.console.print(f"[bold]$ {escape(stripped)}[/bold]")
     return _dispatch_and_translate_exit(
         stripped,
@@ -262,12 +335,12 @@ def run_slash(*, command: str, args: list[str] | None = None, context: Any) -> d
 
 slash_invoke_tool = RegisteredTool(
     name="slash_invoke",
+    compact_description="Run an OpenSRE interactive slash command.",
     description=slash_invoke_tool_description(),
     input_schema=slash_invoke_input_schema(),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_slash,
     is_available=lambda sources: capability_available_from_sources(sources, "slash_commands"),

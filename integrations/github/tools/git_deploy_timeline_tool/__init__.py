@@ -22,15 +22,22 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.incident_window import IncidentWindow
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    normalize_github_tool_result,
     resolve_github_mcp_config,
 )
 from integrations.github.mcp import call_github_mcp_tool
@@ -154,9 +161,26 @@ def _is_available(sources: dict[str, dict]) -> bool:
     return bool(github_source_available(sources) and gh.get("owner") and gh.get("repo"))
 
 
+def _map_get_git_deploy_timeline(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    timeline = output.get("commits")
+    if isinstance(timeline, list) and timeline:
+        count = len(timeline)
+        word = "deploy" if count == 1 else "deploys"
+        record_evidence_entry(
+            evidence,
+            source="get_git_deploy_timeline",
+            label="Git Deploy Timeline",
+            summary=f"{count} {word}",
+        )
+
+
 @tool(
     name="get_git_deploy_timeline",
     source="github",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description=(
         "List commits on a GitHub branch within a time window (defaults to the last "
         "120 minutes). Used to correlate an alert with recent deploys by asking "
@@ -168,7 +192,7 @@ def _is_available(sources: dict[str, dict]) -> bool:
         "Building a short-form deploy timeline for RCA narrative",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -204,10 +228,12 @@ def _is_available(sources: dict[str, dict]) -> bool:
         },
         "required": ["owner", "repo"],
     },
-    is_available=_is_available,
-    extract_params=_extract_params,
+    is_available=github_tool_available(_is_available),
+    extract_params=github_tool_params(_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_get_git_deploy_timeline,
 )
+@require_webapp_github
 def get_git_deploy_timeline(
     owner: str,
     repo: str,

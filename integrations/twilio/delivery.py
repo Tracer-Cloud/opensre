@@ -1,4 +1,4 @@
-"""Twilio SMS delivery helper — posts investigation findings via Twilio SMS.
+"""Twilio SMS delivery helper — sends messages via Twilio SMS.
 
 This module is independent of the WhatsApp integration: WhatsApp delivery
 lives in :mod:`integrations.whatsapp.delivery` and the two share no code.
@@ -75,7 +75,7 @@ def send_twilio_sms_report(
     report: str,
     sms_ctx: dict[str, Any],
 ) -> tuple[bool, str, str]:
-    """Send a truncated report as SMS via Twilio.
+    """Send a truncated message as SMS via Twilio.
 
     Returns ``(success, error, message_sid)``. ``sms_ctx`` must include
     ``account_sid``, ``auth_token``, ``to``, and either ``from_number`` or

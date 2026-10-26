@@ -18,8 +18,8 @@ from gateway.transports.discord.feedback import feedback_components
 from infrastructure.text.markdown import tighten_markdown_emphasis
 from infrastructure.turn_host.status_messages import (
     EMPTY_RESPONSE_MESSAGE,
+    chat_status_headline,
     initial_status_message,
-    normalize_gateway_status,
     status_from_response_label,
     user_facing_error_message,
 )
@@ -39,7 +39,7 @@ class DiscordTurnOutput:
         tool_hooks: object | None = None,
     ) -> None:
         self.tool_hooks = tool_hooks
-        # Set per turn by this transport's dispatcher; the turn handler reads it
+        # Set per turn by this transport's dispatcher; the turn runner reads it
         # to give tools a cooperative cancel signal on soft timeout or stop.
         self.turn_cancel: threading.Event | None = None
         self._bot_token = bot_token
@@ -84,6 +84,11 @@ class DiscordTurnOutput:
 
     def set_tool_status(self, status: str) -> None:
         self._set_status(status)
+
+    def preview_reply(self, text: str) -> None:
+        """Show the reply the model is writing; a status or the answer replaces it."""
+        if text.strip():
+            self._edit_preview(text)
 
     def finish_streamed_response(self, answer: str) -> None:
         self.finalize(answer)
@@ -142,8 +147,8 @@ class DiscordTurnOutput:
             )
 
     def _set_status(self, status: str) -> None:
-        status = normalize_gateway_status(status)
-        self._edit_preview(f"*{status}*")
+        # Discord italics stay on the label row. The argument row stays on the shell.
+        self._edit_preview(f"*{chat_status_headline(status)}*")
 
     def _edit_preview(self, preview: str) -> None:
         with self._lock:

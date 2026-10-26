@@ -1,9 +1,0 @@
-base: 000-healthy
-scenario_id: 006-replication-lag-cpu-redherring
-db_instance_identifier: analytics-prod
-db_cluster: analytics-cluster
-failure_mode: replication_lag
-severity: critical
-scenario_difficulty: 2
-adversarial_signals:
-  - CPUUtilization

@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import subprocess
-
 import google.auth
-import keyring
 from google.auth.exceptions import DefaultCredentialsError
 
 import config.llm_credentials as llm_credentials
@@ -14,20 +11,7 @@ from config.llm_auth.credentials import (
     status,
 )
 from config.llm_auth.records import save_provider_auth_record
-from config.secrets import guidance, os_keyring
 from config.secrets.store import lookup
-from tests.shared.keyring_backend import MemoryKeyring
-
-
-class _MacOSKeyringBackend:
-    pass
-
-
-_MacOSKeyringBackend.__module__ = "keyring.backends.macOS"
-
-
-def _security_tool_path(name: str) -> str:
-    return f"/usr/bin/{name}"
 
 
 def test_status_vertex_ai_configured_when_adc_resolves(monkeypatch) -> None:
@@ -103,24 +87,19 @@ def test_status_bedrock_ignores_vertex_project_env(monkeypatch) -> None:
     assert "AWS_REGION" in result.detail
 
 
-def test_resolve_env_credential_prefers_env_over_keyring(monkeypatch) -> None:
+def test_resolve_env_credential_prefers_env_over_local_file(monkeypatch) -> None:
     monkeypatch.setenv("GITLAB_ACCESS_TOKEN", "from-env")
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
 
-    previous_backend = keyring.get_keyring()
-    keyring.set_keyring(MemoryKeyring())
-    try:
-        llm_credentials.save_keyring_secret("GITLAB_ACCESS_TOKEN", "from-keyring")
-        assert llm_credentials.resolve_env_credential("GITLAB_ACCESS_TOKEN") == "from-env"
-    finally:
-        keyring.set_keyring(previous_backend)
+    llm_credentials.save_credential("GITLAB_ACCESS_TOKEN", "from-store")
+    assert llm_credentials.resolve_env_credential("GITLAB_ACCESS_TOKEN") == "from-env"
 
 
 def test_lookup_reports_the_stored_tier(monkeypatch) -> None:
     monkeypatch.setenv("GITLAB_ACCESS_TOKEN", "from-env")
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
 
-    llm_credentials.save_keyring_secret("GITLAB_ACCESS_TOKEN", "from-store")
+    llm_credentials.save_credential("GITLAB_ACCESS_TOKEN", "from-store")
     monkeypatch.delenv("GITLAB_ACCESS_TOKEN", raising=False)
     found = lookup("GITLAB_ACCESS_TOKEN")
 
@@ -128,31 +107,12 @@ def test_lookup_reports_the_stored_tier(monkeypatch) -> None:
     assert found.tier == "fallback"
 
 
-def test_a_broken_keychain_backend_cannot_affect_resolution(monkeypatch) -> None:
-    """SecretService can raise bare RuntimeError when D-Bus is unset.
-
-    Resolution no longer consults the keychain, so a broken backend is not a
-    failure mode of reading a credential.
-    """
-    monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
-    env_var = "OPENSRE_TEST_MISSING_KEYRING_SECRET"
-    monkeypatch.delenv(env_var, raising=False)
-
-    def _boom(_service: str, _username: str) -> str:
-        raise RuntimeError("Unable to initialize SecretService: DBUS unset")
-
-    monkeypatch.setattr(os_keyring.keyring, "get_password", _boom)
-
-    assert llm_credentials.resolve_env_credential(env_var) == ""
-    assert lookup(env_var).tier == "none"
-
-
 def test_unmanaged_llm_api_key_source_reports_env_stored_and_none(monkeypatch) -> None:
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
     monkeypatch.delenv("EXPERIMENTAL_API_KEY", raising=False)
 
     assert llm_api_key_source("EXPERIMENTAL_API_KEY") == "none"
-    llm_credentials.save_keyring_secret("EXPERIMENTAL_API_KEY", "from-store")
+    llm_credentials.save_credential("EXPERIMENTAL_API_KEY", "from-store")
     assert llm_api_key_source("EXPERIMENTAL_API_KEY") == "fallback"
     monkeypatch.setenv("EXPERIMENTAL_API_KEY", "from-env")
     assert llm_api_key_source("EXPERIMENTAL_API_KEY") == "env"
@@ -164,33 +124,12 @@ def test_managed_llm_api_key_source_uses_metadata_without_reading_secret(
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("OPENSRE_LLM_AUTH_METADATA_PATH", str(tmp_path / "llm-auth.json"))
-    monkeypatch.setattr(os_keyring.sys, "platform", "darwin")
-    monkeypatch.setattr(os_keyring.shutil, "which", _security_tool_path)
-    monkeypatch.setattr(os_keyring.keyring, "get_keyring", _MacOSKeyringBackend)
-
-    def _run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert command == [
-            "/usr/bin/security",
-            "find-generic-password",
-            "-s",
-            "opensre.llm",
-            "-a",
-            "OPENAI_API_KEY",
-        ]
-        assert kwargs["check"] is False
-        return subprocess.CompletedProcess(command, 0)
-
-    def _get_password(_service: str, _username: str) -> str:
-        raise AssertionError("metadata source check must not read the keychain secret")
-
-    monkeypatch.setattr(os_keyring.subprocess, "run", _run)
-    monkeypatch.setattr(os_keyring.keyring, "get_password", _get_password)
     save_provider_auth_record(
         provider="openai",
         auth_name="openai",
         kind="api_key",
-        source="keyring",
-        detail="OPENAI_API_KEY stored in the system keychain.",
+        source="fallback",
+        detail="OPENAI_API_KEY stored in the local credentials file.",
         env_var="OPENAI_API_KEY",
     )
 
@@ -198,30 +137,16 @@ def test_managed_llm_api_key_source_uses_metadata_without_reading_secret(
     assert has_llm_api_key("OPENAI_API_KEY") is True
 
 
-def test_managed_missing_metadata_reports_none_without_reading_secret(
-    monkeypatch, tmp_path
-) -> None:
+def test_managed_missing_metadata_reports_none(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("OPENSRE_LLM_AUTH_METADATA_PATH", str(tmp_path / "llm-auth.json"))
-    monkeypatch.setattr(os_keyring.sys, "platform", "darwin")
-    monkeypatch.setattr(os_keyring.shutil, "which", _security_tool_path)
-    monkeypatch.setattr(os_keyring.keyring, "get_keyring", _MacOSKeyringBackend)
-
-    def _run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(command, 44)
-
-    def _get_password(_service: str, _username: str) -> str:
-        raise AssertionError("metadata source check must not read the keychain secret")
-
-    monkeypatch.setattr(os_keyring.subprocess, "run", _run)
-    monkeypatch.setattr(os_keyring.keyring, "get_password", _get_password)
 
     assert llm_api_key_source("OPENAI_API_KEY") == "none"
     assert has_llm_api_key("OPENAI_API_KEY") is False
 
 
-def test_request_resolution_marks_deleted_keychain_metadata_stale(monkeypatch, tmp_path) -> None:
+def test_request_resolution_marks_deleted_credential_metadata_stale(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.setenv("OPENSRE_LLM_AUTH_METADATA_PATH", str(tmp_path / "llm-auth.json"))
@@ -229,19 +154,14 @@ def test_request_resolution_marks_deleted_keychain_metadata_stale(monkeypatch, t
         provider="deepseek",
         auth_name="deepseek",
         kind="api_key",
-        source="keyring",
-        detail="DEEPSEEK_API_KEY stored in the system keychain.",
+        source="fallback",
+        detail="DEEPSEEK_API_KEY stored in the local credentials file.",
         env_var="DEEPSEEK_API_KEY",
     )
 
-    previous_backend = keyring.get_keyring()
-    keyring.set_keyring(MemoryKeyring())
-    try:
-        before = status("deepseek")
-        resolution = resolve_for_request("deepseek")
-        after = status("deepseek")
-    finally:
-        keyring.set_keyring(previous_backend)
+    before = status("deepseek")
+    resolution = resolve_for_request("deepseek")
+    after = status("deepseek")
 
     assert before.configured is True
     assert before.stale is False
@@ -252,59 +172,59 @@ def test_request_resolution_marks_deleted_keychain_metadata_stale(monkeypatch, t
     assert "Missing credential" in after.detail
 
 
-def test_llm_credential_record_round_trips_in_keyring(monkeypatch) -> None:
+def test_legacy_keyring_metadata_normalizes_to_fallback(monkeypatch, tmp_path) -> None:
+    """Records written before the OS keychain was removed still resolve."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENSRE_LLM_AUTH_METADATA_PATH", str(tmp_path / "llm-auth.json"))
+    save_provider_auth_record(
+        provider="openai",
+        auth_name="openai",
+        kind="api_key",
+        source="keyring",
+        detail="OPENAI_API_KEY stored in the system keychain.",
+        env_var="OPENAI_API_KEY",
+    )
+
+    result = status("openai")
+
+    assert result.configured is True
+    assert result.source == "metadata"
+
+
+def test_llm_credential_record_round_trips_in_local_file(monkeypatch) -> None:
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
 
-    previous_backend = keyring.get_keyring()
-    keyring.set_keyring(MemoryKeyring())
-    try:
-        llm_credentials.save_llm_credential_record(
-            "provider-auth:deepseek",
-            {"provider": "deepseek", "source": "keyring", "empty": ""},
-        )
+    llm_credentials.save_llm_credential_record(
+        "provider-auth:deepseek",
+        {"provider": "deepseek", "source": "fallback", "empty": ""},
+    )
 
-        assert llm_credentials.resolve_llm_credential_record("provider-auth:deepseek") == {
-            "provider": "deepseek",
-            "source": "keyring",
-        }
+    assert llm_credentials.resolve_llm_credential_record("provider-auth:deepseek") == {
+        "provider": "deepseek",
+        "source": "fallback",
+    }
 
-        llm_credentials.delete_llm_credential_record("provider-auth:deepseek")
-        assert llm_credentials.resolve_llm_credential_record("provider-auth:deepseek") == {}
-    finally:
-        keyring.set_keyring(previous_backend)
+    llm_credentials.delete_llm_credential_record("provider-auth:deepseek")
+    assert llm_credentials.resolve_llm_credential_record("provider-auth:deepseek") == {}
 
 
-def test_get_keyring_setup_instructions_for_linux_without_gnome_keyring(monkeypatch) -> None:
-    backend_class = type("Keyring", (), {})
-    backend_class.__module__ = "keyring.backends.fail"
-
+def test_get_keyring_setup_instructions_when_file_refuses(monkeypatch) -> None:
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
-    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
-    monkeypatch.setattr(guidance.sys, "platform", "linux")
-    monkeypatch.setattr(guidance.shutil, "which", lambda _name: None)
-    monkeypatch.setattr(os_keyring.keyring, "get_keyring", lambda: backend_class())
 
     lines = llm_credentials.get_keyring_setup_instructions("ANTHROPIC_API_KEY")
 
-    assert lines[0] == "Current keyring backend: keyring.backends.fail.Keyring."
-    # Reached only once the fallback file has also failed, so the guidance leads
-    # with the writable-path fix rather than a D-Bus tutorial.
-    assert any("could not use the system keychain or write" in line for line in lines)
+    assert any("could not write" in line for line in lines)
     assert any("write access to that path" in line for line in lines)
-    assert any(
-        "sudo apt update && sudo apt install -y gnome-keyring dbus-user-session" in line
-        for line in lines
-    )
     assert any("export ANTHROPIC_API_KEY" in line for line in lines)
 
 
-def test_get_keyring_setup_instructions_when_keyring_is_disabled(monkeypatch) -> None:
+def test_get_keyring_setup_instructions_when_storage_is_disabled(monkeypatch) -> None:
     monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
 
     lines = llm_credentials.get_keyring_setup_instructions("OPENAI_API_KEY")
 
     assert lines == (
-        "Secure local credential storage is disabled by OPENSRE_DISABLE_KEYRING.",
+        "Local credential storage is disabled by OPENSRE_DISABLE_KEYRING.",
         "Unset OPENSRE_DISABLE_KEYRING and rerun `opensre onboard` to save "
         "OPENAI_API_KEY, or export OPENAI_API_KEY in your shell.",
     )

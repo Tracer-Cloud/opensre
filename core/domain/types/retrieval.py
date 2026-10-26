@@ -160,7 +160,7 @@ class RetrievalControls(BaseModel):
     Tools declare which retrieval controls they support so planners
     can make informed decisions about where to send structured queries.
 
-    This is declarative metadata consumed by the investigation registry.
+    This is declarative metadata consumed by the tool registry.
     """
 
     model_config = ConfigDict(extra="forbid")

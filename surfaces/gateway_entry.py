@@ -26,6 +26,13 @@ def gateway_slash_ports_factory() -> SlashPorts:
     return headless_slash_ports()
 
 
+def serve_web() -> None:
+    """Serve the health and alert HTTP app in the foreground (container ``MODE=web``)."""
+    from gateway.web.web_server import serve_webapp_foreground
+
+    serve_webapp_foreground()
+
+
 def start_gateway(*, wait: bool = True) -> GatewayController:
     """Start the gateway with headless slash ports injected for chat turns."""
     from config.local_env import bootstrap_opensre_env_once
@@ -44,6 +51,7 @@ def main() -> None:
 __all__ = [
     "gateway_slash_ports_factory",
     "main",
+    "serve_web",
     "start_gateway",
 ]
 

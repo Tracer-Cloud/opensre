@@ -2,14 +2,17 @@
 
 Contract:
   POST {OPENSRE_WEBAPP_URL}/api/credits/consume
-  Authorization: Bearer <machine token, or the shared secret>
-  body: {"amount": <number>, "organizationId": <org>, "reason": <str>}
+  Authorization: Bearer <OPENSRE_ACCOUNT_TOKEN>  (org-scoped gateway token)
+  Idempotency-Key: <org>:<caller key>   (optional; see ``idempotency_key``)
+  body: {"amount": <number>, "organizationId": <org>, "reason": <str>,
+         "actor": <Slack or Clerk user id, optional>}
   Success (2xx): {"balance", "consumed", "reason"}.
   Shortfall: HTTP 402 with {"error": "insufficient_credits", "balance", "required"}.
 
-The client only classifies the attempt — it never decides policy. Call sites
-choose what UNCONFIGURED (metering off, e.g. dev setups) and UNAVAILABLE
-(webapp outage) mean; the gateway seams deliberately fail open on both.
+The client only classifies the attempt — it never decides policy. A missing
+webapp URL means metering is deliberately disabled for a self-hosted runtime;
+an incomplete hosted configuration or ledger outage is a distinct failure so
+production admission can fail closed.
 """
 
 from __future__ import annotations
@@ -23,12 +26,13 @@ from typing import Any
 
 import httpx
 
+from config.account import agent_bearer_token
 from config.constants.billing import (
     CREDITS_HTTP_TIMEOUT_SECONDS,
+    CREDITS_IDEMPOTENCY_HEADER,
     WEBAPP_URL_ENV,
 )
 from config.constants.organization import organization_id
-from gateway.core.billing.webapp_auth import webapp_bearer_token
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,7 @@ class CreditsOutcome(StrEnum):
 
     ALLOWED = "allowed"
     DENIED = "denied"
+    DISABLED = "disabled"
     UNCONFIGURED = "unconfigured"
     UNAVAILABLE = "unavailable"
 
@@ -60,14 +65,16 @@ def _log_metering_disabled_once() -> None:
     The message is static — no env value or name is interpolated — so the
     warning can never carry a secret into the logs.
     """
-    logger.info("[credits] metering disabled: required configuration is not fully set")
+    logger.info("[credits] metering disabled: no webapp URL configured")
 
 
 def consume_credits(
     organization_id: str | None = None,
     *,
-    amount: float = 1.0,
+    amount: int = 1,
     reason: str,
+    idempotency_key: str | None = None,
+    actor: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> CreditsOutcome:
     """POST one credit consumption to the webapp ledger and classify the result.
@@ -75,21 +82,38 @@ def consume_credits(
     Args:
         organization_id: Neon/Clerk org id; defaults to the silo's
             ``ORGANIZATION_ID`` env value.
-        amount: Credits to consume (webapp requires a positive number).
+        amount: Whole credits to consume (webapp requires a positive integer).
         reason: Short machine-readable cause, e.g. ``"slack_turn"``.
+        idempotency_key: Stable per-delivery identifier, e.g.
+            ``"telegram:44271"``. Sent as ``Idempotency-Key``, prefixed here
+            with the resolved org so a transport id that is only unique per
+            transport cannot collide across tenants. Whether a repeat is
+            actually safe is the webapp's to guarantee, not this client's.
+        actor: The member the charge is spent for (Slack or Clerk user id);
+            the webapp charts it on Settings → Usage when it resolves to a
+            current member, and leaves the charge unattributed otherwise.
         metadata: Optional extra JSON fields merged into the request body.
 
     Returns:
-        ``ALLOWED`` on 2xx, ``DENIED`` on HTTP 402, ``UNCONFIGURED`` when the
-        webapp URL / shared secret / org id is unset, ``UNAVAILABLE`` on
+        ``ALLOWED`` on 2xx, ``DENIED`` on HTTP 402, ``DISABLED`` when no
+        webapp URL is configured for a self-hosted runtime, ``UNCONFIGURED``
+        when hosted metering lacks a token or org id, and ``UNAVAILABLE`` on
         transport errors or any other HTTP status.
     """
     base_url = _env(WEBAPP_URL_ENV).rstrip("/")
-    token = webapp_bearer_token()
-    org = (organization_id or organization_id_for_silo()).strip()
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+        raise ValueError("amount must be a positive integer")
 
-    if not (base_url and token and org):
+    if not base_url:
         _log_metering_disabled_once()
+        return CreditsOutcome.DISABLED
+
+    # The org-scoped gateway token binds the organization at the webapp; the
+    # shared fleet secret is a rollout fallback the webapp must opt in to.
+    token = agent_bearer_token()
+    org = (organization_id or organization_id_for_silo()).strip()
+    if not (token and org):
+        logger.error("[credits] metering misconfigured: hosted authentication is incomplete")
         return CreditsOutcome.UNCONFIGURED
 
     # Metadata is spread first so the billing-critical fields always win and can
@@ -100,12 +124,18 @@ def consume_credits(
         "organizationId": org,
         "reason": reason,
     }
+    if actor:
+        payload["actor"] = actor
+
+    headers = {"Authorization": f"Bearer {token}"}
+    if idempotency_key:
+        headers[CREDITS_IDEMPOTENCY_HEADER] = f"{org}:{idempotency_key}"
 
     try:
         response = httpx.post(
             f"{base_url}{_CONSUME_PATH}",
             json=payload,
-            headers={"Authorization": f"Bearer {token}"},
+            headers=headers,
             timeout=CREDITS_HTTP_TIMEOUT_SECONDS,
         )
     except Exception as exc:
@@ -122,8 +152,7 @@ def consume_credits(
 def _classify_response(response: httpx.Response, *, reason: str) -> CreditsOutcome:
     """Map a ledger HTTP response to an outcome.
 
-    402 → DENIED (the one refuse-the-user state); 2xx → ALLOWED; anything else
-    → UNAVAILABLE, so callers fail open on server errors.
+    402 → DENIED; 2xx → ALLOWED; anything else → UNAVAILABLE.
     """
     if response.status_code == HTTPStatus.PAYMENT_REQUIRED:
         body = _json_dict(response)

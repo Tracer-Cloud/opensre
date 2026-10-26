@@ -78,10 +78,7 @@ def _counts_as_gather_success(name: str, payload: Any) -> bool:
 def count_gather_tool_successes(evidence: GatheredEvidence | None) -> int:
     """How many gather tools returned a usable payload (not ``tool_unavailable``).
 
-    SessionGoal evidence must count gather work: metric_read turns typically
-    run only ``assistant_handoff`` in the action phase (which does not
-    increment ``executed_success_count``), then live PostHog/Grafana/etc. in
-    gather. Ignoring gather successes forced a redundant session-goal turn.
+    SessionGoal evidence must count successful gather work.
 
     Roster probes (``list_*_tools``) do not count — listing alone previously
     looked like evidence after every MCP call failed, which could false-close
@@ -110,7 +107,7 @@ def count_gather_tool_successes(evidence: GatheredEvidence | None) -> int:
 def iter_tool_result_blocks(observation: str) -> Iterator[tuple[str, str]]:
     """Yield ``(tool_line, result_text)`` for each Tool/Result paragraph.
 
-    Matches the gather formatter in ``evidence_driver._format_observation``:
+    Matches rendered ``Tool:`` / ``Arguments:`` / ``Result:`` paragraphs:
     blocks separated by a blank line, each starting with ``Tool: ``, result
     after ``\\nResult: `` (``Arguments:`` may sit between).
     """

@@ -172,7 +172,7 @@ def test_list_sentry_uptime_monitors_parses_payload(monkeypatch: pytest.MonkeyPa
             }
         ]
 
-    monkeypatch.setattr("integrations.sentry.uptime._request_json", _fake_request)
+    monkeypatch.setattr("integrations.sentry.client._request_json", _fake_request)
     config = SentryConfig(
         organization_slug="acme",
         auth_token="token",
@@ -193,7 +193,7 @@ def test_list_sentry_uptime_monitors_403_includes_alerts_hint(
     def _raise(*_args: object, **_kwargs: object) -> None:
         raise httpx.HTTPStatusError("forbidden", request=request, response=response)
 
-    monkeypatch.setattr("integrations.sentry.uptime._request_json", _raise)
+    monkeypatch.setattr("integrations.sentry.client._request_json", _raise)
     config = SentryConfig(organization_slug="acme", auth_token="token")
     with pytest.raises(RuntimeError, match="alerts:read"):
         list_sentry_uptime_monitors(config=config)

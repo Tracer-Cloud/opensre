@@ -2,36 +2,73 @@
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
-import shlex
 import subprocess
 import tempfile
-from pathlib import Path
+import threading
 
 from rich.console import Console
 from rich.markup import escape
 
+import surfaces.interactive_shell.command_registry.cron_cmds as cron_cmds
+import surfaces.interactive_shell.command_registry.messaging_cmds as messaging_cmds
+from config.cli_command_choices import CLI_COMMAND_CHOICES
+from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
+from config.constants.cli_handoff import CLI_HANDOFF_FLAG
+from config.interactive_override import interactive_override_env
+from config.scope_handoff import hand_off_scope
 from core.agent_harness.spi.session_state import session_terminal, set_turn_outcome_hint
-from surfaces.interactive_shell.command_registry.suggestions import closest_choice
+from infrastructure.process.entrypoint import opensre_command
+from infrastructure.process.termination import terminate_process_tree
 from surfaces.interactive_shell.command_registry.types import SlashCommand
-from surfaces.interactive_shell.runtime import Session, TaskKind
-from surfaces.interactive_shell.runtime.subprocess_runner import (
-    SYNTHETIC_TEST_TIMEOUT_SECONDS,
-    build_opensre_cli_argv,
-    start_background_cli_task,
+from surfaces.interactive_shell.runtime import Session
+from surfaces.interactive_shell.runtime.subprocess_runner import build_opensre_cli_argv
+from surfaces.interactive_shell.telemetry.turn_outcome import format_wizard_cli_outcome
+from surfaces.interactive_shell.ui import (
+    COMMAND_OUTPUT_GUTTER_WIDTH,
+    DIM,
+    ERROR,
+    print_command_output,
 )
-from surfaces.interactive_shell.ui import DIM, ERROR, print_command_output
-from surfaces.interactive_shell.utils.telemetry.turn_outcome import format_wizard_cli_outcome
 from surfaces.shared.terminal.components.choice_menu import prepare_repl_output_line
+from tools.interactive_shell.subprocess import (
+    force_rich_color,
+    headless_subprocess_env,
+    subprocess_env_with_width,
+)
 
 _UPDATE_SUBPROCESS_TIMEOUT_SECONDS = 300
-_BACKGROUND_TEST_SUBCOMMANDS = frozenset({"run", "synthetic", "cloudopsbench"})
-_TEST_SUBCOMMANDS = ("list", "run", "synthetic", "cloudopsbench")
-_TEST_PICKER_SELECTION_FILE_ENV = "OPENSRE_TEST_PICKER_SELECTION_FILE"
-_PARENT_INTERACTIVE_SHELL_ENV = "OPENSRE_PARENT_INTERACTIVE_SHELL"
 _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS = 90.0
+_STILL_RUNNING_OUTCOME = "still_running"
+_KEPT_CLI_COMMANDS: list[threading.Thread] = []
+_KEPT_CLI_LOCK = threading.Lock()
+
+
+def _captured_child_env(console: Console, *, headless: bool) -> dict[str, str]:
+    """Environment for a delegated child whose stdout is captured and replayed.
+
+    The child's stdout is a pipe, not a TTY, so Rich in the child has neither a
+    width nor a colour decision of its own. Without ``COLUMNS`` it renders at 80
+    and ellipsizes table cells; the ``/cron list`` ids the action agent chains
+    into ``/cron remove <id>`` come back as ``ecf7c2580b…``. Too wide is just as
+    bad: :func:`print_command_output` re-prints the captured text under a
+    ``↳`` gutter and cannot re-flow a table, so rows wider than the terminal
+    fold mid-border. On the REPL the child therefore renders exactly to the
+    real terminal minus that gutter; headless surfaces have no human reader
+    and render wide so ids stay intact. Colour is forced so the replay can
+    parse the child's styling back instead of losing it.
+    """
+    if headless:
+        return force_rich_color(headless_subprocess_env())
+    return force_rich_color(
+        subprocess_env_with_width(
+            columns=console.size.width,
+            lines=console.size.height,
+            prefix_width=COMMAND_OUTPUT_GUTTER_WIDTH,
+            minimum_columns=1,
+        )
+    )
 
 
 def publish_headless_slash_response(
@@ -57,8 +94,103 @@ def _decode_subprocess_stream(value: str | bytes | None) -> str:
     return value
 
 
+def _stash_collapsed_output(session: Session | None, body: str) -> None:
+    terminal = session_terminal(session) if session is not None else None
+    if terminal is not None:
+        terminal.stash_collapsed_tool_output(body)
+
+
 def _cli_command_succeeded(exit_code: int | None) -> bool:
     return exit_code == 0
+
+
+def shutdown_kept_cli_commands() -> None:
+    """Explicitly wait for kept CLI children; interactive teardown must not call this."""
+    with _KEPT_CLI_LOCK:
+        threads = tuple(_KEPT_CLI_COMMANDS)
+    for thread in threads:
+        thread.join()
+
+
+def _reap_kept_cli_command(process: subprocess.Popen[bytes]) -> None:
+    """Reap a kept child and release its tracking entry when it exits."""
+    try:
+        process.wait()
+    finally:
+        with _KEPT_CLI_LOCK:
+            current = threading.current_thread()
+            if current in _KEPT_CLI_COMMANDS:
+                _KEPT_CLI_COMMANDS.remove(current)
+
+
+def _hand_off_kept_cli_command(
+    process: subprocess.Popen[bytes], *, detach_on_shutdown: bool
+) -> None:
+    thread = threading.Thread(
+        target=_reap_kept_cli_command,
+        args=(process,),
+        name="cli-command-reaper",
+        daemon=detach_on_shutdown,
+    )
+    with _KEPT_CLI_LOCK:
+        _KEPT_CLI_COMMANDS.append(thread)
+    thread.start()
+
+
+def _captured_file_snapshot(path: str) -> bytes:
+    """Read only bytes already written, even if a background child keeps appending."""
+    # A separate open has its own offset: seeking the inherited descriptor
+    # would also move the child's write offset. Windows requires delete sharing
+    # when reopening a NamedTemporaryFile marked for deletion on last close.
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_TEMPORARY", 0)
+    with os.fdopen(os.open(path, flags), "rb") as snapshot:
+        size = os.fstat(snapshot.fileno()).st_size
+        return snapshot.read(size)
+
+
+def _run_captured_keep_running(
+    cmd: list[str], *, timeout: float | None, env: dict[str, str], detach_on_shutdown: bool
+) -> subprocess.CompletedProcess[str]:
+    """Capture a child without stopping its work at the foreground timeout.
+
+    A detached host caps foreground output and drains later bytes to discard.
+    Its temporary output descriptors survive the REPL's exit without growing.
+    Interactive reapers are daemon threads; headless hosts wait for completion.
+    """
+    with tempfile.NamedTemporaryFile() as stdout, tempfile.NamedTemporaryFile() as stderr:
+        process = subprocess.Popen(
+            opensre_command(CLI_HANDOFF_FLAG, json.dumps(cmd), str(timeout)),
+            stdin=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=True,
+            env=env,
+        )
+        handed_off = False
+        try:
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                partial_stdout = _captured_file_snapshot(stdout.name)
+                partial_stderr = _captured_file_snapshot(stderr.name)
+                _hand_off_kept_cli_command(process, detach_on_shutdown=detach_on_shutdown)
+                handed_off = True
+                raise subprocess.TimeoutExpired(
+                    cmd,
+                    0.0 if timeout is None else timeout,
+                    output=partial_stdout,
+                    stderr=partial_stderr,
+                ) from None
+            return subprocess.CompletedProcess(
+                cmd,
+                process.returncode if process.returncode is not None else 1,
+                _captured_file_snapshot(stdout.name).decode("utf-8", errors="replace"),
+                _captured_file_snapshot(stderr.name).decode("utf-8", errors="replace"),
+            )
+        finally:
+            if not handed_off and process.poll() is None:
+                terminate_process_tree(process.pid, grace_seconds=0, force_wait_seconds=1)
+                process.wait()
 
 
 def run_cli_command(
@@ -68,6 +200,7 @@ def run_cli_command(
     session: Session | None = None,
     subprocess_timeout: float | None = None,
     capture_output: bool = True,
+    keep_running_hint: str | None = None,
 ) -> bool:
     """Helper to delegate complex or interactive Click commands to a child process.
 
@@ -80,6 +213,11 @@ def run_cli_command(
     real TTY (e.g. the install script's own progress output during an update)
     while still being killed if it hangs.
 
+    ``keep_running_hint`` marks a captured command whose work must not be cut
+    off at the timeout (a scheduled tick holding its claim): the reply returns
+    at the timeout with the hint, telling the reader where the outcome lands,
+    and the child keeps running instead of being killed.
+
     ``capture_output`` (default ``True``) makes the helper capture stdout/stderr
     and replay them through ``console``, so delegated command output appears
     inside the REPL buffer (instead of bypassing ``console.print`` via the
@@ -87,8 +225,8 @@ def run_cli_command(
     action agent reads it back as its tool observation. Capture is the default
     because most delegated commands are non-interactive printers; only commands
     that prompt on the real TTY (``onboard``, ``login``, ``uninstall``), stream
-    their own progress UI (``update``), or block indefinitely (``cron start``,
-    ``hermes watch``, ``watchdog``) must pass ``capture_output=False``.
+    their own progress UI (``update``), or block indefinitely (``cron start``)
+    must pass ``capture_output=False``.
 
     **Return value:** Reports subprocess success for headless/gateway sessions
     (``session`` with no terminal facet) so slash analytics can show failure.
@@ -106,38 +244,51 @@ def run_cli_command(
     should_capture = capture_output or headless
     if headless and subprocess_timeout is None:
         subprocess_timeout = _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS
-    child_env = os.environ.copy()
-    child_env[_PARENT_INTERACTIVE_SHELL_ENV] = "1"
-    if should_capture:
-        # Captured child stdout isn't a TTY, so force Rich colour there and parse
-        # it back in print_command_output — otherwise its styling would be lost.
-        child_env["FORCE_COLOR"] = "1"
-        # Without a terminal (and with no exported COLUMNS) Rich in the child
-        # falls back to 80 columns and truncates table cells with an ellipsis —
-        # `/cron list` task ids come back as `ecf7c2580b…`, which the action
-        # agent cannot chain into `/cron remove <id>`. Render captured output
-        # wide; the REPL re-print re-wraps to the real terminal anyway. On a
-        # "dumb" TERM Rich short-circuits to 80x25 and ignores COLUMNS, so give
-        # the forced-colour child a real TERM as well (headless/CI surfaces).
-        if child_env.get("TERM", "").lower() in {"dumb", "unknown"}:
-            child_env["TERM"] = "xterm-256color"
-        child_env.setdefault("COLUMNS", "200")
+    # A streamed child owns the real TTY and sizes itself; only a captured child
+    # needs to be told how wide its reader is.
+    child_env = (
+        _captured_child_env(console, headless=headless) if should_capture else os.environ.copy()
+    )
+    child_env[OPENSRE_PARENT_INTERACTIVE_SHELL_ENV] = "1"
+    # The child inherits the environment, not the dispatching context, so a
+    # non-TTY slash command's override must be written into its env, and so
+    # must the turn's organization scope.
+    child_env.update(interactive_override_env())
+    hand_off_scope(child_env)
     exit_code: int | None = 0
+    backgrounded = False
     try:
         if should_capture:
-            captured_result = subprocess.run(
-                cmd,
-                check=False,
-                timeout=subprocess_timeout,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=child_env,
-            )
+            if keep_running_hint is not None:
+                captured_result = _run_captured_keep_running(
+                    cmd,
+                    timeout=subprocess_timeout,
+                    env=child_env,
+                    detach_on_shutdown=session is not None and not headless,
+                )
+            else:
+                captured_result = subprocess.run(
+                    cmd,
+                    check=False,
+                    timeout=subprocess_timeout,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=child_env,
+                )
             exit_code = captured_result.returncode
-            print_command_output(console, captured_result.stdout or "")
-            print_command_output(console, captured_result.stderr or "", style=ERROR)
+            print_command_output(
+                console,
+                captured_result.stdout or "",
+                on_collapse=lambda body: _stash_collapsed_output(session, body),
+            )
+            print_command_output(
+                console,
+                captured_result.stderr or "",
+                style=ERROR,
+                on_collapse=lambda body: _stash_collapsed_output(session, body),
+            )
             if captured_result.returncode != 0:
                 console.print(
                     f"[{ERROR}]CLI command exited with non-zero code {captured_result.returncode}[/]"
@@ -166,9 +317,37 @@ def run_cli_command(
         # kill a hung install script, i.e. a streamed child mid-redraw of its own
         # progress bar.
         prepare_repl_output_line()
-        print_command_output(console, _decode_subprocess_stream(exc.stdout))
-        print_command_output(console, _decode_subprocess_stream(exc.stderr), style=ERROR)
-        console.print(f"[{ERROR}]error:[/] CLI command timed out")
+        print_command_output(
+            console,
+            _decode_subprocess_stream(exc.stdout),
+            on_collapse=lambda body: _stash_collapsed_output(session, body),
+        )
+        print_command_output(
+            console,
+            _decode_subprocess_stream(exc.stderr),
+            style=ERROR,
+            on_collapse=lambda body: _stash_collapsed_output(session, body),
+        )
+        if keep_running_hint is None:
+            console.print(f"[{ERROR}]error:[/] CLI command timed out")
+        else:
+            # The tick is still in progress. Record that explicitly so slash
+            # history is not a successful repair, and do not fail the turn:
+            # a failure here is what made the agent run the command again.
+            backgrounded = True
+            waited = exc.timeout if isinstance(exc.timeout, int | float) else 0
+            message = (
+                f"Still running in the background after {waited:.0f}s; "
+                f"it was not stopped. {keep_running_hint}"
+            )
+            if session is not None:
+                session.complete_latest_record(
+                    "slash",
+                    ok=False,
+                    slash_outcome=_STILL_RUNNING_OUTCOME,
+                    response_text=message,
+                )
+            console.print(f"[{DIM}]{escape(message)}[/]")
     except KeyboardInterrupt:
         exit_code = None
         # Same cursor hazard as the normal-exit path: Ctrl+C can land mid-line while
@@ -182,11 +361,20 @@ def run_cli_command(
     if session is not None and not should_capture:
         set_turn_outcome_hint(session, format_wizard_cli_outcome(args, exit_code=exit_code))
     ok = _cli_command_succeeded(exit_code)
-    if session is not None and not ok:
+    if ok and args[:2] == ["auth", "login"] and not headless:
+        from core.llm.factory import reset_llm_clients
+        from surfaces.shared.llm_setup.env_sync import reload_provider_selection
+
+        if "--no-set-provider" not in args:
+            reload_provider_selection()
+        reset_llm_clients()
+    if session is not None and not ok and not backgrounded:
         session.mark_latest(ok=False, kind="slash")
-    # Headless/gateway surfaces need the real exit status for slash analytics.
-    # Interactive REPL handlers must not return False to dispatch_slash on CLI
-    # failure — that would exit the shell (/exit is the only intentional False).
+    # A backgrounded tick already recorded ``still_running``. Returning True
+    # keeps the REPL (and a headless turn) from treating the handoff as a
+    # failed command. Headless surfaces otherwise need the real exit status.
+    if backgrounded:
+        return True
     return ok if headless else True
 
 
@@ -194,155 +382,117 @@ def _cmd_onboard(session: Session, console: Console, args: list[str]) -> bool:  
     if session_terminal(session) is None:
         cli_cmd = " ".join(["uv run opensre onboard", *args]).strip()
         message = (
-            "Onboarding is an interactive wizard (LLM provider, integrations, messaging). "
+            "Onboarding is an interactive wizard for LLM provider setup. "
             "It cannot run inside a Telegram chat.\n\n"
             f"Run on the server:\n  {cli_cmd}\n\n"
-            "Or configure individual services with "
-            "`/integrations setup <service>`."
+            "Configure integrations separately with `/integrations setup <service>`."
         )
         console.print()
         console.print(message)
         publish_headless_slash_response(session, message=message)
         return True
     # The REPL loop treats ``/onboard`` as exclusive-stdin in
-    # ``runtime.utils.input_policy`` so the prompt_toolkit Application is torn down before
+    # ``runtime.input_policy`` so the prompt_toolkit Application is torn down before
     # this handler runs — the wizard subprocess therefore gets exclusive
     # stdin and can drive its own interactive prompts without conflicting
     # with the shell's UI.
     return run_cli_command(console, ["onboard", *args], capture_output=False, session=session)
 
 
+def _cmd_setup(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    if session_terminal(session) is None:
+        cli_cmd = " ".join(["uv run opensre setup", *args]).strip()
+        message = (
+            "Setup signs in to an OpenSRE account and activates its hosted model. "
+            "It cannot run inside a Telegram chat.\n\n"
+            f"Run on the server:\n  {cli_cmd}\n\n"
+            "Configure integrations separately with `/integrations setup <service>`."
+        )
+        console.print()
+        console.print(message)
+        publish_headless_slash_response(session, message=message)
+        return True
+    return run_cli_command(console, ["setup", *args], capture_output=False, session=session)
+
+
+def _cmd_credits(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    return run_cli_command(console, ["credits", *args], capture_output=True, session=session)
+
+
+def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    subcommand = args[0].lower() if args else "status"
+    if session_terminal(session) is None and subcommand == "login":
+        message = (
+            "OpenSRE account login opens a browser and cannot run inside a chat.\n\n"
+            "Run on the server:\n  uv run opensre account login"
+        )
+        console.print()
+        console.print(message)
+        publish_headless_slash_response(session, message=message)
+        return True
+    cli_args = list(args)
+    if subcommand == "usage" and session_terminal(session) is None and "--no-browser" not in args:
+        # A chat user cannot use a browser opened on the server; give them the URL.
+        cli_args.append("--no-browser")
+    capture_output = subcommand in {"status", "usage", "logout", "credits"}
+    handled = run_cli_command(
+        console, ["account", *cli_args], capture_output=capture_output, session=session
+    )
+    if subcommand == "logout" and session_terminal(session) is not None:
+        from config.account import account_llm_route
+
+        if account_llm_route() is None:
+            console.print(f"[{DIM}]Signed out. Closing the interactive shell.[/]")
+            return False
+    return handled
+
+
 def _cmd_auth(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    if args == ["login"]:
+        return _cmd_login(session, console, [])
     # ``login`` (and provider flows) prompt on the real TTY; status/logout print.
     capture_output = not args or args[0].lower() in {"status", "logout"}
     return run_cli_command(console, ["auth", *args], capture_output=capture_output, session=session)
 
 
 def _cmd_login(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    # Show metadata-only choices before paying the child CLI's startup cost.
+    if not args and session_terminal(session) is not None:
+        from surfaces.shared.llm_setup.auth_menu import prompt_auth_provider
+
+        profile = prompt_auth_provider()
+        if profile is None:
+            return True
+        args = [profile.name]
     # Interactive provider login prompts on the real TTY.
     return run_cli_command(console, ["auth", "login", *args], capture_output=False, session=session)
 
 
-def _cmd_remote(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
-    # Remote-sync configuration prompts on the real TTY (click.prompt).
-    return run_cli_command(console, ["remote", *args], capture_output=False, session=session)
-
-
-def _catalog_task_kind(command: list[str]) -> TaskKind:
-    return TaskKind.SYNTHETIC_TEST if "synthetic" in command else TaskKind.CLI_COMMAND
-
-
-def _argv_for_catalog_command(command: list[str]) -> list[str]:
-    if command[:1] == ["opensre"]:
-        return build_opensre_cli_argv(command[1:])
-    return command
-
-
-def _start_test_command(
-    *,
-    session: Session,
-    console: Console,
-    command: list[str],
-    display_command: str | None = None,
-) -> None:
-    shown = display_command or shlex.join(command)
-    session.record("cli_command", shown)
-    start_background_cli_task(
-        display_command=shown,
-        argv_list=_argv_for_catalog_command(command),
-        session=session,
-        console=console,
-        timeout_seconds=SYNTHETIC_TEST_TIMEOUT_SECONDS,
-        kind=_catalog_task_kind(command),
-        use_pty=True,
+def _validate_logout_args(args: list[str]) -> str | None:
+    """Reject provider names so ``/logout`` cannot be read as ``/auth logout``."""
+    if not args:
+        return None
+    provider = escape(args[0])
+    return (
+        f"[{ERROR}]/logout[/] signs out of the OpenSRE account and takes no arguments. "
+        f"To clear an LLM provider credential, run [bold]/auth logout {provider}[/bold]."
     )
 
 
-def _run_test_picker_for_background(session: Session, console: Console) -> bool:
-    console.print()
-    with contextlib.closing(
-        tempfile.NamedTemporaryFile(
-            prefix="opensre-test-selection-",
-            suffix=".json",
-            delete=False,
-        )
-    ) as handle:
-        selection_path = Path(handle.name)
-    try:
-        env = dict(os.environ)
-        env[_TEST_PICKER_SELECTION_FILE_ENV] = str(selection_path)
-        result = subprocess.run(
-            build_opensre_cli_argv(["tests"]),
-            check=False,
-            env=env,
-        )
-        if result.returncode != 0:
-            console.print(f"[{ERROR}]CLI command exited with non-zero code {result.returncode}[/]")
-            console.print()
-            return True
-        if not selection_path.stat().st_size:
-            console.print()
-            return True
-        payload = json.loads(selection_path.read_text(encoding="utf-8"))
-    finally:
-        with contextlib.suppress(OSError):
-            selection_path.unlink()
-
-    if not isinstance(payload, list):
-        console.print(f"[{ERROR}]test picker returned an invalid selection[/]")
-        console.print()
-        return True
-
-    for item in payload:
-        if not isinstance(item, dict):
-            continue
-        command = item.get("command")
-        if not isinstance(command, list) or not all(isinstance(part, str) for part in command):
-            continue
-        display = item.get("command_display")
-        _start_test_command(
-            session=session,
-            console=console,
-            command=command,
-            display_command=display if isinstance(display, str) else None,
-        )
-    console.print()
+def _cmd_remote(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    console.print(
+        "[bold]/remote has been retired.[/bold] Remote-agent operations are unavailable "
+        "in this build.\n"
+        "/remote-sync mirrors sessions and memory to an object store; "
+        "it does not control deployed agents. Use [bold]/help[/bold] for supported commands."
+    )
+    session.mark_latest(ok=False, kind="slash")
     return True
 
 
-def _cmd_tests(session: Session, console: Console, args: list[str]) -> bool:
-    if not args:
-        return _run_test_picker_for_background(session, console)
-
-    subcommand = args[0].lower()
-    if subcommand in _BACKGROUND_TEST_SUBCOMMANDS:
-        _start_test_command(
-            session=session,
-            console=console,
-            command=["opensre", "tests", *args],
-        )
-        return True
-
-    if subcommand.startswith("-"):
-        return run_cli_command(console, ["tests", *args], session=session)
-
-    if subcommand not in _TEST_SUBCOMMANDS:
-        suggestion = closest_choice(subcommand, _TEST_SUBCOMMANDS)
-        if suggestion is None:
-            console.print(
-                f"[{ERROR}]unknown tests subcommand:[/] {escape(args[0])}  "
-                "(try [bold]/tests list[/bold], [bold]/tests run <test_id>[/bold], "
-                "[bold]/tests synthetic[/bold], or [bold]/tests cloudopsbench[/bold])"
-            )
-        else:
-            console.print(
-                f"[{ERROR}]unknown tests subcommand:[/] {escape(args[0])}  "
-                f"Did you mean [bold]/tests {suggestion}[/bold]?"
-            )
-        session.mark_latest(ok=False, kind="slash")
-        return True
-
-    return run_cli_command(console, ["tests", *args], session=session)
+def _cmd_logout(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    """Sign out of the OpenSRE account. Same close-the-shell path as ``/account logout``."""
+    return _cmd_account(session, console, ["logout"])
 
 
 def _cmd_guardrails(session: Session, console: Console, args: list[str]) -> bool:
@@ -369,26 +519,21 @@ def _cmd_config(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["config", *args], session=session)
 
 
+def _cmd_runbooks(session: Session, console: Console, args: list[str]) -> bool:
+    return run_cli_command(console, ["runbooks", *args], session=session)
+
+
+def _cmd_skills(session: Session, console: Console, args: list[str]) -> bool:
+    # ``/skills update`` stores the newest release; this session runs it from its next turn.
+    return run_cli_command(console, ["skills", *(args or ["status"])], session=session)
+
+
 def _cmd_messaging(session: Session, console: Console, args: list[str]) -> bool:
-    return run_cli_command(console, ["messaging", *args], session=session)
-
-
-def _cmd_hermes(session: Session, console: Console, args: list[str]) -> bool:
-    # ``hermes watch`` live-tails logs until interrupted; capturing would buffer
-    # its stream forever. Everything else (including bare ``/hermes`` help) prints.
-    capture_output = not args or args[0].lower() != "watch"
-    return run_cli_command(
-        console, ["hermes", *args], capture_output=capture_output, session=session
-    )
+    return messaging_cmds.cmd_messaging(session, console, args, run_cli=run_cli_command)
 
 
 def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
-    # ``cron start`` blocks as the scheduler daemon and must stream to the real
-    # TTY. Every other subcommand is a printer; the captured output reaches the
-    # slash history row, where the action agent reads it back (e.g. task ids
-    # from ``/cron list`` to chain a remove).
-    capture_output = not args or args[0].lower() != "start"
-    return run_cli_command(console, ["cron", *args], capture_output=capture_output, session=session)
+    return cron_cmds.cmd_cron(session, console, args, run_cli=run_cli_command)
 
 
 def _cmd_sentry(session: Session, console: Console, args: list[str]) -> bool:
@@ -399,31 +544,88 @@ def _cmd_posthog(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["posthog", *args], capture_output=True, session=session)
 
 
-def _cmd_watchdog(session: Session, console: Console, args: list[str]) -> bool:
-    # Blocking monitor loop; streams sampled state until interrupted.
-    return run_cli_command(console, ["watchdog", *args], capture_output=False, session=session)
+def _cmd_triage(session: Session, console: Console, args: list[str]) -> bool:
+    if args and args[0] == "watch":
+        console.print(
+            "Run the foreground watch in a separate terminal: opensre triage watch --help. "
+            "Use /triage reports --state <file> here to read retained reports."
+        )
+        session.mark_latest(ok=True, kind="slash")
+        return True
+    return run_cli_command(console, ["triage", *args], capture_output=True, session=session)
 
 
 def _cmd_debug(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["debug", *args], session=session)
 
 
-def _cmd_misses(session: Session, console: Console, args: list[str]) -> bool:
-    return run_cli_command(console, ["misses", *args], session=session)
-
-
 COMMANDS: list[SlashCommand] = [
+    SlashCommand(
+        "/triage",
+        "Read retained OTel incident reports.",
+        _cmd_triage,
+        usage=("/triage reports --state <file>",),
+        first_arg_completions=(("reports", "Read retained incident reports"),),
+        mutating=False,
+    ),
+    SlashCommand(
+        "/account",
+        "Sign in to OpenSRE and inspect the local account.",
+        _cmd_account,
+        usage=(
+            "/account",
+            "/account login",
+            "/account status",
+            "/account credits",
+            "/account usage",
+            "/account logout",
+        ),
+        first_arg_completions=(
+            ("login", "Sign in"),
+            ("status", "Show login"),
+            ("credits", "Show hosted credits"),
+            ("usage", "Open top-up page"),
+            ("logout", "Sign out"),
+        ),
+    ),
+    SlashCommand(
+        "/credits",
+        "Show remaining OpenSRE hosted credits for the signed-in account.",
+        _cmd_credits,
+        usage=("/credits", "/credits --dev"),
+    ),
     SlashCommand(
         "/auth",
         "Log in to LLM providers and inspect local auth state.",
         _cmd_auth,
-        usage=("/auth", "/auth status", "/auth login deepseek", "/auth logout deepseek"),
+        first_arg_completions=CLI_COMMAND_CHOICES[("/auth",)],
+        usage=(
+            "/auth",
+            "/auth status",
+            "/auth login chatgpt",
+            "/auth login deepseek",
+            "/auth logout deepseek",
+        ),
     ),
     SlashCommand(
         "/login",
         "Shortcut for LLM provider login.",
         _cmd_login,
-        usage=("/login", "/login chatgpt", "/login claude", "/login deepseek"),
+        usage=("/login", "/login chatgpt", "/login anthropic", "/login deepseek"),
+    ),
+    SlashCommand(
+        "/logout",
+        "Sign out of the OpenSRE account and close the shell.",
+        _cmd_logout,
+        usage=("/logout",),
+        notes=("Same as /account logout. To clear one LLM provider, use /auth logout <provider>.",),
+        validate_args=_validate_logout_args,
+    ),
+    SlashCommand(
+        "/setup",
+        "First-run setup: OpenSRE account, hosted model, then the interactive shell.",
+        _cmd_setup,
+        usage=("/setup", "/setup --dev"),
     ),
     SlashCommand(
         "/onboard",
@@ -433,27 +635,15 @@ COMMANDS: list[SlashCommand] = [
     ),
     SlashCommand(
         "/remote",
-        "Connect to and trigger a remote deployed agent.",
+        "Remote-agent operations are unavailable in this build.",
         _cmd_remote,
-        usage=(
-            "/remote health",
-            "/remote investigate",
-            "/remote ops",
-            "/remote pull",
-            "/remote trigger",
-        ),
-    ),
-    SlashCommand(
-        "/tests",
-        "Browse and run inventoried tests.",
-        _cmd_tests,
-        usage=("/tests", "/tests list", "/tests run", "/tests synthetic"),
-        first_arg_completions=tuple((name, f"/tests {name}") for name in _TEST_SUBCOMMANDS),
+        usage=("/remote",),
     ),
     SlashCommand(
         "/guardrails",
         "Manage sensitive information guardrail rules.",
         _cmd_guardrails,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/guardrails",)],
         usage=(
             "/guardrails audit",
             "/guardrails init",
@@ -475,41 +665,67 @@ COMMANDS: list[SlashCommand] = [
         "/config",
         "Show or edit local OpenSRE config.",
         _cmd_config,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/config",)],
         usage=("/config show", "/config set <key> <value>"),
+    ),
+    SlashCommand(
+        "/runbooks",
+        "Manage trusted runbook sources for guided investigations.",
+        _cmd_runbooks,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/runbooks",)],
+        usage=(
+            "/runbooks list",
+            "/runbooks add github --name <name> --repo <owner/repo>",
+            "/runbooks verify <name>",
+            "/runbooks remove <name>",
+        ),
+    ),
+    SlashCommand(
+        "/skills",
+        "Publish skills and inspect the live skills release in use.",
+        _cmd_skills,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/skills",)],
+        usage=(
+            "/skills status",
+            "/skills update",
+            "/skills push <name>",
+            "/skills rollback",
+        ),
     ),
     SlashCommand(
         "/messaging",
         "Manage messaging security and identities.",
         _cmd_messaging,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/messaging",)],
         usage=(
-            "/messaging pair",
-            "/messaging allow",
-            "/messaging revoke",
-            "/messaging status",
+            "/messaging status --platform <platform>",
+            "/messaging pair --platform <platform>",
+            "/messaging allow --platform <platform> --user-id <id>",
+            "/messaging revoke --platform <platform> --user-id <id>",
         ),
-    ),
-    SlashCommand(
-        "/hermes",
-        "Live-tail Hermes logs and send incidents to Telegram.",
-        _cmd_hermes,
-        usage=("/hermes watch",),
+        notes=("Omit required values in the terminal to choose them interactively.",),
     ),
     SlashCommand(
         "/cron",
         "Manage cron-driven scheduled deliveries.",
         _cmd_cron,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/cron",)],
         usage=(
+            "/cron",
             "/cron list",
             "/cron add --name <name>",
-            "/cron remove <id>",
-            "/cron run <id>",
-            "/cron logs <id>",
+            "/cron remove [id]",
+            "/cron run [id]",
+            "/cron logs [id]",
+            "/cron status",
+            "/cron start [--service]",
         ),
     ),
     SlashCommand(
         "/sentry",
         "Schedule and run automated Sentry morning digests or uptime watches.",
         _cmd_sentry,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/sentry",)],
         usage=(
             "/sentry digest run",
             "/sentry digest schedule list",
@@ -527,6 +743,7 @@ COMMANDS: list[SlashCommand] = [
         "/posthog",
         "Schedule and run automated PostHog per-metric summary reports.",
         _cmd_posthog,
+        first_arg_completions=CLI_COMMAND_CHOICES[("/posthog",)],
         usage=(
             "/posthog report run",
             "/posthog report schedule list",
@@ -536,26 +753,9 @@ COMMANDS: list[SlashCommand] = [
         ),
     ),
     SlashCommand(
-        "/watchdog",
-        "Monitor one process and send threshold alarms.",
-        _cmd_watchdog,
-        usage=("/watchdog --pid <pid> [--max-rss <size>] [--max-cpu <percent>]",),
-        examples=("/watchdog --pid 123 --max-rss 1G",),
-    ),
-    SlashCommand(
         "/debug",
         "run targeted runtime diagnostics",
         _cmd_debug,
-    ),
-    SlashCommand(
-        "/misses",
-        "Triage investigation misses and export them as benchmark scenarios.",
-        _cmd_misses,
-        usage=(
-            "/misses list",
-            "/misses stats",
-            "/misses export --out <dir>",
-            "/misses convert <miss_id>",
-        ),
+        first_arg_completions=CLI_COMMAND_CHOICES[("/debug",)],
     ),
 ]

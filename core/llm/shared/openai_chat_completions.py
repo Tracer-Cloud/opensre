@@ -19,8 +19,14 @@ from core.llm.types import AgentLLMResponse, LLMResponse, ToolCall
 _RETRY_INITIAL_BACKOFF_SEC = 1.0
 _RETRY_MAX_ATTEMPTS = 3
 
-AGENT_CLIENT_TIMEOUT_SEC: float = 90.0
-LLM_CLIENT_TIMEOUT_SEC: float = 60.0
+#: Both match the hosted route's own upstream limit (120 s). A reasoning model
+#: writing a long answer can take over a minute; a client that gives up first
+#: is still billed for the answer it never reads.
+AGENT_CLIENT_TIMEOUT_SEC: float = 120.0
+LLM_CLIENT_TIMEOUT_SEC: float = 120.0
+#: The SDK's own retries are off: our loops decide what is worth retrying, and
+#: a timed-out request is not (it already ran upstream and was billed).
+OPENAI_SDK_MAX_RETRIES = 0
 
 
 def get_attr_or_item(value: Any, key: str, default: Any = None) -> Any:
@@ -173,6 +179,8 @@ def agent_response_from_completion(
         tool_calls=parse_tool_calls(message),
         stop_reason=stop_reason,
         raw_content=message_to_dict(message),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )
 
 
@@ -300,7 +308,7 @@ def invoke_with_litellm_llm_retries(
     model: str,
     on_model_fallback: Callable[[], dict[str, Any] | None],
 ) -> Any:
-    from infrastructure.safety.guardrails.engine import GuardrailBlockedError
+    from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
     backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
     last_err: Exception | None = None
@@ -366,7 +374,7 @@ def stream_with_litellm_retries(
     model: str,
     on_model_fallback: Callable[[], dict[str, Any] | None],
 ) -> Iterator[str]:
-    from infrastructure.safety.guardrails.engine import GuardrailBlockedError
+    from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
     backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
     for attempt in range(_RETRY_MAX_ATTEMPTS):

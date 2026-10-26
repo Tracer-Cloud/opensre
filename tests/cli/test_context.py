@@ -6,6 +6,7 @@ from infrastructure.process.runtime_flags import (
     configure_runtime_flags,
     is_debug,
     is_json_output,
+    is_onboarding_enabled,
     is_verbose,
     is_yes,
     reset_runtime_flags,
@@ -61,18 +62,33 @@ def test_is_yes_false() -> None:
     assert is_yes() is False
 
 
+def test_onboarding_defaults_to_enabled_and_can_be_disabled() -> None:
+    reset_runtime_flags()
+    assert is_onboarding_enabled() is True
+
+    configure_runtime_flags(onboarding=False)
+    assert is_onboarding_enabled() is False
+
+
 def test_defaults_without_configuration() -> None:
     reset_runtime_flags()
     assert is_json_output() is False
     assert is_verbose() is False
     assert is_debug() is False
     assert is_yes() is False
+    assert is_onboarding_enabled() is True
 
 
 def test_sync_runtime_flags_from_click_root() -> None:
     reset_runtime_flags()
     root_ctx = click.Context(click.Command("root"))
-    root_ctx.obj = {"json": True, "verbose": False, "debug": True, "yes": True}
+    root_ctx.obj = {
+        "json": True,
+        "verbose": False,
+        "debug": True,
+        "yes": True,
+        "skip_onboarding": True,
+    }
 
     child_ctx = click.Context(click.Command("child"), parent=root_ctx)
     child_ctx.obj = {"json": False}
@@ -82,6 +98,7 @@ def test_sync_runtime_flags_from_click_root() -> None:
     assert is_verbose() is False
     assert is_debug() is True
     assert is_yes() is True
+    assert is_onboarding_enabled() is False
 
 
 def test_sync_runtime_flags_from_click_none_obj() -> None:
@@ -93,3 +110,4 @@ def test_sync_runtime_flags_from_click_none_obj() -> None:
     assert is_verbose() is False
     assert is_debug() is False
     assert is_yes() is False
+    assert is_onboarding_enabled() is True

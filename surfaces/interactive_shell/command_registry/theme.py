@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from rich.console import Console
+from rich.markup import escape
 
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
@@ -21,7 +22,7 @@ from surfaces.shared.terminal.components.choice_menu import (
 
 
 def _refresh_prompt_style(session: Session) -> None:
-    """Defer prompt-toolkit style refresh until the next prompt_async turn."""
+    """Defer prompt-toolkit style refresh until the prompt input loop resumes."""
     session.terminal.pending_theme_refresh = True
 
 
@@ -61,7 +62,9 @@ def _cmd_theme(session: Session, console: Console, args: list[str]) -> bool:
         selected = args[0].strip().lower()
         if selected not in list_theme_names():
             supported = ", ".join(list_theme_names())
-            console.print(f"[{ui_theme.ERROR}]unknown theme:[/] {selected}  (choose: {supported})")
+            console.print(
+                f"[{ui_theme.ERROR}]unknown theme:[/] {escape(selected)}  (choose: {supported})"
+            )
             return True
         _persist_and_report_theme(session, console, selected)
         return True

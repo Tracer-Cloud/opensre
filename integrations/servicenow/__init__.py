@@ -7,6 +7,8 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import ServiceNowIntegrationConfig
+from integrations.servicenow.setup import SERVICENOW_SETUP
+from integrations.servicenow.verifier import build_servicenow_config, validate_servicenow_config
 
 logger = logging.getLogger(__name__)
 
@@ -30,3 +32,6 @@ def classify(
     if cfg.instance_url and cfg.username and cfg.password:
         return cfg, "servicenow"
     return None, None
+
+
+__all__ = ["SERVICENOW_SETUP", "build_servicenow_config", "classify", "validate_servicenow_config"]

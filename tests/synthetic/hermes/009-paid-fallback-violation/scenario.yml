@@ -1,7 +1,0 @@
-scenario_id: "009-paid-fallback-violation"
-title: "Auxiliary fallback ignores :free constraint and hits paid model 403 (#24029)"
-source: "https://github.com/NousResearch/hermes-agent/issues/24029"
-log_file: "errors.log"
-classifier:
-  warning_burst_threshold: 2
-  warning_burst_window_s: 60

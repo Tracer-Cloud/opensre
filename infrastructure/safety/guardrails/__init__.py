@@ -1,5 +1,5 @@
 """Sensitive information guardrails for LLM interactions."""
 
-from infrastructure.safety.guardrails.engine import GuardrailEngine, get_guardrail_engine
+from infrastructure.safety.guardrails.evaluator import GuardrailEvaluator, get_guardrail_evaluator
 
-__all__ = ["GuardrailEngine", "get_guardrail_engine"]
+__all__ = ["GuardrailEvaluator", "get_guardrail_evaluator"]

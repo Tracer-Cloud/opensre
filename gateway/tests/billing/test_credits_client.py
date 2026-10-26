@@ -7,6 +7,9 @@ from typing import Any
 import httpx
 import pytest
 
+from config.principal import Actor, Principal, StorageScope
+from config.scope_context import bound_storage_scope
+from gateway.core.billing import turn_metering
 from gateway.core.billing.credits_client import CreditsOutcome, consume_credits
 
 _URL_ENV = "OPENSRE_WEBAPP_URL"
@@ -22,7 +25,7 @@ def metering_on(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_unconfigured_when_secret_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Arrange: URL + org present but no shared secret → metering is off.
+    # Arrange: URL + org present but no credential → hosted misconfiguration.
     monkeypatch.setenv(_URL_ENV, "https://app.opensre.test")
     monkeypatch.delenv(_SECRET_ENV, raising=False)
 
@@ -93,7 +96,7 @@ def test_transport_error_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None
     # Act
     outcome = consume_credits(organization_id="org_x", reason="slack_turn")
 
-    # Assert: UNAVAILABLE so the gateway can fail open instead of blocking the user.
+    # Assert: callers receive a non-admitting outcome and fail closed.
     assert outcome is CreditsOutcome.UNAVAILABLE
 
 
@@ -137,7 +140,7 @@ def test_5xx_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     # Act
     outcome = consume_credits(organization_id="org_x", reason="slack_turn")
 
-    # Assert: only 402 denies; every other error status is UNAVAILABLE (fail-open).
+    # Assert: only 402 means exhausted; other error statuses cannot admit work.
     assert outcome is CreditsOutcome.UNAVAILABLE
 
 
@@ -148,13 +151,13 @@ def test_request_matches_webapp_contract(monkeypatch: pytest.MonkeyPatch) -> Non
 
     def capture(url: str, **kwargs: Any) -> httpx.Response:
         calls.append({"url": url, **kwargs})
-        return httpx.Response(HTTPStatus.OK, json={"balance": 9, "consumed": 2.5})
+        return httpx.Response(HTTPStatus.OK, json={"balance": 9, "consumed": 2})
 
     monkeypatch.setattr("gateway.core.billing.credits_client.httpx.post", capture)
 
     # Act
     outcome = consume_credits(
-        "org_x", amount=2.5, reason="investigation", metadata={"investigationId": "inv-1"}
+        "org_x", amount=2, reason="investigation", metadata={"investigationId": "inv-1"}
     )
 
     # Assert: bearer secret + the webapp's body shape ("amount", never "units").
@@ -164,7 +167,7 @@ def test_request_matches_webapp_contract(monkeypatch: pytest.MonkeyPatch) -> Non
     assert call["headers"]["Authorization"] == "Bearer sekrit"
     assert call["timeout"] == 5.0
     assert call["json"] == {
-        "amount": 2.5,
+        "amount": 2,
         "organizationId": "org_x",
         "reason": "investigation",
         "investigationId": "inv-1",
@@ -185,7 +188,7 @@ def test_metadata_cannot_override_billing_fields(monkeypatch: pytest.MonkeyPatch
     # Act
     consume_credits(
         organization_id="org_real",
-        amount=1.0,
+        amount=1,
         reason="slack_turn",
         metadata={"amount": 0, "organizationId": "org_injected", "reason": "free_ride"},
     )
@@ -198,11 +201,69 @@ def test_metadata_cannot_override_billing_fields(monkeypatch: pytest.MonkeyPatch
     assert sent["json"]["reason"] == "slack_turn"
 
 
+@pytest.mark.usefixtures("metering_on")
+def test_a_replayed_delivery_repeats_one_org_scoped_idempotency_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the polling transports replay a delivery after a restart, so the
+    # same delivery id is consumed twice. Both attempts must carry the same key
+    # for the ledger to collapse them into one debit.
+    calls: list[dict[str, Any]] = []
+
+    def capture(_url: str, **kwargs: Any) -> httpx.Response:
+        calls.append(kwargs)
+        return httpx.Response(HTTPStatus.OK, json={"balance": 4})
+
+    monkeypatch.setattr("gateway.core.billing.credits_client.httpx.post", capture)
+
+    # Act: the crash-and-replay of one Telegram update.
+    for _ in range(2):
+        consume_credits(
+            organization_id="org_real",
+            reason="telegram_turn",
+            idempotency_key="telegram:44271",
+        )
+
+    # Assert: byte-identical key, and scoped to the org so the same update id
+    # under another tenant cannot be mistaken for this debit.
+    first, second = (call["headers"]["Idempotency-Key"] for call in calls)
+    assert first == second == "org_real:telegram:44271"
+
+
+@pytest.mark.usefixtures("metering_on")
+def test_no_idempotency_header_when_the_caller_names_no_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: an unkeyed caller must not send an empty or forged key, which the
+    # webapp could otherwise treat as a repeat of a previous unkeyed charge.
+    calls: list[dict[str, Any]] = []
+
+    def capture(_url: str, **kwargs: Any) -> httpx.Response:
+        calls.append(kwargs)
+        return httpx.Response(HTTPStatus.OK, json={"balance": 4})
+
+    monkeypatch.setattr("gateway.core.billing.credits_client.httpx.post", capture)
+
+    # Act
+    consume_credits(organization_id="org_real", reason="smoke")
+
+    # Assert
+    (sent,) = calls
+    assert "Idempotency-Key" not in sent["headers"]
+
+
+@pytest.mark.parametrize("amount", [0, -1, 1.5, True])
+def test_rejects_non_positive_or_fractional_amounts(amount: Any) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        consume_credits(organization_id="org_real", amount=amount, reason="slack_turn")
+
+
 def test_creditsoutcome_is_strenum_with_identical_values() -> None:
     # Arrange: the persisted/logged string for each outcome must not move.
     expected_values = {
         CreditsOutcome.ALLOWED: "allowed",
         CreditsOutcome.DENIED: "denied",
+        CreditsOutcome.DISABLED: "disabled",
         CreditsOutcome.UNCONFIGURED: "unconfigured",
         CreditsOutcome.UNAVAILABLE: "unavailable",
     }
@@ -212,3 +273,31 @@ def test_creditsoutcome_is_strenum_with_identical_values() -> None:
         assert member.value == expected
         assert member == expected
         assert isinstance(member, str)
+
+
+@pytest.mark.usefixtures("metering_on")
+def test_a_metered_turn_names_its_member_on_the_charge(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: a Slack member's turn on a gateway that meters per turn
+    monkeypatch.setattr(turn_metering, "account_llm_route", lambda: None)
+    calls: list[dict[str, Any]] = []
+
+    def capture(_url: str, **kwargs: Any) -> httpx.Response:
+        calls.append(kwargs)
+        return httpx.Response(HTTPStatus.OK, json={"balance": 1})
+
+    monkeypatch.setattr("gateway.core.billing.credits_client.httpx.post", capture)
+    scope = StorageScope(principal=Principal.org("org_x"), actor=Actor(id="U0MEMBER"))
+
+    # Act
+    with (
+        bound_storage_scope(scope),
+        turn_metering.bound_turn_metering(
+            organization_id="org_x", reason="slack_turn", idempotency_key="ts-1", on_denied=list
+        ),
+    ):
+        admitted = turn_metering.admit_metered_turn()
+
+    # Assert: Settings → Usage can chart the charge under the member who spent it
+    assert admitted is True
+    (sent,) = calls
+    assert sent["json"]["actor"] == "U0MEMBER"

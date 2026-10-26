@@ -1,11 +1,10 @@
 """Internal chat seam — one entry over the shared ``run_turn`` engine.
 
 The **public** host API is :class:`~core.agent_harness.harness.AgentSession`
-(``chat`` / ``investigate``). Adapters (shell TTY dispatcher, ``HeadlessAgent``)
+(``chat``). Adapters (shell TTY dispatcher, ``HeadlessAgent``)
 build :class:`ChatTurnBindings` from their surface ports, then call
 :func:`dispatch_chat_turn` from inside ``.dispatch``. This module must not
-import ``surfaces`` or ``gateway``. Investigation is
-:meth:`AgentSession.investigate` (installed payload runner).
+import ``surfaces`` or ``gateway``.
 """
 
 from __future__ import annotations
@@ -14,11 +13,9 @@ from dataclasses import dataclass
 
 from core.agent_harness.ports import (
     ConfirmFn,
-    EvidenceGatherer,
     ExecuteActions,
     OutputSink,
     SessionState,
-    StreamAnswerFn,
     TurnAccounting,
 )
 from core.agent_harness.turns.orchestrator import run_turn
@@ -34,8 +31,6 @@ class ChatTurnBindings:
     """
 
     execute_actions: ExecuteActions
-    answer: StreamAnswerFn
-    gather: EvidenceGatherer
     accounting: TurnAccounting
     confirm_fn: ConfirmFn | None = None
     is_tty: bool | None = None
@@ -57,8 +52,6 @@ def dispatch_chat_turn(
         message,
         session,
         execute_actions=bindings.execute_actions,
-        answer=bindings.answer,
-        gather=bindings.gather,
         accounting=bindings.accounting,
         confirm_fn=bindings.confirm_fn,
         is_tty=bindings.is_tty,

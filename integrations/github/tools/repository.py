@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -17,12 +23,10 @@ from integrations.github.helpers import (
 
 
 def _github_repository_available(sources: dict[str, dict]) -> bool:
+    if sources.get("github", {}).get("connection_selection_error"):
+        return False
     gh = sources.get("github", {})
-    return bool(
-        (github_source_available(sources) or resolve_github_token(None))
-        and gh.get("owner")
-        and gh.get("repo")
-    )
+    return bool((github_source_available(sources)) and gh.get("owner") and gh.get("repo"))
 
 
 def _github_repository_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -59,12 +63,28 @@ def _normalize_repository(repo: dict[str, Any], *, owner: str, repo_name: str) -
     }
 
 
+def _map_get_github_repository(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    if output.get("repository"):
+        owner = output.get("owner") or _input.get("owner", "unknown")
+        repo = output.get("repo") or _input.get("repo", "unknown")
+        record_evidence_entry(
+            evidence,
+            source="get_github_repository",
+            label="GitHub Repository Info",
+            summary=f"{owner}/{repo}",
+        )
+
+
 @tool(
     name="get_github_repository",
     source="github",
     description=(
-        "Fetch GitHub repository metadata such as star count, forks, open issues, "
-        "description, default branch, and visibility via the GitHub REST API."
+        "Fetch GitHub repository metadata. When the user asks for stars, report "
+        "stargazers_count — never forks_count, watchers_count, or subscribers_count. "
+        "Also returns forks, open issues, description, default branch, and visibility "
+        "via the GitHub REST API."
     ),
     use_cases=[
         "Answering how many GitHub stars a repository has",
@@ -74,10 +94,12 @@ def _normalize_repository(repo: dict[str, Any], *, owner: str, repo_name: str) -
     anti_examples=[
         "Searching repository source code (use search_github_code)",
         "Searching GitHub issues by keyword (use search_github_issues)",
+        "Answering a star-count question with forks_count or watchers_count",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     input_schema={
         "type": "object",
         "properties": {
@@ -87,10 +109,12 @@ def _normalize_repository(repo: dict[str, Any], *, owner: str, repo_name: str) -
         },
         "required": ["owner", "repo"],
     },
-    is_available=_github_repository_available,
-    extract_params=_github_repository_extract_params,
+    is_available=github_tool_available(_github_repository_available),
+    extract_params=github_tool_params(_github_repository_extract_params),
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_get_github_repository,
 )
+@require_webapp_github
 def get_github_repository(
     owner: str,
     repo: str,
@@ -119,11 +143,19 @@ def get_github_repository(
             repository={},
         )
     repository = _normalize_repository(payload, owner=owner, repo_name=repo)
+    stars = repository["stargazers_count"] or 0
+    branch = repository["default_branch"] or "unknown"
+    visibility = repository["visibility"] or "unknown"
+    language = repository["language"]
+    parts = [f"{owner}/{repo}", f"{stars}★", branch, visibility]
+    if language:
+        parts.append(language)
     return {
         "source": "github",
         "available": True,
         "owner": owner,
         "repo": repo,
         "repository": repository,
-        "stargazers_count": repository["stargazers_count"] or 0,
+        "stargazers_count": stars,
+        "summary": " · ".join(str(p) for p in parts),
     }

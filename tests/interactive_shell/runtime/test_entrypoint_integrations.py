@@ -15,17 +15,13 @@ from rich.console import Console
 
 import surfaces.interactive_shell.main as main_entrypoint
 from core.agent_harness.session.integration_resolution import IntegrationResolutionResult
-from surfaces.interactive_shell.runtime.startup import first_launch_github as flg
+from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.session import Session
-
-
-def _console() -> Console:
-    return Console(file=io.StringIO(), force_terminal=False, highlight=False)
 
 
 def test_hydrate_populates_session_from_effective_resolution(monkeypatch: Any) -> None:
     monkeypatch.setattr(
-        "infrastructure.harness_ports.configured_integration_services",
+        "infrastructure.harness_providers.configured_integration_services",
         lambda: ["gitlab", "datadog"],
     )
     session = Session()
@@ -37,7 +33,7 @@ def test_hydrate_populates_session_from_effective_resolution(monkeypatch: Any) -
 
 def test_hydrate_marks_known_even_when_none_configured(monkeypatch: Any) -> None:
     monkeypatch.setattr(
-        "infrastructure.harness_ports.configured_integration_services",
+        "infrastructure.harness_providers.configured_integration_services",
         list,
     )
     session = Session()
@@ -90,27 +86,6 @@ def test_warm_resolved_integrations_skips_empty_cache(monkeypatch: Any) -> None:
     assert session.resolved_integrations_cache is None
     session.warm_resolved_integrations()
     assert calls == ["resolve", "resolve"]
-
-
-def test_warm_resolved_integrations_uses_quiet_resolve(monkeypatch: Any) -> None:
-    progress_calls: list[str] = []
-    quiet_calls: list[str] = []
-
-    monkeypatch.setattr(
-        "tools.investigation.stages.resolve_integrations.resolve_integrations",
-        lambda _state: progress_calls.append("progress") or {"resolved_integrations": {}},
-    )
-    monkeypatch.setattr(
-        "core.agent_harness.session.integration_resolution.resolve_integrations",
-        lambda: quiet_calls.append("quiet") or {"datadog": {}},
-    )
-
-    session = Session()
-    session.warm_resolved_integrations()
-
-    assert quiet_calls == ["quiet"]
-    assert progress_calls == []
-    assert session.resolved_integrations_cache == {"datadog": {}}
 
 
 def test_get_integrations_returns_pydantic_cached_result(monkeypatch: Any) -> None:
@@ -169,15 +144,15 @@ def test_stale_background_warm_does_not_overwrite_refreshed_cache() -> None:
     stale_generation = session.integrations._warm_generation
     session.integrations._warm_generation += 1
     session.integrations._store(
-        {"fresh": {"token": "new"}}, generation=session.integrations._warm_generation
+        {"fresh": {"token": "new"}}, generation=session.integrations._warm_generation, stamp=0
     )
-    session.integrations._store({"stale": {"token": "old"}}, generation=stale_generation)
+    session.integrations._store({"stale": {"token": "old"}}, generation=stale_generation, stamp=0)
     assert session.resolved_integrations_cache == {"fresh": {"token": "new"}}
 
 
 def test_hydrate_entrypoint_does_not_warm_before_prompt(monkeypatch: Any) -> None:
     monkeypatch.setattr(
-        "infrastructure.harness_ports.configured_integration_services",
+        "infrastructure.harness_providers.configured_integration_services",
         lambda: ["datadog"],
     )
     resolve_calls: list[str] = []
@@ -202,37 +177,13 @@ def test_hydrate_leaves_unknown_on_failure(monkeypatch: Any) -> None:
         raise RuntimeError("catalog blew up")
 
     monkeypatch.setattr(
-        "infrastructure.harness_ports.configured_integration_services",
+        "infrastructure.harness_providers.configured_integration_services",
         _boom,
     )
     session = Session()
     session.hydrate_configured_integrations()
     assert session.configured_integrations_known is False
     assert session.configured_integrations == ()
-
-
-def test_gate_error_blocks_startup_without_bypass(monkeypatch: Any) -> None:
-    """On an unexpected gate error we must NOT fail open into the REPL unless an
-    explicit bypass applies."""
-    monkeypatch.setattr(
-        flg,
-        "should_require_github_login",
-        lambda: (_ for _ in ()).throw(RuntimeError("gate broke")),
-    )
-    monkeypatch.setattr(flg, "_github_login_explicitly_bypassed", lambda: False)
-
-    assert flg.require_startup_github_login(_console()) is False
-
-
-def test_gate_error_allows_startup_with_bypass(monkeypatch: Any) -> None:
-    monkeypatch.setattr(
-        flg,
-        "should_require_github_login",
-        lambda: (_ for _ in ()).throw(RuntimeError("gate broke")),
-    )
-    monkeypatch.setattr(flg, "_github_login_explicitly_bypassed", lambda: True)
-
-    assert flg.require_startup_github_login(_console()) is True
 
 
 def test_run_repl_async_identifies_saved_github_username(monkeypatch: Any) -> None:
@@ -250,17 +201,8 @@ def test_run_repl_async_identifies_saved_github_username(monkeypatch: Any) -> No
 
     monkeypatch.setattr(
         main_entrypoint,
-        "create_repl_runtime_context",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
-    )
-
-    class _PromptSession:
-        history = None
-
-    monkeypatch.setattr(
-        main_entrypoint,
-        "build_prompt_session",
-        lambda: _PromptSession(),
+        "create_repl_runtime",
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
 
     import asyncio
@@ -280,7 +222,7 @@ def test_run_repl_async_failed_resume_flushes_starter_session(
     monkeypatch.setattr("config.constants.OPENSRE_HOME_DIR", tmp_path)
     monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.identify_saved_github_username",
+        "infrastructure.analytics.github_identity.identify_saved_github_username",
         lambda: None,
     )
     monkeypatch.setattr(
@@ -298,43 +240,79 @@ def test_run_repl_async_failed_resume_flushes_starter_session(
 
     monkeypatch.setattr(session.store, "flush", _track_flush)
 
-    class _PromptSession:
-        history = None
-
     monkeypatch.setattr(
         main_entrypoint,
-        "build_prompt_session",
-        lambda: _PromptSession(),
-    )
-    monkeypatch.setattr(
-        main_entrypoint,
-        "create_repl_runtime_context",
-        lambda **_kwargs: SimpleNamespace(session=session, inbox=None),
+        "create_repl_runtime",
+        lambda **_kwargs: SimpleNamespace(session=session, state=ReplState(), inbox=None),
     )
 
     exit_code = asyncio.run(main_entrypoint.run_repl_async(resume_session_id="missing-session"))
 
     assert exit_code == 1
-    assert flushed == [session.session_id]
+    # Teardown persists before the blocking close, and ``close`` flushes again;
+    # the repeat is a documented no-op (no second leaf). What this pins is that
+    # the starter session — and only it — reached the store.
+    assert flushed and set(flushed) == {session.session_id}
     assert not (sessions_dir / f"{session.session_id}.jsonl").exists()
 
 
-def test_explicit_bypass_detects_skip_env(monkeypatch: Any) -> None:
-    monkeypatch.setenv("OPENSRE_SKIP_GITHUB_LOGIN", "1")
-    assert flg._github_login_explicitly_bypassed() is True
+def test_run_repl_async_runs_held_back_launch_work_once_the_banner_is_painted(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    """``after_banner`` runs after ``finish_banner`` and before the session body."""
+    import asyncio
+
+    # Arrange: a booted runtime whose resume fails, so the run ends right after
+    # the banner step without starting the prompt loop.
+    monkeypatch.setattr("config.constants.OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.setattr(
+        "infrastructure.analytics.github_identity.identify_saved_github_username",
+        lambda: None,
+    )
+    order: list[str] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.command_registry.session_cmds.resume.resume_session_by_prefix",
+        lambda *_args, **_kwargs: order.append("resume") or False,
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "create_repl_runtime",
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
+    )
+
+    # Act
+    asyncio.run(
+        main_entrypoint.run_repl_async(
+            resume_session_id="missing-session",
+            finish_banner=lambda: order.append("banner"),
+            after_banner=lambda: order.append("after_banner"),
+        )
+    )
+
+    # Assert
+    assert order == ["banner", "after_banner", "resume"]
 
 
-def test_explicit_bypass_detects_ci_environment(monkeypatch: Any) -> None:
-    monkeypatch.delenv("OPENSRE_SKIP_GITHUB_LOGIN", raising=False)
-    monkeypatch.setenv("CI", "true")
-    assert flg._github_login_explicitly_bypassed() is True
+def _finish_banner_then_stop(**kwargs: Any) -> int:
+    """Invoke the launch-banner finisher the real ``run_repl_async`` would.
+
+    ``run_repl`` spins the wordmark on a thread and paints the static banner
+    only when the async half calls ``finish_banner``. Stubs that skip the
+    shell must still run that finisher or startup chrome never reaches the
+    injected console.
+    """
+    finish = kwargs.get("finish_banner")
+    if finish is not None:
+        finish()
+    return 0
 
 
 def test_run_repl_writes_startup_output_to_the_supplied_console(monkeypatch: Any) -> None:
     """An embedding caller can capture the shell's output.
 
     The module built one forced-terminal Console at import and used it for the
-    splash, the ready box, and the login gate, so nothing could redirect them.
+    ready box, so nothing could redirect it.
     """
     # Arrange
     from io import StringIO
@@ -344,16 +322,18 @@ def test_run_repl_writes_startup_output_to_the_supplied_console(monkeypatch: Any
     from config.repl_config import ReplConfig
 
     captured = Console(file=StringIO(), force_terminal=False, width=80)
-    monkeypatch.setattr(main_entrypoint, "run_startup_sweep", lambda: None)
     monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "animate_launch_wordmark", lambda *_a, **_k: None)
 
     def _fake_terminal_ui(console: Any, **_kwargs: Any) -> None:
         console.print("SPLASH")
         console.print("READY")
 
+    async def _skip_async(**kwargs: Any) -> int:
+        return _finish_banner_then_stop(**kwargs)
+
     monkeypatch.setattr(main_entrypoint, "render_terminal_ui", _fake_terminal_ui)
-    # Stop before the event loop; the startup renders are what this pins.
-    monkeypatch.setattr(main_entrypoint, "require_startup_github_login", lambda _console: False)
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _skip_async)
 
     # Act
     exit_code = main_entrypoint.run_repl(
@@ -368,18 +348,48 @@ def test_run_repl_writes_startup_output_to_the_supplied_console(monkeypatch: Any
     assert "READY" in text
 
 
+def test_launch_banner_captures_shell_render_after_successful_first_paint(
+    monkeypatch: Any,
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(main_entrypoint, "animate_launch_wordmark", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "render_terminal_ui",
+        lambda *_a, **_k: events.append("rendered"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "capture_interactive_shell_rendered",
+        lambda **_kwargs: events.append("captured"),
+    )
+
+    spin = main_entrypoint._start_launch_banner(
+        Console(file=io.StringIO(), force_terminal=False),
+        on_painted=lambda: events.append("captured"),
+    )
+    spin.finish()
+
+    assert events == ["rendered", "captured"]
+
+    assert events == ["rendered", "captured"]
+
+
 def test_run_repl_defaults_to_the_module_console(monkeypatch: Any) -> None:
     """Omitting the console keeps today's behaviour, not a silent no-op."""
     # Arrange
     seen: list[object] = []
-    monkeypatch.setattr(main_entrypoint, "run_startup_sweep", lambda: None)
     monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "animate_launch_wordmark", lambda *_a, **_k: None)
 
     def _record_console(console: Any, **_kwargs: Any) -> None:
         seen.append(console)
 
+    async def _skip_async(**kwargs: Any) -> int:
+        return _finish_banner_then_stop(**kwargs)
+
     monkeypatch.setattr(main_entrypoint, "render_terminal_ui", _record_console)
-    monkeypatch.setattr(main_entrypoint, "require_startup_github_login", lambda _console: False)
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _skip_async)
 
     from config.repl_config import ReplConfig
 
@@ -393,7 +403,7 @@ def test_run_repl_defaults_to_the_module_console(monkeypatch: Any) -> None:
 def test_run_repl_async_routes_the_console_into_resume(monkeypatch: Any, tmp_path: Path) -> None:
     """The async half must use the caller's console too, not the module default.
 
-    ``run_repl`` renders the splash before the event loop; everything after —
+    ``run_repl`` renders the welcome panel before the event loop; everything after —
     resume output and the controller — runs inside ``run_repl_async``, so the
     console has to survive the hand-off.
     """
@@ -405,7 +415,9 @@ def test_run_repl_async_routes_the_console_into_resume(monkeypatch: Any, tmp_pat
 
     monkeypatch.setattr("config.constants.OPENSRE_HOME_DIR", tmp_path)
     monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
-    monkeypatch.setattr("infrastructure.analytics.cli.identify_saved_github_username", lambda: None)
+    monkeypatch.setattr(
+        "infrastructure.analytics.github_identity.identify_saved_github_username", lambda: None
+    )
 
     seen: list[object] = []
 
@@ -418,14 +430,10 @@ def test_run_repl_async_routes_the_console_into_resume(monkeypatch: Any, tmp_pat
         _resume,
     )
 
-    class _PromptSession:
-        history = None
-
-    monkeypatch.setattr(main_entrypoint, "build_prompt_session", lambda: _PromptSession())
     monkeypatch.setattr(
         main_entrypoint,
-        "create_repl_runtime_context",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        "create_repl_runtime",
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
     captured = Console(file=StringIO(), force_terminal=False, width=80)
 
@@ -442,7 +450,7 @@ def test_run_repl_async_routes_the_console_into_resume(monkeypatch: Any, tmp_pat
 def test_run_repl_hands_its_console_to_the_async_half(monkeypatch: Any) -> None:
     """The console must survive the sync-to-async hand-off.
 
-    ``run_repl`` renders the splash itself and then delegates everything else;
+    ``run_repl`` renders the welcome panel itself and then delegates everything else;
     dropping the argument there would silently return output to the module
     default while the startup renders still looked correct.
     """
@@ -453,10 +461,8 @@ def test_run_repl_hands_its_console_to_the_async_half(monkeypatch: Any) -> None:
 
     from config.repl_config import ReplConfig
 
-    monkeypatch.setattr(main_entrypoint, "run_startup_sweep", lambda: None)
     monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(main_entrypoint, "render_terminal_ui", lambda _console, **_kw: None)
-    monkeypatch.setattr(main_entrypoint, "require_startup_github_login", lambda _console: True)
 
     seen: list[object] = []
 
@@ -489,7 +495,8 @@ def test_package_facade_exposes_every_runtime_parameter() -> None:
     import inspect
 
     from surfaces.interactive_shell import run_repl as facade
-    from surfaces.interactive_shell.main import run_repl as runtime
+
+    runtime = main_entrypoint.run_repl
 
     # Act
     facade_params = inspect.signature(facade).parameters
@@ -512,14 +519,17 @@ def test_console_injection_works_through_the_package_facade(monkeypatch: Any) ->
     from config.repl_config import ReplConfig
     from surfaces.interactive_shell import run_repl as facade
 
-    monkeypatch.setattr(main_entrypoint, "run_startup_sweep", lambda: None)
     monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "animate_launch_wordmark", lambda *_a, **_k: None)
 
     def _fake_terminal_ui(console: Any, **_kwargs: Any) -> None:
         console.print("SPLASH")
 
+    async def _skip_async(**kwargs: Any) -> int:
+        return _finish_banner_then_stop(**kwargs)
+
     monkeypatch.setattr(main_entrypoint, "render_terminal_ui", _fake_terminal_ui)
-    monkeypatch.setattr(main_entrypoint, "require_startup_github_login", lambda _console: False)
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _skip_async)
     captured = Console(file=StringIO(), force_terminal=False, width=80)
 
     # Act
@@ -546,15 +556,14 @@ def test_initial_input_replay_uses_the_supplied_console(monkeypatch: Any) -> Non
 
     from surfaces.interactive_shell.runtime.startup import initial_input as replay
 
-    monkeypatch.setattr("infrastructure.analytics.cli.identify_saved_github_username", lambda: None)
+    monkeypatch.setattr(
+        "infrastructure.analytics.github_identity.identify_saved_github_username", lambda: None
+    )
 
     def _fake_terminal_ui(console: Any, **_kwargs: Any) -> None:
         console.print("REPLAY-SPLASH")
 
     monkeypatch.setattr(replay, "render_terminal_ui", _fake_terminal_ui)
-
-    class _PromptSession:
-        history = None
 
     # Rendering happens before the first turn; stub the turn so this pins the
     # console wiring rather than the whole execution stack.
@@ -564,11 +573,10 @@ def test_initial_input_replay_uses_the_supplied_console(monkeypatch: Any) -> Non
         lambda *_a, **_kw: None,
     )
 
-    monkeypatch.setattr(main_entrypoint, "build_prompt_session", lambda: _PromptSession())
     monkeypatch.setattr(
         main_entrypoint,
-        "create_repl_runtime_context",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        "create_repl_runtime",
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
     captured = Console(file=StringIO(), force_terminal=False, width=80)
 
@@ -584,7 +592,7 @@ def test_turn_output_and_prompt_echo_reach_the_supplied_console() -> None:
 
     Startup renders honoured the injected console while the controller and turn
     host built their own force-terminal consoles, so an embedding caller
-    captured the splash and missed every agent response, tool line and prompt
+    captured the welcome panel and missed every agent response, tool line and prompt
     echo — the part it actually wanted.
     """
     # Arrange
@@ -706,45 +714,7 @@ def test_controller_routes_its_console_to_echo_and_turns() -> None:
     assert controller.turn_runtime.console is captured
 
 
-def test_investigation_rendering_uses_the_supplied_console() -> None:
-    """``/investigate`` output must land in the caller's console too.
-
-    The stream renderer built its own ``Console``, so an embedding caller that
-    captured the conversation still lost investigation progress, tool detail and
-    the final report — the longest output the shell produces.
-    """
-    # Arrange
-    import surfaces.shared.terminal.stream_renderer as renderer_module
-    from surfaces.interactive_shell.runtime.investigation_adapter import (
-        repl_foreground_renderer,
-    )
-
-    captured = Console(file=io.StringIO(), force_terminal=False, width=80)
-    built: list[renderer_module.StreamRenderer] = []
-
-    class _RecordingRenderer(renderer_module.StreamRenderer):
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__(**kwargs)
-            built.append(self)
-
-        def render_stream(self, _events: Any) -> dict[str, Any]:
-            self._console.print("INVESTIGATION-PROGRESS")
-            return {}
-
-    # Act
-    original = renderer_module.StreamRenderer
-    renderer_module.StreamRenderer = _RecordingRenderer  # type: ignore[misc]
-    try:
-        repl_foreground_renderer(captured)(iter(()))
-    finally:
-        renderer_module.StreamRenderer = original  # type: ignore[misc]
-
-    # Assert
-    assert built[0]._console is captured
-    assert "INVESTIGATION-PROGRESS" in captured.file.getvalue()  # type: ignore[attr-defined]
-
-
-def test_investigation_progress_display_uses_the_supplied_console(
+def test_progress_display_uses_the_supplied_console(
     monkeypatch: Any,
 ) -> None:
     """Progress and tool-detail lines must follow the console too.
@@ -768,114 +738,3 @@ def test_investigation_progress_display_uses_the_supplied_console(
     # Assert
     assert tracker._display is not None
     assert tracker._display._console is captured  # type: ignore[attr-defined]
-
-
-def test_action_investigation_ports_forward_the_supplied_console(
-    monkeypatch: Any,
-) -> None:
-    """``investigation_start`` / ``alert_sample`` must keep the turn console.
-
-    Slash ``/investigate`` already threaded ``console=`` into the session runner.
-    Action-tool ports called the same adapters without it, so an embedding
-    caller that captured the conversation still lost investigation progress.
-    """
-    # Arrange
-    from surfaces.interactive_shell.runtime.investigation_adapter import (
-        repl_investigation_launch_ports,
-    )
-
-    captured = Console(file=io.StringIO(), force_terminal=False, width=80)
-    seen_text: list[Console | None] = []
-    seen_sample: list[Console | None] = []
-
-    def _fake_text(**kwargs: Any) -> dict[str, Any]:
-        seen_text.append(kwargs.get("console"))
-        return {}
-
-    def _fake_sample(**kwargs: Any) -> dict[str, Any]:
-        seen_sample.append(kwargs.get("console"))
-        return {}
-
-    def _unused_background(**_kwargs: Any) -> str:
-        raise AssertionError("background launcher should not run")
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.investigation_adapter.run_investigation_for_session",
-        _fake_text,
-    )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.investigation_adapter.run_sample_alert_for_session",
-        _fake_sample,
-    )
-    ports = repl_investigation_launch_ports(
-        start_background_text=_unused_background,
-        start_background_sample=_unused_background,
-    )
-
-    # Act
-    ports.run_text_investigation(
-        alert_text="cpu high",
-        context_overrides=None,
-        cancel_requested=None,
-        console=captured,
-    )
-    ports.run_sample_alert(
-        template_name="generic",
-        context_overrides=None,
-        cancel_requested=None,
-        console=captured,
-    )
-
-    # Assert
-    assert seen_text == [captured]
-    assert seen_sample == [captured]
-
-
-def test_streamed_run_paints_only_through_the_renderer_on_the_supplied_console() -> None:
-    """The StreamRenderer is the single painter for a streamed foreground run.
-
-    The streamed pipeline silences the process-wide tracker at stream start;
-    stage progress reaches the caller's console through the StreamRenderer's
-    events. Re-arming the global tracker for the run would give every stage a
-    second painter on the same console (doubled READ/PLAN progress lines).
-    """
-    # Arrange
-    from infrastructure.observability.render.progress import (
-        NoopProgressTracker,
-        get_progress_tracker,
-        silence_progress_tracker,
-    )
-    from surfaces.interactive_shell.runtime.investigation_adapter import (
-        repl_foreground_renderer,
-    )
-
-    captured = Console(file=io.StringIO(), force_terminal=False, width=80)
-    silence_progress_tracker()
-    constructed: dict[str, Any] = {}
-    mid_stream_trackers: list[type] = []
-
-    def _fake_stream_renderer(**kwargs: Any) -> SimpleNamespace:
-        constructed.update(kwargs)
-
-        def _render(_events: Any) -> dict[str, Any]:
-            # Runs while the renderer is active, exactly where a stage would
-            # call ``get_progress_tracker()`` from the pipeline thread.
-            mid_stream_trackers.append(type(get_progress_tracker()))
-            return {}
-
-        return SimpleNamespace(render_stream=_render)
-
-    # Act
-    import surfaces.shared.terminal.stream_renderer as renderer_module
-
-    real_renderer = renderer_module.StreamRenderer
-    renderer_module.StreamRenderer = _fake_stream_renderer  # type: ignore[assignment]
-    try:
-        repl_foreground_renderer(captured)(iter(()))
-    finally:
-        renderer_module.StreamRenderer = real_renderer  # type: ignore[assignment]
-
-    # Assert: the renderer paints to the caller's console; the global tracker
-    # stays silenced for the whole stream.
-    assert constructed.get("console") is captured
-    assert mid_stream_trackers == [NoopProgressTracker]

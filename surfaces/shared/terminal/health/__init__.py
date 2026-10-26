@@ -114,10 +114,13 @@ def render_health_report(
     console.print()
 
     table = Table(title="Integration Checks", box=box.SIMPLE_HEAVY, show_lines=False)
-    table.add_column("Service", style=BOLD_BRAND)
-    table.add_column("Source", style=SECONDARY)
-    table.add_column("Status")
-    table.add_column("Detail")
+    table.add_column("Service", style=BOLD_BRAND, no_wrap=True)
+    table.add_column("Source", style=SECONDARY, no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    # Fold long connect-timeout DETAIL so the table stays within the terminal
+    # (and within COLUMNS-minus-prefix when relayed from a background task).
+    detail_width = max(24, min(console.width, 120) - 36)
+    table.add_column("Detail", overflow="fold", max_width=detail_width)
 
     for result in normalized_results:
         table.add_row(

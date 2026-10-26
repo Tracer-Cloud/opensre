@@ -6,7 +6,14 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from core.agent_harness.prompts.action.active_skill import active_skill_block
+from core.agent_harness.prompts.action.goal_kernel import (
+    ACTION_GOAL_KERNEL,
+    ACTION_GOAL_KERNEL_CLOSER,
+)
 from core.agent_harness.prompts.action.text import _SYSTEM_PROMPT_BASE
+from core.agent_harness.prompts.action.turn_interaction import turn_interaction_facts_block
+from core.agent_harness.prompts.getting_started import load_getting_started_block
 from core.agent_harness.prompts.kernel.envelope import (
     PromptBlock,
     PromptBlockId,
@@ -14,37 +21,62 @@ from core.agent_harness.prompts.kernel.envelope import (
     PromptEnvelope,
     PromptTier,
 )
+from core.agent_harness.prompts.kernel.surfaces import known_profile
 from core.agent_harness.prompts.memory.conversation import (
     format_prior_action_facts,
     format_recent_conversation,
 )
-from core.agent_harness.prompts.runtime_facts import render_static_runtime_facts
-from core.agent_harness.prompts.skills.loader import load_skills_index
-from infrastructure.harness_ports import action_prompt_vendor_fragments
+from core.agent_harness.prompts.runtime_facts import (
+    build_live_runtime_facts_block,
+    render_static_runtime_facts,
+)
+from core.agent_harness.prompts.skills import load_skills_prompt_index
+from core.agent_harness.task_plan.prompt import (
+    ask_user_answered_block,
+    current_task_plan_block,
+)
+from core.state.history_settings import structured_history_enabled
+from infrastructure.harness_providers import action_prompt_vendor_fragments
 
 if TYPE_CHECKING:
     from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+    from core.domain.repositories import RepositoryPreferences
 
 logger = logging.getLogger(__name__)
 
-_MAX_TEXT_LEN = 512
 _USER_TEMPLATE = "USER MESSAGE (literal): <<<{text}>>>"
 
+#: Opens the session-context section of a user message. A turn sends the section
+#: only when it changed, and the history replays earlier copies verbatim, so the
+#: newest copy in the conversation is the current one.
+SESSION_CONTEXT_HEADER = (
+    "SESSION CONTEXT (as of this message; it stays current until a later message "
+    "carries a new SESSION CONTEXT, which replaces it):\n"
+)
 
-def _runtime_facts_block() -> str:
-    """The authoritative host/version facts, or ``""`` when they cannot be read.
 
-    Same producer as the assistant block: two speakers may answer the user, and
-    facts assembled twice drift. Never raises — a turn without facts is worse
+def _runtime_facts_blocks(surface: str | None) -> tuple[str, str]:
+    """The ``(static, live)`` runtime facts, each ``""`` when they cannot be read.
+
+    One capture feeds both: static facts hold for the session and sit in the
+    cached half, live facts change every turn. The live block always carries
+    the clock; this host's uptime, disk and memory join it only on a surface
+    whose profile allows them. Never raises — a turn without facts is worse
     than one with them, but far better than a turn that does not run.
     """
     from config.runtime_metadata import capture_runtime_facts
 
+    # A missing or unrecognised surface gets no host readings: profile_for would
+    # read it as the shell, the wrong direction for one installation's facts.
+    profile = known_profile(surface)
+    host_measurements = profile is not None and profile.host_measurements
     try:
-        return render_static_runtime_facts(capture_runtime_facts())
+        runtime = capture_runtime_facts()
+        live = build_live_runtime_facts_block(runtime, host_measurements=host_measurements)
+        return render_static_runtime_facts(runtime), live
     except Exception:  # noqa: BLE001 - prompt assembly must not fail a turn
         logger.debug("Runtime facts unavailable for the action prompt", exc_info=True)
-        return ""
+        return "", ""
 
 
 def build_action_system_prompt(turn_snapshot: TurnSnapshot) -> str:
@@ -88,7 +120,14 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             # Trailing separators stay in the block; avoid ``base + "\n\n"`` which
             # copies the entire stable prompt body on every turn.
             content="".join((_SYSTEM_PROMPT_BASE, "\n\n")),
-            provenance="core.agent_harness.prompts.action.text",
+            provenance="core.agent_harness.prompts.opensre_system_prompt.md",
+        ),
+        PromptBlock(
+            id=PromptBlockId.ACTION_GOAL_KERNEL,
+            kind=PromptBlockKind.RULE,
+            tier=PromptTier.STABLE,
+            content="".join((ACTION_GOAL_KERNEL, "\n\n")),
+            provenance="core.agent_harness.prompts.action.goal_kernel",
         ),
     ]
     vendor_fragments = action_prompt_vendor_fragments()
@@ -98,22 +137,36 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             kind=PromptBlockKind.RULE,
             tier=PromptTier.STABLE,
             content=vendor_fragments,
-            provenance="infrastructure.harness_ports.action_prompt_vendor_fragments",
+            provenance="infrastructure.harness_providers.action_prompt_vendor_fragments",
             suffix="\n\n",
         )
     )
-    facts_block = _runtime_facts_block()
+    static_facts, live_facts = _runtime_facts_blocks(turn_snapshot.prompt_surface)
     blocks.extend(
         _optional_block(
             id=PromptBlockId.ACTION_RUNTIME_FACTS,
             kind=PromptBlockKind.CONTEXT,
             tier=PromptTier.STABLE,
-            content=facts_block,
+            content=static_facts,
             provenance="config.runtime_metadata",
             suffix="\n\n",
         )
     )
-    skills_index = load_skills_index()
+    skills_index = (
+        "\n\n".join(
+            filter(
+                None,
+                (
+                    load_skills_prompt_index(),
+                    load_getting_started_block(surface=turn_snapshot.prompt_surface or ""),
+                ),
+            )
+        )
+        if turn_snapshot.skill_discovery_enabled
+        else "The host supplies a complete task for this turn. Execute that task with its "
+        "named tools. Workflow discovery is disabled; do not load skill_view or substitute "
+        "an onboarding or report-only workflow."
+    )
     blocks.extend(
         _optional_block(
             id=PromptBlockId.ACTION_SKILLS,
@@ -142,9 +195,30 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.agent_harness.turns.turn_snapshot",
         )
     )
-    # Volatile before ephemeral so render_cached + render_ephemeral reassemble
-    # into render() and the cache breakpoint can sit after memory.
-    memory_block = long_term_memory_block()
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.REPOSITORY_CONTEXT,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.CONTEXT,
+            content=repository_context_block(turn_snapshot),
+            provenance="core.agent_harness.turns.turn_snapshot",
+        )
+    )
+    # Session context (the context and volatile tiers) leaves the system prompt
+    # for the conversation, so a memory write or a newly named repository adds
+    # one section to the history instead of re-pricing the whole prefix.
+    # Workspace knowledge first: a scan rewrites it far less often than a
+    # member's own memory changes.
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.WORKSPACE_KNOWLEDGE,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.VOLATILE,
+            content=_workspace_knowledge(turn_snapshot),
+            provenance="core.domain.knowledge",
+        )
+    )
+    memory_block = _long_term_memory(turn_snapshot)
     blocks.extend(
         _optional_block(
             id=PromptBlockId.LONG_TERM_MEMORY,
@@ -154,25 +228,107 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.domain.memory",
         )
     )
-    blocks.append(
-        PromptBlock(
-            id=PromptBlockId.RECENT_CONVERSATION,
-            kind=PromptBlockKind.CONVERSATION,
-            tier=PromptTier.EPHEMERAL,
-            content=recent_conversation_block(turn_snapshot),
-            provenance="core.agent_harness.turns.turn_snapshot",
-        )
-    )
-    action_facts = prior_action_facts_block(turn_snapshot)
     blocks.extend(
         _optional_block(
-            id=PromptBlockId.PRIOR_ACTION_FACTS,
-            kind=PromptBlockKind.CONTEXT,
+            id=PromptBlockId.ASK_USER_ANSWERED,
+            kind=PromptBlockKind.RULE,
             tier=PromptTier.EPHEMERAL,
-            content=action_facts,
-            provenance="core.agent_harness.turns.turn_snapshot",
+            # A skill's own decision rules govern its answer turns; the generic
+            # plan-and-execute guidance would send the model back to the plan.
+            content=(
+                ""
+                if turn_snapshot.active_skill
+                else ask_user_answered_block(
+                    turn_snapshot.text,
+                    plan_only=turn_snapshot.plan_only_until_authorized,
+                    continues_plan=turn_snapshot.plan_answer_continues,
+                )
+            ),
+            provenance="core.agent_harness.task_plan.prompt",
+            suffix="\n\n",
         )
     )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.ACTIVE_SKILL,
+            kind=PromptBlockKind.RULE,
+            tier=PromptTier.EPHEMERAL,
+            content=active_skill_block(
+                turn_snapshot.active_skill,
+                turn_snapshot.text,
+                host_advances=turn_snapshot.plan_answer_continues,
+            ),
+            provenance="core.agent_harness.prompts.action.active_skill",
+        )
+    )
+    blocks.append(
+        PromptBlock(
+            id=PromptBlockId.ACTION_GOAL_KERNEL_CLOSER,
+            kind=PromptBlockKind.RULE,
+            tier=PromptTier.EPHEMERAL,
+            content=ACTION_GOAL_KERNEL_CLOSER,
+            provenance="core.agent_harness.prompts.action.goal_kernel",
+        )
+    )
+    # Ephemeral: the time changes every turn, and the cached half must stay byte-identical.
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.ACTION_LIVE_RUNTIME_FACTS,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=live_facts,
+            provenance="core.agent_harness.prompts.runtime_facts",
+        )
+    )
+    blocks.append(
+        PromptBlock(
+            id=PromptBlockId.TURN_INTERACTION,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=turn_interaction_facts_block(turn_snapshot),
+            provenance="core.agent_harness.prompts.action.turn_interaction",
+        )
+    )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.RELEVANT_MEMORIES,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=relevant_memories_block(turn_snapshot),
+            provenance="core.domain.memory",
+        )
+    )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.RELEVANT_WORKSPACE_KNOWLEDGE,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=relevant_workspace_knowledge_block(turn_snapshot),
+            provenance="core.domain.knowledge",
+        )
+    )
+    # With structured history the earlier turns precede the user message as
+    # typed messages (``turns.structured_history``); the text block and the facts
+    # scraped from it remain only as the fallback when that is switched off.
+    if not structured_history_enabled():
+        blocks.append(
+            PromptBlock(
+                id=PromptBlockId.RECENT_CONVERSATION,
+                kind=PromptBlockKind.CONVERSATION,
+                tier=PromptTier.EPHEMERAL,
+                content=recent_conversation_block(turn_snapshot),
+                provenance="core.agent_harness.turns.turn_snapshot",
+            )
+        )
+        blocks.extend(
+            _optional_block(
+                id=PromptBlockId.PRIOR_ACTION_FACTS,
+                kind=PromptBlockKind.CONTEXT,
+                tier=PromptTier.EPHEMERAL,
+                content=prior_action_facts_block(turn_snapshot),
+                provenance="core.agent_harness.turns.turn_snapshot",
+            )
+        )
     recovery = interrupted_turn_recovery_block(turn_snapshot)
     if recovery:
         # Ephemeral: the note rides exactly one turn (popped from the session
@@ -186,6 +342,21 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
                 provenance="core.agent_harness.session.persistence.wal_recovery",
             )
         )
+    plan_block = current_task_plan_block(
+        turn_snapshot.task_plan,
+        plan_only=turn_snapshot.plan_only_until_authorized,
+        host_advances=turn_snapshot.plan_answer_continues,
+    )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.CURRENT_TASK_PLAN,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=plan_block,
+            provenance="core.agent_harness.task_plan.prompt",
+            suffix="\n",
+        )
+    )
     return PromptEnvelope.from_blocks(
         blocks,
         separator="",
@@ -203,17 +374,66 @@ def connected_integrations_block(turn_snapshot: TurnSnapshot) -> str:
         listing = "none"
     else:
         listing = "unknown"
-    # Listing does not gate diagnostic→investigation: why/figure-out always
-    # hand off for gather + Want-me-to; explicit investigate always dispatches.
-    # The list only tells the planner which sources gather can use.
     gate_note = (
-        "This listing does NOT gate diagnostic→investigation. Cause/why / "
-        "figure-out questions → assistant_handoff + gather + Want-me-to "
-        "investigate offer. Explicit investigate/RCA/diagnose/analyze/"
-        "root-cause verbs → investigation_start ALWAYS (even when this line "
-        "is none).\n"
+        "Cause/why / figure-out questions → use available chat tools, then answer directly.\n"
     )
     return f"CONNECTED INTEGRATIONS (this install, right now): {listing}\n{gate_note}\n"
+
+
+_VCS_INTEGRATIONS = frozenset({"github", "gitlab", "bitbucket"})
+
+
+def repository_context_block(turn_snapshot: TurnSnapshot) -> str:
+    """Render the session's repositories and the organization's standing choices."""
+    active = turn_snapshot.active_vcs_repositories
+    known = turn_snapshot.known_vcs_repositories
+    preferences = turn_snapshot.repository_preferences
+    vendors = sorted(set(active) | set(known))
+    vcs_connected = bool(_VCS_INTEGRATIONS & set(turn_snapshot.configured_integrations))
+    if not vendors and preferences.empty and not vcs_connected:
+        return ""
+
+    sections: list[str] = []
+    if vendors:
+        lines: list[str] = []
+        for vendor in vendors:
+            active_repo = active.get(vendor, "none")
+            remembered = known.get(vendor, ())
+            remembered_text = ", ".join(remembered) if remembered else "none"
+            lines.append(f"- {vendor}: active={active_repo}; remembered={remembered_text}")
+        repository_lines = "\n".join(lines)
+        sections.append(
+            "REPOSITORY CONTEXT (this session; one active target per vendor, many "
+            "remembered repositories):\n"
+            f"{repository_lines}\n"
+            "Use the active target for an unqualified repository request. A user-named "
+            "repository becomes active without deleting the others. Do not describe the "
+            "active repository as the only repository OpenSRE remembers.\n"
+        )
+    sections.append(_repository_preferences_section(preferences))
+    return "\n".join(sections) + "\n"
+
+
+def _repository_preferences_section(preferences: RepositoryPreferences) -> str:
+    primary = ", ".join(preferences.primary) or "none saved"
+    excluded = ", ".join(preferences.excluded) or "none saved"
+    notes = "".join(
+        f"- note on {repository}: {note}\n" for repository, note in preferences.notes.items()
+    )
+    return (
+        "REPOSITORY PREFERENCES (whole organization, kept across sessions):\n"
+        f"- primary: {primary}\n"
+        f"- never change: {excluded}\n"
+        f"{notes}"
+        'A repository named only by its short name ("the opensre repo") is the '
+        "primary repository with that name. With no primary for it, pick the "
+        "original over its forks and mirrors (a fork's parent wins), say which you "
+        "picked, and do not ask the user to choose between a repository and its "
+        "forks; ask only when unrelated repositories that are not forks share the "
+        "name. Never create branches, commits, pushes, pull requests or issues in a "
+        "never-change repository. When the user says which repository to work on or "
+        "to leave alone, save it with repository_preferences in the same turn.\n"
+    )
 
 
 def recent_conversation_block(turn_snapshot: TurnSnapshot) -> str:
@@ -260,7 +480,7 @@ def interrupted_turn_recovery_block(turn_snapshot: TurnSnapshot) -> str:
 
 
 def long_term_memory_block() -> str:
-    """Inject stored memory facts into every action-agent turn when available."""
+    """The memory index (summary plus one line per memory) for the session-context section."""
     from core.domain.memory import (
         ensure_memory_store,
         memory_available_here,
@@ -274,51 +494,167 @@ def long_term_memory_block() -> str:
     if not rendered:
         return ""
     return (
-        "LONG-TERM MEMORY (durable facts from ~/.opensre/memory — injected into "
-        "every turn). Use listed facts when planning; when the USER MESSAGE "
-        "contains a new useful durable fact, call memory_remember in this turn "
-        "even if they never said remember/save — do not wait for special phrasing. "
-        "Prefer updating an existing name over near-duplicates:\n"
+        "LONG-TERM MEMORY (durable facts from earlier sessions; the index lists "
+        "stored memories one per line, by kind, most recently updated first). The full text of "
+        "memories that match this request appears under RELEVANT MEMORIES; read "
+        "any other with memory_recall. When the USER MESSAGE contains a new useful "
+        "durable fact, call memory_remember in this turn even if they never said "
+        "remember/save — do not wait for special phrasing. Prefer updating an "
+        "existing name over near-duplicates. Repository memories are a collection: "
+        "keep one stable memory per repository and never overwrite one repository's "
+        "facts merely because another repository became active:\n"
         f"{rendered}\n\n"
     )
 
 
-def build_action_user_message(text: str, *, prefix: str = "") -> str:
-    """Wrap the user turn; optional ``prefix`` carries ephemeral system halves.
+def workspace_knowledge_block() -> str:
+    """The organization profile and workspace entry index for the session-context section."""
+    from core.domain.knowledge import render_workspace_block
 
-    ``prefix`` is where per-turn conversation / prior-action-facts land once the
-    action driver opts into :meth:`PromptEnvelope.render_cached` — the same text
-    the model used to see at the end of ``system``, moved here so the cached
-    system prefix stays byte-stable across turns.
+    rendered = render_workspace_block()
+    if not rendered:
+        return ""
+    return (
+        "WORKSPACE KNOWLEDGE (shared by everyone in this organization and kept "
+        "current by background scans of its connected integrations, not by this "
+        "user; use it to know who people are, what the company does and where "
+        "things live. The full text of entries that match this request appears "
+        "under RELEVANT WORKSPACE KNOWLEDGE; read any other with memory_recall. "
+        "It may be out of date, so check anything that could have changed before "
+        "acting on it):\n"
+        f"{rendered}\n\n"
+    )
+
+
+def _workspace_knowledge(turn_snapshot: TurnSnapshot) -> str:
+    """The workspace block, unless the host runs this turn without long-term memory."""
+    return workspace_knowledge_block() if turn_snapshot.long_term_memory_enabled else ""
+
+
+def relevant_workspace_knowledge_block(turn_snapshot: TurnSnapshot) -> str:
+    """Full text of the workspace entries that match this turn's request."""
+    from core.domain.knowledge import render_relevant_workspace_entries
+
+    if not turn_snapshot.long_term_memory_enabled:
+        return ""
+    rendered = render_relevant_workspace_entries(
+        turn_snapshot.text,
+        context=(
+            *turn_snapshot.active_vcs_repositories.values(),
+            *turn_snapshot.configured_integrations,
+        ),
+    )
+    if not rendered:
+        return ""
+    return (
+        "RELEVANT WORKSPACE KNOWLEDGE (organization-wide entries that match this "
+        "request, most relevant first; they may be out of date):\n"
+        f"{rendered}\n\n"
+    )
+
+
+def _long_term_memory(turn_snapshot: TurnSnapshot) -> str:
+    """The memory index, unless the host runs this turn without long-term memory."""
+    return long_term_memory_block() if turn_snapshot.long_term_memory_enabled else ""
+
+
+def relevant_memories_block(turn_snapshot: TurnSnapshot) -> str:
+    """Full text of the stored memories that match this turn's request.
+
+    Ranked against the user's message, with the active repositories and the
+    connected integrations as lower-weight context. Empty when the host runs
+    this turn without long-term memory.
+    """
+    from core.domain.memory import memory_available_here, render_relevant_memories
+
+    if not turn_snapshot.long_term_memory_enabled or not memory_available_here():
+        return ""
+    rendered = render_relevant_memories(
+        turn_snapshot.text,
+        context=(
+            *turn_snapshot.active_vcs_repositories.values(),
+            *turn_snapshot.configured_integrations,
+        ),
+    )
+    if not rendered:
+        return ""
+    return (
+        "RELEVANT MEMORIES (stored memories that match this request, most relevant "
+        "first; they may be out of date, so re-check anything that could have "
+        "changed before acting on it):\n"
+        f"{rendered}\n\n"
+    )
+
+
+def session_context_section(context: str) -> str:
+    """The session-context section a user message carries; ``""`` when ``context`` is empty."""
+    return "".join((SESSION_CONTEXT_HEADER, context)) if context else ""
+
+
+def build_action_user_message(text: str, *, context: str = "", prefix: str = "") -> str:
+    """Wrap the user turn with the parts of the prompt that stay out of ``system``.
+
+    ``context`` is the envelope's session-context layer, given only when the
+    replayed history does not already carry it: the history replays the user
+    message verbatim, so an unchanged section is never sent twice. ``prefix``
+    is the ephemeral layer (this turn's plan, facts and memories). Neither sits
+    in ``system``, so the cached system prefix stays byte-stable across turns.
 
     Layout (required by head-preserving truncation ``text[:keep]``):
 
     1. Literal user message first — never drop the active request.
-    2. Ephemeral history next, newest-first — when the combined turn is over
-       budget, the tail cut removes the oldest chatter, not the latest turns
-       the follow-up is referring to.
+    2. Session context, then the ephemeral blocks: the order the model read them
+       in when they were part of the system prompt. In the text-history fallback
+       the conversation rides last, newest-first, so a tail cut over budget
+       removes the oldest chatter, not the latest turns a follow-up refers to.
     """
     body = _USER_TEMPLATE.format(text=sanitize_action_text(text.strip()))
-    if not prefix:
+    if not context and not prefix:
         return body
     # Ephemeral history can be large; join avoids an intermediate f-string copy.
-    return "".join((body, "\n", prefix))
+    return "".join((body, "\n", session_context_section(context), prefix))
+
+
+def action_prompt_skill_and_context(
+    envelope: PromptEnvelope, *, session_context: str = ""
+) -> tuple[str, str]:
+    """Split this turn's model context into the active skill body and the rest.
+
+    The cached system prompt is recorded separately. ``session_context`` is the
+    session-context layer this turn's message carried (``""`` when the history
+    already held it). The active skill rides in the ephemeral layer only while
+    the user is answering that skill; everything else (session context,
+    conversation, plan, facts) is the model context.
+    """
+    skill = envelope.block(PromptBlockId.ACTIVE_SKILL)
+    skill_text = skill.render().strip() if skill is not None else ""
+    context = "".join((session_context_section(session_context), envelope.render_ephemeral()))
+    if skill_text:
+        context = context.replace(skill_text, "", 1)
+    return skill_text, context.strip()
 
 
 def sanitize_action_text(text: str) -> str:
+    """Remove control characters and envelope delimiters; budgeting owns truncation."""
     sanitised = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-    sanitised = re.sub(r"<{3,}|>{3,}", " ", sanitised)
-    return sanitised[:_MAX_TEXT_LEN]
+    return re.sub(r"<{3,}|>{3,}", " ", sanitised)
 
 
 __all__ = [
+    "SESSION_CONTEXT_HEADER",
     "build_action_system_prompt_envelope",
     "build_action_system_prompt",
+    "action_prompt_skill_and_context",
     "build_action_user_message",
+    "session_context_section",
     "connected_integrations_block",
     "interrupted_turn_recovery_block",
     "long_term_memory_block",
+    "relevant_workspace_knowledge_block",
+    "workspace_knowledge_block",
     "prior_action_facts_block",
     "recent_conversation_block",
+    "relevant_memories_block",
+    "repository_context_block",
     "sanitize_action_text",
 ]

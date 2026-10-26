@@ -46,6 +46,7 @@ from typing import Any
 
 from filelock import FileLock, Timeout
 
+from config.constants.account import INTEGRATION_LOCAL_ORIGIN, INTEGRATION_RETRIEVAL_ORIGIN_FIELD
 from config.constants.paths import integrations_store_path
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,8 @@ logger = logging.getLogger(__name__)
 STORE_PATH: Path | None = None
 
 
-def _store_path() -> Path:
+def resolve_store_path() -> Path:
+    """Return the effective integration store path for the current scope."""
     return Path(STORE_PATH) if STORE_PATH is not None else integrations_store_path()
 
 
@@ -73,7 +75,7 @@ class IntegrationStoreLockTimeout(TimeoutError):
 
 def _lock_timeout_error() -> IntegrationStoreLockTimeout:
     return IntegrationStoreLockTimeout(
-        f"Integration store locked: {_lock_path()} (store: {_store_path()})"
+        f"Integration store locked: {_lock_path()} (store: {resolve_store_path()})"
     )
 
 
@@ -116,7 +118,7 @@ def _migrate_if_needed(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
 
 def _lock_path() -> Path:
     """Return the file lock path derived from the current STORE_PATH."""
-    return _store_path().with_suffix(".lock")
+    return resolve_store_path().with_suffix(".lock")
 
 
 def _ensure_private_store_directory(path: Path) -> None:
@@ -129,7 +131,7 @@ def _ensure_private_store_directory(path: Path) -> None:
 
 def _acquire_lock() -> FileLock:
     """Create and return a FileLock for the current STORE_PATH."""
-    _ensure_private_store_directory(_store_path().parent)
+    _ensure_private_store_directory(resolve_store_path().parent)
     return FileLock(str(_lock_path()), timeout=_LOCK_TIMEOUT_SECONDS)
 
 
@@ -164,7 +166,7 @@ def _save_unlocked(data: dict[str, Any]) -> None:
 
     Callers must already hold the store lock.
     """
-    _atomic_write(_store_path(), data)
+    _atomic_write(resolve_store_path(), data)
 
 
 def _load_raw_unlocked() -> tuple[dict[str, Any], bool]:
@@ -173,13 +175,15 @@ def _load_raw_unlocked() -> tuple[dict[str, Any], bool]:
     Returns ``(data, did_migrate)``.  This helper does **not** write back
     migrations and does **not** acquire any lock.
     """
-    if not _store_path().exists():
+    if not resolve_store_path().exists():
         return {"version": _VERSION, "integrations": []}, False
     try:
-        text = _store_path().read_text(encoding="utf-8")
+        text = resolve_store_path().read_text(encoding="utf-8")
         data = json.loads(text)
     except (json.JSONDecodeError, OSError):
-        logger.warning("Failed to read integrations store at %s", _store_path(), exc_info=True)
+        logger.warning(
+            "Failed to read integrations store at %s", resolve_store_path(), exc_info=True
+        )
         return {"version": _VERSION, "integrations": []}, False
     if not isinstance(data, dict) or "integrations" not in data:
         return {"version": _VERSION, "integrations": []}, False
@@ -248,7 +252,12 @@ def _locked_update(mutator: Callable[[dict[str, Any]], bool]) -> tuple[dict[str,
 
 def load_integrations() -> list[dict[str, Any]]:
     """Return all active local integrations (v2 shape)."""
-    return list(_load_raw().get("integrations", []))
+    return [
+        {**record, INTEGRATION_RETRIEVAL_ORIGIN_FIELD: INTEGRATION_LOCAL_ORIGIN}
+        if record.get("service") == "github"
+        else record
+        for record in _load_raw().get("integrations", [])
+    ]
 
 
 def replace_integrations(integrations: list[dict[str, Any]]) -> None:

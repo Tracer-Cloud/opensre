@@ -12,8 +12,9 @@ from dataclasses import replace
 from pathlib import Path
 
 from config.constants.paths import REPO_ROOT
+from config.constants.skill_success import success_section
 from core.tool import RegisteredTool
-from core.tool_framework.skill_guidance import format_tool_skill_guidance, load_tool_skill_guidance
+from core.tool_framework import format_tool_skill_guidance, load_tool_skill_guidance
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +26,23 @@ def _skill_guidance_files() -> tuple[Path, ...]:
 
     explicit = (
         REPO_ROOT / "integrations" / "github" / "tools" / "workflow" / "SKILL.md",
-        REPO_ROOT / "integrations" / "sentry" / "tools" / "skills" / "sentry-summary" / "SKILL.md",
+        REPO_ROOT
+        / "integrations"
+        / "sentry"
+        / "tools"
+        / "skills"
+        / "summarizing-sentry-issues"
+        / "SKILL.md",
         REPO_ROOT
         / "integrations"
         / "posthog"
         / "tools"
         / "skills"
-        / "posthog-summary"
+        / "summarizing-posthog-analytics"
         / "SKILL.md",
         REPO_ROOT / "integrations" / "github" / "tools" / "github_cli" / "SKILL.md",
         REPO_ROOT / "integrations" / "github" / "tools" / "ci_fix" / "SKILL.md",
         REPO_ROOT / "integrations" / "github" / "tools" / "security_fix" / "SKILL.md",
-        REPO_ROOT / "integrations" / "yandex_cloud" / "tools" / "SKILL.md",
     )
     discovered = sorted(
         (REPO_ROOT / "tools" / "system" / "python_execution_tool" / "skills").glob("*/SKILL.md")
@@ -44,10 +50,20 @@ def _skill_guidance_files() -> tuple[Path, ...]:
     return (*explicit, *discovered)
 
 
-def _truncate_skill_guidance(text: str) -> str:
-    if len(text) <= _MAX_TOOL_SKILL_GUIDANCE_CHARS:
+def tool_guidance_tools(name: str) -> tuple[str, ...]:
+    """Tools whose descriptions carry the guidance called *name*; empty when none does."""
+    wanted = name.strip().casefold()
+    for skill_path in _skill_guidance_files():
+        skill = load_tool_skill_guidance(skill_path).skill
+        if skill is not None and skill.name.casefold() == wanted:
+            return skill.tool_names
+    return ()
+
+
+def _truncate_skill_guidance(text: str, remaining: int) -> str:
+    if len(text) <= remaining:
         return text
-    return text[: _MAX_TOOL_SKILL_GUIDANCE_CHARS - 3].rstrip() + "..."
+    return text[: remaining - 3].rstrip() + "..."
 
 
 def _with_skill_guidance(tool: RegisteredTool, guidance: str) -> RegisteredTool:
@@ -71,6 +87,7 @@ def apply_skill_guidance(
         known_tool_names if known_tool_names is not None else frozenset(tools_by_name)
     )
     guidance_by_tool: dict[str, list[str]] = {}
+    remaining_by_tool: dict[str, int] = {}
 
     for skill_path in _skill_guidance_files():
         result = load_tool_skill_guidance(skill_path, known_tool_names=diagnostic_names)
@@ -84,12 +101,24 @@ def apply_skill_guidance(
         skill = result.skill
         if skill is None or skill.disable_model_invocation:
             continue
-        guidance = format_tool_skill_guidance(skill)
+        content = skill.content.strip()
+        section = success_section(skill.name)
+        suffix = f"\n\n{section}" if section and "## Success criteria" not in content else ""
+        wrapper_size = len(format_tool_skill_guidance(replace(skill, content="")))
         for tool_name in skill.tool_names:
             if tool_name not in tools_by_name:
                 continue
+            remaining = remaining_by_tool.get(tool_name, _MAX_TOOL_SKILL_GUIDANCE_CHARS)
+            separator_size = 2 if tool_name in guidance_by_tool else 0
+            body_budget = remaining - separator_size - wrapper_size - len(suffix)
+            if body_budget < 3:
+                continue
+            # Keep path metadata, success criteria and closing markup intact.
+            bounded_content = _truncate_skill_guidance(content, body_budget) + suffix
+            guidance = format_tool_skill_guidance(replace(skill, content=bounded_content))
+            remaining_by_tool[tool_name] = remaining - separator_size - len(guidance)
             guidance_by_tool.setdefault(tool_name, []).append(guidance)
 
     for tool_name, guidances in guidance_by_tool.items():
-        combined = _truncate_skill_guidance("\n\n".join(guidances))
+        combined = "\n\n".join(guidances)
         tools_by_name[tool_name] = _with_skill_guidance(tools_by_name[tool_name], combined)
