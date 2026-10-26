@@ -69,3 +69,18 @@ def test_work_list_omits_store_footer_but_path_remains_available(
     path = runner.invoke(work_command, ["path"])
     assert path.exit_code == 0
     assert str(tmp_path / "work_items") in path.output.replace("\n", "")
+
+
+@pytest.mark.parametrize("title", [["   "], ["", "\t"]])
+def test_work_add_rejects_blank_title_as_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, title: list[str]
+) -> None:
+    """A whitespace-only title is a usage error, not an unhandled crash."""
+    monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
+
+    result = CliRunner().invoke(work_command, ["add", *title])
+
+    assert result.exit_code == 2, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "title must not be blank" in result.output
+    assert list_work_items(status=None) == []

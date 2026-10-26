@@ -110,6 +110,8 @@ def work_add(
 ) -> None:
     """Add a work item."""
     title_text = " ".join(title).strip()
+    if not title_text:
+        raise click.BadParameter("title must not be blank", param_hint="TITLE")
     _validate_datetime("due-at", due_at)
     _validate_datetime("remind-at", remind_at)
     reminder_timezone = timezone.strip() or "UTC"
