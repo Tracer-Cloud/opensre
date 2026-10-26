@@ -60,6 +60,8 @@ def prepare_cron_task(
         mode = mode or loop_template.mode or None
     if not cron_expr.strip():
         raise click.UsageError("Missing option '--cron'.")
+    # APScheduler reads a blank timezone as the host's local zone; keep the UTC default.
+    timezone = timezone.strip() or "UTC"
     # Validate cron expression by constructing the APScheduler trigger
     try:
         build_cron_trigger(cron_expr, timezone)
