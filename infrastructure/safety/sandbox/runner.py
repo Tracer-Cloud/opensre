@@ -15,26 +15,16 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 
-from config.constants import OPENSRE_TMP_DIR, ensure_opensre_tmp_dir
+from config.constants import (
+    OPENSRE_TMP_DIR,
+    ensure_opensre_tmp_dir,
+)
 from config.constants.paths import CONTEXT_ROOT_ENV, host_home, integrations_store_path
+from config.constants.sandbox import SANDBOX_BASE_ENV_KEYS, SANDBOXED_TEMP_ENV_KEYS
 
 DEFAULT_TIMEOUT: int = 30
 MAX_TIMEOUT: int = 60
 _SANDBOX_TMP_ROOT = os.path.realpath(os.fspath(OPENSRE_TMP_DIR))
-_BASE_ENV_KEYS = (
-    "HOME",
-    "LANG",
-    "LC_ALL",
-    "PATH",
-    "REQUESTS_CA_BUNDLE",
-    "SSL_CERT_FILE",
-    "SYSTEMROOT",
-    "TEMP",
-    "TMPDIR",
-    "TMP",
-    "USERPROFILE",
-    "WINDIR",
-)
 _PYTHON_EXECUTABLE_NAMES = ("python3", "python")
 _PYTHON_PROBE = "import sys; raise SystemExit(sys.version_info[0] != 3)"
 _PYTHON_PROBE_TIMEOUT = 3

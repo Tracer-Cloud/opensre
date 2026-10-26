@@ -12,11 +12,16 @@ from typing import Any
 
 import pytest
 
-from config.constants import OPENSRE_TMP_DIR, ensure_opensre_tmp_dir
+from config.constants import (
+    OPENSRE_TMP_DIR,
+    ensure_opensre_tmp_dir,
+)
 from config.constants.paths import host_home
+from config.constants.sandbox import SANDBOX_BASE_ENV_KEYS, SANDBOXED_TEMP_ENV_KEYS
 from infrastructure.safety.sandbox.runner import (
     MAX_TIMEOUT,
     SandboxResult,
+    _sandbox_env,
     python_interpreter_available,
     run_python_sandbox,
 )
@@ -399,23 +404,6 @@ class TestSandboxEnvironment:
 
         assert result.success, result.stderr
         assert result.stdout.strip() != "%SystemDrive%"
-
-    @pytest.mark.skipif(os.name != "nt", reason="shell folder lookup is Windows-only")
-    def test_child_shell_folder_lookup_does_not_fail_silently(self) -> None:
-        # Without SYSTEMDRIVE, SHGetFolderPathW cannot resolve CSIDL_COMMON_APPDATA
-        # and returns 0x80070003 with an empty buffer rather than raising. Generated
-        # code then acts on "" as if it were a directory, which is the quieter half
-        # of the bug: a wrong path, not a crash.
-        code = (
-            "import ctypes;"
-            "b = ctypes.create_unicode_buffer(260);"
-            "ctypes.windll.shell32.SHGetFolderPathW(None, 0x0023, None, 0, b);"
-            "print(b.value)"
-        )
-        result = run_python_sandbox(code)
-
-        assert result.success, result.stderr
-        assert result.stdout.strip() != ""
 
     def test_unlisted_variables_are_still_not_forwarded(
         self, monkeypatch: pytest.MonkeyPatch

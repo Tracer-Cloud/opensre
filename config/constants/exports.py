@@ -196,6 +196,8 @@ EXPORTS: dict[str, str] = {
     # environment
     "CONTAINER_SUPERVISOR_PID_ENV": "environment",
     "DEPLOYMENT_ENV_ENV": "environment",
+    "SANDBOX_BASE_ENV_KEYS": "sandbox",
+    "SANDBOXED_TEMP_ENV_KEYS": "sandbox",
     # filestorage
     "BLOB_READ_WRITE_TOKEN_ENV": "filestorage",
     "DEFAULT_MAX_PARALLEL_UPLOADS": "filestorage",
