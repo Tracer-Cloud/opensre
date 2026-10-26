@@ -9,6 +9,7 @@ import pytest
 
 from integrations.hosted_gateway import (
     ERR_GATEWAY_UNAVAILABLE,
+    ERR_GITHUB_REQUIRED,
     ERR_INSECURE_APP_URL,
     ERR_INVALID_RESPONSE,
     ERR_NOT_SIGNED_IN,
@@ -16,6 +17,7 @@ from integrations.hosted_gateway import (
     ERR_TOO_MANY_PROMPTS,
     ERR_UNAUTHORIZED,
     ERR_UNREACHABLE,
+    EXPECTED_ERRORS,
     GatewayHealth,
     HostedGatewayClient,
     HostedGatewayError,
@@ -170,6 +172,25 @@ def test_a_cause_that_is_not_a_stable_code_is_dropped(error: str) -> None:
     assert excinfo.value.code == ERR_GATEWAY_UNAVAILABLE
     assert excinfo.value.cause_code == ""
     assert _TOKEN not in str(excinfo.value) and _TOKEN not in repr(excinfo.value)
+
+
+def test_a_member_without_github_is_refused_a_prompt_as_an_expected_failure() -> None:
+    """GitHub is a prerequisite: the app answers 403 until the member connects it."""
+    # Arrange
+    response = httpx.Response(
+        HTTPStatus.FORBIDDEN,
+        json={"error": "github_required", "connect_url": "https://app.test/dashboard"},
+    )
+    client = _client(httpx.MockTransport(lambda _request: response))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        client.send_prompt("delegate the demo", context={})
+
+    # Assert: a setup step for the member, not an incident to report.
+    assert excinfo.value.code == ERR_GITHUB_REQUIRED
+    assert excinfo.value.cause_code == ""
+    assert ERR_GITHUB_REQUIRED in EXPECTED_ERRORS
 
 
 def test_a_capacity_refusal_keeps_the_status_and_names_the_cause() -> None:

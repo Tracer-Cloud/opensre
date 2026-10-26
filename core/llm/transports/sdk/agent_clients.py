@@ -19,6 +19,7 @@ from config.llm_models import DEFAULT_MAX_TOKENS
 from core.context_budget import strip_internal_message_markers
 from core.llm.shared.llm_retry import (
     maybe_raise_credit_exhausted,
+    maybe_raise_github_required,
     rate_limit_sleep_seconds,
 )
 from core.llm.shared.openai_chat_completions import (
@@ -1058,6 +1059,7 @@ class OpenAIAgentClient:
                 time.sleep(rate_limit_sleep_seconds(err, backoff))
                 backoff *= 2
             except PermissionDeniedError as err:
+                maybe_raise_github_required(err)
                 raise RuntimeError(f"{self._provider_label} request forbidden: {err}") from err
             except Exception as err:
                 if is_exception_named(err, "APITimeoutError"):

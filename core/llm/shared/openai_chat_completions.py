@@ -11,6 +11,7 @@ from typing import Any
 from core.llm.shared.llm_retry import (
     extract_retry_after_seconds,
     maybe_raise_credit_exhausted,
+    maybe_raise_github_required,
     rate_limit_sleep_seconds,
 )
 from core.llm.shared.usage import emit_usage
@@ -270,6 +271,7 @@ def invoke_with_litellm_agent_retries(
                     _litellm_not_found_message(provider_label=provider_name, model=model)
                 ) from err
             if is_exception_named(err, "PermissionDeniedError"):
+                maybe_raise_github_required(err)
                 raise RuntimeError(f"{provider_name} request forbidden: {err}") from err
             if is_exception_named(err, "BadRequestError"):
                 maybe_raise_credit_exhausted(provider_name, err)

@@ -54,6 +54,8 @@ ERR_ALREADY_SETTLED = "already_settled"
 ERR_NOT_OWNED = "not_owned"
 #: The gateway's prompt queue is full and it took nothing; send again after ``retry_after``.
 ERR_TOO_MANY_PROMPTS = "too_many_prompts"
+#: The app serves no prompt until the signed-in member sees a connected GitHub account.
+ERR_GITHUB_REQUIRED = "github_required"
 
 #: A prompt id as the gateway mints it; anything else never becomes part of a URL.
 _PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
@@ -94,6 +96,7 @@ EXPECTED_ERRORS = frozenset(
         ERR_ALREADY_SETTLED,
         ERR_NOT_OWNED,
         ERR_TOO_MANY_PROMPTS,
+        ERR_GITHUB_REQUIRED,
     }
 )
 
@@ -424,9 +427,10 @@ _LIFECYCLE_REFUSALS: dict[int, str] = {
     HTTPStatus.CONFLICT: ERR_NOT_PROVISIONED,
 }
 
-#: A prompt needs a running task; the app answers 409 when there is none.
+#: A prompt needs a running task (409 when there is none) and a connected GitHub (403).
 _PROMPT_REFUSALS: dict[int, str] = {
     **_REFUSALS,
+    HTTPStatus.FORBIDDEN: ERR_GITHUB_REQUIRED,
     HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
     HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
 }
@@ -441,6 +445,7 @@ _PROMPT_RESULT_REFUSALS: dict[int, str] = {
 #: Answering: a 409 is the gateway not running, or the prompt not waiting; the body says which.
 _PROMPT_ANSWER_REFUSALS: dict[int, str] = {
     **_PROMPT_RESULT_REFUSALS,
+    HTTPStatus.FORBIDDEN: ERR_GITHUB_REQUIRED,
     HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
 }
 _ANSWER_BODY_CODES = frozenset({ERR_NOT_RUNNING, ERR_NOT_WAITING, ERR_ALREADY_ANSWERED})
@@ -599,6 +604,7 @@ def _text(value: object) -> str:
 __all__ = [
     "ERR_ALREADY_SETTLED",
     "ERR_GATEWAY_UNAVAILABLE",
+    "ERR_GITHUB_REQUIRED",
     "ERR_INSECURE_APP_URL",
     "ERR_INVALID_RESPONSE",
     "ERR_NOT_PROVISIONED",

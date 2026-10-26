@@ -11,6 +11,7 @@ from core.tool import report_run_error
 from integrations.hosted_gateway.client import (
     ERR_ALREADY_SETTLED,
     ERR_GATEWAY_UNAVAILABLE,
+    ERR_GITHUB_REQUIRED,
     ERR_INSECURE_APP_URL,
     ERR_NOT_OWNED,
     ERR_NOT_PROVISIONED,
@@ -43,6 +44,10 @@ _FAILURE_TEXT = {
     ERR_NOT_RUNNING: "Your organization's hosted gateway is not running, so it cannot take a prompt.",
     ERR_UNKNOWN_PROMPT: "The hosted gateway no longer holds that prompt; send it again.",
     ERR_PROMPT_TOO_LARGE: "That prompt is too long for the hosted gateway; shorten it.",
+    ERR_GITHUB_REQUIRED: (
+        "OpenSRE takes no prompts until GitHub is connected. Connect your own GitHub account "
+        "on the OpenSRE dashboard, or ask a workspace admin to connect one for everyone."
+    ),
     ERR_TOO_MANY_PROMPTS: (
         "The hosted gateway's prompt queue is full, so it refused this prompt and queued "
         "nothing. Send it again in a moment."

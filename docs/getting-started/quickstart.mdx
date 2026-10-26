@@ -37,7 +37,7 @@ Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or comparable). S
 
 Choose **Sign in or create account** in the welcome screen.
 
-The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. Signing in activates the OpenSRE-hosted model, so you need no LLM key. Back in the terminal, OpenSRE confirms the session with the web app and opens the shell. If the sign-in screen comes back instead, see [troubleshooting](#troubleshooting).
+The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. Signing in activates the OpenSRE-hosted model, so you need no LLM key. The hosted model answers only once GitHub is connected in the OpenSRE app, either your own account or one a workspace admin connected for everyone; the dashboard's **Connect GitHub** step does it. Back in the terminal, OpenSRE confirms the session with the web app and opens the shell. If the sign-in screen comes back instead, see [troubleshooting](#troubleshooting).
 
 ## Step 3: Pick what to do
 
@@ -132,4 +132,5 @@ opensre uninstall --yes
 - **The Linux binary does not start**: Prebuilt binaries require glibc 2.35 or newer; use a supported distribution or the [Docker guide](/install/docker).
 - **`make` is missing**: See the [development setup guide](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md) if you are working from source.
 - **The demo menu did not appear**: Menus need an interactive terminal. Run `opensre` in a terminal window rather than through a pipe or a CI job, then type `/demo`.
+- **"OpenSRE needs a connected GitHub account"**: The hosted model, Slack and Telegram answers, and hosted-gateway prompts all wait for GitHub. Open the OpenSRE dashboard and finish **Connect GitHub**, or ask a workspace admin to connect GitHub for everyone, then retry. No credits are spent on a refused request.
 - **The sign-in screen comes back after you signed in**: Run `opensre account status`; it names what is wrong with the session (expired, revoked, or the web app unreachable).

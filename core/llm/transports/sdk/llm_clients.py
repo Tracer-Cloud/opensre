@@ -35,6 +35,7 @@ from core.llm.providers.bedrock_model_ids import is_anthropic_bedrock_model
 from core.llm.shared.llm_retry import (
     extract_retry_after_seconds,
     maybe_raise_credit_exhausted,
+    maybe_raise_github_required,
 )
 from core.llm.shared.openai_chat_completions import (
     _RETRY_INITIAL_BACKOFF_SEC,
@@ -801,6 +802,7 @@ class OpenAILLMClient:
             except (OpenAIAuthError, OpenAINotFoundError, OpenAIBadRequestError):
                 raise
             except Exception as err:
+                maybe_raise_github_required(err)
                 maybe_raise_credit_exhausted(getattr(self, "_provider_label", "OpenAI"), err)
                 last_err = err
                 if attempt == _RETRY_MAX_ATTEMPTS - 1:
@@ -917,6 +919,7 @@ class OpenAILLMClient:
                 time.sleep(wait)
                 backoff_seconds = wait * 2
             except Exception as err:
+                maybe_raise_github_required(err)
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
                 if attempt == max_attempts - 1:
@@ -1029,6 +1032,7 @@ class OpenAILLMClient:
                 time.sleep(wait)
                 backoff_seconds = wait * 2
             except Exception as err:
+                maybe_raise_github_required(err)
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 if emitted:
                     # Mid-stream failure: never retry — chunks are already on

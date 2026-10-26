@@ -437,6 +437,39 @@ def test_opensre_payment_required_raises_upgrade_error_without_retry(
     assert excinfo.value.upgrade_url == upgrade_url
 
 
+def test_hosted_github_prerequisite_raises_connect_error_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hosted proxy refuses with 403 until GitHub is connected; that is no key failure."""
+    from core.llm.shared.llm_retry import OpenSREGithubRequiredError
+
+    fake = _install_fake_openai(monkeypatch)
+    call_count = 0
+    connect_url = "https://app.opensre.dev/dashboard"
+
+    def raise_github_required(**_: object) -> object:
+        nonlocal call_count
+        call_count += 1
+        err = fake.PermissionDeniedError("Error code: 403")
+        err.code = "opensre_github_required"
+        err.body = {"code": "opensre_github_required", "connect_url": connect_url}
+        raise err
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=raise_github_required))
+    )
+    client._model = "gpt-4o"
+    client._max_tokens = 512
+
+    with pytest.raises(OpenSREGithubRequiredError) as excinfo:
+        client.invoke(messages=[{"role": "user", "content": "hi"}])
+
+    assert call_count == 1
+    assert excinfo.value.connect_url == connect_url
+    assert connect_url in str(excinfo.value)
+
+
 def test_openai_agent_client_rebuilds_when_the_account_token_rotates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

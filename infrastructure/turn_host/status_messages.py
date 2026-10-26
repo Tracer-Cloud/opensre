@@ -12,7 +12,7 @@ from collections.abc import Callable
 from functools import lru_cache
 from typing import Any
 
-from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
+from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER, GITHUB_REQUIRED_MARKER
 
 #: Returns a tool's own wording (display name, description) for status copy.
 DescribeTool = Callable[[str], tuple[str, ...]]
@@ -70,6 +70,12 @@ def user_facing_error_message(detail: str) -> str:
         return (
             "The assistant is temporarily unavailable: LLM credits are exhausted. "
             "Run `opensre auth login <provider>` to re-authenticate or switch providers."
+        )
+    if GITHUB_REQUIRED_MARKER in detail:
+        return (
+            "OpenSRE needs a connected GitHub account before it can answer. Connect "
+            "GitHub on the OpenSRE dashboard, or ask a workspace admin to connect one "
+            "for everyone."
         )
     return _GENERIC_ERROR
 

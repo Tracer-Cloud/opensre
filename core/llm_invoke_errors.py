@@ -294,12 +294,13 @@ def classify_llm_invoke_failure(exc: BaseException) -> LLMInvokeFailure | None:
     represents a non-recoverable billing condition that callers must halt
     on, not wrap into a degraded result.
     """
-    from core.llm.shared.llm_retry import LLMCreditExhaustedError
+    from core.llm.shared.llm_retry import LLMCreditExhaustedError, OpenSREGithubRequiredError
 
     # Fatal — propagate to the runner / operator. Do NOT wrap into the
     # generic "rate-limited" classification (which the text branch below
     # would otherwise match against "credit balance too low" / "quota").
-    if isinstance(exc, LLMCreditExhaustedError):
+    # A hosted route refusing until GitHub is connected is fatal the same way.
+    if isinstance(exc, (LLMCreditExhaustedError, OpenSREGithubRequiredError)):
         return None
 
     if _is_llm_cli_error(exc, "CLIAuthenticationRequired"):

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
+import pytest
+
+from core.llm.shared.llm_retry import (
+    CREDIT_EXHAUSTED_MARKER,
+    OpenSREGithubRequiredError,
+    maybe_raise_github_required,
+)
 from core.tool.contracts import RegisteredTool
 from infrastructure.turn_host.status_messages import (
     INITIAL_STATUSES,
@@ -40,6 +46,23 @@ def test_user_facing_error_keeps_credit_exhausted_guidance() -> None:
     # Assert: user gets re-auth guidance, not the raw provider billing text.
     assert "opensre auth login" in shown
     assert "balance too low" not in shown
+
+
+def test_user_facing_error_tells_a_chat_member_to_connect_github() -> None:
+    # Arrange: the hosted proxy's 403 as the agent turn raises it.
+    class HostedGithubRequired(Exception):
+        code = "opensre_github_required"
+        body = {"connect_url": "https://app.opensre.dev/dashboard"}
+
+    with pytest.raises(OpenSREGithubRequiredError) as excinfo:
+        maybe_raise_github_required(HostedGithubRequired("Error code: 403"))
+
+    # Act
+    shown = user_facing_error_message(str(excinfo.value))
+
+    # Assert: the member learns the prerequisite instead of a generic failure.
+    assert "connected GitHub account" in shown
+    assert shown != user_facing_error_message("anything else")
 
 
 def _make_tool(name: str, description: str) -> RegisteredTool:

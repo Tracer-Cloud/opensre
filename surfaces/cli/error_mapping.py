@@ -10,6 +10,7 @@ def reraise_cli_runtime_error(exc: BaseException) -> NoReturn:
     from core.llm.shared.llm_retry import (
         LLMCreditExhaustedError,
         OpenSRECreditsExhaustedError,
+        OpenSREGithubRequiredError,
     )
     from core.llm_invoke_errors import classify_llm_invoke_failure
     from integrations.llm_cli import CLIAuthenticationRequired
@@ -20,6 +21,13 @@ def reraise_cli_runtime_error(exc: BaseException) -> NoReturn:
         raise OpenSREError(
             str(exc),
             suggestion=f"Upgrade your plan or buy a credit top-up at {destination}.",
+        ) from exc
+
+    if isinstance(exc, OpenSREGithubRequiredError):
+        destination = exc.connect_url or "the OpenSRE app"
+        raise OpenSREError(
+            str(exc),
+            suggestion=f"Connect GitHub at {destination}, then run the command again.",
         ) from exc
 
     if isinstance(exc, LLMCreditExhaustedError):
