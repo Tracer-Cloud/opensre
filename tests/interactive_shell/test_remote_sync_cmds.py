@@ -308,8 +308,9 @@ def test_setup_missing_flag_value_never_writes(
 
 
 @pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("flags", ["--prefix=team/", "--disabled --enabled --prefix=team/"])
 def test_terminal_setup_uses_exclusive_form_and_saves_only_after_submit(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cancel: bool
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cancel: bool, flags: str
 ) -> None:
     from prompt_toolkit.application import Application, create_app_session
     from prompt_toolkit.input import create_pipe_input
@@ -333,7 +334,7 @@ def test_terminal_setup_uses_exclusive_form_and_saves_only_after_submit(
             return app.run(pre_run=lambda: pipe.send_text(keys))
 
     monkeypatch.setattr(remote_sync_cmds, "run_command_input", collect)
-    command = "/remote-sync setup --prefix=team/"
+    command = f"/remote-sync setup {flags}"
     session = Session()
     session.terminal.exclusive_stdin_active = input_policy.turn_needs_exclusive_stdin(
         command, session
@@ -403,6 +404,10 @@ def test_gateway_complete_flags_bypass_form_and_incomplete_flags_never_write(
         (["setup", "--bucket=store"], False),
         (["setup", "--disabled"], False),
         (["setup", "--bucket", "--disabled"], False),
+        (["setup", "--disabled", "--enabled"], True),
+        (["setup", "--enabled", "--disabled"], False),
+        (["setup", "--bucket=store", "--disabled", "--enabled"], False),
+        (["setup", "--disabled", "--enabled", "--bucket=store"], False),
     ],
 )
 def test_remote_sync_input_metadata_preserves_complete_command_bypass(

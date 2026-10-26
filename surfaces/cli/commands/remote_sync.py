@@ -34,9 +34,6 @@ from infrastructure.process.exit_codes import ERROR, SUCCESS
 from infrastructure.process.runtime_flags import is_json_output
 from surfaces.cli.commands.remote_sync_progress import CliProgress
 from surfaces.cli.telemetry import capture_exception
-from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
-from surfaces.shared.terminal.components.command_input import run_command_input
-from surfaces.shared.terminal.remote_sync_input import build_remote_sync_form, setup_request
 
 
 @click.group(name="remote-sync", invoke_without_command=True)
@@ -165,7 +162,7 @@ def run_remote_sync_on_exit() -> None:
 @click.option(
     "--bucket",
     default=None,
-    help="Store name you own (S3 bucket, GCS bucket, or Blob store id).",
+    help="Store name you own. Required unless --disabled is used alone.",
 )
 @click.option(
     "--prefix",
@@ -188,7 +185,7 @@ def setup_command(
     profile: str | None,
     enabled: bool,
 ) -> None:
-    """Write remote_sync settings to ~/.opensre/config.yml (interactive if flags omitted)."""
+    """Save remote-sync settings from flags; use /remote-sync setup for the editable form."""
     if not enabled and (bucket is None or not bucket.strip()):
         # --disabled with no new settings just switches the stored section off.
         try:
@@ -202,25 +199,16 @@ def setup_command(
         click.echo(SETUP_DISABLED_CONFIRM)
         raise SystemExit(SUCCESS)
     try:
-        request = _collect_setup_request(
+        request = _setup_request_from_flags(
             provider=provider,
             bucket=bucket,
             prefix=prefix,
             region=region,
             profile=profile,
-            enabled=(
-                enabled
-                if click.get_current_context().get_parameter_source("enabled")
-                is not click.core.ParameterSource.DEFAULT
-                else None
-            ),
+            enabled=enabled,
         )
-        if request is None:
-            return
         config = save_remote_sync_settings(request)
-    except (RemoteSyncError, click.Abort) as exc:
-        if isinstance(exc, click.Abort):
-            raise SystemExit(ERROR) from exc
+    except RemoteSyncError as exc:
         click.echo(str(exc), err=True)
         raise SystemExit(ERROR) from exc
     for line in format_setup_lines(config, enabled=request.enabled):
@@ -254,16 +242,16 @@ def _reject_disabled_with_setup_flags(
         )
 
 
-def _collect_setup_request(
+def _setup_request_from_flags(
     *,
     provider: str | None,
     bucket: str | None,
     prefix: str | None,
     region: str | None,
     profile: str | None,
-    enabled: bool | None,
-) -> RemoteSyncSetupRequest | None:
-    """Use complete flags directly; otherwise collect an editable terminal draft."""
+    enabled: bool,
+) -> RemoteSyncSetupRequest:
+    """Reject incomplete flags on every terminal without collecting interactive input."""
     values = {
         name: value
         for name, value in (
@@ -278,15 +266,20 @@ def _collect_setup_request(
     for name, value in values.items():
         if value.startswith("--"):
             raise RemoteSyncSetupError(f"--{name} requires a value", field=name)
-    if enabled is not None:
-        values["enabled"] = "true" if enabled else "false"
-    if provider is not None and bucket is not None and bucket.strip():
-        return setup_request(values)
-    if not repl_tty_interactive():
-        raise RemoteSyncError(
-            "pass --provider and --bucket, or run setup in an interactive terminal"
+    if bucket is None or not bucket.strip():
+        raise click.UsageError(
+            "setup needs --bucket. Example: opensre remote-sync setup "
+            "--provider aws --bucket my-bucket. "
+            "For an editable form, use /remote-sync setup in the interactive shell."
         )
-    return run_command_input(build_remote_sync_form(values))
+    return RemoteSyncSetupRequest(
+        bucket=bucket,
+        provider=provider if provider is not None else DEFAULT_REMOTE_SYNC_PROVIDER,
+        prefix=prefix if prefix is not None else DEFAULT_REMOTE_SYNC_PREFIX,
+        region=region or "",
+        profile=profile or "",
+        enabled=enabled,
+    )
 
 
 __all__ = ["remote_sync_command", "run_remote_sync_on_exit"]

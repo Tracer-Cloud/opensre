@@ -19,8 +19,8 @@ Use a **private** store. It can hold incident chats and system details.
 ## Setup
 
 ```bash
-# Interactive (writes ~/.opensre/config.yml)
-opensre remote-sync setup
+# Editable form inside the interactive shell (writes ~/.opensre/config.yml)
+/remote-sync setup
 
 # AWS / S3
 opensre remote-sync setup --provider aws --bucket my-opensre-bucket
@@ -36,9 +36,8 @@ export BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 opensre remote-sync setup --provider azure --bucket my-container
 ```
 
-In the interactive shell, run `/remote-sync setup` to open the same editable
-form. Choose a provider and enter the **required** bucket, container, or store
-name. Provider defaults to `aws`. **Optional settings** contains the prefix (default
+In the interactive shell, run `/remote-sync setup` to open the editable form.
+Choose a provider and enter the **required** bucket, container, or store name. Provider defaults to `aws`. **Optional settings** contains the prefix (default
 `opensre`), provider-supported region/profile fields (optional, using ambient
 configuration when empty), and the enabled switch (default Yes for new setups).
 
@@ -48,8 +47,11 @@ provider updates its fields and credential guidance. **Save settings** writes
 Validation errors keep your draft editable. Setup saves configuration only: it
 does not verify access, create a store, or transfer files. Use a private store.
 
-Complete flag commands save without opening a form. On chat gateways and in
-scripts, pass flags instead of relying on interactive input. For example:
+External CLI commands (`opensre remote-sync setup`) and chat gateways use flags
+only, even on a TTY. Missing `--bucket` returns an actionable error without
+prompting or saving. Provider is optional and defaults to `aws`; for example,
+`opensre remote-sync setup --bucket my-opensre-bucket` saves directly. Complete
+REPL flag commands also save without opening the form. For example:
 
 ```bash
 /remote-sync setup --provider vercel --bucket opensre-remote-sync
@@ -58,8 +60,8 @@ scripts, pass flags instead of relying on interactive input. For example:
 A flag missing its value is rejected before the form opens or anything is saved.
 `--prefix=` uses the default prefix. `setup --disabled` only turns sync off,
 keeping the stored destination; to save new settings while disabled, also supply
-`--provider` and `--bucket`. Credentials stay in the provider's ambient environment,
-not in this form or config file. Environment variables still override saved
+`--bucket` (and optionally `--provider`). Credentials stay in the provider's
+ambient environment, not in this form or config file. Environment variables still override saved
 settings for a run.
 
 Or set env vars yourself:

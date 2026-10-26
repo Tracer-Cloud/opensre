@@ -10,7 +10,7 @@ from prompt_toolkit.output import DummyOutput
 from config.constants import paths
 from config.local_settings import read_section, update_section
 from infrastructure.filestorage.setup import RemoteSyncSetupRequest
-from surfaces.shared.terminal.remote_sync_input import build_remote_sync_form
+from surfaces.interactive_shell.ui.remote_sync_input import build_remote_sync_form
 
 
 def test_form_prefills_stored_settings_and_cancel_never_writes(
@@ -96,7 +96,7 @@ def test_form_rendering_keeps_fields_and_actions_readable(
     assert "prod" not in content
 
 
-@pytest.mark.parametrize("surface", ["cli", "slash"])
+@pytest.mark.parametrize("surface", ["cli", "cli-incomplete", "slash"])
 def test_real_pty_setup_returns_cleanly_to_next_editable_prompt(
     tmp_path: Path, surface: str
 ) -> None:
@@ -116,12 +116,14 @@ from pathlib import Path
 from config.constants import paths
 paths.OPENSRE_HOME_DIR = Path(sys.argv[1])
 from config.local_settings import read_section
-if sys.argv[2] == "cli":
+if sys.argv[2].startswith("cli"):
+    incomplete = sys.argv[2] == "cli-incomplete"
     from surfaces.cli.commands.remote_sync import remote_sync_command
     try:
-        remote_sync_command.main(["setup"], standalone_mode=False)
+        args = ["setup"] if incomplete else ["setup", "--provider", "vercel", "--bucket", "pty-store"]
+        remote_sync_command.main(args)
     except SystemExit as exc:
-        assert exc.code == 0
+        assert (exc.code != 0) if incomplete else (exc.code == 0)
 else:
     from rich.console import Console
     from surfaces.interactive_shell.command_registry import dispatch_slash
@@ -132,7 +134,10 @@ else:
     dispatch_slash(command, session, Console(), is_tty=True)
 from prompt_toolkit import PromptSession
 print("FOLLOWUP:" + PromptSession().prompt("Next input: "))
-assert read_section("remote_sync")["bucket"] == "pty-store"
+if sys.argv[2] == "cli-incomplete":
+    assert not read_section("remote_sync")
+else:
+    assert read_section("remote_sync")["bucket"] == "pty-store"
 """
     master, slave = pty.openpty()
     process: subprocess.Popen[bytes] | None = None
@@ -161,13 +166,14 @@ assert read_section("remote_sync")["bucket"] == "pty-store"
                         os.write(master, b"\x1b[1;1R")
             del pending[: pending.index(marker) + len(marker)]
 
-        expect(b"Type to filter")
-        os.write(master, b"vercel\r")
-        expect(b"Bucket/store")
-        os.write(master, b"\x1b[B\r")
-        expect(b"Name of an existing")
-        os.write(master, b"pty-store\r\x13")
-        expect(b"settings saved")
+        if surface == "slash":
+            expect(b"Type to filter")
+            os.write(master, b"vercel\r")
+            expect(b"Bucket/store")
+            os.write(master, b"\x1b[B\r")
+            expect(b"Name of an existing")
+            os.write(master, b"pty-store\r\x13")
+        expect(b"setup needs --bucket" if surface == "cli-incomplete" else b"settings saved")
         expect(b"Next input:")
         os.write(master, b"next-prompt-works\r")
         expect(b"FOLLOWUP:next-prompt-works")
@@ -178,3 +184,42 @@ assert read_section("remote_sync")["bucket"] == "pty-store"
             process.wait(timeout=10)
         os.close(master)
         os.close(slave)
+
+
+@pytest.mark.parametrize("surface", ["cli", "slash"])
+def test_complete_destination_uses_same_default_provider_without_form(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, surface: str
+) -> None:
+    import io
+
+    from click.testing import CliRunner
+    from rich.console import Console
+
+    from surfaces.cli.app import cli
+    from surfaces.interactive_shell.command_registry import dispatch_slash
+    from surfaces.interactive_shell.runtime import Session
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
+
+    def unexpected(_app: object) -> None:
+        raise AssertionError("Complete settings must not open a form on either surface")
+
+    monkeypatch.setattr("click.prompt", unexpected)
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.command_registry.remote_sync_cmds.run_command_input", unexpected
+    )
+    if surface == "cli":
+        result = CliRunner().invoke(cli, ["remote-sync", "setup", "--bucket", "demo"])
+        assert result.exit_code == 0, result.output
+    else:
+        dispatch_slash(
+            "/remote-sync setup --bucket demo", Session(), Console(file=io.StringIO()), is_tty=False
+        )
+    assert read_section("remote_sync") == {
+        "provider": "aws",
+        "bucket": "demo",
+        "prefix": "opensre",
+        "region": "",
+        "profile": "",
+        "enabled": True,
+    }

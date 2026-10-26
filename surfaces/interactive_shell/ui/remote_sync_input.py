@@ -1,4 +1,4 @@
-"""Remote-sync setup fields shared by the CLI and terminal slash command."""
+"""Editable remote-sync setup for terminal slash commands."""
 
 from __future__ import annotations
 

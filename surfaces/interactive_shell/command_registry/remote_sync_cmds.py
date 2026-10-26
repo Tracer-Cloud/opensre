@@ -37,9 +37,9 @@ from surfaces.interactive_shell.command_registry.input_collection import can_col
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT
+from surfaces.interactive_shell.ui.remote_sync_input import build_remote_sync_form, setup_request
 from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.input_form import InputFormError
-from surfaces.shared.terminal.remote_sync_input import build_remote_sync_form, setup_request
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +246,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
             f"Subcommands: status, sync, setup. Default provider is "
             f"{DEFAULT_REMOTE_SYNC_PROVIDER} (built-in: {', '.join(builtin_providers())}). "
             "Credentials stay ambient; integration keys are never uploaded. "
-            "Setup opens an editable form in a terminal; gateways require --bucket. "
+            "Setup opens an editable form in the REPL; external CLI and gateways use flags. "
             "Complete flags save without prompting. Same service as `opensre remote-sync`.",
         ),
         first_arg_completions=(

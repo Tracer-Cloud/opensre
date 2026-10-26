@@ -8,11 +8,7 @@ from types import SimpleNamespace
 
 import click
 import pytest
-import yaml
 from click.testing import CliRunner
-from prompt_toolkit.application import Application
-from prompt_toolkit.input import create_pipe_input
-from prompt_toolkit.output import DummyOutput
 
 from config.constants.filestorage import REMOTE_SYNC_BUCKET_ENV, REMOTE_SYNC_ENV
 from infrastructure.filestorage.config import RemoteSyncConfig
@@ -322,14 +318,12 @@ def test_setup_writes_settings_with_supported_flags(
     assert result.exit_code == 0
 
 
-def _set_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make ``_collect_setup_request`` take its prompt branch under CliRunner.
+def _unexpected_prompt(*_args: object, **_kwargs: object) -> None:
+    raise AssertionError("External setup commands must only accept flags")
 
-    ``CliRunner``'s simulated stdin reports ``isatty() is False`` by default,
-    which the command reads as "not a terminal" and refuses to prompt.
-    ``click.prompt`` itself reads through ``sys.stdin`` (which CliRunner
-    already feeds from ``input=``), so only the tty check needs faking.
-    """
+
+def _set_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the command observe a TTY, including sync progress rendering."""
     import click
 
     monkeypatch.setattr(
@@ -337,57 +331,42 @@ def _set_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def _set_form_interactive(monkeypatch: pytest.MonkeyPatch, keys: str) -> None:
-    """Drive the actual editable form while CliRunner captures command output."""
-    monkeypatch.setattr("surfaces.cli.commands.remote_sync.repl_tty_interactive", lambda: True)
-
-    def run_form(app: Application[RemoteSyncSetupRequest | None]) -> RemoteSyncSetupRequest | None:
-        with create_pipe_input() as pipe:
-            app.input = pipe
-            app.output = DummyOutput()
-            return app.run(pre_run=lambda: pipe.send_text(keys))
-
-    monkeypatch.setattr("surfaces.cli.commands.remote_sync.run_command_input", run_form)
-
-
-def test_setup_interactive_skips_prompts_for_provider_without_extra_fields(
+def test_setup_missing_bucket_on_tty_requires_flags_without_prompting(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from config.constants import paths as paths_mod
 
     monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
-    _set_form_interactive(monkeypatch, "vercel\r\x1b[B\rmy-bucket\r\x13")
+    _set_interactive(monkeypatch)
+    monkeypatch.setattr(click, "prompt", _unexpected_prompt)
 
-    # Provider selection and bucket editing; no region/profile fields for vercel.
+    # A terminal does not change the external command into an input form.
     result = runner.invoke(remote_sync_command, ["setup"])
-    assert result.exit_code == 0, result.output
-
-    on_disk = yaml.safe_load((tmp_path / "config.yml").read_text(encoding="utf-8"))
-    assert on_disk["remote_sync"]["provider"] == "vercel"
-    assert on_disk["remote_sync"]["region"] == ""
-    assert on_disk["remote_sync"]["profile"] == ""
+    assert result.exit_code != 0
+    assert "--bucket" in result.output
+    assert not isinstance(result.exception, AssertionError)
+    assert not (tmp_path / "config.yml").exists()
 
 
-def test_setup_interactive_prompts_for_provider_extra_fields(
+def test_setup_partial_provider_flags_never_prompt_or_save(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from config.constants import paths as paths_mod
 
     monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
-    _set_form_interactive(monkeypatch, "\r\x1b[B\rmy-bucket\r\x13")
+    _set_interactive(monkeypatch)
+    monkeypatch.setattr(click, "prompt", _unexpected_prompt)
 
-    # Optional provider fields supplied as flags prefill the draft while the
-    # editable form collects the missing destination and confirms submission.
+    # Optional provider flags cannot replace the required destination.
+    # No interactive wizard should collect it for an external command.
     result = runner.invoke(
         remote_sync_command,
         ["setup", "--provider", "aws", "--region", "us-east-1", "--profile", "my-profile"],
     )
-    assert result.exit_code == 0, result.output
-
-    on_disk = yaml.safe_load((tmp_path / "config.yml").read_text(encoding="utf-8"))
-    assert on_disk["remote_sync"]["provider"] == "aws"
-    assert on_disk["remote_sync"]["profile"] == "my-profile"
-    assert on_disk["remote_sync"]["region"] == "us-east-1"
+    assert result.exit_code != 0
+    assert "--bucket" in result.output
+    assert not isinstance(result.exception, AssertionError)
+    assert not (tmp_path / "config.yml").exists()
 
 
 def _save_config(
@@ -423,10 +402,10 @@ def test_setup_with_flags_saves_and_confirms(
 
 
 def test_setup_without_bucket_off_tty_fails(runner: CliRunner) -> None:
-    # CliRunner stdin is not a TTY, so the interactive wizard is refused.
+    # CliRunner stdin is not a TTY, and external setup still requires flags.
     result = runner.invoke(remote_sync_command, ["setup", "--provider", "gcs"])
     assert result.exit_code != 0
-    assert "pass --provider and --bucket" in result.output
+    assert "--bucket" in result.output
 
 
 def test_setup_unknown_provider_fails_with_known_list(runner: CliRunner) -> None:
@@ -436,7 +415,7 @@ def test_setup_unknown_provider_fails_with_known_list(runner: CliRunner) -> None
     assert "gcs" in result.output
 
 
-def test_setup_prompts_for_missing_flags_on_a_tty(
+def test_setup_complete_flags_use_default_provider_without_prompting(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from config.constants import paths
@@ -446,12 +425,13 @@ def test_setup_prompts_for_missing_flags_on_a_tty(
     monkeypatch.setattr(
         "surfaces.cli.commands.remote_sync.save_remote_sync_settings", _save_config(saved)
     )
-    _set_form_interactive(monkeypatch, "gcs\r\x1b[B\rmy-bucket\r\x13")
-    # gcs declares no extra fields; save after selecting the provider and destination.
-    result = runner.invoke(remote_sync_command, ["setup"])
+    _set_interactive(monkeypatch)
+    monkeypatch.setattr(click, "prompt", _unexpected_prompt)
+    # Provider is optional on both surfaces; a supplied destination is complete.
+    result = runner.invoke(remote_sync_command, ["setup", "--bucket", "my-bucket"])
     assert result.exit_code == 0
     request = saved["request"]
-    assert request.provider == "gcs"
+    assert request.provider == "aws"
     assert request.bucket == "my-bucket"
     assert request.prefix == "opensre"
 
@@ -517,7 +497,7 @@ def test_setup_help_lists_the_flags(runner: CliRunner) -> None:
     assert "--bucket" in result.output
 
 
-def test_setup_form_cancellation_leaves_existing_settings_unchanged(
+def test_setup_incomplete_flags_leave_existing_settings_unchanged(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from config.constants import paths
@@ -526,9 +506,10 @@ def test_setup_form_cancellation_leaves_existing_settings_unchanged(
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
     update_section("remote_sync", {"bucket": "stored", "provider": "gcs", "enabled": False})
     before = (tmp_path / "config.yml").read_bytes()
-    _set_form_interactive(monkeypatch, "\x03")
+    _set_interactive(monkeypatch)
+    monkeypatch.setattr(click, "prompt", _unexpected_prompt)
     result = runner.invoke(remote_sync_command, ["setup"])
-    assert result.exit_code == 0
+    assert result.exit_code != 0
     assert "saved" not in result.output
     assert (tmp_path / "config.yml").read_bytes() == before
 
@@ -551,7 +532,7 @@ def test_setup_malformed_flags_never_open_form_or_write(
     def unexpected(_app: object) -> None:
         raise AssertionError("Malformed flags must be rejected before opening a form")
 
-    monkeypatch.setattr("surfaces.cli.commands.remote_sync.run_command_input", unexpected)
+    monkeypatch.setattr(click, "prompt", unexpected)
     result = runner.invoke(remote_sync_command, ["setup", *flags])
     assert result.exit_code != 0
     assert not isinstance(result.exception, AssertionError)
