@@ -30,6 +30,7 @@ from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
     join_first_turn_warmup,
     warm_first_turn,
 )
+from surfaces.interactive_shell.runtime.startup.github_gate import pass_github_gate
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
 from surfaces.interactive_shell.runtime.startup.integrations_prefetch import (
     start_integrations_prefetch,
@@ -308,6 +309,19 @@ def run_repl(
             if not pass_sign_in_gate(
                 out, on_screen=on_rendered, while_validating=spin_while_validating
             ):
+                return 0
+            # GitHub is checked on the integrations the prefetch read, so the
+            # read must finish first; joining it again in the boot is free.
+            if integrations_ready is not None:
+                integrations_ready()
+
+            def stop_spin() -> None:
+                if spin is not None and not spin.aborted:
+                    spin.abort()
+
+            # No composer and no startup menu until GitHub is connected: the
+            # app refuses every model call without it.
+            if not pass_github_gate(out, before_screen=stop_spin):
                 return 0
             if spin is None or spin.aborted:
                 # No spin ran during the check, or a sign-in screen replaced it.
