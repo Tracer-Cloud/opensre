@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import signal
 
 import pytest
+from click.testing import CliRunner
 
+from infrastructure.process.exit_codes import SUCCESS, UPDATE_AVAILABLE, UPDATE_CHECK_FAILED
 from infrastructure.process.release_version import (
     development_install_doctor_version_detail,
     extract_main_build_sha,
@@ -11,6 +14,8 @@ from infrastructure.process.release_version import (
     fetch_latest_version,
     is_update_available,
 )
+from surfaces.cli.app import cli
+from surfaces.cli.commands import general as general_module
 from surfaces.cli.lifecycle.update import _upgrade_via_install_script, run_update
 
 
@@ -373,3 +378,50 @@ def test_development_install_doctor_detail_editable_and_uv_run(
     assert detail == (
         "2026.4.5 (editable install + uv run; skipped comparing to latest main build)"
     )
+
+
+def _fetch_fails() -> str:
+    raise RuntimeError("network unreachable")
+
+
+@pytest.mark.parametrize(
+    ("latest", "exit_code", "update_available"),
+    [
+        (lambda: "1.0.0", SUCCESS, False),
+        (lambda: "1.2.3", UPDATE_AVAILABLE, True),
+        (_fetch_fails, UPDATE_CHECK_FAILED, None),
+    ],
+    ids=["up-to-date", "update-available", "lookup-failed"],
+)
+def test_json_update_check_tells_a_new_release_from_a_failed_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+    latest: object,
+    exit_code: int,
+    update_available: bool | None,
+) -> None:
+    """Scripts read ``--json update --check``; each outcome needs its own code and payload."""
+    for name in ("capture_update_started", "capture_update_completed", "capture_update_failed"):
+        monkeypatch.setattr(general_module, name, lambda **_kw: None)
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.get_opensre_version", lambda: "1.0.0")
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.fetch_latest_version", latest)
+    monkeypatch.setattr("surfaces.cli.lifecycle.update._upgrade_via_install_script", pytest.fail)
+
+    result = CliRunner().invoke(cli, ["--json", "update", "--check"])
+
+    assert result.exit_code == exit_code
+    payload = json.loads(result.stdout)
+    assert payload["current"] == "1.0.0"
+    assert payload["update_available"] is update_available
+    assert (payload["error"] is None) is (update_available is not None)
+
+
+def test_text_update_check_exits_differently_when_the_lookup_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.get_opensre_version", lambda: "1.0.0")
+    monkeypatch.setattr("surfaces.cli.lifecycle.update.fetch_latest_version", _fetch_fails)
+
+    rc = run_update(check_only=True)
+
+    assert rc == UPDATE_CHECK_FAILED != UPDATE_AVAILABLE
+    assert "could not fetch" in capsys.readouterr().err

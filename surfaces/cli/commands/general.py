@@ -41,7 +41,9 @@ def update_command(check_only: bool, local_yes: bool) -> None:
 
     capture_update_started(check_only=check_only)
     try:
-        exit_code = run_update(check_only=check_only, yes=local_yes or is_yes())
+        exit_code = run_update(
+            check_only=check_only, yes=local_yes or is_yes(), as_json=is_json_output()
+        )
     except Exception as exc:
         capture_update_failed(check_only=check_only, reason=type(exc).__name__)
         raise

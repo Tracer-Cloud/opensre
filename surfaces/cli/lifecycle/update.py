@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
@@ -7,6 +8,12 @@ import sys
 
 from config.constants.environment import CONTAINER_SUPERVISOR_PID_ENV
 from config.version import get_opensre_version
+from infrastructure.process.exit_codes import (
+    ERROR,
+    SUCCESS,
+    UPDATE_AVAILABLE,
+    UPDATE_CHECK_FAILED,
+)
 from infrastructure.process.release_version import (
     MAIN_BUILD_RELEASE_URL,
     fetch_latest_version,
@@ -75,33 +82,76 @@ def _restart_container_supervisor(pid: int) -> None:
         )
 
 
-def run_update(*, check_only: bool = False, yes: bool = False) -> int:
+def _print_check_json(
+    *, current: str, latest: str | None, update_available: bool | None, error: str | None
+) -> None:
+    print(
+        json.dumps(
+            {
+                "current": current,
+                "latest": latest,
+                "update_available": update_available,
+                "error": error,
+            }
+        )
+    )
+
+
+def _lookup_failed(*, current: str, message: str, check_only: bool, as_json: bool) -> int:
+    """Report a failed latest-version lookup; ``--check`` gets its own exit code."""
+    if check_only and as_json:
+        _print_check_json(current=current, latest=None, update_available=None, error=message)
+    else:
+        print(f"  error: {message}", file=sys.stderr)
+    return UPDATE_CHECK_FAILED if check_only else ERROR
+
+
+def run_update(*, check_only: bool = False, yes: bool = False, as_json: bool = False) -> int:
+    """Check for, and unless ``check_only`` install, a newer main build.
+
+    With ``check_only`` the exit code is :data:`SUCCESS` when up to date,
+    :data:`UPDATE_AVAILABLE` when a newer build exists, and
+    :data:`UPDATE_CHECK_FAILED` when the latest version could not be determined.
+    ``as_json`` makes ``check_only`` print one JSON object instead of text.
+    """
     # To skip this check in CI or automated environments, set OPENSRE_NO_UPDATE_CHECK=1.
     current = get_opensre_version()
 
     try:
         latest = fetch_latest_version()
     except Exception as exc:
-        print(f"  error: could not fetch latest version: {exc}", file=sys.stderr)
-        return 1
+        return _lookup_failed(
+            current=current,
+            message=f"could not fetch latest version: {exc}",
+            check_only=check_only,
+            as_json=as_json,
+        )
 
     if not latest:
-        print(
-            "  error: could not determine latest main build version from release data.",
-            file=sys.stderr,
+        return _lookup_failed(
+            current=current,
+            message="could not determine latest main build version from release data.",
+            check_only=check_only,
+            as_json=as_json,
         )
-        return 1
 
-    if not is_update_available(current, latest):
+    update_available = is_update_available(current, latest)
+    if check_only and as_json:
+        _print_check_json(
+            current=current, latest=latest, update_available=update_available, error=None
+        )
+        return UPDATE_AVAILABLE if update_available else SUCCESS
+
+    if not update_available:
         print(f"  opensre {current} is already up to date.")
-        return 0
+        return SUCCESS
 
     print(f"  current: {current}")
     print(f"  latest:  {latest}")
     print("  main build: " + MAIN_BUILD_RELEASE_URL)
 
     if check_only:
-        return 1
+        return UPDATE_AVAILABLE
 
     if is_editable_install():
         print(
