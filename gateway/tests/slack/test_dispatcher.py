@@ -14,6 +14,7 @@ from slack_sdk.errors import SlackApiError
 from config.constants.billing import ORGANIZATION_ID_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from config.constants.gateway import TURN_ERROR_MESSAGE
 from config.principal import Principal, StorageScope
+from core.llm.shared.llm_retry import OpenSREGithubRequiredError, maybe_raise_github_required
 from gateway.core.billing import turn_metering
 from gateway.core.billing.credits_client import CreditsOutcome
 from gateway.tests.billing.turn_metering_harness import metered_callback
@@ -410,6 +411,33 @@ def test_errored_turn_posts_the_error() -> None:
     assert messaging.posts, "error was never posted"
     assert "went wrong" in messaging.posts[-1]["text"].lower()
     assert ("add", "x") in [(r["op"], r["emoji"]) for r in messaging.reactions]
+
+
+def test_a_turn_refused_for_missing_github_tells_the_member_to_connect_it() -> None:
+    """The hosted 403 escapes the turn; the thread names the fix, not a retry."""
+    messaging = _FakeMessagingClient()
+
+    class HostedGithubRequired(Exception):
+        code = "opensre_github_required"
+        body = {"connect_url": "https://app.opensre.dev/dashboard"}
+
+    def handler(_text: str, _session: Any, _sink: Any, _logger: logging.Logger) -> None:
+        try:
+            maybe_raise_github_required(HostedGithubRequired("Error code: 403"))
+        except OpenSREGithubRequiredError as exc:
+            raise RuntimeError("planner failed") from exc
+
+    with pytest.raises(RuntimeError):
+        _dispatcher(
+            settings=_settings(["U1"]),
+            messaging=messaging,
+            resolver=_FakeSessionResolver(),
+            handler=handler,
+        )._run_turn(_inbound(), _test_scope())
+
+    shown = messaging.posts[-1]["text"]
+    assert "connected GitHub account" in shown
+    assert "try again" not in shown.lower()
 
 
 def test_agent_context_omits_thread_ts_to_avoid_thread_reads() -> None:

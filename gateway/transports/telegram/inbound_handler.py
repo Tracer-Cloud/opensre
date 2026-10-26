@@ -10,7 +10,6 @@ from contextlib import AbstractContextManager, nullcontext
 
 from config.constants.gateway import (
     CREDITS_DENIED_MESSAGE,
-    TURN_ERROR_MESSAGE,
     TURN_TIMEOUT_MESSAGE,
     USER_STOP_MESSAGE,
 )
@@ -33,6 +32,7 @@ from gateway.transports.telegram.session_rotation import resolve_or_rotate_sessi
 from gateway.transports.telegram.settings import GatewaySettings, TelegramInboundMessage
 from gateway.transports.telegram.turn_output import TelegramTurnOutput
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.turn_host.status_messages import turn_error_detail
 from infrastructure.turn_host.turn_callback import TurnCallback
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ async def handle_polled_inbound_telegram_message(
                 try:
                     with registration:
                         await event_loop.run_in_executor(executor, _run_turn)
-                except Exception:
+                except Exception as exc:
                     logger.exception(
                         "[telegram-gateway] turn ERRORED chat=%s session=%s",
                         event.chat_id,
@@ -212,7 +212,7 @@ async def handle_polled_inbound_telegram_message(
                     )
                     if terminal.claim():
                         try:
-                            output.render_error(TURN_ERROR_MESSAGE)
+                            output.render_error(turn_error_detail(exc))
                         except Exception:
                             logger.debug(
                                 "[telegram-gateway] error finalize failed",

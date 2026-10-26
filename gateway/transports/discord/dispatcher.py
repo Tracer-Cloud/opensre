@@ -10,7 +10,6 @@ from contextlib import suppress
 from config.constants.gateway import (
     CREDITS_DENIED_MESSAGE,
     NO_ACTIVE_TURN_MESSAGE,
-    TURN_ERROR_MESSAGE,
     TURN_TIMEOUT_MESSAGE,
     UNAUTHORIZED_MESSAGE,
     USER_STOP_MESSAGE,
@@ -41,6 +40,7 @@ from gateway.transports.discord.thread_history import (
 )
 from gateway.transports.discord.turn_output import DiscordTurnOutput
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.turn_host.status_messages import turn_error_detail
 from infrastructure.turn_host.turn_callback import TurnCallback
 from integrations.messaging_security import MessagingPlatform
 
@@ -328,10 +328,10 @@ class DiscordTurnDispatcher:
                         ),
                     ):
                         self._handler(agent_text, session, output, self._logger)
-                except Exception:
+                except Exception as exc:
                     if terminal.claim():
                         with suppress(Exception):
-                            output.render_error(TURN_ERROR_MESSAGE)
+                            output.render_error(turn_error_detail(exc))
                         remove_reaction(
                             channel_id=inbound.channel_id,
                             message_id=inbound.message_id,

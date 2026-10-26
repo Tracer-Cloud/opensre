@@ -12,7 +12,12 @@ from collections.abc import Callable
 from functools import lru_cache
 from typing import Any
 
-from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER, GITHUB_REQUIRED_MARKER
+from config.constants.gateway import TURN_ERROR_MESSAGE
+from core.llm.shared.llm_retry import (
+    CREDIT_EXHAUSTED_MARKER,
+    GITHUB_REQUIRED_MARKER,
+    OpenSREGithubRequiredError,
+)
 
 #: Returns a tool's own wording (display name, description) for status copy.
 DescribeTool = Callable[[str], tuple[str, ...]]
@@ -78,6 +83,23 @@ def user_facing_error_message(detail: str) -> str:
             "for everyone."
         )
     return _GENERIC_ERROR
+
+
+def turn_error_detail(exc: BaseException) -> str:
+    """What a chat transport hands ``render_error`` for a turn that raised.
+
+    Only the hosted GitHub prerequisite (raised directly or as a cause) keeps
+    its text, so the member learns the step that unblocks them; anything else
+    is the fixed turn-error message. ``render_error`` maps either to safe copy.
+    """
+    seen: set[int] = set()
+    cause: BaseException | None = exc
+    while cause is not None and id(cause) not in seen:
+        if isinstance(cause, OpenSREGithubRequiredError):
+            return str(cause)
+        seen.add(id(cause))
+        cause = cause.__cause__
+    return TURN_ERROR_MESSAGE
 
 
 def status_from_response_label(label: str) -> str:
@@ -151,5 +173,6 @@ __all__ = [
     "normalize_gateway_status",
     "status_from_response_label",
     "status_from_tool_start",
+    "turn_error_detail",
     "user_facing_error_message",
 ]

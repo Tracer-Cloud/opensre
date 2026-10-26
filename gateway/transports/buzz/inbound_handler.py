@@ -11,7 +11,6 @@ from contextlib import AbstractContextManager, nullcontext
 
 from config.constants.gateway import (
     CREDITS_DENIED_MESSAGE,
-    TURN_ERROR_MESSAGE,
     TURN_TIMEOUT_MESSAGE,
     USER_STOP_MESSAGE,
 )
@@ -29,6 +28,7 @@ from gateway.transports.buzz.session_rotation import conversation_key, resolve_o
 from gateway.transports.buzz.settings import BuzzInboundMessage, GatewaySettings
 from gateway.transports.buzz.turn_output import BuzzTurnOutput
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.turn_host.status_messages import turn_error_detail
 from infrastructure.turn_host.turn_callback import TurnCallback
 from integrations.buzz import BuzzClient
 
@@ -213,7 +213,7 @@ async def handle_polled_inbound_buzz_message(
             try:
                 with registration:
                     await event_loop.run_in_executor(executor, _run_turn)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "[buzz-gateway] turn ERRORED channel=%s session=%s",
                     event.channel_id,
@@ -221,7 +221,7 @@ async def handle_polled_inbound_buzz_message(
                 )
                 if terminal.claim():
                     try:
-                        output.render_error(TURN_ERROR_MESSAGE)
+                        output.render_error(turn_error_detail(exc))
                     except Exception:
                         logger.debug("[buzz-gateway] error finalize failed", exc_info=True)
                 raise

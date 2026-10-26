@@ -10,7 +10,6 @@ import time
 from config.constants.gateway import (
     CREDITS_DENIED_MESSAGE,
     NO_ACTIVE_TURN_MESSAGE,
-    TURN_ERROR_MESSAGE,
     UNAUTHORIZED_MESSAGE,
     USER_STOP_MESSAGE,
 )
@@ -51,6 +50,7 @@ from gateway.transports.slack.processing.thread_history import (
 )
 from gateway.transports.slack.settings import SlackGatewaySettings
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.turn_host.status_messages import turn_error_detail
 from infrastructure.turn_host.turn_callback import TurnCallback
 from integrations.messaging_security import MessagingPlatform
 
@@ -423,7 +423,7 @@ class SlackTurnDispatcher:
                         ),
                     ):
                         self._handler(agent_text, session, output, self._logger)
-                except Exception:
+                except Exception as exc:
                     self._logger.exception(
                         "[slack-gateway] turn ERRORED after %.1fs channel=%s session=%s",
                         time.monotonic() - turn_started,
@@ -436,7 +436,7 @@ class SlackTurnDispatcher:
                     # already owns the outcome.
                     if terminal.claim():
                         try:
-                            output.render_error(TURN_ERROR_MESSAGE)
+                            output.render_error(turn_error_detail(exc))
                         except Exception:
                             self._logger.debug(
                                 "[slack-gateway] error finalize failed", exc_info=True
