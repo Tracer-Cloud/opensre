@@ -28,7 +28,7 @@ def guardrails_test(text: str) -> None:
     """Test guardrail rules against a text string."""
     from infrastructure.safety.guardrails.cli import cmd_test
 
-    cmd_test(text)
+    cmd_test(text, json_output=is_json_output())
 
 
 @guardrails.command()
@@ -37,7 +37,7 @@ def audit(limit: int) -> None:
     """Show recent guardrail audit log entries."""
     from infrastructure.safety.guardrails.cli import cmd_audit
 
-    cmd_audit(limit=limit)
+    cmd_audit(limit=limit, json_output=is_json_output())
 
 
 @guardrails.command(name="rules")

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import NoReturn
 
 import click
 
 from infrastructure.safety.guardrails.audit import AuditLogger
-from infrastructure.safety.guardrails.evaluator import GuardrailEvaluator
+from infrastructure.safety.guardrails.evaluator import GuardrailEvaluator, ScanMatch, ScanResult
 from infrastructure.safety.guardrails.rules import get_default_rules_path, load_rules
 
 _STARTER_CONFIG = """\
@@ -63,21 +65,77 @@ def cmd_init() -> None:
     click.echo("  Test with: opensre guardrails test 'AKIAIOSFODNN7EXAMPLE'")
 
 
-def cmd_test(text: str) -> None:
-    """Scan sample text and display what would be matched/redacted/blocked."""
+def _redact_text(text: str, matches: tuple[ScanMatch, ...]) -> str:
+    """Replace every redact-action match span with a ``[REDACTED:<rule>]`` marker."""
+    redact_matches = sorted(
+        (m for m in matches if m.action.value == "redact"),
+        key=lambda m: m.start,
+        reverse=True,
+    )
+    redacted = text
+    for match in redact_matches:
+        redacted = redacted[: match.start] + f"[REDACTED:{match.rule_name}]" + redacted[match.end :]
+    return redacted
+
+
+def _exit_json_error(message: str, rules_path: Path) -> NoReturn:
+    """Emit a machine-readable error object and exit non-zero (``--json`` mode)."""
+    click.echo(json.dumps({"error": message, "config_path": str(rules_path)}))
+    raise SystemExit(1)
+
+
+def _echo_test_json(text: str, result: ScanResult, rules_path: Path) -> None:
+    """Emit the ``guardrails test`` result as one JSON object.
+
+    ``redacted`` is ``null`` when the text is blocked, since a blocked request
+    is rejected rather than rewritten.
+    """
+    payload = {
+        "config_path": str(rules_path),
+        "matches": [
+            {
+                "rule": m.rule_name,
+                "action": m.action.value,
+                "matched_text": m.matched_text,
+                "start": m.start,
+                "end": m.end,
+            }
+            for m in result.matches
+        ],
+        "blocked": result.blocked,
+        "blocking_rules": list(result.blocking_rules),
+        "redacted": None if result.blocked else _redact_text(text, result.matches),
+    }
+    click.echo(json.dumps(payload))
+
+
+def cmd_test(text: str, *, json_output: bool = False) -> None:
+    """Scan sample text and display what would be matched/redacted/blocked.
+
+    With ``json_output`` a missing config or an empty rule set is an error:
+    a JSON error object is printed and the process exits 1.
+    """
     rules_path = get_default_rules_path()
     if not rules_path.exists():
+        if json_output:
+            _exit_json_error("No guardrails config found.", rules_path)
         click.echo(f"  No guardrails config found at {rules_path}")
         click.echo("  Create the file to enable guardrails.")
         return
 
     rules = load_rules(rules_path)
     if not rules:
+        if json_output:
+            _exit_json_error("No valid rules loaded from config.", rules_path)
         click.echo("  No valid rules loaded from config.")
         return
 
     evaluator = GuardrailEvaluator(rules)
     result = evaluator.scan(text)
+
+    if json_output:
+        _echo_test_json(text, result, rules_path)
+        return
 
     if not result.matches:
         click.echo("  No matches found.")
@@ -91,23 +149,21 @@ def cmd_test(text: str) -> None:
     if result.blocked:
         click.echo(f"\n  BLOCKED by: {', '.join(result.blocking_rules)}")
     else:
-        redact_matches = sorted(
-            (m for m in result.matches if m.action.value == "redact"),
-            key=lambda m: m.start,
-            reverse=True,
-        )
-        redacted = text
-        for match in redact_matches:
-            redacted = (
-                redacted[: match.start] + f"[REDACTED:{match.rule_name}]" + redacted[match.end :]
-            )
-        click.echo(f"\n  Redacted output: {redacted}")
+        click.echo(f"\n  Redacted output: {_redact_text(text, result.matches)}")
 
 
-def cmd_audit(*, limit: int = 50) -> None:
-    """Print recent audit log entries."""
+def cmd_audit(*, limit: int = 50, json_output: bool = False) -> None:
+    """Print recent audit log entries.
+
+    Text mode prints one JSON object per line; ``json_output`` prints a single
+    JSON array so the output parses as one document (``[]`` when empty).
+    """
     audit_logger = AuditLogger()
     entries = audit_logger.read_entries(limit=limit)
+
+    if json_output:
+        click.echo(json.dumps(entries))
+        return
 
     if not entries:
         click.echo("  No audit entries found.")

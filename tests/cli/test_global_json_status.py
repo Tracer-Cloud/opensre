@@ -257,3 +257,96 @@ def test_global_json_serializes_guardrails_rules(
             "enabled": True,
         }
     ]
+
+
+def test_global_json_serializes_guardrails_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from surfaces.cli.app import cli
+
+    rules_path = tmp_path / "guardrails.yml"
+    rules_path.write_text(
+        """rules:
+  - name: deploy_token
+    action: redact
+    patterns:
+      - token-[0-9]+
+  - name: forbidden
+    action: block
+    keywords:
+      - forbidden
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.cli.get_default_rules_path",
+        lambda: rules_path,
+    )
+
+    redacted = CliRunner().invoke(cli, ["--json", "guardrails", "test", "use token-42 now"])
+    blocked = CliRunner().invoke(cli, ["--json", "guardrails", "test", "forbidden token-42"])
+    clean = CliRunner().invoke(cli, ["--json", "guardrails", "test", "nothing here"])
+
+    assert redacted.exit_code == 0, redacted.output
+    assert json.loads(redacted.output) == {
+        "config_path": str(rules_path),
+        "matches": [
+            {
+                "rule": "deploy_token",
+                "action": "redact",
+                "matched_text": "token-42",
+                "start": 4,
+                "end": 12,
+            }
+        ],
+        "blocked": False,
+        "blocking_rules": [],
+        "redacted": "use [REDACTED:deploy_token] now",
+    }
+    blocked_payload = json.loads(blocked.output)
+    assert blocked_payload["blocked"] is True
+    assert blocked_payload["blocking_rules"] == ["forbidden"]
+    assert blocked_payload["redacted"] is None
+    assert json.loads(clean.output)["matches"] == []
+
+
+def test_global_json_guardrails_test_errors_are_json_with_nonzero_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from surfaces.cli.app import cli
+
+    missing = tmp_path / "missing.yml"
+    empty = tmp_path / "empty.yml"
+    empty.write_text("rules: []\n", encoding="utf-8")
+    runner = CliRunner()
+
+    for path, message in (
+        (missing, "No guardrails config found."),
+        (empty, "No valid rules loaded from config."),
+    ):
+        monkeypatch.setattr(
+            "infrastructure.safety.guardrails.cli.get_default_rules_path", lambda path=path: path
+        )
+        result = runner.invoke(cli, ["--json", "guardrails", "test", "anything"])
+
+        assert result.exit_code == 1, result.output
+        assert json.loads(result.output) == {"error": message, "config_path": str(path)}
+
+
+def test_global_json_serializes_guardrails_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.safety.guardrails.audit import AuditLogger
+    from surfaces.cli.app import cli
+
+    audit = AuditLogger(path=tmp_path / "audit.jsonl")
+    monkeypatch.setattr("infrastructure.safety.guardrails.cli.AuditLogger", lambda: audit)
+
+    empty = CliRunner().invoke(cli, ["--json", "guardrails", "audit"])
+    audit.log(rule_name="r1", action="redact", matched_text_preview="secret")
+    audit.log(rule_name="r2", action="block", matched_text_preview="other")
+    entries = CliRunner().invoke(cli, ["--json", "guardrails", "audit", "--limit", "1"])
+
+    assert json.loads(empty.output) == []
+    parsed = json.loads(entries.output)
+    assert [entry["rule_name"] for entry in parsed] == ["r2"]
