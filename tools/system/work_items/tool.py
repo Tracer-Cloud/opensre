@@ -55,6 +55,7 @@ from tools.system.work_items.validation import (
     valid_priority_detail,
     valid_status_detail,
     validate_datetime_arg,
+    validate_offset,
 )
 
 
@@ -223,7 +224,8 @@ def work_task_add(
     description=(
         "List durable human work items. Use when the user asks for all tasks still to do, "
         "hackathon task overview, completed tasks, blocked tasks, or project-specific todos. "
-        "Use due_after/due_before for date ranges and overdue_only for unfinished overdue tasks."
+        "Use due_after/due_before for date ranges and overdue_only for unfinished overdue tasks. "
+        "Use a positive limit; when next_offset is not null, continue with it and the same filters."
     ),
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
@@ -239,7 +241,17 @@ def work_task_add(
             },
             "project": {"type": "string", "description": "Optional exact project filter."},
             "owner": {"type": "string", "description": "Optional exact owner filter."},
-            "limit": {"type": "integer", "default": DEFAULT_WORK_ITEM_LIMIT},
+            "limit": {
+                "type": "integer",
+                "default": DEFAULT_WORK_ITEM_LIMIT,
+                "description": "Page size, capped at 100. Zero returns only counts; use a positive size to page.",
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "default": 0,
+                "description": "Number of matching tasks to skip; use next_offset to continue with the same filters.",
+            },
             "due_after": {
                 "type": "string",
                 "description": "Optional inclusive lower due-date bound, ISO date/time. Naive values use timezone.",
@@ -269,11 +281,15 @@ def work_task_list(
     project: str = "",
     owner: str = "",
     limit: int = DEFAULT_WORK_ITEM_LIMIT,
+    offset: int = 0,
     due_after: str = "",
     due_before: str = "",
     overdue_only: bool = False,
     timezone: str = "UTC",
 ) -> dict[str, Any]:
+    error = validate_offset(offset)
+    if error is not None:
+        return error
     try:
         due_filter = parse_due_date_filter(
             due_after=due_after, due_before=due_before, overdue_only=overdue_only, timezone=timezone
@@ -292,7 +308,9 @@ def work_task_list(
     if due_filter is not None:
         filtered, invalid_dates = filter_due_dates(filtered, due_filter)
     max_items = normalize_limit(limit)
-    result = list_result(filtered[:max_items], total=len(filtered))
+    result = list_result(
+        filtered[offset : offset + max_items], total=len(filtered), offset=offset, limit=max_items
+    )
     if due_filter is not None:
         result["due_filter"] = due_filter.summary()
         result["invalid_due_dates"] = invalid_dates

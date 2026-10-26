@@ -151,6 +151,38 @@ def test_unresolvable_stored_dates_are_reported_without_changing_default_listing
     assert filtered["invalid_due_dates"] == 4
 
 
+def test_due_filters_apply_before_offset_paging(work_dir: Path) -> None:
+    add_work_item(title="Undated", project="infra", priority="urgent")
+    add_work_item(title="Too late", due_at="2026-11-02", project="infra", priority="urgent")
+    matches = [
+        add_work_item(title=f"In range {index}", due_at="2026-10-30T12:00Z", project="infra")
+        for index in range(5)
+    ]
+    args = {"project": "infra", "due_after": "2026-10-30", "due_before": "2026-10-31"}
+    pages = []
+    offset: int | None = 0
+    while offset is not None:
+        page = work_task_list(**args, limit=2, offset=offset)
+        assert page["total"] == 5
+        assert page["due_filter"]["due_before"] == "2026-10-31T00:00:00+00:00"
+        pages.append(page)
+        offset = page["next_offset"]
+    assert [page["returned"] for page in pages] == [2, 2, 1]
+    assert [page["has_more"] for page in pages] == [True, True, False]
+    assert [task["id"] for page in pages for task in page["tasks"]] == [item.id for item in matches]
+
+
+def test_invalid_offset_is_rejected_before_due_filter_or_store(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_read(**_kwargs: object) -> NoReturn:
+        raise AssertionError("Invalid offsets must not read the store")
+
+    monkeypatch.setattr("tools.system.work_items.tool.list_work_items", unexpected_read)
+    result = work_task_list(offset=-1, overdue_only=True)
+    assert result["error"] == "invalid_offset"
+
+
 @pytest.mark.parametrize(
     "args",
     [

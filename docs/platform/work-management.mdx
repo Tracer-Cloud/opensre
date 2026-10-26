@@ -42,6 +42,34 @@ Mark the docs and CLI tasks as completed.
 The agent stores these as work items and uses the same store when ranking or
 listing them later.
 
+## Listing more than one page
+
+Ask the agent to "show the next page of my open tasks" or "list all tasks for
+project infra." Its `work_task_list` tool accepts these optional paging values:
+
+| Value | Default | Behavior |
+| --- | --- | --- |
+| `limit` | `20` | Maximum tasks in one response, capped at `100`. Zero returns counts without task rows. |
+| `offset` | `0` | Non-negative integer: number of matching tasks to skip. |
+
+Status, project, and owner filters apply before the offset. Results retain the
+usual order: unfinished tasks first, then higher priority, then creation time.
+Each response includes `returned`, the full matching `total`, the effective
+`limit`, `offset`, `has_more`, and `next_offset`.
+
+For example, with 45 matching tasks and `limit: 20`, offsets `0`, `20`, and `40`
+return 20, 20, and 5 tasks. Pass the returned `next_offset` with the same filters
+to continue. The last page has `has_more: false` and `next_offset: null`. An
+offset at or beyond the total returns an empty page with no continuation.
+
+With `limit: 0`, `has_more` can still be true, but `next_offset` is null because
+no rows were returned. Use a positive limit at the same offset to retrieve them.
+
+Pages reflect the current store on each call. Adding, completing, deleting, or
+changing task priorities between calls can move items between pages; restart
+from offset zero when you need a fresh complete listing. These paging values
+belong to the agent tool; terminal commands keep their existing options.
+
 ## Filter tasks by due date
 
 Ask the agent to "show my overdue tasks" or "list the infra tasks due on Friday
@@ -72,7 +100,8 @@ an ambiguous time requires an explicit offset. If both bounds are given,
 `due_after` must precede `due_before`.
 
 Due filters combine with the existing status, project, and owner filters before
-the result limit; `total` counts all matching tasks. The default status remains
+the offset and result limit; `total` counts all matching tasks, and paging
+works the same way as for unfiltered listings. The default status remains
 `open`. Use `status: "active"` to include blocked and deferred tasks too.
 Completed tasks are always excluded by `overdue_only`, even with `status: "all"`.
 
@@ -82,6 +111,9 @@ matching tasks. The response's `due_filter` records the resolved UTC bounds,
 timezone, and the cutoff used for overdue checks. Without a due filter, the
 existing listing behavior and response fields are unchanged. These options
 belong to the agent tool; terminal commands retain their existing options.
+
+With `overdue_only`, each call uses its own current instant as the cutoff, so a
+task that becomes overdue between paged calls can shift later pages.
 
 ## Reminders and check-ins
 

@@ -39,11 +39,20 @@ def added_result(item: WorkItem, *, scheduled_task_id: str = "") -> dict[str, An
     }
 
 
-def list_result(items: Sequence[WorkItem], *, total: int) -> dict[str, Any]:
+def list_result(
+    items: Sequence[WorkItem], *, total: int, offset: int, limit: int
+) -> dict[str, Any]:
+    """Describe a filtered page and expose a continuation only when it advances."""
+    returned = len(items)
+    has_more = offset + returned < total
     return {
         "tasks": [item_summary(item) for item in items],
-        "returned": len(items),
+        "returned": returned,
         "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": has_more,
+        "next_offset": offset + returned if returned and has_more else None,
         "path": str(work_items_path()),
     }
 
