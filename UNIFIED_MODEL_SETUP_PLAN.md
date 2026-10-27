@@ -2,7 +2,7 @@
 
 ## Implementation status — 2026-10-27
 
-Implementation branch: `codex/unified-model-setup`. The implemented slice covers the shared
+Implementation branch: `codex/unified-login-model-ux`. The implemented slice covers the shared
 connection/selection operations, method-grouped login pickers, direct cross-provider
 model picker, login-to-picker handoff, choose-later semantics, inactive provider
 settings, hosted/local switching, standalone model commands, and CLI/REPL documentation. Source IDs remain unchanged.
