@@ -142,17 +142,24 @@ def _read_secrets(path: Path) -> Mapping[str, str]:
     return secrets
 
 
-def _load_unlocked(path: Path) -> dict[str, str]:
+def _load_unlocked(path: Path, *, for_write: bool = False) -> dict[str, str]:
+    """Read existing secrets; mutations must never replace an unreadable store."""
     if not path.exists():
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    secrets = data.get("secrets")
-    if not isinstance(secrets, dict):
+        if not isinstance(data, dict) or not isinstance(data.get("secrets"), dict):
+            raise ValueError("credential store must contain a secrets mapping")
+        secrets = data["secrets"]
+        if for_write and any(
+            not isinstance(key, str) or not isinstance(value, str) for key, value in secrets.items()
+        ):
+            raise ValueError("credential entries must contain string keys and values")
+    except (ValueError, OSError) as exc:
+        if for_write:
+            raise LocalStoreError(
+                "Credential store could not be read safely; refusing to overwrite it."
+            ) from exc
         return {}
     return {
         str(key): str(value)
@@ -213,7 +220,7 @@ def set(env_var: str, value: str) -> None:  # noqa: A001 - mirrors get/delete in
     try:
         _ensure_parent(path)
         with _store_lock(path):
-            secrets = _load_unlocked(path)
+            secrets = _load_unlocked(path, for_write=True)
             secrets[env_var] = value
             _write_unlocked(path, secrets)
             clear_read_cache()
@@ -231,7 +238,7 @@ def delete(env_var: str) -> None:
         return
     try:
         with _store_lock(path):
-            secrets = _load_unlocked(path)
+            secrets = _load_unlocked(path, for_write=True)
             if env_var not in secrets:
                 return
             del secrets[env_var]
