@@ -23,6 +23,12 @@ LLM_PROVIDER_ENV: Final[str] = "LLM_PROVIDER"
 OPENSRE_LLM_CONNECTION_ENV: Final[str] = "OPENSRE_LLM_CONNECTION"
 HOSTED_MODEL_PROVIDER: Final[str] = "opensre-hosted"
 OPENSRE_MODEL_SETUP_RESULT_ENV: Final[str] = "OPENSRE_MODEL_SETUP_RESULT"
+
+# Connections/models that consume the session reasoning-effort override.
+REASONING_EFFORT_MODEL_PREFIXES: Final[dict[str, tuple[str, ...]]] = {
+    "openai": ("o1", "o3", "o4", "gpt-5", "gpt-6"),
+    "codex": ("",),
+}
 OPENSRE_SUBSCRIPTION_AUTH_DIR_ENV: Final[str] = "OPENSRE_SUBSCRIPTION_AUTH_DIR"
 
 #: Retired auth-method selector; subscription connections now have separate

@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import StrEnum
 
+from config.constants.llm import REASONING_EFFORT_MODEL_PREFIXES
+
 
 class ReasoningEffort(StrEnum):
     """Closed user-facing reasoning-effort vocabulary for REPL and env overrides."""
@@ -115,6 +117,16 @@ def provider_supports_reasoning_effort(provider: str | None) -> bool:
     return (provider or "").strip().lower() in {"openai", "codex"}
 
 
+def applied_reasoning_effort(
+    provider: str, model: str, choice: ReasoningEffort | str | None
+) -> str | None:
+    """Effort sent by this connection, not an ignored override or guessed default."""
+    prefixes = REASONING_EFFORT_MODEL_PREFIXES.get(provider, ())
+    if not model.startswith(prefixes):
+        return None
+    return runtime_reasoning_effort(choice) or resolve_reasoning_effort(model)
+
+
 def infer_reasoning_effort_default(provider: str | None, model: str | None) -> str | None:
     """Best-effort default reasoning level for providers we wire today.
 
@@ -172,6 +184,7 @@ def apply_reasoning_effort(choice: ReasoningEffort | str | None) -> Iterator[Non
 
 
 __all__ = [
+    "applied_reasoning_effort",
     "REASONING_EFFORT_OPTIONS",
     "ReasoningEffort",
     "ReasoningEffortChoice",

@@ -7,6 +7,8 @@ from config.package_exports import bind_package_exports
 # Re-exported name -> leaf module. Importing this package must not load
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
+    "CI_FIX_STATUS_LABEL": "ci_fixes",
+    "REASONING_EFFORT_MODEL_PREFIXES": "llm",
     "HOSTED_MODEL_PROVIDER": "llm",
     "OPENSRE_MODEL_SETUP_RESULT_ENV": "llm",
     "GROK_OAUTH_CLIENT_ID": "grok",

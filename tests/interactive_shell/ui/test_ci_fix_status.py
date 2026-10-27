@@ -57,7 +57,7 @@ def test_tool_completion_updates_prompt_from_memory_even_when_save_fails(
         assert result["work_outcome"]["status"] == "succeeded"
         rendered = ANSI(ci_fix_status.prompt_status_ansi(session))
         text = fragment_list_to_text(to_formatted_text(rendered))
-        assert "CI/CD fixes (1) ✓" in text
+        assert "CI fixes (1) ✓" in text
         assert "Auto (High)" in text
         assert load_launch_status().ci_fix_count == 1
         ci_fix_tool.fix_github_pr_ci(
@@ -83,7 +83,7 @@ def test_chip_gives_way_before_the_autonomy_level_truncates(
     ``Auto (Hi… · CI/CD fixes (0)`` — strictly worse than one column narrower,
     which drops the chip and shows the level in full.
     """
-    from config.constants import CI_FIX_COUNT_LABEL
+    from config.constants import CI_FIX_STATUS_LABEL
 
     session = Session()
     for count in (0, 3):
@@ -97,8 +97,9 @@ def test_chip_gives_way_before_the_autonomy_level_truncates(
             plain = fragment_list_to_text(
                 to_formatted_text(ANSI(ci_fix_status.prompt_status_ansi(session)))
             )
-            if CI_FIX_COUNT_LABEL in plain:
+            if CI_FIX_STATUS_LABEL in plain:
                 assert "Auto (High)" in plain, f"level truncated beside chip at width {width}"
+                assert "Allow all" in plain
 
 
 def test_zero_chip_is_dim_and_live_line_fits_narrow_terminals(
@@ -131,5 +132,29 @@ def test_zero_chip_is_dim_and_live_line_fits_narrow_terminals(
                 assert "\n" not in plain
             if count == 0:
                 assert "✗" not in plain
-                if width >= 40:
-                    assert f"{theme.DIM_ANSI}CI/CD fixes (0)" in rendered
+                if width >= 80:
+                    assert f"{theme.DIM_ANSI}CI fixes (0)" in rendered
+
+
+def test_ci_chip_never_displaces_model_effort_or_permissions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rich.cells import cell_len
+
+    from config.llm_reasoning_effort import ReasoningEffort
+
+    session = Session()
+    session.terminal.provider_model = ("codex", "gpt-6.1-sol")
+    session.reasoning_effort = ReasoningEffort.HIGH
+    session.terminal.ci_fix_count_fn = lambda: 0
+    for width in (39, 79, 159):
+        monkeypatch.setattr(ci_fix_status, "prompt_line_width", lambda width=width: width)
+        plain = fragment_list_to_text(
+            to_formatted_text(ANSI(ci_fix_status.prompt_status_ansi(session)))
+        )
+        assert cell_len(plain) <= width
+        assert "(High) · Allow all" in plain
+        if width == 39:
+            assert "CI fixes" not in plain
+        else:
+            assert plain == "    codex / gpt-6.1-sol (High) · Allow all · CI fixes (0)"

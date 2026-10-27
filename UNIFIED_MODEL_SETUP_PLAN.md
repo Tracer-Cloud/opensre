@@ -389,6 +389,16 @@ Include actual synthetic PTY evidence in the PR's Demo section. If cloud executi
 cannot exercise live vendor authentication, record that limit rather than claiming
 subscription consumption, entitlement, renewal or billing acceptance passed.
 
+## Prompt-footer follow-up
+
+The CLI/REPL slice also puts the active provider/model first in the prompt footer,
+then applied effort in parentheses, then permissions and the CI fix count. Effort
+is shown only for connections/models that consume the override; Claude Code's
+current adapter ignores it, so no effort is claimed there. Exact route IDs stay
+visible rather than inferring a CLI-configured model. The CI chip drops before
+model text is clipped; permission copy remains visible at practical narrow widths.
+This changes presentation only, not approval policy or provider behavior.
+
 ## Cloud implementer checklist
 
 - [ ] Read root and applicable package `AGENTS.md` files, `CI.md`, `PERSISTENCE.md`,

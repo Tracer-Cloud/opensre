@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from config.constants import CI_FIX_COUNT_LABEL
+from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, to_formatted_text
+
+from config.constants.ci_fixes import CI_FIX_STATUS_LABEL
 from infrastructure.terminal import theme as ui_theme
-from surfaces.interactive_shell.ui.auto_status import STATUS_TEXT_INDENT, auto_status_ansi
+from surfaces.interactive_shell.ui.auto_status import auto_status_ansi
 from surfaces.interactive_shell.ui.input_prompt.layout import prompt_line_width
+from surfaces.shared.terminal.prompt_layout import prompt_text_width
 
 if TYPE_CHECKING:
     from surfaces.interactive_shell.session import Session
@@ -19,17 +22,14 @@ def prompt_status_ansi(session: Session, *, quiet: bool = False) -> str:
     if count_fn is None:
         return auto_status_ansi(session, quiet=quiet)
     count = count_fn()
-    chip = f"{CI_FIX_COUNT_LABEL} ({count})" + (" ✓" if count > 0 else "")
+    chip = f"{CI_FIX_STATUS_LABEL} ({count})" + (" ✓" if count > 0 else "")
     width = prompt_line_width()
-    remaining = width - len(chip) - 3
-    # The level is what the row exists to show, so the chip is what gives way.
-    # The budget has to cover three things, or the level truncates beside a chip
-    # that did fit: the gutter ``auto_status_ansi`` prepends before clipping, the
-    # widest level label, and the ellipsis column ``clip_prompt_text`` reserves
-    # (the permission copy after the label is always there to be clipped).
-    level_budget = len(STATUS_TEXT_INDENT) + len("Auto (High)") + len("…")
-    if remaining < level_budget:
-        return auto_status_ansi(session, quiet=quiet)
-    auto = auto_status_ansi(session, quiet=quiet, max_width=remaining)
+    auto = auto_status_ansi(session, quiet=quiet, max_width=width)
+    # The model/effort and permission row is what this footer exists to show,
+    # so the chip gives way before any of that content loses space. Never pad
+    # to full width: resize reflow would strand stale chrome in scrollback.
+    plain = fragment_list_to_text(to_formatted_text(ANSI(auto)))
+    if prompt_text_width(plain + " · " + chip) > width:
+        return auto
     style = ui_theme.SECONDARY_ANSI if count > 0 else ui_theme.DIM_ANSI
     return f"{auto}{ui_theme.DIM_ANSI} · {style}{chip}{ui_theme.ANSI_RESET}"

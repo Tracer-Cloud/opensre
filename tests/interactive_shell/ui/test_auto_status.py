@@ -1,6 +1,8 @@
-"""Auto-status ANSI line: permission copy, no model slug on idle chrome."""
+"""Model-first footer with truthful effort and persistent permission copy."""
 
 from __future__ import annotations
+
+import pytest
 
 from config.constants.repl_autonomy import AutoLevel
 from surfaces.interactive_shell.session import Session
@@ -38,7 +40,7 @@ def test_idle_status_updates_model_without_hiding_permissions() -> None:
     session.terminal.provider_model = ("chatgpt", "gpt-6.1-sol")
     session.terminal.auto_level = AutoLevel.HIGH
     rendered = auto_status_ansi(session)
-    assert "Auto (High)" in rendered
+    assert "Auto (High)" not in rendered
     assert "Allow all" in rendered
     assert "chatgpt / gpt-6.1-sol" in rendered
 
@@ -163,3 +165,59 @@ def test_confirmation_region_height_is_constant_while_confirming() -> None:
         return render_prompt_region(session, state, spinner).value.count("\n")
 
     assert _confirm_rows(0) == _confirm_rows(1)
+
+
+def test_model_first_footer_shows_applied_effort_not_autonomy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, to_formatted_text
+
+    from config.llm_reasoning_effort import ReasoningEffort
+
+    monkeypatch.delenv("OPENSRE_REASONING_EFFORT", raising=False)
+    session = Session()
+    session.terminal.provider_model = ("openai", "gpt-5.4")
+    session.reasoning_effort = ReasoningEffort.HIGH
+    session.terminal.auto_level = AutoLevel.OFF
+    plain = fragment_list_to_text(to_formatted_text(ANSI(auto_status_ansi(session))))
+    assert plain == "    openai / gpt-5.4 (High) · Ask everything"
+    assert "Auto" not in plain
+
+    # A saved effort is not applied by Claude Code, so never claim it is active.
+    session.terminal.provider_model = ("claude-code", "claude-sonnet-4-5")
+    plain = fragment_list_to_text(to_formatted_text(ANSI(auto_status_ansi(session))))
+    assert plain == "    claude-code / claude-sonnet-4-5 · Ask everything"
+
+    session.terminal.provider_model = ("codex", "gpt-6.1-sol")
+    session.reasoning_effort = None
+    plain = fragment_list_to_text(to_formatted_text(ANSI(auto_status_ansi(session))))
+    assert "gpt-6.1-sol (Xhigh)" in plain
+    monkeypatch.setenv("OPENSRE_REASONING_EFFORT", "low")
+    plain = fragment_list_to_text(to_formatted_text(ANSI(auto_status_ansi(session))))
+    assert "gpt-6.1-sol (Low)" in plain
+
+    session.terminal.provider_model = ("openai", "gpt-4.1")
+    assert "(Low)" not in auto_status_ansi(session)
+
+
+def test_long_model_keeps_permissions_and_applied_effort_at_narrow_width() -> None:
+    from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, to_formatted_text
+    from rich.cells import cell_len
+
+    from config.llm_reasoning_effort import ReasoningEffort
+
+    session = Session()
+    session.terminal.provider_model = ("openai", "gpt-5-" + "界[model]" * 40 + "\n\x1b\r")
+    session.reasoning_effort = ReasoningEffort.HIGH
+    for level in AutoLevel:
+        session.terminal.auto_level = level
+        for width in (1, 8, 20, 39, 79, 159):
+            plain = fragment_list_to_text(
+                to_formatted_text(ANSI(auto_status_ansi(session, max_width=width)))
+            )
+            assert cell_len(plain) <= width
+            assert "\n" not in plain
+            assert plain == plain.rstrip()
+            if width >= 39:
+                assert "(High)" in plain
+                assert ("Allow all" if level == AutoLevel.HIGH else "Ask") in plain

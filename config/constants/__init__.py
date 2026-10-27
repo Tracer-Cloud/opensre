@@ -321,6 +321,7 @@ if TYPE_CHECKING:
     from config.constants.ci_fixes import (
         CI_FIX_LEDGER_PATH_ENV as CI_FIX_LEDGER_PATH_ENV,
     )
+    from config.constants.ci_fixes import CI_FIX_STATUS_LABEL as CI_FIX_STATUS_LABEL
     from config.constants.ci_fixes import (
         CI_FIX_UNSETTLED_MERGE_ATTEMPTS as CI_FIX_UNSETTLED_MERGE_ATTEMPTS,
     )
@@ -861,6 +862,9 @@ if TYPE_CHECKING:
     )
     from config.constants.llm import (
         OPENSRE_SUBSCRIPTION_AUTH_DIR_ENV as OPENSRE_SUBSCRIPTION_AUTH_DIR_ENV,
+    )
+    from config.constants.llm import (
+        REASONING_EFFORT_MODEL_PREFIXES as REASONING_EFFORT_MODEL_PREFIXES,
     )
     from config.constants.mariadb import (
         MARIADB_DATABASE_ENV as MARIADB_DATABASE_ENV,
