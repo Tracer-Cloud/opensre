@@ -186,6 +186,7 @@ async def test_enter_on_a_root_command_opens_its_subcommand_tray() -> None:
         assert prompt.default_buffer.text == "/model "
         assert state is not None
         assert [completion.text for completion in state.completions] == [
+            "list",
             "show",
             "set",
             "restore",

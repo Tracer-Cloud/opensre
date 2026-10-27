@@ -99,16 +99,14 @@ def model_toolcall_set(model: str) -> None:
 @model_toolcall.command(name="show")
 def model_toolcall_show() -> None:
     """Show the active provider's separate tool-call model."""
-    import os
-
+    from config.llm_settings import LLMSettings
+    from core.llm.provider_models import resolve_provider_models
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
     provider, model = active_model()
-    option = PROVIDER_BY_VALUE.get(provider)
-    toolcall = (
-        os.getenv(option.toolcall_model_env, "") if option and option.toolcall_model_env else ""
-    )
-    value = toolcall or model
+    value = model
+    if provider in PROVIDER_BY_VALUE:
+        _reasoning, value = resolve_provider_models(LLMSettings.from_env(), provider)
     if _json():
         click.echo(json.dumps({"provider": provider, "model": value}))
     else:

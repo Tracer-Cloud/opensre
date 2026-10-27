@@ -130,12 +130,12 @@ def choose_model(
                 raise InputFormError("Choose a listed model.", field="model")
             return value
 
-        app = build_input_form(
-            values,
-            title="Choose a model",
-            heading="Connected providers" if provider is None else f"Connected to {provider}",
-            submit_label="Use model",
-            fields=lambda _, choices=choices, has_rows=bool(rows): [
+        def fields(
+            _draft: dict[str, str],
+            choices: list[InputChoice] = choices,
+            has_rows: bool = bool(rows),
+        ) -> list[InputField]:
+            return [
                 InputField(
                     "model",
                     "Model",
@@ -152,7 +152,14 @@ def choose_model(
                         RecordColumn(name) for name in ("Model", "Source", "State")
                     ),
                 )
-            ],
+            ]
+
+        app = build_input_form(
+            values,
+            title="Choose a model",
+            heading="Connected providers" if provider is None else f"Connected to {provider}",
+            submit_label="Use model",
+            fields=fields,
             validate=validate,
             initial_field="model",
             submit_on_choice=True,

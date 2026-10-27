@@ -203,7 +203,7 @@ class TestDispatchSlash:
         output = buf.getvalue()
         assert "Show or change active LLM settings." in output
         assert "/model set <provider>" in output
-        assert "Typed bare /model opens an interactive menu" in output
+        assert "Typed bare /model opens connected model choices" in output
         from surfaces.interactive_shell.command_registry.model.command import COMMANDS as model_cmds
 
         notes = " ".join(model_cmds[0].notes)

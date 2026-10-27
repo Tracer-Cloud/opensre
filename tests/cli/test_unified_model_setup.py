@@ -332,3 +332,83 @@ def test_custom_endpoint_login_remembers_candidate_without_activating(monkeypatc
     assert provider_choices("custom-openai")[0].model == "gateway-model"
     assert os.environ["LLM_PROVIDER"] == "openai"
     assert not os.getenv("CUSTOM_OPENAI_REASONING_MODEL")
+
+
+def test_restore_cli_clears_override_and_keeps_gateway_model(monkeypatch, selection_paths):
+    from config.llm_auth.cli_auth import CliAuthState
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
+    from surfaces.shared.llm_setup.selection import default_model
+
+    monkeypatch.setenv("CLAUDE_CODE_MODEL", "opus")
+    monkeypatch.setenv("CUSTOM_OPENAI_REASONING_MODEL", "gateway-model")
+    monkeypatch.setattr(
+        "config.llm_auth.cli_auth.resolve_cli_auth_state",
+        lambda _: CliAuthState(True, True, "Connected"),
+    )
+    result = CliRunner().invoke(cli, ["model", "restore", "claude-code"])
+    assert result.exit_code == 0, result.output
+    assert os.environ["CLAUDE_CODE_MODEL"] == ""
+    assert default_model(PROVIDER_BY_VALUE["custom-openai"]) == "gateway-model"
+
+
+def test_toolcall_show_uses_effective_tiered_default(monkeypatch, selection_paths):
+    import json
+
+    from config.llm_settings import LLMSettings
+    from core.llm.provider_models import resolve_provider_models
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic")
+    for key in ("ANTHROPIC_MODEL", "ANTHROPIC_REASONING_MODEL", "ANTHROPIC_TOOLCALL_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    reasoning, toolcall = resolve_provider_models(LLMSettings.from_env(), "anthropic")
+    assert reasoning != toolcall
+    result = CliRunner().invoke(cli, ["--json", "model", "toolcall", "show"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {"provider": "anthropic", "model": toolcall}
+
+
+def test_reused_key_still_validates_and_does_not_switch_on_rejection(monkeypatch, selection_paths):
+    from rich.console import Console
+
+    from surfaces.shared.llm_setup import connection, validation
+    from surfaces.shared.llm_setup.persist import AuthSetupError
+    from surfaces.shared.llm_setup.validation_result import ValidationResult
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("OPENAI_API_KEY", "expired-synthetic-key")
+    calls = []
+
+    def reject(**kwargs):
+        calls.append((kwargs["api_key"], kwargs["model"]))
+        return ValidationResult(ok=False, detail="API key rejected")
+
+    monkeypatch.setattr(validation, "validate_provider_credentials", reject)
+    with pytest.raises(AuthSetupError, match="API key rejected"):
+        connection.connect_provider(Console(), "openai", model="gpt-5.4")
+    assert calls == [("expired-synthetic-key", "gpt-5.4")]
+    assert os.environ["LLM_PROVIDER"] == "anthropic"
+    assert not selection_paths.exists()
+
+
+def test_connecting_ambient_provider_makes_its_models_selectable(monkeypatch, selection_paths):
+    from rich.console import Console
+
+    from config.llm_auth import credentials
+    from config.llm_auth.credentials import CredentialSource, CredentialStatus
+    from surfaces.shared.llm_setup import connection, model_choices
+    from surfaces.shared.llm_setup.model_choices import connected_choices
+
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+
+    # Stand in for the ambient IAM/ADC probe, not the picker or connect workflow.
+    def status(provider):
+        return CredentialStatus(provider, True, CredentialSource.AMBIENT, False, False, "IAM ready")
+
+    monkeypatch.setattr(credentials, "status", status)
+    monkeypatch.setattr(connection, "status", status)
+    monkeypatch.setattr(model_choices, "status", status)
+    connection.connect_provider(Console(), "bedrock")
+    rows = connected_choices(provider="bedrock")
+    assert rows and all(row.provider == "bedrock" for row in rows)
+    assert os.environ["LLM_PROVIDER"] == "openai"

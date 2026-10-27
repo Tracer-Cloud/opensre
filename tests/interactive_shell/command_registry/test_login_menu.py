@@ -13,13 +13,14 @@ from surfaces.interactive_shell.session import Session
 @pytest.mark.parametrize("selection", ["chatgpt", None])
 def test_login_selects_locally_before_starting_cli(monkeypatch, command, selection) -> None:
     from surfaces.shared.llm_setup import auth_menu
+    from surfaces.shared.llm_setup.auth_profiles import resolve_auth_profile
 
     session = Session()
     run_cli = Mock(return_value=True)
 
     def select_provider():
         run_cli.assert_not_called()
-        return auth_menu.resolve_auth_profile(selection) if selection else None
+        return resolve_auth_profile(selection) if selection else None
 
     monkeypatch.setattr(cli_parity, "session_terminal", lambda _: object())
     monkeypatch.setattr(auth_menu, "prompt_auth_provider", select_provider)

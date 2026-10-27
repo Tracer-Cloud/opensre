@@ -174,7 +174,9 @@ def test_cli_login_keeps_api_keys_separate_and_status_never_reads_tokens(
     monkeypatch.setenv("OPENAI_API_KEY", "api-key-must-stay")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://wrong.example")
     monkeypatch.setenv("OPENSRE_ACCOUNT_TOKEN", "opensre-identity-must-stay")
-    result = CliRunner().invoke(cli, ["auth", "login", "chatgpt", "--no-open-browser"])
+    result = CliRunner().invoke(
+        cli, ["auth", "login", "chatgpt", "--no-open-browser", "--set-provider"]
+    )
     assert result.exit_code == 0, result.output
     env = (tmp_path / ".env").read_text()
     assert "LLM_PROVIDER=chatgpt\n" in env

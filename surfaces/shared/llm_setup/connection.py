@@ -8,10 +8,10 @@ import click
 from rich.console import Console
 
 from config.env_file import sync_env_values
-from config.llm_auth.credentials import status, verify
+from config.llm_auth.credentials import resolve_for_request, status, verify
 from config.llm_auth.model_catalog import save_models
 from config.llm_auth.records import save_provider_auth_record
-from surfaces.shared.llm_setup import model_discovery
+from surfaces.shared.llm_setup import model_discovery, validation
 from surfaces.shared.llm_setup.auth_menu import prompt_auth_provider
 from surfaces.shared.llm_setup.auth_profiles import provider_for_profile, resolve_auth_profile
 from surfaces.shared.llm_setup.auth_results import AuthSetupResult
@@ -146,6 +146,13 @@ def connect_provider(
                     preferred = provider.default_model
             check_model = preferred or _required("Model ID")
             if reuse:
+                if validate:
+                    resolved = resolve_for_request(provider.value)
+                    checked = validation.validate_provider_credentials(
+                        provider=provider, api_key=resolved.api_key, model=check_model
+                    )
+                    if not checked.ok:
+                        raise AuthSetupError(checked.detail)
                 result = AuthSetupResult(
                     provider.value, check_model, str(auth.source), auth.detail, None
                 )
@@ -179,6 +186,14 @@ def connect_provider(
             discovered = model_discovery.discover_models(provider)
             if discovered:
                 save_models(provider.value, discovered)
+            save_provider_auth_record(
+                provider=provider.value,
+                auth_name=profile.name,
+                kind=profile.kind,
+                source=str(auth.source),
+                detail=auth.detail,
+                verified=auth.verified,
+            )
             result = AuthSetupResult(
                 provider.value, model or provider.default_model, str(auth.source), auth.detail, None
             )

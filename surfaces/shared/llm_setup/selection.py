@@ -37,10 +37,10 @@ def model_allowed(provider: ProviderOption, model: str) -> bool:
 
 def default_model(provider: ProviderOption) -> str:
     """Keep configured gateway models when the provider has no built-in default."""
-    return (
-        provider.default_model
-        or os.getenv(provider.model_env, "").strip()
-        or (os.getenv(provider.legacy_model_env, "").strip() if provider.legacy_model_env else "")
+    if provider.default_model or not provider.endpoint_env:
+        return provider.default_model
+    return os.getenv(provider.model_env, "").strip() or (
+        os.getenv(provider.legacy_model_env, "").strip() if provider.legacy_model_env else ""
     )
 
 
@@ -113,7 +113,7 @@ def select_reasoning_model(model: str, *, provider_name: str | None = None) -> S
         raise SelectionError(
             "Hosted models are managed by OpenSRE. Select a connected provider instead."
         )
-    provider = resolve_provider(provider_name or os.getenv(LLM_PROVIDER_ENV, "anthropic"))
+    provider = resolve_provider(provider_name or os.getenv(LLM_PROVIDER_ENV) or "anthropic")
     selected = normalize_model(model)
     validate_model(provider, selected)
     path = env_sync.sync_reasoning_model_env(provider=provider, model=selected)
@@ -131,7 +131,7 @@ def select_toolcall_model(model: str, *, provider_name: str | None = None) -> Se
         raise SelectionError(
             "Hosted models are managed by OpenSRE. Select a connected provider instead."
         )
-    provider = resolve_provider(provider_name or os.getenv(LLM_PROVIDER_ENV, "anthropic"))
+    provider = resolve_provider(provider_name or os.getenv(LLM_PROVIDER_ENV) or "anthropic")
     if not provider.toolcall_model_env:
         raise SelectionError(f"provider {provider.value} does not expose a separate toolcall model")
     selected = normalize_model(model)

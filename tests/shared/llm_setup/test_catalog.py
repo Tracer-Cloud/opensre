@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from surfaces.interactive_shell.command_registry.model.switching import _is_model_allowed
 from surfaces.shared.llm_setup.catalog import (
     ANTHROPIC_MODELS,
     CLAUDE_CODE_MODELS,
@@ -13,6 +12,7 @@ from surfaces.shared.llm_setup.catalog import (
     PROVIDER_BY_VALUE,
     SUPPORTED_PROVIDERS,
 )
+from surfaces.shared.llm_setup.selection import model_allowed
 
 
 def test_project_env_path_defaults_to_repo_root() -> None:
@@ -81,7 +81,7 @@ def test_new_claude_models_allowed_by_anthropic_provider() -> None:
     assert provider.default_model == "claude-opus-4-7"
 
     for model_id in ("claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"):
-        assert _is_model_allowed(provider, model_id) is True
+        assert model_allowed(provider, model_id) is True
 
     # Arbitrary uncurated models remain rejected
-    assert _is_model_allowed(provider, "claude-unknown-99") is False
+    assert model_allowed(provider, "claude-unknown-99") is False

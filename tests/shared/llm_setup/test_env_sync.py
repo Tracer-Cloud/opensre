@@ -271,7 +271,7 @@ def test_sync_provider_env_gemini_cli_writes_model(tmp_path, monkeypatch) -> Non
     assert "GEMINI_CLI_MODEL=\n" in content
 
 
-def test_sync_provider_env_removes_stale_toolcall_and_classification_keys(
+def test_sync_provider_env_preserves_inactive_toolcall_and_classification_keys(
     tmp_path, monkeypatch
 ) -> None:
     env_path = tmp_path / ".env"
@@ -297,10 +297,10 @@ def test_sync_provider_env_removes_stale_toolcall_and_classification_keys(
     content = env_path.read_text(encoding="utf-8")
     assert "LLM_PROVIDER=codex\n" in content
     assert "CODEX_MODEL=gpt-5.4-mini\n" in content
-    assert "OPENAI_TOOLCALL_MODEL=" not in content
-    assert "OPENAI_CLASSIFICATION_MODEL=" not in content
-    assert "OPENAI_REASONING_MODEL=" not in content
-    assert "OPENAI_TOOLCALL_MODEL" not in os.environ
+    assert "OPENAI_TOOLCALL_MODEL=gpt-5.4-mini\n" in content
+    assert "OPENAI_CLASSIFICATION_MODEL=gpt-5.4-mini\n" in content
+    assert "OPENAI_REASONING_MODEL=gpt-5.4-mini\n" in content
+    assert os.environ["OPENAI_TOOLCALL_MODEL"] == "gpt-5.4-mini"
 
 
 def test_sync_provider_env_loads_preserved_keys_from_env_file(tmp_path, monkeypatch) -> None:
@@ -372,8 +372,8 @@ def test_sync_provider_env_updates_os_environ(tmp_path, monkeypatch) -> None:
 
     assert os.environ["LLM_PROVIDER"] == "codex"
     assert os.environ["CODEX_MODEL"] == "gpt-5.4-mini"
-    assert "OPENAI_TOOLCALL_MODEL" not in os.environ
-    assert "OPENAI_REASONING_MODEL" not in os.environ
+    assert os.environ["OPENAI_TOOLCALL_MODEL"] == "gpt-5.4-mini"
+    assert os.environ["OPENAI_REASONING_MODEL"] == "gpt-5.4-mini"
 
 
 def test_sync_provider_env_skips_empty_preserved_values_in_os_environ(
