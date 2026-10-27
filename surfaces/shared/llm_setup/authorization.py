@@ -9,6 +9,7 @@ from collections.abc import Callable
 import click
 
 from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
+from surfaces.shared.llm_setup.auth_profiles import ProviderAuthProfile
 from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 
 
@@ -42,3 +43,19 @@ def choose_subscription_model(models: list[tuple[str, str]], *, provider: str) -
     if selected is None:
         raise click.Abort()
     return str(selected)
+
+
+def maybe_open_setup_page(profile: ProviderAuthProfile, *, enabled: bool) -> None:
+    if not enabled or not profile.setup_url:
+        return
+    if not sys.stdin.isatty():
+        click.echo(f"Setup page: {profile.setup_url}")
+        return
+    if click.confirm(f"Open {profile.label} setup page in your browser?", default=True):
+        opened = False
+        try:
+            opened = bool(webbrowser.open(profile.setup_url))
+        finally:
+            from infrastructure.analytics.capture import capture_browser_open_requested
+
+            capture_browser_open_requested(target="provider_setup", opened=opened)

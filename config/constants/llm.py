@@ -21,6 +21,8 @@ LLM_PROVIDER_ENV: Final[str] = "LLM_PROVIDER"
 
 # Explicit local model selection is independent of OpenSRE account identity.
 OPENSRE_LLM_CONNECTION_ENV: Final[str] = "OPENSRE_LLM_CONNECTION"
+HOSTED_MODEL_PROVIDER: Final[str] = "opensre-hosted"
+OPENSRE_MODEL_SETUP_RESULT_ENV: Final[str] = "OPENSRE_MODEL_SETUP_RESULT"
 OPENSRE_SUBSCRIPTION_AUTH_DIR_ENV: Final[str] = "OPENSRE_SUBSCRIPTION_AUTH_DIR"
 
 #: Retired auth-method selector; subscription connections now have separate

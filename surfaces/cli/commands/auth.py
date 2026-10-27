@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import sys
-import webbrowser
 from collections.abc import Iterable
 
 import click
+from click.core import ParameterSource
 from rich.console import Console
 from rich.text import Text
 
@@ -19,11 +18,11 @@ from surfaces.shared.llm_setup.auth_profiles import (
 )
 from surfaces.shared.llm_setup.auth_service import (
     AuthSetupError,
-    configure_api_key_provider,
     logout_provider,
     provider_status,
     verify_provider,
 )
+from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
@@ -38,22 +37,6 @@ def _resolve_or_raise(provider: str) -> ProviderAuthProfile:
         raise click.UsageError(
             f"Unknown auth provider '{provider}'. Choose one of: {_provider_choices()}."
         ) from exc
-
-
-def _maybe_open_setup_page(profile: ProviderAuthProfile, *, enabled: bool) -> None:
-    if not enabled or not profile.setup_url:
-        return
-    if not sys.stdin.isatty():
-        click.echo(f"Setup page: {profile.setup_url}")
-        return
-    if click.confirm(f"Open {profile.label} setup page in your browser?", default=True):
-        opened = False
-        try:
-            opened = bool(webbrowser.open(profile.setup_url))
-        finally:
-            from infrastructure.analytics.capture import capture_browser_open_requested
-
-            capture_browser_open_requested(target="provider_setup", opened=opened)
 
 
 # Mirrors render_health_report's table style (surfaces/shared/terminal/health) so
@@ -133,9 +116,8 @@ def auth_command(ctx: click.Context) -> None:
 @click.option("--model", help="Reasoning model to persist with the provider selection.")
 @click.option(
     "--set-provider/--no-set-provider",
-    default=True,
-    show_default=True,
-    help="Persist LLM_PROVIDER and provider model settings after login.",
+    default=None,
+    help="Explicitly select the provider after login, or connect only with --no-set-provider.",
 )
 @click.option(
     "--validate/--no-validate",
@@ -155,13 +137,15 @@ def auth_login(
     provider: str | None,
     api_key: str | None,
     model: str | None,
-    set_provider: bool,
+    set_provider: bool | None,
     validate: bool,
     open_browser: bool,
     profile_id: str | None,
     new_account: bool,
 ) -> None:
     """Configure one LLM provider auth path."""
+    if provider is None and not repl_tty_interactive():
+        raise click.UsageError("Supply a provider: opensre auth login <provider> --api-key <key>.")
     profile = _resolve_or_raise(provider) if provider else prompt_auth_provider()
     if profile is None:
         raise click.Abort()
@@ -169,66 +153,47 @@ def auth_login(
         raise click.UsageError("Use --profile or --new-account, not both.")
     if profile.kind != "subscription" and (profile_id or new_account):
         raise click.UsageError("--profile and --new-account apply to subscription login.")
+    from surfaces.shared.llm_setup.auth_results import SelectionError
+    from surfaces.shared.llm_setup.connection import connect_provider
+    from surfaces.shared.llm_setup.model_picker import choose_model
+    from surfaces.shared.llm_setup.selection import select_provider
+
+    if api_key is not None and profile.kind == "subscription":
+        from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
+
+        if SUBSCRIPTION_BY_VALUE[profile.provider_value].auth_method != "api_key":
+            raise click.UsageError(f"{profile.label} uses oauth authorization, not an API key.")
+    interactive = repl_tty_interactive()
     try:
-        if profile.kind == "subscription":
-            from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
-
-            spec = SUBSCRIPTION_BY_VALUE[profile.provider_value]
-            if api_key is not None and spec.auth_method != "api_key":
-                raise click.UsageError(
-                    f"{profile.label} uses {spec.auth_method} authorization, not an API key."
-                )
-            from surfaces.cli.commands.subscription_auth import (
-                choose_subscription_model,
-                present_authorization,
-            )
-            from surfaces.shared.llm_setup.subscription_service import configure_subscription
-
-            result = configure_subscription(
-                profile=profile,
-                model=model,
-                set_provider=set_provider,
-                present=present_authorization(
-                    open_browser=open_browser, provider=profile.provider_value
-                ),
-                choose_model=lambda models: choose_subscription_model(
-                    models, provider=profile.provider_value
-                ),
-                credential=(api_key or click.prompt(f"{profile.label} key", hide_input=True))
-                if spec.auth_method == "api_key"
-                else None,
-                profile_id=profile_id,
-                new_account=new_account,
-            )
+        result = connect_provider(
+            _console,
+            profile.name,
+            api_key=api_key,
+            model=model,
+            validate=validate,
+            open_browser=open_browser
+            and (
+                interactive
+                or click.get_current_context().get_parameter_source("open_browser")
+                == ParameterSource.COMMANDLINE
+            ),
+            profile_id=profile_id,
+            new_account=new_account,
+        )
+        click.echo(f"Connected: {profile.label}")
+        if result.detail:
+            _console.print(Text(result.detail))
+        if set_provider is True and (model is not None or not interactive):
+            selected = select_provider(result.provider, model or result.model or None)
+            click.echo(f"Now using {selected.model or 'CLI default'} · {selected.provider}")
+        elif set_provider is not False and interactive:
+            choose_model(_console, provider=result.provider, initial_model=model or result.model)
         else:
-            _maybe_open_setup_page(profile, enabled=open_browser)
-            resolved_key = api_key
-            if resolved_key is None:
-                resolved_key = click.prompt(
-                    f"{profile.label} key",
-                    hide_input=True,
-                    confirmation_prompt=False,
-                    type=str,
-                )
-            result = configure_api_key_provider(
-                profile=profile,
-                api_key=resolved_key,
-                model=model,
-                set_provider=set_provider,
-                validate=validate,
-            )
-    except AuthSetupError as exc:
+            click.echo(f"Choose a model: opensre model set {result.provider} <model>")
+    except (AuthSetupError, SelectionError) as exc:
         raise click.ClickException(str(exc)) from exc
 
-    click.echo(f"Authenticated: {profile.label}")
-    click.echo(f"Provider     : {result.provider}")
-    click.echo(f"Credential   : {result.source}")
-    if result.model:
-        click.echo(f"Model        : {result.model}")
-    if result.env_path:
-        click.echo(f"Env          : {result.env_path}")
-    click.echo(f"Status       : {result.detail}")
-    click.echo(f"Verify       : opensre auth verify {result.provider}")
+    click.echo(f"Verify: opensre auth verify {result.provider}")
 
 
 @auth_command.command(name="status")

@@ -1,4 +1,4 @@
-"""Separate API-key and subscription authentication profiles."""
+"""Authentication profiles for supported provider connection sources."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from surfaces.shared.llm_setup.catalog import (
     WizardCredentialKind,
 )
 
-AuthKind = Literal["api_key", "subscription"]
+AuthKind = Literal["api_key", "subscription", "cli", "host", "none"]
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,27 @@ def iter_auth_profiles(kind: AuthKind | None = None) -> tuple[ProviderAuthProfil
     """Return all supported auth setup paths."""
     profiles = (
         *_api_key_profiles(),
+        *(
+            ProviderAuthProfile(
+                provider.value,
+                provider.value,
+                provider.label,
+                "cli",
+                auth_hint="Use the vendor CLI's own authentication.",
+            )
+            for provider in SUPPORTED_PROVIDERS
+            if provider.credential_kind == WizardCredentialKind.CLI
+        ),
+        *(
+            ProviderAuthProfile(provider.value, provider.value, provider.label, "host")
+            for provider in SUPPORTED_PROVIDERS
+            if provider.credential_kind == WizardCredentialKind.HOST
+        ),
+        *(
+            ProviderAuthProfile(provider.value, provider.value, provider.label, "none")
+            for provider in SUPPORTED_PROVIDERS
+            if provider.credential_kind == WizardCredentialKind.NONE
+        ),
         *(
             ProviderAuthProfile(
                 name=provider.value,

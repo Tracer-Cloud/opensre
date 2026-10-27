@@ -30,6 +30,11 @@ class CommandSpec:
 # the real Click object and fails if these drift.
 COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
+        "model",
+        "Choose models from connected providers.",
+        "surfaces.cli.commands.model:model_command",
+    ),
+    CommandSpec(
         "triage",
         "Watch scoped OTel telemetry and retain incident reports (opt-in pilot).",
         "surfaces.cli.commands.triage:triage_command",

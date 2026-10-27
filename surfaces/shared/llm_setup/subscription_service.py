@@ -6,6 +6,8 @@ from collections.abc import Callable
 
 import httpx
 
+from config.llm_auth.credentials import status
+from config.llm_auth.model_catalog import save_models
 from config.llm_auth.records import resolve_provider_auth_record, save_provider_auth_record_values
 from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
 from core.llm.subscriptions.registry import subscription_adapter
@@ -31,21 +33,36 @@ def configure_subscription(
     provider = provider_for_profile(profile)
     adapter = subscription_adapter(provider.value).auth
     spec = SUBSCRIPTION_BY_VALUE[provider.value]
+    discovered: list[tuple[str, str]] = []
 
     def select(models: list[tuple[str, str]]) -> str:
+        discovered[:] = models
         selected = model.strip() if model is not None else choose_model(models)
         if selected not in {slug for slug, _ in models}:
             raise AuthSetupError(f"Choose a model available to this {provider.label} account.")
         return selected
 
     try:
-        selected_model = adapter.login(
-            present,
-            profile_id=profile_id,
-            new_account=new_account,
-            select_model=select,
-            **({"credential": credential} if credential is not None else {}),
+        reuse = (
+            not profile_id
+            and not new_account
+            and credential is None
+            and status(provider.value).configured
         )
+        if reuse:
+            try:
+                selected_model = select(adapter.verify())
+            except SubscriptionLoginRequired:
+                reuse = False
+        if not reuse:
+            selected_model = adapter.login(
+                present,
+                profile_id=profile_id,
+                new_account=new_account,
+                select_model=select,
+                **({"credential": credential} if credential is not None else {}),
+            )
+        save_models(provider.value, discovered)
         env_path = (
             sync_provider_env(provider=provider, model=selected_model) if set_provider else None
         )
@@ -77,6 +94,7 @@ def verify_subscription(profile: ProviderAuthProfile) -> AuthStatus:
         )
         raise AuthSetupError(detail) from exc
     detail = f"{profile.label} credentials accepted; {len(models)} models available. Inference remains subject to plan limits."
+    save_models(provider, models)
     record = resolve_provider_auth_record(provider)
     save_provider_auth_record_values(provider, {**record, "verified": "true", "stale": "false"})
     return AuthStatus(provider, profile.label, True, "subscription", detail, verified=True)
@@ -85,6 +103,8 @@ def verify_subscription(profile: ProviderAuthProfile) -> AuthStatus:
 def logout_subscription(provider: str) -> str:
     """Clear subscription tokens without touching API keys or OpenSRE identity."""
     try:
-        return subscription_adapter(provider).auth.logout()
+        detail = subscription_adapter(provider).auth.logout()
+        save_models(provider, [])
+        return detail
     except (RuntimeError, ValueError) as exc:
         raise AuthSetupError(str(exc)) from exc

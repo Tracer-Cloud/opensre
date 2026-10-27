@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+class SelectionError(ValueError):
+    """An invalid or incomplete model selection that must not be persisted."""
+
+
 @dataclass(frozen=True)
 class AuthStatus:
     """Status row for one provider auth path."""
@@ -28,3 +32,13 @@ class AuthSetupResult:
     source: str
     detail: str
     env_path: Path | None
+
+
+@dataclass(frozen=True)
+class SelectionResult:
+    """The committed provider and model, without credential material."""
+
+    provider: str
+    model: str
+    env_path: Path
+    toolcall_model: str | None = None

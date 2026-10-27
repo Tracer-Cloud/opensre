@@ -121,8 +121,11 @@ def save_provider_auth_record(
         if not isinstance(providers, dict):
             providers = {}
             data["providers"] = providers
+        existing = providers.get(provider_value, {})
+        catalog = existing.get("model_catalog", "") if isinstance(existing, dict) else ""
         providers[provider_value] = _normalize_record(
             {
+                "model_catalog": catalog,
                 "provider": provider_value,
                 "auth_name": auth_name,
                 "kind": kind,

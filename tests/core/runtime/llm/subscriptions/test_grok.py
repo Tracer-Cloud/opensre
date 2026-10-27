@@ -226,7 +226,9 @@ def test_cli_login_runtime_streaming_verify_and_logout(wire, tmp_path):
     from core.llm.readiness import llm_ready
     from surfaces.shared.llm_setup.auth_service import logout_provider, verify_provider
 
-    result = CliRunner().invoke(cli, ["auth", "login", "grok", "--no-open-browser"])
+    result = CliRunner().invoke(
+        cli, ["auth", "login", "grok", "--set-provider", "--no-open-browser"]
+    )
     assert result.exit_code == 0, result.output
     assert "ABCD-EFGH" in result.output and "secret-device-code" not in result.output
     env = (tmp_path / ".env").read_text()

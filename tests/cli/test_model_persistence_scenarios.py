@@ -316,7 +316,7 @@ class TestReplModelPersistence:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            "surfaces.interactive_shell.command_registry.model.ollama.list_available_models",
+            "surfaces.shared.llm_setup.ollama.list_available_models",
             lambda _host: ("llama3.2:latest",),
         )
         console, output = _capture()

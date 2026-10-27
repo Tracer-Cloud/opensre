@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
+
+if TYPE_CHECKING:
+    from surfaces.shared.llm_setup.catalog import ProviderOption
 
 _MODEL_LIST_TIMEOUT_SECONDS = 5.0
 
@@ -49,6 +52,30 @@ def model_is_available(model: str, available_models: tuple[str, ...]) -> bool:
     if ":" in model:
         return False
     return any(candidate.split(":", maxsplit=1)[0] == model for candidate in available_models)
+
+
+def provider_models(provider: ProviderOption) -> list[tuple[str, str]]:
+    """Resolve the provider host and deliberately discover its installed models."""
+    from config.llm_credentials import resolve_env_credential
+
+    host = resolve_env_credential(provider.api_key_env, default=provider.credential_default)
+    available = list_available_models(host)
+    if not available:
+        raise OllamaModelDiscoveryError(
+            "No Ollama models are available. Pull one with ollama pull <model>, then reconnect."
+        )
+    return [(model, model) for model in available]
+
+
+def require_available_model(provider: ProviderOption, model: str) -> None:
+    """Reject an unavailable tag without changing the current selection."""
+    from surfaces.shared.llm_setup.auth_results import SelectionError
+
+    available = tuple(value for value, _label in provider_models(provider))
+    if not model_is_available(model, available):
+        raise SelectionError(
+            f"Ollama model is not available: {model}. Available models: {', '.join(available)}"
+        )
 
 
 __all__ = [

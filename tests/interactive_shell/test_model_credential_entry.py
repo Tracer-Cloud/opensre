@@ -1,4 +1,4 @@
-"""/model set offers inline API-key entry instead of dead-ending on a missing key."""
+"""Explicit model changes use connected credentials and preserve endpoint guards."""
 
 from __future__ import annotations
 
@@ -45,47 +45,32 @@ def _credential_status_sequence(monkeypatch: Any, *, configured_after: bool) -> 
     monkeypatch.setattr(credentials, "status", lambda _p: next(statuses, fallback))
 
 
-def test_blank_key_cancels_without_saving(monkeypatch: Any) -> None:
+@pytest.mark.parametrize("key", ["", "synthetic-key"])
+def test_missing_key_directs_to_login_without_prompting_or_saving(monkeypatch, key):
     import surfaces.shared.llm_setup.auth_service as service
 
     _credential_status_sequence(monkeypatch, configured_after=False)
-    saves: list[Any] = []
-    monkeypatch.setattr(service, "configure_api_key_provider", lambda **kw: saves.append(kw))
-
-    console = _Console(key="")  # blank input = cancel
-    assert switching.switch_llm_provider("openai", console) is False  # type: ignore[arg-type]
-    assert saves == []
-    assert any("cancelled" in line for line in console.printed)
-
-
-def test_pasted_key_is_saved_and_switch_proceeds(monkeypatch: Any) -> None:
-    import surfaces.shared.llm_setup.auth_profiles as providers
-    import surfaces.shared.llm_setup.auth_service as service
-    import surfaces.shared.llm_setup.env_sync as env_sync
-
-    _credential_status_sequence(monkeypatch, configured_after=True)
-    monkeypatch.setattr(providers, "resolve_auth_profile", lambda _p: object())
-    saves: list[Any] = []
-    monkeypatch.setattr(service, "configure_api_key_provider", lambda **kw: saves.append(kw))
-    monkeypatch.setattr(env_sync, "sync_provider_env", lambda **_: "/tmp/.env")
-    monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
-    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
-
-    console = _Console(key="sk-test-123")
-    assert switching.switch_llm_provider("openai", console) is True  # type: ignore[arg-type]
-    assert saves and saves[0]["api_key"] == "sk-test-123"
+    monkeypatch.setattr(
+        service,
+        "configure_api_key_provider",
+        lambda **_kw: pytest.fail("Model selection must not log in"),
+    )
+    console = _Console(key=key)
+    console.input = lambda *_a, **_kw: pytest.fail("Complete model command must not prompt")
+    assert switching.switch_llm_provider("openai", console) is False
+    assert any("opensre auth login openai" in line for line in console.printed)
 
 
 @pytest.mark.parametrize(
     "change",
     [
-        lambda console: switching.switch_llm_provider("anthropic", console),
         lambda console: switching.switch_reasoning_model("gpt-5.5", console),
         lambda console: switching.switch_toolcall_model("gpt-5.5", console),
-        lambda console: switching.restore_default_model("anthropic", console),
     ],
 )
-def test_account_login_blocks_every_model_change(monkeypatch: Any, change: Any) -> None:
+def test_model_only_changes_do_not_implicitly_leave_hosted_billing(
+    monkeypatch: Any, change: Any
+) -> None:
     monkeypatch.setattr(
         "config.account.account_llm_route",
         lambda: SimpleNamespace(model="gpt-5.4-mini"),
@@ -93,8 +78,7 @@ def test_account_login_blocks_every_model_change(monkeypatch: Any, change: Any) 
     console = _Console()
 
     assert change(console) is False
-    assert any("managed by your OpenSRE account" in line for line in console.printed)
-    assert any("/logout" in line for line in console.printed)
+    assert any("Select a connected provider" in line for line in console.printed)
 
 
 def test_account_model_is_the_effective_model_shown_by_the_shell(monkeypatch: Any) -> None:
@@ -167,7 +151,7 @@ def test_custom_provider_no_model_preserves_configured_model(monkeypatch: Any) -
     monkeypatch.setattr(
         env_sync, "sync_provider_env", lambda **kw: synced.append(kw) or "/tmp/.env"
     )
-    monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
+    monkeypatch.setattr("core.llm.factory.reset_llm_clients", lambda: None)
     monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
 
     console = _Console()
@@ -181,7 +165,9 @@ def test_custom_provider_no_model_uses_legacy_model(monkeypatch: Any) -> None:
     assert provider.legacy_model_env is not None
     monkeypatch.setenv(provider.legacy_model_env, "gateway-model")
 
-    assert switching._resolve_omitted_model(provider) == "gateway-model"
+    from surfaces.shared.llm_setup.selection import default_model
+
+    assert default_model(provider) == "gateway-model"
 
 
 def test_missing_subscription_directs_to_browser_login_without_prompting_for_key(monkeypatch):

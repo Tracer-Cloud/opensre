@@ -7,6 +7,7 @@ import os
 import subprocess
 import tempfile
 import threading
+from pathlib import Path
 
 from rich.console import Console
 from rich.markup import escape
@@ -202,6 +203,32 @@ def run_cli_command(
     capture_output: bool = True,
     keep_running_hint: str | None = None,
 ) -> bool:
+    """Delegate commands, keeping model-setup changes scoped to this child."""
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory(prefix="opensre-model-setup-") as directory:
+        return _run_cli_command(
+            console,
+            args,
+            session=session,
+            subprocess_timeout=subprocess_timeout,
+            capture_output=capture_output,
+            keep_running_hint=keep_running_hint,
+            setup_result=Path(directory) / "result.json",
+        )
+
+
+def _run_cli_command(
+    console: Console,
+    args: list[str],
+    *,
+    session: Session | None = None,
+    subprocess_timeout: float | None = None,
+    capture_output: bool = True,
+    keep_running_hint: str | None = None,
+    setup_result: Path,
+) -> bool:
     """Helper to delegate complex or interactive Click commands to a child process.
 
     ``subprocess_timeout`` caps how long ``subprocess.run`` waits before raising
@@ -250,6 +277,9 @@ def run_cli_command(
         _captured_child_env(console, headless=headless) if should_capture else os.environ.copy()
     )
     child_env[OPENSRE_PARENT_INTERACTIVE_SHELL_ENV] = "1"
+    from config.constants.llm import OPENSRE_MODEL_SETUP_RESULT_ENV
+
+    child_env[OPENSRE_MODEL_SETUP_RESULT_ENV] = str(setup_result)
     # The child inherits the environment, not the dispatching context, so a
     # non-TTY slash command's override must be written into its env, and so
     # must the turn's organization scope.
@@ -361,13 +391,21 @@ def run_cli_command(
     if session is not None and not should_capture:
         set_turn_outcome_hint(session, format_wizard_cli_outcome(args, exit_code=exit_code))
     ok = _cli_command_succeeded(exit_code)
-    if ok and args[:2] == ["auth", "login"] and not headless:
+    if not headless:
         from core.llm.factory import reset_llm_clients
-        from surfaces.shared.llm_setup.env_sync import reload_provider_selection
+        from surfaces.shared.llm_setup.env_sync import (
+            reload_connected_provider,
+            reload_provider_selection,
+        )
+        from surfaces.shared.llm_setup.handoff import read_setup
 
-        if "--no-set-provider" not in args:
+        connected, selected = read_setup(setup_result)
+        if connected:
+            reload_connected_provider(connected)
+        if selected or (ok and args[:2] == ["auth", "login"] and "--set-provider" in args):
             reload_provider_selection()
-        reset_llm_clients()
+        if connected or selected:
+            reset_llm_clients()
     if session is not None and not ok and not backgrounded:
         session.mark_latest(ok=False, kind="slash")
     # A backgrounded tick already recorded ``still_running``. Returning True

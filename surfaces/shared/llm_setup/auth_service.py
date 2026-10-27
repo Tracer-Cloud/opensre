@@ -164,6 +164,12 @@ def logout_provider(raw_name: str) -> str:
         from surfaces.shared.llm_setup.subscription_service import logout_subscription
 
         return logout_subscription(provider.value)
+    if profile.kind in {"cli", "host", "none"}:
+        delete_provider_auth_record(provider.value)
+        return (
+            f"Cleared OpenSRE setup metadata for {provider.label}. "
+            "External CLI sessions, ambient credentials, and host settings were not removed."
+        )
     delete_provider_auth_record(provider.value)
     try:
         delete_provider_auth(provider.value)

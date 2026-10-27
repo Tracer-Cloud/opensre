@@ -316,7 +316,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks about messaging pairing, allowlists, revocation, or security status",
     ),
     "/model": _mcp(
-        "Explicit /model command operations: show the model table, open the model menu, "
+        "Explicit /model command operations: list connected model choices, open the direct model picker, "
         "set/restore the active LLM provider or reasoning model, or manage the toolcall model.",
         "User explicitly types /model or asks to run /model show",
         "User asks to change, set, restore, or switch the active provider or model",

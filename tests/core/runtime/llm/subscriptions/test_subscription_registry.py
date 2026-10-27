@@ -58,6 +58,7 @@ def test_second_adapter_dispatches_setup_runtime_and_logout(monkeypatch, tmp_pat
     from core.llm.subscriptions.types import SubscriptionAuth
     from surfaces.cli.app import cli
 
+    monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
     seen = []
     registration = registry.SUBSCRIPTION_ADAPTERS["grok"]
 
@@ -67,6 +68,15 @@ def test_second_adapter_dispatches_setup_runtime_and_logout(monkeypatch, tmp_pat
         ):
             seen.append((profile_id, new_account, credential))
             assert (credential == "subscription-key") == (method == "api_key")
+            from config.llm_auth.records import save_provider_auth_record
+
+            save_provider_auth_record(
+                provider="grok",
+                auth_name="grok",
+                kind="subscription",
+                source="subscription",
+                detail="Synthetic connection",
+            )
             return select_model(self.models())
 
         def resolve(self):
@@ -100,7 +110,15 @@ def test_second_adapter_dispatches_setup_runtime_and_logout(monkeypatch, tmp_pat
     )
     monkeypatch.setattr("surfaces.shared.llm_setup.env_sync.PROJECT_ENV_PATH", tmp_path / ".env")
     monkeypatch.setenv("OPENSRE_PROJECT_ENV_PATH", str(tmp_path / ".env"))
-    args = ["auth", "login", "grok", "--no-open-browser", "--profile", "test-account"]
+    args = [
+        "auth",
+        "login",
+        "grok",
+        "--set-provider",
+        "--no-open-browser",
+        "--profile",
+        "test-account",
+    ]
     if method == "api_key":
         args += ["--api-key", "subscription-key"]
     result = CliRunner().invoke(cli, args)
@@ -112,6 +130,9 @@ def test_second_adapter_dispatches_setup_runtime_and_logout(monkeypatch, tmp_pat
     assert verify_provider("grok").provider == "grok"
     assert resolve_provider_auth_record("grok")["verified"] == "true"
     assert logout_provider("grok") == "test subscription removed"
+    from config.llm_auth.model_catalog import saved_models
+
+    assert saved_models("grok") == []
     reset_llm_clients()
     try:
         assert get_llm(LLMRole.AGENT).model_id == "test-model"
