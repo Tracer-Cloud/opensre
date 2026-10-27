@@ -174,7 +174,9 @@ def test_cli_login_keeps_api_keys_separate_and_status_never_reads_tokens(
     monkeypatch.setenv("OPENAI_API_KEY", "api-key-must-stay")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://wrong.example")
     monkeypatch.setenv("OPENSRE_ACCOUNT_TOKEN", "opensre-identity-must-stay")
-    result = CliRunner().invoke(cli, ["auth", "login", "chatgpt", "--no-open-browser"])
+    result = CliRunner().invoke(
+        cli, ["auth", "login", "chatgpt", "--no-open-browser", "--set-provider"]
+    )
     assert result.exit_code == 0, result.output
     env = (tmp_path / ".env").read_text()
     assert "LLM_PROVIDER=chatgpt\n" in env
@@ -392,7 +394,11 @@ def test_wizard_uses_browser_flow_and_account_models_without_prompting_for_key(
     def forbid_static_or_api_prompt(*_args, **_kwargs):
         raise AssertionError("Subscriptions must use browser login and the account's model catalog")
 
-    monkeypatch.setattr(flow, "choose_provider_model", forbid_static_or_api_prompt)
+    from surfaces.shared.llm_setup.selection import select_provider
+
+    monkeypatch.setattr(
+        flow, "model_picker", lambda *_args, **_kwargs: select_provider("chatgpt", "gpt-6.1-sol")
+    )
     monkeypatch.setattr(flow, "_prompt_validated_llm_credential", forbid_static_or_api_prompt)
     assert flow.run_llm_setup(show_header=False) == 0
     assert "LLM_PROVIDER=chatgpt" in (tmp_path / ".env").read_text()

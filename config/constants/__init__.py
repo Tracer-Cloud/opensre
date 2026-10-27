@@ -829,6 +829,9 @@ if TYPE_CHECKING:
         AZURE_OPENAI_BASE_URL_ENV as AZURE_OPENAI_BASE_URL_ENV,
     )
     from config.constants.llm import (
+        HOSTED_MODEL_SOURCE_ID as HOSTED_MODEL_SOURCE_ID,
+    )
+    from config.constants.llm import (
         LLM_AUTH_METHOD_ENV as LLM_AUTH_METHOD_ENV,
     )
     from config.constants.llm import (
@@ -851,6 +854,9 @@ if TYPE_CHECKING:
     )
     from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
+    )
+    from config.constants.llm import (
+        OPENSRE_LLM_SETUP_RESULT_PATH_ENV as OPENSRE_LLM_SETUP_RESULT_PATH_ENV,
     )
     from config.constants.llm import (
         OPENSRE_REACT_GOAL_LLM_REVIEW_ENV as OPENSRE_REACT_GOAL_LLM_REVIEW_ENV,

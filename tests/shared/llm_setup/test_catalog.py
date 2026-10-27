@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from surfaces.interactive_shell.command_registry.model.switching import _is_model_allowed
 from surfaces.shared.llm_setup.catalog import (
     ANTHROPIC_MODELS,
     CLAUDE_CODE_MODELS,
@@ -13,6 +12,7 @@ from surfaces.shared.llm_setup.catalog import (
     PROVIDER_BY_VALUE,
     SUPPORTED_PROVIDERS,
 )
+from surfaces.shared.llm_setup.selection import _is_model_allowed
 
 
 def test_project_env_path_defaults_to_repo_root() -> None:

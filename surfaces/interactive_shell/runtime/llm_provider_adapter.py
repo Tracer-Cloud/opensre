@@ -8,12 +8,12 @@ from typing import Protocol
 from rich.console import Console
 
 from config.llm_auth.provider_catalog import PROVIDER_BY_VALUE
-from surfaces.interactive_shell.command_registry import (
+from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
+from surfaces.shared.llm_setup.model_presentation import (
     switch_llm_provider,
     switch_reasoning_model,
 )
-from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
 from tools.interactive_shell.shared.execution_policy import ExecutionPolicyResult
 from tools.interactive_shell.shared.host_contracts import ExecutionGate
 

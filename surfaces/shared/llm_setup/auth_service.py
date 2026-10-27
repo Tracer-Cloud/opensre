@@ -30,7 +30,6 @@ from surfaces.shared.llm_setup.auth_profiles import (
 )
 from surfaces.shared.llm_setup.auth_results import AuthSetupResult, AuthStatus
 from surfaces.shared.llm_setup.catalog import WizardCredentialKind
-from surfaces.shared.llm_setup.env_sync import sync_provider_env
 from surfaces.shared.llm_setup.persist import AuthSetupError, persist_api_key_secret
 from surfaces.shared.llm_setup.validation import validate_provider_credentials
 
@@ -56,7 +55,7 @@ def configure_api_key_provider(
     profile: ProviderAuthProfile,
     api_key: str,
     model: str | None = None,
-    set_provider: bool = True,
+    set_provider: bool = False,
     validate: bool = True,
     env_path: Path | None = None,
 ) -> AuthSetupResult:
@@ -87,17 +86,25 @@ def configure_api_key_provider(
     except (RuntimeError, ValueError) as exc:
         raise AuthSetupError(str(exc)) from exc
 
-    extra_env = {provider.api_key_env: normalized_key}
-    written_path = (
-        sync_provider_env(
-            provider=provider,
-            model=selected_model,
-            extra_env=extra_env,
-            env_path=env_path,
-        )
-        if set_provider
-        else None
+    # A deliberate replacement must shadow the old process export immediately.
+    os.environ[provider.api_key_env] = normalized_key
+    # Replace an existing .env credential too: it would otherwise shadow the new
+    # stored key when the next process starts. Do not introduce a new .env secret.
+    from config.env_file import env_assignment_key, read_env_lines, sync_env_values
+    from config.local_env import get_project_env_path
+
+    credential_env_path = env_path or get_project_env_path()
+    if any(
+        env_assignment_key(line) == provider.api_key_env
+        for line in read_env_lines(credential_env_path)
+    ):
+        sync_env_values({provider.api_key_env: normalized_key}, env_path=credential_env_path)
+    from surfaces.shared.llm_setup.selection import select_provider
+
+    selection = (
+        select_provider(provider.value, selected_model, env_path=env_path) if set_provider else None
     )
+    written_path = selection.env_path if selection else None
     source = "fallback" if saved.used_fallback else "local-file"
     _save_auth_record(
         provider_value=provider.value, profile=profile, source=source, detail=saved.detail
@@ -108,6 +115,7 @@ def configure_api_key_provider(
         source=source,
         detail=saved.detail,
         env_path=written_path,
+        selection_changed=selection.changed if selection else False,
     )
 
 

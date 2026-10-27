@@ -28,7 +28,6 @@ def test_chatgpt_setup_verify_logout_characterization(
         model="account-model",
         set_provider=False,
         present=lambda _url: None,
-        choose_model=lambda models: models[0][0],
         profile_id="selected-account",
         new_account=True,
     )
@@ -58,6 +57,7 @@ def test_second_adapter_dispatches_setup_runtime_and_logout(monkeypatch, tmp_pat
     from core.llm.subscriptions.types import SubscriptionAuth
     from surfaces.cli.app import cli
 
+    monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
     seen = []
     registration = registry.SUBSCRIPTION_ADAPTERS["grok"]
 
@@ -100,7 +100,15 @@ def test_second_adapter_dispatches_setup_runtime_and_logout(monkeypatch, tmp_pat
     )
     monkeypatch.setattr("surfaces.shared.llm_setup.env_sync.PROJECT_ENV_PATH", tmp_path / ".env")
     monkeypatch.setenv("OPENSRE_PROJECT_ENV_PATH", str(tmp_path / ".env"))
-    args = ["auth", "login", "grok", "--no-open-browser", "--profile", "test-account"]
+    args = [
+        "auth",
+        "login",
+        "grok",
+        "--set-provider",
+        "--no-open-browser",
+        "--profile",
+        "test-account",
+    ]
     if method == "api_key":
         args += ["--api-key", "subscription-key"]
     result = CliRunner().invoke(cli, args)

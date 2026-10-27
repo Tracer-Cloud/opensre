@@ -9,8 +9,10 @@ from typing import Literal
 import questionary
 
 from config.env_file import sync_env_values
+from config.llm_auth.model_catalog import save_model_catalog
+from config.llm_auth.records import save_provider_auth_record
+from config.llm_credentials import resolve_env_credential
 from config.setup_store import get_store_path, save_local_config
-from core.llm.providers.azure_openai import is_azure_openai_provider
 from infrastructure.terminal.theme import (
     ERROR,
     GLYPH_ERROR,
@@ -19,9 +21,6 @@ from infrastructure.terminal.theme import (
     WARNING,
 )
 from integrations.llm_cli import diagnose_binary_path
-from surfaces.cli.wizard.azure_openai import (
-    choose_provider_model,
-)
 from surfaces.cli.wizard.components import (
     Choice,
     WizardBack,
@@ -47,7 +46,6 @@ from surfaces.cli.wizard.llm_credential import (
     OK,
     REPICK,
     UNSAVED,
-    UNVERIFIED,
     CredentialState,
     _credential_line_for_saved_summary,
     _persist_llm_credential_with_recovery,
@@ -60,12 +58,19 @@ from surfaces.cli.wizard.summaries import (
     render_next_steps,
     render_saved_summary,
 )
+from surfaces.shared.llm_setup.auth_profiles import resolve_auth_profile
+from surfaces.shared.llm_setup.auth_results import AuthSetupResult
+from surfaces.shared.llm_setup.authorization import present_authorization
 from surfaces.shared.llm_setup.catalog import (
     PROVIDER_BY_VALUE,
     ProviderOption,
     WizardCredentialKind,
 )
-from surfaces.shared.llm_setup.env_sync import sync_provider_env
+from surfaces.shared.llm_setup.discovery import discover_models
+from surfaces.shared.llm_setup.login_flow import finish_connection
+from surfaces.shared.llm_setup.model_inventory import saved_model
+from surfaces.shared.llm_setup.model_picker import model_picker
+from surfaces.shared.llm_setup.persist import AuthSetupError
 from surfaces.shared.llm_setup.provider_choices import (
     DEFAULT_SETUP_PROVIDER_VALUE,
     OTHER_PROVIDER_SELECTION,
@@ -74,6 +79,7 @@ from surfaces.shared.llm_setup.provider_choices import (
     ordered_setup_provider_options,
     other_setup_provider_options,
 )
+from surfaces.shared.llm_setup.subscription_service import configure_subscription
 
 WIZARD_TOTAL_STEPS = 2
 logger = logging.getLogger(__name__)
@@ -297,7 +303,6 @@ def run_llm_setup(
     force_repick = False
     provider: ProviderOption
     model: str
-    provider_extra_env: dict[str, str] = {}
     credential_state: CredentialState = OK
     # Records a ``continue_unsaved`` secret export so it can be re-applied
     # before the in-process shell handoff.
@@ -333,145 +338,117 @@ def run_llm_setup(
             provider = saved_provider
             model = saved_model_value or provider.default_model
 
+        # Authentication uses an internal validation model. Only the shared
+        # post-connection picker may change the active selection.
+        model = saved_model(provider) or model
         if provider.credential_kind == WizardCredentialKind.SUBSCRIPTION:
-            from surfaces.cli.wizard.subscription import configure_subscription_wizard
-
-            selected = configure_subscription_wizard(provider)
-            if selected is None:
+            try:
+                connected = configure_subscription(
+                    profile=resolve_auth_profile(provider.value),
+                    model=None,
+                    set_provider=False,
+                    present=present_authorization(open_browser=True, provider=provider.value),
+                )
+            except AuthSetupError as exc:
+                console.print(str(exc), markup=False)
                 return 1
-            model = selected
-            break
-
-        # The model pick comes BEFORE the credential block, in both branches: the live
-        # probe must run against the model that actually gets persisted. Probing the
-        # provider default instead locks out anyone who picks a non-default model — an
-        # Ollama user selecting a model they have pulled would be told to pull the
-        # default model they never chose, on every retry.
-        #
-        # Azure is the exception: its "model" is a live deployment name discovered from
-        # the resource, so it needs the endpoint + key first. The deployment pick is
-        # therefore deferred into ``_prompt_validated_llm_credential`` (still before the
-        # validation probe), and skipped here.
-        if change_provider:
-            if not is_azure_openai_provider(provider.value):
-                try:
-                    model = choose_provider_model(
-                        provider,
-                        default=model,
-                        prompt_label=_provider_choice_label(provider),
-                        back_on_cancel=True,
-                    )
-                except WizardBack:
-                    force_repick = True
-                    continue
-        elif provider.models:
-            current_display = model or "CLI default"
-            console.print(f"[{SECONDARY}]current model  {current_display}[/]")
-            if confirm("Change model?", default=False):
-                model = choose_provider_model(
-                    provider,
-                    default=model,
-                    prompt_label=_provider_choice_label(provider),
-                )
-
-        if change_provider:
-            if provider.credential_kind not in (
-                WizardCredentialKind.CLI,
-                WizardCredentialKind.NONE,
-            ):
-                credential_outcome, model = _prompt_validated_llm_credential(
-                    provider,
-                    model=model,
-                    session_env_sink=session_env_sink,
-                )
-                if credential_outcome == CANCEL:
-                    return 1
-                if credential_outcome == REPICK:
-                    force_repick = True
-                    continue
-                if credential_outcome == DEFERRED:
-                    # No key to hand: finish onboarding with the provider chosen
-                    # and nothing persisted, rather than ending the wizard.
-                    credential_state = DEFERRED
-                elif credential_outcome == UNVERIFIED:
-                    credential_state = UNVERIFIED
-                elif credential_outcome == UNSAVED:
-                    credential_state = UNSAVED
-                # Called again here (Azure only) to populate ``provider_extra_env`` for
-                # ``sync_provider_env`` below. ``_prompt_validated_llm_credential`` already
-                # set ``AZURE_OPENAI_BASE_URL`` in ``os.environ`` so the probe could read it,
-                # so this call short-circuits on the configured endpoint rather than
-                # re-prompting — its only job now is to hand the endpoint env back for the
-                # .env sync.
-                azure_env = ensure_provider_endpoint_settings(provider)
-                if azure_env is None:
-                    force_repick = True
-                    continue
-                provider_extra_env = azure_env
-                os.environ.update(azure_env)
         else:
-            if provider.credential_kind not in (
-                WizardCredentialKind.CLI,
-                WizardCredentialKind.NONE,
-            ):
-                has_api_key = bool(defaults["has_api_key"])
-                legacy_api_key = str(defaults["legacy_api_key"] or "").strip()
-                # A ``host`` credential (e.g. the Ollama host) is not a secret api key: never
-                # migrate a stale legacy ``api_key`` value into it — that would leak a
-                # secret-shaped value into .env and point the runtime at a bogus host. Fall
-                # through to the host prompt instead.
-                if (
-                    not has_api_key
-                    and legacy_api_key
-                    and provider.credential_kind != WizardCredentialKind.HOST
-                ):
-                    migration_outcome = _persist_llm_credential_with_recovery(
-                        provider, legacy_api_key, session_env_sink=session_env_sink
+            if provider.credential_kind == WizardCredentialKind.CLI:
+                cli_out = _run_cli_llm_onboarding(provider)
+                if cli_out == "abort":
+                    return 1
+                if cli_out == "repick":
+                    force_repick = True
+                    continue
+            elif provider.credential_kind != WizardCredentialKind.NONE:
+                existing = resolve_env_credential(provider.api_key_env)
+                legacy = str(defaults.get("legacy_api_key") or "").strip()
+                if not existing and legacy and provider.credential_secret:
+                    migration = _persist_llm_credential_with_recovery(
+                        provider, legacy, session_env_sink=session_env_sink
                     )
-                    if migration_outcome == CANCEL:
+                    if migration == CANCEL:
                         return 1
-                    if migration_outcome == REPICK:
+                    if migration == REPICK:
                         force_repick = True
                         continue
-                    if migration_outcome == UNSAVED:
-                        credential_state = UNSAVED
-                    has_api_key = True
-                if not has_api_key:
-                    credential_outcome, model = _prompt_validated_llm_credential(
+                    credential_state = migration
+                    existing = legacy
+                if existing and provider.credential_secret:
+                    # Reuse an existing supported key without a second secret prompt.
+                    os.environ[provider.api_key_env] = existing
+                else:
+                    outcome, model = _prompt_validated_llm_credential(
                         provider,
                         model=model,
                         session_env_sink=session_env_sink,
+                        interactive_model=False,
                     )
-                    if credential_outcome == CANCEL:
+                    if outcome == CANCEL:
                         return 1
-                    if credential_outcome == REPICK:
+                    if outcome == REPICK:
                         force_repick = True
                         continue
-                    if credential_outcome == DEFERRED:
-                        credential_state = DEFERRED
-                    elif credential_outcome == UNVERIFIED:
-                        credential_state = UNVERIFIED
-                    elif credential_outcome == UNSAVED:
-                        credential_state = UNSAVED
-            # Called again here (Azure only) to populate ``provider_extra_env`` for
-            # ``sync_provider_env`` below. When the credential prompt ran it already set
-            # ``AZURE_OPENAI_BASE_URL`` in ``os.environ``, so this call short-circuits on the
-            # configured endpoint instead of re-prompting — its only job now is to hand the
-            # endpoint env back for the .env sync.
-            azure_env = ensure_provider_endpoint_settings(provider)
-            if azure_env is None:
+                    credential_state = outcome
+            endpoint = ensure_provider_endpoint_settings(provider)
+            if endpoint is None:
                 force_repick = True
                 continue
-            provider_extra_env = azure_env
-            os.environ.update(azure_env)
+            if endpoint:
+                sync_env_values(endpoint)
+                os.environ.update(endpoint)
+            if credential_state != DEFERRED:
+                try:
+                    catalog = discover_models(provider)
+                    if catalog is not None:
+                        save_model_catalog(provider.value, catalog)
+                except (ValueError, RuntimeError) as exc:
+                    console.print(str(exc), markup=False)
+                    return 1
+            if credential_state not in (DEFERRED, UNSAVED):
+                save_provider_auth_record(
+                    provider=provider.value,
+                    auth_name=provider.value,
+                    kind=str(provider.credential_kind),
+                    source="metadata",
+                    detail="Connected during onboarding.",
+                    verified=credential_state == OK,
+                )
+            connected = AuthSetupResult(
+                provider.value,
+                model,
+                "session" if credential_state == UNSAVED else "metadata",
+                "Onboarding connection",
+                None,
+            )
 
-        if provider.credential_kind == WizardCredentialKind.CLI:
-            cli_out = _run_cli_llm_onboarding(provider)
-            if cli_out == "abort":
-                return 1
-            if cli_out == "repick":
-                force_repick = True
-                continue
+        if credential_state == DEFERRED:
+            selected = None
+        else:
+            selected = finish_connection(
+                console,
+                connect=lambda connected=connected: connected,
+                provider=provider.value,
+                activation=None,
+                model=None,
+                interactive=True,
+                picker=model_picker,
+            )
+        if selected is None:
+            # Keep the completed connection and existing route, including on Esc.
+            step_header(summary_step, total_steps, "Summary")
+            console.print(
+                f"Connected {provider.label}; active model unchanged."
+                if credential_state != DEFERRED
+                else "Setup deferred; active model unchanged.",
+                markup=False,
+            )
+            console.print(
+                f"Next: opensre auth login {provider.value} or opensre model", markup=False
+            )
+            _seed_onboarding_loops()
+            return 0
+        model = selected.model
         break
 
     probes = {
@@ -486,11 +463,7 @@ def run_llm_setup(
         model_env=provider.model_env,
         probes=probes,
     )
-    env_path = sync_provider_env(
-        provider=provider,
-        model=model,
-        extra_env=provider_extra_env or None,
-    )
+    env_path = selected.env_path
     if credential_state == UNSAVED:
         # Re-apply the session-only value the user chose to continue with so the
         # in-process shell handoff can read it. A ``host`` value normally goes

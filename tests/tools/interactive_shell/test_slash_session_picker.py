@@ -31,6 +31,9 @@ def test_agent_selected_sessions_picker_is_deferred_to_exclusive_stdin_turn() ->
         ("/loops", ["pause", ""]),
         ("/loops", ["remove"]),
         ("/work", ["complete"]),
+        ("/model", ["set"]),
+        ("/model", ["toolcall"]),
+        ("/model", ["toolcall", "set"]),
     ],
 )
 def test_agent_selected_missing_input_is_deferred(command: str, args: list[str]) -> None:
@@ -78,4 +81,14 @@ def test_other_missing_arguments_are_not_deferred(command: str, args: list[str])
     ports = SimpleNamespace(tty_interactive=lambda: True, command_needs_input=needs_command_input)
     assert not _slash_drives_interactive_picker(
         command, args, session=session, is_tty=True, ports=ports
+    )
+
+
+@pytest.mark.parametrize(
+    "args", [[], ["list"], ["show"], ["set", "openai", "gpt-test"], ["toolcall", "show"]]
+)
+def test_agent_model_inspection_and_complete_selection_do_not_queue(args):
+    ports = SimpleNamespace(tty_interactive=lambda: True, command_needs_input=needs_command_input)
+    assert not _slash_drives_interactive_picker(
+        "/model", args, session=SimpleNamespace(terminal=object()), is_tty=True, ports=ports
     )

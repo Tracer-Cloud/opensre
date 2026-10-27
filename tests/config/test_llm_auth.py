@@ -61,6 +61,7 @@ def test_configure_deepseek_api_key_stores_secret_and_nonsecret_env(
         api_key="deepseek-secret",
         model="deepseek-v4-flash",
         env_path=env_path,
+        set_provider=True,
     )
 
     assert result.provider == "deepseek"
@@ -68,7 +69,7 @@ def test_configure_deepseek_api_key_stores_secret_and_nonsecret_env(
     env_content = env_path.read_text(encoding="utf-8")
     assert "LLM_PROVIDER=deepseek\n" in env_content
     assert "DEEPSEEK_REASONING_MODEL=deepseek-v4-flash\n" in env_content
-    assert "DEEPSEEK_API_KEY=deepseek-secret\n" in env_content
+    assert "DEEPSEEK_API_KEY=" not in env_content
     assert resolve_provider_auth_record("deepseek")["source"] == "fallback"
     assert result.source == "fallback"
 
@@ -138,6 +139,7 @@ def test_successful_explicit_provider_login_selects_local_billing_without_loggin
         profile=resolve_auth_profile("deepseek"),
         api_key="test-key",
         validate=False,
+        set_provider=True,
         env_path=tmp_path / ".env",
     )
     assert result.provider == "deepseek"

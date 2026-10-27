@@ -418,6 +418,7 @@ def persist_llm_api_key(env_var: str, value: str) -> bool:
             result = persist_api_key_secret(env_var, value, save_secret=save_credential)
         detail = result.detail if result.used_fallback else ""
         _write_llm_api_key_to_env(env_var, value)
+        os.environ[env_var] = value
     except (AuthSetupError, RuntimeError, ValueError, OSError) as exc:
         console.print(f"[{ERROR}]  {GLYPH_ERROR}  {exc}[/]")
         console.print(

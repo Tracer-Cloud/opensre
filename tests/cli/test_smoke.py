@@ -662,9 +662,6 @@ def test_onboard_interactive_smoke(
         "onboard",
         actions=[
             PtyAction(expect="Choose your LLM provider", send=b"\r"),
-            # #3591: the model is picked BEFORE the credential, so the live probe runs
-            # against the model that actually gets persisted.
-            PtyAction(expect="Choose OpenAI model", send=b"\r"),
             PtyAction(expect="OpenAI API key", send=b"smoke-test-key\r"),
             # The local probe returns 401; choose "Save anyway without validating"
             # to exercise credential persistence after an explicit rejection.
@@ -675,6 +672,7 @@ def test_onboard_interactive_smoke(
                 # Lazy SDK initialization runs inside the live validation probe.
                 timeout=30.0,
             ),
+            PtyAction(expect="Choose a model", send=b"\r"),
         ],
         timeout=30.0,
         extra_env={
@@ -751,10 +749,6 @@ def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
         f"{provider_label} requires login. What next?",
         f"Could not verify {provider_label} login. What next?",
     )
-    model_prompt: tuple[str, ...] = (
-        f"Choose {provider_label} model",
-        "Model",
-    )
     actions = [
         PtyAction(expect="Choose your LLM provider", send=b"\r", stagger_j=2),
         PtyAction(
@@ -763,7 +757,6 @@ def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
             stagger_j=other_stagger_up,
             stagger_key=b"k",
         ),
-        PtyAction(expect=model_prompt, send=b"\r", timeout=30.0),
         PtyAction(
             expect=login_prompt,
             send=b"\r",
@@ -771,10 +764,6 @@ def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
             timeout=90.0,
         ),
         PtyAction(expect="Choose your LLM provider", send=b"\r"),
-        # #3591: the model is chosen BEFORE the credential, so the live probe
-        # runs against the model that gets persisted. Same order as
-        # test_onboard_interactive_smoke: model -> key -> recovery menu.
-        PtyAction(expect="Choose OpenAI model", send=b"\r"),
         PtyAction(expect="OpenAI API key", send=b"smoke-test-key\r"),
         # smoke-test-key fails validation; move to "Save anyway without
         # validating" to keep the local credentials-file path and every
@@ -785,6 +774,7 @@ def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
             stagger_j=1,
             timeout=90.0,
         ),
+        PtyAction(expect="Choose a model", send=b"\r"),
     ]
 
     try:

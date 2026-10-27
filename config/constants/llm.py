@@ -151,3 +151,9 @@ def normalize_anthropic_base_url(value: str) -> str:
     if base.endswith("/v1"):
         base = base[: -len("/v1")]
     return base
+
+
+# Private parent/child setup outcome; carries provider identity and activation only.
+OPENSRE_LLM_SETUP_RESULT_PATH_ENV = "OPENSRE_LLM_SETUP_RESULT_PATH"
+
+HOSTED_MODEL_SOURCE_ID: Final[str] = "opensre-hosted"

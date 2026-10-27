@@ -9,9 +9,9 @@ import pytest
 from rich.console import Console
 
 import config.setup_store as wizard_store
+import surfaces.shared.llm_setup.effective as effective_module
 import surfaces.shared.llm_setup.env_sync as env_sync
 from surfaces.interactive_shell.command_registry import dispatch_slash
-from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.llm_setup.catalog import PROJECT_ENV_PATH, PROJECT_ROOT, PROVIDER_BY_VALUE
 
@@ -39,7 +39,7 @@ def patch_llm_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         anthropic_reasoning_model = "claude-opus-4-7"
         anthropic_toolcall_model = "claude-haiku-4-5-20251001"
 
-    monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _Fake())
+    monkeypatch.setattr(effective_module, "load_llm_settings", lambda: _Fake())
 
 
 class TestProjectPaths:
@@ -147,6 +147,7 @@ class TestReplModelPersistence:
     ) -> None:
         monkeypatch.setattr("core.llm.factory.reset_llm_clients", lambda: None)
         monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-key")
         wizard_store.save_local_config(
             wizard_mode="quickstart",
             provider="anthropic",
@@ -162,7 +163,7 @@ class TestReplModelPersistence:
 
         env_body = persistence_paths["env"].read_text(encoding="utf-8")
         assert "ANTHROPIC_REASONING_MODEL=claude-opus-4-7" in env_body
-        assert "LLM_PROVIDER=" not in env_body
+        assert "LLM_PROVIDER=anthropic" in env_body
 
         stored = wizard_store.load_local_config(persistence_paths["store"])["targets"]["local"]
         assert stored["provider"] == "anthropic"
@@ -316,7 +317,7 @@ class TestReplModelPersistence:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            "surfaces.interactive_shell.command_registry.model.ollama.list_available_models",
+            "surfaces.shared.llm_setup.ollama_models.list_available_models",
             lambda _host: ("llama3.2:latest",),
         )
         console, output = _capture()

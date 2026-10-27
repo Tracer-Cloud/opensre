@@ -16,6 +16,7 @@ import pytest
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
+import surfaces.shared.llm_setup.effective as effective_module
 from config.account import AccountLLMRoute
 from config.constants.conversation_history import (
     HISTORY_COMPACT_AFTER_TURNS,
@@ -202,7 +203,7 @@ class TestDispatchSlash:
         output = buf.getvalue()
         assert "Show or change active LLM settings." in output
         assert "/model set <provider>" in output
-        assert "Typed bare /model opens an interactive menu" in output
+        assert "Typed bare /model opens the connected-model picker" in output
         from surfaces.interactive_shell.command_registry.model.command import COMMANDS as model_cmds
 
         notes = " ".join(model_cmds[0].notes)
@@ -363,7 +364,7 @@ class TestDispatchSlash:
         class _FakeLLM:
             provider = "openai"
 
-        monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _FakeLLM())
+        monkeypatch.setattr(effective_module, "load_llm_settings", lambda: _FakeLLM())
         session = Session()
         console, buf = _capture()
 
@@ -389,7 +390,7 @@ class TestDispatchSlash:
             anthropic_reasoning_model = "claude-opus-4-7"
             anthropic_toolcall_model = "claude-haiku-4-5-20251001"
 
-        monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _FakeLLM())
+        monkeypatch.setattr(effective_module, "load_llm_settings", lambda: _FakeLLM())
         session = Session()
         console, buf = _capture()
 
@@ -513,7 +514,7 @@ class TestSpecificListCommands:
             anthropic_reasoning_model = "claude-opus-4"
             anthropic_toolcall_model = "claude-haiku-4"
 
-        monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _FakeLLM())
+        monkeypatch.setattr(effective_module, "load_llm_settings", lambda: _FakeLLM())
 
     def test_model_show_displays_provider_and_models(self, monkeypatch: object) -> None:
         self._patch_llm(monkeypatch)
@@ -543,7 +544,7 @@ class TestSpecificListCommands:
             provider = "ollama"
             ollama_model = "qwen2.5:7b"
 
-        monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _FakeLLM())
+        monkeypatch.setattr(effective_module, "load_llm_settings", lambda: _FakeLLM())
         console, buf = _capture()
         dispatch_slash("/model show", Session(), console)
         output = buf.getvalue()
@@ -552,7 +553,7 @@ class TestSpecificListCommands:
         assert "default" not in output
 
     def test_model_show_handles_missing_env_gracefully(self, monkeypatch: object) -> None:
-        monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: None)
+        monkeypatch.setattr(effective_module, "load_llm_settings", lambda: None)
         console, buf = _capture()
         dispatch_slash("/model show", Session(), console)
         assert "LLM settings unavailable" in buf.getvalue()
@@ -884,7 +885,7 @@ class TestModelCommand:
             anthropic_reasoning_model = "claude-opus-4"
             anthropic_toolcall_model = "claude-haiku-4"
 
-        monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _Fake())
+        monkeypatch.setattr(effective_module, "load_llm_settings", lambda: _Fake())
 
     def _redirect_wizard_store(
         self,
@@ -909,55 +910,35 @@ class TestModelCommand:
         dispatch_slash("/model", Session(), console)
         assert "anthropic" in buf.getvalue()
 
-    def test_model_interactive_set_flow_applies_selection(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        self._patch_llm(monkeypatch)
-        import surfaces.shared.llm_setup.env_sync as env_sync
+    def test_model_interactive_set_flow_applies_selection(self, monkeypatch, tmp_path) -> None:
+        import surfaces.shared.llm_setup.model_picker as picker
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
-        env_path = tmp_path / ".env"
-        store_path = self._redirect_wizard_store(monkeypatch, tmp_path)
-        monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
-        monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-key")
+        monkeypatch.setattr(
+            "surfaces.shared.llm_setup.env_sync.PROJECT_ENV_PATH", tmp_path / ".env"
+        )
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        # The root list is the tray-styled subcommand picker; the provider and
-        # model submenus below it are still plain choice menus.
-        roots = iter(["set", None])
-        selections = iter([model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"])
-        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(roots))
-        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        from surfaces.shared.llm_setup.model_inventory import model_choices
 
-        console, buf = _capture()
+        chosen = next(row for row in model_choices(provider_id="anthropic") if row.model_id)
+        monkeypatch.setattr(picker, "run_command_input", lambda _: chosen.key)
         session = Session()
         session.terminal.exclusive_stdin_active = True
+        console, output = _capture()
         dispatch_slash("/model", session, console)
+        assert "Now using" in output.getvalue()
+        assert "LLM_PROVIDER=anthropic" in (tmp_path / ".env").read_text()
 
-        output = buf.getvalue()
-        assert "switched LLM provider" in output
-        assert "reasoning model:" in output
-        assert "LLM_PROVIDER=anthropic" in env_path.read_text(encoding="utf-8")
-        stored = json.loads(store_path.read_text(encoding="utf-8"))
-        assert stored["targets"]["local"]["provider"] == "anthropic"
-
-    def test_model_interactive_show_then_done_shows_table_once(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        self._patch_llm(monkeypatch)
+    def test_model_list_is_read_only(self, monkeypatch) -> None:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
-        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        picks = iter(["show", None])
-        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(picks))
-        console, buf = _capture()
-        session = Session()
-        session.terminal.exclusive_stdin_active = True
-        dispatch_slash("/model", session, console)
-        assert "anthropic" in buf.getvalue()
+        monkeypatch.setattr(
+            model_cmd, "model_picker", lambda *_a, **_k: pytest.fail("list must not open a picker")
+        )
+        console, output = _capture()
+        dispatch_slash("/model list", Session(), console)
+        assert "Models" in output.getvalue()
 
     def test_toolcall_without_a_model_asks_instead_of_printing_usage(
         self,
@@ -1022,7 +1003,7 @@ class TestModelCommand:
         menu_calls: list[str] = []
         monkeypatch.setattr(
             model_cmd,
-            "_interactive_model_menu",
+            "_interactive_set_provider",
             lambda *_a, **_k: menu_calls.append("menu") or True,
         )
         console, buf = _capture()
@@ -1032,36 +1013,18 @@ class TestModelCommand:
         assert menu_calls == []
         assert "anthropic" in buf.getvalue()
 
-    def test_model_interactive_escape_backs_out_without_changes(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        self._patch_llm(monkeypatch)
+    def test_model_interactive_escape_backs_out_without_changes(self, monkeypatch) -> None:
+        import surfaces.shared.llm_setup.model_picker as picker
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        roots = iter(
-            [
-                "set",  # root -> set
-                None,  # Esc at root -> close menu
-            ]
+        monkeypatch.setattr(picker, "run_command_input", lambda _: None)
+        monkeypatch.setattr(
+            picker, "select_provider", lambda *_a, **_k: pytest.fail("Esc must not commit")
         )
-        selections = iter(
-            [
-                model_cmd.OTHER_PROVIDER_SELECTION,  # provider submenu selected
-                "anthropic",  # provider selected
-                None,  # Esc from model selection -> back to provider list
-                None,  # Esc from provider list -> back to root action list
-            ]
-        )
-        monkeypatch.setattr(model_cmd, "repl_choose_subcommand", lambda **_: next(roots))
-        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
         session = Session()
         session.terminal.exclusive_stdin_active = True
-        console, buf = _capture()
-        dispatch_slash("/model", session, console)
-
-        assert "switched LLM provider" not in buf.getvalue()
+        dispatch_slash("/model", session, _capture()[0])
         assert session.history[-1]["ok"] is True
 
     def test_set_switches_provider(
@@ -1152,49 +1115,28 @@ class TestModelCommand:
         assert "custom-openai" in output
         assert session.history[-1]["ok"] is False
 
-    def test_set_without_provider_opens_the_provider_picker_when_typed(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        self._patch_llm(monkeypatch)
-        import surfaces.shared.llm_setup.env_sync as env_sync
+    def test_set_without_provider_opens_the_model_picker_when_typed(self, monkeypatch) -> None:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
-        env_path = tmp_path / ".env"
-        self._redirect_wizard_store(monkeypatch, tmp_path)
-        monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
-        monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
-        monkeypatch.setattr("config.account.account_llm_route", _signed_out)
+        called = []
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        selections = iter([model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"])
-        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-        console, buf = _capture()
+        monkeypatch.setattr(model_cmd, "model_picker", lambda *_a, **_k: called.append(True))
         session = Session()
         session.terminal.exclusive_stdin_active = True
+        dispatch_slash("/model set", session, _capture()[0])
+        assert called == [True]
 
-        dispatch_slash("/model set", session, console)
-
-        assert "switched LLM provider" in buf.getvalue()
-        assert "LLM_PROVIDER=anthropic" in env_path.read_text(encoding="utf-8")
-
-    def test_set_without_provider_refuses_before_the_picker_when_account_managed(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_account_login_keeps_the_local_model_picker_available(self, monkeypatch) -> None:
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         monkeypatch.setattr("config.account.account_llm_route", _signed_in)
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
-        monkeypatch.setattr(model_cmd, "repl_choose_one", _menu_must_not_open)
-        console, buf = _capture()
+        called = []
+        monkeypatch.setattr(model_cmd, "model_picker", lambda *_a, **_k: called.append(True))
         session = Session()
         session.terminal.exclusive_stdin_active = True
-
-        dispatch_slash("/model set", session, console)
-
-        assert "LLM settings are managed by your OpenSRE account" in buf.getvalue()
-        assert session.history[-1]["ok"] is False
+        dispatch_slash("/model set", session, _capture()[0])
+        assert called == [True]
 
     def test_set_unknown_reasoning_model_is_rejected(
         self,
@@ -1258,6 +1200,7 @@ class TestModelCommand:
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
         monkeypatch.setenv("LLM_PROVIDER", "openai")
+        monkeypatch.setenv("OPENAI_API_KEY", "synthetic-key")
 
         console, buf = _capture()
         dispatch_slash("/model set gpt-5.5", Session(), console)
@@ -1266,7 +1209,7 @@ class TestModelCommand:
         assert "reasoning model set to" in output
         assert "gpt-5.5" in output
         contents = env_path.read_text(encoding="utf-8")
-        assert "LLM_PROVIDER=" not in contents
+        assert "LLM_PROVIDER=openai" in contents
         assert "OPENAI_REASONING_MODEL=gpt-5.5" in contents
         assert "OPENAI_MODEL=gpt-5.5" in contents
         stored = json.loads(store_path.read_text(encoding="utf-8"))
@@ -1285,6 +1228,7 @@ class TestModelCommand:
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
         monkeypatch.setenv("LLM_PROVIDER", "openai")
+        monkeypatch.setenv("OPENAI_API_KEY", "synthetic-key")
 
         dispatch_slash("/model set gpt 5.5", Session(), _capture()[0])
 
@@ -1311,6 +1255,7 @@ class TestModelCommand:
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
         monkeypatch.setenv("LLM_PROVIDER", "openai")
+        monkeypatch.setenv("OPENAI_API_KEY", "synthetic-key")
 
         console, buf = _capture()
         ok = switch_reasoning_model("gpt 5.5", console)

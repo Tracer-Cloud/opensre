@@ -122,7 +122,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/verify` | Verify integration connectivity (all or one service) |
 | `/integrations` | List, verify, show, setup, or remove integrations |
 | `/mcp` | List, connect, or disconnect MCP servers |
-| `/model` | Show the account-managed hosted model |
+| `/model` | Search connected models and select an explicit source |
 | `/tools` | List registered chat and action tools |
 
 ### Privacy and history
@@ -196,7 +196,7 @@ These invocations open a picker or submenu:
 | `/help` | Browse categories; Enter runs the selected command |
 | `/integrations list` | Browse configured integrations; verify, setup, or remove the selected item |
 | `/mcp list` | Browse configured MCP servers; verify, connect, or disconnect |
-| `/model` | show / set / restore / toolcall |
+| `/model` | Direct model picker; list / show / set / restore / toolcall |
 | `/theme` | Pick a colour theme from the installed list |
 | `/choose` | Reopen the selection menu the agent queued |
 | `/trust`, `/verbose` | on / off |
@@ -215,8 +215,8 @@ Checks time out after 30 seconds; Esc cancels an in-progress check.
 These action keys leave ordinary typing available for search. Connections without
 a verifier show **Configured**, not a successful connectivity check.
 
-`/model` keeps its menu running: picking `show` prints the current models and
-hands you back to the menu, so leave it with **done** or Esc.
+`/model` opens the connected-model picker directly. Select a row to activate it;
+Esc keeps the current selection. `/model list` and `/model show` are read-only.
 
 ## Commands
 
@@ -643,30 +643,33 @@ MCP-capable integrations only (subset of the full integration catalog).
 
 <Accordion title="/model">
 
-Show the active hosted model. An authenticated interactive shell is account-managed, so local provider/model changes are locked until sign-out; signing out closes the shell.
+Search connected models directly, with the current row preselected and each
+provider/source labeled. Choosing a row activates it immediately. Esc/Ctrl-C
+keeps the active selection. **Connect a provider** invokes `/login` and opens its
+models after successful connection. **Custom model…** collects an exact ID when
+supported. Login's scoped picker also offers **Choose later, keep current model**.
 
 ```text
+/model
+/model list
 /model show
 /model set openai gpt-4.1
 /model set anthropic claude-sonnet-4-20250514 --toolcall-model claude-sonnet-4-20250514
 /model set claude-sonnet-4-20250514
-/model restore
-/model restore anthropic
+/model restore [provider]
 /model toolcall set gpt-4.1-mini
-/model
 ```
 
-| Subcommand | Behavior |
-| --- | --- |
-| `show` (default) | Show provider and reasoning/toolcall model slots |
-| `set &lt;provider&gt; [model] [--toolcall-model &lt;m&gt;]` | Refuse the local change while the account route is active |
-| `set &lt;model&gt;` (no provider) | Refuse the local change while the account route is active |
-| `restore [provider]` | Refuse the local change while the account route is active |
-| `toolcall set &lt;model&gt;` | Refuse the local change while the account route is active |
+`list` shows choices, sources and availability; `show` shows the effective model
+slots. `set` selects explicitly and reports the login command if credentials are
+missing. Model-only shorthand targets the configured provider. `restore` uses a
+validated default; `toolcall` configures a separate slot when supported. The same
+operations are available through `opensre model`; root `--json` supports `list`
+and `show`. Agent/headless bare `/model` remains read-only.
 
-**Account lock:** `set`, `restore`, and `toolcall set` explain that the model is managed by the OpenSRE account and make no change. The account route overrides local provider variables for every model role while the session is signed in.
-
-**Bare `/model`:** in a terminal this opens a menu rather than printing the table. The menu stays open: `show` prints the current models and hands you back to it, so leave with **done** or Esc. `set`, `restore` and `toolcall` close it once the change succeeds. Use `/model show` when you only want the table.
+Local selection retains OpenSRE identity. Select the **OpenSRE · Hosted credits**
+row to return to hosted inference. API and subscription routes remain distinct;
+CLI-managed choices describe vendor CLI billing honestly.
 
 **Reasoning vs toolcall model:** Reasoning model drives chat and planning; toolcall model drives tool invocation when the provider exposes a separate slot (common on Anthropic/OpenAI).
 
@@ -1002,7 +1005,7 @@ Log in to LLM providers, show local auth status, or clear stored credentials. Sa
 /login deepseek
 ```
 
-Shortcut for `/auth login`. Same provider flows as `opensre auth login`. This signs in an LLM provider. Sign in to an OpenSRE account with `/account login`, and sign out of that account with `/logout`.
+Shortcut for `/auth login`. Same provider flows as `opensre auth login`: connect, then choose a model. Choosing later keeps the completed connection and current active model. Use `--no-set-provider` to connect only. Non-TTY login defaults to connect only; scripts expecting activation must pass `--set-provider --model <id>`. This signs in an LLM provider. Sign in to an OpenSRE account with `/account login`, and sign out of that account with `/logout`.
 
 </Accordion>
 
@@ -1444,7 +1447,7 @@ Continue chatting, then optionally:
 | `/cost` shows zero | No LLM turns yet this session; chat once and retry |
 | `/resume` not found | Run `/sessions`; use longer ID prefix |
 | `/resume` ambiguous prefix | Add more characters from Session ID column |
-| `/model set` reports an account lock | The hosted model is working as designed; `/logout` closes the shell rather than switching it to a local provider |
+| `/model set` reports missing credentials | Run `/login <provider>`, then select a model; OpenSRE identity is retained |
 | `/integrations show` not found | Run `/integrations list` for exact service slug |
 | History pause not working | Requires redacting backend — see `/privacy` |
 | Garbage in next prompt after table | Known TTY issue — upgrade OpenSRE; report if persistent |

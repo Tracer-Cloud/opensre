@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 import webbrowser
 from collections.abc import Callable
 
 import click
 
 from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
-from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 
 
 def present_authorization(*, open_browser: bool, provider: str) -> Callable[[str], None]:
@@ -30,15 +28,14 @@ def present_authorization(*, open_browser: bool, provider: str) -> Callable[[str
     return present
 
 
-def choose_subscription_model(models: list[tuple[str, str]], *, provider: str) -> str:
-    """Select only a model visible to the selected subscription account."""
-    if not sys.stdin.isatty():
-        click.echo(f"Using model: {models[0][0]} (override with --model).")
-        return models[0][0]
-    selected = repl_choose_subcommand(
-        parent=f"/login {provider} model",
-        options=models,
-    )
-    if selected is None:
-        raise click.Abort()
-    return str(selected)
+def present_setup_page(*, label: str, url: str, open_browser: bool) -> None:
+    """Offer the provider-owned key setup URL on an intentional terminal login."""
+    click.echo(f"Setup page: {url}")
+    if open_browser and click.confirm(f"Open {label} setup page in your browser?", default=True):
+        opened = False
+        try:
+            opened = bool(webbrowser.open(url))
+        finally:
+            from infrastructure.analytics.capture import capture_browser_open_requested
+
+            capture_browser_open_requested(target="provider_setup", opened=opened)

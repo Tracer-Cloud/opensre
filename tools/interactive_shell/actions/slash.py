@@ -76,6 +76,15 @@ def _slash_drives_interactive_picker(
         return True
     if name == "/login":
         return True
+    if name == "/model":
+        return bool(slash_args) and (
+            (slash_args[0].lower() in {"set", "use", "switch", "toolcall"} and len(slash_args) == 1)
+            or (
+                len(slash_args) == 2
+                and slash_args[0].lower() == "toolcall"
+                and slash_args[1].lower() in {"set", "use", "switch"}
+            )
+        )
     if not slash_args:
         return name in _INTERACTIVE_PICKER_MENUS
     return (name, slash_args[0].lower()) in _INTERACTIVE_PICKER_SUBCOMMANDS and (

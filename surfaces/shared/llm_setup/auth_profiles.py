@@ -13,7 +13,7 @@ from surfaces.shared.llm_setup.catalog import (
     WizardCredentialKind,
 )
 
-AuthKind = Literal["api_key", "subscription"]
+AuthKind = Literal["api_key", "subscription", "cli", "ambient", "local"]
 
 
 @dataclass(frozen=True)
@@ -68,20 +68,37 @@ def _api_key_profiles() -> tuple[ProviderAuthProfile, ...]:
 
 def iter_auth_profiles(kind: AuthKind | None = None) -> tuple[ProviderAuthProfile, ...]:
     """Return all supported auth setup paths."""
-    profiles = (
-        *_api_key_profiles(),
-        *(
-            ProviderAuthProfile(
-                name=provider.value,
-                provider_value=provider.value,
-                label=provider.label,
-                kind="subscription",
-                auth_hint=SUBSCRIPTION_BY_VALUE[provider.value].auth_hint,
+    other_kinds: dict[WizardCredentialKind, AuthKind] = {
+        WizardCredentialKind.CLI: "cli",
+        WizardCredentialKind.NONE: "ambient",
+        WizardCredentialKind.HOST: "local",
+    }
+    profiles = list(_api_key_profiles())
+    for provider in SUPPORTED_PROVIDERS:
+        if provider.credential_kind == WizardCredentialKind.SUBSCRIPTION:
+            profiles.append(
+                ProviderAuthProfile(
+                    name=provider.value,
+                    provider_value=provider.value,
+                    label=provider.label,
+                    kind="subscription",
+                    auth_hint=SUBSCRIPTION_BY_VALUE[provider.value].auth_hint,
+                )
             )
-            for provider in SUPPORTED_PROVIDERS
-            if provider.credential_kind == WizardCredentialKind.SUBSCRIPTION
-        ),
-    )
+        elif provider.credential_kind in other_kinds:
+            profiles.append(
+                ProviderAuthProfile(
+                    name=provider.value,
+                    provider_value=provider.value,
+                    label=provider.label,
+                    kind=other_kinds[provider.credential_kind],
+                    auth_hint={
+                        "cli": "Reuse the vendor CLI session; billing follows its configuration.",
+                        "ambient": "Use existing ambient credentials.",
+                        "local": "Connect the local runtime.",
+                    }[other_kinds[provider.credential_kind]],
+                )
+            )
     return tuple(profile for profile in profiles if kind is None or profile.kind == kind)
 
 

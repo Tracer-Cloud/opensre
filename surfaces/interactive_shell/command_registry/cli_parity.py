@@ -250,6 +250,20 @@ def run_cli_command(
         _captured_child_env(console, headless=headless) if should_capture else os.environ.copy()
     )
     child_env[OPENSRE_PARENT_INTERACTIVE_SHELL_ENV] = "1"
+    import tempfile
+    from pathlib import Path
+
+    from config.constants.llm import OPENSRE_LLM_SETUP_RESULT_PATH_ENV
+
+    setup_handoff = (
+        tempfile.TemporaryDirectory(prefix="opensre-login-")
+        if args[:2] == ["auth", "login"]
+        else None
+    )
+    receipt = Path(setup_handoff.name) / "result.json" if setup_handoff else None
+    if receipt is not None:
+        child_env[OPENSRE_LLM_SETUP_RESULT_PATH_ENV] = str(receipt)
+
     # The child inherits the environment, not the dispatching context, so a
     # non-TTY slash command's override must be written into its env, and so
     # must the turn's organization scope.
@@ -361,13 +375,12 @@ def run_cli_command(
     if session is not None and not should_capture:
         set_turn_outcome_hint(session, format_wizard_cli_outcome(args, exit_code=exit_code))
     ok = _cli_command_succeeded(exit_code)
-    if ok and args[:2] == ["auth", "login"] and not headless:
-        from core.llm.factory import reset_llm_clients
-        from surfaces.shared.llm_setup.env_sync import reload_provider_selection
+    if receipt is not None:
+        from surfaces.shared.llm_setup.handoff import refresh_setup_result
 
-        if "--no-set-provider" not in args:
-            reload_provider_selection()
-        reset_llm_clients()
+        refresh_setup_result(receipt)
+    if setup_handoff is not None:
+        setup_handoff.cleanup()
     if session is not None and not ok and not backgrounded:
         session.mark_latest(ok=False, kind="slash")
     # A backgrounded tick already recorded ``still_running``. Returning True
@@ -611,7 +624,16 @@ COMMANDS: list[SlashCommand] = [
         "/login",
         "Shortcut for LLM provider login.",
         _cmd_login,
-        usage=("/login", "/login chatgpt", "/login anthropic", "/login deepseek"),
+        usage=(
+            "/login",
+            "/login chatgpt",
+            "/login anthropic",
+            "/login deepseek",
+            "/login <provider> --no-set-provider",
+        ),
+        notes=(
+            "Connect, then choose a model. Esc/choose later retains the connection and current selection.",
+        ),
     ),
     SlashCommand(
         "/logout",

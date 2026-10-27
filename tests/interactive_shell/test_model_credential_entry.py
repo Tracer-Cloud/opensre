@@ -7,7 +7,8 @@ from typing import Any
 
 import pytest
 
-import surfaces.interactive_shell.command_registry.model.switching as switching
+import surfaces.shared.llm_setup.model_presentation as switching
+import surfaces.shared.llm_setup.selection as selection
 from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
 
@@ -45,60 +46,36 @@ def _credential_status_sequence(monkeypatch: Any, *, configured_after: bool) -> 
     monkeypatch.setattr(credentials, "status", lambda _p: next(statuses, fallback))
 
 
-def test_blank_key_cancels_without_saving(monkeypatch: Any) -> None:
-    import surfaces.shared.llm_setup.auth_service as service
-
+def test_explicit_set_never_prompts_for_a_missing_key(monkeypatch: Any) -> None:
     _credential_status_sequence(monkeypatch, configured_after=False)
-    saves: list[Any] = []
-    monkeypatch.setattr(service, "configure_api_key_provider", lambda **kw: saves.append(kw))
-
-    console = _Console(key="")  # blank input = cancel
-    assert switching.switch_llm_provider("openai", console) is False  # type: ignore[arg-type]
-    assert saves == []
-    assert any("cancelled" in line for line in console.printed)
-
-
-def test_pasted_key_is_saved_and_switch_proceeds(monkeypatch: Any) -> None:
-    import surfaces.shared.llm_setup.auth_profiles as providers
-    import surfaces.shared.llm_setup.auth_service as service
-    import surfaces.shared.llm_setup.env_sync as env_sync
-
-    _credential_status_sequence(monkeypatch, configured_after=True)
-    monkeypatch.setattr(providers, "resolve_auth_profile", lambda _p: object())
-    saves: list[Any] = []
-    monkeypatch.setattr(service, "configure_api_key_provider", lambda **kw: saves.append(kw))
-    monkeypatch.setattr(env_sync, "sync_provider_env", lambda **_: "/tmp/.env")
-    monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
-    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
-
-    console = _Console(key="sk-test-123")
-    assert switching.switch_llm_provider("openai", console) is True  # type: ignore[arg-type]
-    assert saves and saves[0]["api_key"] == "sk-test-123"
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        lambda console: switching.switch_llm_provider("anthropic", console),
-        lambda console: switching.switch_reasoning_model("gpt-5.5", console),
-        lambda console: switching.switch_toolcall_model("gpt-5.5", console),
-        lambda console: switching.restore_default_model("anthropic", console),
-    ],
-)
-def test_account_login_blocks_every_model_change(monkeypatch: Any, change: Any) -> None:
-    monkeypatch.setattr(
-        "config.account.account_llm_route",
-        lambda: SimpleNamespace(model="gpt-5.4-mini"),
-    )
     console = _Console()
+    console.input = lambda *_args, **_kwargs: pytest.fail("explicit set must not prompt")
+    assert switching.switch_llm_provider("openai", console) is False
+    assert any("opensre auth login openai" in line for line in console.printed)
 
-    assert change(console) is False
-    assert any("managed by your OpenSRE account" in line for line in console.printed)
-    assert any("/logout" in line for line in console.printed)
+
+def test_explicit_set_does_not_save_a_supplied_console_key(monkeypatch: Any) -> None:
+    _credential_status_sequence(monkeypatch, configured_after=False)
+    console = _Console(key="synthetic-key")
+    assert switching.switch_llm_provider("openai", console) is False
+    assert all("synthetic-key" not in line for line in console.printed)
+
+
+def test_account_identity_does_not_block_explicit_local_selection(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        "config.account.account_llm_route", lambda: SimpleNamespace(model="hosted-model")
+    )
+    _configured(monkeypatch)
+    monkeypatch.setattr(
+        "surfaces.shared.llm_setup.env_sync.sync_provider_env", lambda **_: "/tmp/.env"
+    )
+    monkeypatch.setattr(selection, "_reset_runtime_llm_caches", lambda: None)
+    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
+    assert switching.switch_llm_provider("anthropic", _Console()) is True
 
 
 def test_account_model_is_the_effective_model_shown_by_the_shell(monkeypatch: Any) -> None:
-    from surfaces.interactive_shell.command_registry import repl_data
+    from surfaces.shared.llm_setup import effective as repl_data
 
     monkeypatch.setenv("LLM_PROVIDER", "anthropic")
     monkeypatch.setattr(
@@ -158,16 +135,15 @@ def test_custom_provider_missing_model_is_rejected(monkeypatch: Any) -> None:
 def test_custom_provider_no_model_preserves_configured_model(monkeypatch: Any) -> None:
     # Switching a custom provider with no explicit model keeps the configured one
     # (restore-default / provider-only path) instead of blanking it.
-    import surfaces.shared.llm_setup.env_sync as env_sync
 
     _configured(monkeypatch)
     monkeypatch.setenv("CUSTOM_OPENAI_BASE_URL", "http://localhost:4000/v1")
     monkeypatch.setenv("CUSTOM_OPENAI_REASONING_MODEL", "gpt-5.4")
     synced: list[Any] = []
     monkeypatch.setattr(
-        env_sync, "sync_provider_env", lambda **kw: synced.append(kw) or "/tmp/.env"
+        selection, "sync_provider_env", lambda **kw: synced.append(kw) or "/tmp/.env"
     )
-    monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
+    monkeypatch.setattr(selection, "_reset_runtime_llm_caches", lambda: None)
     monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
 
     console = _Console()
@@ -181,7 +157,7 @@ def test_custom_provider_no_model_uses_legacy_model(monkeypatch: Any) -> None:
     assert provider.legacy_model_env is not None
     monkeypatch.setenv(provider.legacy_model_env, "gateway-model")
 
-    assert switching._resolve_omitted_model(provider) == "gateway-model"
+    assert selection._resolve_omitted_model(provider) == "gateway-model"
 
 
 def test_missing_subscription_directs_to_browser_login_without_prompting_for_key(monkeypatch):

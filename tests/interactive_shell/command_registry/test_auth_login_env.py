@@ -32,6 +32,12 @@ def test_login_reloads_only_selected_connection(
     monkeypatch.setenv("OPENSRE_LLM_TRANSPORT", "litellm")
 
     def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        import json
+
+        child_env = _kwargs["env"]
+        Path(child_env["OPENSRE_LLM_SETUP_RESULT_PATH"]).write_text(
+            json.dumps({"provider": "chatgpt", "activated": set_provider}), encoding="utf-8"
+        )
         return subprocess.CompletedProcess(cmd, exit_code, stdout="", stderr="")
 
     monkeypatch.setattr(cli_parity.subprocess, "run", run)
@@ -40,7 +46,7 @@ def test_login_reloads_only_selected_connection(
         args.append("--no-set-provider")
     cli_parity.run_cli_command(Console(file=StringIO()), args)
 
-    switched = set_provider and exit_code == 0
+    switched = set_provider
     assert os.environ["UNRELATED_SETTING"] == "exported"
     assert os.environ["LLM_PROVIDER"] == ("chatgpt" if switched else "anthropic")
     assert os.environ["CHATGPT_MODEL"] == ("selected-model" if switched else "exported-model")

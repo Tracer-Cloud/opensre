@@ -6,7 +6,7 @@ from surfaces.interactive_shell.command_registry.model.command import (
     COMMANDS,
     parse_model_set_args,
 )
-from surfaces.interactive_shell.command_registry.model.switching import (
+from surfaces.shared.llm_setup.model_presentation import (
     restore_default_model,
     switch_llm_provider,
     switch_reasoning_model,

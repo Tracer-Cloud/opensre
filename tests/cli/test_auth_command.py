@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from config.llm_credentials import resolve_env_credential
@@ -13,36 +12,30 @@ def test_login_uses_readable_auth_selectors(monkeypatch) -> None:
     from surfaces.shared.llm_setup import auth_menu as auth
 
     seen = []
-    choices = iter(["subscriptions", "chatgpt"])
 
-    def select(**kwargs):
-        seen.append(kwargs)
-        return next(choices)
+    def build(values, **kwargs):
+        fields = kwargs["fields"](values)
+        seen.extend(fields[0].choices)
+        assert kwargs["submit_on_choice"] is True
+        return object()
 
-    monkeypatch.setattr(auth, "repl_choose_one", select, raising=False)
-    monkeypatch.setattr(auth, "configured_profile_name", lambda: "chatgpt")
+    monkeypatch.setattr(auth, "build_input_form", build)
+    monkeypatch.setattr(auth, "run_command_input", lambda _: "chatgpt")
     assert auth.prompt_auth_provider().name == "chatgpt"
-    assert seen[0]["breadcrumb"] == "/login"
-    assert seen[0]["title"] == "Sign in with"
-    assert [label for _, label in seen[0]["choices"]] == ["API key", "Subscriptions"]
-    assert seen[0]["initial_value"] == "subscriptions"
-    assert seen[1]["initial_value"] == "chatgpt"
-    assert [name for name, _ in seen[1]["choices"]] == ["chatgpt", "grok"]
+    labels = [choice.label for choice in seen]
+    assert any("Subscription" in label for label in labels)
+    assert any("API billing" in label for label in labels)
+    assert any("CLI-managed" in label for label in labels)
 
 
 def test_subscription_model_selector_can_cancel(monkeypatch) -> None:
-    import click
+    from rich.console import Console
 
-    from surfaces.cli.commands import subscription_auth
+    from surfaces.shared.llm_setup import model_picker
 
-    monkeypatch.setattr(subscription_auth.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(
-        subscription_auth, "repl_choose_subcommand", lambda **_kwargs: None, raising=False
-    )
-    with pytest.raises(click.Abort):
-        subscription_auth.choose_subscription_model(
-            [("gpt-test", "Test model")], provider="chatgpt"
-        )
+    monkeypatch.setattr(model_picker, "run_command_input", lambda _: None)
+    monkeypatch.setattr(model_picker, "model_choices", lambda **_: ())
+    assert model_picker.model_picker(Console(), provider_id="chatgpt") is None
 
 
 def _patch_auth_env(monkeypatch, tmp_path: Path) -> Path:
@@ -56,7 +49,7 @@ def _patch_auth_env(monkeypatch, tmp_path: Path) -> Path:
     return env_path
 
 
-def test_auth_login_deepseek_stores_secret_and_env(monkeypatch, tmp_path: Path) -> None:
+def test_non_tty_login_stores_secret_without_activation(monkeypatch, tmp_path: Path) -> None:
     env_path = _patch_auth_env(monkeypatch, tmp_path)
 
     result = CliRunner().invoke(
@@ -73,11 +66,10 @@ def test_auth_login_deepseek_stores_secret_and_env(monkeypatch, tmp_path: Path) 
     )
 
     assert result.exit_code == 0, result.output
-    assert "Authenticated: DeepSeek API key" in result.output
+    assert "Connected: DeepSeek API key" in result.output
     assert resolve_env_credential("DEEPSEEK_API_KEY") == "deepseek-secret"
-    env_content = env_path.read_text(encoding="utf-8")
-    assert "LLM_PROVIDER=deepseek\n" in env_content
-    assert "DEEPSEEK_API_KEY=deepseek-secret\n" in env_content
+    assert not env_path.exists()
+    assert "opensre model set deepseek" in result.output
 
 
 def test_auth_status_provider_reports_metadata_without_reading_secret(
@@ -170,14 +162,11 @@ def test_auth_logout_deepseek_removes_stored_secret(monkeypatch, tmp_path: Path)
 
     assert result.exit_code == 0, result.output
     assert resolve_env_credential("DEEPSEEK_API_KEY") == ""
-    assert "DEEPSEEK_API_KEY=" not in env_path.read_text(encoding="utf-8")
+    assert not env_path.exists() or "DEEPSEEK_API_KEY=" not in env_path.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("choices", [[None], ["subscriptions", None]])
-def test_login_picker_cancellation_does_not_start_setup(monkeypatch, choices) -> None:
+def test_login_picker_cancellation_does_not_start_setup(monkeypatch) -> None:
     from surfaces.shared.llm_setup import auth_menu
 
-    answers = iter(choices)
-    monkeypatch.setattr(auth_menu, "configured_profile_name", lambda: "chatgpt")
-    monkeypatch.setattr(auth_menu, "repl_choose_one", lambda **_: next(answers))
+    monkeypatch.setattr(auth_menu, "run_command_input", lambda _: None)
     assert auth_menu.prompt_auth_provider() is None

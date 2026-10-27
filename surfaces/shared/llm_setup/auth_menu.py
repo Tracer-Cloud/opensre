@@ -1,49 +1,53 @@
-"""Shared terminal selection for provider login."""
+"""One shared provider/source picker for login and model setup."""
 
 from __future__ import annotations
 
+import config.llm_settings as llm_settings
 from surfaces.shared.llm_setup.auth_profiles import (
-    AuthKind,
     ProviderAuthProfile,
     iter_auth_profiles,
     resolve_auth_profile,
 )
-from surfaces.shared.terminal.components.choice_menu import repl_choose_one
+from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
+from surfaces.shared.llm_setup.provider_sources import source_label
+from surfaces.shared.terminal.components.command_input import run_command_input
+from surfaces.shared.terminal.components.input_form import InputChoice, InputField, build_input_form
 
 
 def configured_profile_name() -> str | None:
-    """The auth-profile name matching the install's active LLM provider, if any."""
-    from config.llm_settings import get_configured_llm_provider
-
-    configured = get_configured_llm_provider()
-    for profile in iter_auth_profiles():
-        if configured == profile.provider_value or configured in profile.all_names:
-            return profile.name
-    return None
+    provider = llm_settings.get_configured_llm_provider()
+    return next((p.name for p in iter_auth_profiles() if p.provider_value == provider), None)
 
 
 def prompt_auth_provider() -> ProviderAuthProfile | None:
-    """Choose a login provider without resolving credentials; return None on cancel."""
-    configured = configured_profile_name()
-    current = resolve_auth_profile(configured) if configured else None
-    kind = repl_choose_one(
-        title="Sign in with",
-        breadcrumb="/login",
-        choices=[
-            ("api-keys", "API key"),
-            ("subscriptions", "Subscriptions"),
-        ],
-        initial_value="subscriptions" if current and current.kind == "subscription" else "api-keys",
+    profiles = sorted(
+        iter_auth_profiles(),
+        key=lambda profile: PROVIDER_BY_VALUE[profile.provider_value].label.casefold(),
     )
-    if kind is None:
-        return None
-    credential_kind: AuthKind = "subscription" if kind == "subscriptions" else "api_key"
-    provider = repl_choose_one(
-        title="Choose a provider",
-        breadcrumb="/login › " + ("Subscriptions" if kind == "subscriptions" else "API key"),
-        choices=[(profile.name, profile.label) for profile in iter_auth_profiles(credential_kind)],
-        initial_value=configured,
+    choices = tuple(
+        InputChoice(
+            p.name, source_label(PROVIDER_BY_VALUE[p.provider_value]), details=(p.auth_hint,)
+        )
+        for p in profiles
     )
-    if provider is None:
-        return None
-    return resolve_auth_profile(provider)
+    app = build_input_form(
+        {"provider": configured_profile_name() or choices[0].value or ""},
+        title="Connect a provider",
+        heading="Choose a provider and source",
+        submit_label="Connect",
+        fields=lambda _: (
+            InputField(
+                "provider",
+                "Provider / source",
+                required=True,
+                choices=choices,
+                searchable=True,
+                record_choices=True,
+            ),
+        ),
+        validate=lambda values: values["provider"],
+        initial_field="provider",
+        submit_on_choice=True,
+    )
+    selected = run_command_input(app)
+    return resolve_auth_profile(selected) if selected else None

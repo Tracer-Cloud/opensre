@@ -3,10 +3,24 @@ title: "LLM Providers"
 description: "Supported LLM APIs and CLIs, environment variables, and how to switch between them."
 ---
 
-The interactive shell uses your signed-in OpenSRE account by default. To select
-your own provider billing, run `opensre auth login` and choose API keys or
-Subscriptions. A successful login selects that connection for reasoning,
-classification, and tool calls while retaining your OpenSRE identity.
+The interactive shell uses your signed-in OpenSRE account by default. Run
+`opensre auth login` (or `/login` in the shell) to connect another provider.
+Interactive login opens that provider's model picker immediately. Select a model
+to activate it, or choose **Choose later, keep current model**. Authentication saves
+the connection; model selection changes the active provider and billing source.
+
+Run `opensre model` or `/model` to search models from connected providers directly.
+Each row names its source, including API billing, subscription, CLI-managed,
+ambient credentials, or local runtime. The current model is preselected. Enter
+activates one row; Esc/Ctrl-C keeps the current model. **Connect a provider** uses
+the same login flow and returns directly to its models. Use **Custom model…** for
+an exact model or deployment ID where supported. API/CLI catalog choices do not
+guarantee account access; cached subscription catalogs can change.
+
+Selecting a local provider retains your OpenSRE account identity. The **OpenSRE ·
+Hosted credits** row stays available for explicitly returning to hosted inference.
+The general Claude Code connection is **CLI-managed**; its billing depends on the
+vendor CLI configuration and is not guaranteed to use a subscription.
 
 Other hosts and account-independent CLI workflows can use the providers below.
 Choose one with `LLM_PROVIDER`; API providers use an API key stored in
@@ -173,18 +187,50 @@ issue if you need another first-class provider.
 
 ## Login and secret storage
 
-Use `opensre auth login` to choose **API keys** (provider API billing) or
-**Subscriptions** (provider plan usage). OAuth subscriptions use browser authorization;
-API-key providers use a hidden paste prompt.
+`opensre auth login` opens one provider/source picker. OAuth subscriptions use
+browser authorization; API-key providers reuse existing keys or ask for a hidden
+paste. Vendor CLIs reuse their supported local sessions. Missing CLI binaries or
+definite sign-out show vendor setup instructions. Unknown CLI authentication is
+shown as **Auth checked on use**, without claiming a verified session.
 
 | Command | What it does |
 | --- | --- |
-| `opensre auth` | Show API-key and subscription auth status and the active provider |
-| `opensre auth login deepseek` | Guide DeepSeek setup, validate `DEEPSEEK_API_KEY`, store it in `.env` and `~/.opensre/credentials.json`, and select DeepSeek |
-| `opensre auth verify deepseek` | Check DeepSeek credentials and refresh local metadata |
-| `opensre auth logout deepseek` | Remove OpenSRE-managed DeepSeek credentials and metadata |
+| `opensre auth` | Show provider auth status and the active route |
+| `opensre auth login deepseek` | Validate and save a key, then open DeepSeek models in a terminal |
+| `opensre auth login deepseek --no-set-provider` | Connect only; skip the model picker |
+| `opensre auth login openai --set-provider --model <id>` | Validate and explicitly select a model |
+| `opensre model` | Search connected models directly |
+| `opensre model list` / `opensre model show` | Read-only choices or effective selection |
+| `opensre --json model list` / `opensre --json model show` | Exact provider/model IDs, source, active state and availability as JSON |
+| `opensre model set <provider> [model]` | Select explicitly; omitted model uses a validated provider default |
+| `opensre model restore [provider]` | Restore the provider's default reasoning model |
+| `opensre model toolcall set <id>` | Configure the active provider's separate toolcall slot |
+| `opensre auth verify deepseek` | Check credentials and refresh local metadata |
+| `opensre auth logout deepseek` | Remove OpenSRE-managed credentials and cached choices |
 
-API-key login writes the key to `.env` and `~/.opensre/credentials.json`.
+`model set` also accepts `--toolcall-model <id>`. Complete commands never open a
+login prompt. Missing credentials name `opensre auth login <provider>`.
+Provider models and endpoints survive switching away and back. Keys retain their
+existing storage and environment precedence; an explicit key replacement takes
+effect for the next request.
+
+**Script compatibility change:** non-TTY login now connects only by default.
+Migrate scripts that expected automatic selection to
+`opensre auth login <provider> --set-provider --model <id>`. With explicit
+`--set-provider` and no model, terminal callers get the picker and non-TTY callers
+use a validated default or receive an actionable error. `--model` alone supplies
+the connection validation model and picker preselection, without activation.
+`--no-set-provider` always connects only. Non-TTY commands do not prompt for keys
+or open browsers implicitly. Supply required keys/settings explicitly. Existing
+sessions can be reused; intentional remote OAuth can use explicit
+`--no-open-browser` and the printed authorization URL.
+
+API-key login stores the key in `~/.opensre/credentials.json`. Selection does not
+copy session-only secrets to durable storage. Azure and custom gateways require
+an endpoint URL and an exact model/deployment ID (`--model`); set their documented
+endpoint environment variables before non-TTY login. Ollama setup discovers
+installed models. Cached discovery is refreshed during intentional setup or
+verification, rather than on each picker redraw.
 
 `opensre auth` and `/auth status` are safe to show in prompts: they do not read
 stored secrets. For API-key providers they check environment variables and
@@ -225,11 +271,12 @@ Use `--new-account` to add another account or workspace. Use
 email addresses match. Logout clears the selected account's tokens and retains
 its registration for later sign-in. Other saved accounts and API keys remain.
 
-Login selects `LLM_PROVIDER=chatgpt` and your own plan billing, while preserving
-your OpenSRE account identity. `--no-set-provider` saves credentials without
-changing the selected provider. To restore OpenSRE hosted billing for a signed-in
-account, set `OPENSRE_LLM_CONNECTION=account` in `.env`. To switch to API billing, run
-`opensre auth login openai` (or another API provider).
+Selecting a ChatGPT model activates `LLM_PROVIDER=chatgpt` and plan billing,
+while preserving your OpenSRE account identity. Choose later or use
+`--no-set-provider` to retain the connection without activation. Return to hosted
+billing through the OpenSRE hosted row in `/model`; choose an OpenAI API row to
+use API billing. Neither login nor a failed model selection chooses a different
+provider, API key, account, or billing source as a fallback.
 
 Subscription credentials are stored separately in owner-only files under
 `~/.opensre/subscriptions/chatgpt/`; keep this directory private and out of

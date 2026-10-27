@@ -52,7 +52,9 @@ def _run_onboarding_command(
 
     if exit_code == 0:
         capture_onboard_completed(load_config())
-        if _should_launch_shell_after_onboarding(ctx):
+        from core.llm.readiness import llm_ready
+
+        if _should_launch_shell_after_onboarding(ctx) and llm_ready().ready:
             exit_code = _launch_interactive_shell(ctx)
     else:
         capture_onboard_failed()

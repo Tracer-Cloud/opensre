@@ -20,7 +20,7 @@ from config.env_file import (
     write_env_lines,
 )
 from config.env_key_sensitivity import is_sensitive_env_key
-from surfaces.shared.llm_setup.catalog import ProviderOption, WizardCredentialKind
+from surfaces.shared.llm_setup.catalog import ProviderOption
 
 
 def sync_reasoning_model_env(
@@ -133,52 +133,20 @@ def sync_provider_env(
 ) -> Path:
     """Write provider settings into the project .env.
 
-    Removes stale non-secret keys from other providers. Existing API keys and
-    other secrets are left in place.
+    Preserve provider-specific settings and credentials across explicit switches.
     """
-    from surfaces.shared.llm_setup.catalog import SUPPORTED_PROVIDERS
-
     target_path = env_path or PROJECT_ENV_PATH
     existing = read_env_lines(target_path)
 
-    # Strip stale model/endpoint keys from other providers. API keys and other
-    # secrets stay in ``.env`` — switching providers must not delete them.
-    keys_to_remove: set[str] = set()
-    for p in SUPPORTED_PROVIDERS:
-        keys_to_remove |= _provider_specific_keys(p)
-
-    # Legacy OAuth-era key: no longer written, always scrubbed from old files.
-    keys_to_remove.add(LLM_AUTH_METHOD_ENV)
+    # Inactive providers retain models/endpoints; only active routing is global.
+    from core.llm.providers.custom_endpoints import is_custom_provider
     from core.llm.transport_mode import LLM_TRANSPORT_ENV
 
-    keys_to_remove.add(LLM_TRANSPORT_ENV)
-
-    # Keep the active provider's model keys. Sensitive keys are dropped from
-    # the removal set below so a rewrite never deletes an existing API key.
-    active_non_secret: set[str] = {provider.model_env}
-    if provider.legacy_model_env:
-        active_non_secret.add(provider.legacy_model_env)
-    if provider.toolcall_model_env:
-        active_non_secret.add(provider.toolcall_model_env)
-    classification_env = _classification_model_env(provider)
-    if classification_env:
-        active_non_secret.add(classification_env)
-    from core.llm.providers.custom_endpoints import is_custom_provider
-
-    # Providers that carry a user-supplied endpoint (Azure + the custom gateways)
-    # keep their base URL in .env; without this it is stripped on the next sync.
-    provider_has_endpoint = provider.value == "azure-openai" or is_custom_provider(provider.value)
-    if provider_has_endpoint and provider.endpoint_env:
-        active_non_secret.add(provider.endpoint_env)
-    if provider.value == "azure-openai" and provider.api_version_env:
-        active_non_secret.add(provider.api_version_env)
-    # A ``host`` credential (e.g. the Ollama host) is non-secret runtime config
-    # that the wizard persists to ``.env`` — keep it as an active key so this
-    # sync does not strip it back out in the same wizard run.
-    if provider.credential_kind == WizardCredentialKind.HOST and provider.api_key_env:
-        active_non_secret.add(provider.api_key_env)
-    keys_to_remove -= active_non_secret
-    keys_to_remove = {key for key in keys_to_remove if not is_sensitive_env_key(key)}
+    keys_to_remove = {LLM_AUTH_METHOD_ENV, LLM_TRANSPORT_ENV}
+    active_non_secret = {
+        key for key in _provider_specific_keys(provider) if not is_sensitive_env_key(key)
+    }
+    provider_has_endpoint = bool(provider.endpoint_env)
 
     lines = _remove_keys(existing, keys_to_remove)
 

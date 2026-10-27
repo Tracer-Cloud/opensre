@@ -7,7 +7,7 @@ import os
 from rich.console import Console
 from rich.markup import escape
 
-import surfaces.interactive_shell.command_registry.repl_data as repl_data
+import surfaces.shared.llm_setup.effective as effective
 from config.constants.llm import LLM_PROVIDER_ENV
 from config.constants.repl_autonomy import (
     AUTO_LEVEL_CAPTIONS,
@@ -119,7 +119,7 @@ def _cmd_trust(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _cmd_effort(session: Session, console: Console, args: list[str]) -> bool:
-    settings = repl_data.load_llm_settings()
+    settings = effective.load_llm_settings()
     provider = str(getattr(settings, "provider", os.getenv(LLM_PROVIDER_ENV, "anthropic")))
     reasoning_model = ""
     if settings is not None:

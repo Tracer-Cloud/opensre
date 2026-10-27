@@ -121,8 +121,11 @@ def save_provider_auth_record(
         if not isinstance(providers, dict):
             providers = {}
             data["providers"] = providers
+        previous = providers.get(provider_value, {})
+        catalog = previous.get("model_catalog") if isinstance(previous, dict) else None
         providers[provider_value] = _normalize_record(
             {
+                **({"model_catalog": catalog} if isinstance(catalog, str) else {}),
                 "provider": provider_value,
                 "auth_name": auth_name,
                 "kind": kind,
@@ -137,7 +140,9 @@ def save_provider_auth_record(
         _write_unlocked(path, data)
 
 
-def save_provider_auth_record_values(provider: str, values: Mapping[str, object]) -> None:
+def save_provider_auth_record_values(
+    provider: str, values: Mapping[str, object], *, replace_catalog: bool = False
+) -> None:
     """Persist an already-shaped non-secret provider auth record."""
     provider_value = provider.strip().lower()
     path = _auth_metadata_path()
@@ -148,7 +153,22 @@ def save_provider_auth_record_values(provider: str, values: Mapping[str, object]
         if not isinstance(providers, dict):
             providers = {}
             data["providers"] = providers
-        record = _normalize_record({"provider": provider_value, **dict(values)})
+        previous = providers.get(provider_value, {})
+        catalog = previous.get("model_catalog") if isinstance(previous, dict) else None
+        incoming = dict(values)
+        if not replace_catalog:
+            incoming.pop("model_catalog", None)
+        record = _normalize_record(
+            {
+                **(
+                    previous
+                    if replace_catalog and isinstance(previous, dict)
+                    else ({"model_catalog": catalog} if isinstance(catalog, str) else {})
+                ),
+                "provider": provider_value,
+                **incoming,
+            }
+        )
         record.setdefault("updated_at", _utc_now())
         providers[provider_value] = record
         _write_unlocked(path, data)

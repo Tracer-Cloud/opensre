@@ -10,10 +10,10 @@ from surfaces.interactive_shell.command_registry.model import (
     switch_toolcall_model,
 )
 from surfaces.interactive_shell.command_registry.repl_data import (
-    load_llm_settings,
     load_verified_integrations,
 )
 from surfaces.interactive_shell.command_registry.types import SlashCommand
+from surfaces.shared.llm_setup.effective import load_llm_settings
 
 __all__ = [
     "SLASH_COMMANDS",

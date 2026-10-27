@@ -23,6 +23,7 @@ def _set_tty(monkeypatch: pytest.MonkeyPatch, *, is_tty: bool) -> None:
 def test_onboarding_success_launches_shell_when_interactive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("core.llm.readiness.llm_ready", lambda: SimpleNamespace(ready=True))
     launched: list[object] = []
     _set_tty(monkeypatch, is_tty=True)
     monkeypatch.delenv(onboard_module.OPENSRE_AUTO_LAUNCH_ENV, raising=False)
@@ -117,3 +118,14 @@ def test_onboard_auto_launch_suppresses_shell_render_capture(
 
     assert onboard_module._launch_interactive_shell(ctx) == 0
     assert captured == [False]
+
+
+def test_deferred_setup_does_not_launch_an_unusable_turn(monkeypatch):
+    _set_tty(monkeypatch, is_tty=True)
+    monkeypatch.setattr("core.llm.readiness.llm_ready", lambda: SimpleNamespace(ready=False))
+    monkeypatch.setattr(
+        onboard_module, "_launch_interactive_shell", lambda *_: pytest.fail("no usable route")
+    )
+    with pytest.raises(SystemExit) as exc:
+        onboard_module._run_onboarding_command(lambda: 0, load_config=lambda: {})
+    assert exc.value.code == 0

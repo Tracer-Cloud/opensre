@@ -332,6 +332,7 @@ def _prompt_validated_llm_credential(
     *,
     model: str,
     session_env_sink: dict[str, str] | None = None,
+    interactive_model: bool = True,
 ) -> tuple[CredentialOutcome, str]:
     """Prompt for, validate against ``model``, and persist one LLM credential.
 
@@ -396,17 +397,45 @@ def _prompt_validated_llm_credential(
             # "validate the model the user picked" holds while discovery has its creds.
             os.environ[env_key] = value
             try:
-                model = choose_provider_model(
-                    provider,
-                    default=model,
-                    back_on_cancel=True,
-                )
+                if interactive_model:
+                    model = choose_provider_model(provider, default=model, back_on_cancel=True)
+                else:
+                    from config.llm_auth.model_catalog import save_model_catalog
+                    from surfaces.shared.llm_setup.azure_models import discover_models
+
+                    catalog = discover_models(provider)
+                    if catalog:
+                        save_model_catalog(provider.value, catalog)
+                        model = model if model in {value for value, _ in catalog} else catalog[0][0]
+                    elif not model:
+                        model = prompt_value("Exact Azure deployment ID", back_on_cancel=True)
             except WizardBack:
                 # Backing out of the deployment pick returns to the provider menu; drop the
                 # endpoint so the re-selected Azure provider re-prompts it (#3591).
                 _clear_provider_endpoint_env(provider)
                 return REPICK, model
 
+        if provider.credential_kind == WizardCredentialKind.HOST and not interactive_model:
+            from config.llm_auth.model_catalog import save_model_catalog
+            from surfaces.shared.llm_setup.ollama import list_available_models, model_is_available
+
+            try:
+                installed = list_available_models(value)
+            except RuntimeError as exc:
+                console.print(str(exc), markup=False)
+                installed = ()
+            if installed:
+                save_model_catalog(provider.value, [(item, item) for item in installed])
+                if not model_is_available(model, installed):
+                    model = installed[0]
+
+        if needs_endpoint and not model:
+            try:
+                model = prompt_value(
+                    "Exact model ID for connection validation", back_on_cancel=True
+                )
+            except WizardBack:
+                return REPICK, model
         validation = _validate_llm_credential(provider, value=value, model=model)
         _render_credential_validation(label, model, validation)
         if not validation.ok:

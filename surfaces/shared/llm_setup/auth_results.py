@@ -28,3 +28,5 @@ class AuthSetupResult:
     source: str
     detail: str
     env_path: Path | None
+    choices: tuple[tuple[str, str], ...] = ()
+    selection_changed: bool = False

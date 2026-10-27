@@ -65,6 +65,20 @@ _EXCLUSIVE_STDIN_COMMANDS: frozenset[str] = frozenset(
 )
 _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
     {
+        *(
+            ("/model", sub)
+            for sub in (
+                "list",
+                "show",
+                "set",
+                "use",
+                "switch",
+                "restore",
+                "default",
+                "reset",
+                "toolcall",
+            )
+        ),
         ("/integrations", "list"),
         ("/integrations", "show"),
         ("/integrations", "verify"),
