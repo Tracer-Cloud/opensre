@@ -42,7 +42,7 @@ def _credential_status_sequence(monkeypatch: Any, *, configured_after: bool) -> 
         ]
     )
     fallback = SimpleNamespace(configured=configured_after, stale=False, detail="")
-    monkeypatch.setattr(credentials, "status", lambda _p: next(statuses, fallback))
+    monkeypatch.setattr(credentials, "connection_status", lambda _p: next(statuses, fallback))
 
 
 @pytest.mark.parametrize("key", ["", "synthetic-key"])
@@ -106,7 +106,7 @@ def _configured(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(
         credentials,
-        "status",
+        "connection_status",
         lambda _p: SimpleNamespace(configured=True, stale=False, detail=""),
     )
 

@@ -6,11 +6,9 @@ import os
 from dataclasses import dataclass
 
 from config.constants.llm import HOSTED_MODEL_PROVIDER, LLM_PROVIDER_ENV, OPENSRE_LLM_CONNECTION_ENV
-from config.llm_auth.cli_auth import resolve_cli_auth_state
-from config.llm_auth.credentials import status
+from config.llm_auth.credentials import connection_status
 from config.llm_auth.model_catalog import saved_models
-from config.llm_auth.provider_catalog import require_provider_spec
-from config.llm_auth.records import resolve_provider_auth_record
+from config.llm_auth.records import provider_auth_records
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.shared.llm_setup.catalog import SUPPORTED_PROVIDERS
 from surfaces.shared.llm_setup.hosted_connection import hosted_model
@@ -55,7 +53,12 @@ def active_model() -> tuple[str, str]:
     return provider.value, saved or provider.default_model
 
 
-def provider_choices(name: str) -> list[ModelChoice]:
+def provider_choices(
+    name: str,
+    *,
+    record: dict[str, str] | None = None,
+    active: tuple[str, str] | None = None,
+) -> list[ModelChoice]:
     """Return curated/cached choices and a saved custom model, with no live discovery."""
     provider = resolve_provider(name)
     kinds = {
@@ -66,7 +69,9 @@ def provider_choices(name: str) -> list[ModelChoice]:
         "none": "Cloud account",
     }
     source = f"{provider.label} · {kinds[provider.credential_kind]}"
-    models = saved_models(name) or [(option.value, option.label) for option in provider.models]
+    models = saved_models(name, record=record) or [
+        (option.value, option.label) for option in provider.models
+    ]
     saved = os.getenv(provider.model_env, "").strip() or (
         os.getenv(provider.legacy_model_env, "").strip() if provider.legacy_model_env else ""
     )
@@ -77,7 +82,7 @@ def provider_choices(name: str) -> list[ModelChoice]:
             "CLI default" if provider.credential_kind == "cli" else "Custom model ID required"
         )
         models = [(provider.default_model, provider.default_model or fallback)]
-    active = active_model()
+    active = active_model() if active is None else active
     if active[0] == name and active[1] not in dict(models):
         models = [(active[1], active[1] or "CLI default"), *models]
     return [
@@ -99,11 +104,12 @@ def active_choice() -> ModelChoice:
 
 
 def connected_choices(*, provider: str | None = None) -> list[ModelChoice]:
-    """Snapshot configured providers once per user action, never once per redraw."""
+    """List saved connections without launching auth probes or discovering providers."""
     from dataclasses import replace
 
     rows: list[ModelChoice] = []
     current = active_model()
+    records = provider_auth_records()
     hosted = hosted_model()
     if hosted and provider in (None, HOSTED_MODEL_PROVIDER):
         rows.append(
@@ -118,32 +124,21 @@ def connected_choices(*, provider: str | None = None) -> list[ModelChoice]:
     for option in SUPPORTED_PROVIDERS:
         if provider is not None and option.value != provider:
             continue
-        record = resolve_provider_auth_record(option.value)
-        if option.credential_kind in {"none", "host"} and option.value != current[0] and not record:
-            spec = require_provider_spec(option.value)
-            hints = (option.api_key_env, option.model_env, spec.project_env, spec.location_env)
-            if not any(key and os.getenv(key) for key in hints):
-                continue
-        auth = status(option.value)
-        availability = "stale" if auth.stale else "configured"
-        configured = auth.configured
-        if option.credential_kind == "cli" and not configured:
-            try:
-                cli = resolve_cli_auth_state(option.value)
-            except (RuntimeError, OSError):
-                cli = None
-            configured = cli is not None and cli.installed and cli.logged_in is None
-            availability = "Auth checked on use"
-            if not configured and (record or option.value == current[0]):
-                rows.extend(
-                    replace(row, availability="Reconnect with /login")
-                    for row in provider_choices(option.value)
-                )
-        if not configured:
+        record = records.get(option.value, {})
+        auth = connection_status(option.value, record=record)
+        if not auth.configured:
             continue
+        availability = (
+            "Reconnect with /login"
+            if auth.stale
+            else "configured"
+            if auth.verified
+            else "Auth checked on use"
+        )
         if option.endpoint_env and not os.getenv(option.endpoint_env, "").strip():
             continue
         rows.extend(
-            replace(row, availability=availability) for row in provider_choices(option.value)
+            replace(row, availability=availability)
+            for row in provider_choices(option.value, record=record, active=current)
         )
     return sorted(rows, key=lambda row: row.provider != current[0])

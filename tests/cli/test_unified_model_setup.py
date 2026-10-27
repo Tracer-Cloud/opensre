@@ -247,29 +247,27 @@ def test_hosted_round_trip_retains_identity_and_requires_explicit_selection(
     assert resolved == [True]
 
 
-def test_cli_probe_failure_does_not_hide_usable_models(monkeypatch, selection_paths):
-    from config.llm_auth.credentials import CredentialSource, CredentialStatus
+def test_stale_cli_connection_does_not_hide_usable_api_models(monkeypatch, selection_paths):
+    from config.llm_auth.records import save_provider_auth_record
     from surfaces.shared.llm_setup import model_choices
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
     monkeypatch.setenv("LLM_PROVIDER", "claude-code")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic")
     monkeypatch.setattr(
         model_choices,
         "SUPPORTED_PROVIDERS",
         tuple(PROVIDER_BY_VALUE[p] for p in ("openai", "claude-code")),
     )
-    monkeypatch.setattr(
-        model_choices,
-        "status",
-        lambda provider: CredentialStatus(
-            provider, provider == "openai", CredentialSource.ENV, False, False, "Synthetic status"
-        ),
+    save_provider_auth_record(
+        provider="claude-code",
+        auth_name="claude-code",
+        kind="cli",
+        source="cli",
+        detail="Reconnect required",
+        verified=False,
+        stale=True,
     )
-
-    def broken(_):
-        raise OSError("Vendor CLI probe failed")
-
-    monkeypatch.setattr(model_choices, "resolve_cli_auth_state", broken)
     rows = model_choices.connected_choices()
     assert any(row.provider == "openai" for row in rows)
     assert any(row.provider == "claude-code" and "Reconnect" in row.availability for row in rows)
@@ -396,7 +394,7 @@ def test_connecting_ambient_provider_makes_its_models_selectable(monkeypatch, se
 
     from config.llm_auth import credentials
     from config.llm_auth.credentials import CredentialSource, CredentialStatus
-    from surfaces.shared.llm_setup import connection, model_choices
+    from surfaces.shared.llm_setup import connection
     from surfaces.shared.llm_setup.model_choices import connected_choices
 
     monkeypatch.setenv("LLM_PROVIDER", "openai")
@@ -407,8 +405,79 @@ def test_connecting_ambient_provider_makes_its_models_selectable(monkeypatch, se
 
     monkeypatch.setattr(credentials, "status", status)
     monkeypatch.setattr(connection, "status", status)
-    monkeypatch.setattr(model_choices, "status", status)
     connection.connect_provider(Console(), "bedrock")
     rows = connected_choices(provider="bedrock")
     assert rows and all(row.provider == "bedrock" for row in rows)
     assert os.environ["LLM_PROVIDER"] == "openai"
+
+
+def test_model_inventory_and_selection_are_probe_free(monkeypatch, selection_paths):
+    from io import StringIO
+
+    from rich.console import Console
+
+    from config.llm_auth import cli_auth, credentials, records
+    from config.llm_auth.cli_auth import CliAuthChecker, CliAuthState
+    from surfaces.shared.llm_setup import model_choices
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
+    from surfaces.shared.llm_setup.model_picker import render_models
+    from surfaces.shared.llm_setup.selection import SelectionError, select_provider
+
+    monkeypatch.setenv("LLM_PROVIDER", "claude-code")
+    monkeypatch.setenv("GROK_CLI_MODEL", "grok-build")
+    monkeypatch.setattr(
+        model_choices,
+        "SUPPORTED_PROVIDERS",
+        tuple(PROVIDER_BY_VALUE[p] for p in ("claude-code", "grok-cli", "bedrock")),
+    )
+    records.save_provider_auth_record(
+        provider="claude-code",
+        auth_name="claude-code",
+        kind="cli",
+        source="cli",
+        detail="Previously connected; auth checked on use",
+        verified=False,
+    )
+    records.save_provider_auth_record(
+        provider="bedrock",
+        auth_name="bedrock",
+        kind="none",
+        source="ambient",
+        detail="Saved cloud connection",
+        verified=False,
+    )
+    ambient_probes = []
+
+    def ambient_probe(_spec):
+        ambient_probes.append("bedrock")
+        raise AssertionError("Model browsing must not probe cloud credentials")
+
+    monkeypatch.setitem(credentials._AMBIENT_PROBES, "bedrock", ambient_probe)
+    reads = []
+    load = records._load_unlocked
+
+    def read(path):
+        reads.append(path)
+        return load(path)
+
+    monkeypatch.setattr(records, "_load_unlocked", read)
+    probes = []
+
+    def probe(provider):
+        probes.append(provider)
+        return CliAuthState(True, None, "Installed CLI; auth status unknown")
+
+    monkeypatch.setattr(cli_auth, "_installed", CliAuthChecker(probe))
+    output = StringIO()
+    render_models(Console(file=output, width=160))
+    rows = model_choices.connected_choices()
+    assert {row.provider for row in rows} == {"claude-code", "bedrock"}
+    assert not ambient_probes
+    assert not probes, f"Model browsing unexpectedly launched vendor probes: {probes}"
+    assert len(reads) == 2, "Each inventory should read provider metadata just once"
+    select_provider("claude-code", "sonnet")
+    assert not probes, "Selecting a saved model must not start an auth probe"
+    assert os.environ["CLAUDE_CODE_MODEL"] == "sonnet"
+    with pytest.raises(SelectionError, match="/login"):
+        select_provider("grok-cli", "grok-build")
+    assert not probes

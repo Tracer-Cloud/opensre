@@ -157,9 +157,8 @@ def save_provider_auth_record_values(provider: str, values: Mapping[str, object]
         _write_unlocked(path, data)
 
 
-def resolve_provider_auth_record(provider: str) -> dict[str, str]:
-    """Resolve non-token auth metadata for a provider without reading secrets."""
-    provider_value = provider.strip().lower()
+def provider_auth_records() -> dict[str, dict[str, str]]:
+    """Read one non-secret connection snapshot under a single metadata lock."""
     path = _auth_metadata_path()
     if not path.exists():
         return {}
@@ -168,14 +167,20 @@ def resolve_provider_auth_record(provider: str) -> dict[str, str]:
     providers = data.get("providers")
     if not isinstance(providers, dict):
         return {}
-    record = providers.get(provider_value)
-    if not isinstance(record, dict):
-        return {}
     return {
-        str(key): str(value)
-        for key, value in record.items()
-        if isinstance(key, str) and isinstance(value, str)
+        name: {
+            key: value
+            for key, value in record.items()
+            if isinstance(key, str) and isinstance(value, str)
+        }
+        for name, record in providers.items()
+        if isinstance(name, str) and isinstance(record, dict)
     }
+
+
+def resolve_provider_auth_record(provider: str) -> dict[str, str]:
+    """Resolve non-token auth metadata for a provider without reading secrets."""
+    return provider_auth_records().get(provider.strip().lower(), {})
 
 
 def delete_provider_auth_record(provider: str) -> None:
@@ -196,6 +201,7 @@ def delete_provider_auth_record(provider: str) -> None:
 __all__ = [
     "delete_provider_auth_record",
     "provider_auth_record_name",
+    "provider_auth_records",
     "resolve_provider_auth_record",
     "save_provider_auth_record",
     "save_provider_auth_record_values",

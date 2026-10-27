@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from config.constants.llm import LLM_PROVIDER_ENV
 from config.llm_auth.cli_auth import resolve_cli_auth_state
 from config.llm_auth.provider_catalog import (
     API_KEY_PROVIDER_ENVS,
@@ -199,6 +200,52 @@ def _record_status(spec: ProviderSpec, record: dict[str, str]) -> CredentialStat
         verified=verified and not stale,
         stale=stale,
         detail=detail,
+    )
+
+
+def connection_status(provider: str, *, record: dict[str, str] | None = None) -> CredentialStatus:
+    """Describe saved connections without CLI, ambient, network, or secret probes.
+
+    This is configuration evidence, not a live authentication check. Explicit
+    login/verify and request-time resolution own those checks.
+    """
+    spec = require_provider_spec(provider)
+    metadata = resolve_provider_auth_record(provider) if record is None else record
+    if spec.credential_kind == "subscription":
+        from config.secrets.store import keyring_is_disabled
+
+        if metadata.get("source") == "subscription" and not keyring_is_disabled():
+            return _record_status(spec, metadata)
+    else:
+        if spec.api_key_env and _env_value(spec.api_key_env):
+            return _source_status(spec.value, CredentialSource.ENV, "Configured in environment.")
+        if metadata:
+            return _record_status(spec, metadata)
+        if spec.credential_kind in {"cli", "ambient", "local"}:
+            # A model preference alone is not evidence of a vendor CLI login.
+            hints = (
+                (spec.api_key_env, spec.project_env, spec.location_env)
+                if spec.credential_kind != "cli"
+                else ()
+            )
+            if os.getenv(LLM_PROVIDER_ENV) == spec.value or any(
+                key and _env_value(key) for key in hints
+            ):
+                return CredentialStatus(
+                    spec.value,
+                    True,
+                    CredentialSource.METADATA,
+                    False,
+                    False,
+                    "Saved configuration; authentication is checked on use.",
+                )
+    return CredentialStatus(
+        spec.value,
+        False,
+        CredentialSource.NONE,
+        False,
+        False,
+        f"Connect this provider with /login {spec.value}.",
     )
 
 
@@ -564,6 +611,7 @@ __all__ = [
     "CredentialSource",
     "CredentialStatus",
     "MissingLLMCredentialError",
+    "connection_status",
     "delete",
     "has_api_key_env_status",
     "has_llm_api_key",

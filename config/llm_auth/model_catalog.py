@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
 from config.llm_auth.records import resolve_provider_auth_record, save_provider_auth_record_values
 
 
-def saved_models(provider: str) -> list[tuple[str, str]]:
+def saved_models(
+    provider: str, *, record: Mapping[str, str] | None = None
+) -> list[tuple[str, str]]:
     """Return valid cached choices without resolving credentials or network access."""
-    raw = resolve_provider_auth_record(provider).get("model_catalog", "[]")
+    metadata = resolve_provider_auth_record(provider) if record is None else record
+    raw = metadata.get("model_catalog", "[]")
     try:
         data = json.loads(raw)
     except (ValueError, TypeError):

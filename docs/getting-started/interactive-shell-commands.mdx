@@ -122,7 +122,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/verify` | Verify integration connectivity (all or one service) |
 | `/integrations` | List, verify, show, setup, or remove integrations |
 | `/mcp` | List, connect, or disconnect MCP servers |
-| `/model` | Show the account-managed hosted model |
+| `/model` | Select a model from saved provider connections |
 | `/tools` | List registered chat and action tools |
 
 ### Privacy and history
@@ -196,7 +196,7 @@ These invocations open a picker or submenu:
 | `/help` | Browse categories; Enter runs the selected command |
 | `/integrations list` | Browse configured integrations; verify, setup, or remove the selected item |
 | `/mcp list` | Browse configured MCP servers; verify, connect, or disconnect |
-| `/model` | show / set / restore / toolcall |
+| `/model` | Flat model picker; Enter selects, Esc keeps the active model |
 | `/theme` | Pick a colour theme from the installed list |
 | `/choose` | Reopen the selection menu the agent queued |
 | `/trust`, `/verbose` | on / off |
@@ -215,8 +215,11 @@ Checks time out after 30 seconds; Esc cancels an in-progress check.
 These action keys leave ordinary typing available for search. Connections without
 a verifier show **Configured**, not a successful connectivity check.
 
-`/model` keeps its menu running: picking `show` prints the current models and
-hands you back to the menu, so leave it with **done** or Esc.
+`/model` and bare `/model set` show saved connections without checking every
+installed CLI or opening a sign-in flow. `/model list` prints the same inventory.
+To add or reconnect a provider, use `/login`; installing a CLI or setting only a
+model preference does not add a connection. Saved connections with unknown auth
+show **Auth checked on use**, not a successful live check.
 
 ## Commands
 

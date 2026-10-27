@@ -211,6 +211,12 @@ Required missing inputs fail with usage guidance.
 | `opensre auth verify deepseek` | Check DeepSeek credentials and refresh local metadata |
 | `opensre auth logout deepseek` | Remove OpenSRE-managed DeepSeek credentials and metadata |
 
+Model browsing uses saved connections and cached model catalogs. It does not
+launch vendor CLIs, probe cloud credentials, or start sign-in. Use `/login` or
+`opensre auth login <provider>` to connect another provider or refresh its catalog;
+an installed CLI alone is not a connected provider. Unknown auth is labelled
+**Auth checked on use**. Model selection does not silently log in to another source.
+
 API-key login writes the key to `.env` and `~/.opensre/credentials.json`.
 
 `opensre auth` and `/auth status` are safe to show in prompts: they do not read

@@ -130,7 +130,7 @@ def test_successful_explicit_provider_login_selects_local_billing_without_loggin
     from config.constants.billing import WEBAPP_URL_ENV
 
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)
-    monkeypatch.delenv("OPENSRE_LLM_CONNECTION", raising=False)
+    monkeypatch.setenv("OPENSRE_LLM_CONNECTION", "account")
     monkeypatch.setenv(OPENSRE_ACCOUNT_TOKEN_ENV, "existing-opensre-account")
     monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example")
     assert account_llm_route() is not None

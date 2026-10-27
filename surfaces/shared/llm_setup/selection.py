@@ -68,7 +68,7 @@ def select_provider(
         return select_hosted(model)
     provider = resolve_provider(name)
     selected = normalize_model(model) if model is not None else default_model(provider)
-    auth = credentials.status(provider.value)
+    auth = credentials.connection_status(provider.value)
     if provider.api_key_env and provider.credential_secret and not auth.configured:
         raise SelectionError(
             f"missing credential for {provider.value}: {provider.api_key_env} is not set. "
@@ -82,16 +82,8 @@ def select_provider(
         raise SelectionError(
             f"missing base URL for {provider.value}: set {provider.endpoint_env} or run opensre onboard"
         )
-    if provider.credential_kind == "cli":
-        from config.llm_auth.cli_auth import resolve_cli_auth_state
-
-        cli = resolve_cli_auth_state(provider.value)
-        if cli is None:
-            raise SelectionError(
-                f"Cannot check {provider.label}. Run /login {provider.value} to connect."
-            )
-        if not cli.installed or cli.logged_in is False:
-            raise SelectionError(cli.detail)
+    if provider.credential_kind == "cli" and (not auth.configured or auth.stale):
+        raise SelectionError(f"Run /login {provider.value} to connect before selecting its models.")
     validate_model(provider, selected)
     selected_toolcall = None
     if toolcall_model is not None and provider.toolcall_model_env:

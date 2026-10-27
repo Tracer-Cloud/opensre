@@ -80,11 +80,12 @@ def _provider_specific_keys(p: ProviderOption) -> set[str]:
     return keys
 
 
-def _env_value_from_lines(lines: list[str], key: str) -> str | None:
+def _env_value_from_lines(lines: list[str], key: str, *, keep_empty: bool = False) -> str | None:
     for line in lines:
         if env_assignment_key(line) == key:
             _, _, rhs = line.partition("=")
-            return rhs.strip().strip("\"'") or None
+            value = rhs.strip().strip("\"'")
+            return value if keep_empty else value or None
     return None
 
 
@@ -119,7 +120,8 @@ def reload_provider_selection() -> None:
         LLM_TRANSPORT_ENV,
     }
     for key in keys:
-        value = _env_value_from_lines(lines, key)
+        # An explicitly selected CLI default clears an old exported override.
+        value = _env_value_from_lines(lines, key, keep_empty=True)
         if value is not None:
             os.environ[key] = value
         elif key == LLM_TRANSPORT_ENV:
