@@ -333,15 +333,20 @@ def test_custom_endpoint_login_remembers_candidate_without_activating(monkeypatc
 
 
 def test_restore_cli_clears_override_and_keeps_gateway_model(monkeypatch, selection_paths):
-    from config.llm_auth.cli_auth import CliAuthState
+    from config.llm_auth.records import save_provider_auth_record
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
     from surfaces.shared.llm_setup.selection import default_model
 
     monkeypatch.setenv("CLAUDE_CODE_MODEL", "opus")
     monkeypatch.setenv("CUSTOM_OPENAI_REASONING_MODEL", "gateway-model")
-    monkeypatch.setattr(
-        "config.llm_auth.cli_auth.resolve_cli_auth_state",
-        lambda _: CliAuthState(True, True, "Connected"),
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    save_provider_auth_record(
+        provider="claude-code",
+        auth_name="claude-code",
+        kind="cli",
+        source="cli",
+        detail="Previously connected CLI",
+        verified=False,
     )
     result = CliRunner().invoke(cli, ["model", "restore", "claude-code"])
     assert result.exit_code == 0, result.output
