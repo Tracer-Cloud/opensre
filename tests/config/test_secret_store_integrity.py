@@ -17,6 +17,8 @@ from config.secrets.store import delete_secret, resolve_secret, save_secret
 def credential_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "credentials.json"
     monkeypatch.delenv(OPENSRE_DISABLE_KEYRING_ENV, raising=False)
+    for env_var in ("TEST_CREDENTIAL_A", "TEST_CREDENTIAL_B", "TEST_CREDENTIAL_NEW"):
+        monkeypatch.delenv(env_var, raising=False)
     monkeypatch.setattr(local_file, "store_path", lambda: path)
     local_file.clear_read_cache()
     return path
