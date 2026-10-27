@@ -132,9 +132,7 @@ def test_representative_tools_hide_credentials_but_keep_targets(tool_name: str) 
     required = set(tool.public_input_schema.get("required", []))  # type: ignore[attr-defined]
     assert CREDENTIAL_PARAM_NAMES.isdisjoint(required)
     # The injected credentials are also gone from the visible properties.
-    assert (
-        set(tool.injected_params) & CREDENTIAL_PARAM_NAMES
-    )  # declares some creds  # type: ignore[attr-defined]
+    assert set(tool.injected_params) & CREDENTIAL_PARAM_NAMES  # declares some creds  # type: ignore[attr-defined]
     assert set(tool.injected_params).isdisjoint(props)  # type: ignore[attr-defined]
 
 
