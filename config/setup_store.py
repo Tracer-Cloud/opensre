@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from filelock import FileLock
 
 from config.constants import get_store_path as _get_store_path_from_config
 
@@ -27,19 +33,48 @@ def get_store_path() -> Path:
     return _get_store_path_from_config()
 
 
-def _load_raw(path: Path | None = None) -> dict[str, Any]:
+def _load_raw(path: Path | None = None, *, for_write: bool = False) -> dict[str, Any]:
     store_path = path or get_store_path()
     if not store_path.exists():
         return deepcopy(_EMPTY_CONFIG)
 
     try:
         data = json.loads(store_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (ValueError, OSError) as exc:
+        if for_write:
+            raise OSError(
+                "Setup store could not be read safely; refusing to overwrite it."
+            ) from exc
         return deepcopy(_EMPTY_CONFIG)
 
     if not isinstance(data, dict):
+        if for_write:
+            raise OSError("Setup store could not be read safely; expected a JSON object.")
         return deepcopy(_EMPTY_CONFIG)
     return data
+
+
+@contextmanager
+def _locked_config(path: Path) -> Iterator[dict[str, Any]]:
+    """Hold one lock across reading, changing, and publishing the setup payload."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(path.with_suffix(path.suffix + ".lock")), timeout=10):
+        yield _load_raw(path, for_write=True)
+
+
+def _save_raw(path: Path, data: dict[str, Any]) -> None:
+    """Publish a complete JSON document atomically; the caller holds its lock."""
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        with suppress(OSError):
+            os.unlink(temporary)
 
 
 def load_local_config(path: Path | None = None) -> dict[str, Any]:
@@ -59,26 +94,24 @@ def save_local_config(
 ) -> Path:
     """Persist the local wizard configuration to disk."""
     store_path = path or get_store_path()
-    data = _load_raw(store_path)
-    timestamp = datetime.now(UTC).isoformat()
-    data["version"] = _VERSION
-    data["wizard"] = {
-        "mode": wizard_mode,
-        "configured_target": "local",
-        "updated_at": timestamp,
-    }
-    targets = data.setdefault("targets", {})
-    targets["local"] = {
-        "provider": provider,
-        "model": model,
-        "api_key_env": api_key_env,
-        "model_env": model_env,
-        "updated_at": timestamp,
-    }
-    data["probes"] = probes
-
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    store_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    with _locked_config(store_path) as data:
+        timestamp = datetime.now(UTC).isoformat()
+        data["version"] = _VERSION
+        data["wizard"] = {
+            "mode": wizard_mode,
+            "configured_target": "local",
+            "updated_at": timestamp,
+        }
+        targets = data.setdefault("targets", {})
+        targets["local"] = {
+            "provider": provider,
+            "model": model,
+            "api_key_env": api_key_env,
+            "model_env": model_env,
+            "updated_at": timestamp,
+        }
+        data["probes"] = probes
+        _save_raw(store_path, data)
     return store_path
 
 
@@ -92,19 +125,18 @@ def update_local_llm_selection(
 ) -> Path:
     """Merge LLM provider/model into the wizard store without resetting other fields."""
     store_path = path or get_store_path()
-    data = _load_raw(store_path)
-    timestamp = datetime.now(UTC).isoformat()
-    targets = data.setdefault("targets", {})
-    local = targets.setdefault("local", {})
-    local["provider"] = provider
-    local["model"] = model
-    local["api_key_env"] = api_key_env
-    local["model_env"] = model_env
-    # Drop the legacy OAuth-era key from stores written before its removal.
-    local.pop("auth_method", None)
-    local["updated_at"] = timestamp
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    store_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    with _locked_config(store_path) as data:
+        timestamp = datetime.now(UTC).isoformat()
+        targets = data.setdefault("targets", {})
+        local = targets.setdefault("local", {})
+        local["provider"] = provider
+        local["model"] = model
+        local["api_key_env"] = api_key_env
+        local["model_env"] = model_env
+        # Drop the legacy OAuth-era key from stores written before its removal.
+        local.pop("auth_method", None)
+        local["updated_at"] = timestamp
+        _save_raw(store_path, data)
     return store_path
 
 
@@ -132,35 +164,33 @@ def save_named_remote(
 ) -> None:
     """Save a named remote endpoint."""
     store_path = path or get_store_path()
-    data = _load_raw(store_path)
-    remote_section = data.setdefault("remote", {})
-    remotes = remote_section.setdefault("remotes", {})
-    remotes[name] = {
-        "url": url,
-        "source": source,
-        "updated_at": datetime.now(UTC).isoformat(),
-    }
-    if set_active:
-        remote_section["url"] = url
-        remote_section["active_name"] = name
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    store_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    with _locked_config(store_path) as data:
+        remote_section = data.setdefault("remote", {})
+        remotes = remote_section.setdefault("remotes", {})
+        remotes[name] = {
+            "url": url,
+            "source": source,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        if set_active:
+            remote_section["url"] = url
+            remote_section["active_name"] = name
+        _save_raw(store_path, data)
 
 
 def delete_named_remote(name: str, path: Path | None = None) -> None:
     """Remove a named remote entry and clear the active URL if it was the active one."""
     store_path = path or get_store_path()
-    data = _load_raw(store_path)
-    remote_section = data.get("remote", {})
-    remotes: dict[str, Any] = remote_section.get("remotes", {})
-    if name not in remotes:
-        return
-    removed_url = remotes.pop(name, {}).get("url")
-    if removed_url and remote_section.get("url") == removed_url:
-        remote_section.pop("url", None)
-        remote_section.pop("active_name", None)
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    store_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    with _locked_config(store_path) as data:
+        remote_section = data.get("remote", {})
+        remotes: dict[str, Any] = remote_section.get("remotes", {})
+        if name not in remotes:
+            return
+        removed_url = remotes.pop(name, {}).get("url")
+        if removed_url and remote_section.get("url") == removed_url:
+            remote_section.pop("url", None)
+            remote_section.pop("active_name", None)
+        _save_raw(store_path, data)
 
 
 def load_remote_ops_config(path: Path | None = None) -> dict[str, str | None]:
@@ -185,16 +215,15 @@ def save_remote_ops_config(
 ) -> None:
     """Persist remote ops provider scope to the store."""
     store_path = path or get_store_path()
-    data = _load_raw(store_path)
-    remote_data = data.setdefault("remote", {})
-    remote_data["provider"] = provider
-    if project:
-        remote_data["project"] = project
-    else:
-        remote_data.pop("project", None)
-    if service:
-        remote_data["service"] = service
-    else:
-        remote_data.pop("service", None)
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    store_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    with _locked_config(store_path) as data:
+        remote_data = data.setdefault("remote", {})
+        remote_data["provider"] = provider
+        if project:
+            remote_data["project"] = project
+        else:
+            remote_data.pop("project", None)
+        if service:
+            remote_data["service"] = service
+        else:
+            remote_data.pop("service", None)
+        _save_raw(store_path, data)
