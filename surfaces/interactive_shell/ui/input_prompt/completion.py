@@ -181,3 +181,9 @@ _INLINE_PICKER_COMMANDS: frozenset[str] = frozenset(
 def _suppress_empty_arg_completions_for_inline_picker(cmd_name: str, raw_arg: str) -> bool:
     """Hide first-arg autocomplete when bare slash command opens inline picker."""
     return repl_tty_interactive() and not raw_arg and cmd_name in _INLINE_PICKER_COMMANDS
+
+
+def root_command_submits(command_name: str) -> bool:
+    """Whether Enter submits this exact command instead of opening a subcommand tray."""
+    command = SLASH_COMMANDS.get(command_name.strip())
+    return command is not None and command.enter_runs_root

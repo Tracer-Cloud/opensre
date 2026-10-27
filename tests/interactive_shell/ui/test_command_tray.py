@@ -174,23 +174,14 @@ async def test_tab_on_slash_command_opens_its_subcommand_tray() -> None:
 
 
 @pytest.mark.asyncio
-async def test_enter_on_a_root_command_opens_its_subcommand_tray() -> None:
+async def test_enter_on_model_submits_directly_to_its_picker() -> None:
     async with _running_prompt() as prompt:
         prompt.default_buffer.document = Document("/model", len("/model"))
         prompt.default_buffer.complete_state = None
-
         _press(prompt, Keys.ControlM)
-
-        state = prompt.default_buffer.complete_state
-        assert not prompt.app.is_done
-        assert prompt.default_buffer.text == "/model "
-        assert state is not None
-        assert [completion.text for completion in state.completions] == [
-            "show",
-            "set",
-            "restore",
-            "toolcall",
-        ]
+        assert prompt.app.is_done
+        assert prompt.app.future is not None
+        assert prompt.app.future.result() == "/model"
 
 
 @pytest.mark.asyncio

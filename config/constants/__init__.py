@@ -160,7 +160,13 @@ if TYPE_CHECKING:
         AWS_ACCESS_KEY_ID_ENV as AWS_ACCESS_KEY_ID_ENV,
     )
     from config.constants.aws import (
+        AWS_CONTAINER_CREDENTIALS_RELATIVE_URI_ENV as AWS_CONTAINER_CREDENTIALS_RELATIVE_URI_ENV,
+    )
+    from config.constants.aws import (
         AWS_EXTERNAL_ID_ENV as AWS_EXTERNAL_ID_ENV,
+    )
+    from config.constants.aws import (
+        AWS_PROFILE_ENV as AWS_PROFILE_ENV,
     )
     from config.constants.aws import (
         AWS_REGION_ENV as AWS_REGION_ENV,
@@ -173,6 +179,9 @@ if TYPE_CHECKING:
     )
     from config.constants.aws import (
         AWS_SESSION_TOKEN_ENV as AWS_SESSION_TOKEN_ENV,
+    )
+    from config.constants.aws import (
+        AWS_WEB_IDENTITY_TOKEN_FILE_ENV as AWS_WEB_IDENTITY_TOKEN_FILE_ENV,
     )
     from config.constants.azure import (
         AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT as AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT,
@@ -556,6 +565,12 @@ if TYPE_CHECKING:
     )
     from config.constants.gateway import (
         WEB_STOP_TIMEOUT_SECONDS as WEB_STOP_TIMEOUT_SECONDS,
+    )
+    from config.constants.gcp import (
+        GOOGLE_APPLICATION_CREDENTIALS_ENV as GOOGLE_APPLICATION_CREDENTIALS_ENV,
+    )
+    from config.constants.gcp import (
+        VERTEX_AI_PROJECT_ENV as VERTEX_AI_PROJECT_ENV,
     )
     from config.constants.git import (
         GIT_ALLOW_PROTOCOL_ENV as GIT_ALLOW_PROTOCOL_ENV,

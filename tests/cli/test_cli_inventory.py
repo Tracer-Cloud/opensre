@@ -30,6 +30,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "integrations",
         "knowledge",
         "messaging",
+        "model",
         "onboard",
         "posthog",
         "remote-sync",

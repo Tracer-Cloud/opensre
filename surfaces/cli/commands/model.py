@@ -86,7 +86,9 @@ def model_set(provider: str, model: str | None, toolcall_model: str | None) -> N
 def model_restore(provider: str | None) -> None:
     """Restore the provider's validated default reasoning model."""
     try:
-        result = restore_provider(provider or os.getenv(LLM_PROVIDER_ENV, "anthropic"))
+        result = restore_provider(
+            provider or os.getenv(LLM_PROVIDER_ENV, "anthropic") or "anthropic"
+        )
     except (ModelSelectionError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"Now using {result.model or 'CLI default'} · {result.source}")

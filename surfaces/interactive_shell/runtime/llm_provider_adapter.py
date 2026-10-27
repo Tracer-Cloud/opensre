@@ -7,6 +7,7 @@ from typing import Protocol
 
 from rich.console import Console
 
+from config.constants.llm import HOSTED_MODEL_SOURCE_ID
 from config.llm_auth.provider_catalog import PROVIDER_BY_VALUE
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
@@ -47,7 +48,7 @@ class ReplLlmProviderPorts:
 
     def apply_target(self, target: str, console: Console) -> bool:
         candidate = target.strip()
-        if candidate.lower() in PROVIDER_BY_VALUE:
+        if candidate.lower() in PROVIDER_BY_VALUE or candidate.lower() == HOSTED_MODEL_SOURCE_ID:
             return switch_llm_provider(candidate, console)
         return switch_reasoning_model(candidate, console)
 

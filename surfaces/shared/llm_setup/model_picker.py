@@ -130,12 +130,13 @@ def model_picker(
                 else "Select a model to activate its connection"
             )
         )
-        app = build_input_form(
-            {"model": initial.key if initial else choices[0].value or ""},
-            title="Choose a model",
-            heading=description,
-            submit_label="Use model",
-            fields=lambda _, choices=tuple(choices), has_rows=bool(rows): (
+
+        def fields(
+            _values: dict[str, str],
+            choices: tuple[InputChoice, ...] = tuple(choices),
+            has_rows: bool = any(row.availability != "reconnect" for row in rows),
+        ) -> tuple[InputField, ...]:
+            return (
                 InputField(
                     "model",
                     "Models" if has_rows else "No providers connected",
@@ -144,7 +145,14 @@ def model_picker(
                     searchable=True,
                     record_choices=True,
                 ),
-            ),
+            )
+
+        app = build_input_form(
+            {"model": initial.key if initial else choices[0].value or ""},
+            title="Choose a model",
+            heading=description,
+            submit_label="Use model",
+            fields=fields,
             validate=lambda values: values["model"],
             initial_field="model",
             submit_on_choice=True,

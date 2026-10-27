@@ -582,6 +582,7 @@ def test_tab_on_unique_slash_command_opens_its_subcommands() -> None:
     assert buff.text == "/model "
     assert buff.complete_state is not None
     assert [completion.text for completion in buff.complete_state.completions] == [
+        "list",
         "show",
         "set",
         "restore",
@@ -606,6 +607,7 @@ def test_tab_with_open_completion_menu_opens_selected_command_subcommands() -> N
     assert buff.text == "/model "
     assert buff.complete_state is not None
     assert [completion.text for completion in buff.complete_state.completions] == [
+        "list",
         "show",
         "set",
         "restore",

@@ -36,7 +36,7 @@ def normalize_model_id(model: str) -> str:
 
 
 def resolve_provider(name: str | None = None) -> ProviderOption:
-    key = (name or os.getenv(LLM_PROVIDER_ENV, "anthropic")).strip().lower()
+    key = (name or os.getenv(LLM_PROVIDER_ENV, "anthropic") or "anthropic").strip().lower()
     provider = PROVIDER_BY_VALUE.get(key)
     if provider is None:
         raise ModelSelectionError(f"unknown LLM provider: {key}. Run opensre model list.")
@@ -116,7 +116,7 @@ def select_provider(
     env_path: Path | None = None,
 ) -> SelectionResult:
     """Validate the entire choice before committing active routing and model settings."""
-    if provider_name == HOSTED_SOURCE:
+    if provider_name.strip().lower() == HOSTED_SOURCE:
         from surfaces.shared.llm_setup.model_inventory import hosted_choice
 
         choice = hosted_choice()
@@ -141,6 +141,8 @@ def select_provider(
         os.getenv(provider.model_env),
         os.getenv(OPENSRE_LLM_CONNECTION_ENV),
     ) != (provider.value, selected, "local")
+    if toolcall is not None and provider.toolcall_model_env:
+        changed = changed or os.getenv(provider.toolcall_model_env, "") != toolcall
     path = sync_provider_env(
         provider=provider, model=selected, toolcall_model=toolcall, env_path=env_path
     )

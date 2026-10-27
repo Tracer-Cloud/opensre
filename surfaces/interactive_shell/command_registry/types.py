@@ -39,6 +39,8 @@ class SlashCommand:
     #: quit) set this False so the execution gate — including the plan-only
     #: gate — never asks the user to confirm them.
     mutating: bool = True
+    #: Enter runs an exact bare command; Tab still explores its subcommands.
+    enter_runs_root: bool = False
 
 
 def make_list_root_handler(

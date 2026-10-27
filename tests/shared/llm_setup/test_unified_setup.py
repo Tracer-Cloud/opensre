@@ -509,3 +509,66 @@ def test_inventory_isolates_broken_provider_and_keeps_catalog_order(monkeypatch,
     rows = model_inventory.model_choices()
     assert rows[0].availability == "reconnect"
     assert all(r.availability == "available" for r in rows if r.provider_id == "openai")
+
+
+def test_cli_and_slash_can_select_the_hosted_source_without_api_fallback(monkeypatch, isolated):
+    from config.account import AccountRecord, account_llm_route, save_account_record
+    from config.constants.llm import HOSTED_MODEL_SOURCE_ID
+    from surfaces.interactive_shell.command_registry import dispatch_slash
+    from surfaces.interactive_shell.session import Session
+
+    monkeypatch.setattr(model_inventory, "hosted_choice", _HOSTED_CHOICE)
+    monkeypatch.setenv("OPENSRE_ACCOUNT_METADATA_PATH", str(isolated.parent / "account.json"))
+    monkeypatch.setenv("OPENSRE_ACCOUNT_TOKEN", "synthetic-account-token")
+    save_account_record(
+        AccountRecord(
+            "synthetic-user",
+            None,
+            None,
+            "https://example.invalid",
+            "2026-10-27T00:00:00Z",
+            "2026-11-27T00:00:00Z",
+            llm_model="hosted-model",
+        )
+    )
+    result = CliRunner().invoke(cli, ["model", "set", HOSTED_MODEL_SOURCE_ID, "hosted-model"])
+    assert result.exit_code == 0, result.output
+    assert account_llm_route().model == "hosted-model"
+    monkeypatch.setenv("OPENSRE_LLM_CONNECTION", "local")
+    output = io.StringIO()
+    dispatch_slash(
+        f"/model set {HOSTED_MODEL_SOURCE_ID} hosted-model", Session(), Console(file=output)
+    )
+    assert account_llm_route().model == "hosted-model"
+    assert "missing credential" not in output.getvalue()
+
+
+def test_validated_azure_deployment_remains_selectable_when_listing_is_empty(monkeypatch, isolated):
+    monkeypatch.setattr("surfaces.shared.llm_setup.connection.discover_models", lambda _: ())
+    monkeypatch.setattr(
+        "surfaces.shared.llm_setup.auth_service.validate_provider_credentials",
+        lambda **_: SimpleNamespace(ok=True),
+    )
+    monkeypatch.setattr(
+        model_inventory, "SUPPORTED_PROVIDERS", (PROVIDER_BY_VALUE["azure-openai"],)
+    )
+    connect_provider(
+        profile=resolve_auth_profile("azure-openai"),
+        api_key="synthetic-key",
+        model="private-deployment",
+        settings={"AZURE_OPENAI_BASE_URL": "https://example.invalid"},
+    )
+    rows = model_inventory.model_choices(provider_id="azure-openai")
+    assert [(row.model_id, row.availability) for row in rows] == [
+        ("private-deployment", "available")
+    ]
+    assert os.environ["LLM_PROVIDER"] == "anthropic"
+
+
+def test_fresh_install_has_no_phantom_default_provider(monkeypatch, isolated):
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    for provider in model_inventory.SUPPORTED_PROVIDERS:
+        for key in (provider.api_key_env, provider.model_env, provider.legacy_model_env):
+            if key:
+                monkeypatch.delenv(key, raising=False)
+    assert model_inventory.model_choices() == ()

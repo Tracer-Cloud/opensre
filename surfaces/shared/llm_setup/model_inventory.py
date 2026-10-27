@@ -119,7 +119,10 @@ def model_choices(*, provider_id: str | None = None) -> tuple[ModelChoice, ...]:
             continue
         active = provider.value == active_provider
         try:
-            state = _provider_state(provider, active)
+            explicitly_configured = bool(
+                os.getenv(LLM_PROVIDER_ENV, "").strip() or saved_model(provider)
+            )
+            state = _provider_state(provider, active and explicitly_configured)
             cached = cached_model_catalog(provider.value)
         except Exception:
             cached = ()

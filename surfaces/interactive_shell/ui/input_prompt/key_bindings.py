@@ -17,7 +17,10 @@ from infrastructure.terminal.prompt_support import (
     CTRL_C_DOUBLE_PRESS_WINDOW_S,
     repl_prompt_ctrl_c_should_exit,
 )
-from surfaces.interactive_shell.ui.input_prompt.completion import subcommand_completions
+from surfaces.interactive_shell.ui.input_prompt.completion import (
+    root_command_submits,
+    subcommand_completions,
+)
 from surfaces.interactive_shell.ui.input_prompt.terminal_replies import (
     discard_reply_tail,
     escape_heads_a_sequence,
@@ -127,6 +130,18 @@ def _build_prompt_key_bindings() -> KeyBindings:
     def _accept_turn(event: KeyPressEvent) -> None:
         if event.data in _MODIFIED_ENTER_SEQUENCES:
             event.current_buffer.newline(copy_margin=False)
+            return
+        buffer = event.current_buffer
+        state = buffer.complete_state
+        completion = (
+            (state.current_completion or next(iter(state.completions), None)) if state else None
+        )
+        target = completion.text if completion and completion.text.startswith("/") else buffer.text
+        if root_command_submits(target):
+            if completion is not None:
+                buffer.apply_completion(completion)
+            buffer.cancel_completion()
+            buffer.validate_and_handle()
             return
         if event.current_buffer.complete_state is not None and _tab_expand_or_menu(
             event.current_buffer,

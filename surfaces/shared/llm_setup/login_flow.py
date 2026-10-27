@@ -119,10 +119,10 @@ def finish_connection(
         report_setup(provider, activated=True, credential_replaced=replaced)
         return selected
     if interactive:
-        selected = picker(console, provider_id=provider, preferred_model=model)
-        if selected is not None:
+        picked = picker(console, provider_id=provider, preferred_model=model)
+        if picked is not None:
             report_setup(provider, activated=True, credential_replaced=replaced)
-        return selected
+        return picked
     console.print(Text(f"Connected. Select explicitly with opensre model set {provider} <model>."))
     return None
 

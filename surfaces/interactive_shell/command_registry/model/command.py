@@ -7,7 +7,7 @@ import os
 from rich.console import Console
 from rich.markup import escape
 
-from config.constants.llm import LLM_PROVIDER_ENV
+from config.constants.llm import HOSTED_MODEL_SOURCE_ID, LLM_PROVIDER_ENV
 from core.agent_harness.spi.session_state import exclusive_stdin_active
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
@@ -114,16 +114,6 @@ def _prompt_custom_model_id(_console: Console, provider_value: str = "provider")
 def _interactive_set_provider(console: Console) -> bool | None:
     model_picker(console, connect=lambda provider_id: connect_from_picker(console, provider_id))
     return True
-
-
-def _interactive_restore_provider(console: Console) -> bool | None:
-    provider_value = _choose_provider_value(
-        title="LLM provider",
-        breadcrumb=f"{_ROOT}{CRUMB_SEP}restore",
-    )
-    if provider_value is None:
-        return None
-    return restore_default_model(provider_value, console)
 
 
 def _interactive_set_toolcall(console: Console) -> bool | None:
@@ -286,7 +276,10 @@ def _cmd_model(session: Session, console: Console, args: list[str]) -> bool:
             return True
         from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
-        if provider_name.strip().lower() not in PROVIDER_BY_VALUE:
+        if (
+            provider_name.strip().lower() not in PROVIDER_BY_VALUE
+            and provider_name.strip().lower() != HOSTED_MODEL_SOURCE_ID
+        ):
             if tc_model is not None:
                 console.print()
                 console.print(f"[{ERROR}]--toolcall-model requires an explicit provider[/]")
@@ -340,5 +333,6 @@ COMMANDS: list[SlashCommand] = [
             "Connect a provider to sign in and choose its model. Esc keeps the active selection.",
         ),
         first_arg_completions=_MODEL_FIRST_ARGS,
+        enter_runs_root=True,
     ),
 ]

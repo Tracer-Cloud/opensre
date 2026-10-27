@@ -425,9 +425,13 @@ def run_llm_setup(
         if credential_state == DEFERRED:
             selected = None
         else:
+
+            def connection_result(result: AuthSetupResult = connected) -> AuthSetupResult:
+                return result
+
             selected = finish_connection(
                 console,
-                connect=lambda connected=connected: connected,
+                connect=connection_result,
                 provider=provider.value,
                 activation=None,
                 model=None,

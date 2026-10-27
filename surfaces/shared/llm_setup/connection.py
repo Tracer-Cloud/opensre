@@ -89,11 +89,12 @@ def connect_provider(
                 provider.value, model or provider.default_model, profile.kind, detail, None
             )
         catalog = discover_models(provider)
-        if catalog is not None:
+        if catalog:
             save_model_catalog(provider.value, catalog)
         elif model:
             # Keep the validation model selectable without changing an active model env.
-            save_model_catalog(provider.value, ((model, model),))
+            catalog = ((model, model),)
+            save_model_catalog(provider.value, catalog)
         if settings:
             sync_env_values(settings)
         return AuthSetupResult(

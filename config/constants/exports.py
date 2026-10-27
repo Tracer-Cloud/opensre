@@ -128,6 +128,11 @@ EXPORTS: dict[str, str] = {
     "ALERTMANAGER_USERNAME_ENV": "alertmanager",
     # aws
     "AWS_ACCESS_KEY_ID_ENV": "aws",
+    "AWS_PROFILE_ENV": "aws",
+    "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI_ENV": "aws",
+    "AWS_WEB_IDENTITY_TOKEN_FILE_ENV": "aws",
+    "GOOGLE_APPLICATION_CREDENTIALS_ENV": "gcp",
+    "VERTEX_AI_PROJECT_ENV": "gcp",
     "AWS_EXTERNAL_ID_ENV": "aws",
     "AWS_REGION_ENV": "aws",
     "AWS_ROLE_ARN_ENV": "aws",
