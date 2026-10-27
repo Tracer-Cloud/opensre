@@ -114,7 +114,16 @@ def reload_provider_selection() -> None:
         os.environ[OPENSRE_LLM_CONNECTION_ENV] = connection
     if provider is None or connection == "account":
         return
-    keys = _provider_specific_keys(provider) | {
+    # Credentials/endpoints are owned by the connect handoff. Model selection
+    # must not replace a reused export with an older saved credential.
+    keys = (
+        _provider_specific_keys(provider)
+        - {
+            provider.api_key_env,
+            provider.endpoint_env,
+            provider.api_version_env,
+        }
+    ) | {
         LLM_PROVIDER_ENV,
         OPENSRE_LLM_CONNECTION_ENV,
         LLM_TRANSPORT_ENV,
@@ -128,7 +137,7 @@ def reload_provider_selection() -> None:
             os.environ.pop(key, None)
 
 
-def reload_connected_provider(provider_value: str) -> None:
+def reload_connected_provider(provider_value: str, *, written_keys: tuple[str, ...]) -> None:
     """Reload only settings written for a connected provider, not active routing."""
     from config.local_env import get_project_env_path
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
@@ -137,7 +146,8 @@ def reload_connected_provider(provider_value: str) -> None:
     if provider is None:
         return
     lines = read_env_lines(get_project_env_path())
-    for key in {provider.api_key_env, provider.endpoint_env, provider.api_version_env} - {""}:
+    allowed = {provider.api_key_env, provider.endpoint_env, provider.api_version_env} - {""}
+    for key in allowed.intersection(written_keys):
         value = _env_value_from_lines(lines, key)
         if value is not None:
             os.environ[key] = value

@@ -202,7 +202,7 @@ def connect_provider(
             os.environ.update(settings)
         from surfaces.shared.llm_setup.handoff import notify_setup
 
-        notify_setup(connected=provider.value)
+        notify_setup(connected=provider.value, written_keys=tuple(settings))
         return result
     except BaseException:
         for key, value in previous.items():

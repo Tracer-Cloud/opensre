@@ -399,12 +399,12 @@ def _run_cli_command(
         )
         from surfaces.shared.llm_setup.handoff import read_setup
 
-        connected, selected = read_setup(setup_result)
-        if connected:
-            reload_connected_provider(connected)
-        if selected or (ok and args[:2] == ["auth", "login"] and "--set-provider" in args):
+        outcome = read_setup(setup_result)
+        if outcome.connected:
+            reload_connected_provider(outcome.connected, written_keys=outcome.written_keys)
+        if outcome.selected or (ok and args[:2] == ["auth", "login"] and "--set-provider" in args):
             reload_provider_selection()
-        if connected or selected:
+        if outcome.connected or outcome.selected:
             reset_llm_clients()
     if session is not None and not ok and not backgrounded:
         session.mark_latest(ok=False, kind="slash")
