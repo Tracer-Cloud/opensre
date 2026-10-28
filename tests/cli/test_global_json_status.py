@@ -42,6 +42,34 @@ def test_global_json_serializes_work_list(tmp_path: Path, monkeypatch: pytest.Mo
     assert json.loads(result.output) == [item.to_dict()]
 
 
+def test_global_json_serializes_work_next(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from surfaces.cli.app import cli
+    from tools.system.work_items.results import priority_result
+    from core.domain.work_items import prioritize_work_items
+
+    monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
+    item = add_work_item(title="page the on-call", priority="high")
+    ranked = prioritize_work_items([item], limit=5)
+
+    result = CliRunner().invoke(cli, ["--json", "work", "next", "--limit", "5"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == priority_result(ranked)
+
+
+def test_global_json_serializes_empty_work_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from surfaces.cli.app import cli
+
+    monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
+
+    result = CliRunner().invoke(cli, ["--json", "work", "next"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {"recommendations": []}
+
+
 def test_global_json_serializes_cron_list(monkeypatch: pytest.MonkeyPatch) -> None:
     from surfaces.cli.app import cli
 

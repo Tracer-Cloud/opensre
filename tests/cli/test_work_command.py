@@ -84,3 +84,22 @@ def test_work_add_rejects_blank_title_as_usage_error(
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert "title must not be blank" in result.output
     assert list_work_items(status=None) == []
+
+def test_work_next_json_flag_emits_recommendations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Local --json matches the global flag for ranked work recommendations."""
+    import json
+
+    from core.domain.work_items import add_work_item, prioritize_work_items
+    from tools.system.work_items.results import priority_result
+
+    monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
+    item = add_work_item(title="ship the hotfix", priority="urgent")
+    ranked = prioritize_work_items([item], limit=3)
+
+    result = CliRunner().invoke(work_command, ["next", "--json", "--limit", "3"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == priority_result(ranked)
+

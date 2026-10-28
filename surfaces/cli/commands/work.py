@@ -201,7 +201,8 @@ def work_complete(selectors: tuple[str, ...]) -> None:
 @click.option("--project", default="", help="Exact project filter.")
 @click.option("--owner", default="", help="Exact owner filter.")
 @click.option("--limit", type=click.IntRange(min=1), default=5, show_default=True)
-def work_next(project: str, owner: str, limit: int) -> None:
+@click.option("--json", "json_out", is_flag=True, help="Emit JSON instead of a table.")
+def work_next(project: str, owner: str, limit: int, json_out: bool) -> None:
     """Show the highest-priority open work."""
     items = [
         item
@@ -209,6 +210,11 @@ def work_next(project: str, owner: str, limit: int) -> None:
         if item.is_active
     ]
     ranked = prioritize_work_items(items, limit=limit)
+    if json_out or is_json_output():
+        from tools.system.work_items.results import priority_result
+
+        click.echo(json.dumps(priority_result(ranked), indent=2, ensure_ascii=False))
+        return
     if not ranked:
         _console.print("[dim]No open work items found.[/dim]")
         return
