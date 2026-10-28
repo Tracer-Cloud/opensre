@@ -62,6 +62,7 @@ def test_the_stored_next_run_skips_the_weekend() -> None:
     # Assert: Monday, not Saturday
     assert next_run == "2026-10-12T08:00:00+00:00"
 
+
 # ---------------------------------------------------------------------------
 # OR semantics: both day-of-month and day-of-week are restricted
 # ---------------------------------------------------------------------------
@@ -83,11 +84,11 @@ def test_dom_and_dow_both_restricted_fires_on_next_weekday_match() -> None:
 
 
 def test_dom_and_dow_both_restricted_fires_on_dom_when_earlier() -> None:
-    # From 2026-10-28 (Wednesday) a 1st-of-month schedule is sooner than Friday.
-    ref = datetime(2026, 10, 28, 0, 0, tzinfo=UTC)
+    # From 2026-10-31 (Saturday), Nov 1 comes before the next Friday.
+    ref = datetime(2026, 10, 31, 0, 0, tzinfo=UTC)
     trigger = build_cron_trigger("0 9 1 * 5", "UTC")
     result = trigger.get_next_fire_time(None, ref)
-    assert result == datetime(2026, 10, 30, 9, 0, tzinfo=UTC)  # Friday before Nov 1
+    assert result == datetime(2026, 11, 1, 9, 0, tzinfo=UTC)
 
 
 def test_star_dow_keeps_single_cron_trigger() -> None:
@@ -104,4 +105,3 @@ def test_step_dom_counts_as_unrestricted() -> None:
     # */5 on DOM is unrestricted for the OR rule; weekday alone drives the fire.
     result = _next("0 9 */5 * 1")
     assert result == datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
-
