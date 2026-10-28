@@ -85,6 +85,7 @@ def test_work_add_rejects_blank_title_as_usage_error(
     assert "title must not be blank" in result.output
     assert list_work_items(status=None) == []
 
+
 def test_work_next_json_flag_emits_recommendations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -102,4 +103,3 @@ def test_work_next_json_flag_emits_recommendations(
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == priority_result(ranked)
-

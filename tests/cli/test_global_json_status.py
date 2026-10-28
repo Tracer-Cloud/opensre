@@ -43,9 +43,9 @@ def test_global_json_serializes_work_list(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 def test_global_json_serializes_work_next(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.domain.work_items import prioritize_work_items
     from surfaces.cli.app import cli
     from tools.system.work_items.results import priority_result
-    from core.domain.work_items import prioritize_work_items
 
     monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
     item = add_work_item(title="page the on-call", priority="high")
