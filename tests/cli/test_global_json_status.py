@@ -257,3 +257,60 @@ def test_global_json_serializes_guardrails_rules(
             "enabled": True,
         }
     ]
+
+
+def test_global_json_serializes_skills_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    from infrastructure.skills_registry import SkillsAuth
+    from surfaces.cli.app import cli
+
+    releases = [
+        {
+            "seq": 3,
+            "created_at": "2026-10-28T12:00:00Z",
+            "source": "push",
+            "source_ref": "abc123",
+            "created_by": "alice",
+        }
+    ]
+    monkeypatch.setattr(
+        "surfaces.cli.commands.skills._app_url",
+        lambda: "https://skills.example",
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.commands.skills._auth",
+        lambda *_args: SkillsAuth(account_token="test-token"),
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.commands.skills.list_releases",
+        lambda *_args, **_kwargs: releases,
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "skills", "history"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == releases
+
+
+def test_global_json_serializes_skills_history_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from infrastructure.skills_registry import SkillsAuth
+    from surfaces.cli.app import cli
+
+    monkeypatch.setattr(
+        "surfaces.cli.commands.skills._app_url",
+        lambda: "https://skills.example",
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.commands.skills._auth",
+        lambda *_args: SkillsAuth(account_token="test-token"),
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.commands.skills.list_releases",
+        lambda *_args, **_kwargs: [],
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "skills", "history", "--limit", "5"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == []

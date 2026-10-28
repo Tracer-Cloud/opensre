@@ -303,6 +303,9 @@ def skills_history(limit: int) -> None:
         releases = list_releases(app_url, _auth(app_url, ""), limit=limit)
     except SkillsApiError as exc:
         raise click.ClickException(str(exc)) from exc
+    if is_json_output():
+        click.echo(json.dumps(releases))
+        return
     for item in releases:
         click.echo(
             f"#{item.get('seq')}  {item.get('created_at', '')}  {item.get('source', '')}"
