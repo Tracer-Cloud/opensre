@@ -95,12 +95,29 @@ def _weekday_ranges(days: set[int]) -> list[str]:
     return ranges
 
 
+def _is_restricted(field: str) -> bool:
+    """Return True when the field restricts days (not ``*`` or ``*/<step>``).
+
+    Crontab treats a bare ``*`` or a ``*/N`` step as unrestricted for the
+    DOM/DOW OR rule. Named ranges, lists, and plain numbers are restricted.
+    """
+    stripped = field.strip()
+    return stripped != "*" and not stripped.startswith("*/")
+
+
 def build_cron_trigger(cron: str, timezone: str | None) -> Any:
-    """Build an APScheduler ``CronTrigger`` for a five- or six-field crontab expression.
+    """Build an APScheduler trigger for a five- or six-field crontab expression.
+
+    When both ``day`` and ``day_of_week`` are restricted (neither is ``*`` or
+    ``*/<step>``), crontab fires when either matches. A single APScheduler
+    ``CronTrigger`` would AND them instead, so this returns an ``OrTrigger`` of
+    two ``CronTrigger``s — one for the day-of-month field and one for the
+    weekday field.
 
     Raises ``ValueError`` when the field count, a field value, or the timezone
     is invalid, so callers reject a schedule before it is stored.
     """
+    from apscheduler.triggers.combining import OrTrigger
     from apscheduler.triggers.cron import CronTrigger
 
     parts = cron.split()
@@ -112,14 +129,36 @@ def build_cron_trigger(cron: str, timezone: str | None) -> Any:
     else:
         raise ValueError(f"{CRON_FIELD_COUNT_ERROR}: {cron!r}")
 
+    dow_names = day_of_week_names(day_of_week)
     try:
+        if _is_restricted(day) and _is_restricted(day_of_week):
+            # crontab OR: fire when DOM matches OR when DOW matches.
+            dom_trigger = CronTrigger(
+                second=second,
+                minute=minute,
+                hour=hour,
+                day=day,
+                month=month,
+                day_of_week="*",
+                timezone=timezone,
+            )
+            dow_trigger = CronTrigger(
+                second=second,
+                minute=minute,
+                hour=hour,
+                day="*",
+                month=month,
+                day_of_week=dow_names,
+                timezone=timezone,
+            )
+            return OrTrigger([dom_trigger, dow_trigger])
         return CronTrigger(
             second=second,
             minute=minute,
             hour=hour,
             day=day,
             month=month,
-            day_of_week=day_of_week_names(day_of_week),
+            day_of_week=dow_names,
             timezone=timezone,
         )
     except (ValueError, TypeError, KeyError) as exc:
