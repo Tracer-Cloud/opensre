@@ -491,6 +491,39 @@ def test_cron_add_persists_manual_loop_prompt(
     assert list_tasks(store)[0].params == expected
 
 
+@pytest.mark.parametrize("tz_flag", ["", "   "])
+def test_cron_add_blank_timezone_defaults_to_utc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tz_flag: str
+) -> None:
+    """Empty or whitespace --tz must store UTC, not the host local zone (#6896)."""
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--cron",
+            "0 9 * * *",
+            "--tz",
+            tz_flag,
+            "--provider",
+            "interactive_shell",
+            "--prompt",
+            "hi",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "TZ: UTC" in result.output
+    assert list_tasks(store)[0].timezone == "UTC"
+
+
 @pytest.mark.parametrize("mode", ["report", "agent"])
 def test_cron_add_rejects_mode_for_non_manual_loop(mode: str) -> None:
     result = CliRunner().invoke(
