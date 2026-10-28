@@ -257,3 +257,85 @@ def test_global_json_serializes_guardrails_rules(
             "enabled": True,
         }
     ]
+
+def test_global_json_serializes_guardrails_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from surfaces.cli.app import cli
+
+    rules_path = tmp_path / "guardrails.yml"
+    rules_path.write_text(
+        "rules:\n"
+        "  - name: aws_key\n"
+        "    action: redact\n"
+        "    patterns:\n"
+        "      - \"AKIA[0-9A-Z]{16}\"\n"
+    )
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.rules.get_default_rules_path",
+        lambda: rules_path,
+    )
+
+    result = CliRunner().invoke(
+        cli, ["--json", "guardrails", "test", "key=AKIAIOSFODNN7EXAMPLE"]
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["config_found"] is True
+    assert payload["blocked"] is False
+    assert payload["matches"][0]["rule_name"] == "aws_key"
+    assert payload["matches"][0]["action"] == "redact"
+    assert "AKIAIOSFODNN7EXAMPLE" in payload["matches"][0]["matched_text"]
+    assert "[REDACTED:aws_key]" in payload["redacted_output"]
+
+
+def test_global_json_serializes_guardrails_test_missing_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from surfaces.cli.app import cli
+
+    missing = tmp_path / "missing.yml"
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.rules.get_default_rules_path",
+        lambda: missing,
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "guardrails", "test", "noop"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == {
+        "config_found": False,
+        "config_path": str(missing),
+        "matches": [],
+        "blocked": False,
+        "blocking_rules": [],
+        "redacted_output": None,
+    }
+
+
+def test_global_json_serializes_guardrails_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.safety.guardrails.audit import AuditLogger
+    from surfaces.cli.app import cli
+
+    audit_path = tmp_path / "guardrail_audit.jsonl"
+    AuditLogger(path=audit_path).log(
+        rule_name="aws_key",
+        action="redact",
+        matched_text_preview="AKIAIOSFODNN7EXAMPLE",
+        context="cli-test",
+    )
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.audit._DEFAULT_AUDIT_PATH",
+        audit_path,
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "guardrails", "audit", "--limit", "10"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["limit"] == 10
+    assert payload["count"] == 1
+    assert payload["entries"][0]["rule_name"] == "aws_key"
+    assert payload["entries"][0]["action"] == "redact"
+
