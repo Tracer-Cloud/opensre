@@ -7,15 +7,22 @@ but are created and listed only through this command group.
 
 from __future__ import annotations
 
+import json
+
 import click
 from rich.console import Console
 from rich.table import Table
 
 from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
+from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.delivery import SUPPORTED_DELIVERY_PROVIDERS
 from infrastructure.scheduling.scheduler.sources import CLI_POSTHOG_METRIC_REPORT
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
-from surfaces.cli.commands.scheduling import add_task_and_echo, validate_cron_and_timezone
+from surfaces.cli.commands.scheduling import (
+    add_task_and_echo,
+    scheduled_task_json,
+    validate_cron_and_timezone,
+)
 
 _console = Console()
 _PROVIDER_CHOICES = [p.value for p in SUPPORTED_DELIVERY_PROVIDERS]
@@ -171,6 +178,9 @@ def posthog_report_schedule_list() -> None:
     from infrastructure.scheduling.scheduler.types import TaskKind
 
     tasks = [task for task in list_tasks() if task.kind == TaskKind.POSTHOG_METRIC_REPORT]
+    if is_json_output():
+        click.echo(json.dumps([scheduled_task_json(task) for task in tasks]))
+        return
     if not tasks:
         _console.print("[dim]No PostHog metric report schedules configured.[/dim]")
         return

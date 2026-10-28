@@ -20,7 +20,7 @@ from infrastructure.filestorage.exposure import PublicAccessStatus
 from infrastructure.filestorage.operations import SyncRootStatus, SyncStatus
 from infrastructure.process.runtime_flags import reset_runtime_flags
 from infrastructure.scheduling.scheduler.loops import LoopSummary
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
 
 @pytest.fixture(autouse=True)
@@ -257,3 +257,145 @@ def test_global_json_serializes_guardrails_rules(
             "enabled": True,
         }
     ]
+
+
+def test_global_json_serializes_sentry_digest_schedule_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from surfaces.cli.app import cli
+
+    task = ScheduledTask(
+        id="digest123456",
+        kind=TaskKind.SENTRY_MORNING_DIGEST,
+        cron="0 8 * * 1-5",
+        timezone="UTC",
+        provider=Provider.SLACK,
+        chat_id="C123",
+        enabled=True,
+        last_run="2026-10-28T08:00:00+00:00",
+        params={"project_slug": "frontend"},
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.list_tasks",
+        lambda: [task],
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "sentry", "digest", "schedule", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == [
+        {
+            "id": "digest123456",
+            "kind": "sentry_morning_digest",
+            "name": "",
+            "cron": "0 8 * * 1-5",
+            "timezone": "UTC",
+            "provider": "slack",
+            "chat_id": "C123",
+            "enabled": True,
+            "last_run": "2026-10-28T08:00:00+00:00",
+            "next_run": None,
+            "params": {"project_slug": "frontend"},
+        }
+    ]
+
+
+def test_global_json_serializes_sentry_uptime_watch_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from surfaces.cli.app import cli
+
+    task = ScheduledTask(
+        id="uptime123456",
+        kind=TaskKind.SENTRY_UPTIME_WATCH,
+        cron="*/5 * * * *",
+        timezone="UTC",
+        provider=Provider.TELEGRAM,
+        chat_id="-1001",
+        enabled=False,
+        params={"project_slug": "api"},
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.list_tasks",
+        lambda: [task],
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "sentry", "uptime", "watch", "list"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == [
+        {
+            "id": "uptime123456",
+            "kind": "sentry_uptime_watch",
+            "name": "",
+            "cron": "*/5 * * * *",
+            "timezone": "UTC",
+            "provider": "telegram",
+            "chat_id": "-1001",
+            "enabled": False,
+            "last_run": None,
+            "next_run": None,
+            "params": {"project_slug": "api"},
+        }
+    ]
+
+
+def test_global_json_serializes_posthog_report_schedule_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from surfaces.cli.app import cli
+
+    task = ScheduledTask(
+        id="posthog12345",
+        kind=TaskKind.POSTHOG_METRIC_REPORT,
+        cron="0 9 * * 1",
+        timezone="America/New_York",
+        provider=Provider.SLACK,
+        chat_id="C999",
+        enabled=True,
+        params={"stats_period": "7d"},
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.list_tasks",
+        lambda: [task],
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "posthog", "report", "schedule", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == [
+        {
+            "id": "posthog12345",
+            "kind": "posthog_metric_report",
+            "name": "",
+            "cron": "0 9 * * 1",
+            "timezone": "America/New_York",
+            "provider": "slack",
+            "chat_id": "C999",
+            "enabled": True,
+            "last_run": None,
+            "next_run": None,
+            "params": {"stats_period": "7d"},
+        }
+    ]
+
+
+def test_global_json_serializes_empty_schedule_lists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from surfaces.cli.app import cli
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.list_tasks",
+        lambda: [],
+    )
+
+    for args in (
+        ["--json", "sentry", "digest", "schedule", "list"],
+        ["--json", "sentry", "uptime", "watch", "list"],
+        ["--json", "posthog", "report", "schedule", "list"],
+    ):
+        result = CliRunner().invoke(cli, args)
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == []

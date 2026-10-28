@@ -9,8 +9,6 @@ importing a private function out of a peer command module.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from rich.console import Console
 
 from infrastructure.scheduling.scheduler.cron_expression import (
@@ -20,9 +18,7 @@ from infrastructure.scheduling.scheduler.cron_expression import (
     CRON_FORMAT_HELP,
     build_cron_trigger,
 )
-
-if TYPE_CHECKING:
-    from infrastructure.scheduling.scheduler.types import ScheduledTask
+from infrastructure.scheduling.scheduler.types import ScheduledTask
 
 _console = Console()
 
@@ -62,4 +58,21 @@ def add_task_and_echo(task: ScheduledTask, *, label: str) -> ScheduledTask:
     return added
 
 
-__all__ = ["add_task_and_echo", "validate_cron_and_timezone"]
+def scheduled_task_json(task: ScheduledTask) -> dict[str, object]:
+    """Stable machine-readable view of a scheduler task for ``--json`` list commands."""
+    return {
+        "id": task.id,
+        "kind": task.kind.value,
+        "name": task.name,
+        "cron": task.cron,
+        "timezone": task.timezone,
+        "provider": task.provider.value,
+        "chat_id": task.chat_id,
+        "enabled": task.enabled,
+        "last_run": task.last_run,
+        "next_run": task.next_run,
+        "params": dict(task.params),
+    }
+
+
+__all__ = ["add_task_and_echo", "scheduled_task_json", "validate_cron_and_timezone"]
