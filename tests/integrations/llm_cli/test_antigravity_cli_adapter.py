@@ -17,7 +17,6 @@ from integrations.llm_cli.antigravity_cli import (
     _PROBE_TIMEOUT_SEC,
     AntigravityCLIAdapter,
     _fallback_antigravity_cli_paths,
-    _resolve_exec_timeout_seconds,
 )
 from integrations.llm_cli.binary_resolver import npm_prefix_bin_dirs
 from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
@@ -225,24 +224,6 @@ def test_build_omits_model_and_output_format_and_stateful_flags(
         "--dangerously-skip-permissions",
     }
     assert not (forbidden & set(inv.argv)), f"argv leaked forbidden flag: {inv.argv}"
-
-
-def test_resolve_exec_timeout_default() -> None:
-    with patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("ANTIGRAVITY_CLI_TIMEOUT_SECONDS", None)
-        assert _resolve_exec_timeout_seconds() == 300.0
-
-
-def test_resolve_exec_timeout_clamps_low_and_high() -> None:
-    with patch.dict(os.environ, {"ANTIGRAVITY_CLI_TIMEOUT_SECONDS": "5"}, clear=False):
-        assert _resolve_exec_timeout_seconds() == 30.0
-    with patch.dict(os.environ, {"ANTIGRAVITY_CLI_TIMEOUT_SECONDS": "9999"}, clear=False):
-        assert _resolve_exec_timeout_seconds() == 600.0
-
-
-def test_resolve_exec_timeout_uses_valid_value() -> None:
-    with patch.dict(os.environ, {"ANTIGRAVITY_CLI_TIMEOUT_SECONDS": "240"}, clear=False):
-        assert _resolve_exec_timeout_seconds() == 240.0
 
 
 @patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/agy")

@@ -12,7 +12,7 @@ Use this package when adding a new **non-interactive** LLM that shells out to a 
 | `registry.py`        | `CLI_PROVIDER_REGISTRY`: maps `LLM_PROVIDER` → `adapter_factory` + optional `model_env_key`. `opensre doctor` uses `get_cli_provider_registration()` so any key in this registry is treated as CLI-backed—do not hardcode provider IDs in `doctor.py`. |
 | `subprocess_env.py` | Filtered `env` passed to CLI subprocesses (`build_cli_subprocess_env`). Extend `_SAFE_SUBPROCESS_ENV_PREFIXES` here when a CLI needs vendor-specific env prefixes. |
 | `env_overrides.py` | Optional explicit HTTP/API keys merged into `CLIInvocation.env` when `build_cli_subprocess_env` would drop them (shared tuples + `nonempty_env_values`). |
-| `timeout_utils.py`   | Shared timeout env parsing (`resolve_timeout_from_env` for default + clamp behavior). |
+| `timeout_utils.py`   | Shared timeout env parsing (`resolve_timeout_from_env` for default + clamp behavior; `resolve_exec_timeout_from_env` applies the shared exec bounds to an adapter's `<PROVIDER>_TIMEOUT_SECONDS`). |
 | `probe_utils.py`     | Shared subprocess probe helpers (currently `run_version_probe` for `<binary> --version`). |
 | `semver_utils.py`    | Shared semver helpers (`parse_semver_three_part`, `semver_to_tuple`). |
 | `binary_resolver.py` | Shared executable resolution helpers (`env -> PATH -> fallback paths`).                     |

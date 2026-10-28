@@ -44,35 +44,18 @@ from integrations.llm_cli.binary_resolver import (
 from integrations.llm_cli.binary_resolver import (
     resolve_cli_binary,
 )
-from integrations.llm_cli.constants import (
-    DEFAULT_EXEC_TIMEOUT_SEC as _DEFAULT_EXEC_TIMEOUT_SEC,
-)
-from integrations.llm_cli.constants import (
-    MAX_EXEC_TIMEOUT_SEC as _MAX_EXEC_TIMEOUT_SEC,
-)
-from integrations.llm_cli.constants import (
-    MIN_EXEC_TIMEOUT_SEC as _MIN_EXEC_TIMEOUT_SEC,
-)
+from integrations.llm_cli.constants import DEFAULT_EXEC_TIMEOUT_SEC
 from integrations.llm_cli.output import require_nonempty_output
 from integrations.llm_cli.probe_utils import run_version_probe
 from integrations.llm_cli.semver_utils import parse_semver_three_part, semver_to_tuple
 from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
-from integrations.llm_cli.timeout_utils import resolve_timeout_from_env
+from integrations.llm_cli.timeout_utils import resolve_exec_timeout_from_env
 
 _PROBE_TIMEOUT_SEC = 20.0
 _AUTH_HINT = "Run: agy (interactive Google Sign-In) or set GEMINI_API_KEY for keyless fallback."
 # Buffer so the Python-side subprocess timeout sits above ``agy --print-timeout``
 # and lets the CLI emit its own clean timeout message instead of being SIGKILL'd.
 _SUBPROCESS_TIMEOUT_BUFFER_SEC = 10.0
-
-
-def _resolve_exec_timeout_seconds() -> float:
-    return resolve_timeout_from_env(
-        env_key="ANTIGRAVITY_CLI_TIMEOUT_SECONDS",
-        default=_DEFAULT_EXEC_TIMEOUT_SEC,
-        minimum=_MIN_EXEC_TIMEOUT_SEC,
-        maximum=_MAX_EXEC_TIMEOUT_SEC,
-    )
 
 
 def _antigravity_auth_env_overrides() -> dict[str, str]:
@@ -142,7 +125,7 @@ class AntigravityCLIAdapter:
     auth_hint = _AUTH_HINT.removesuffix(".")
     # 1.0.0 had OAuth-hang bugs fixed in 1.0.1; flag older installs at probe time.
     min_version: str | None = "1.0.1"
-    default_exec_timeout_sec = _DEFAULT_EXEC_TIMEOUT_SEC
+    default_exec_timeout_sec = DEFAULT_EXEC_TIMEOUT_SEC
 
     def _resolve_binary(self) -> str | None:
         return resolve_cli_binary(
@@ -256,7 +239,7 @@ class AntigravityCLIAdapter:
                 "or set ANTIGRAVITY_CLI_BIN to the full binary path."
             )
 
-        resolved_timeout = _resolve_exec_timeout_seconds()
+        resolved_timeout = resolve_exec_timeout_from_env("ANTIGRAVITY_CLI_TIMEOUT_SECONDS")
         argv: list[str] = [
             binary,
             "-p",

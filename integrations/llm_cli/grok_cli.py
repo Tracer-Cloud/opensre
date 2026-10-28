@@ -48,15 +48,7 @@ from integrations.llm_cli.binary_resolver import (
 from integrations.llm_cli.binary_resolver import (
     resolve_cli_binary,
 )
-from integrations.llm_cli.constants import (
-    DEFAULT_EXEC_TIMEOUT_SEC as _DEFAULT_EXEC_TIMEOUT_SEC,
-)
-from integrations.llm_cli.constants import (
-    MAX_EXEC_TIMEOUT_SEC as _MAX_EXEC_TIMEOUT_SEC,
-)
-from integrations.llm_cli.constants import (
-    MIN_EXEC_TIMEOUT_SEC as _MIN_EXEC_TIMEOUT_SEC,
-)
+from integrations.llm_cli.constants import DEFAULT_EXEC_TIMEOUT_SEC
 from integrations.llm_cli.env_overrides import (
     XAI_CLI_ENV_KEYS,
     nonempty_env_values,
@@ -64,20 +56,11 @@ from integrations.llm_cli.env_overrides import (
 from integrations.llm_cli.output import require_nonempty_output
 from integrations.llm_cli.probe_utils import run_version_probe
 from integrations.llm_cli.semver_utils import parse_semver_three_part
-from integrations.llm_cli.timeout_utils import resolve_timeout_from_env
+from integrations.llm_cli.timeout_utils import resolve_exec_timeout_from_env
 
 _PROBE_TIMEOUT_SEC = 5.0
 _AUTH_PROBE_TIMEOUT_SEC = 10.0
 _AUTH_HINT = "Run: grok login or set XAI_API_KEY."
-
-
-def _resolve_exec_timeout_seconds() -> float:
-    return resolve_timeout_from_env(
-        env_key="GROK_CLI_TIMEOUT_SECONDS",
-        default=_DEFAULT_EXEC_TIMEOUT_SEC,
-        minimum=_MIN_EXEC_TIMEOUT_SEC,
-        maximum=_MAX_EXEC_TIMEOUT_SEC,
-    )
 
 
 def _grok_env_overrides() -> dict[str, str]:
@@ -165,7 +148,7 @@ class GrokCLIAdapter:
     install_hint = "curl -fsSL https://x.ai/cli/install.sh | bash"
     auth_hint = _AUTH_HINT.removesuffix(".")
     min_version: str | None = None
-    default_exec_timeout_sec = _DEFAULT_EXEC_TIMEOUT_SEC
+    default_exec_timeout_sec = DEFAULT_EXEC_TIMEOUT_SEC
 
     def _resolve_binary(self) -> str | None:
         return resolve_cli_binary(
@@ -298,7 +281,7 @@ class GrokCLIAdapter:
             stdin=None,
             cwd=cwd,
             env=env,
-            timeout_sec=_resolve_exec_timeout_seconds(),
+            timeout_sec=resolve_exec_timeout_from_env("GROK_CLI_TIMEOUT_SECONDS"),
         )
 
     def parse(self, *, stdout: str, stderr: str, returncode: int) -> str:
