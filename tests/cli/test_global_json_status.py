@@ -257,3 +257,58 @@ def test_global_json_serializes_guardrails_rules(
             "enabled": True,
         }
     ]
+
+
+def test_global_json_serializes_triage_reports(tmp_path: Path) -> None:
+    import json
+
+    from core.telemetry.models import Scope
+    from core.telemetry.storage.store import WatchStore
+    from surfaces.cli.app import cli
+
+    state = tmp_path / "watch.db"
+    store = WatchStore(state, "global-json-triage")
+    scope = Scope(service="checkout", environment="prod", start=10, end=20)
+    with store._connection() as conn:
+        conn.execute(
+            "INSERT INTO episodes(id, scope, report) VALUES(?, ?, NULL)",
+            (
+                "ep-json",
+                json.dumps(
+                    {
+                        "service": scope.service,
+                        "environment": scope.environment,
+                        "start": scope.start,
+                        "end": scope.end,
+                    }
+                ),
+            ),
+        )
+        conn.commit()
+    store.save_report("ep-json", scope, "opened for checkout")
+
+    result = CliRunner().invoke(cli, ["--json", "triage", "reports", "--state", str(state)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload) == 1
+    assert payload[0]["episode"] == "ep-json"
+    assert payload[0]["kind"] == "opened"
+    assert payload[0]["status"] == "pending"
+    assert payload[0]["delivered"] is False
+    assert "opened for checkout" in payload[0]["body"]
+
+
+def test_global_json_serializes_empty_triage_reports(tmp_path: Path) -> None:
+    import json
+
+    from core.telemetry.storage.store import WatchStore
+    from surfaces.cli.app import cli
+
+    state = tmp_path / "empty.db"
+    WatchStore(state, "empty-triage")
+
+    result = CliRunner().invoke(cli, ["--json", "triage", "reports", "--state", str(state)])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == []

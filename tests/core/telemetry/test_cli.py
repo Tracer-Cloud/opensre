@@ -91,3 +91,67 @@ def test_repl_reports_delegate_but_continuous_watch_stays_in_terminal(
     cli_parity._cmd_triage(session, console, ["watch"])
     assert calls == [["triage", "reports", "--state", "state.db"]]
     assert "separate terminal" in output.getvalue()
+
+
+def test_reports_json_emits_sanitized_array(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Global --json returns a stable array; empty state is []."""
+    import json
+
+    from infrastructure.process.runtime_flags import (
+        configure_runtime_flags,
+        reset_runtime_flags,
+    )
+    from surfaces.cli.app import cli
+
+    state = tmp_path / "empty.db"
+    # Create a readable but empty watch DB via WatchStore with fingerprint.
+    WatchStore(state, "json-reports")
+    reset_runtime_flags()
+    configure_runtime_flags(json=True)
+    try:
+        result = CliRunner().invoke(cli, ["--json", "triage", "reports", "--state", str(state)])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == []
+    finally:
+        reset_runtime_flags()
+
+    # Seed one pending event and confirm shape + sanitize.
+    store = WatchStore(state, "json-reports")
+    from core.telemetry.models import Scope
+
+    scope = Scope(service="payment", environment="demo", start=1, end=2)
+    with store._connection() as conn:
+        conn.execute(
+            "INSERT INTO episodes(id, scope, report) VALUES(?, ?, NULL)",
+            (
+                "ep1",
+                json.dumps(
+                    {
+                        "service": scope.service,
+                        "environment": scope.environment,
+                        "start": scope.start,
+                        "end": scope.end,
+                    }
+                ),
+            ),
+        )
+        conn.commit()
+    store.save_report("ep1", scope, "secret@example.com caused the spike")
+    reset_runtime_flags()
+    configure_runtime_flags(json=True)
+    try:
+        result = CliRunner().invoke(cli, ["--json", "triage", "reports", "--state", str(state)])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert len(payload) == 1
+        assert payload[0]["id"] == 1
+        assert payload[0]["episode"] == "ep1"
+        assert payload[0]["kind"] == "opened"
+        assert payload[0]["delivered"] is False
+        assert payload[0]["status"] == "pending"
+        assert "[REDACTED:email]" in payload[0]["body"]
+        assert "secret@example.com" not in payload[0]["body"]
+    finally:
+        reset_runtime_flags()

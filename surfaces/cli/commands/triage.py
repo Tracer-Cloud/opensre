@@ -18,6 +18,7 @@ from core.telemetry.investigation import investigate, sanitize
 from core.telemetry.models import WatchRule
 from core.telemetry.storage.store import WatchStore
 from core.telemetry.watch import WatchRunner, poll
+from infrastructure.process.runtime_flags import is_json_output
 from integrations.clickhouse import ClickHouseEvidenceConfig, ClickHouseEvidenceReader
 
 
@@ -143,6 +144,20 @@ def reports(state: Path) -> None:
         events = WatchStore(state, None).events()
     except Exception as exc:
         raise click.ClickException("Cannot read this watch state file.") from exc
+    if is_json_output():
+        payload = [
+            {
+                "id": event["id"],
+                "episode": event["episode"],
+                "kind": event["kind"],
+                "body": sanitize(event["body"]),
+                "delivered": bool(event["delivered"]),
+                "status": "delivered" if event["delivered"] else "pending",
+            }
+            for event in events
+        ]
+        click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
     for event in events:
         status = "delivered" if event["delivered"] else "pending"
         click.echo(f"\nEvent {event['id']} ({status})\n{sanitize(event['body'])}")
