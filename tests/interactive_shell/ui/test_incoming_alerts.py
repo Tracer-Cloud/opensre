@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+import pytest
 from rich.console import Console
 
 from core.domain.alerts.inbox import AlertInbox, IncomingAlert
@@ -321,3 +323,80 @@ class TestAlertInboxEventClearing:
 
         # After draining all, event should be cleared
         assert not inbox2.pending_event.is_set()
+
+
+def _store_failure(texts: set[str]) -> Any:
+    """Build an ``append_turn`` replacement that fails for the given alert texts."""
+
+    def _append_turn(_session: object, _kind: str, text: str) -> None:
+        if text in texts:
+            raise OSError(f"session store rejected {text}")
+
+    return _append_turn
+
+
+def _print_failure() -> Any:
+    """Build a ``Console.print`` replacement that always fails."""
+
+    def _print(*_args: object, **_kwargs: object) -> None:
+        raise OSError("terminal write failed")
+
+    return _print
+
+
+class TestDrainFailureRecovery:
+    """A failed record or render must not lose an alert or the rest of its batch."""
+
+    def test_record_failure_requeues_the_alert(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        session = Session()
+        inbox = AlertInbox(maxsize=10, retry_after=60)
+        console = Console()
+        monkeypatch.setattr(session.store, "append_turn", _store_failure({"down"}))
+        inbox.put(IncomingAlert(text="down"))
+
+        assert drain_and_render_incoming(session, console, inbox) == 0
+        assert session.history == []
+        assert session.alerts.entries == []
+        assert inbox.qsize == 1
+        assert inbox.iter_pending() == []
+
+    def test_retried_alert_is_recorded_exactly_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        session = Session()
+        inbox = AlertInbox(maxsize=10, retry_after=0)
+        console = Console()
+        inbox.put(IncomingAlert(text="flaky"))
+
+        failures = {"flaky"}
+        monkeypatch.setattr(session.store, "append_turn", _store_failure(failures))
+        assert drain_and_render_incoming(session, console, inbox) == 0
+        assert inbox.qsize == 1
+
+        failures.clear()
+        assert drain_and_render_incoming(session, console, inbox) == 1
+        assert [entry["text"] for entry in session.history] == ["flaky"]
+        assert [a.text for a in session.alerts.entries] == ["flaky"]
+        assert inbox.qsize == 0
+
+    def test_record_failure_does_not_drop_the_batch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        session = Session()
+        inbox = AlertInbox(maxsize=10, retry_after=60)
+        console = Console()
+        monkeypatch.setattr(session.store, "append_turn", _store_failure({"b"}))
+        for text in ("a", "b", "c"):
+            inbox.put(IncomingAlert(text=text))
+
+        assert drain_and_render_incoming(session, console, inbox) == 2
+        assert [entry["text"] for entry in session.history] == ["a", "c"]
+        assert inbox.qsize == 1
+
+    def test_render_failure_keeps_the_recorded_alert(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        session = Session()
+        inbox = AlertInbox(maxsize=10, retry_after=0)
+        console = Console()
+        monkeypatch.setattr(console, "print", _print_failure())
+        inbox.put(IncomingAlert(text="recorded"))
+
+        assert drain_and_render_incoming(session, console, inbox) == 0
+        # Already in history, so it is not requeued: a retry would record it twice.
+        assert [entry["text"] for entry in session.history] == ["recorded"]
+        assert inbox.qsize == 0

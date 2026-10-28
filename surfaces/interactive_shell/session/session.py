@@ -42,9 +42,13 @@ class Session(SessionCore):
         Also stores the alert in the ``alerts`` inbox facet (bounded FIFO), preserving
         received_at, severity, source, and alert_name so /status displays accurate
         timestamps and future uses have complete data.
+
+        Persistence runs first because it is the step that can fail: when it raises,
+        none of the in-memory copies have been touched yet, so the caller can retry
+        this alert without duplicating the history entry.
         """
-        self.history.append({"type": "incoming_alert", "text": alert.text, "ok": True})
         self.store.append_turn(self, "incoming_alert", alert.text)
+        self.history.append({"type": "incoming_alert", "text": alert.text, "ok": True})
         self.alerts.add(alert)
 
     def clear(self, *, rotate_identity: bool = True) -> None:

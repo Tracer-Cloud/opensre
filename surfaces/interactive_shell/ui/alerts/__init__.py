@@ -6,6 +6,7 @@ The alert receiver, queue, and listener lifecycle live in
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 
     from core.domain.alerts.inbox import AlertInbox
     from surfaces.interactive_shell.runtime import Session
+
+log = logging.getLogger(__name__)
 
 
 def time_ago(then: datetime | None) -> str:
@@ -97,16 +100,29 @@ def drain_and_render_incoming(
     console: Console,
     inbox: AlertInbox,
 ) -> int:
-    """Pop all queued alerts, render each one, and record them in session.
+    """Pop the queued alerts, record each one, and render it.
+
+    Recording happens before rendering so an alert that reached session history
+    is never handed back to the inbox for a second attempt. A record failure
+    requeues that one alert for a later drain and moves on to the rest of the
+    batch, so neither failure mode drops an alert or the alerts behind it.
 
     Returns the number of alerts rendered.
     """
-    alerts = inbox.iter_pending()
     count = 0
 
-    for alert in alerts:
-        console.print(format_incoming_alert(alert), end="\n")
-        session.record_incoming_alert(alert)
+    for alert in inbox.iter_pending():
+        try:
+            session.record_incoming_alert(alert)
+        except Exception as exc:
+            log.warning("Error recording incoming alert, retrying later: %s", exc)
+            inbox.requeue(alert)
+            continue
+        try:
+            console.print(format_incoming_alert(alert), end="\n")
+        except Exception as exc:
+            log.warning("Error rendering incoming alert: %s", exc)
+            continue
         count += 1
 
     return count
