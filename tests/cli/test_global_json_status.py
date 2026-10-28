@@ -258,6 +258,7 @@ def test_global_json_serializes_guardrails_rules(
         }
     ]
 
+
 def test_global_json_serializes_guardrails_test(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -265,20 +266,14 @@ def test_global_json_serializes_guardrails_test(
 
     rules_path = tmp_path / "guardrails.yml"
     rules_path.write_text(
-        "rules:\n"
-        "  - name: aws_key\n"
-        "    action: redact\n"
-        "    patterns:\n"
-        "      - \"AKIA[0-9A-Z]{16}\"\n"
+        'rules:\n  - name: aws_key\n    action: redact\n    patterns:\n      - "AKIA[0-9A-Z]{16}"\n'
     )
     monkeypatch.setattr(
         "infrastructure.safety.guardrails.rules.get_default_rules_path",
         lambda: rules_path,
     )
 
-    result = CliRunner().invoke(
-        cli, ["--json", "guardrails", "test", "key=AKIAIOSFODNN7EXAMPLE"]
-    )
+    result = CliRunner().invoke(cli, ["--json", "guardrails", "test", "key=AKIAIOSFODNN7EXAMPLE"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["config_found"] is True
@@ -338,4 +333,3 @@ def test_global_json_serializes_guardrails_audit(
     assert payload["count"] == 1
     assert payload["entries"][0]["rule_name"] == "aws_key"
     assert payload["entries"][0]["action"] == "redact"
-
