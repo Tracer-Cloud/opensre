@@ -257,3 +257,44 @@ def test_global_json_serializes_guardrails_rules(
             "enabled": True,
         }
     ]
+
+
+def test_global_json_serializes_messaging_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from surfaces.cli.app import cli
+
+    store_path = tmp_path / "integrations.json"
+    store_path.write_text(json.dumps({"version": 2, "integrations": []}))
+    monkeypatch.setattr("integrations.store.STORE_PATH", store_path)
+
+    seed = CliRunner().invoke(
+        cli, ["messaging", "allow", "--platform", "telegram", "--user-id", "6514715683"]
+    )
+    assert seed.exit_code == 0, seed.output
+
+    result = CliRunner().invoke(cli, ["--json", "messaging", "status", "--platform", "telegram"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["platform"] == "telegram"
+    assert payload["configured"] is True
+    assert payload["inbound_enabled"] is True
+    assert payload["allowed_user_ids"] == ["6514715683"]
+    assert payload["pairing_pending"] is False
+
+
+def test_global_json_serializes_unconfigured_messaging_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from surfaces.cli.app import cli
+
+    store_path = tmp_path / "integrations.json"
+    store_path.write_text(json.dumps({"version": 2, "integrations": []}))
+    monkeypatch.setattr("integrations.store.STORE_PATH", store_path)
+
+    result = CliRunner().invoke(cli, ["--json", "messaging", "status", "--platform", "slack"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["platform"] == "slack"
+    assert payload["configured"] is False
+    assert payload["allowed_user_ids"] == []

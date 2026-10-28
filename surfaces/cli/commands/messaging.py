@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import click
 from rich.console import Console
 
+from infrastructure.process.runtime_flags import is_json_output
 from integrations.messaging_security import (
     MessagingIdentityPolicy,
     generate_pairing_code,
@@ -175,6 +177,20 @@ def status_command(platform: str) -> None:
     """Show the current messaging security status for a platform."""
     service = platform.lower()
     record, policy = _load_identity_policy(service)
+
+    if is_json_output():
+        payload = {
+            "platform": service,
+            "configured": record is not None,
+            "inbound_enabled": policy.inbound_enabled,
+            "require_dm_pairing": policy.require_dm_pairing,
+            "pairing_pending": bool(policy.pairing_secret_hash),
+            "rejection_behavior": policy.rejection_behavior.value,
+            "allowed_user_ids": list(policy.allowed_user_ids),
+            "allowed_chat_ids": list(policy.allowed_chat_ids),
+        }
+        click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
 
     _console.print(f"\n[bold]Messaging Security Status — {platform}[/bold]\n")
 

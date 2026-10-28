@@ -158,6 +158,52 @@ class TestMessagingStatusCommand:
         assert "Inbound enabled" in result.output
         assert "6514715683" in result.output
 
+    def test_status_json_unconfigured(self, _isolated_store: Path) -> None:
+        from infrastructure.process.runtime_flags import (
+            configure_runtime_flags,
+            reset_runtime_flags,
+        )
+
+        reset_runtime_flags()
+        configure_runtime_flags(json=True)
+        try:
+            runner = CliRunner()
+            result = runner.invoke(messaging, ["status", "--platform", "telegram"])
+            assert result.exit_code == 0, result.output
+            payload = json.loads(result.output)
+            assert payload["platform"] == "telegram"
+            assert payload["configured"] is False
+            assert payload["allowed_user_ids"] == []
+            assert payload["pairing_pending"] is False
+            assert payload["inbound_enabled"] is False
+        finally:
+            reset_runtime_flags()
+
+    def test_status_json_configured(self, _isolated_store: Path) -> None:
+        from infrastructure.process.runtime_flags import (
+            configure_runtime_flags,
+            reset_runtime_flags,
+        )
+
+        reset_runtime_flags()
+        runner = CliRunner()
+        runner.invoke(messaging, ["allow", "--platform", "telegram", "--user-id", "6514715683"])
+        configure_runtime_flags(json=True)
+        try:
+            result = runner.invoke(messaging, ["status", "--platform", "telegram"])
+            assert result.exit_code == 0, result.output
+            payload = json.loads(result.output)
+            assert payload["platform"] == "telegram"
+            assert payload["configured"] is True
+            assert payload["inbound_enabled"] is True
+            assert payload["require_dm_pairing"] is True
+            assert payload["pairing_pending"] is False
+            assert payload["allowed_user_ids"] == ["6514715683"]
+            assert payload["allowed_chat_ids"] == []
+            assert isinstance(payload["rejection_behavior"], str)
+        finally:
+            reset_runtime_flags()
+
 
 class TestMessagingGroupNoSubcommand:
     def test_bare_group_shows_help_and_exits_zero(self) -> None:
