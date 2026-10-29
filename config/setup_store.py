@@ -17,6 +17,7 @@ from filelock import FileLock
 from config.constants import get_store_path as _get_store_path_from_config
 
 _VERSION = 1
+_LOCK_TIMEOUT_SECONDS = 10.0
 _EMPTY_CONFIG = {"version": _VERSION, "wizard": {}, "targets": {}, "probes": {}}
 
 
@@ -35,11 +36,10 @@ def get_store_path() -> Path:
 
 def _load_raw(path: Path | None = None, *, for_write: bool = False) -> dict[str, Any]:
     store_path = path or get_store_path()
-    if not store_path.exists():
-        return deepcopy(_EMPTY_CONFIG)
-
     try:
         data = json.loads(store_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return deepcopy(_EMPTY_CONFIG)
     except (ValueError, OSError) as exc:
         if for_write:
             raise OSError(
@@ -58,7 +58,7 @@ def _load_raw(path: Path | None = None, *, for_write: bool = False) -> dict[str,
 def _locked_config(path: Path) -> Iterator[dict[str, Any]]:
     """Hold one lock across reading, changing, and publishing the setup payload."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(path.with_suffix(path.suffix + ".lock")), timeout=10):
+    with FileLock(str(path.with_suffix(path.suffix + ".lock")), timeout=_LOCK_TIMEOUT_SECONDS):
         yield _load_raw(path, for_write=True)
 
 

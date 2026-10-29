@@ -10,7 +10,7 @@ from queue import Queue
 from typing import Any
 
 import pytest
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 from config import setup_store
 
@@ -62,17 +62,18 @@ def test_model_and_remote_saves_preserve_both_successful_updates(
     assert setup_store.load_remote_url(path) == "http://127.0.0.1:9999"
 
 
+@pytest.mark.parametrize("failure_point", ["os.fsync", "os.replace"])
 def test_failed_publish_keeps_previous_config_intact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_point: str
 ) -> None:
     path = tmp_path / "opensre.json"
     setup_store.save_named_remote("production", "http://127.0.0.1:9999", path=path)
     before = path.read_bytes()
 
-    def failed_replace(*_args: object, **_kwargs: object) -> None:
+    def failed_publish(*_args: object, **_kwargs: object) -> None:
         raise OSError("simulated atomic publication failure")
 
-    monkeypatch.setattr("os.replace", failed_replace)
+    monkeypatch.setattr(failure_point, failed_publish)
     with pytest.raises(OSError, match="publication failure"):
         setup_store.update_local_llm_selection(provider="new", model="new", path=path)
     assert path.read_bytes() == before
@@ -80,9 +81,11 @@ def test_failed_publish_keeps_previous_config_intact(
 
 
 @pytest.mark.parametrize("operation", ["model", "remote", "delete", "scope", "wizard"])
-def test_mutations_preserve_an_unreadable_setup_store(tmp_path: Path, operation: str) -> None:
+@pytest.mark.parametrize("payload", [b'{"remote":', b"\xff", b"[]"])
+def test_mutations_preserve_an_unreadable_setup_store(
+    tmp_path: Path, operation: str, payload: bytes
+) -> None:
     path = tmp_path / "opensre.json"
-    payload = b'{"remote":{"remotes":{"production":{"url":"http://127.0.0.1:9999"}}},'
     path.write_bytes(payload)
     with pytest.raises(OSError, match="read safely"):
         if operation == "model":
@@ -107,6 +110,23 @@ def test_mutations_preserve_an_unreadable_setup_store(tmp_path: Path, operation:
             )
     assert path.read_bytes() == payload
     assert setup_store.load_local_config(path)["targets"] == {}
+
+
+def test_lock_timeout_preserves_config_and_releases_after_contention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "opensre.json"
+    setup_store.save_named_remote("production", "http://127.0.0.1:9999", path=path)
+    before = path.read_bytes()
+    monkeypatch.setattr(setup_store, "_LOCK_TIMEOUT_SECONDS", 0.01)
+
+    with FileLock(str(path) + ".lock"), pytest.raises(Timeout):
+        setup_store.update_local_llm_selection(provider="new", model="new", path=path)
+    assert path.read_bytes() == before
+
+    setup_store.update_local_llm_selection(provider="new", model="new", path=path)
+    assert setup_store.load_local_config(path)["targets"]["local"]["model"] == "new"
+    assert setup_store.load_named_remotes(path) == {"production": "http://127.0.0.1:9999"}
 
 
 def test_a_successful_publish_remains_valid_json_with_existing_sections(tmp_path: Path) -> None:
