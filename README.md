@@ -4,9 +4,9 @@
   <img src="docs/logo/opensre-logo-white.svg" alt="OpenSRE" width="360" />
 </p>
 
-<h1>OpenSRE v0.1: Build Your Own AI SRE Agents</h1>
+<h1>OpenSRE: The open-source agent for CI/CD reliability</h1>
 
-<p>The open-source framework for AI SRE agents, and the training and evaluation environment they need to improve. Connect the 60+ tools you already run, define your own workflows, and answer production questions on your own infrastructure.</p>
+<p>Your CI tells you it broke, but not why or how to fix it. OpenSRE is a CLI agent that reads the failed run, traces the cause and pushes a fix for you to review. Self-hosted, with your own models.</p>
 
 <p align="center">
   <a href="https://github.com/Tracer-Cloud/opensre/actions/workflows/ci.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/Tracer-Cloud/opensre/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
@@ -93,7 +93,6 @@ For supported platforms and troubleshooting, see [Install locally](https://www.o
 - [Quick Start](#quick-start)
 - [Deployment](#deployment)
 - [How OpenSRE Works](#how-opensre-works)
-- [Capabilities & integrations](#capabilities--integrations)
 - [Integrations](#integrations)
 - [Security](#security)
 - [Telemetry](#telemetry)
@@ -104,23 +103,21 @@ For supported platforms and troubleshooting, see [Install locally](https://www.o
 
 ## Why OpenSRE?
 
-When something breaks in production, the evidence is scattered across logs, metrics, traces, runbooks, and Slack threads. OpenSRE is an open-source framework for AI SRE agents that resolve production incidents, built to run on your own infrastructure.
+AI writes more of the code every month. Someone still has to fix the build.
 
-We do that because SWE-bench<sup>1</sup> gave coding agents scalable training data and clear feedback. Production incident response still lacks an equivalent.
+When CI goes red, it tells you _that_ something failed, not _why_ or how to fix it. Under deadline pressure, teams hit re-run and move on, flaky checks pile up, `main` stays red, and the real investigation waits for whichever senior engineer has time. OpenSRE is an open-source CI/CD reliability agent that does that investigation for you, built to run on your own infrastructure with your own models:
 
-Distributed failures are slower, noisier, and harder to simulate and evaluate than local code tasks, which is why AI SRE, and AI for production debugging more broadly, remains unsolved.
+- **Recover from red builds faster:** it investigates the moment a run fails, reading logs, testing hypotheses and pushing a fix for you to review
+- **Fix the cause, not just the rerun:** it separates CI-caused failures from code-caused ones, so you fix the right thing
+- **Know what CI is costing you:** failure rate, developer hours lost to unreliable CI, and how long `main` stays red
+- **Senior-level context for everyone:** every engineer gets the same depth of analysis
 
-OpenSRE is building _that_ missing layer:
+SWE-bench<sup>1</sup> showed that agents improve fastest with realistic tasks and clear feedback. Pipeline failures are slower, noisier and harder to reproduce than local code tasks, so we hold OpenSRE to the same standard by:
 
-> an open reinforcement learning environment for agentic infrastructure incident response, with end-to-end tests for realistic production failures
-
-We do that by:
-
-- building easy-to-deploy, customizable AI SRE agents for production operations and incident response
 - running real-world end-to-end tests across cloud-backed scenarios [(tests/e2e)](tests/e2e)
 - keeping semantic test-catalog naming so e2e vs unit and local vs cloud boundaries stay obvious [(tests/README.md)](tests/README.md)
 
-Our mission is to build AI SRE agents on top of this, scale it to thousands of realistic infrastructure failure scenarios, and establish OpenSRE as the benchmark and training ground for AI SRE.
+Start with the **[CI/CD overview](docs/cicd/overview.mdx)**: analyze a repository's CI reliability, fix failing checks on a PR, or set up an agent that keeps CI green.
 
 <sup>1</sup> https://arxiv.org/abs/2310.06770
 
@@ -195,32 +192,17 @@ An OpenSRE Cloud managed gateway, an AWS EC2 path, and a general self-hosted opt
   alt="opensre-how-it-works-github"
 />
 
-When you ask a question or an alert arrives, OpenSRE automatically:
+When a CI run fails, an alert arrives, or you ask a question, OpenSRE automatically:
 
-1. **Fetches** the relevant context and correlated logs, metrics, traces, and recent deploys
+1. **Fetches** the relevant context: failing checks and CI logs, recent commits and deploys, and correlated logs, metrics and traces
 2. **Masks** sensitive identifiers (optional) before external LLM calls
-3. **Reasons** across your connected systems to test hypotheses in a tool-calling loop
+3. **Reasons** across your connected systems to test hypotheses in a tool-calling loop, separating CI-caused failures from code-caused ones
 4. **Answers** with an evidence-linked response in the conversation
-5. **Suggests** next steps and, optionally, executes remediation actions
+5. **Fixes** the cause and pushes it to the PR branch for you to review, or suggests next steps and, optionally, executes remediation actions
 6. **Posts** a summary directly to Slack, PagerDuty, or Telegram — no context switching needed
 
 For the current code-level agent architecture after removing the old graph and chain
 framework layers, see [AGENTS.md](AGENTS.md).
-
----
-
-## Capabilities & integrations
-
-|                                          |                                                                                  |
-| ---------------------------------------- | -------------------------------------------------------------------------------- |
-| 🔍 **Evidence-driven diagnosis**         | Correlated analysis across logs, metrics, traces, deploys, and config            |
-| 📋 **Runbook-aware reasoning**           | OpenSRE reads your runbooks and applies them automatically                       |
-| 🔗 **Evidence-backed root cause**        | Every conclusion is linked to the data behind it                                 |
-| 🛡️ **Reversible identifier masking**     | Redact pods, clusters, and account IDs before external LLM calls; restore in output |
-| 📊 **Session cost & history**            | Per-session token tracking (`/cost`) and resumable REPL sessions (`/sessions`) |
-| 🤖 **Full LLM flexibility**              | Bring your own model — Anthropic, OpenAI, Codex, Ollama, Gemini, OpenRouter, TrustedRouter, NVIDIA NIM, Bedrock |
-
-OpenSRE connects to **60+** tools across LLMs, observability, cloud infrastructure, data platforms, incident management, and MCP. The full matrix (with roadmap links) lives in the **[product docs](https://www.opensre.com/docs)**; a detailed catalog is also maintained in-repo as the project grows.
 
 ---
 
