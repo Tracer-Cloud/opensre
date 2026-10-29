@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from copy import copy
 
 import click
 from click.core import ParameterSource
@@ -282,6 +283,10 @@ def _connection_target(action: str) -> str | None:
 
 
 login_command.add_command(status_command, name="list")
+# Status remains callable without advertising the same action twice in menus.
+_status_alias = copy(status_command)
+_status_alias.hidden = True
+login_command.add_command(_status_alias, name="status")
 auth_command.add_command(connect_command, name="login")
 auth_command.add_command(status_command, name="status")
 auth_command.add_command(verify_command, name="verify")
