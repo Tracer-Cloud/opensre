@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from config.cli_command_choices import CLI_COMMAND_CHOICES
+from config.llm_auth.credentials import connection_status
+from config.llm_auth.records import provider_auth_records
 from surfaces.shared.llm_setup.auth_profiles import iter_auth_profiles
-from surfaces.shared.llm_setup.auth_service import provider_status
 from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
 
 
@@ -15,10 +16,12 @@ def prompt_login_action() -> str | None:
 
 def prompt_connection_target(action: str) -> str | None:
     """Select a saved connection for verification or provider-owned disconnection."""
+    records = provider_auth_records()
     options = tuple(
         (profile.name, profile.label)
         for profile in iter_auth_profiles()
-        if (status := provider_status(profile.name)).authenticated or status.stale
+        if records.get(profile.provider_value)
+        or connection_status(profile.provider_value, record={}).configured
     )
     if not options:
         from rich.console import Console
