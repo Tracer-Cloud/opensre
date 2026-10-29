@@ -9,6 +9,7 @@ from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 
 from config.cli_command_choices import CLI_COMMAND_CHOICES
+from config.constants.slash_commands import COMPATIBILITY_SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry.help import QUICK_ACCESS_COMMANDS
 from surfaces.interactive_shell.command_registry.types import SlashCommand
@@ -149,11 +150,13 @@ class ShellCompleter(Completer):
                     if cmd is not None:
                         yield _slash_completion(cmd, -1, cols=cols)
                 for cmd in SLASH_COMMANDS.values():
-                    if cmd.name not in _QUICK_ACCESS_SET:
+                    if cmd.name not in _QUICK_ACCESS_SET | COMPATIBILITY_SLASH_COMMANDS:
                         yield _slash_completion(cmd, -1, cols=cols)
             else:
                 for cmd in SLASH_COMMANDS.values():
-                    if cmd.name.lower().startswith(needle):
+                    if cmd.name not in COMPATIBILITY_SLASH_COMMANDS and cmd.name.lower().startswith(
+                        needle
+                    ):
                         yield _slash_completion(cmd, -len(parts[0]), cols=cols)
             return
 

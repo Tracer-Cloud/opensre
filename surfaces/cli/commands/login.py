@@ -1,4 +1,4 @@
-"""CLI commands for LLM provider authentication."""
+"""Provider connections through login, with the legacy auth command preserved."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from surfaces.shared.llm_setup.auth_service import (
     provider_status,
     verify_provider,
 )
+from surfaces.shared.llm_setup.login_menu import prompt_connection_target, prompt_login_action
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
@@ -35,7 +36,7 @@ def _resolve_or_raise(provider: str) -> ProviderAuthProfile:
         return resolve_auth_profile(provider)
     except KeyError as exc:
         raise click.UsageError(
-            f"Unknown auth provider '{provider}'. Choose one of: {_provider_choices()}."
+            f"Unknown model provider '{provider}'. Choose one of: {_provider_choices()}."
         ) from exc
 
 
@@ -71,7 +72,7 @@ def _render_status_table(providers: Iterable[ProviderAuthProfile]) -> None:
         os.getenv(OPENSRE_ACCOUNT_TOKEN_ENV) and os.getenv(WEBAPP_URL_ENV)
     )
     active = (
-        "OpenSRE account (hosted openai)"
+        "OpenSRE hosted · OpenSRE credits"
         if account_hint and not local
         else get_configured_llm_provider()
     )
@@ -92,7 +93,7 @@ def _render_status_table(providers: Iterable[ProviderAuthProfile]) -> None:
         )
     _console.print(
         RecordTable(
-            title="Auth status",
+            title="Model connections",
             subtitle=f"Active provider: {active}",
             columns=tuple(
                 RecordColumn(name) for name in ("Provider", "Status", "Method", "Source")
@@ -102,15 +103,40 @@ def _render_status_table(providers: Iterable[ProviderAuthProfile]) -> None:
     )
 
 
-@click.group(name="auth", invoke_without_command=True)
+class _LoginGroup(click.Group):
+    """Accept the established ``login <provider>`` shorthand as ``login connect``."""
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        if args and args[0] not in self.commands and args[0] not in ctx.help_option_names:
+            args = ["connect", *args]
+        return super().parse_args(ctx, args)
+
+
+@click.group(name="login", cls=_LoginGroup, invoke_without_command=True)
+@click.pass_context
+def login_command(ctx: click.Context) -> None:
+    """Connect and manage external model providers."""
+    if ctx.invoked_subcommand is not None:
+        return
+    if not repl_tty_interactive():
+        raise click.UsageError(
+            "Supply an action or provider: opensre login list, "
+            "opensre login <provider>, or opensre login --help."
+        )
+    action = prompt_login_action()
+    if action is not None:
+        ctx.invoke(login_command.commands[action])
+
+
+@click.group(name="auth", invoke_without_command=True, hidden=True)
 @click.pass_context
 def auth_command(ctx: click.Context) -> None:
-    """Log in to LLM providers and inspect local auth state."""
+    """Compatibility commands; use opensre login to manage model connections."""
     if ctx.invoked_subcommand is None:
         _render_status_table(iter_auth_profiles())
 
 
-@auth_command.command(name="login")
+@login_command.command(name="connect")
 @click.argument("provider", required=False)
 @click.option("--api-key", help="API key to store for API-key providers.")
 @click.option("--model", help="Reasoning model to persist with the provider selection.")
@@ -131,9 +157,9 @@ def auth_command(ctx: click.Context) -> None:
     show_default=True,
     help="Open the provider setup page or subscription authorization in your browser.",
 )
-@click.option("--profile", "profile_id", help="Saved ChatGPT registration ID from auth status.")
+@click.option("--profile", "profile_id", help="Saved ChatGPT registration ID from login status.")
 @click.option("--new-account", is_flag=True, help="Register another ChatGPT account or workspace.")
-def auth_login(
+def connect_command(
     provider: str | None,
     api_key: str | None,
     model: str | None,
@@ -145,7 +171,7 @@ def auth_login(
 ) -> None:
     """Configure one LLM provider auth path."""
     if provider is None and not repl_tty_interactive():
-        raise click.UsageError("Supply a provider: opensre auth login <provider> --api-key <key>.")
+        raise click.UsageError("Supply a provider: opensre login <provider> --api-key <key>.")
     profile = _resolve_or_raise(provider) if provider else prompt_auth_provider()
     if profile is None:
         raise click.Abort()
@@ -193,21 +219,25 @@ def auth_login(
     except (AuthSetupError, SelectionError) as exc:
         raise click.ClickException(str(exc)) from exc
 
-    click.echo(f"Verify: opensre auth verify {result.provider}")
+    click.echo(f"Verify: opensre login verify {result.provider}")
 
 
-@auth_command.command(name="status")
+@login_command.command(name="status")
 @click.argument("provider", required=False)
-def auth_status(provider: str | None) -> None:
-    """Show provider auth status."""
+def status_command(provider: str | None) -> None:
+    """Show model connections without retrieving secrets or contacting providers."""
     profiles = (_resolve_or_raise(provider),) if provider else iter_auth_profiles()
     _render_status_table(profiles)
 
 
-@auth_command.command(name="verify")
-@click.argument("provider")
-def auth_verify(provider: str) -> None:
+@login_command.command(name="verify")
+@click.argument("provider", required=False)
+def verify_command(provider: str | None) -> None:
     """Intentionally verify one provider's request-time credentials."""
+    if provider is None:
+        provider = _connection_target("verify")
+        if provider is None:
+            return
     _resolve_or_raise(provider)
     try:
         status = verify_provider(provider)
@@ -222,16 +252,39 @@ def auth_verify(provider: str) -> None:
     click.echo(f"Detail   : {status.detail}")
 
 
-@auth_command.command(name="logout")
-@click.argument("provider")
-def auth_logout(provider: str) -> None:
+@login_command.command(name="disconnect")
+@click.argument("provider", required=False)
+def disconnect_command(provider: str | None) -> None:
     """Clear OpenSRE-managed auth for a provider."""
+    if provider is None:
+        provider = _connection_target("disconnect")
+        if provider is None:
+            return
     _resolve_or_raise(provider)
     try:
         detail = logout_provider(provider)
     except AuthSetupError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(detail)
+    from surfaces.shared.llm_setup.handoff import notify_setup
+
+    notify_setup(disconnected=resolve_auth_profile(provider).provider_value)
+    click.echo(
+        "The active model selection was not changed. "
+        "Use opensre model to select another connection if needed."
+    )
 
 
-__all__ = ["auth_command"]
+def _connection_target(action: str) -> str | None:
+    if not repl_tty_interactive():
+        raise click.UsageError(f"Supply a provider: opensre login {action} <provider>.")
+    return prompt_connection_target(action)
+
+
+login_command.add_command(status_command, name="list")
+auth_command.add_command(connect_command, name="login")
+auth_command.add_command(status_command, name="status")
+auth_command.add_command(verify_command, name="verify")
+auth_command.add_command(disconnect_command, name="logout")
+
+__all__ = ["auth_command", "login_command"]

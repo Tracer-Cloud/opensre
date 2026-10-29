@@ -196,8 +196,8 @@ class CommandSurface(StrEnum):
 
 
 _AUTH_LOGIN_COMMAND: dict[CommandSurface, str] = {
-    CommandSurface.SHELL: "/auth login",
-    CommandSurface.CLI: "opensre auth login",
+    CommandSurface.SHELL: "/login",
+    CommandSurface.CLI: "opensre login",
 }
 _ONBOARD_COMMAND: dict[CommandSurface, str] = {
     CommandSurface.SHELL: "/onboard",

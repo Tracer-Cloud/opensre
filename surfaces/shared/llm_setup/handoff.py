@@ -17,6 +17,7 @@ class SetupOutcome:
     connected: str | None = None
     selected: bool = False
     written_keys: tuple[str, ...] = ()
+    disconnected: str | None = None
 
 
 def notify_setup(
@@ -24,6 +25,7 @@ def notify_setup(
     connected: str | None = None,
     selected: bool = False,
     written_keys: tuple[str, ...] = (),
+    disconnected: str | None = None,
 ) -> None:
     """Write only to the result path created for this invocation by its parent."""
     name = os.getenv(OPENSRE_MODEL_SETUP_RESULT_ENV)
@@ -37,6 +39,8 @@ def notify_setup(
     result = previous if isinstance(previous, dict) else {}
     if connected is not None:
         result["connected"] = connected
+    if disconnected is not None:
+        result["disconnected"] = disconnected
     if selected:
         result["selected"] = True
     previous_keys = result.get("written_keys", [])
@@ -58,6 +62,7 @@ def read_setup(path: Path) -> SetupOutcome:
     if not isinstance(result, dict):
         return SetupOutcome()
     connected = result.get("connected")
+    disconnected = result.get("disconnected")
     raw_keys = result.get("written_keys", [])
     keys = (
         tuple(key for key in raw_keys if isinstance(key, str)) if isinstance(raw_keys, list) else ()
@@ -66,4 +71,5 @@ def read_setup(path: Path) -> SetupOutcome:
         connected if isinstance(connected, str) else None,
         result.get("selected") is True,
         keys,
+        disconnected if isinstance(disconnected, str) else None,
     )

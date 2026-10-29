@@ -22,7 +22,7 @@ def test_credit_exhausted_error_maps_to_opensre_error_with_auth_hint() -> None:
     err = exc_info.value
     assert "credit exhausted" in str(err).lower()
     assert err.suggestion is not None
-    assert "opensre auth login" in err.suggestion
+    assert "opensre login" in err.suggestion
 
 
 def test_opensre_credit_exhaustion_maps_to_stripe_upgrade_hint() -> None:

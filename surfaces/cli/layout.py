@@ -35,7 +35,7 @@ _GETTING_STARTED: tuple[str, ...] = (
 
 #: Day-to-day operation once configured.
 _EVERYDAY: tuple[str, ...] = (
-    "auth",
+    "login",
     "model",
     "config",
     "integrations",

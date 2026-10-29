@@ -99,7 +99,7 @@ def custom_openai(monkeypatch: pytest.MonkeyPatch) -> None:
     [
         (
             "CUSTOM_OPENAI_API_KEY",
-            "No API key is set for custom-openai. Run `opensre auth login custom-openai`",
+            "No API key is set for custom-openai. Run `opensre login custom-openai`",
         ),
         # The settings validator fires first and must not read as a missing key.
         (
@@ -167,7 +167,7 @@ def test_refused_turn_still_counts_as_a_not_configured_provider_failure(
 def test_turn_failing_on_a_missing_key_names_the_catalog_provider(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Regression: the client's label `Custom Openai` surfaced as `/auth login custom_openai`."""
+    """Regression: the client's label `Custom Openai` surfaced as `/login custom_openai`."""
     # The prompt-safe status still lists a key the request then cannot find.
     monkeypatch.setattr(service, "llm_ready", lambda: LLMReadiness(provider="custom-openai"))
     config = PromptLogConfig(log_path=tmp_path / "prompts.jsonl")
@@ -200,7 +200,7 @@ def test_turn_failing_on_a_missing_key_names_the_catalog_provider(
 
     assert outcome.status is AskStatus.ERROR
     assert outcome.error is not None
-    assert "`opensre auth login custom-openai`" in outcome.error.message
+    assert "`opensre login custom-openai`" in outcome.error.message
     assert "custom_openai" not in outcome.error.message
     # `opensre ask` cannot run a slash command.
     assert "`/" not in outcome.error.message

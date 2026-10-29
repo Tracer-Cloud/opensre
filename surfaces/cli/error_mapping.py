@@ -34,7 +34,7 @@ def reraise_cli_runtime_error(exc: BaseException) -> NoReturn:
         raise OpenSREError(
             str(exc),
             suggestion=(
-                "Run `opensre auth login <provider>` to re-authenticate "
+                "Run `opensre login <provider>` to re-authenticate "
                 "or switch to a different provider."
             ),
         ) from exc

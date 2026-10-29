@@ -58,7 +58,7 @@ def test_missing_key_directs_to_login_without_prompting_or_saving(monkeypatch, k
     console = _Console(key=key)
     console.input = lambda *_a, **_kw: pytest.fail("Complete model command must not prompt")
     assert switching.switch_llm_provider("openai", console) is False
-    assert any("opensre auth login openai" in line for line in console.printed)
+    assert any("opensre login openai" in line for line in console.printed)
 
 
 @pytest.mark.parametrize(
@@ -174,4 +174,4 @@ def test_missing_subscription_directs_to_browser_login_without_prompting_for_key
     _credential_status_sequence(monkeypatch, configured_after=False)
     console = _Console()
     assert switching.switch_llm_provider("chatgpt", console) is False
-    assert any("/auth login chatgpt" in line for line in console.printed)
+    assert any("/login chatgpt" in line for line in console.printed)

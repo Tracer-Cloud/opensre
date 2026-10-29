@@ -4,7 +4,7 @@ description: "Supported LLM APIs and CLIs, environment variables, and how to swi
 ---
 
 The interactive shell uses your signed-in OpenSRE account by default. To select
-your own provider billing, run `opensre auth login` (or `/login` in the shell).
+your own provider billing, run `opensre login` (or `/login` in the shell).
 Choose a provider, connect it, then select a model in the picker that opens
 automatically. Only selecting a model changes your active provider and billing;
 **Choose later** or Esc keeps the connection without switching. Your OpenSRE
@@ -51,8 +51,8 @@ Each provider has two model roles:
 
 | Provider | Setup | Model selection |
 | --- | --- | --- |
-| ChatGPT | `opensre auth login chatgpt` | Models available to the signed-in account; `CHATGPT_MODEL` records the selected model |
-| Grok subscription (local testing) | `opensre auth login grok` | Browser login; no client-ID setup; `GROK_MODEL` records the selected account model |
+| ChatGPT | `opensre login chatgpt` | Models available to the signed-in account; `CHATGPT_MODEL` records the selected model |
+| Grok subscription (local testing) | `opensre login grok` | Browser login; no client-ID setup; `GROK_MODEL` records the selected account model |
 
   </Tab>
   <Tab title="Cloud & local">
@@ -175,7 +175,17 @@ issue if you need another first-class provider.
 
 ## Login and secret storage
 
-Use `opensre auth login` (or `/login`) to choose **Subscription**, **API key**,
+`/login` manages external provider connections; `/model` selects the active
+connection/model. OpenSRE hosted inference uses `/account` sign-in and OpenSRE
+credits, independently of provider connection commands. Connecting another
+provider does not switch inference or billing until you select its model.
+
+`opensre auth …` and `/auth …` remain compatibility commands for existing
+scripts and direct invocations. Prefer `opensre login …` for new workflows.
+No removal is scheduled; any future removal requires a release-note migration
+window. See [Compatibility commands and migration](/getting-started/interactive-shell-commands).
+
+Use `opensre login` (or `/login`) to choose **connect**, then **Subscription**, **API key**,
 **CLI-managed**, or **Local / cloud** in the standard subcommand-style submenu,
 then choose a provider in its submenu. Use ↑/↓ and Enter; there is no search/filter
 form for login. Esc from providers goes back to methods; Esc from methods cancels.
@@ -203,45 +213,45 @@ Required missing inputs fail with usage guidance.
 
 | Command | What it does |
 | --- | --- |
-| `opensre auth` | Show provider auth status and the active provider |
-| `opensre auth login deepseek` | Guide DeepSeek setup, validate `DEEPSEEK_API_KEY`, store it in `.env` and `~/.opensre/credentials.json`, then offer its models in a terminal; non-interactive login connects only |
+| `opensre login list` | Show model connection status and the active provider |
+| `opensre login deepseek` | Guide DeepSeek setup, validate `DEEPSEEK_API_KEY`, store it in `.env` and `~/.opensre/credentials.json`, then offer its models in a terminal; non-interactive login connects only |
 | `opensre model list` | List connected models, source/billing labels and active state without switching |
 | `opensre model show` | Show the active model and source; `opensre --json model show` emits JSON |
 | `opensre model set deepseek <model-id>` | Explicitly select an already-connected provider and model |
-| `opensre auth verify deepseek` | Check DeepSeek credentials and refresh local metadata |
-| `opensre auth logout deepseek` | Remove OpenSRE-managed DeepSeek credentials and metadata |
+| `opensre login verify deepseek` | Check DeepSeek credentials and refresh local metadata |
+| `opensre login disconnect deepseek` | Remove OpenSRE-managed DeepSeek credentials and metadata |
 
 Model browsing uses saved connections and cached model catalogs. It does not
 launch vendor CLIs, probe cloud credentials, or start sign-in. Use `/login` or
-`opensre auth login <provider>` to connect another provider or refresh its catalog;
+`opensre login <provider>` to connect another provider or refresh its catalog;
 an installed CLI alone is not a connected provider. Unknown auth is labelled
 **Auth checked on use**. Model selection does not silently log in to another source.
 
 API-key login writes the key to `.env` and `~/.opensre/credentials.json`.
 
-`opensre auth` and `/auth status` are safe to show in prompts: they do not read
+`opensre login status` and `/login status` are safe to show in prompts: they do not read
 stored secrets. For API-key providers they check environment variables and
 non-secret metadata in `~/.opensre/llm-auth.json`. If you delete a key from
 the credentials file directly, status may look stale until you run
-`opensre auth verify <provider>` or make a request. Verification marks the
+`opensre login verify <provider>` or make a request. Verification marks the
 provider `stale` when the secret is gone.
 
 For account-independent CLI workflows:
 
 ```bash
-opensre auth login openai
-opensre auth login anthropic
-opensre auth login deepseek
-opensre auth status
+opensre login openai
+opensre login anthropic
+opensre login deepseek
+opensre login status
 ```
 
 ## ChatGPT subscription
 
 ```bash
-opensre auth login chatgpt
-opensre auth verify chatgpt
-opensre auth status chatgpt
-opensre auth logout chatgpt
+opensre login chatgpt
+opensre login verify chatgpt
+opensre login status chatgpt
+opensre login disconnect chatgpt
 ```
 
 Continue with ChatGPT in your browser and authorize OpenSRE to use your plan.
@@ -254,7 +264,7 @@ is still needed to confirm that plan usage is available.
 
 Use `--new-account` to add another account or workspace. Use
 `--profile <registration-id>` to sign in to a saved registration listed by
-`opensre auth status chatgpt`. Registrations remain separate even when their
+`opensre login status chatgpt`. Registrations remain separate even when their
 email addresses match. Logout clears the selected account's tokens and retains
 its registration for later sign-in. Other saved accounts and API keys remain.
 
@@ -263,7 +273,7 @@ billing, while preserving your OpenSRE account identity. Authentication alone
 does not activate the subscription. `--no-set-provider` connects without opening
 the model picker. To restore OpenSRE hosted billing, choose the **OpenSRE hosted**
 row in `/model`, or run `opensre model set opensre-hosted`. To switch to API
-billing, choose a connected API model or run `opensre auth login openai` and
+billing, choose a connected API model or run `opensre login openai` and
 select a model after connection. Subscription failures never fall back to an API key.
 
 Subscription credentials are stored separately in owner-only files under
@@ -287,7 +297,7 @@ Sign in with an eligible Grok subscription; no API key or client-ID setup is nee
 **Live subscription inference and billing validation in OpenSRE remain pending.**
 
 ```bash
-opensre auth login grok
+opensre login grok
 ```
 
 OpenSRE uses the public Grok CLI OAuth registration also used by OpenCode, Kilo,
@@ -309,11 +319,11 @@ check that the authorized account has an active eligible plan and remaining
 allowance. OpenSRE does not switch to a paid API key when subscription access fails.
 
 ```bash
-opensre auth status grok
-opensre auth verify grok
-opensre auth login grok --new-account
-opensre auth login grok --profile <saved-account-id>
-opensre auth logout grok
+opensre login status grok
+opensre login verify grok
+opensre login grok --new-account
+opensre login grok --profile <saved-account-id>
+opensre login disconnect grok
 ```
 
 `status` lists saved account IDs without reading tokens. `verify` checks renewal and
@@ -535,7 +545,7 @@ export DEEPSEEK_TOOLCALL_MODEL=deepseek-v4-flash
 ```
 
 Uses DeepSeek’s OpenAI-compatible API at `https://api.deepseek.com`. Run
-`opensre auth login deepseek` for guided key setup and secure local storage.
+`opensre login deepseek` for guided key setup and secure local storage.
 
 </Accordion>
 
@@ -985,9 +995,9 @@ OpenSRE does not silently switch providers when credentials are missing. It
 keeps the configured provider and reports missing or stale auth before LLM work
 starts.
 
-- **`opensre auth` and `/auth status`** show status from environment variables,
+- **`opensre login status` and `/login status`** show status from environment variables,
   provider metadata, CLI probes, or local config — without exposing secrets.
-- **`opensre auth verify <provider>`** checks credentials at request time and
+- **`opensre login verify <provider>`** checks credentials at request time and
   refreshes metadata.
 - **`opensre config` and `opensre doctor`** report the configured provider
   and credential status without resolving secrets.
@@ -995,11 +1005,11 @@ starts.
 
   ```
   [LLM provider: openai]
-  Missing credential for LLM provider 'openai'. Set OPENAI_API_KEY or run `opensre auth login openai`.
+  Missing credential for LLM provider 'openai'. Set OPENAI_API_KEY or run `opensre login openai`.
   ```
 
 If credentials are missing, set the provider API key, run
-`opensre auth login <provider>`, or change `LLM_PROVIDER` to a provider you have
+`opensre login <provider>`, or change `LLM_PROVIDER` to a provider you have
 configured.
 
 ## Switching providers at runtime

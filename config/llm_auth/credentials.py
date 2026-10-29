@@ -190,7 +190,7 @@ def _record_status(spec: ProviderSpec, record: dict[str, str]) -> CredentialStat
     stale = _bool_record_value(record, "stale", False)
     verified = _bool_record_value(record, "verified", not stale)
     detail = record.get("detail") or (
-        f"{spec.api_key_env} was previously saved; run `opensre auth verify {spec.value}` "
+        f"{spec.api_key_env} was previously saved; run `opensre login verify {spec.value}` "
         "to confirm it is still available."
     )
     return CredentialStatus(
@@ -278,7 +278,7 @@ def status(provider: str) -> CredentialStatus:
             CredentialSource.NONE,
             False,
             False,
-            record.get("detail") or f"Run `opensre auth login {spec.value}` to sign in.",
+            record.get("detail") or f"Run `opensre login {spec.value}` to sign in.",
         )
 
     if spec.credential_kind == "api_key":
@@ -457,7 +457,7 @@ def resolve_for_request(provider: str) -> CredentialResolution:
             )
         detail = (
             f"Missing credential for LLM provider '{spec.value}'. Set {spec.api_key_env} "
-            f"or run `opensre auth login {spec.value}`."
+            f"or run `opensre login {spec.value}`."
         )
         _mark_stale(spec, detail)
         return CredentialResolution(spec.value, "", CredentialSource.NONE, detail)

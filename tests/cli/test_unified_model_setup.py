@@ -82,7 +82,7 @@ def test_model_cli_and_repl_share_selection(
 def test_login_handoff_choose_later_keeps_auth_without_selection(
     monkeypatch: pytest.MonkeyPatch, selection_paths: Path
 ) -> None:
-    import surfaces.cli.commands.auth as auth
+    import surfaces.cli.commands.login as auth
     from surfaces.shared.llm_setup import model_picker
 
     monkeypatch.delenv("OPENSRE_DISABLE_KEYRING", raising=False)

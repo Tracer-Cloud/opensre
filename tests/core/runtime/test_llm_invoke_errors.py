@@ -188,8 +188,8 @@ _CUSTOM_OPENAI_MISSING_BASE_URL = (
 @pytest.mark.parametrize(
     ("surface", "commands", "foreign_prefix"),
     [
-        (CommandSurface.SHELL, ("`/auth login openai`", "`/onboard`"), "`opensre "),
-        (CommandSurface.CLI, ("`opensre auth login openai`", "`opensre onboard`"), "`/"),
+        (CommandSurface.SHELL, ("`/login openai`", "`/onboard`"), "`opensre "),
+        (CommandSurface.CLI, ("`opensre login openai`", "`opensre onboard`"), "`/"),
     ],
 )
 def test_missing_key_guidance_uses_only_the_readers_command_spelling(
@@ -218,7 +218,7 @@ def test_remediate_missing_credentials_without_provider_uses_placeholder() -> No
 
     assert text is not None
     assert "No LLM API key is set" in text
-    assert "/auth login <provider>" in text
+    assert "/login <provider>" in text
 
 
 def test_signed_out_cli_guidance_offers_account_sign_in() -> None:
@@ -276,7 +276,7 @@ def test_remediate_missing_credentials_matches_absence_wrappers(message: str) ->
     text = remediate_llm_setup_failure(message, surface=CommandSurface.SHELL, provider="anthropic")
 
     assert text is not None
-    assert "`/auth login anthropic`" in text
+    assert "`/login anthropic`" in text
 
 
 @pytest.mark.parametrize(

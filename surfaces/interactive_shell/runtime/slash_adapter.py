@@ -143,10 +143,15 @@ class ReplSlashPorts:
         # Suspend the prompt for rendering instead of ending that turn with a
         # queued command that loses the remaining work (e.g. remove by task ID).
         try:
-            is_cron_list = shlex.split(command)[:2] == ["/cron", "list"]
+            parts = shlex.split(command)
+            is_listing = (
+                parts[:2] == ["/cron", "list"]
+                or (parts[:1] == ["/login"] and parts[1:2] in (["list"], ["status"]))
+                or (parts[:1] == ["/auth"] and parts[1:2] in ([], ["status"]))
+            )
         except ValueError:
-            is_cron_list = False
-        if is_tty is not False and self.tty_interactive() and is_cron_list:
+            is_listing = False
+        if is_tty is not False and self.tty_interactive() and is_listing:
             return with_exclusive_output(session, dispatch)
         return dispatch()
 

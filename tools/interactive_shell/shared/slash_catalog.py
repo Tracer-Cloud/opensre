@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from config.constants.slash_commands import COMPATIBILITY_SLASH_COMMANDS
 from core.tool_framework.utils import object_schema, string_array_property, string_property
 
 _MAX_COMPACT_DESC_CHARS = 120
@@ -67,7 +68,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to sign in to OpenSRE or create a personal account",
         "User asks whether they are logged into OpenSRE",
         anti_examples=(
-            "User asks to log in to an LLM provider (use /auth)",
+            "User asks to connect or manage an external model provider (use /login)",
             "User asks to configure the GitHub integration only (use /integrations)",
         ),
     ),
@@ -77,8 +78,8 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks about the alert inbox, listener, or queued alerts",
     ),
     "/auth": _mcp(
-        "Log in to LLM providers and inspect local auth state. Subcommands: login, status, logout.",
-        "User asks to log in, authenticate, connect an LLM provider, or check provider auth",
+        "Compatibility alias for existing auth commands. Use /login for provider connection management.",
+        "User explicitly types an existing /auth command",
         anti_examples=("User asks to configure an observability integration (use /integrations)",),
     ),
     "/auto": _mcp(
@@ -239,13 +240,17 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         ),
     ),
     "/login": _mcp(
-        "Shortcut for /auth login. Supports ChatGPT subscription browser login "
-        "and API-key providers such as deepseek.",
-        "User asks to log in to ChatGPT, Claude, DeepSeek, or another LLM provider",
+        "Connect and manage external model providers. Use list/status to inspect connections, "
+        "connect <provider> or <provider> to connect, verify <provider> to check, and "
+        "disconnect <provider> to clear OpenSRE-managed credentials. CLI-owned sessions "
+        "and ambient credentials remain externally managed. Connecting alone does not "
+        "switch the active model or billing; /model explicitly selects the connection. "
+        "OpenSRE hosted access uses /account login and OpenSRE credits.",
+        "User asks to connect, inspect, verify, or disconnect an external model provider",
         anti_examples=(
             "User asks to log in to a non-LLM integration (use /integrations or /mcp)",
             "User asks to sign in to their OpenSRE account (use /account login)",
-            "User asks to sign out of their OpenSRE account (use /logout)",
+            "User asks to sign out of their OpenSRE account (use /account logout)",
         ),
     ),
     "/logout": _mcp(
@@ -254,7 +259,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User types /logout or asks to sign out of their OpenSRE account",
         "User asks to leave the signed-in account before switching LLM providers",
         anti_examples=(
-            "User asks to clear one LLM provider credential (use /auth logout <provider>)",
+            "User asks to disconnect a provider (use /login disconnect <provider>)",
             "User asks to leave the shell without signing out (use /exit)",
             "User asks to log in to an LLM provider (use /login)",
         ),
@@ -595,6 +600,8 @@ def format_slash_catalog_text(
 
     lines: list[str] = []
     for spec in entries:
+        if spec.name in COMPATIBILITY_SLASH_COMMANDS:
+            continue
         desc = spec.llm_description
         if compact and len(desc) > _MAX_COMPACT_DESC_CHARS:
             desc = desc[: _MAX_COMPACT_DESC_CHARS - 1].rstrip() + "…"
@@ -635,7 +642,9 @@ def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -
     # Keep planner payload intentionally tiny for live LLM runs with strict
     # prompt budgets. The full rich catalog remains available via
     # format_slash_catalog_text(..., compact=False).
-    body = "\n".join(f"- `{spec.name}`" for spec in entries)
+    body = "\n".join(
+        f"- `{spec.name}`" for spec in entries if spec.name not in COMPATIBILITY_SLASH_COMMANDS
+    )
     return f"{header}\n\n{body}"
 
 

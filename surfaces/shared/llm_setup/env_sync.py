@@ -153,6 +153,20 @@ def reload_connected_provider(provider_value: str, *, written_keys: tuple[str, .
             os.environ[key] = value
 
 
+def reload_disconnected_provider(provider_value: str) -> None:
+    """Drop an API key removed by a child, retaining routing and ambient credentials."""
+    from surfaces.shared.llm_setup.auth_profiles import provider_for_profile, resolve_auth_profile
+
+    try:
+        profile = resolve_auth_profile(provider_value)
+    except KeyError:
+        return
+    if profile.kind == "api_key":
+        provider = provider_for_profile(profile)
+        if provider.api_key_env:
+            os.environ.pop(provider.api_key_env, None)
+
+
 def sync_provider_env(
     *,
     provider: ProviderOption,

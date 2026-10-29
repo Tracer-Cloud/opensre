@@ -23,7 +23,7 @@ def _stream_error(event: Any) -> RuntimeError:
             "ChatGPT plan usage is unavailable or its limit was reached. Review ChatGPT Settings → Usage, then retry."
         )
     return RuntimeError(
-        "ChatGPT inference failed or was incomplete. Retry the request; verify access with `opensre auth verify chatgpt`."
+        "ChatGPT inference failed or was incomplete. Retry the request; verify access with `opensre login verify chatgpt`."
     )
 
 
@@ -31,7 +31,7 @@ class ChatGPTResponsesAgentClient(ResponsesAgentClient):
     """ChatGPT uses plan-specific tool declarations and encrypted reasoning replay."""
 
     provider_name = "ChatGPT"
-    auth_error_hint = "Run `opensre auth login chatgpt`."
+    auth_error_hint = "Run `opensre login chatgpt`."
 
     def _stream_error(self, _event: Any) -> RuntimeError:
         return _stream_error(_event)

@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 CLI_COMMAND_CHOICES: dict[tuple[str, ...], tuple[tuple[str, str], ...]] = {
+    ("/login",): (
+        ("list", "View model connections"),
+        ("connect", "Connect a provider"),
+        ("verify", "Verify a connection"),
+        ("disconnect", "Disconnect a provider"),
+    ),
     ("/auth",): (
         ("status", "Show local provider authentication"),
         ("login", "Sign in to a provider"),

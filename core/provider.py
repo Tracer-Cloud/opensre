@@ -81,7 +81,7 @@ def resolve_llm_api_key(env_name: str) -> str:
         if provider_env == env_name:
             raise RuntimeError(
                 f"Missing credential for LLM provider '{provider}'. Set {env_name} "
-                f"or run `opensre auth login {provider}`."
+                f"or run `opensre login {provider}`."
             )
     return resolved
 

@@ -139,7 +139,7 @@ def login(
         selected = profile_id or ("" if new_account else str(store.get("active", "")))
         if selected and selected not in store["profiles"]:
             raise SubscriptionLoginRequired(
-                "Unknown xAI account ID. See `opensre auth status grok`."
+                "Unknown xAI account ID. See `opensre login status grok`."
             )
         previous = dict(store["profiles"].get(selected, {}))
     configured_client = os.getenv(GROK_OAUTH_CLIENT_ID_ENV, "").strip()
@@ -221,7 +221,7 @@ def resolve() -> SubscriptionAuth:
         selected = str(store.get("active", ""))
         profile = store["profiles"].get(selected, {})
         if not profile.get("access_token"):
-            raise SubscriptionLoginRequired("Run `opensre auth login grok` to sign in.")
+            raise SubscriptionLoginRequired("Run `opensre login grok` to sign in.")
         if float(profile.get("expires_at", 0)) <= time.time() + 60:
             with httpx.Client(timeout=30, follow_redirects=False) as client:
                 endpoint = _endpoint(_discovery(client)["token_endpoint"])
@@ -243,7 +243,7 @@ def resolve() -> SubscriptionAuth:
                         write_store("grok", store)
                         _metadata(store)
                     raise SubscriptionLoginRequired(
-                        "xAI session renewal failed. Retry or run `opensre auth login grok`."
+                        "xAI session renewal failed. Retry or run `opensre login grok`."
                     )
                 tokens = _tokens(dict(response.json()), profile)
             store["profiles"][selected] = tokens
