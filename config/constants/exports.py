@@ -352,6 +352,7 @@ EXPORTS: dict[str, str] = {
     "KUBECONFIG_CONTENT_ENV": "kubernetes",
     "KUBECONFIG_CONTEXT_ENV": "kubernetes",
     "KUBECONFIG_NAMESPACE_ENV": "kubernetes",
+    "KUBECONFIG_NAMESPACES_ENV": "kubernetes",
     "KUBECONFIG_PATH_ENV": "kubernetes",
     # llm
     "ANTHROPIC_DEFER_LOADING_KEY": "llm",
