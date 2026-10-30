@@ -45,6 +45,7 @@ def test_login_picker_cancellation_returns_without_selecting_a_route(monkeypatch
 
     assert auth.prompt_auth_provider() is None
 
+
 def test_subscription_model_selector_can_cancel(monkeypatch) -> None:
     import click
 
@@ -187,13 +188,3 @@ def test_auth_logout_deepseek_removes_stored_secret(monkeypatch, tmp_path: Path)
     assert result.exit_code == 0, result.output
     assert resolve_env_credential("DEEPSEEK_API_KEY") == ""
     assert "DEEPSEEK_API_KEY=" not in env_path.read_text(encoding="utf-8")
-
-
-def test_login_picker_cancellation_does_not_start_setup(monkeypatch) -> None:
-    from surfaces.shared.llm_setup import auth_menu
-
-    monkeypatch.setattr(auth_menu, "configured_profile_name", lambda: "chatgpt")
-    monkeypatch.setattr(auth_menu, "build_input_form", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(auth_menu, "run_command_input", lambda _app: None)
-
-    assert auth_menu.prompt_auth_provider() is None
