@@ -185,22 +185,37 @@ scripts and direct invocations. Prefer `opensre login …` for new workflows.
 No removal is scheduled; any future removal requires a release-note migration
 window. See [Compatibility commands and migration](/getting-started/interactive-shell-commands).
 
-Use `opensre login` (or `/login`) to choose **connect**, then **Subscription**, **API key**,
-**CLI-managed**, or **Local / cloud** in the standard subcommand-style submenu,
-then choose a provider in its submenu. Use ↑/↓ and Enter; there is no search/filter
-form for login. Esc from providers goes back to methods; Esc from methods cancels.
+Use `opensre login` (or `/login`) and choose **connect** to open one searchable
+catalog of provider routes. API-key, subscription, vendor CLI, local, and cloud
+routes appear together; search by provider name or route and inspect the route
+and billing columns before continuing. Each entry represents a distinct
+authentication and execution path, not just a vendor brand.
 
-Subscription and API billing stay separate. General Claude Code appears under
-**CLI-managed**, not Subscription: its vendor CLI can use different auth/billing
-paths. OAuth subscriptions use browser authorization; API-key providers use a
-hidden paste prompt. Existing supported sessions are reused. Direct commands
-such as `/login openai` bypass the method/provider pickers.
+The details distinguish provider/service, route, account information when it
+is available, authentication owner, execution path, and billing source. For
+example, OpenAI API and OpenAI Codex CLI are separate entries: the former uses
+an API key and API billing, while the latter runs the vendor CLI and its billing
+depends on that CLI's own configuration. OpenSRE does not infer that a CLI
+session is a subscription. For custom API-compatible endpoints, billing is
+shown as unknown because it depends on the configured endpoint.
 
-After connecting, the terminal opens that provider's model choices automatically.
-`opensre model` (or `/model`) opens a searchable list across connected providers.
-Choose a row and press Enter once to activate it. The source label stays visible:
-Claude Code is **CLI-managed**, not a guarantee of subscription-only billing.
-Choose **+ Connect a provider** to add another source from the same picker.
+OAuth subscriptions use browser authorization; API-key providers use a hidden
+paste prompt. Existing supported sessions are reused. Direct commands such as
+`/login openai` still bypass the picker.
+
+After connecting, the terminal opens that route's model choices automatically.
+`opensre model` (or `/model`) opens a searchable list across connected routes.
+The source, route, billing, account/authentication details, and availability
+remain visible with each model. Choose a row and press Enter once to activate
+it. Connecting, verifying, selecting a model, and disconnecting remain
+separate operations: connecting does not change active inference or billing,
+and cancellation leaves the active route unchanged. Choose **+ Connect a
+provider** to add another route from the model picker.
+
+ChatGPT supports selecting an existing registration with `--profile` or
+creating one with `--new-account`. The current model picker still represents
+the active ChatGPT registration as one provider-level route; it does not yet
+show multiple ChatGPT registrations as independently selectable model routes.
 
 <Warning>
 Non-interactive login now connects only by default. Scripts that previously
