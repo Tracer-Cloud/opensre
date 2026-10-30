@@ -42,7 +42,7 @@ class ProviderModelDefaults:
 
 DEFAULT_MAX_TOKENS = 25_000
 DEFAULT_AZURE_OPENAI_API_VERSION = "2024-10-21"
-DEFAULT_VERTEX_AI_LOCATION = "us-central1"
+DEFAULT_VERTEX_AI_LOCATION = "us"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -97,7 +97,7 @@ PROVIDER_MODEL_DEFAULTS: dict[str, ProviderModelDefaults] = {
         settings_key="gemini",
         reasoning="gemini-3.1-pro-preview",
         classification="gemini-3-flash-preview",
-        toolcall="gemini-3.1-flash-lite-preview",
+        toolcall="gemini-3.1-flash-lite",
         base_url=GEMINI_BASE_URL,
     ),
     "nvidia": ProviderModelDefaults(
@@ -119,9 +119,9 @@ PROVIDER_MODEL_DEFAULTS: dict[str, ProviderModelDefaults] = {
     "groq": ProviderModelDefaults(
         provider="groq",
         settings_key="groq",
-        reasoning="llama-3.3-70b-versatile",
-        classification="llama-3.3-70b-versatile",
-        toolcall="llama-3.1-8b-instant",
+        reasoning="openai/gpt-oss-120b",
+        classification="openai/gpt-oss-120b",
+        toolcall="openai/gpt-oss-20b",
         base_url=GROQ_BASE_URL,
     ),
     "azure-openai": ProviderModelDefaults(
@@ -157,9 +157,9 @@ PROVIDER_MODEL_DEFAULTS: dict[str, ProviderModelDefaults] = {
     "vertex-ai": ProviderModelDefaults(
         provider="vertex-ai",
         settings_key="vertex_ai",
-        reasoning="gemini-2.5-pro",
-        classification="gemini-2.5-flash",
-        toolcall="gemini-2.5-flash-lite",
+        reasoning="gemini-3.8-flash",
+        classification="gemini-3.8-flash",
+        toolcall="gemini-3.5-flash-lite",
     ),
     "ollama": ProviderModelDefaults(
         provider="ollama",

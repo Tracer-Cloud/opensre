@@ -112,7 +112,7 @@ def test_llm_settings_accepts_vertex_ai_without_project() -> None:
 
     assert settings.provider == "vertex-ai"
     assert settings.vertex_ai_project == ""
-    assert settings.vertex_ai_location == "us-central1"
+    assert settings.vertex_ai_location == "us"
 
 
 def test_llm_settings_from_env_vertex_ai(monkeypatch) -> None:
@@ -124,9 +124,9 @@ def test_llm_settings_from_env_vertex_ai(monkeypatch) -> None:
 
     assert settings.provider == "vertex-ai"
     assert settings.vertex_ai_project == "my-gcp-project"
-    assert settings.vertex_ai_location == "us-central1"
-    assert settings.vertex_ai_reasoning_model == "gemini-2.5-pro"
-    assert settings.vertex_ai_toolcall_model == "gemini-2.5-flash-lite"
+    assert settings.vertex_ai_location == "us"
+    assert settings.vertex_ai_reasoning_model == "gemini-3.8-flash"
+    assert settings.vertex_ai_toolcall_model == "gemini-3.5-flash-lite"
 
 
 def test_llm_settings_from_env_vertex_ai_custom_location(monkeypatch) -> None:

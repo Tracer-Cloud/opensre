@@ -42,8 +42,8 @@ def _guard_sdk_only_provider(provider: str) -> None:
 
 
 def _litellm_model_for_compat(model: str) -> str:
-    """Prefix model with ``openai/`` if not already prefixed, for compat endpoints."""
-    return model if model.startswith("openai/") else f"openai/{model}"
+    """Keep the endpoint model ID intact beneath the LiteLLM transport prefix."""
+    return f"openai/{model}"
 
 
 def build_litellm_agent_client(settings: Any, provider: str) -> AgentLLMClient:

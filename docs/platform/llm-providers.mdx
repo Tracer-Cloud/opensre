@@ -38,10 +38,10 @@ Each provider has two model roles:
 | OpenRouter | `LLM_PROVIDER=openrouter`<br />`OPENROUTER_API_KEY` | Reasoning: `openrouter/auto`<br />Toolcall: `openrouter/auto` |
 | TrustedRouter | `LLM_PROVIDER=trustedrouter`<br />`TRUSTEDROUTER_API_KEY` | Reasoning: `trustedrouter/auto`<br />Toolcall: `trustedrouter/auto` |
 | DeepSeek | `LLM_PROVIDER=deepseek`<br />`DEEPSEEK_API_KEY` | Reasoning: `deepseek-v4-pro`<br />Toolcall: `deepseek-v4-flash` |
-| Google Gemini API key | `LLM_PROVIDER=gemini`<br />`GEMINI_API_KEY` | Reasoning: `gemini-3.1-pro-preview`<br />Toolcall: `gemini-3.1-flash-lite-preview` |
+| Google Gemini API key | `LLM_PROVIDER=gemini`<br />`GEMINI_API_KEY` | Reasoning: `gemini-3.1-pro-preview`<br />Toolcall: `gemini-3.1-flash-lite` |
 | NVIDIA NIM | `LLM_PROVIDER=nvidia`<br />`NVIDIA_API_KEY` | Reasoning: `meta/llama-3.1-405b-instruct`<br />Toolcall: `meta/llama-3.1-8b-instruct` |
 | MiniMax | `LLM_PROVIDER=minimax`<br />`MINIMAX_API_KEY` | Reasoning: `MiniMax-M3`<br />Toolcall: `MiniMax-M2.7-highspeed` |
-| Groq | `LLM_PROVIDER=groq`<br />`GROQ_API_KEY` | Reasoning: `llama-3.3-70b-versatile`<br />Toolcall: `llama-3.1-8b-instant` |
+| Groq | `LLM_PROVIDER=groq`<br />`GROQ_API_KEY` | Reasoning: `openai/gpt-oss-120b`<br />Toolcall: `openai/gpt-oss-20b` |
 | Azure OpenAI | `LLM_PROVIDER=azure-openai`<br />`AZURE_OPENAI_API_KEY` + resource URL | Reasoning: `gpt-5.4-mini` (deployment name)<br />Toolcall: `gpt-5.4-mini` (deployment name) |
 | Custom OpenAI-compatible | `LLM_PROVIDER=custom-openai`<br />`CUSTOM_OPENAI_API_KEY` + `CUSTOM_OPENAI_BASE_URL` | Your `CUSTOM_OPENAI_MODEL` (both roles) |
 | Custom Anthropic-compatible | `LLM_PROVIDER=custom-anthropic`<br />`CUSTOM_ANTHROPIC_API_KEY` + `CUSTOM_ANTHROPIC_BASE_URL` | Your `CUSTOM_ANTHROPIC_MODEL` (both roles) |
@@ -60,7 +60,7 @@ Each provider has two model roles:
 | Provider | Config | Default models |
 | --- | --- | --- |
 | Amazon Bedrock | `LLM_PROVIDER=bedrock`<br />AWS IAM (`AWS_REGION`) | Reasoning: `us.anthropic.claude-sonnet-4-6`<br />Toolcall: `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
-| Google Vertex AI | `LLM_PROVIDER=vertex-ai`<br />Google ADC (`VERTEX_AI_PROJECT`) | Reasoning: `gemini-2.5-pro`<br />Toolcall: `gemini-2.5-flash-lite` |
+| Google Vertex AI | `LLM_PROVIDER=vertex-ai`<br />Google ADC (`VERTEX_AI_PROJECT`) | Reasoning: `gemini-3.8-flash`<br />Toolcall: `gemini-3.5-flash-lite` |
 | Ollama (local) | `LLM_PROVIDER=ollama`<br />No API key (local daemon) | Reasoning: `llama3.2`<br />Toolcall: `llama3.2` |
 
   </Tab>
@@ -561,7 +561,7 @@ export GEMINI_API_KEY=...
 export GEMINI_MODEL=gemini-3.1-pro-preview
 # Or per role:
 export GEMINI_REASONING_MODEL=gemini-3.1-pro-preview
-export GEMINI_TOOLCALL_MODEL=gemini-3.1-flash-lite-preview
+export GEMINI_TOOLCALL_MODEL=gemini-3.1-flash-lite
 ```
 
 Uses Google’s OpenAI-compatible endpoint at
@@ -610,10 +610,10 @@ at `1.0` to match MiniMax guidance.
 export LLM_PROVIDER=groq
 export GROQ_API_KEY=gsk_...
 # Optional override:
-export GROQ_MODEL=llama-3.3-70b-versatile
+export GROQ_MODEL=openai/gpt-oss-120b
 # Or per role:
-export GROQ_REASONING_MODEL=llama-3.3-70b-versatile
-export GROQ_TOOLCALL_MODEL=llama-3.1-8b-instant
+export GROQ_REASONING_MODEL=openai/gpt-oss-120b
+export GROQ_TOOLCALL_MODEL=openai/gpt-oss-20b
 ```
 
 Uses Groq’s OpenAI-compatible API at `https://api.groq.com/openai/v1`.
@@ -660,10 +660,10 @@ your account and region.
 export LLM_PROVIDER=vertex-ai
 export VERTEX_AI_PROJECT=my-gcp-project
 # Optional (defaults to us-central1):
-export VERTEX_AI_LOCATION=us-central1
+export VERTEX_AI_LOCATION=us
 # Optional overrides:
-export VERTEX_AI_REASONING_MODEL=gemini-2.5-pro
-export VERTEX_AI_TOOLCALL_MODEL=gemini-2.5-flash-lite
+export VERTEX_AI_REASONING_MODEL=gemini-3.8-flash
+export VERTEX_AI_TOOLCALL_MODEL=gemini-3.5-flash-lite
 ```
 
 No API key. Auth uses Google Application Default Credentials (ADC): run
@@ -675,10 +675,15 @@ Always routed through LiteLLM as `vertex_ai/<model>` (same pattern as Azure
 OpenAI). The wizard lists Gemini models; you can also type any other
 Vertex-supported model ID (`allow_custom_models`).
 
-Defaults (`gemini-2.5-pro` / `-flash` / `-flash-lite`) are the GA Gemini
-generation. Gemini 3.x (`gemini-3.1-pro-preview`, `gemini-3-flash-preview`,
-`gemini-3.1-flash-lite-preview`) is selectable in the wizard but is Preview-only
-in Vertex Model Garden as of mid-2026 — availability and pricing can change.
+Defaults are `gemini-3.8-flash` for reasoning/classification and
+`gemini-3.5-flash-lite` for tool calls. An unset `VERTEX_AI_LOCATION` defaults to
+`us`, the US multi-region endpoint supported by both models. Set `eu` for the
+EU multi-region or `global` for the global endpoint, according to your data
+residency requirements and model availability. Explicit model and location
+settings are preserved; existing `us-central1` configurations need an explicit
+location change when selecting these models. Older Gemini 2.5 models retired
+on Google Cloud on October 20, 2026; the Gemini Developer API has a separate
+lifecycle.
 
 </Accordion>
 

@@ -55,7 +55,7 @@ def test_vertex_ai_defaults_location_when_unset() -> None:
 
     client = build_litellm_agent_client(settings, "vertex-ai")
 
-    assert client._vertex_location == "us-central1"
+    assert client._vertex_location == "us"
 
 
 def test_vertex_ai_omits_project_when_unset_instead_of_raising() -> None:
