@@ -1,12 +1,10 @@
-"""Request-local compatibility for Azure chat completion token limits."""
+"""Request-local compatibility for OpenAI-compatible chat completion token limits."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any
-
-from core.llm.providers.azure_openai import is_azure_litellm_model
 
 
 def _rejects_max_tokens(error: Exception) -> bool:
@@ -31,10 +29,10 @@ def _rejects_max_tokens(error: Exception) -> bool:
     )
 
 
-def azure_completion_token_retry_kwargs(
+def completion_token_retry_kwargs(
     kwargs: dict[str, Any], error: Exception
 ) -> dict[str, Any] | None:
-    """Copy an explicitly rejected Azure request, replacing only its token limit.
+    """Copy an explicitly rejected chat request, replacing only its token limit.
 
     Deployment names cannot identify the underlying model. Removing ``max_tokens``
     bounds this correction to once per request without shared client state.
@@ -50,10 +48,9 @@ def azure_completion_token_retry_kwargs(
     return retry
 
 
-def azure_litellm_token_retry_kwargs(
-    kwargs: dict[str, Any], error: Exception
-) -> dict[str, Any] | None:
-    """Apply Azure token-limit compatibility only to the failing LiteLLM route."""
-    if not is_azure_litellm_model(str(kwargs.get("model", ""))):
+def litellm_token_retry_kwargs(kwargs: dict[str, Any], error: Exception) -> dict[str, Any] | None:
+    """Apply Token-limit compatibility only to Azure or explicit compatible endpoints."""
+    model = str(kwargs.get("model", ""))
+    if not (model.startswith("azure/") or (model.startswith("openai/") and kwargs.get("api_base"))):
         return None
-    return azure_completion_token_retry_kwargs(kwargs, error)
+    return completion_token_retry_kwargs(kwargs, error)

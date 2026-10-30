@@ -43,6 +43,7 @@ from core.llm.shared.openai_responses import (
     responses_tool_specs,
     uses_responses_api,
 )
+from core.llm.shared.openai_token_limits import completion_token_retry_kwargs
 from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
 from core.llm.shared.usage import (
     emit_provider_usage,
@@ -1018,7 +1019,8 @@ class OpenAIAgentClient:
 
         backoff = _RETRY_INITIAL_BACKOFF_SEC
         last_err: Exception | None = None
-        for attempt in range(_RETRY_MAX_ATTEMPTS):
+        attempt = 0
+        while attempt < _RETRY_MAX_ATTEMPTS:
             try:
                 response = self._request_completion(
                     kwargs,
@@ -1036,11 +1038,16 @@ class OpenAIAgentClient:
                     f"{self._provider_label} model '{self._model}' not found."
                 ) from err
             except BadRequestError as err:
+                retry = completion_token_retry_kwargs(kwargs, err)
+                if retry is not None:
+                    kwargs = retry
+                    continue
                 # Some providers (or proxies) surface insufficient_quota as
                 # 400 — distinguish before the generic wrap.
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 raise RuntimeError(f"{self._provider_label} request rejected: {err}") from err
             except RateLimitError as err:
+                attempt += 1
                 # OpenAI returns insufficient_quota as HTTP 429 with body
                 # text "You exceeded your current quota". Halt rather than
                 # burning retries on a dead account.
@@ -1051,7 +1058,7 @@ class OpenAIAgentClient:
                 # when present instead of waiting our deterministic backoff
                 # (matters most on tight tiers like gpt-4o's 30k TPM).
                 last_err = err
-                if attempt == _RETRY_MAX_ATTEMPTS - 1:
+                if attempt == _RETRY_MAX_ATTEMPTS:
                     raise RuntimeError(
                         f"{self._provider_label} rate limit exceeded after "
                         f"{_RETRY_MAX_ATTEMPTS} attempts: {err}"
@@ -1062,12 +1069,13 @@ class OpenAIAgentClient:
                 maybe_raise_github_required(err)
                 raise RuntimeError(f"{self._provider_label} request forbidden: {err}") from err
             except Exception as err:
+                attempt += 1
                 if is_exception_named(err, "APITimeoutError"):
                     # Not retried: the request already ran upstream and was billed.
                     raise RuntimeError(f"{self._provider_label} request timed out: {err}") from err
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
-                if attempt == _RETRY_MAX_ATTEMPTS - 1:
+                if attempt == _RETRY_MAX_ATTEMPTS:
                     raise RuntimeError(f"{self._provider_label} API failed: {err}") from err
                 time.sleep(backoff)
                 backoff *= 2

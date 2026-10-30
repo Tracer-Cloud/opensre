@@ -7,7 +7,7 @@ from typing import Any
 import litellm
 import pytest
 
-from core.llm.providers.azure_token_limits import azure_litellm_token_retry_kwargs
+from core.llm.shared.openai_token_limits import litellm_token_retry_kwargs
 from core.llm.transports.litellm.clients import LiteLLMAgentClient, LiteLLMLLMClient
 
 
@@ -37,11 +37,11 @@ def test_token_retry_uses_explicit_rejection_and_leaves_request_unchanged(
 ) -> None:
     request = {"model": "azure/prod-chat", "max_tokens": 37, "messages": []}
     error = _rejection(body=body, message=message)
-    retry = azure_litellm_token_retry_kwargs(request, error)
+    retry = litellm_token_retry_kwargs(request, error)
     assert request == {"model": "azure/prod-chat", "max_tokens": 37, "messages": []}
     if expected:
         assert retry == {"model": "azure/prod-chat", "max_completion_tokens": 37, "messages": []}
-        assert azure_litellm_token_retry_kwargs(retry, error) is None
+        assert litellm_token_retry_kwargs(retry, error) is None
     else:
         assert retry is None
 
@@ -49,17 +49,13 @@ def test_token_retry_uses_explicit_rejection_and_leaves_request_unchanged(
 def test_token_retry_ignores_other_routes_and_status_codes() -> None:
     error = _rejection()
     assert (
-        azure_litellm_token_retry_kwargs({"model": "openai/prod-chat", "max_tokens": 37}, error)
-        is None
+        litellm_token_retry_kwargs({"model": "openai/prod-chat", "max_tokens": 37}, error) is None
     )
     error.status_code = HTTPStatus.UNAUTHORIZED
-    assert (
-        azure_litellm_token_retry_kwargs({"model": "azure/prod-chat", "max_tokens": 37}, error)
-        is None
-    )
+    assert litellm_token_retry_kwargs({"model": "azure/prod-chat", "max_tokens": 37}, error) is None
     error.status_code = HTTPStatus.BAD_REQUEST
     assert (
-        azure_litellm_token_retry_kwargs(
+        litellm_token_retry_kwargs(
             {"model": "azure/prod-chat", "max_tokens": 37, "max_completion_tokens": 37}, error
         )
         is None

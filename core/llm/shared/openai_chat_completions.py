@@ -8,13 +8,13 @@ from collections.abc import Callable, Iterator
 from http import HTTPStatus
 from typing import Any
 
-from core.llm.providers.azure_token_limits import azure_litellm_token_retry_kwargs
 from core.llm.shared.llm_retry import (
     extract_retry_after_seconds,
     maybe_raise_credit_exhausted,
     maybe_raise_github_required,
     rate_limit_sleep_seconds,
 )
+from core.llm.shared.openai_token_limits import litellm_token_retry_kwargs
 from core.llm.shared.usage import emit_usage
 from core.llm.types import (
     AgentLLMResponse,
@@ -287,7 +287,7 @@ def invoke_with_litellm_agent_retries(
         except Exception as err:
             _raise_terminal_litellm_error(err, provider_name)
             # Parameter compatibility does not consume transient retry attempts.
-            retry = azure_litellm_token_retry_kwargs(kwargs, err)
+            retry = litellm_token_retry_kwargs(kwargs, err)
             if retry is not None:
                 kwargs = retry
                 continue
@@ -347,7 +347,7 @@ def invoke_with_litellm_llm_retries(
             raise
         except Exception as err:
             _raise_terminal_litellm_error(err, provider_label)
-            retry = azure_litellm_token_retry_kwargs(kwargs, err)
+            retry = litellm_token_retry_kwargs(kwargs, err)
             if retry is not None:
                 kwargs = retry
                 continue
@@ -430,7 +430,7 @@ def stream_with_litellm_retries(
             if emitted:
                 raise
             _raise_terminal_litellm_error(err, provider_label)
-            retry = azure_litellm_token_retry_kwargs(kwargs, err)
+            retry = litellm_token_retry_kwargs(kwargs, err)
             if retry is not None:
                 kwargs = retry
                 continue

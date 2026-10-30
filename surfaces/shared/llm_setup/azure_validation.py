@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from core.llm.providers.azure_openai import (
+    azure_openai_deployment_name,
+    azure_openai_uses_completion_tokens,
     format_azure_deployment_not_found_message,
     is_azure_deployment_lookup_error,
     list_azure_openai_deployments,
     normalize_azure_openai_base_url,
     resolve_azure_openai_api_version,
 )
-from core.llm.providers.azure_token_limits import azure_completion_token_retry_kwargs
+from core.llm.shared.openai_token_limits import completion_token_retry_kwargs
 from surfaces.shared.llm_setup.openai_client import load_openai_client
 from surfaces.shared.llm_setup.validation_result import ValidationResult
 
@@ -52,6 +54,13 @@ def validate_credentials(
             detail="Azure OpenAI resource URL is missing. Set AZURE_OPENAI_BASE_URL.",
         )
 
+    route = deployment
+    deployment = azure_openai_deployment_name(route)
+    if not deployment or "/" in deployment:
+        return ValidationResult(
+            ok=False,
+            detail="Supply an Azure deployment name or a supported gpt5_series/o_series route.",
+        )
     resolved_api_version = resolve_azure_openai_api_version(api_version)
     openai_client_cls, openai_auth_error = load_openai_client()
     azure_base = f"{normalized_base}/openai/deployments/{deployment}"
@@ -66,14 +75,14 @@ def validate_credentials(
             "model": deployment,
             "messages": [{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
         }
-        if deployment.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6")):
+        if azure_openai_uses_completion_tokens(route):
             request_kwargs["max_completion_tokens"] = 24
         else:
             request_kwargs["max_tokens"] = 24
         try:
             response = client.chat.completions.create(**request_kwargs)
         except Exception as error:
-            retry = azure_completion_token_retry_kwargs(request_kwargs, error)
+            retry = completion_token_retry_kwargs(request_kwargs, error)
             if retry is None:
                 raise
             response = client.chat.completions.create(**retry)

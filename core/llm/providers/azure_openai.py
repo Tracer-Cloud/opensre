@@ -30,7 +30,19 @@ def select_azure_openai_model(settings: Any, model_type: ModelType) -> str:
 def azure_openai_deployment_name(value: str) -> str:
     """Return the Azure deployment name without the LiteLLM ``azure/`` prefix."""
     name = value.strip()
-    return name.removeprefix("azure/")
+    name = name.removeprefix("azure/")
+    for family in ("gpt5_series/", "o_series/"):
+        if name.startswith(family):
+            return name.removeprefix(family)
+    return name
+
+
+def azure_openai_uses_completion_tokens(value: str) -> bool:
+    """Recognize explicit LiteLLM families separately from the deployed resource ID."""
+    route = value.strip().removeprefix("azure/")
+    return route.startswith(("gpt5_series/", "o_series/")) or route.startswith(
+        ("o1", "o3", "o4", "gpt-5", "gpt-6")
+    )
 
 
 def azure_openai_litellm_model(deployment: str) -> str:

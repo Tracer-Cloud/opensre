@@ -153,6 +153,26 @@ def test_known_azure_reasoning_name_already_uses_completion_tokens(
 
 
 @pytest.mark.parametrize("mode", ["agent", "invoke", "stream", "validation"])
+@pytest.mark.parametrize(
+    "route",
+    [
+        "gpt5_series/prod-chat",
+        "o_series/prod-chat",
+        "azure/gpt5_series/prod-chat",
+        "azure/o_series/prod-chat",
+    ],
+)
+def test_explicit_azure_routes_use_the_actual_deployment(
+    endpoint: _AzureEndpoint, mode: str, route: str
+) -> None:
+    assert _call(mode, route) == "OpenSRE ready"
+    assert len(endpoint.requests) == 1
+    assert endpoint.urls[0].path == "/openai/deployments/prod-chat/chat/completions"
+    assert endpoint.requests[0]["model"] == "prod-chat"
+    assert "max_completion_tokens" in endpoint.requests[0]
+
+
+@pytest.mark.parametrize("mode", ["agent", "invoke", "stream", "validation"])
 @pytest.mark.parametrize("rejection", ["temperature", "repeated-max-tokens"])
 def test_azure_parameter_correction_is_narrow_and_bounded(
     endpoint: _AzureEndpoint, mode: str, rejection: str

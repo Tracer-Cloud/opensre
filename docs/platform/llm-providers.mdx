@@ -395,7 +395,10 @@ Uses the OpenAI SDK. Reasoning models (`o1`, `o3`, `o4`, `gpt-5*`) use
 
 Azure OpenAI always goes through LiteLLM. Model env vars are **deployment
 names** from your Azure resource, not public OpenAI model IDs.
-Custom names such as `prod-chat` are supported. If Azure explicitly rejects
+Custom names such as `prod-chat` are supported. Explicit LiteLLM family routes
+`gpt5_series/prod-chat` and `o_series/prod-chat` (optionally prefixed with
+`azure/`) also work in both setup validation and runtime; only `prod-chat`
+is sent as the Azure deployment name. If Azure explicitly rejects
 `max_tokens`, runtime calls and credential validation retry once with
 `max_completion_tokens`, keeping the same deployment and token limit.
 
@@ -431,6 +434,12 @@ In the REPL:
 /model set azure-openai gpt-5.4-mini
 /model set azure-openai gpt-5.4-mini --toolcall-model gpt-5.4-nano
 ```
+
+OpenAI-compatible endpoints may expose opaque model aliases, such as `prod-chat`,
+that hide the underlying model family. When a Chat Completions endpoint explicitly
+rejects `max_tokens`, runtime calls and setup validation retry once with
+`max_completion_tokens` using the same model and token limit. Other errors fail
+normally; a stream that has already emitted text is never replayed.
 
 If deployment discovery fails during onboarding, enter the deployment name by
 hand. It must match a deployment in your Azure resource, not a model ID from
