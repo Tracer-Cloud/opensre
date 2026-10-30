@@ -9,61 +9,41 @@ from config.llm_credentials import resolve_env_credential
 from surfaces.cli.app import cli
 
 
-@pytest.mark.parametrize(
-    "method,provider,excluded",
-    [
-        ("Subscription", "chatgpt", {"openai", "anthropic", "claude-code"}),
-        ("API key", "openai", {"chatgpt", "claude-code"}),
-        ("CLI-managed", "claude-code", {"anthropic", "chatgpt"}),
-        ("Local / cloud", "ollama", {"openai", "chatgpt", "claude-code"}),
-    ],
-)
-def test_login_groups_sources_in_subcommand_submenus(monkeypatch, method, provider, excluded):
-    from surfaces.shared.llm_setup import auth_menu as auth
-    from surfaces.shared.llm_setup.auth_profiles import resolve_auth_profile
-
-    seen = []
-    profile = resolve_auth_profile(provider)
-    answers = iter([method, profile.label])
-    monkeypatch.setattr(auth, "configured_profile_name", lambda: provider)
-
-    def choose(**kwargs):
-        seen.append(kwargs)
-        return next(answers)
-
-    monkeypatch.setattr(auth, "repl_choose_subcommand", choose)
-    assert auth.prompt_auth_provider().name == provider
-    assert len(seen) == 2
-    assert {name for name, _ in seen[0]["options"]} == {
-        "Subscription",
-        "API key",
-        "CLI-managed",
-        "Local / cloud",
-    }
-    provider_labels = {name for name, _ in seen[1]["options"]}
-    assert profile.label in provider_labels
-    assert not provider_labels.intersection(resolve_auth_profile(name).label for name in excluded)
-    assert seen[0]["parent"] == "/login"
-    assert seen[1]["parent"] == f"/login {method}"
-    assert seen[0]["initial_value"] == method
-    assert seen[1]["initial_value"] == profile.label
-
-
-def test_login_provider_escape_returns_to_method_submenu(monkeypatch):
+def test_login_picker_shows_all_routes_in_one_searchable_catalog(monkeypatch):
     from surfaces.shared.llm_setup import auth_menu as auth
 
-    answers = iter(["Subscription", None, "API key", "OpenAI API key"])
-    parents = []
+    captured = {}
+
+    def build_form(values, **kwargs):
+        captured["field"] = kwargs["fields"](values)[0]
+        captured["heading"] = kwargs["heading"]
+        return object()
+
+    monkeypatch.setattr(auth, "configured_profile_name", lambda: "openai")
+    monkeypatch.setattr(auth, "build_input_form", build_form)
+    monkeypatch.setattr(auth, "run_command_input", lambda _app: "codex")
+
+    selected = auth.prompt_auth_provider()
+    field = captured["field"]
+
+    assert selected is not None and selected.name == "codex"
+    assert captured["heading"] == "Available connections"
+    assert field.searchable
+    route_names = {choice.value for choice in field.choices}
+    assert {"chatgpt", "openai", "codex"} <= route_names
+    codex = next(choice for choice in field.choices if choice.value == "codex")
+    assert "Billing unknown" in codex.summary
+    assert "Vendor CLI subprocess" in codex.details
+
+
+def test_login_picker_cancellation_returns_without_selecting_a_route(monkeypatch):
+    from surfaces.shared.llm_setup import auth_menu as auth
+
     monkeypatch.setattr(auth, "configured_profile_name", lambda: "chatgpt")
+    monkeypatch.setattr(auth, "build_input_form", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(auth, "run_command_input", lambda _app: None)
 
-    def choose(**kwargs):
-        parents.append(kwargs["parent"])
-        return next(answers)
-
-    monkeypatch.setattr(auth, "repl_choose_subcommand", choose)
-    assert auth.prompt_auth_provider().name == "openai"
-    assert parents == ["/login", "/login Subscription", "/login", "/login API key"]
-
+    assert auth.prompt_auth_provider() is None
 
 def test_subscription_model_selector_can_cancel(monkeypatch) -> None:
     import click
@@ -209,11 +189,11 @@ def test_auth_logout_deepseek_removes_stored_secret(monkeypatch, tmp_path: Path)
     assert "DEEPSEEK_API_KEY=" not in env_path.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("answers", [[None], ["Subscription", None, None]])
-def test_login_picker_cancellation_does_not_start_setup(monkeypatch, answers) -> None:
+def test_login_picker_cancellation_does_not_start_setup(monkeypatch) -> None:
     from surfaces.shared.llm_setup import auth_menu
 
-    selections = iter(answers)
     monkeypatch.setattr(auth_menu, "configured_profile_name", lambda: "chatgpt")
-    monkeypatch.setattr(auth_menu, "repl_choose_subcommand", lambda **_kw: next(selections))
+    monkeypatch.setattr(auth_menu, "build_input_form", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(auth_menu, "run_command_input", lambda _app: None)
+
     assert auth_menu.prompt_auth_provider() is None
