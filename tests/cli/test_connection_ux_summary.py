@@ -1,6 +1,8 @@
 """Shared connection summaries and route-first login discovery."""
 
 from surfaces.shared.llm_setup import auth_menu
+from typing import Any
+
 from surfaces.shared.llm_setup.auth_profiles import iter_auth_profiles
 from surfaces.shared.llm_setup.connection_summary import (
     summarize_connection,
@@ -13,6 +15,7 @@ def test_provider_routes_have_distinct_non_secret_summaries() -> None:
 
     api = summarize_connection(profiles["openai"])
     codex = summarize_connection(profiles["codex"])
+    custom = summarize_connection(profiles["custom-openai"])
 
     assert api.route == "Direct API"
     assert api.billing == "API billing (usage-based)"
@@ -21,6 +24,8 @@ def test_provider_routes_have_distinct_non_secret_summaries() -> None:
     assert codex.billing.startswith("Billing unknown")
     assert codex.authentication.startswith("Vendor CLI")
     assert api.source_label != codex.source_label
+    assert custom.route == "Custom API endpoint"
+    assert custom.billing.startswith("Unknown")
 
 
 def test_hosted_connection_is_described_separately_from_external_providers() -> None:
@@ -35,7 +40,7 @@ def test_hosted_connection_is_described_separately_from_external_providers() -> 
 
 
 def test_login_picker_lists_all_routes_together_and_is_searchable(monkeypatch) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def build_form(values, **kwargs):
         fields = kwargs["fields"](values)
