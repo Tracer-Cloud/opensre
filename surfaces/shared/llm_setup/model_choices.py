@@ -11,6 +11,7 @@ from config.llm_auth.model_catalog import saved_models
 from config.llm_auth.records import provider_auth_records
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.shared.llm_setup.catalog import SUPPORTED_PROVIDERS
+from surfaces.shared.llm_setup.connection_summary import summarize_provider_connection
 from surfaces.shared.llm_setup.hosted_connection import hosted_model
 from surfaces.shared.llm_setup.selection import resolve_provider
 
@@ -61,14 +62,18 @@ def provider_choices(
 ) -> list[ModelChoice]:
     """Return curated/cached choices and a saved custom model, with no live discovery."""
     provider = resolve_provider(name)
-    kinds = {
-        "api_key": "API billing",
-        "subscription": "Subscription",
-        "cli": "CLI-managed",
-        "host": "Local",
-        "none": "Cloud account",
-    }
-    source = f"{provider.label} · {kinds[provider.credential_kind]}"
+    summary = summarize_provider_connection(name)
+    if summary is None:
+        kinds = {
+            "api_key": "API billing",
+            "subscription": "Subscription",
+            "cli": "CLI-managed · billing unknown",
+            "host": "Local",
+            "none": "Cloud account",
+        }
+        source = f"{provider.label} · {kinds[provider.credential_kind]}"
+    else:
+        source = summary.source_label
     models = saved_models(name, record=record) or [
         (option.value, option.label) for option in provider.models
     ]
