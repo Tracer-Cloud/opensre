@@ -107,6 +107,11 @@ smtp: passed — Connected to SMTP server successfully.
 | `from_address must look like an email address` | Sender address is malformed. |
 | `SMTP connection failed` | Host/port/TLS settings are wrong, or the relay is unreachable. |
 
+
+## Scheduled report email
+
+SMTP accounts added in the OpenSRE app can also send **scheduled loop reports**. A loop names the mailbox as `smtp:<record>` and lists recipient addresses; mail always leaves from that loop owner's SMTP account. Gmail connected through [Pipedream](/integrations/collaboration/pipedream) uses `gmail:<account id>` instead. See [Scheduled deliveries → Email delivery](/platform/cron#email-delivery).
+
 ## Security
 
 - Prefer app passwords / SMTP credentials scoped to a mailer account.

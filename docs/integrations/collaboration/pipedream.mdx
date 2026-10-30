@@ -1,0 +1,57 @@
+---
+title: "Pipedream"
+description: "Connect apps such as Gmail, Linear, and Notion through Pipedream so OpenSRE can call them without storing vendor API tokens locally"
+---
+
+## Overview
+
+[Pipedream Connect](https://pipedream.com/docs/connect) lets a workspace (and individual members) link third-party apps in the OpenSRE app. OpenSRE then reaches those apps through an authenticated webapp proxy: Pipedream project credentials stay in the hosted app, and local agents never hold the vendor API tokens.
+
+Typical uses:
+
+- Read or send from a member's **Gmail** or **Outlook** mailbox
+- Work with apps that have no native OpenSRE integration yet (for example **Linear**, **Notion**, or **Google Sheets**)
+- Let a scheduled loop send its report from a connected Gmail account (see [Scheduled deliveries](/platform/cron#email-delivery))
+
+## Prerequisites
+
+- An OpenSRE Cloud workspace at [app.opensre.com](https://app.opensre.com)
+- Permission to open **Integrations** and connect Pipedream apps for the workspace or for yourself
+
+Local CLI SMTP and other env-var integrations keep working on their own. Pipedream is the hosted Connect path.
+
+## Setup
+
+1. Sign in at [app.opensre.com](https://app.opensre.com).
+2. Open **Integrations**.
+3. Connect **Pipedream**, then add the apps you need (Gmail, Linear, Notion, and others Pipedream lists for the workspace).
+4. Optional: connect a **personal** account (for example your own Gmail). Personal accounts are available only on that member's turns; workspace accounts are shared.
+
+There is no `opensre integrations setup pipedream` wizard. Connection is done in the app so credentials never leave the webapp.
+
+## What becomes available
+
+Once at least one app is connected, the agent can use:
+
+| Tool | Purpose |
+| --- | --- |
+| `list_pipedream_tools` | List tools for a connected app (optionally filter by name) |
+| `call_pipedream_tool` | Call one of those tools with arguments |
+
+Pass the connected app id (for example `gmail`, `linear`, or `notion`). When an app has several accounts, pass `account_id` from the connection list. Phrases like "email" or "inbox" usually mean the requester's own Gmail or Outlook account.
+
+## Verify
+
+In the interactive shell:
+
+```text
+/integrations list
+```
+
+Confirm a `pipedream` connection is present and that the apps you expect are listed. Ask the agent to list tools for one connected app, for example "list Pipedream tools for gmail".
+
+## Related
+
+- [SMTP](/integrations/messaging/smtp) — local or relay SMTP without Pipedream
+- [Scheduled deliveries](/platform/cron#email-delivery) — email a cron report from an SMTP or Gmail mailbox
+- [Integrations overview](/integrations)
