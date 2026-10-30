@@ -24,6 +24,7 @@ from surfaces.shared.llm_setup.auth_service import (
     verify_provider,
 )
 from surfaces.shared.llm_setup.login_menu import prompt_connection_target, prompt_login_action
+from surfaces.shared.llm_setup.connection_summary import summarize_connection
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
@@ -80,16 +81,21 @@ def _render_status_table(providers: Iterable[ProviderAuthProfile]) -> None:
     rows = []
     for profile in providers:
         status = provider_status(profile.name)
+        summary = summarize_connection(profile)
         state = "stale" if status.stale else "ok" if status.authenticated else "missing"
         rows.append(
             RecordRow(
                 cells=(
-                    Text(profile.name, style=BOLD_BRAND),
+                    Text(summary.provider, style=BOLD_BRAND),
                     _status_badge(state),
-                    Text(profile.kind, style=SECONDARY),
-                    Text(status.source, style=SECONDARY),
+                    Text(summary.route, style=SECONDARY),
+                    Text(summary.billing, style=SECONDARY),
                 ),
-                details=(Text(status.detail),),
+                details=(
+                    *(Text(line) for line in summary.detail_lines),
+                    Text(f"Credential source: {status.source}"),
+                    Text(status.detail),
+                ),
             )
         )
     _console.print(
@@ -97,7 +103,7 @@ def _render_status_table(providers: Iterable[ProviderAuthProfile]) -> None:
             title="Model connections",
             subtitle=f"Active provider: {active}",
             columns=tuple(
-                RecordColumn(name) for name in ("Provider", "Status", "Method", "Source")
+                RecordColumn(name) for name in ("Provider", "Status", "Route", "Billing")
             ),
             rows=tuple(rows),
         )
