@@ -16,7 +16,7 @@ def test_provider_routes_have_distinct_non_secret_summaries() -> None:
 
     assert api.route == "Direct API"
     assert api.billing == "API billing (usage-based)"
-    assert api.authentication == "API key managed by OpenSRE"
+    assert api.authentication.startswith("API key from OpenSRE credential storage")
     assert codex.route == "Vendor CLI"
     assert codex.billing.startswith("Billing unknown")
     assert codex.authentication.startswith("Vendor CLI")
