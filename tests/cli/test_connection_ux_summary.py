@@ -13,6 +13,8 @@ def test_provider_routes_have_distinct_non_secret_summaries() -> None:
     api = summarize_connection(profiles["openai"])
     codex = summarize_connection(profiles["codex"])
     custom = summarize_connection(profiles["custom-openai"])
+    custom_anthropic = summarize_connection(profiles["custom-anthropic"])
+    azure = summarize_connection(profiles["azure-openai"])
 
     assert api.route == "Direct API"
     assert api.billing == "API billing (usage-based)"
@@ -23,6 +25,13 @@ def test_provider_routes_have_distinct_non_secret_summaries() -> None:
     assert api.source_label != codex.source_label
     assert custom.route == "Custom API endpoint"
     assert custom.billing.startswith("Unknown")
+    assert custom.execution == "Configured API-compatible endpoint"
+    assert custom_anthropic.route == "Custom API endpoint"
+    assert custom_anthropic.billing.startswith("Unknown")
+    assert azure.route == "Azure deployment"
+    assert azure.account == "Configured Azure resource"
+    assert azure.execution == "Azure OpenAI endpoint"
+    assert azure.billing == "Azure usage billing"
 
 
 def test_hosted_connection_is_described_separately_from_external_providers() -> None:
