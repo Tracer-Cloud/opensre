@@ -33,7 +33,7 @@ def test_login_picker_shows_all_routes_in_one_searchable_catalog(monkeypatch):
     assert {"chatgpt", "openai", "codex"} <= route_names
     codex = next(choice for choice in field.choices if choice.value == "codex")
     assert "Billing unknown" in codex.summary
-    assert "Vendor CLI subprocess" in codex.details
+    assert "Execution: Vendor CLI subprocess" in codex.details
 
 
 def test_login_picker_cancellation_returns_without_selecting_a_route(monkeypatch):
