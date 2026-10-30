@@ -1,30 +1,22 @@
-"""Method and provider submenus shared by CLI and REPL login."""
+"""Provider connection picker shared by CLI and REPL login."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from rich.text import Text
 
 from surfaces.shared.llm_setup.auth_profiles import (
-    AuthKind,
     ProviderAuthProfile,
     iter_auth_profiles,
 )
-from surfaces.shared.terminal.components.subcommand_menu import repl_choose_subcommand
-
-
-@dataclass(frozen=True)
-class _ConnectionMethod:
-    label: str
-    kinds: tuple[AuthKind, ...]
-    usage: str
-
-
-_METHODS = (
-    _ConnectionMethod("Subscription", ("subscription",), "Use your provider plan"),
-    _ConnectionMethod("API key", ("api_key",), "Provider API billing"),
-    _ConnectionMethod("CLI-managed", ("cli",), "Vendor CLI auth; billing may vary"),
-    _ConnectionMethod("Local / cloud", ("host", "none"), "Local host or cloud IAM / ADC"),
+from surfaces.shared.llm_setup.connection_summary import summarize_connection
+from surfaces.shared.terminal.components.command_input import run_command_input
+from surfaces.shared.terminal.components.input_form import (
+    InputChoice,
+    InputField,
+    InputFormError,
+    build_input_form,
 )
+from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow
 
 
 def configured_profile_name() -> str | None:
@@ -39,38 +31,81 @@ def configured_profile_name() -> str | None:
 
 
 def prompt_auth_provider() -> ProviderAuthProfile | None:
-    """Choose a method and provider in subcommand trays; Esc from providers goes back."""
-    profiles = iter_auth_profiles()
-    configured = configured_profile_name()
-    current = next((profile for profile in profiles if profile.name == configured), None)
-    methods = {
-        method.label: method
-        for method in _METHODS
-        if any(profile.kind in method.kinds for profile in profiles)
-    }
-    if not methods:
+    """Choose from every supported route in one searchable, non-probing catalog."""
+    profiles = tuple(sorted(iter_auth_profiles(), key=lambda profile: profile.label.casefold()))
+    if not profiles:
         return None
-    initial = next(
-        (method.label for method in methods.values() if current and current.kind in method.kinds),
-        next(iter(methods)),
+
+    by_name = {profile.name: profile for profile in profiles}
+    choices: list[InputChoice] = []
+    for profile in profiles:
+        summary = summarize_connection(profile)
+        choices.append(
+            InputChoice(
+                value=profile.name,
+                label=profile.label,
+                summary=f"{summary.route} · {summary.billing}",
+                summary_style="description",
+                details=summary.detail_lines,
+                search_text=" ".join(
+                    (
+                        profile.name,
+                        profile.provider_value,
+                        profile.label,
+                        summary.route,
+                        summary.account,
+                        summary.authentication,
+                        summary.execution,
+                        summary.billing,
+                    )
+                ),
+                record=RecordRow(
+                    cells=(
+                        Text(summary.provider),
+                        Text(summary.route),
+                        Text(summary.billing),
+                    ),
+                    details=tuple(Text(line) for line in summary.detail_lines),
+                ),
+            )
+        )
+
+    configured = configured_profile_name()
+    initial = configured if configured in by_name else profiles[0].name
+    columns = tuple(RecordColumn(name) for name in ("Provider", "Route", "Billing"))
+
+    def fields(_draft: dict[str, str]) -> list[InputField]:
+        return [
+            InputField(
+                "provider",
+                "Connection",
+                description=(
+                    "Search by provider or route. Each entry is a distinct authentication "
+                    "and execution path; billing is shown separately."
+                ),
+                required=True,
+                choices=tuple(choices),
+                searchable=True,
+                record_choices=True,
+                record_columns=columns,
+            )
+        ]
+
+    def validate(draft: dict[str, str]) -> str:
+        selected = draft["provider"]
+        if selected not in by_name:
+            raise InputFormError("Choose a listed connection route.", field="provider")
+        return selected
+
+    app = build_input_form(
+        {"provider": initial},
+        title="Connect a provider",
+        heading="Available connections",
+        submit_label="Continue",
+        fields=fields,
+        validate=validate,
+        initial_field="provider",
+        submit_on_choice=True,
     )
-    while True:
-        selected = repl_choose_subcommand(
-            parent="/login",
-            options=tuple((method.label, method.usage) for method in methods.values()),
-            initial_value=initial,
-        )
-        if selected is None:
-            return None
-        initial = selected
-        method = methods[selected]
-        offered = {profile.label: profile for profile in profiles if profile.kind in method.kinds}
-        chosen = repl_choose_subcommand(
-            parent=f"/login {method.label}",
-            options=tuple(
-                (profile.label, profile.auth_hint or method.usage) for profile in offered.values()
-            ),
-            initial_value=current.label if current and current.kind in method.kinds else None,
-        )
-        if chosen is not None:
-            return offered[chosen]
+    selected = run_command_input(app)
+    return by_name.get(selected) if selected is not None else None
