@@ -100,7 +100,9 @@ def active_choice() -> ModelChoice:
     """Describe the current selection without resolving credentials or live catalogs."""
     provider, model = active_model()
     if provider == HOSTED_MODEL_PROVIDER:
-        return ModelChoice(provider, model, model, "OpenSRE hosted · OpenSRE credits", True)
+        summary = summarize_provider_connection(provider)
+        source = summary.source_label if summary is not None else "OpenSRE hosted · OpenSRE credits"
+        return ModelChoice(provider, model, model, source, True)
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
     if provider in PROVIDER_BY_VALUE:
@@ -117,12 +119,14 @@ def connected_choices(*, provider: str | None = None) -> list[ModelChoice]:
     records = provider_auth_records()
     hosted = hosted_model()
     if hosted and provider in (None, HOSTED_MODEL_PROVIDER):
+        summary = summarize_provider_connection(HOSTED_MODEL_PROVIDER)
+        source = summary.source_label if summary is not None else "OpenSRE hosted · OpenSRE credits"
         rows.append(
             ModelChoice(
                 HOSTED_MODEL_PROVIDER,
                 hosted,
                 hosted,
-                "OpenSRE hosted · OpenSRE credits",
+                source,
                 current == (HOSTED_MODEL_PROVIDER, hosted),
             )
         )
