@@ -43,40 +43,13 @@ def summarize_connection(profile: ProviderAuthProfile) -> ConnectionSummary:
     """Describe a provider route without reading credentials or probing the provider."""
     provider = provider_for_profile(profile)
     if profile.kind == "api_key":
-        custom_endpoint = provider.value in {"custom-openai", "custom-anthropic"}
-        azure_endpoint = provider.value == "azure-openai"
-        route = (
-            "Custom API endpoint"
-            if custom_endpoint
-            else "Azure deployment"
-            if azure_endpoint
-            else "Direct API"
-        )
         return ConnectionSummary(
             provider=provider.label,
-            route=route,
-            account=(
-                "Configured endpoint; account details are not available"
-                if custom_endpoint
-                else "Configured Azure resource"
-                if azure_endpoint
-                else "Not available from API-key metadata"
-            ),
+            route=provider.connection_route or "Direct API",
+            account=provider.connection_account or "Not available from API-key metadata",
             authentication="API key from OpenSRE credential storage or configured environment",
-            execution=(
-                "Configured API-compatible endpoint"
-                if custom_endpoint
-                else "Azure OpenAI endpoint"
-                if azure_endpoint
-                else "Native provider API"
-            ),
-            billing=(
-                "Unknown (depends on the configured endpoint)"
-                if custom_endpoint
-                else "Azure usage billing"
-                if azure_endpoint
-                else "API billing (usage-based)"
-            ),
+            execution=provider.connection_execution or "Native provider API",
+            billing=provider.connection_billing or "API billing (usage-based)",
         )
     if profile.kind == "subscription":
         return ConnectionSummary(
