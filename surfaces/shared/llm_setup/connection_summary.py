@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from config.constants.llm import HOSTED_MODEL_PROVIDER
-from surfaces.shared.llm_setup.auth_profiles import ProviderAuthProfile, provider_for_profile, resolve_auth_profile
+from surfaces.shared.llm_setup.auth_profiles import (
+    ProviderAuthProfile,
+    provider_for_profile,
+    resolve_auth_profile,
+)
 
 
 @dataclass(frozen=True)
@@ -39,13 +43,40 @@ def summarize_connection(profile: ProviderAuthProfile) -> ConnectionSummary:
     """Describe a provider route without reading credentials or probing the provider."""
     provider = provider_for_profile(profile)
     if profile.kind == "api_key":
+        custom_endpoint = provider.value in {"custom-openai", "custom-anthropic"}
+        azure_endpoint = provider.value == "azure-openai"
+        route = (
+            "Custom API endpoint"
+            if custom_endpoint
+            else "Azure deployment"
+            if azure_endpoint
+            else "Direct API"
+        )
         return ConnectionSummary(
             provider=provider.label,
-            route="Direct API",
-            account="Not available from API-key metadata",
-            authentication="API key managed by OpenSRE",
-            execution="Native provider API",
-            billing="API billing (usage-based)",
+            route=route,
+            account=(
+                "Configured endpoint; account details are not available"
+                if custom_endpoint
+                else "Configured Azure resource"
+                if azure_endpoint
+                else "Not available from API-key metadata"
+            ),
+            authentication="API key from OpenSRE credential storage or configured environment",
+            execution=(
+                "Configured API-compatible endpoint"
+                if custom_endpoint
+                else "Azure OpenAI endpoint"
+                if azure_endpoint
+                else "Native provider API"
+            ),
+            billing=(
+                "Unknown (depends on the configured endpoint)"
+                if custom_endpoint
+                else "Azure usage billing"
+                if azure_endpoint
+                else "API billing (usage-based)"
+            ),
         )
     if profile.kind == "subscription":
         return ConnectionSummary(
