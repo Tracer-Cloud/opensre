@@ -91,7 +91,7 @@ Create a new scheduled delivery task.
 | `--kind` | Yes | Task kind: `manual_loop`, `recurring_skill`, `github_pr_sweep`, `posthog_metric_report`, `work_item_reminder`, `work_item_checkin` |
 | `--cron` | Yes | Cron expression (5 fields: minute hour day month day_of_week; prepend a seconds field for sub-minute polling, see [Cron Syntax](#cron-syntax)) |
 | `--tz` | No | IANA timezone (default: `UTC`). Examples: `Europe/London`, `US/Eastern`, `Asia/Kolkata` |
-| `--provider` | Yes | Messaging provider: `telegram`, `slack`, `discord`, `rocketchat`, `email`, `interactive_shell` |
+| `--provider` | Yes | Messaging provider: `telegram`, `slack`, `discord`, `rocketchat`, `interactive_shell`. For email, use the OpenSRE app; see [Email delivery](#email-delivery). |
 | `--chat-id` | Cond. | Required for telegram/discord/rocketchat. Optional for slack when an incoming webhook or `SLACK_DEFAULT_CHAT_ID` is configured, and not needed for `interactive_shell`. |
 | `--window` | No | Lookback window in hours (default: `24`) |
 | `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` (optional with `--mode agent --skill`) and rejected for other kinds |
