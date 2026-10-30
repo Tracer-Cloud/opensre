@@ -12,6 +12,7 @@ from rich.text import Text
 from infrastructure.terminal.theme import ERROR
 from surfaces.shared.llm_setup.auth_results import SelectionError, SelectionResult
 from surfaces.shared.llm_setup.model_choices import ModelChoice, connected_choices
+from surfaces.shared.llm_setup.connection_summary import summarize_provider_connection
 from surfaces.shared.llm_setup.selection import select_provider
 from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.input_form import (
@@ -23,8 +24,13 @@ from surfaces.shared.terminal.components.input_form import (
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 
+def _connection_detail_lines(provider: str) -> tuple[str, ...]:
+    summary = summarize_provider_connection(provider)
+    return summary.detail_lines if summary is not None else ()
+
+
 def render_models(console: Console, *, provider: str | None = None) -> None:
-    """Render the same source-labelled choices used by the interactive picker."""
+    """Render connected routes with the shared non-secret connection summary."""
     rows = connected_choices(provider=provider)
     console.print(
         RecordTable(
@@ -36,7 +42,8 @@ def render_models(console: Console, *, provider: str | None = None) -> None:
                         Text(row.label),
                         Text(row.source),
                         Text("current" if row.active else row.availability),
-                    )
+                    ),
+                    details=tuple(Text(line) for line in _connection_detail_lines(row.provider)),
                 )
                 for row in rows
             ),
@@ -73,14 +80,15 @@ def choose_model(
                 row.label,
                 summary=row.source,
                 summary_style="description",
-                details=(row.availability,),
+                details=(*_connection_detail_lines(row.provider), f"Availability: {row.availability}"),
                 search_text=f"{row.provider} {row.model} {row.source}",
                 record=RecordRow(
                     cells=(
                         Text(row.label),
                         Text(row.source),
                         Text("current" if row.active else row.availability),
-                    )
+                    ),
+                    details=tuple(Text(line) for line in _connection_detail_lines(row.provider)),
                 ),
             )
             for row in rows
