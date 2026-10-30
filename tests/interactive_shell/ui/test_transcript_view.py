@@ -12,12 +12,14 @@ from prompt_toolkit.application import Application, create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
+from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
+from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.ui.input_prompt.stdout import (
     _DEFERRED_END,
     _DEFERRED_START,
@@ -27,6 +29,7 @@ from surfaces.interactive_shell.ui.input_prompt.stdout import (
     _AppBoundStdoutProxy,
 )
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
+from surfaces.interactive_shell.ui.streaming.loop import ReplyStream
 from surfaces.interactive_shell.ui.transcript_view import TranscriptControl, TranscriptStore
 from surfaces.interactive_shell.ui.transcript_view.store import render_rows, trim_row_padding
 from surfaces.shared.terminal.banner import ResponsiveLaunchBanner
@@ -401,6 +404,56 @@ def test_replies_through_a_delegating_console_rewrap_on_grow(
         loop.close()
 
     assert _plain_rows(store, width=140) == [_PARAGRAPH]
+
+
+@pytest.mark.parametrize("no_color", [False, True])
+def test_nonempty_reply_keeps_its_surface_through_resize_and_menu(
+    monkeypatch: pytest.MonkeyPatch, no_color: bool
+) -> None:
+    """Replay keeps mixed text on its surface without retaining menu output."""
+    if no_color:
+        monkeypatch.setenv("NO_COLOR", "1")
+    else:
+        monkeypatch.delenv("NO_COLOR", raising=False)
+    previous = ui_theme.get_active_theme_name()
+    store = TranscriptStore()
+    loop = asyncio.new_event_loop()
+    try:
+        ui_theme.set_active_theme("purple")
+        proxy = _proxy(store, io.StringIO(), _FakeApp(loop))
+        monkeypatch.setattr(sys, "stdout", proxy)
+        console = StreamingConsole(
+            _Spinner(), threading.Event(), output=Console(width=80), highlight=False
+        )
+        stream = ReplyStream(console)
+        stream.feed(f"**Result**: {_PARAGRAPH}\n\n")
+        stream.feed("with `code` and *emphasis*.")
+        stream.finish()
+        proxy.begin_transient_output()
+        proxy.write("temporary menu\n")
+        proxy.end_transient_output()
+        proxy.close()
+
+        for width in (40, 90, 160, 40):
+            rows, older = store.tail_rows(width, 50)
+            assert not older
+            plain = " ".join("".join(chunk for _, chunk in row).strip() for row in rows)
+            assert "temporary menu" not in plain
+            assert " ".join(plain.split()) == f"● Result: {_PARAGRAPH} with code and emphasis."
+            for row in rows:
+                assert sum(len(chunk) for _, chunk in row) <= width - 2
+                for style, chunk in row:
+                    if not chunk.strip():
+                        continue
+                    attrs = Style.from_dict({}).get_attrs_for_style_str(style)
+                    if no_color:
+                        assert not attrs.color and not attrs.bgcolor
+                    else:
+                        assert attrs.bgcolor == ui_theme.get_active_theme().BG.lstrip("#").lower()
+                        assert attrs.color
+    finally:
+        loop.close()
+        ui_theme.set_active_theme(previous)
 
 
 def _race_the_end_marker(proxy: _AppBoundStdoutProxy) -> list[threading.Thread]:

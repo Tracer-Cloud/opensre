@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from rich.console import Console
 from rich.text import Text
 
@@ -187,11 +188,58 @@ def test_reply_block_paints_accent_label_and_themed_body() -> None:
     # Marker follows the active theme's HIGHLIGHT (whatever the palette sets).
     highlight = get_theme("blue").HIGHLIGHT.lstrip("#")
     r, g, b = (int(highlight[i : i + 2], 16) for i in (0, 2, 4))
-    assert f"38;2;{r};{g};{b}m" in output
+    assert re.search(rf"38;2;{r};{g};{b}(?:;|m)", output)
     # Body uses the active palette's primary text colour.
     text = get_theme("blue").TEXT.lstrip("#")
     r, g, b = (int(text[i : i + 2], 16) for i in (0, 2, 4))
-    assert f"38;2;{r};{g};{b}m" in output
+    assert re.search(rf"38;2;{r};{g};{b}(?:;|m)", output)
+
+
+@pytest.mark.parametrize("name", list_theme_names())
+@pytest.mark.parametrize("path", ["whole", "continuation", "streamed"])
+def test_reply_text_has_readable_effective_colors(name: str, path: str) -> None:
+    """Actual mixed Markdown must pair every visible glyph with a readable surface."""
+    from surfaces.interactive_shell.ui.streaming.loop import ReplyStream
+    from surfaces.interactive_shell.ui.streaming.renderer import render_reply_block
+
+    def luminance(rgb: tuple[int, int, int]) -> float:
+        channels = [value / 255 for value in rgb]
+        linear = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in channels]
+        return sum(v * weight for v, weight in zip(linear, (0.2126, 0.7152, 0.0722), strict=True))
+
+    previous = ui_theme.get_active_theme_name()
+    try:
+        set_active_theme(name)
+        console = Console(force_terminal=True, color_system="truecolor", no_color=False, width=80)
+        with console.capture() as capture:
+            markdown = (
+                "Plain **strong** and *emphasis*, `code`, [link](https://example.com).\n\n"
+                "# Heading\n\n> Quote\n\n- Bullet\n\n"
+                "| Name | Result |\n| --- | --- |\n| check | passed |\n\n"
+                "```\nplain code\n```"
+            )
+            if path == "streamed":
+                stream = ReplyStream(console)
+                for offset in range(0, len(markdown), 17):
+                    stream.feed(markdown[offset : offset + 17])
+                stream.finish()
+            else:
+                render_reply_block(console, markdown, lead=path == "whole")
+        rendered = Text.from_ansi(capture.get())
+        assert "Plain strong and emphasis" in rendered.plain
+        assert "plain code" in rendered.plain
+        for offset, glyph in enumerate(rendered.plain):
+            if glyph.isspace():
+                continue
+            style = rendered.get_style_at_offset(console, offset)
+            assert style.color is not None and style.bgcolor is not None, (name, glyph, style)
+            light, dark = sorted(
+                (luminance(style.color.get_truecolor()), luminance(style.bgcolor.get_truecolor())),
+                reverse=True,
+            )
+            assert (light + 0.05) / (dark + 0.05) >= 4.5, (name, glyph, style)
+    finally:
+        set_active_theme(previous)
 
 
 def test_palette_registry_keys_match_the_config_vocabulary() -> None:

@@ -41,9 +41,9 @@ from core.agent_harness.spi.prompt_chrome import WANT_ME_TO_MARKER
 from surfaces.interactive_shell.ui.streaming.renderer import (
     _build_markdown_block,
     render_reply_block,
+    reply_renderable,
     reply_width,
 )
-from surfaces.interactive_shell.ui.transcript import transcript_gutter
 
 # Throttle for the optional ``update_streaming_progress`` hook on the
 # console — caps cross-thread queueing on long bursts of chunks. Same
@@ -226,16 +226,11 @@ class ReplyStream:
             # for the next standalone block. This matters most after lists,
             # whose renderer adds no trailing blank line.
             self._console.print()
-        # The first paragraph carries the assistant marker in the gutter; every
-        # paragraph hangs in the same indented body column. Explicit TEXT so
-        # body never falls through to terminal white and washes the marker out.
+        # Share whole-reply styling so every paragraph has a readable surface;
+        # only the first carries the marker in the common body column.
         with self._console.use_theme(ui_theme.MARKDOWN_THEME):
             self._console.print(
-                transcript_gutter(
-                    markdown,
-                    lead=self._rendered_paragraphs == 0,
-                    label_style=ui_theme.reply_marker_style(),
-                ),
+                reply_renderable(markdown, lead=self._rendered_paragraphs == 0),
                 style=str(ui_theme.TEXT),
                 width=reply_width(self._console),
             )

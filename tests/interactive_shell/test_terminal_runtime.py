@@ -199,14 +199,18 @@ def test_full_screen_transcript_takes_the_wheel_through_mouse_reporting() -> Non
     assert prompt.app.renderer.mouse_support() is True
 
 
-def test_full_screen_frame_keeps_the_terminal_background() -> None:
+@pytest.mark.parametrize("has_reply", [False, True])
+def test_full_screen_frame_keeps_the_terminal_background(
+    monkeypatch: pytest.MonkeyPatch, has_reply: bool
+) -> None:
     """Entering the full-screen view must not repaint the user's terminal.
 
     Regression: painting the root with the theme ``BG`` turned the whole screen
     a light grey on terminals whose palette renders that colour lighter than
     their own background, the moment the shell switched to the transcript view.
-    Only the composer plate and menu selection may carry a background.
+    Only content surfaces may carry a background; unused space stays native.
     """
+    monkeypatch.delenv("NO_COLOR", raising=False)
     set_active_theme("blue")
     buffer = io.StringIO()
     output = Vt100_Output(
@@ -215,21 +219,40 @@ def test_full_screen_frame_keeps_the_terminal_background() -> None:
         term="xterm-256color",
         default_color_depth=ColorDepth.DEPTH_24_BIT,
     )
+    store = TranscriptStore()
+    if has_reply:
+        from rich.console import Console
+
+        from surfaces.interactive_shell.ui.streaming.renderer import render_reply_block
+
+        console = Console(force_terminal=True, color_system="truecolor", no_color=False)
+        with console.capture() as capture:
+            render_reply_block(console, "Readable **reply** with `code`.")
+        store.append_text(capture.get())
     with create_app_session(input=DummyInput(), output=output):
-        prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(TranscriptStore()))
+        prompt = input_prompt.build_prompt_session(transcript=TranscriptControl(store))
         app = prompt.app
 
         async def _render_frame() -> None:
             app.renderer.render(app, app.layout)
 
         asyncio.run(_render_frame())
+        screen = app.renderer._last_screen
+        assert screen is not None
+        assert app.style is not None
+        unused = app.style.get_attrs_for_style_str(screen.data_buffer[19][59].style)
+        assert not unused.bgcolor
+        if has_reply:
+            body = app.style.get_attrs_for_style_str(screen.data_buffer[0][3].style)
+            assert body.color == THEME_REGISTRY["blue"].TEXT.lstrip("#").lower()
+            assert body.bgcolor == THEME_REGISTRY["blue"].BG.lstrip("#").lower()
 
     painted = set(re.findall(r"48;2;(\d+;\d+;\d+)", buffer.getvalue()))
     assert painted, "expected the composer plate to carry a background"
     assert painted <= {
         _rgb(THEME_REGISTRY["blue"].INPUT_SURFACE),
         _rgb(ui_theme.menu_selection_hex()),
-    }
+    } | ({_rgb(THEME_REGISTRY["blue"].BG)} if has_reply else set())
 
 
 def test_full_screen_terminal_background_honors_no_color(
