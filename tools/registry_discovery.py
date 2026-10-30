@@ -40,6 +40,7 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.coralogix.tools",
     "integrations.dagster.tools",
     "integrations.datadog.tools",
+    "integrations.dynatrace.tools",
     "integrations.ec2.tools",
     "integrations.eks.tools",
     "integrations.elasticsearch.tools",

@@ -147,6 +147,12 @@ def _setup_new_relic() -> None:
     _run_spec_setup(NEW_RELIC_SETUP)
 
 
+def _setup_dynatrace() -> None:
+    from integrations.dynatrace.setup import DYNATRACE_SETUP
+
+    _run_spec_setup(DYNATRACE_SETUP)
+
+
 def _setup_aws() -> None:
     from integrations.aws.role_mode_gate import (
         CONFIGURE_FIRST_INSTRUCTION,
@@ -528,6 +534,7 @@ _HANDLERS: dict[str, Any] = {
     "kubernetes": _setup_kubernetes,
     "servicenow": _setup_servicenow,
     "new_relic": _setup_new_relic,
+    "dynatrace": _setup_dynatrace,
     "google_docs": _setup_google_docs,
 }
 

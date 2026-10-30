@@ -1,0 +1,33 @@
+{
+  "state": "SUCCEEDED",
+  "progress": 100,
+  "result": {
+    "records": [
+      {
+        "timestamp": "2026-10-29T09:26:47.000000000Z",
+        "content": "checkout request completed",
+        "loglevel": "INFO",
+        "k8s.namespace.name": "payments",
+        "k8s.deployment.name": "omnenest-api",
+        "k8s.container.name": "omnenest",
+        "host.name": "aks-workload3-12345678-vmss000001"
+      }
+    ],
+    "types": [
+      {
+        "indexRange": [0, 0],
+        "mappings": {
+          "timestamp": {"type": "timestamp"},
+          "content": {"type": "string"}
+        }
+      }
+    ],
+    "metadata": {
+      "grail": {
+        "scannedRecords": 20100234,
+        "scannedBytes": 1048576,
+        "sampled": false
+      }
+    }
+  }
+}

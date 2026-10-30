@@ -197,6 +197,16 @@ EXPORTS: dict[str, str] = {
     "DATADOG_API_KEY_ENV": "datadog",
     "DATADOG_APP_KEY_ENV": "datadog",
     "DATADOG_SITE_ENV": "datadog",
+    # dynatrace
+    "DYNATRACE_DEFAULT_LOG_LIMIT": "dynatrace",
+    "DYNATRACE_DEFAULT_TIMEFRAME_MINUTES": "dynatrace",
+    "DYNATRACE_MAX_LOG_LIMIT": "dynatrace",
+    "DYNATRACE_MAX_TIMEFRAME_MINUTES": "dynatrace",
+    "DYNATRACE_PLATFORM_TOKEN_ENV": "dynatrace",
+    "DYNATRACE_POLL_INTERVAL_SECONDS": "dynatrace",
+    "DYNATRACE_QUERY_TIMEOUT_SECONDS": "dynatrace",
+    "DYNATRACE_SCAN_LIMIT_GB": "dynatrace",
+    "DYNATRACE_TENANT_URL_ENV": "dynatrace",
     # environment
     "CONTAINER_SUPERVISOR_PID_ENV": "environment",
     "DEPLOYMENT_ENV_ENV": "environment",

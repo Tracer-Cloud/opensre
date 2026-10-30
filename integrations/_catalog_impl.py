@@ -72,6 +72,7 @@ from config.constants.discord import (
     DISCORD_DEFAULT_CHANNEL_ID_ENV,
     DISCORD_PUBLIC_KEY_ENV,
 )
+from config.constants.dynatrace import DYNATRACE_PLATFORM_TOKEN_ENV, DYNATRACE_TENANT_URL_ENV
 from config.constants.github import (
     GITHUB_MCP_ARGS_ENV,
     GITHUB_MCP_AUTH_TOKEN_ENV,
@@ -285,6 +286,8 @@ from integrations.dagster import build_dagster_config
 from integrations.dagster import classify as _classify_dagster
 from integrations.datadog import classify as _classify_datadog
 from integrations.discord import classify as _classify_discord
+from integrations.dynatrace import classify as _classify_dynatrace
+from integrations.dynatrace.config import DynatraceIntegrationConfig
 from integrations.effective_models import EffectiveIntegrations
 from integrations.github.mcp import build_github_mcp_config
 from integrations.github.mcp import classify as _classify_github
@@ -535,6 +538,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "prefect": _classify_prefect,
     "railway": _classify_railway,
     "new_relic": _classify_new_relic,
+    "dynatrace": _classify_dynatrace,
 }
 
 
@@ -793,6 +797,26 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 _active_env_record(
                     "new_relic",
                     new_relic_config.model_dump(exclude={"integration_id"}),
+                )
+            )
+
+    dynatrace_tenant_url = os.getenv(DYNATRACE_TENANT_URL_ENV, "").strip()
+    dynatrace_platform_token = resolve_env_credential(DYNATRACE_PLATFORM_TOKEN_ENV)
+    if dynatrace_tenant_url and dynatrace_platform_token:
+        try:
+            dynatrace_config = DynatraceIntegrationConfig.model_validate(
+                {
+                    "tenant_url": dynatrace_tenant_url,
+                    "platform_token": dynatrace_platform_token,
+                }
+            )
+        except Exception as exc:
+            _report_env_loader_failure(exc, integration="dynatrace")
+        else:
+            integrations.append(
+                _active_env_record(
+                    "dynatrace",
+                    dynatrace_config.model_dump(exclude={"integration_id"}),
                 )
             )
 

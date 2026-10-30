@@ -396,6 +396,33 @@ if TYPE_CHECKING:
     from config.constants.datadog import (
         DATADOG_SITE_ENV as DATADOG_SITE_ENV,
     )
+    from config.constants.dynatrace import (
+        DYNATRACE_DEFAULT_LOG_LIMIT as DYNATRACE_DEFAULT_LOG_LIMIT,
+    )
+    from config.constants.dynatrace import (
+        DYNATRACE_DEFAULT_TIMEFRAME_MINUTES as DYNATRACE_DEFAULT_TIMEFRAME_MINUTES,
+    )
+    from config.constants.dynatrace import (
+        DYNATRACE_MAX_LOG_LIMIT as DYNATRACE_MAX_LOG_LIMIT,
+    )
+    from config.constants.dynatrace import (
+        DYNATRACE_MAX_TIMEFRAME_MINUTES as DYNATRACE_MAX_TIMEFRAME_MINUTES,
+    )
+    from config.constants.dynatrace import (
+        DYNATRACE_PLATFORM_TOKEN_ENV as DYNATRACE_PLATFORM_TOKEN_ENV,
+    )
+    from config.constants.dynatrace import (
+        DYNATRACE_POLL_INTERVAL_SECONDS as DYNATRACE_POLL_INTERVAL_SECONDS,
+    )
+    from config.constants.dynatrace import (
+        DYNATRACE_QUERY_TIMEOUT_SECONDS as DYNATRACE_QUERY_TIMEOUT_SECONDS,
+    )
+    from config.constants.dynatrace import (
+        DYNATRACE_SCAN_LIMIT_GB as DYNATRACE_SCAN_LIMIT_GB,
+    )
+    from config.constants.dynatrace import (
+        DYNATRACE_TENANT_URL_ENV as DYNATRACE_TENANT_URL_ENV,
+    )
     from config.constants.environment import (
         CONTAINER_SUPERVISOR_PID_ENV as CONTAINER_SUPERVISOR_PID_ENV,
     )

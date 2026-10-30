@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, cast
 
+from config.constants.dynatrace import DYNATRACE_PLATFORM_TOKEN_ENV, DYNATRACE_TENANT_URL_ENV
 from config.constants.google_docs import (
     GOOGLE_CREDENTIALS_FILE_ENV,
     GOOGLE_DRIVE_FOLDER_ID_ENV,
@@ -120,6 +121,7 @@ def load_env_integration_services() -> list[str]:
         _all_env(NEW_RELIC_API_KEY_ENV, NEW_RELIC_ACCOUNT_ID_ENV)
         or _env_is_set(NEW_RELIC_INSTANCES_ENV),
     )
+    add("dynatrace", _all_env(DYNATRACE_TENANT_URL_ENV, DYNATRACE_PLATFORM_TOKEN_ENV))
     add(
         "aws",
         _any_env("AWS_INSTANCES", "AWS_ROLE_ARN")

@@ -120,6 +120,7 @@
               "integrations/monitoring/betterstack",
               "integrations/monitoring/coralogix",
               "integrations/monitoring/datadog",
+              "integrations/monitoring/dynatrace",
               "integrations/monitoring/grafana",
               "integrations/monitoring/grafana_annotations",
               "integrations/monitoring/groundcover",
