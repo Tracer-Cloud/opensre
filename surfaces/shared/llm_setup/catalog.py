@@ -120,6 +120,11 @@ class ProviderOption:
     #: Use this for providers whose model catalogs are large, account-gated, or
     #: updated independently of OpenSRE releases.
     allow_custom_models: bool = False
+    #: Optional connection-presentation metadata; shared summaries use generic defaults otherwise.
+    connection_route: str = ""
+    connection_account: str = ""
+    connection_execution: str = ""
+    connection_billing: str = ""
 
     def __post_init__(self) -> None:
         spec = require_provider_spec(self.value)
@@ -823,6 +828,10 @@ SUPPORTED_PROVIDERS = (
         api_version_env=AZURE_OPENAI_API_VERSION_ENV,
         credential_default="https://your-resource.openai.azure.com",
         allow_custom_models=True,
+        connection_route="Azure deployment",
+        connection_account="Configured Azure resource",
+        connection_execution="Azure OpenAI endpoint",
+        connection_billing="Azure usage billing",
     ),
     ProviderOption(
         value="custom-openai",
@@ -838,6 +847,10 @@ SUPPORTED_PROVIDERS = (
         endpoint_env=CUSTOM_OPENAI_BASE_URL_ENV,
         credential_default="http://localhost:4000/v1",
         allow_custom_models=True,
+        connection_route="Custom API endpoint",
+        connection_account="Configured endpoint; account details are not available",
+        connection_execution="Configured API-compatible endpoint",
+        connection_billing="Unknown (depends on the configured endpoint)",
     ),
     ProviderOption(
         value="custom-anthropic",
@@ -853,6 +866,10 @@ SUPPORTED_PROVIDERS = (
         endpoint_env=CUSTOM_ANTHROPIC_BASE_URL_ENV,
         credential_default="https://proxy.example.com",
         allow_custom_models=True,
+        connection_route="Custom API endpoint",
+        connection_account="Configured endpoint; account details are not available",
+        connection_execution="Configured API-compatible endpoint",
+        connection_billing="Unknown (depends on the configured endpoint)",
     ),
     ProviderOption(
         value="grok-cli",
