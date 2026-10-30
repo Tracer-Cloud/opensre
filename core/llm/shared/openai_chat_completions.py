@@ -16,7 +16,13 @@ from core.llm.shared.llm_retry import (
     rate_limit_sleep_seconds,
 )
 from core.llm.shared.usage import emit_usage
-from core.llm.types import AgentLLMResponse, LLMResponse, ToolCall
+from core.llm.types import (
+    AgentLLMResponse,
+    LLMRequestCancelled,
+    LLMResponse,
+    LLMStreamInterrupted,
+    ToolCall,
+)
 
 _RETRY_INITIAL_BACKOFF_SEC = 1.0
 _RETRY_MAX_ATTEMPTS = 3
@@ -235,7 +241,20 @@ def stream_chunk_delta_content(chunk: Any) -> str | None:
 
 
 def is_exception_named(err: BaseException, *names: str) -> bool:
-    return type(err).__name__ in names
+    return any(cls.__name__ in names for cls in type(err).__mro__)
+
+
+def _raise_terminal_litellm_error(err: Exception, provider: str) -> None:
+    """Stop failures that must not replay an unchanged or possibly billed request."""
+    from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
+
+    if isinstance(err, (GuardrailBlockedError, LLMRequestCancelled, LLMStreamInterrupted)):
+        raise err
+    if isinstance(err, TimeoutError) or is_exception_named(err, "APITimeoutError", "Timeout"):
+        raise RuntimeError(f"{provider} request timed out; it was not retried.") from err
+    if is_exception_named(err, "PermissionDeniedError", "UnprocessableEntityError"):
+        maybe_raise_github_required(err)
+        raise RuntimeError(f"{provider} request rejected: {err}") from err
 
 
 def _litellm_not_found_message(*, provider_label: str, model: str) -> str:
@@ -266,6 +285,7 @@ def invoke_with_litellm_agent_retries(
         try:
             return completion_fn(**kwargs)
         except Exception as err:
+            _raise_terminal_litellm_error(err, provider_name)
             # Parameter compatibility does not consume transient retry attempts.
             retry = azure_litellm_token_retry_kwargs(kwargs, err)
             if retry is not None:
@@ -278,9 +298,6 @@ def invoke_with_litellm_agent_retries(
                 raise RuntimeError(
                     _litellm_not_found_message(provider_label=provider_name, model=model)
                 ) from err
-            if is_exception_named(err, "PermissionDeniedError"):
-                maybe_raise_github_required(err)
-                raise RuntimeError(f"{provider_name} request forbidden: {err}") from err
             if is_exception_named(err, "BadRequestError"):
                 maybe_raise_credit_exhausted(provider_name, err)
                 message = getattr(err, "message", str(err))
@@ -329,6 +346,7 @@ def invoke_with_litellm_llm_retries(
         except GuardrailBlockedError:
             raise
         except Exception as err:
+            _raise_terminal_litellm_error(err, provider_label)
             retry = azure_litellm_token_retry_kwargs(kwargs, err)
             if retry is not None:
                 kwargs = retry
@@ -347,6 +365,7 @@ def invoke_with_litellm_llm_retries(
                     _litellm_not_found_message(provider_label=provider_label, model=model)
                 ) from err
             if is_exception_named(err, "BadRequestError"):
+                maybe_raise_credit_exhausted(provider_label, err)
                 message = str(getattr(err, "message", err))
                 if "model identifier" in message.lower():
                     rebuilt = on_model_fallback()
@@ -360,6 +379,7 @@ def invoke_with_litellm_llm_retries(
                 is_exception_named(err, "RateLimitError")
                 or getattr(err, "status_code", None) == HTTPStatus.TOO_MANY_REQUESTS
             ):
+                maybe_raise_credit_exhausted(provider_label, err)
                 last_err = err
                 if attempt == _RETRY_MAX_ATTEMPTS:
                     raise RuntimeError(
@@ -409,6 +429,7 @@ def stream_with_litellm_retries(
         except Exception as err:
             if emitted:
                 raise
+            _raise_terminal_litellm_error(err, provider_label)
             retry = azure_litellm_token_retry_kwargs(kwargs, err)
             if retry is not None:
                 kwargs = retry
@@ -427,6 +448,7 @@ def stream_with_litellm_retries(
                     _litellm_not_found_message(provider_label=provider_label, model=model)
                 ) from err
             if is_exception_named(err, "BadRequestError"):
+                maybe_raise_credit_exhausted(provider_label, err)
                 message = str(getattr(err, "message", err))
                 if "model identifier" in message.lower():
                     rebuilt = on_model_fallback()
@@ -440,6 +462,7 @@ def stream_with_litellm_retries(
                 is_exception_named(err, "RateLimitError")
                 or getattr(err, "status_code", None) == HTTPStatus.TOO_MANY_REQUESTS
             ):
+                maybe_raise_credit_exhausted(provider_label, err)
                 if attempt == _RETRY_MAX_ATTEMPTS:
                     raise RuntimeError(
                         f"{provider_label} rate limit exceeded (HTTP 429) after multiple retries. "

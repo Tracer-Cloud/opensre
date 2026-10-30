@@ -114,6 +114,8 @@ class LiteLLMAgentClient:
             "messages": prepend_system_message(strip_internal_message_markers(messages), system),
             "max_tokens": self._max_tokens,
             "timeout": AGENT_CLIENT_TIMEOUT_SEC,
+            "max_retries": 0,
+            "num_retries": 0,
         }
         api_key = self._api_key()
         if api_key is not None:
@@ -247,6 +249,8 @@ class LiteLLMLLMClient:
             "messages": messages,
             "max_tokens": self._max_tokens,
             "timeout": LLM_CLIENT_TIMEOUT_SEC,
+            "max_retries": 0,
+            "num_retries": 0,
         }
         api_key = self._api_key()
         if api_key is not None:
