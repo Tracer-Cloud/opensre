@@ -1,0 +1,55 @@
+---
+title: "Pipedream"
+description: "Use apps connected through Pipedream, such as Gmail, Google Drive and Linear, from OpenSRE chats"
+---
+
+## Overview
+
+Pipedream lets OpenSRE use apps that have no built-in OpenSRE integration, such as Linear, Notion, Gmail, Google Drive or Outlook. You connect the apps in the OpenSRE app. In the interactive shell and in chat, OpenSRE finds the tools that each connected app offers and calls them for you.
+
+You connect each app in one of two ways:
+
+- **For the workspace:** everyone in the workspace can use it, for example the team's Linear.
+- **For yourself:** only your own turns can use it, for example your Gmail or Drive. Other members, and scheduled loops owned by someone else, never reach it.
+
+Pipedream credentials stay in the OpenSRE app. Nothing is stored on your machine.
+
+## Prerequisites
+
+- An OpenSRE account. Pipedream does not work with a local-only setup.
+- The apps you want to use, connected in the OpenSRE app under **Integrations**.
+
+## Setup
+
+1. In the OpenSRE app, open **Integrations** and connect the app through Pipedream. Choose whether it is for the workspace or just for you.
+2. On each machine where you run the CLI, sign in to the same account:
+
+   ```bash
+   opensre account login
+   ```
+
+There is no `opensre integrations setup` step and no environment variable to set.
+
+## Use it
+
+Ask for what you want in plain language:
+
+```text
+Create a Linear issue for the checkout latency regression and assign it to me.
+Find the emails from PagerDuty about the payments outage this morning.
+```
+
+OpenSRE first lists the tools the app offers, then calls the one it needs. If you have connected more than one account for the same app, for example two Gmail accounts, name the one you mean in the request, such as its email address. Otherwise OpenSRE has to pick one from the list of connected accounts.
+
+## Troubleshooting
+
+| Message | What to do |
+| --- | --- |
+| `No Pipedream apps are connected` | Connect the app in the OpenSRE app under **Integrations**, then retry. |
+| `Sign in to OpenSRE before using Pipedream integrations` | Run `opensre account login`. |
+| `This account belongs to a member; it can be used only in their own turn` | The app is connected to another member personally. Ask them to run the request, or connect it for the workspace. |
+| `The OpenSRE Pipedream proxy is unavailable` | The OpenSRE app could not be reached. Check your network and retry. |
+
+## Related
+
+- [Scheduled email delivery](/platform/cron#email-delivery): send a loop's report from a Gmail account connected here.
