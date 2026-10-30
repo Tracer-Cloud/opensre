@@ -373,8 +373,10 @@ member's, even though the loop runs on a schedule with nobody signed in. The
 report arrives as formatted HTML with a plain-text copy, and its title becomes
 the subject.
 
-If the mail server refuses some recipients, a retry sends only to those
-recipients, so the others are not emailed twice. If you remove the SMTP account
+If the mail server refuses some recipients, the scheduler's automatic retry
+sends only to those recipients. A later `opensre cron run <task_id>
+--failed-only`, or a retry after the scheduler restarts, resends the report to
+every recipient, so some may get it twice. If you remove the SMTP account
 a loop sends from, its runs fail with `The SMTP account this loop sends from is
 no longer connected.` Choose another mailbox for the loop.
 
