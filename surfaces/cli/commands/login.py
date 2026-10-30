@@ -23,8 +23,8 @@ from surfaces.shared.llm_setup.auth_service import (
     provider_status,
     verify_provider,
 )
-from surfaces.shared.llm_setup.login_menu import prompt_connection_target, prompt_login_action
 from surfaces.shared.llm_setup.connection_summary import summarize_connection
+from surfaces.shared.llm_setup.login_menu import prompt_connection_target, prompt_login_action
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
