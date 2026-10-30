@@ -11,8 +11,8 @@ from rich.text import Text
 
 from infrastructure.terminal.theme import ERROR
 from surfaces.shared.llm_setup.auth_results import SelectionError, SelectionResult
-from surfaces.shared.llm_setup.model_choices import ModelChoice, connected_choices
 from surfaces.shared.llm_setup.connection_summary import summarize_provider_connection
+from surfaces.shared.llm_setup.model_choices import ModelChoice, connected_choices
 from surfaces.shared.llm_setup.selection import select_provider
 from surfaces.shared.terminal.components.command_input import run_command_input
 from surfaces.shared.terminal.components.input_form import (
@@ -80,7 +80,10 @@ def choose_model(
                 row.label,
                 summary=row.source,
                 summary_style="description",
-                details=(*_connection_detail_lines(row.provider), f"Availability: {row.availability}"),
+                details=(
+                    *_connection_detail_lines(row.provider),
+                    f"Availability: {row.availability}",
+                ),
                 search_text=f"{row.provider} {row.model} {row.source}",
                 record=RecordRow(
                     cells=(
@@ -148,7 +151,10 @@ def choose_model(
                     "model",
                     "Model",
                     description=(
-                        "Source and billing are shown with each model. Esc keeps your current model."
+                        (
+                            "Source and billing are shown with each model. "
+                            "Esc keeps your current model."
+                        )
                         if has_rows
                         else "No providers connected. Choose Connect a provider to get started."
                     ),
