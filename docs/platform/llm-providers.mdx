@@ -395,6 +395,9 @@ Uses the OpenAI SDK. Reasoning models (`o1`, `o3`, `o4`, `gpt-5*`) use
 
 Azure OpenAI always goes through LiteLLM. Model env vars are **deployment
 names** from your Azure resource, not public OpenAI model IDs.
+Custom names such as `prod-chat` are supported. If Azure explicitly rejects
+`max_tokens`, runtime calls and credential validation retry once with
+`max_completion_tokens`, keeping the same deployment and token limit.
 
 ```bash
 export LLM_PROVIDER=azure-openai

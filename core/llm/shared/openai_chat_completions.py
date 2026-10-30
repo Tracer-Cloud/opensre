@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 from http import HTTPStatus
 from typing import Any
 
+from core.llm.providers.azure_token_limits import azure_litellm_token_retry_kwargs
 from core.llm.shared.llm_retry import (
     extract_retry_after_seconds,
     maybe_raise_credit_exhausted,
@@ -260,10 +261,17 @@ def invoke_with_litellm_agent_retries(
 ) -> Any:
     backoff = _RETRY_INITIAL_BACKOFF_SEC
     last_err: Exception | None = None
-    for attempt in range(_RETRY_MAX_ATTEMPTS):
+    attempt = 0
+    while attempt < _RETRY_MAX_ATTEMPTS:
         try:
             return completion_fn(**kwargs)
         except Exception as err:
+            # Parameter compatibility does not consume transient retry attempts.
+            retry = azure_litellm_token_retry_kwargs(kwargs, err)
+            if retry is not None:
+                kwargs = retry
+                continue
+            attempt += 1
             if is_exception_named(err, "AuthenticationError"):
                 raise RuntimeError(f"{provider_name} authentication failed.") from err
             if is_exception_named(err, "NotFoundError"):
@@ -285,7 +293,7 @@ def invoke_with_litellm_agent_retries(
             ):
                 maybe_raise_credit_exhausted(provider_name, err)
                 last_err = err
-                if attempt == _RETRY_MAX_ATTEMPTS - 1:
+                if attempt == _RETRY_MAX_ATTEMPTS:
                     raise RuntimeError(
                         f"{provider_name} rate limit exceeded after "
                         f"{_RETRY_MAX_ATTEMPTS} attempts: {err}"
@@ -294,7 +302,7 @@ def invoke_with_litellm_agent_retries(
                 backoff *= 2
                 continue
             last_err = err
-            if attempt == _RETRY_MAX_ATTEMPTS - 1:
+            if attempt == _RETRY_MAX_ATTEMPTS:
                 raise RuntimeError(f"{provider_name} API failed: {err}") from err
             time.sleep(backoff)
             backoff *= 2
@@ -314,12 +322,18 @@ def invoke_with_litellm_llm_retries(
 
     backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
     last_err: Exception | None = None
-    for attempt in range(_RETRY_MAX_ATTEMPTS):
+    attempt = 0
+    while attempt < _RETRY_MAX_ATTEMPTS:
         try:
             return completion_fn(**kwargs)
         except GuardrailBlockedError:
             raise
         except Exception as err:
+            retry = azure_litellm_token_retry_kwargs(kwargs, err)
+            if retry is not None:
+                kwargs = retry
+                continue
+            attempt += 1
             if is_exception_named(err, "AuthenticationError"):
                 raise RuntimeError(
                     f"{provider_label} authentication failed. Check {api_key_env} in your environment, .env, or secure local keychain."
@@ -347,7 +361,7 @@ def invoke_with_litellm_llm_retries(
                 or getattr(err, "status_code", None) == HTTPStatus.TOO_MANY_REQUESTS
             ):
                 last_err = err
-                if attempt == _RETRY_MAX_ATTEMPTS - 1:
+                if attempt == _RETRY_MAX_ATTEMPTS:
                     raise RuntimeError(
                         f"{provider_label} rate limit exceeded (HTTP 429) after multiple retries. "
                         "Check your quota and billing details."
@@ -358,7 +372,7 @@ def invoke_with_litellm_llm_retries(
                 backoff_seconds = wait * 2
                 continue
             last_err = err
-            if attempt == _RETRY_MAX_ATTEMPTS - 1:
+            if attempt == _RETRY_MAX_ATTEMPTS:
                 raise RuntimeError(
                     "LLM API request failed after multiple retries. Try again in a few seconds."
                 ) from err
@@ -379,7 +393,8 @@ def stream_with_litellm_retries(
     from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
     backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
-    for attempt in range(_RETRY_MAX_ATTEMPTS):
+    attempt = 0
+    while attempt < _RETRY_MAX_ATTEMPTS:
         emitted = False
         try:
             stream = completion_fn(stream=True, **kwargs)
@@ -394,6 +409,11 @@ def stream_with_litellm_retries(
         except Exception as err:
             if emitted:
                 raise
+            retry = azure_litellm_token_retry_kwargs(kwargs, err)
+            if retry is not None:
+                kwargs = retry
+                continue
+            attempt += 1
             if is_exception_named(err, "AuthenticationError"):
                 raise RuntimeError(
                     f"{provider_label} authentication failed. Check {api_key_env} in your environment, .env, or secure local keychain."
@@ -420,7 +440,7 @@ def stream_with_litellm_retries(
                 is_exception_named(err, "RateLimitError")
                 or getattr(err, "status_code", None) == HTTPStatus.TOO_MANY_REQUESTS
             ):
-                if attempt == _RETRY_MAX_ATTEMPTS - 1:
+                if attempt == _RETRY_MAX_ATTEMPTS:
                     raise RuntimeError(
                         f"{provider_label} rate limit exceeded (HTTP 429) after multiple retries. "
                         "Check your quota and billing details."
@@ -430,7 +450,7 @@ def stream_with_litellm_retries(
                 time.sleep(wait)
                 backoff_seconds = wait * 2
                 continue
-            if attempt == _RETRY_MAX_ATTEMPTS - 1:
+            if attempt == _RETRY_MAX_ATTEMPTS:
                 raise RuntimeError(
                     "LLM API request failed after multiple retries. Try again in a few seconds."
                 ) from err

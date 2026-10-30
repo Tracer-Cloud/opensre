@@ -9,6 +9,7 @@ from core.llm.providers.azure_openai import (
     normalize_azure_openai_base_url,
     resolve_azure_openai_api_version,
 )
+from core.llm.providers.azure_token_limits import azure_completion_token_retry_kwargs
 from surfaces.shared.llm_setup.openai_client import load_openai_client
 from surfaces.shared.llm_setup.validation_result import ValidationResult
 
@@ -69,7 +70,13 @@ def validate_credentials(
             request_kwargs["max_completion_tokens"] = 24
         else:
             request_kwargs["max_tokens"] = 24
-        response = client.chat.completions.create(**request_kwargs)
+        try:
+            response = client.chat.completions.create(**request_kwargs)
+        except Exception as error:
+            retry = azure_completion_token_retry_kwargs(request_kwargs, error)
+            if retry is None:
+                raise
+            response = client.chat.completions.create(**retry)
         sample_text = (response.choices[0].message.content or "").strip()
         return ValidationResult(
             ok=True,
