@@ -644,6 +644,7 @@ EXPORTS: dict[str, str] = {
     "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",
     "MAX_CONCURRENT_TOOL_CALLS": "tooling",
+    "OPENSRE_PARALLEL_TOOL_CALLS_ENV": "tooling",
     "TOOL_PREFETCH_MAX_ENTRIES": "tooling",
     "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "ToolBlockedBy": "tooling",

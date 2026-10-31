@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -25,7 +26,12 @@ from config.constants.tool_discovery import (
     TOOL_FAILURE_STATES,
 )
 from config.constants.tool_params import config_only_params
-from config.constants.tooling import MAX_CONCURRENT_TOOL_CALLS, ToolBlockedBy, ToolSkippedBy
+from config.constants.tooling import (
+    MAX_CONCURRENT_TOOL_CALLS,
+    OPENSRE_PARALLEL_TOOL_CALLS_ENV,
+    ToolBlockedBy,
+    ToolSkippedBy,
+)
 from config.scope_context import in_current_scope
 from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
@@ -54,6 +60,7 @@ _EXECUTED_TOOL_OUTCOMES = frozenset({"ok", "tool_error", "exception"})
 # was skipped without running because the turn ended or was cancelled first.
 _BLOCKED_METADATA_KEY = "blocked"
 _SKIPPED_METADATA_KEY = "skipped"
+_FALSY_ENV_VALUES = frozenset({"0", "false", "no", "off"})
 
 
 def availability_view(resolved_integrations: dict[str, Any]) -> dict[str, Any]:
@@ -316,6 +323,8 @@ def execute_tool_calls(
     per-call hooks hold one lock, so host callbacks never overlap; only tool
     bodies do.
 
+    ``OPENSRE_PARALLEL_TOOL_CALLS=0`` runs every call alone on the calling thread.
+
     ``iteration`` is the loop iteration that requested the calls; analytics
     records it beside each call's position in the response.
     """
@@ -537,10 +546,17 @@ def _concurrency_safe(tool: RuntimeTool | None) -> bool:
     return isinstance(tool, RegisteredTool) and tool.concurrency_safe
 
 
+def parallel_tool_calls_enabled() -> bool:
+    """Whether read-only calls of one response may run at once (on unless switched off)."""
+    return os.getenv(OPENSRE_PARALLEL_TOOL_CALLS_ENV, "").strip().lower() not in _FALSY_ENV_VALUES
+
+
 def _execution_runs(
     tool_calls: Sequence[ToolCall], tool_map: Mapping[str, RuntimeTool]
 ) -> list[list[int]]:
     """Call indexes in run order, cut into runs: consecutive concurrency-safe calls share one."""
+    if not parallel_tool_calls_enabled():
+        return [[index] for index in _execution_order(tool_calls, tool_map)]
     runs: list[list[int]] = []
     previous_safe = False
     for index in _execution_order(tool_calls, tool_map):
