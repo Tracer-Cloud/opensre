@@ -36,6 +36,9 @@ CRON_FIELD_COUNT_ERROR = (
 _WEEKDAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 #: Crontab weekday numbers run 0-7; both 0 and 7 are Sunday.
 _CRONTAB_LAST_WEEKDAY = 7
+#: The zone a schedule runs in when its surface supplies none, matching the
+#: documented ``--tz`` default of every ``add`` command.
+DEFAULT_CRON_TIMEZONE = "UTC"
 _CRONTAB_WEEKDAY_ITEM = re.compile(
     r"(?:(?P<every>\*)|(?P<first>\d+)(?:-(?P<last>\d+))?)(?:/(?P<step>\d+))?"
 )
@@ -95,6 +98,16 @@ def _weekday_ranges(days: set[int]) -> list[str]:
     return ranges
 
 
+def normalize_cron_timezone(timezone: str | None) -> str:
+    """The zone a cron surface means: absent, blank, or whitespace is the documented UTC default.
+
+    APScheduler reads a falsy timezone as the *host's* local zone, so a stored
+    schedule would fire at different wall-clock times on machines in different
+    zones; a whitespace key instead fails the lookup with an unusable message.
+    """
+    return (timezone or "").strip() or DEFAULT_CRON_TIMEZONE
+
+
 def build_cron_trigger(cron: str, timezone: str | None) -> Any:
     """Build an APScheduler ``CronTrigger`` for a five- or six-field crontab expression.
 
@@ -120,7 +133,7 @@ def build_cron_trigger(cron: str, timezone: str | None) -> Any:
             day=day,
             month=month,
             day_of_week=day_of_week_names(day_of_week),
-            timezone=timezone,
+            timezone=normalize_cron_timezone(timezone),
         )
     except (ValueError, TypeError, KeyError) as exc:
         raise ValueError(f"invalid cron expression or timezone: {exc}") from exc
@@ -184,7 +197,9 @@ __all__ = [
     "CRON_FIELD_COUNT_ERROR",
     "CRON_FIELD_COUNT_WITH_SECONDS",
     "CRON_FORMAT_HELP",
+    "DEFAULT_CRON_TIMEZONE",
     "build_cron_trigger",
     "cap_cron_at_most_hourly",
     "day_of_week_names",
+    "normalize_cron_timezone",
 ]

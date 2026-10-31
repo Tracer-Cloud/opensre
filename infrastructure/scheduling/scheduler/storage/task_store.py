@@ -23,6 +23,7 @@ from config.constants.scheduler import SCHEDULER_SCHEDULE_CHANGED_AT_PARAM
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from config.scope_handoff import acting_scope
 from infrastructure.scheduling.scheduler import reload_signal
+from infrastructure.scheduling.scheduler.cron_expression import normalize_cron_timezone
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CREATED_BY_PARAM,
     LOOP_DESCRIPTION_PARAM,
@@ -269,7 +270,9 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     The owning organization is part of it: two organizations with the same
     schedule hold two rows, and so do two members' private loops, each run as
     its own owner. A template loop is identified by its template name, not by
-    the prompt and description copied from it.
+    the prompt and description copied from it. The zone is read through the
+    same default a trigger uses, so a row written before a blank zone meant UTC
+    still matches the schedule a re-confirmation stores.
     """
     raw_params = entry.get("params") or {}
     ignored = {LOOP_CREATED_BY_PARAM, SCHEDULER_SCHEDULE_CHANGED_AT_PARAM}
@@ -282,7 +285,7 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
         _owner_of(entry),
         entry.get("kind"),
         entry.get("cron"),
-        entry.get("timezone"),
+        normalize_cron_timezone(entry.get("timezone")),
         entry.get("provider"),
         entry.get("chat_id"),
         entry.get("window_hours"),

@@ -6,8 +6,9 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from infrastructure.scheduling.scheduler.cron_expression import normalize_cron_timezone
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 
 
@@ -89,6 +90,16 @@ class ScheduledTask(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     last_run: str | None = None
     next_run: str | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def _default_timezone(cls, value: str) -> str:
+        """Store the documented default when a surface supplied no zone.
+
+        A persisted blank would let the host's local zone decide when the task
+        fires, and the same task would read back differently on every machine.
+        """
+        return normalize_cron_timezone(value)
 
     @model_validator(mode="after")
     def _require_work_item_id_for_reminders(self) -> ScheduledTask:

@@ -297,6 +297,22 @@ class TestAddTaskDeduplicates:
         assert len(list_tasks(store_path)) == 1
         assert second.id == first.id
 
+    def test_readding_a_schedule_written_with_a_blank_zone_folds_into_one(
+        self, store_path: Path
+    ) -> None:
+        """A row written before a blank zone meant UTC is still the same schedule."""
+        # Arrange: the bytes an older release stored.
+        legacy = self._daily_summary().model_dump(mode="json")
+        legacy["timezone"] = ""
+        store_path.write_text(json.dumps([legacy]), encoding="utf-8")
+
+        # Act: the user confirms the same schedule again.
+        added = add_task(self._daily_summary(), store_path)
+
+        # Assert: one row, keeping the id the store already had.
+        assert len(list_tasks(store_path)) == 1
+        assert added.id == legacy["id"]
+
     def test_repeated_confirmations_do_not_accumulate(self, store_path: Path) -> None:
         # Arrange / Act: the observed failure, in miniature.
         for _ in range(10):

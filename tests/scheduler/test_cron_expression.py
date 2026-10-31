@@ -61,3 +61,45 @@ def test_the_stored_next_run_skips_the_weekend() -> None:
 
     # Assert: Monday, not Saturday
     assert next_run == "2026-10-12T08:00:00+00:00"
+
+
+@pytest.mark.parametrize("blank", ["", "   ", None])
+def test_a_blank_timezone_builds_the_documented_utc_trigger(blank: str | None) -> None:
+    """APScheduler reads a falsy zone as the host's local zone and a whitespace one
+    as an unusable key, so both have to mean the default the ``--tz`` help names."""
+    trigger = build_cron_trigger("0 9 * * *", blank)
+
+    assert str(trigger.timezone) == "UTC"
+
+
+def test_a_task_stored_without_a_zone_fires_at_the_utc_slot() -> None:
+    # Arrange: the timezone a surface sends when its option is cleared
+    task = ScheduledTask(
+        kind=TaskKind.MANUAL_LOOP,
+        cron="0 9 * * *",
+        timezone="",
+        provider=Provider.INTERACTIVE_SHELL,
+    )
+
+    # Act
+    next_run = compute_next_run(task, datetime(2026, 10, 9, 9, 30, tzinfo=UTC))
+
+    # Assert: 09:00 UTC, not 09:00 wherever the host happens to be
+    assert task.timezone == "UTC"
+    assert next_run == "2026-10-10T09:00:00+00:00"
+
+
+def test_a_named_timezone_still_decides_when_the_loop_fires() -> None:
+    """Only an absent zone is defaulted; a supplied one keeps its own wall clock."""
+    task = ScheduledTask(
+        kind=TaskKind.MANUAL_LOOP,
+        cron="0 9 * * *",
+        timezone="Asia/Kolkata",
+        provider=Provider.INTERACTIVE_SHELL,
+    )
+
+    # Act: 09:30 UTC is already 15:00 in Kolkata, so tomorrow's slot is next
+    next_run = compute_next_run(task, datetime(2026, 10, 9, 9, 30, tzinfo=UTC))
+
+    # Assert: 09:00 Kolkata, which is 03:30 UTC the following day
+    assert next_run == "2026-10-10T03:30:00+00:00"

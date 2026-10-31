@@ -49,6 +49,26 @@ class TestScheduledTask:
         assert task.last_run is None
         assert task.next_run is None
 
+    @pytest.mark.parametrize("blank", ["", "  "])
+    def test_a_blank_timezone_stores_the_documented_default(self, blank: str) -> None:
+        """A stored blank lets the host's local zone decide when the task fires."""
+        task = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            timezone=blank,
+            provider=Provider.INTERACTIVE_SHELL,
+        )
+        assert task.timezone == "UTC"
+
+    def test_a_supplied_timezone_is_stored_as_written(self) -> None:
+        task = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            timezone="Europe/London",
+            provider=Provider.INTERACTIVE_SHELL,
+        )
+        assert task.timezone == "Europe/London"
+
     def test_work_item_reminder_requires_work_item_id(self) -> None:
         with pytest.raises(ValidationError, match="params.work_item_id"):
             ScheduledTask(
