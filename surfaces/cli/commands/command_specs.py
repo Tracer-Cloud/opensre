@@ -71,9 +71,15 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         "surfaces.cli.commands.onboard:onboard",
     ),
     CommandSpec(
+        "login",
+        "Connect and manage external model providers.",
+        "surfaces.cli.commands.login:login_command",
+    ),
+    CommandSpec(
         "auth",
-        "Log in to LLM providers and inspect local auth state.",
-        "surfaces.cli.commands.auth:auth_command",
+        "Compatibility commands; use opensre login to manage model connections.",
+        "surfaces.cli.commands.login:auth_command",
+        hidden=True,
     ),
     CommandSpec(
         "config",

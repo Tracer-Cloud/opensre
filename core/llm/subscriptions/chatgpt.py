@@ -137,10 +137,10 @@ def _exchange(client: httpx.Client, form: dict[str, str]) -> dict[str, Any]:
             }
         ):
             raise _UnusableRefreshToken(
-                "ChatGPT session is no longer usable. Run `opensre auth login chatgpt` again."
+                "ChatGPT session is no longer usable. Run `opensre login chatgpt` again."
             )
         raise SubscriptionLoginRequired(
-            "ChatGPT token exchange failed. Run `opensre auth login chatgpt` again."
+            "ChatGPT token exchange failed. Run `opensre login chatgpt` again."
         )
     return dict(response.json())
 
@@ -170,7 +170,7 @@ def login(
             and profile_id != store.get("pending")
         ):
             raise SubscriptionLoginRequired(
-                "Unknown ChatGPT account ID. See `opensre auth status chatgpt`."
+                "Unknown ChatGPT account ID. See `opensre login status chatgpt`."
             )
         previous = dict(store["profiles"].get(selected, {}))
         host_id = store["host_id"]
@@ -264,7 +264,7 @@ def resolve() -> SubscriptionAuth:
         selected = str(store.get("active", ""))
         profile = store["profiles"].get(selected, {})
         if not profile.get("access_token"):
-            raise SubscriptionLoginRequired("Run `opensre auth login chatgpt` to sign in.")
+            raise SubscriptionLoginRequired("Run `opensre login chatgpt` to sign in.")
         now = time.time()
         if float(profile.get("expires_at", 0)) <= now + 60:
             refresh_at = profile.get("earliest_refresh_at") or 0

@@ -1,4 +1,4 @@
-"""The turn-error render adds ``/model`` and ``/auth login`` recovery hints on a credit-exhausted error."""
+"""The turn-error render adds ``/model`` and ``/login`` recovery hints on a credit-exhausted error."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def test_credit_exhausted_turn_error_shows_model_hint() -> None:
 
 def test_credit_exhausted_turn_error_shows_auth_login_hint() -> None:
     output = _render_turn_error(LLMCreditExhaustedError("Anthropic credit exhausted"))
-    assert "/auth login" in output
+    assert "/login" in output
 
 
 def test_opensre_credit_exhaustion_shows_checkout_instead_of_provider_hints() -> None:
@@ -110,7 +110,7 @@ def test_opensre_credit_exhaustion_shows_checkout_instead_of_provider_hints() ->
     )
     # Arrange/Act above. Assert: the URL appears once, as the way out; no provider hints.
     assert output.count(upgrade_url) == 1
-    assert "/auth login" not in output
+    assert "/login" not in output
     assert "Top up or upgrade: " in output
     assert "/account usage" in output
     assert "/credits" in output
@@ -156,4 +156,4 @@ def test_opensre_credit_exhaustion_link_is_clickable_and_not_repeated() -> None:
 def test_other_turn_error_has_no_model_hint() -> None:
     output = _render_turn_error(RuntimeError("something else broke"))
     assert "/model" not in output
-    assert "/auth login" not in output
+    assert "/login" not in output

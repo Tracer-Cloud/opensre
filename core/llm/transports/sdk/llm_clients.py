@@ -44,6 +44,7 @@ from core.llm.shared.openai_chat_completions import (
     OPENAI_SDK_MAX_RETRIES,
     normalize_messages_openai,
 )
+from core.llm.shared.openai_token_limits import completion_token_retry_kwargs
 from core.llm.shared.structured_output import (
     StructuredOutputClient,
     json_schema_for_structured_output,
@@ -867,7 +868,8 @@ class OpenAILLMClient:
         backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
         max_attempts = _RETRY_MAX_ATTEMPTS
         last_err: Exception | None = None
-        for attempt in range(max_attempts):
+        attempt = 0
+        while attempt < max_attempts:
             try:
                 response = client.chat.completions.create(**kwargs)
                 break
@@ -876,6 +878,7 @@ class OpenAILLMClient:
                     f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment, .env, or secure local keychain."
                 ) from err
             except OpenAINotFoundError as err:
+                attempt += 1
                 if self._activate_model_fallback():
                     kwargs = self._build_request_kwargs(prompt_or_messages)
                     continue
@@ -884,6 +887,11 @@ class OpenAILLMClient:
                     "Check your configured model name or endpoint."
                 ) from err
             except OpenAIBadRequestError as err:
+                retry = completion_token_retry_kwargs(kwargs, err)
+                if retry is not None:
+                    kwargs = retry
+                    continue
+                attempt += 1
                 if _is_openai_invalid_model_identifier(err) and self._activate_model_fallback():
                     kwargs = self._build_request_kwargs(prompt_or_messages)
                     continue
@@ -907,9 +915,10 @@ class OpenAILLMClient:
                     _format_openai_connection_error(err, self._provider_label)
                 ) from err
             except OpenAIRateLimitError as err:
+                attempt += 1
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
-                if attempt == max_attempts - 1:
+                if attempt == max_attempts:
                     raise RuntimeError(
                         f"{self._provider_label} rate limit exceeded (HTTP 429) after multiple retries. "
                         "Check your quota and billing details."
@@ -919,10 +928,11 @@ class OpenAILLMClient:
                 time.sleep(wait)
                 backoff_seconds = wait * 2
             except Exception as err:
+                attempt += 1
                 maybe_raise_github_required(err)
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
-                if attempt == max_attempts - 1:
+                if attempt == max_attempts:
                     raise RuntimeError(
                         "LLM API request failed after multiple retries. Try again in a few seconds."
                     ) from err
@@ -964,7 +974,8 @@ class OpenAILLMClient:
 
         backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
         max_attempts = _RETRY_MAX_ATTEMPTS
-        for attempt in range(max_attempts):
+        attempt = 0
+        while attempt < max_attempts:
             emitted = False
             try:
                 for chunk in client.chat.completions.create(stream=True, **kwargs):
@@ -980,6 +991,7 @@ class OpenAILLMClient:
                     f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment, .env, or secure local keychain."
                 ) from err
             except OpenAINotFoundError as err:
+                attempt += 1
                 if not emitted and self._activate_model_fallback():
                     kwargs = self._build_request_kwargs(prompt_or_messages)
                     continue
@@ -988,6 +1000,11 @@ class OpenAILLMClient:
                     "Check your configured model name or endpoint."
                 ) from err
             except OpenAIBadRequestError as err:
+                retry = completion_token_retry_kwargs(kwargs, err)
+                if retry is not None and not emitted:
+                    kwargs = retry
+                    continue
+                attempt += 1
                 if (
                     not emitted
                     and _is_openai_invalid_model_identifier(err)
@@ -1019,10 +1036,11 @@ class OpenAILLMClient:
                     _format_openai_connection_error(err, self._provider_label)
                 ) from err
             except OpenAIRateLimitError as err:
+                attempt += 1
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 if emitted:
                     raise
-                if attempt == max_attempts - 1:
+                if attempt == max_attempts:
                     raise RuntimeError(
                         f"{self._provider_label} rate limit exceeded (HTTP 429) after multiple retries. "
                         "Check your quota and billing details."
@@ -1032,13 +1050,14 @@ class OpenAILLMClient:
                 time.sleep(wait)
                 backoff_seconds = wait * 2
             except Exception as err:
+                attempt += 1
                 maybe_raise_github_required(err)
                 maybe_raise_credit_exhausted(self._provider_label, err)
                 if emitted:
                     # Mid-stream failure: never retry — chunks are already on
                     # the user's screen and a retry would duplicate them.
                     raise
-                if attempt == max_attempts - 1:
+                if attempt == max_attempts:
                     raise RuntimeError(
                         "LLM API request failed after multiple retries. Try again in a few seconds."
                     ) from err

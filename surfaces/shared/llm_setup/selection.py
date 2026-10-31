@@ -72,12 +72,10 @@ def select_provider(
     if provider.api_key_env and provider.credential_secret and not auth.configured:
         raise SelectionError(
             f"missing credential for {provider.value}: {provider.api_key_env} is not set. "
-            f"Run opensre auth login {provider.value}."
+            f"Run opensre login {provider.value}."
         )
     if provider.credential_kind == "subscription" and not auth.configured:
-        raise SelectionError(
-            f"sign in before selecting this subscription: /auth login {provider.value}"
-        )
+        raise SelectionError(f"sign in before selecting this subscription: /login {provider.value}")
     if provider.endpoint_env and not os.getenv(provider.endpoint_env, "").strip():
         raise SelectionError(
             f"missing base URL for {provider.value}: set {provider.endpoint_env} or run opensre onboard"

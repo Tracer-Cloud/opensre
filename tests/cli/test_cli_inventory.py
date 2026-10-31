@@ -18,7 +18,6 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
     {
         "account",
         "ask",
-        "auth",
         "config",
         "credits",
         "cron",
@@ -29,6 +28,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "health",
         "integrations",
         "knowledge",
+        "login",
         "messaging",
         "model",
         "onboard",
@@ -46,7 +46,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
     }
 )
 
-EXPECTED_HIDDEN_COMMANDS = frozenset({"_package-smoke", CI_REPAIR_WORKER_COMMAND})
+EXPECTED_HIDDEN_COMMANDS = frozenset({"auth", "_package-smoke", CI_REPAIR_WORKER_COMMAND})
 
 
 def _command_inventory() -> tuple[frozenset[str], frozenset[str]]:

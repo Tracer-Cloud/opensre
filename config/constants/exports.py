@@ -606,6 +606,7 @@ EXPORTS: dict[str, str] = {
     "SLACK_WEBHOOK_URL_ENV": "slack",
     # slash_commands
     "INTEGRATIONS_SETUP_COMMAND": "slash_commands",
+    "COMPATIBILITY_SLASH_COMMANDS": "slash_commands",
     "INTEGRATIONS_SETUP_PREFIX": "slash_commands",
     "QUEUED_COMMAND_KEY": "slash_commands",
     # smtp

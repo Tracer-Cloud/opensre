@@ -15,7 +15,7 @@ class GrokResponsesAgentClient(ResponsesAgentClient):
 
     provider_name = "Grok subscription"
     auth_error_hint = (
-        "Run `opensre auth verify grok`; check xAI subscription entitlement and quota."
+        "Run `opensre login verify grok`; check xAI subscription entitlement and quota."
     )
 
     def _request(

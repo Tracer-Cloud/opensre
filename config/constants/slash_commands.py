@@ -13,7 +13,11 @@ INTEGRATIONS_SETUP_PREFIX: Final[str] = f"{INTEGRATIONS_SETUP_COMMAND} "
 #: Tool-result key naming a command queued to run as the user's next turn.
 QUEUED_COMMAND_KEY: Final[str] = "queued_command"
 
+#: Supported literal aliases omitted from primary help, suggestions, and planner prose.
+COMPATIBILITY_SLASH_COMMANDS: Final[frozenset[str]] = frozenset({"/auth", "/logout"})
+
 __all__ = [
+    "COMPATIBILITY_SLASH_COMMANDS",
     "INTEGRATIONS_SETUP_COMMAND",
     "INTEGRATIONS_SETUP_PREFIX",
     "QUEUED_COMMAND_KEY",

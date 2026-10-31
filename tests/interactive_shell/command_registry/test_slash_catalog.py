@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from config.constants.slash_commands import COMPATIBILITY_SLASH_COMMANDS
 from core.agent_harness.tools.action_tools import get_action_tool
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry.slash_catalog import (
@@ -41,8 +42,10 @@ def test_slash_command_specs_have_mcp_metadata() -> None:
 
 def test_slash_invoke_tool_description_lists_every_command() -> None:
     description = slash_invoke_tool_description()
-    for name in SLASH_COMMANDS:
+    for name in SLASH_COMMANDS.keys() - COMPATIBILITY_SLASH_COMMANDS:
         assert name in description
+    for name in COMPATIBILITY_SLASH_COMMANDS:
+        assert f"`{name}`" not in description
 
 
 def test_slash_invoke_description_is_not_a_natural_language_router() -> None:

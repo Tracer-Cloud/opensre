@@ -40,7 +40,7 @@ def render_models(console: Console, *, provider: str | None = None) -> None:
                 )
                 for row in rows
             ),
-            caption="Connect a provider with /login or opensre auth login.",
+            caption="Connect a provider with /login or opensre login.",
         )
     )
 
@@ -115,7 +115,7 @@ def choose_model(
             for choice in choices
         ]
         if not choices:
-            console.print("No providers connected. Run /login or opensre auth login.")
+            console.print("No providers connected. Run /login or opensre login.")
             return None
         current = next((row.key for row in rows if row.active), None)
         preferred = next(

@@ -168,7 +168,7 @@ class TestDispatchSlash:
 
         assert dispatch_slash("/logout deepseek", Session(), console) is True
         text = output.getvalue()
-        assert "/auth logout deepseek" in text
+        assert "/login disconnect deepseek" in text
         assert "Closing the interactive shell" not in text
 
     def test_help_lists_all_commands(self) -> None:
@@ -176,8 +176,12 @@ class TestDispatchSlash:
         console, buf = _capture()
         assert dispatch_slash("/help", session, console) is True
         output = buf.getvalue()
-        for name in SLASH_COMMANDS:
+        from config.constants.slash_commands import COMPATIBILITY_SLASH_COMMANDS
+
+        for name in SLASH_COMMANDS.keys() - COMPATIBILITY_SLASH_COMMANDS:
             assert name in output
+        for name in COMPATIBILITY_SLASH_COMMANDS:
+            assert name not in output
         assert "Use /help <command> for usage." in output
         assert "/model set <provider>" not in output
         latest = session.history[-1]

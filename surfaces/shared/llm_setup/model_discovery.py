@@ -22,7 +22,7 @@ def discover_models(provider: ProviderOption) -> list[tuple[str, str]] | None:
             return subscription_adapter(provider.value).auth.models()
         except (httpx.HTTPError, RuntimeError, ValueError, OSError) as exc:
             raise SelectionError(
-                f"Cannot load {provider.label} models. Run /auth verify {provider.value} "
+                f"Cannot load {provider.label} models. Run /login verify {provider.value} "
                 f"or /login {provider.value} to reconnect. No other source was selected."
             ) from exc
     loader = _LOADERS.get(provider.value)

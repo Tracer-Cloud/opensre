@@ -240,9 +240,7 @@ DEEPSEEK_MODELS = (
 GEMINI_MODELS = (
     ModelOption(value=GEMINI_REASONING_MODEL, label="Gemini 3.1 Pro (preview)"),
     ModelOption(value="gemini-3-flash-preview", label="Gemini 3 Flash (preview)"),
-    ModelOption(value="gemini-3.1-flash-lite-preview", label="Gemini 3.1 Flash-Lite (preview)"),
-    ModelOption(value="gemini-3.1-flash-image-preview", label="Gemini 3.1 Flash Image (preview)"),
-    ModelOption(value="gemini-3-pro-image-preview", label="Gemini 3 Pro Image (preview)"),
+    ModelOption(value="gemini-3.1-flash-lite", label="Gemini 3.1 Flash-Lite"),
 )
 
 NVIDIA_MODELS = (
@@ -259,12 +257,8 @@ MINIMAX_MODELS = (
 )
 
 GROQ_MODELS = (
-    ModelOption(value=GROQ_REASONING_MODEL, label="Llama 3.3 70B Versatile"),
-    ModelOption(value="llama-3.1-8b-instant", label="Llama 3.1 8B Instant"),
-    ModelOption(value="openai/gpt-oss-120b", label="GPT-OSS 120B"),
+    ModelOption(value=GROQ_REASONING_MODEL, label="GPT-OSS 120B"),
     ModelOption(value="openai/gpt-oss-20b", label="GPT-OSS 20B"),
-    ModelOption(value="qwen/qwen3-32b", label="Qwen3 32B"),
-    ModelOption(value="meta-llama/llama-4-scout-17b-16e-instruct", label="Llama 4 Scout 17B"),
 )
 
 BEDROCK_MODELS = (
@@ -315,18 +309,8 @@ BEDROCK_MODELS = (
 )
 
 VERTEX_AI_MODELS = (
-    ModelOption(value=VERTEX_AI_REASONING_MODEL, label="Gemini 2.5 Pro (Vertex) — default"),
-    ModelOption(value="gemini-2.5-flash", label="Gemini 2.5 Flash (Vertex)"),
-    ModelOption(value="gemini-2.5-flash-lite", label="Gemini 2.5 Flash-Lite (Vertex)"),
-    # Gemini 3.x is Preview-only in Vertex Model Garden as of the July 2026 release
-    # notes (docs.cloud.google.com/vertex-ai/generative-ai/docs/release-notes) — not
-    # curated as the default. Same IDs as the direct Gemini provider's GEMINI_MODELS,
-    # since Vertex serves Gemini under the same publisher-model IDs.
-    ModelOption(value="gemini-3.1-pro-preview", label="Gemini 3.1 Pro (Vertex, preview)"),
-    ModelOption(value="gemini-3-flash-preview", label="Gemini 3 Flash (Vertex, preview)"),
-    ModelOption(
-        value="gemini-3.1-flash-lite-preview", label="Gemini 3.1 Flash-Lite (Vertex, preview)"
-    ),
+    ModelOption(value=VERTEX_AI_REASONING_MODEL, label="Gemini 3.8 Flash (Vertex) — default"),
+    ModelOption(value="gemini-3.5-flash-lite", label="Gemini 3.5 Flash-Lite (Vertex)"),
 )
 
 OLLAMA_MODELS = (

@@ -94,7 +94,6 @@ For supported platforms and troubleshooting, see [Install locally](https://www.o
 - [Quick Start](#quick-start)
 - [Deployment](#deployment)
 - [How OpenSRE Works](#how-opensre-works)
-- [Capabilities & integrations](#capabilities--integrations)
 - [Integrations](#integrations)
 - [Security](#security)
 - [Telemetry](#telemetry)
@@ -106,14 +105,21 @@ For supported platforms and troubleshooting, see [Install locally](https://www.o
 
 AI writes more of the code every month. Someone still has to fix the build.
 
-A red pipeline tells you _that_ something failed, not _why_. Under deadline pressure, teams hit re-run and move on, flaky checks pile up, `main` stays red, and the real investigation waits for whichever senior engineer has time.
+When CI goes red, it tells you _that_ something failed, not _why_ or how to fix it. Under deadline pressure, teams hit re-run and move on, flaky checks pile up, `main` stays red, and the real investigation waits for whichever senior engineer has time. OpenSRE is an open-source CI/CD reliability agent that does that investigation for you, built to run on your own infrastructure with your own models:
 
-OpenSRE is the CI/CD reliability agent you run on your own terms:
+- **Recover from red builds faster:** it investigates the moment a run fails, reading logs, testing hypotheses and pushing a fix for you to review
+- **Fix the cause, not just the rerun:** it separates CI-caused failures from code-caused ones, so you fix the right thing
+- **Know what CI is costing you:** failure rate, developer hours lost to unreliable CI, and how long `main` stays red
+- **Senior-level context for everyone:** every engineer gets the same depth of analysis
 
-- **Recover from red builds faster.** It investigates the moment a run fails: reading logs, testing hypotheses and preparing a fix before you've opened the pipeline.
-- **Fix the cause, not just the rerun.** It separates CI-caused failures from code-caused ones, so you fix the right thing instead of retrying until green.
-- **Senior-level context for everyone.** Every engineer gets the same depth of analysis, without waiting on the one person who knows the pipeline.
-- **Open source, on your infrastructure.** Apache 2.0, self-hosted, with your own models.
+SWE-bench<sup>1</sup> showed that agents improve fastest with realistic tasks and clear feedback. Pipeline failures are slower, noisier and harder to reproduce than local code tasks, so we hold OpenSRE to the same standard by:
+
+- running real-world end-to-end tests across cloud-backed scenarios [(tests/e2e)](tests/e2e)
+- keeping semantic test-catalog naming so e2e vs unit and local vs cloud boundaries stay obvious [(tests/README.md)](tests/README.md)
+
+Start with the **[CI/CD overview](docs/cicd/overview.mdx)**: analyze a repository's CI reliability, fix failing checks on a PR, or set up an agent that keeps CI green.
+
+<sup>1</sup> https://arxiv.org/abs/2310.06770
 
 ---
 
@@ -209,35 +215,20 @@ An OpenSRE Cloud managed gateway, an AWS EC2 path, and a general self-hosted opt
   alt="opensre-how-it-works-github"
 />
 
-When a run fails, or you ask about one, OpenSRE:
+When a CI run fails, an alert arrives, or you ask a question, OpenSRE automatically:
 
-1. **Reads** the failing checks, compact log excerpts, and the commits and history around them
+1. **Fetches** the relevant context: failing checks and CI logs, recent commits and deploys, and correlated logs, metrics and traces
 2. **Masks** sensitive identifiers (optional) before external LLM calls
-3. **Reasons** across your connected systems to test hypotheses and separate CI-caused failures from code-caused ones
-4. **Fixes** the cause in an isolated checkout, using your logged-in coding agent (Pi, Claude Code, Codex, Cursor) or its built-in agent on your own model
-5. **Verifies** by pushing to the PR or repair branch and waiting for the new checks to pass
-6. **Reports** an evidence-linked summary in the shell, or in Slack, PagerDuty or Telegram
+3. **Reasons** across your connected systems to test hypotheses in a tool-calling loop, separating CI-caused failures from code-caused ones
+4. **Answers** with an evidence-linked response in the conversation
+5. **Fixes** the cause in an isolated checkout, using your logged-in coding agent (Pi, Claude Code, Codex, Cursor) or its built-in agent on your own model, and pushes it to the PR or repair branch for you to review; alternatively, it suggests next steps and, optionally, executes remediation actions
+6. **Verifies** by waiting for the new checks to pass
+7. **Posts** a summary directly to Slack, PagerDuty, or Telegram — no context switching needed
 
 Connect your observability, code and chat tools once, and every skill runs on them.
 
 For the current code-level agent architecture after removing the old graph and chain
 framework layers, see [AGENTS.md](AGENTS.md).
-
----
-
-## Capabilities & integrations
-
-|                                          |                                                                                  |
-| ---------------------------------------- | -------------------------------------------------------------------------------- |
-| 🔧 **CI fixes you review**               | Reads failing checks, applies a fix, pushes to the PR branch and waits for green |
-| 📈 **CI reliability analytics**          | Failure rate, CI- vs code-caused failures, developer hours lost, red time on `main` |
-| 🔁 **Scheduled repair agents**           | Recurring reliability reports and bounded repair loops, locally or on a hosted gateway |
-| 🔍 **Evidence-backed root cause**        | Correlated analysis across CI logs, commits, metrics, traces and deploys, every conclusion linked to its data |
-| 🛡️ **Reversible identifier masking**     | Redact pods, clusters, and account IDs before external LLM calls; restore in output |
-| 📊 **Session cost & history**            | Per-session token tracking (`/cost`) and resumable REPL sessions (`/sessions`) |
-| 🤖 **Full LLM flexibility**              | Bring your own model — Anthropic, OpenAI, Codex, Ollama, Gemini, OpenRouter, TrustedRouter, NVIDIA NIM, Bedrock |
-
-OpenSRE connects to **60+** tools across LLMs, observability, cloud infrastructure, data platforms, incident management, and MCP. The full matrix (with roadmap links) lives in the **[product docs](https://www.opensre.com/docs)**; a detailed catalog is also maintained in-repo as the project grows.
 
 ---
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from core.llm.shared.openai_token_limits import completion_token_retry_kwargs
 from surfaces.shared.llm_setup.catalog import ProviderOption
 from surfaces.shared.llm_setup.openai_client import load_openai_client
 from surfaces.shared.llm_setup.validation_result import ValidationResult
@@ -158,19 +159,23 @@ def validate_provider_credentials(
         # back to api.openai.com and its (valid) key is reported as rejected.
         base_url = _get_provider_base_url(provider.value)
         openai_client = openai_client_cls(api_key=api_key, base_url=base_url, timeout=30.0)
-        # Only native OpenAI reasoning models use max_completion_tokens; others use max_tokens
-        if provider.value == "openai" and model.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6")):
-            openai_response = openai_client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
-                max_completion_tokens=24,
-            )
-        else:
-            openai_response = openai_client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
-                max_tokens=24,
-            )
+        request_kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
+        }
+        token_field = (
+            "max_completion_tokens"
+            if provider.value == "openai" and model.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6"))
+            else "max_tokens"
+        )
+        request_kwargs[token_field] = 24
+        try:
+            openai_response = openai_client.chat.completions.create(**request_kwargs)
+        except Exception as error:
+            retry = completion_token_retry_kwargs(request_kwargs, error)
+            if retry is None:
+                raise
+            openai_response = openai_client.chat.completions.create(**retry)
         sample_text = (openai_response.choices[0].message.content or "").strip()
         provider_label = _provider_validation_label(provider)
         return ValidationResult(

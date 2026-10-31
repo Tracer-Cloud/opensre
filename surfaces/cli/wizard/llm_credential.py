@@ -72,7 +72,7 @@ OK: Final = "ok"
 UNSAVED: Final = "unsaved"
 UNVERIFIED: Final = "unverified"
 #: The user has no key to hand. Onboarding finishes; the key is added later with
-#: ``opensre auth login <provider>`` or the provider env var. One value for both
+#: ``opensre login <provider>`` or the provider env var. One value for both
 #: the prompt outcome and the recorded state, as with ``unsaved``/``unverified``.
 DEFERRED: Final = "deferred"
 
@@ -130,7 +130,7 @@ def _credential_line_for_saved_summary(
         return "project .env"
     if provider.credential_kind != WizardCredentialKind.CLI:
         if credential_state == DEFERRED:
-            return f"not set yet — run `opensre auth login {provider.value}` when you have a key"
+            return f"not set yet — run `opensre login {provider.value}` when you have a key"
         if credential_state == UNSAVED:
             return "not saved — re-enter next run"
         if credential_state == UNVERIFIED:

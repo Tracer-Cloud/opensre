@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from config.constants.slash_commands import COMPATIBILITY_SLASH_COMMANDS
 from core.tool_framework.utils import object_schema, string_array_property, string_property
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from tools.interactive_shell.shared.slash_catalog import MCP_BY_COMMAND
@@ -102,6 +103,8 @@ def format_slash_catalog_text(
 
     lines: list[str] = []
     for spec in entries:
+        if spec.name in COMPATIBILITY_SLASH_COMMANDS:
+            continue
         desc = spec.llm_description
         if compact and len(desc) > _MAX_COMPACT_DESC_CHARS:
             desc = desc[: _MAX_COMPACT_DESC_CHARS - 1].rstrip() + "…"
@@ -142,7 +145,9 @@ def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -
     # Keep planner payload intentionally tiny for live LLM runs with strict
     # prompt budgets. The full rich catalog remains available via
     # format_slash_catalog_text(..., compact=False).
-    body = "\n".join(f"- `{spec.name}`" for spec in entries)
+    body = "\n".join(
+        f"- `{spec.name}`" for spec in entries if spec.name not in COMPATIBILITY_SLASH_COMMANDS
+    )
     return f"{header}\n\n{body}"
 
 

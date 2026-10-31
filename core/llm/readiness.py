@@ -58,9 +58,7 @@ def llm_ready() -> LLMReadiness:
     from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
 
     if provider in SUBSCRIPTION_BY_VALUE and _api_key_absent(provider):
-        return LLMReadiness(
-            provider=provider, reason=f"Run `opensre auth login {provider}` to sign in."
-        )
+        return LLMReadiness(provider=provider, reason=f"Run `opensre login {provider}` to sign in.")
     if provider in KEYLESS_PROVIDER_VALUES or not _api_key_absent(provider):
         return LLMReadiness(provider=provider)
     return LLMReadiness(

@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from config.cli_command_choices import CLI_COMMAND_CHOICES
+from config.constants.slash_commands import COMPATIBILITY_SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import ERROR
@@ -120,7 +121,7 @@ def _help_sections() -> list[HelpSection]:
         visible: list[SlashCommand] = []
         is_quick_access = section_name == _QUICK_ACCESS_SECTION_NAME
         for command in commands:
-            if command.name in seen:
+            if command.name in seen or command.name in COMPATIBILITY_SLASH_COMMANDS:
                 continue
             visible.append(command)
             if not is_quick_access:
@@ -197,6 +198,12 @@ def _cmd_help(_session: Session, console: Console, args: list[str]) -> bool:
                 render_section_detail(console, section_name, commands)
                 return True
         command = _find_command(sections, target)
+        if command is None:
+            from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
+
+            name = target if target.startswith("/") else f"/{target}"
+            if name in COMPATIBILITY_SLASH_COMMANDS:
+                command = SLASH_COMMANDS.get(name)
         if command is not None:
             render_command_detail(console, command)
             return True

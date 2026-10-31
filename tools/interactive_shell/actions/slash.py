@@ -75,7 +75,14 @@ def _slash_drives_interactive_picker(
     if ports.command_needs_input(name, slash_args):
         return True
     if name == "/login":
-        return True
+        return (
+            not slash_args
+            or (
+                slash_args[0] not in {"list", "status", "verify", "disconnect", "--help"}
+                and "--help" not in slash_args
+            )
+            or slash_args in (["verify"], ["disconnect"])
+        )
     if not slash_args:
         return name in _INTERACTIVE_PICKER_MENUS
     return (name, slash_args[0].lower()) in _INTERACTIVE_PICKER_SUBCOMMANDS and (

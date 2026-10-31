@@ -6,7 +6,7 @@ key, so it inherits the env-then-file policy in :mod:`config.secrets.store`
 rather than repeating it.
 
 Not to be confused with ``config.llm_auth.records``, which holds deliberately
-non-secret provider status metadata in a plain file so ``opensre auth status``
+non-secret provider status metadata in a plain file so ``opensre login status``
 can answer without reading stored secrets.
 """
 

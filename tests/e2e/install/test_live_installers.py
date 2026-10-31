@@ -190,6 +190,14 @@ def test_live_brew_tap_and_fetch() -> None:
         check=False,
     )
     assert tap.returncode == 0, tap.stderr + tap.stdout
+    # Homebrew 7.0.11+ trusts a named tap formula implicitly only for install commands.
+    subprocess.run(
+        ["brew", "trust", "--formula", "tracer-cloud/tap/opensre"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
 
     info = subprocess.run(
         ["brew", "info", "--json=v2", "tracer-cloud/tap/opensre"],

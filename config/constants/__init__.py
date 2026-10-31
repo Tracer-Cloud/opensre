@@ -1453,6 +1453,9 @@ if TYPE_CHECKING:
         SLACK_WEBHOOK_URL_ENV as SLACK_WEBHOOK_URL_ENV,
     )
     from config.constants.slash_commands import (
+        COMPATIBILITY_SLASH_COMMANDS as COMPATIBILITY_SLASH_COMMANDS,
+    )
+    from config.constants.slash_commands import (
         INTEGRATIONS_SETUP_COMMAND as INTEGRATIONS_SETUP_COMMAND,
     )
     from config.constants.slash_commands import (

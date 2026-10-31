@@ -20,7 +20,7 @@ _MISSING_KEY = (
     "`admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` "
     "environment variable."
 )
-_AUTH_LOGIN_ID = re.compile(r"`(?:/auth login|opensre auth login) ([^`]+)`")
+_AUTH_LOGIN_ID = re.compile(r"`(?:/login|opensre login) ([^`]+)`")
 _API_KEY_PROVIDERS = [spec for spec in PROVIDER_SPECS if spec.uses_open_sre_api_key]
 
 
@@ -84,7 +84,7 @@ def test_missing_key_guidance_names_an_id_auth_login_accepts(
     assert text is not None
     match = _AUTH_LOGIN_ID.search(text)
     assert match is not None, text
-    assert match.group(0).startswith("`/auth login" if in_shell else "`opensre auth login")
+    assert match.group(0).startswith("`/login" if in_shell else "`opensre login")
     # The canonical id, not merely one the underscore alias happens to rescue.
     assert match.group(1) == spec.value
     assert resolve_auth_profile(match.group(1)).provider_value == spec.value

@@ -13,6 +13,35 @@ from rich.console import Console
 from surfaces.interactive_shell.command_registry import cli_parity
 
 
+@pytest.mark.parametrize("provider,key_removed", [("openai", True), ("claude-code", False)])
+def test_disconnect_handoff_clears_only_managed_api_keys(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, provider: str, key_removed: bool
+) -> None:
+    from config.constants.llm import OPENSRE_MODEL_SETUP_RESULT_ENV
+    from surfaces.shared.llm_setup.handoff import notify_setup
+
+    monkeypatch.setenv("OPENSRE_PROJECT_ENV_PATH", str(tmp_path / ".env"))
+    monkeypatch.setenv("OPENAI_API_KEY", "old-api-key")
+    monkeypatch.setenv("OPENSRE_ACCOUNT_TOKEN", "account-token")
+    monkeypatch.setenv("OPENSRE_LLM_CONNECTION", "account")
+    monkeypatch.setenv("UNRELATED_SETTING", "keep")
+
+    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        child_env = kwargs["env"]
+        assert isinstance(child_env, dict)
+        with monkeypatch.context() as child:
+            child.setenv(OPENSRE_MODEL_SETUP_RESULT_ENV, child_env[OPENSRE_MODEL_SETUP_RESULT_ENV])
+            notify_setup(disconnected=provider)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(cli_parity.subprocess, "run", run)
+    cli_parity.run_cli_command(Console(file=StringIO()), ["login", "disconnect", provider])
+    assert ("OPENAI_API_KEY" not in os.environ) is key_removed
+    assert os.environ["OPENSRE_ACCOUNT_TOKEN"] == "account-token"
+    assert os.environ["OPENSRE_LLM_CONNECTION"] == "account"
+    assert os.environ["UNRELATED_SETTING"] == "keep"
+
+
 @pytest.mark.parametrize("set_provider,exit_code", [(True, 0), (False, 0), (True, 1)])
 def test_login_reloads_only_selected_connection(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, set_provider: bool, exit_code: int

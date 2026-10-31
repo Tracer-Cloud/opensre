@@ -161,9 +161,8 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | `/account` | Sign in to OpenSRE, inspect the local account, or sign out |
 | `/credits` | Remaining hosted credits for the signed-in account (same as `opensre credits`) |
 | `/setup` | First-run setup: account sign-in, hosted model, then the shell (same as `opensre setup`) |
-| `/auth` | Log in to LLM providers, show provider auth status, or clear credentials |
-| `/login` | Shortcut for `/auth login` (`/login openai`, `/login anthropic`, `/login deepseek`). Signs in an LLM provider, not the OpenSRE account |
-| `/logout` | Sign out of the OpenSRE account and close the shell (same as `/account logout`) |
+| `/login` | Manage model connections: list, connect, verify, or disconnect. Direct `/login <provider>` connects that provider |
+| `/account logout` | Sign out of OpenSRE and close the shell; keeps external provider connections |
 | `/onboard` | Interactive onboarding wizard |
 | `/remote` | Connect to and operate remote deployed agents |
 | `/remote-sync` | Manage remote sync to your object store. Subcommands: `status`, `sync`, `setup`. See [Sync to your own object store](/install/remote-sync). |
@@ -676,7 +675,7 @@ Use **+ Connect a provider** inside the picker, or `/login`. Successful login
 opens that provider's model choices automatically. **Choose later** keeps your
 connection without changing the active model. API and CLI catalogs are quick
 choices, not a guarantee of entitlement; subscription/local catalogs come from
-the connected account/host. Run `/auth verify <provider>` to inspect credentials
+the connected account/host. Run `/login verify <provider>` to inspect credentials
 or `/login <provider>` to reconnect and refresh discovered choices.
 
 Selecting a local provider explicitly changes inference billing while keeping
@@ -1001,51 +1000,66 @@ Run the first-use webapp account flow. It creates or signs in to an OpenSRE acco
 
 </Accordion>
 
-<Accordion title="/auth">
-
-```text
-/auth
-/auth status
-/auth login deepseek
-/auth logout deepseek
-/auth verify anthropic
-```
-
-Log in to LLM providers, show local auth status, or clear stored credentials. Same as `opensre auth`. Interactive login prompts on the real TTY.
-
-</Accordion>
-
-<Accordion title="/login">
+<Accordion title="/login — model connections">
 
 ```text
 /login
+/login list
+/login status openai
+/login connect
 /login openai
-/login anthropic
-/login deepseek
+/login verify openai
+/login disconnect openai
 ```
 
-Shortcut for `/auth login`. First choose **Subscription**, **API key**,
-**CLI-managed**, or **Local / cloud** in the standard subcommand-style submenu,
-then choose a provider in its submenu. Use ↑/↓ and Enter, without a search/filter
-form. Esc from providers goes back to methods. `/login openai` and
-other direct provider commands skip these menus.
+Bare `/login` opens the standard action tray: **list**, **connect**, **verify**,
+and **disconnect**. List shows connection status without retrieving stored secrets
+or contacting providers. Verify explicitly checks the selected connection. When
+verify or disconnect needs a provider, the terminal offers saved connections;
+Esc cancels without changing settings. Non-interactive commands require an
+explicit action and any required provider; they never wait for a picker.
 
-Connect, then select a model in the picker that opens automatically. **Choose later** or Esc keeps the completed
-connection without switching models. `--no-set-provider` connects only;
-`--set-provider --model <id>` explicitly connects and activates without the picker.
+Connect opens **Subscription**, **API key**, **CLI-managed**, or **Local / cloud**,
+then the provider submenu. Esc from providers goes back to methods. Direct
+`/login openai` or `/login connect openai` skips those choices. The same commands
+work outside the shell as `opensre login …`.
 
-This signs in an LLM provider, not your OpenSRE identity. Use `/account login`
-for that identity and `/logout` to sign out of it.
+After connection, a model picker opens. **Choose later** or Esc keeps the
+connection and the current model/billing source. `--no-set-provider` connects
+only; `--set-provider --model <id>` explicitly connects and activates without the
+picker. `/model` selects among existing connections, including OpenSRE hosted.
+
+Disconnect removes only the credentials OpenSRE manages for that provider.
+For CLI-managed or ambient-cloud connections, it clears OpenSRE metadata while
+leaving the vendor session, ambient credentials, and host settings intact. It
+does not change the selected model or silently fall back to hosted billing;
+select another connection explicitly with `/model` if needed.
+
+OpenSRE hosted inference uses your OpenSRE account and credits, independently
+of external provider connections. Use `/account login`, `/account credits`,
+and `/account logout` for that account. Account logout closes the shell and
+preserves external provider connections.
 
 </Accordion>
 
-<Accordion title="/logout">
+<Accordion title="Compatibility commands and migration">
 
-```text
-/logout
-```
+Existing `/auth`, `/auth status [provider]`, `/auth login <provider>`,
+`/auth verify <provider>`, and `/auth logout <provider>` remain supported with
+their existing meanings. The equivalent `opensre auth …` commands continue to
+work in scripts. Use `/login list`, `/login <provider>`, `/login verify <provider>`,
+and `/login disconnect <provider>` for new workflows.
 
-Sign out of the OpenSRE account and close the shell. Same as `/account logout`: it revokes the saved session and drops the hosted-model route before another turn. It does not clear an LLM provider credential — use `/auth logout <provider>` for that.
+`/logout` remains a shortcut for `/account logout`; it never disconnects a model
+provider. These compatibility commands are omitted from primary help and root
+completion suggestions, but can still be typed and inspected with `/help /auth`
+or `/help /logout`. No removal is scheduled in this change. Any future removal
+must announce a migration window in the release notes; scripts retain their
+current arguments and exit behavior during that window.
+
+`/setup` remains the first-run account flow. `/onboard` and
+`/onboard local_llm` retain their existing provider/local-model setup capabilities;
+they have not been replaced with aliases for `/setup`.
 
 </Accordion>
 

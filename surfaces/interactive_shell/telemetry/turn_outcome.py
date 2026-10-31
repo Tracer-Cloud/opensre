@@ -27,6 +27,9 @@ _INTERACTIVE_WIZARD_SLASH_PATHS: frozenset[str] = frozenset(
         "/mcp disconnect",
         "/auth login",
         "/auth logout",
+        "/login connect",
+        "/login verify",
+        "/login disconnect",
     }
 )
 _CONDITIONAL_BROWSER_SLASH_PATHS: frozenset[str] = frozenset(

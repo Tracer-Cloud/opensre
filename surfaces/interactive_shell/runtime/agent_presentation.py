@@ -143,7 +143,7 @@ async def _render_agent_presentation_transition(
             if isinstance(exc, LLMCreditExhaustedError):
                 console.print(f"[{DIM}]Run /model to switch to another provider.[/]")
                 console.print(
-                    f"[{DIM}]Or run /auth login <provider> to re-authenticate "
+                    f"[{DIM}]Or run /login <provider> to re-authenticate "
                     f"or add a different provider.[/]"
                 )
         case "turn_end":
