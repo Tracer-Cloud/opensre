@@ -144,5 +144,7 @@ def test_opaque_alias_token_limit_is_consistent_and_bounded(
     assert all(body["model"] == "prod-chat" for body in bodies)
     if len(bodies) == 2:
         first, second = (dict(body) for body in bodies)
-        assert first.pop("max_tokens") == second.pop("max_completion_tokens")
+        max_tokens = first.pop("max_tokens")
+        max_completion_tokens = second.pop("max_completion_tokens")
+        assert max_tokens == max_completion_tokens
         assert first == second
