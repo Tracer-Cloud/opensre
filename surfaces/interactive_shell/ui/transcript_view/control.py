@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 # Rows moved per wheel notch.
 _WHEEL_ROWS = 3
 
+# The bar a scrolled-back view shows once rows arrive below it.
+_NEW_OUTPUT_ROW: Row = (("class:transcript-new-output", "↓ new output"),)
+
 
 class TranscriptControl(UIControl):
     """Transcript viewport: as tall as its rows until they fill the screen.
@@ -40,12 +43,21 @@ class TranscriptControl(UIControl):
         self._offset = 0
         self._page = 1
         self._mark: TranscriptMark | None = None
+        # Where the transcript ended the last time the view was at the bottom,
+        # so a scrolled-back view knows which rows arrived below it.
+        self._bottom_mark: TranscriptMark | None = None
+        self._bar_index = -1
         self._lock = threading.Lock()
 
     @property
     def scrolled_back(self) -> bool:
         """True while older rows are shown instead of the newest output."""
         return self._offset > 0
+
+    @property
+    def shows_new_output(self) -> bool:
+        """True while the bar signalling rows below is on screen."""
+        return self._bar_index >= 0
 
     def is_focusable(self) -> bool:
         return False
@@ -55,12 +67,21 @@ class TranscriptControl(UIControl):
         with self._lock:
             offset, anchor = self._offset, self._mark
             self._page = max(1, height - 1)
-        window = self._store.window(max(1, width), height, offset, anchor)
+        bar = offset > 0 and self._new_below(width)
+        window = self._store.window(
+            max(1, width), max(1, height - 1) if bar else height, offset, anchor
+        )
         with self._lock:
             # A scroll that landed during the render applies on top.
             self._offset = max(0, self._offset - offset + window.offset)
             self._mark = window.mark
+            if self._offset == 0:
+                self._bottom_mark = window.mark
         visible: list[Row] = window.rows
+        self._bar_index = -1
+        if bar and self._offset > 0:
+            visible = [*visible, _NEW_OUTPUT_ROW]
+            self._bar_index = len(visible) - 1
 
         def get_line(index: int) -> StyleAndTextTuples:
             return list(visible[index])
@@ -82,8 +103,20 @@ class TranscriptControl(UIControl):
         """
         with self._lock:
             offset, anchor = self._offset, self._mark
-        window = self._store.window(max(1, width), max(0, max_available_height), offset, anchor)
-        return len(window.rows)
+        bar = offset > 0 and self._new_below(width)
+        window = self._store.window(
+            max(1, width),
+            max(0, max_available_height - 1) if bar else max(0, max_available_height),
+            offset,
+            anchor,
+        )
+        return len(window.rows) + (1 if bar else 0)
+
+    def _new_below(self, width: int) -> bool:
+        """Whether rows arrived below the passage this scrolled-back view holds."""
+        with self._lock:
+            mark = self._bottom_mark
+        return mark is not None and self._store.rows_since(mark, width) > 0
 
     def scroll(self, rows: int) -> None:
         """Move toward older (positive) or newer (negative) rows."""
@@ -106,6 +139,11 @@ class TranscriptControl(UIControl):
             return None
         if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
             self.scroll(-_WHEEL_ROWS)
+            return None
+        if mouse_event.event_type == MouseEventType.MOUSE_UP and (
+            mouse_event.position.y == self._bar_index
+        ):
+            self.scroll_to_bottom()
             return None
         return NotImplemented
 

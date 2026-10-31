@@ -41,6 +41,8 @@ def _build_prompt_style() -> Style:
             "command-tray.current.description": f"nobold {theme.TEXT} {selection}",
             # Footer sits under the plate on terminal bg (hint chrome, not input).
             "composer-footer": theme.DIM,
+            # The bar a scrolled-back transcript shows while output arrives.
+            "transcript-new-output": theme.DIM,
             # prompt_toolkit defaults the ``bottom-toolbar`` style to
             # ``reverse:noinherit``, which paints the toolbar as a dark
             # highlighted band across the terminal. Clear the reverse

@@ -353,8 +353,9 @@ class PromptBuilder:
 
 
 def _transcript_scroll_bindings(view: TranscriptControl) -> KeyBindings:
-    """PageUp/PageDown page through the full-screen transcript."""
+    """PageUp/PageDown page through the full-screen transcript, End returns to it."""
     bindings = KeyBindings()
+    scrolled_back = Condition(lambda: view.scrolled_back)
 
     @bindings.add(Keys.PageUp, filter=~has_completions, eager=True)
     def _page_up(event: KeyPressEvent) -> None:
@@ -364,6 +365,12 @@ def _transcript_scroll_bindings(view: TranscriptControl) -> KeyBindings:
     @bindings.add(Keys.PageDown, filter=~has_completions, eager=True)
     def _page_down(event: KeyPressEvent) -> None:
         view.page_down()
+        event.app.invalidate()
+
+    # Only while scrolled back, so End still ends the line in the composer.
+    @bindings.add(Keys.End, filter=~has_completions & scrolled_back, eager=True)
+    def _end(event: KeyPressEvent) -> None:
+        view.scroll_to_bottom()
         event.app.invalidate()
 
     return bindings
