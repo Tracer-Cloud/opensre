@@ -68,9 +68,7 @@ class TranscriptControl(UIControl):
             offset, anchor = self._offset, self._mark
             self._page = max(1, height - 1)
         bar = offset > 0 and self._new_below(width)
-        window = self._store.window(
-            max(1, width), max(1, height - 1) if bar else height, offset, anchor
-        )
+        window = self._store.window(max(1, width), height, offset, anchor)
         with self._lock:
             # A scroll that landed during the render applies on top.
             self._offset = max(0, self._offset - offset + window.offset)
@@ -79,8 +77,10 @@ class TranscriptControl(UIControl):
                 self._bottom_mark = window.mark
         visible: list[Row] = window.rows
         self._bar_index = -1
-        if bar and self._offset > 0:
-            visible = [*visible, _NEW_OUTPUT_ROW]
+        if bar and self._offset > 0 and visible:
+            # The bar replaces the last row instead of shrinking the window: the
+            # reading position is the top of the passage, which must not move.
+            visible = [*visible[:-1], _NEW_OUTPUT_ROW]
             self._bar_index = len(visible) - 1
 
         def get_line(index: int) -> StyleAndTextTuples:
@@ -103,14 +103,8 @@ class TranscriptControl(UIControl):
         """
         with self._lock:
             offset, anchor = self._offset, self._mark
-        bar = offset > 0 and self._new_below(width)
-        window = self._store.window(
-            max(1, width),
-            max(0, max_available_height - 1) if bar else max(0, max_available_height),
-            offset,
-            anchor,
-        )
-        return len(window.rows) + (1 if bar else 0)
+        window = self._store.window(max(1, width), max(0, max_available_height), offset, anchor)
+        return len(window.rows)
 
     def _new_below(self, width: int) -> bool:
         """Whether rows arrived below the passage this scrolled-back view holds."""

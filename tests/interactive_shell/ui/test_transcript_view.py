@@ -191,7 +191,7 @@ def test_new_output_bar_appears_only_once_rows_arrive_below_the_view() -> None:
     assert not view.shows_new_output
 
 
-def test_new_output_bar_takes_the_last_line_of_a_full_view() -> None:
+def test_new_output_bar_replaces_the_last_row_and_keeps_the_reading_position() -> None:
     store = TranscriptStore()
     store.append_text("".join(f"line {index}\n" for index in range(10)))
     view = TranscriptControl(store)
@@ -200,7 +200,18 @@ def test_new_output_bar_takes_the_last_line_of_a_full_view() -> None:
     assert _visible(view) == ["line 3", "line 4", "line 5"]
 
     store.append_text("line 10\n")
-    assert _visible(view) == ["line 4", "line 5", "↓ new output"]
+    assert _visible(view) == ["line 3", "line 4", "↓ new output"]
+
+
+def test_new_output_bar_uses_the_only_row_a_one_line_view_has() -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)))
+    view = TranscriptControl(store)
+    _visible(view)
+    view.scroll(4)
+    store.append_text("line 10\n")
+
+    assert _visible(view, height=1) == ["↓ new output"]
 
 
 def test_clicking_the_new_output_bar_returns_to_the_newest_row() -> None:
