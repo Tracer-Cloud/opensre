@@ -126,7 +126,9 @@ def test_custom_azure_deployment_retries_only_token_parameter(
     assert _call(mode, deployment) == "OpenSRE ready"
     assert len(endpoint.requests) == 2
     first, second = (dict(body) for body in endpoint.requests)
-    assert first.pop("max_tokens") == second.pop("max_completion_tokens")
+    max_tokens = first.pop("max_tokens")
+    max_completion_tokens = second.pop("max_completion_tokens")
+    assert max_tokens == max_completion_tokens
     assert first == second
     assert endpoint.urls[0] == endpoint.urls[1]
     assert endpoint.urls[0].path == f"/openai/deployments/{deployment}/chat/completions"
