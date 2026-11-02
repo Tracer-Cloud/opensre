@@ -250,6 +250,13 @@ class TranscriptStore:
             self._trim_locked()
             return unflushed
 
+    def has_output_since(self, mark: TranscriptMark) -> bool:
+        """Detect text changes independently of the row delta used for anchoring."""
+        with self._lock:
+            return self._epoch == mark.epoch and (
+                self._seq > mark.seq or _resolve_carriage_returns(self._pending) != mark.pending
+            )
+
     def rows_since(self, mark: TranscriptMark, width: int) -> int:
         """Rows added below ``mark`` at ``width``; 0 once the transcript is cleared."""
         entries, pending, epoch, _seq = self._snapshot()

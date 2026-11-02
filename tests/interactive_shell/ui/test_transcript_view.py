@@ -172,6 +172,33 @@ def test_view_cannot_scroll_past_the_oldest_row() -> None:
     assert "".join(text for _style, text in content.get_line(2)).rstrip() == "line 4"
 
 
+@pytest.mark.parametrize("width", [40, 100, 160])
+@pytest.mark.parametrize("chunk", [" failed", " failed\n", "\rfailed\n"])
+def test_pending_changes_signal_output_without_moving_the_passage(width: int, chunk: str) -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)) + "working")
+    view = TranscriptControl(store)
+    view.create_content(width, 3)
+    view.scroll(4)
+    before = view.create_content(width, 3)
+    top = before.get_line(0)
+    assert not view.shows_new_output
+    store.append_text(chunk)
+    after = view.create_content(width, 3)
+    assert after.get_line(0) == top
+    assert "↓ new output" in "".join(text for _, text in after.get_line(2))
+    assert view.shows_new_output
+    view.scroll_to_bottom()
+    view.create_content(width, 3)
+    assert not view.shows_new_output
+    view.scroll(4)
+    view.create_content(width, 3)
+    assert not view.shows_new_output
+    store.clear()
+    view.create_content(width, 3)
+    assert not view.shows_new_output
+
+
 def test_new_output_bar_appears_only_once_rows_arrive_below_the_view() -> None:
     store = TranscriptStore()
     store.append_text("".join(f"line {index}\n" for index in range(10)))
