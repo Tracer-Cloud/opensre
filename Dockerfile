@@ -50,8 +50,8 @@ RUN apt-get update \
 # What the CI repair loop shells out to: the GitHub CLI for pull-request reads
 # and pushes, and the Codex CLI (on Node) as the coding agent. Pinned and
 # checksum-verified; the hosted account token becomes Codex's OpenAI key.
-ARG GH_VERSION=2.101.0
-ARG NODE_VERSION=22.23.2
+ARG GH_VERSION=2.103.3
+ARG NODE_VERSION=22.23.4
 ARG CODEX_VERSION=0.156.1
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
