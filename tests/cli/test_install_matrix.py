@@ -134,7 +134,11 @@ def _write_curl_shim(
     *,
     mode: str = "",
 ) -> None:
-    """Shim ``curl`` so install.sh never hits the network."""
+    """Shim ``curl`` so install.sh never hits the network.
+
+    An asset staged under ``assets_dir/stale/`` is served once before the
+    current one, as a download that spans a release republish sees it.
+    """
     bin_dir.mkdir(parents=True, exist_ok=True)
     mapping_path = bin_dir / "url_map.json"
     mapping_path.write_text(json.dumps(release_json_by_url), encoding="utf-8")
@@ -273,6 +277,10 @@ def _write_curl_shim(
               fi
               name="$(basename "$url")"
               src="$assets/$name"
+              if [ -f "$assets/stale/$name" ]; then
+                src="$assets/stale/$name.served"
+                mv "$assets/stale/$name" "$src"
+              fi
               [ -f "$src" ] || {{ echo "curl-shim: missing asset $src for $url" >&2; exit 1; }}
               if [ -n "$out" ]; then cp "$src" "$out"; elif [ "$write_out" != true ]; then cat "$src"; fi
               if [ "$write_out" = true ]; then printf '%s' "200"; fi
@@ -647,6 +655,80 @@ def test_install_sh_retries_github_rate_limit_then_installs(tmp_path: Path) -> N
     # A pinned version starts its download alongside the lookup; only the
     # lookup is subject to retries.
     assert [line for line in missing_calls.splitlines() if line.startswith("api ")] == ["api 404"]
+
+
+def _stage_republished_archive(tmp_path: Path, *, archive_version: str, version_line: str) -> str:
+    """Serve a previous build's archive once, beside the current build's checksum."""
+    plat, arch = _host_platform_arch()
+    stale = tmp_path / "assets" / "stale"
+    archive = _build_release_assets(
+        stale,
+        archive_version=archive_version,
+        plat=plat,
+        arch=arch,
+        binary_version_line=version_line,
+    )
+    (stale / f"{archive}.sha256").unlink()
+    return archive
+
+
+def _write_sleep_shim(tmp_path: Path) -> Path:
+    """Record install.sh's waits instead of sleeping; return the log path."""
+    shim_bin = tmp_path / "shim-bin"
+    shim_bin.mkdir(parents=True, exist_ok=True)
+    log = shim_bin / "sleep.log"
+    log.write_text("", encoding="utf-8")
+    shim = shim_bin / "sleep"
+    shim.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> {json.dumps(str(log))}\n')
+    shim.chmod(shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return log
+
+
+def test_install_sh_refetches_main_build_republished_mid_download(tmp_path: Path) -> None:
+    """A main-build archive/checksum pair from different builds is fetched once more."""
+    archive = _stage_republished_archive(
+        tmp_path, archive_version="main", version_line="opensre 0.0 (dev, main @ c0ffee)"
+    )
+    sleeps = _write_sleep_shim(tmp_path)
+
+    result = _run_install_sh(tmp_path, "--main")
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "republished during the download" in result.stderr
+    assert sleeps.read_text(encoding="utf-8").split() == ["10"]
+    calls = (tmp_path / "shim-bin" / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert [line for line in calls if line.startswith("api ")] == ["api 200", "api 200"]
+    assert sorted(line for line in calls if line.startswith("asset ")) == [
+        f"asset 200 {archive}",
+        f"asset 200 {archive}",
+        f"asset 200 {archive}.sha256",
+        f"asset 200 {archive}.sha256",
+    ]
+    version = subprocess.run(
+        [str(tmp_path / "opt" / "bin" / "opensre"), "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "deadbeef" in version.stdout
+
+
+def test_install_sh_pinned_version_checksum_mismatch_fails_fast(tmp_path: Path) -> None:
+    """A versioned release never changes, so its mismatch is final and not retried."""
+    archive = _stage_republished_archive(
+        tmp_path, archive_version="2026.4.29", version_line="opensre 2026.4.28"
+    )
+    sleeps = _write_sleep_shim(tmp_path)
+
+    result = _run_install_sh(tmp_path, "--version", "2026.4.29")
+    assert result.returncode != 0
+    assert f"Checksum verification failed for '{archive}'." in result.stderr
+    assert "republished" not in result.stderr
+    assert sleeps.read_text(encoding="utf-8") == ""
+    calls = (tmp_path / "shim-bin" / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert [line for line in calls if line.startswith("api ")] == ["api 200"]
+    assert [line for line in calls if line == f"asset 200 {archive}"] == [f"asset 200 {archive}"]
+    assert not (tmp_path / "opt" / "bin" / "opensre").exists()
 
 
 @pytest.mark.parametrize("args", [("--main",), ("--version", "2026.4.29")])

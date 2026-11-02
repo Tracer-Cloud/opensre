@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
 import sys
@@ -112,9 +113,12 @@ def test_falls_back_to_default_when_no_candidate_is_on_path(tmp_path: Path) -> N
     assert f"INSTALL_DIR={default_dir}" in result.stdout
 
 
-def test_install_sh_has_no_sudo_install_path() -> None:
-    source = INSTALL_SH.read_text()
+def test_install_sh_never_prompts_for_sudo() -> None:
+    """Installs stay sudo-free; the optional same-shell link may only use ``sudo -n``."""
+    code = "\n".join(
+        line for line in INSTALL_SH.read_text().splitlines() if not line.lstrip().startswith("#")
+    )
 
-    assert "command -v sudo" not in source
-    assert "sudo -v" not in source
-    assert 'sudo "$@"' not in source
+    assert "sudo -v" not in code
+    assert 'sudo "$@"' not in code
+    assert re.findall(r"\bsudo\s+(?!-n\b)[-\w]", code) == []

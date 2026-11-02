@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import tarfile
 import textwrap
 from pathlib import Path
 
@@ -335,7 +339,6 @@ def test_install_sh_uses_concise_unnumbered_install_messages() -> None:
     assert 'run_with_dots "Fetching and verifying checksum"' in source
     assert 'run_with_dots "Extracting OpenSRE"' in source
     assert 'run_with_dots "Installing OpenSRE"' in source
-    assert 'run_with_dots "Checking PATH configuration"' in source
     assert 'muted "Checksum verification passed"' in source
     assert "Run '${BIN_NAME}' to get started!" in source
     assert re.search(r"\[[0-9]+/[0-9]+\]", source) is None
@@ -367,7 +370,7 @@ def test_install_sh_concise_output_sequence() -> None:
         verify_release_checksum
         print_install_confirmation
         ensure_on_path
-        log "Run '${BIN_NAME}' to get started!"
+        print_get_started
         """
     )
 
@@ -381,7 +384,6 @@ def test_install_sh_concise_output_sequence() -> None:
     assert result.stderr.splitlines() == [
         "Downloading OpenSRE main build for darwin-arm64...",
         "Fetching and verifying checksum...",
-        "Checking PATH configuration...",
     ]
 
 
@@ -549,7 +551,7 @@ def test_ensure_on_path_reports_existing_configuration(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == ["PATH already configured"]
-    assert result.stderr.splitlines() == ["Checking PATH configuration..."]
+    assert result.stderr == ""
 
 
 def test_ensure_on_path_does_not_link_into_arbitrary_dependency_bin(tmp_path: Path) -> None:
@@ -649,6 +651,131 @@ def test_ensure_github_cli_respects_skip_env(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "OPENSRE_SKIP_GH_INSTALL" in result.stderr
     assert "OpenSRE GitHub chat tools" in result.stderr
+
+
+_GH_RELEASE_TOOLS = (
+    "awk",
+    "cp",
+    "gzip",
+    "id",
+    "install",
+    "mkdir",
+    "mv",
+    "sha256sum",
+    "shasum",
+    "tar",
+    "tr",
+)
+
+
+@pytest.mark.parametrize("tampered", [False, True])
+def test_ensure_github_cli_installs_verified_release_without_homebrew(
+    tmp_path: Path, tampered: bool
+) -> None:
+    """Linux without Homebrew gets gh's release build beside opensre, never unverified."""
+    asset = "gh_9.9.9_linux_amd64"
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    archive = fixtures / f"{asset}.tar.gz"
+    payload = b"#!/bin/sh\necho gh-ok\n"
+    with tarfile.open(archive, "w:gz") as tar:
+        member = tarfile.TarInfo(f"{asset}/bin/gh")
+        member.size = len(payload)
+        member.mode = 0o755
+        tar.addfile(member, io.BytesIO(payload))
+    digest = "0" * 64 if tampered else hashlib.sha256(archive.read_bytes()).hexdigest()
+    (fixtures / "gh_9.9.9_checksums.txt").write_text(f"{digest}  {asset}.tar.gz\n")
+
+    # Only these tools: system bin dirs also hold brew or gh on dev machines and CI.
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in _GH_RELEASE_TOOLS:
+        if real := shutil.which(name):
+            (tools / name).symlink_to(real)
+    apt_get = tools / "apt-get"
+    apt_get.write_text("#!/bin/sh\nexit 1\n")
+    apt_get.chmod(0o755)
+    install_dir = tmp_path / "bin"
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    result = _run_logging_snippet(
+        f"""
+        github_cli_latest_tag() {{ printf 'v9.9.9\\n'; }}
+        download_to() {{ cp {shlex.quote(str(fixtures))}/"${{1##*/}}" "$2"; }}
+        platform=linux
+        target_arch=x64
+        INSTALL_DIR={shlex.quote(str(install_dir))}
+        tmp_dir={shlex.quote(str(work_dir))}
+        PATH={shlex.quote(str(tools))}
+        ensure_github_cli
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    installed = install_dir / "gh"
+    if tampered:
+        assert not installed.exists()
+        assert not list(install_dir.glob("gh.new.*"))
+        assert "Could not install GitHub CLI (gh) automatically." in result.stderr
+        # Bare ``apt install gh`` fails on stock Ubuntu images: the hint adds GitHub's repo.
+        assert "https://cli.github.com/packages stable main" in result.stderr
+        assert "apt-get install -y gh" in result.stderr
+    else:
+        assert installed.read_bytes() == payload
+        assert installed.stat().st_mode & 0o111
+        assert f"Installed GitHub CLI (gh) to {installed}" in result.stdout
+
+
+@pytest.mark.parametrize("sudo_allowed", [True, False])
+def test_ensure_on_path_links_into_this_shell_with_passwordless_sudo(
+    tmp_path: Path, sudo_allowed: bool
+) -> None:
+    """A piped install cannot change its parent shell's PATH; a system-dir link can."""
+    home = tmp_path / "home"
+    install_dir = home / _LOCAL_BIN
+    install_dir.mkdir(parents=True)
+    for name in ("opensre", "gh"):
+        binary = install_dir / name
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o755)
+    system_bin = tmp_path / "system-bin"
+    system_bin.mkdir()
+    shim_bin = tmp_path / "shim-bin"
+    shim_bin.mkdir()
+    sudo = shim_bin / "sudo"
+    # Exit 2 on anything but ``sudo -n``: the installer must never prompt.
+    sudo.write_text(
+        '#!/bin/sh\n[ "$1" = -n ] || exit 2\nshift\n'
+        + ('exec "$@"\n' if sudo_allowed else "exit 1\n")
+    )
+    sudo.chmod(0o755)
+
+    result = _run_logging_snippet(
+        f"""
+        HOME={shlex.quote(str(home))}
+        SHELL=/bin/bash
+        platform=linux
+        BIN_NAME=opensre
+        INSTALL_DIR={shlex.quote(str(install_dir))}
+        SYSTEM_INSTALL_DIR_CANDIDATES={shlex.quote(str(system_bin))}
+        PATH={shlex.quote(f"{shim_bin}:{system_bin}:/usr/bin:/bin")}
+        ensure_on_path
+        print_get_started
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert str(install_dir) in (home / ".bashrc").read_text()
+    if sudo_allowed:
+        for name in ("opensre", "gh"):
+            assert (system_bin / name).readlink() == install_dir / name
+        assert result.stdout.splitlines()[-1] == "Run 'opensre' to get started!"
+    else:
+        assert not list(system_bin.iterdir())
+        assert result.stdout.splitlines()[-1] == (
+            "Run 'source ~/.bashrc' (or open a new terminal), then run 'opensre' to get started!"
+        )
 
 
 def test_warm_first_launch_skips_package_smoke_off_darwin() -> None:

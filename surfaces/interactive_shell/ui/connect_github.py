@@ -75,13 +75,17 @@ def run_connect_github_gate(
     open_dashboard: Callable[[], None],
     dashboard_url: str,
     on_prompted: Callable[[], None] | None = None,
+    on_choice: Callable[[ConnectGithubChoice | None], None] | None = None,
 ) -> bool:
     """Gate the REPL behind a connected GitHub account; ``True`` to proceed, ``False`` to exit.
 
     Returns at once when ``is_connected``. Otherwise the screen loops until
     ``recheck`` (which asks the app again) confirms a connection or the user
     leaves; Esc leaves too. On non-interactive stdin the gate fails closed and
-    names ``dashboard_url``. ``on_prompted`` fires once, before the screen.
+    names ``dashboard_url``. ``on_prompted`` fires once, before the screen;
+    ``on_choice`` fires for every menu round with the pick, or ``None`` when
+    the menu was dismissed without one. Neither fires for a connected member
+    or a non-interactive run.
     """
     if is_connected():
         return True
@@ -98,6 +102,8 @@ def run_connect_github_gate(
     focus = ConnectGithubChoice.OPEN
     while True:
         choice = prompt_connect_github(focus=focus)
+        if on_choice is not None:
+            on_choice(choice)
         if choice is ConnectGithubChoice.OPEN:
             open_dashboard()
             focus = ConnectGithubChoice.CHECK
