@@ -13,6 +13,7 @@ from prompt_toolkit import PromptSession
 from rich.console import Console
 
 from config.repl_config import ReplConfig
+from core.agent_harness import SessionManager
 from core.agent_harness.spi.cancel import HostCancelReason
 from core.agent_harness.spi.session_goal import (
     apply_session_goal_control,
@@ -343,8 +344,6 @@ class InteractiveShellController:
 
     def _persist_goal_control_for_resume(self, reason: HostCancelReason) -> str:
         """Preserve goal intent without mutating state owned by a detached worker."""
-        from core.agent_harness import SessionManager
-
         return SessionManager.for_session(self.session).persist_session_goal_control(
             self.session,
             reason.value,
@@ -452,6 +451,7 @@ class InteractiveShellController:
                 if not autosubmitted and not ask_user_answers:
                     # A genuine typed turn starts a new workload: reset the ask-user
                     # round counter so the two-round cap is per-request, not per-session.
+                    reset_saved_state = self.session.ask_user_rounds != 0
                     self.session.ask_user_rounds = 0
                     self.session.terminal.pending_choice_response = None
                     # The user moved on, so a turn parked behind setup is not replayed.
@@ -470,6 +470,16 @@ class InteractiveShellController:
                         and not self.state.is_dispatch_running()
                     ):
                         discard_task_plan(self.session)
+                        reset_saved_state = True
+                    if (
+                        reset_saved_state
+                        and not self.state.is_dispatch_running()
+                        and not self.turn_runtime.has_live_turn_worker()
+                    ):
+                        # Every turn reloads the session from storage before it
+                        # runs, so an unsaved reset would come back for this turn.
+                        session_manager = SessionManager.for_session(self.session)
+                        await asyncio.to_thread(session_manager.flush, self.session)
                 # Only exclusive-stdin commands hold the next prompt. A ``/goal``
                 # work turn keeps it open: the prompt row is where the spinner,
                 # the live tool name and the Auto line are painted, so

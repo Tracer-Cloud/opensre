@@ -417,20 +417,35 @@ async def test_idle_go_keeps_an_all_pending_plan() -> None:
 
 @pytest.mark.asyncio
 async def test_idle_new_turn_clears_a_completed_plan() -> None:
-    """A finished plan must not linger over the next unrelated typed turn."""
+    """A finished plan must not linger over the next unrelated typed turn.
+
+    The turn reloads the session from storage before it runs, so the reset
+    must be saved too — otherwise the old plan is pinned for the new turn and
+    its ``Plan complete`` breakdown prints again when it ends.
+    """
+    from core.agent_harness.session import SessionManager
+
     controller = _controller()
+    # The default JSONL store, so the refresh below reads back what was saved.
+    controller.session.store.open_session(controller.session)
+    controller.session.store.append_turn(controller.session, "chat", "review this pr")
     controller.session.task_plan = _plan("completed", "completed")
     controller.session.task_plan_work = [["Prior work"], []]
     controller.session.task_plan_work_step_texts = ("Step 1", "Step 2")
     controller.session.plan_only_until_authorized = True
+    controller.session.ask_user_rounds = 1
+    manager = SessionManager.for_session(controller.session)
+    manager.flush(controller.session)
 
     kept = await controller._handle_input_action(SubmitTurn(text="new question"))
+    manager.refresh_from_storage(controller.session)
 
     assert kept is True
     assert controller.session.task_plan is None
     assert controller.session.task_plan_work == []
     assert controller.session.task_plan_work_step_texts is None
     assert controller.session.plan_only_until_authorized is False
+    assert controller.session.ask_user_rounds == 0
 
 
 @pytest.mark.asyncio

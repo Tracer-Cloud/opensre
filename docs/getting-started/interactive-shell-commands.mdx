@@ -18,9 +18,12 @@ terminals, the highlighted command's description appears below the list.
 
 <Info>
   Confirmation prompts come from **`/auto`** (tool-approval autonomy) and from
-  elevated slash commands. Default `/auto` is **high** (alpha: no tool prompts).
-  `/trust on` skips approval prompts for the rest of the session. Outside a TTY,
-  actions that would ask are blocked.
+  elevated slash commands. Default `/auto` is **high** (alpha: no tool prompts),
+  except Python execution, which asks before every call at every level. Pick
+  **Yes, allow for this session** to stop those prompts until `/new` or
+  `/resume`; code that asks for network access still prompts each time.
+  `/trust on` skips all approval prompts for the rest of the session. Outside a
+  TTY, actions that would ask are blocked.
 </Info>
 
 ## How the REPL works
@@ -372,7 +375,7 @@ Set how often the REPL asks before running agent tools. Shown on the status line
 
 | Level | Prompts before |
 | --- | --- |
-| `high` (default) | Nothing — alpha default; every tool runs immediately |
+| `high` (default) | Nothing except Python execution — alpha default; every other tool runs immediately |
 | `med` | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, … |
 | `low` | Everything `med` asks about, plus additional tool starts |
 | `off` | Every tool type |

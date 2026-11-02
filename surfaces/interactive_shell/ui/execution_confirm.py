@@ -49,6 +49,7 @@ def _default_confirm_fn(prompt: str) -> str:
 
 DEFAULT_CONFIRM_FN: Callable[[str], str] = _default_confirm_fn
 _APPROVE_PROMPT = "Approve this action?"
+_ALLOW_SESSION_ANSWER = "allow_session"
 # Only shell commands get a per-command risk grade; matches ``tool_type`` set by
 # ``tools.interactive_shell.shell.policy``.
 _SHELL_TOOL_TYPE = "shell"
@@ -124,11 +125,15 @@ def execution_allowed(
     confirm_fn: Callable[[str], str] | None = None,
     is_tty: bool | None = None,
     action_already_listed: bool = False,
+    session_approvable: bool = False,
 ) -> bool:
     """Print policy UX, emit analytics, and return whether execution should proceed.
 
     When ``action_already_listed`` is True (e.g. assistant printed a numbered action plan),
     the TTY prompt omits repeating ``action_summary`` and shows only the policy reason.
+    When ``session_approvable`` is True, the prompt offers to stop asking about this
+    ``tool_type`` for the rest of the session, and a tool type already allowed that
+    way runs without a prompt.
     """
     trust_mode = trust_mode_enabled(session)
     tty = sys.stdin.isatty() if is_tty is None else is_tty
@@ -179,6 +184,20 @@ def execution_allowed(
         return False
 
     # NEEDS_CONFIRMATION
+    terminal = getattr(session, "terminal", None)
+    approved_for_session: set[str] | None = (
+        terminal.session_approved_tools if session_approvable and terminal is not None else None
+    )
+    if approved_for_session is not None and result.tool_type in approved_for_session:
+        _emit_decision(
+            tool_type=result.tool_type,
+            policy_verdict=result.verdict,
+            outcome="allowed",
+            trust_mode=trust_mode,
+            reason="session_approved",
+        )
+        return True
+
     summary = action_summary.strip()
     policy_reason = (result.reason or "").strip()
     if result.tool_type == _SHELL_TOOL_TYPE:
@@ -205,14 +224,20 @@ def execution_allowed(
             ("allow_plan", "Yes, run the plan"),
             ("n", "No, cancel"),
         )
-    terminal = getattr(session, "terminal", None)
+    if approved_for_session is not None:
+        options = (
+            options[0],
+            (_ALLOW_SESSION_ANSWER, "Yes, allow for this session"),
+            *options[1:],
+        )
     if terminal is not None:
         terminal.pending_confirm_options = options
     answer = confirm(_APPROVE_PROMPT).strip().lower()
     approve_plan = (
         answer == "allow_plan" and plan_only_active and result.tool_type == _SHELL_TOOL_TYPE
     )
-    if answer not in {"", "y", "yes"} and not approve_plan:
+    approve_session = approved_for_session is not None and answer == _ALLOW_SESSION_ANSWER
+    if answer not in {"", "y", "yes"} and not approve_plan and not approve_session:
         _emit_decision(
             tool_type=result.tool_type,
             policy_verdict=result.verdict,
@@ -229,9 +254,11 @@ def execution_allowed(
         policy_verdict=result.verdict,
         outcome="allowed",
         trust_mode=trust_mode,
-        reason="user_confirmed",
+        reason="user_confirmed_for_session" if approve_session else "user_confirmed",
         user_prompted=True,
     )
+    if approve_session and approved_for_session is not None:
+        approved_for_session.add(result.tool_type)
     if plan_only_active and (
         approve_plan
         or (result.tool_type != _SHELL_TOOL_TYPE and is_mutating_tool_type(result.tool_type))

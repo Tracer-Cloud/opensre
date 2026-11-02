@@ -64,6 +64,7 @@ class Session(SessionCore):
         self.terminal.setup_resume = None
         self.terminal.dispatch_active = False
         self.terminal.exclusive_stdin_active = False
+        self.terminal.session_approved_tools.clear()
         # trust_mode and reasoning_effort are intentionally preserved across /new
 
     def release_resources(self) -> None:
