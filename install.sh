@@ -808,15 +808,14 @@ verify_checksum() {
   checksum_path="$normalized_checksum_path"
   checksum_name="${checksum_path##*/}"
 
+  # A mismatch returns 1 so the caller decides whether it is final.
   if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$archive_dir" && sha256sum -c "$checksum_name") >/dev/null \
-      || die "Checksum verification failed for '${archive_path##*/}'."
+    (cd "$archive_dir" && sha256sum -c "$checksum_name") >/dev/null || return 1
     return
   fi
 
   if command -v shasum >/dev/null 2>&1; then
-    (cd "$archive_dir" && shasum -a 256 -c "$checksum_name") >/dev/null \
-      || die "Checksum verification failed for '${archive_path##*/}'."
+    (cd "$archive_dir" && shasum -a 256 -c "$checksum_name") >/dev/null || return 1
     return
   fi
 
@@ -825,7 +824,7 @@ verify_checksum() {
     [ -n "$expected" ] || die "Checksum file '${checksum_name}' is malformed."
 
     actual="$(openssl dgst -sha256 "$archive_path" | sed 's/^.*= //')"
-    [ "$expected" = "$actual" ] || die "Checksum verification failed for '${archive_path##*/}'."
+    [ "$expected" = "$actual" ] || return 1
     return
   fi
 
@@ -937,8 +936,9 @@ download_and_verify_checksum() {
   local archive_path="$2"
 
   # The checksum download started alongside the archive (start_release_downloads).
+  # Returns 2 when the checksum arrived but does not match the archive.
   wait "$checksum_pid" || return 1
-  verify_checksum "$checksum_path" "$archive_path"
+  verify_checksum "$checksum_path" "$archive_path" || return 2
 }
 
 prepare_and_verify_binary() {
@@ -1505,13 +1505,17 @@ download_release_archive() {
 
 verify_release_checksum() {
   local checksum_path
+  local status=0
 
   if release_has_asset "$release_json" "$checksum_asset"; then
     checksum_path="${tmp_dir}/${checksum_asset}"
     run_with_dots "Fetching and verifying checksum" \
       download_and_verify_checksum "$checksum_path" "$archive_path" \
-      || die "Failed to download or verify checksum '${checksum_asset}'."
+      || status=$?
     checksum_pid=""
+    # A mismatch returns 1 so the caller decides whether it is final.
+    [ "$status" -ne 2 ] || return 1
+    [ "$status" -eq 0 ] || die "Failed to download checksum '${checksum_asset}'."
     muted "Checksum verification passed"
     return
   fi
@@ -1521,6 +1525,30 @@ verify_release_checksum() {
   else
     warn "Release v${version} is missing checksum asset '${checksum_asset}'."
   fi
+}
+
+download_and_verify_release_archive() {
+  local wait_seconds=10
+
+  download_release_archive
+  if verify_release_checksum; then
+    return
+  fi
+
+  # The main build is republished in place after every merge, one asset at a
+  # time (delete, then upload), so a download that spans a publish can pair an
+  # archive and checksum from different builds. A publish settles within
+  # seconds, so fetch the release once more after a short wait. Versioned
+  # releases never change, so their mismatch is final.
+  [ "$INSTALL_CHANNEL" = "main" ] || die "Checksum verification failed for '${archive}'."
+  warn "Checksum mismatch; the main build was likely republished during the download. Downloading it again in ${wait_seconds}s."
+  sleep "$wait_seconds"
+  resolve_release_metadata
+  select_archive_asset
+  prepare_download
+  start_release_downloads "$download_url" "$archive"
+  download_release_archive
+  verify_release_checksum || die "Checksum verification failed for '${archive}'."
 }
 
 extract_release_binary() {
@@ -1656,8 +1684,7 @@ main() {
   resolve_release_metadata
   select_archive_asset
   prepare_download
-  download_release_archive
-  verify_release_checksum
+  download_and_verify_release_archive
   extract_release_binary
   install_release_binary
   finish_install
