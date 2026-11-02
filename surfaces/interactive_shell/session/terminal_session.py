@@ -96,6 +96,12 @@ class TerminalSession:
     trust_mode: bool = False
     """When True, confirmation prompts for elevated REPL actions are skipped."""
 
+    session_approved_tools: set[str] = field(default_factory=set)
+    """Tool types the user chose not to be asked about again this session.
+
+    Narrower than ``trust_mode``: only gates that offer the session row honor it.
+    Never persisted, and cleared by ``/new`` and ``/resume``."""
+
     auto_level: AutoLevel = DEFAULT_AUTO_LEVEL
     """Auto (Off|Low|Med|High) shown above the input box."""
 

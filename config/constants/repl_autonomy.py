@@ -79,6 +79,13 @@ AUTO_LEVEL_ASK_TOOL_TYPES: Final[dict[AutoLevel, frozenset[str] | None]] = {
 # content, so it never runs without the user seeing it first.
 ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset({"execute_python_code"})
 
+# The user may allow one of those tools for the rest of the session, but a call
+# that sets one of these arguments still asks: network access lets generated
+# code send data off the machine.
+SESSION_APPROVAL_EXCLUDED_ARGUMENTS: Final[dict[str, frozenset[str]]] = {
+    "execute_python_code": frozenset({"allow_network"}),
+}
+
 
 def parse_auto_level(raw: str) -> AutoLevel | None:
     """Parse a user-facing auto level, or ``None`` when unknown."""
@@ -110,6 +117,7 @@ __all__ = [
     "AUTO_LEVEL_TITLES",
     "AutoLevel",
     "DEFAULT_AUTO_LEVEL",
+    "SESSION_APPROVAL_EXCLUDED_ARGUMENTS",
     "format_auto_status_bar",
     "format_auto_status_plain",
     "parse_auto_level",

@@ -7,7 +7,10 @@ from dataclasses import dataclass, replace
 
 from rich.console import Console
 
-from config.constants.repl_autonomy import ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES
+from config.constants.repl_autonomy import (
+    ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES,
+    SESSION_APPROVAL_EXCLUDED_ARGUMENTS,
+)
 from config.constants.tooling import ToolBlockedBy
 from core.tool import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
 from surfaces.interactive_shell.session import Session
@@ -86,8 +89,15 @@ class _ShellApproval:
             action_summary=shown_name,
             confirm_fn=self.confirm_fn,
             is_tty=self.is_tty,
+            session_approvable=_session_approvable(request),
         )
         return approved
+
+
+def _session_approvable(request: ToolExecutionRequest) -> bool:
+    """Whether the user may allow this call for the rest of the session."""
+    excluded = SESSION_APPROVAL_EXCLUDED_ARGUMENTS.get(request.tool_call.name, frozenset())
+    return not any(request.arguments.get(name) for name in excluded)
 
 
 def _declined(tool_name: str) -> BeforeToolCallResult:

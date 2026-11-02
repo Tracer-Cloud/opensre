@@ -63,7 +63,7 @@ def ready_hint_ansi() -> str:
 
 
 # Default confirmation rows: (answer, label). The execution gate reads "", "y",
-# "yes" as allow and "always" as allow-and-raise-auto; anything else cancels.
+# "yes" as allow and "allow_session" as allow-and-stop-asking; anything else cancels.
 # The cancel row is always last so the default selection lands on it.
 DEFAULT_CONFIRM_OPTIONS: tuple[tuple[str, str], ...] = (
     ("y", "Yes, allow"),
