@@ -104,3 +104,23 @@ def test_a_connected_member_sees_no_screen(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert proceed is True
     assert buf.getvalue() == ""
+
+
+def test_every_menu_round_is_reported_including_a_dismissal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    console, _buf = _console()
+    _scripted_menu(monkeypatch, [ConnectGithubChoice.OPEN, ConnectGithubChoice.CHECK, None])
+    seen: list[ConnectGithubChoice | None] = []
+
+    proceed = run_connect_github_gate(
+        console,
+        is_connected=lambda: False,
+        recheck=lambda: False,
+        open_dashboard=lambda: None,
+        dashboard_url=_URL,
+        on_choice=seen.append,
+    )
+
+    assert proceed is False
+    assert seen == [ConnectGithubChoice.OPEN, ConnectGithubChoice.CHECK, None]

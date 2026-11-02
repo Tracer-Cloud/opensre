@@ -141,6 +141,38 @@ def capture_stay_signed_out_selected(*, choice_label: str, method: str) -> None:
     )
 
 
+def capture_github_gate_prompted(*, reason_code: str) -> None:
+    """Exposure event: the Connect GitHub screen was rendered; ``reason_code`` says why."""
+    _capture(Event.GITHUB_GATE_PROMPTED, {"reason_code": reason_code, "entrypoint": "github_gate"})
+
+
+def capture_github_gate_rechecked(
+    *, connected: bool, reason_code: str | None, recheck_count: int
+) -> None:
+    """User said GitHub is connected and the app was asked again; ``connected`` opens the shell."""
+    properties: Properties = {
+        "connected": connected,
+        "recheck_count": recheck_count,
+        "entrypoint": "github_gate",
+    }
+    if reason_code:
+        properties["reason_code"] = reason_code
+    _capture(Event.GITHUB_GATE_RECHECKED, properties)
+
+
+def capture_github_gate_exited(*, choice_label: str, method: str, recheck_count: int) -> None:
+    """User left the GitHub gate unconnected: ``menu`` picked Exit, ``dismissed`` closed the menu."""
+    _capture(
+        Event.GITHUB_GATE_EXITED,
+        {
+            "choice_label": choice_label,
+            "method": method,
+            "recheck_count": recheck_count,
+            "entrypoint": "github_gate",
+        },
+    )
+
+
 def capture_gateway_turn_started(*, surface: str) -> None:
     """Mark the start of one Slack/Telegram gateway agent turn."""
     _capture(Event.GATEWAY_TURN_STARTED, {"surface": surface})

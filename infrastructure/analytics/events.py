@@ -28,6 +28,12 @@ class Event(StrEnum):
     SIGN_IN_PROMPTED = "sign_in_prompted"
     SIGN_IN_SELECTED = "sign_in_selected"
     STAY_SIGNED_OUT_SELECTED = "stay_signed_out_selected"
+    # Mandatory Connect GitHub gate after sign-in: exposure, each "I've
+    # connected GitHub" recheck with its answer, and leaving without one. The
+    # dashboard open is ``browser_open_requested`` (target integration_setup).
+    GITHUB_GATE_PROMPTED = "github_gate_prompted"
+    GITHUB_GATE_RECHECKED = "github_gate_rechecked"
+    GITHUB_GATE_EXITED = "github_gate_exited"
     REPL_EXECUTION_POLICY_DECISION = "repl_execution_policy_decision"
     INSTALL_DETECTED = "install_detected"
     USER_ID_LOAD_FAILED = "user_id_load_failed"
