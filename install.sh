@@ -244,55 +244,173 @@ ensure_github_cli() {
   [ -n "${gh_install_pid:-}" ] || start_github_cli_install
   if [ -n "${gh_install_pid:-}" ]; then
     if run_with_dots "Installing GitHub CLI (gh) for OpenSRE GitHub tools" wait "$gh_install_pid"; then
-      success "Installed GitHub CLI (gh) via Homebrew"
+      gh_install_pid=""
+      if [ "${gh_install_method:-}" = "release" ]; then
+        success "Installed GitHub CLI (gh) to ${INSTALL_DIR}/gh"
+      else
+        success "Installed GitHub CLI (gh) via Homebrew"
+      fi
       return 0
     fi
-    warn "Homebrew failed to install gh. Install manually from https://cli.github.com/"
+    gh_install_pid=""
+    warn "Could not install GitHub CLI (gh) automatically."
+    print_github_cli_install_hint
     return 0
   fi
 
-  if command -v gh >/dev/null 2>&1; then
+  if command -v gh >/dev/null 2>&1 || [ -x "${INSTALL_DIR:-}/gh" ]; then
     if install_verbose; then
-      log "GitHub CLI (gh) already on PATH: $(command -v gh)"
+      log "GitHub CLI (gh) already installed: $(command -v gh || printf '%s' "${INSTALL_DIR}/gh")"
     fi
     return 0
   fi
 
   if skip_github_cli_install; then
     warn "GitHub CLI (gh) is not on PATH; skipped install because OPENSRE_SKIP_GH_INSTALL is set."
-    warn "Install from https://cli.github.com/ for OpenSRE GitHub chat tools."
-    return 0
+  else
+    warn "GitHub CLI (gh) is not installed."
   fi
-
-  if command -v apt-get >/dev/null 2>&1; then
-    # Soft dependency only — never require sudo for the OpenSRE installer.
-    warn "GitHub CLI (gh) is missing and apt is available but auto-install needs sudo."
-    warn "Install manually: apt install gh  (or https://cli.github.com/) for OpenSRE GitHub chat tools."
-    return 0
-  fi
-
-  warn "GitHub CLI (gh) is not on PATH and no supported package manager was found."
-  warn "Install from https://cli.github.com/ for OpenSRE GitHub chat tools."
+  print_github_cli_install_hint
 }
 
 github_cli_install_needed() {
   ! command -v gh >/dev/null 2>&1 \
+    && [ ! -x "${INSTALL_DIR:-}/gh" ] \
     && ! skip_github_cli_install \
-    && command -v brew >/dev/null 2>&1
+    && { command -v brew >/dev/null 2>&1 || github_cli_release_platform >/dev/null; }
 }
 
 start_github_cli_install() {
-  # Homebrew is the slowest step on a Mac without gh, and it is independent
-  # of the OpenSRE download, so it runs alongside it; ensure_github_cli waits
-  # for it. Auto-update alone costs ~10s and only refreshes formulae that a
-  # soft dependency does not need to be the newest of.
+  # Installing gh is independent of the OpenSRE download, so it runs
+  # alongside it; ensure_github_cli waits for it. Homebrew keeps gh upgradable
+  # where it exists; its auto-update alone costs ~10s and only refreshes
+  # formulae that a soft dependency does not need to be the newest of.
+  # Elsewhere on Linux, distro archives lack a current gh (Ubuntu's apt has
+  # none until GitHub's repo is added, which needs sudo), so the official
+  # static build goes beside opensre instead.
   github_cli_install_needed || return 0
-  (
-    trap '' HUP
-    HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 \
-      brew install gh
-  ) </dev/null >/dev/null 2>&1 &
+  if command -v brew >/dev/null 2>&1; then
+    gh_install_method="homebrew"
+    (
+      trap '' HUP
+      HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 \
+        brew install gh
+    ) </dev/null >/dev/null 2>&1 &
+  else
+    gh_install_method="release"
+    install_github_cli_release </dev/null >/dev/null 2>&1 &
+  fi
   gh_install_pid=$!
+}
+
+github_cli_release_platform() {
+  # gh names its Linux builds by Go architecture.
+  [ "${platform:-}" = "linux" ] || return 1
+  case "${target_arch:-}" in
+    x64) printf 'linux_amd64\n' ;;
+    arm64) printf 'linux_arm64\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+github_cli_latest_tag() {
+  # The release page redirect names the tag without spending the GitHub API
+  # rate limit that the OpenSRE metadata lookup needs.
+  local location
+  location="$(
+    curl --silent --show-error --fail --connect-timeout 20 --max-time 60 \
+      -o /dev/null -w '%{redirect_url}' "https://github.com/cli/cli/releases/latest"
+  )" || return 1
+  case "${location##*/}" in
+    v[0-9]*) printf '%s\n' "${location##*/}" ;;
+    *) return 1 ;;
+  esac
+}
+
+install_github_cli_release() {
+  # Checksum-verified against the release's own checksums file, the same trust
+  # the OpenSRE archive gets. Fails closed: no verifier means no gh.
+  local suffix tag version asset gh_dir releases="https://github.com/cli/cli/releases/download"
+
+  command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || return 1
+  suffix="$(github_cli_release_platform)" || return 1
+  tag="$(github_cli_latest_tag)" || return 1
+  version="${tag#v}"
+  asset="gh_${version}_${suffix}.tar.gz"
+  gh_dir="${tmp_dir}/gh"
+  mkdir -p "$gh_dir" || return 1
+
+  download_to "${releases}/${tag}/${asset}" "${gh_dir}/${asset}" || return 1
+  download_to "${releases}/${tag}/gh_${version}_checksums.txt" "${gh_dir}/checksums.txt" || return 1
+  awk -v name="$asset" '$2 == name' "${gh_dir}/checksums.txt" > "${gh_dir}/${asset}.sha256"
+  [ -s "${gh_dir}/${asset}.sha256" ] || return 1
+  verify_checksum "${gh_dir}/${asset}.sha256" "${gh_dir}/${asset}" || return 1
+
+  tar -xzf "${gh_dir}/${asset}" -C "$gh_dir" "${asset%.tar.gz}/bin/gh" || return 1
+  mkdir -p "$INSTALL_DIR" || return 1
+  install_binary "${gh_dir}/${asset%.tar.gz}/bin/gh" "${INSTALL_DIR}/gh.new.$$" || return 1
+  mv -f "${INSTALL_DIR}/gh.new.$$" "${INSTALL_DIR}/gh"
+}
+
+print_github_cli_install_hint() {
+  # Copy-pasteable commands for the package manager this machine has. Bare
+  # ``apt install gh`` fails on stock Ubuntu/Debian images: gh comes from
+  # GitHub's apt repository, which has to be added first.
+  local sudo_cmd="sudo "
+  local keyring="/etc/apt/keyrings/githubcli-archive-keyring.gpg"
+  local rpm_repo="https://cli.github.com/packages/rpm/gh-cli.repo"
+  local -a steps=()
+
+  [ "$(id -u 2>/dev/null || printf '1')" != "0" ] || sudo_cmd=""
+
+  if [ "${platform:-}" = "darwin" ]; then
+    command -v brew >/dev/null 2>&1 || steps+=("# Install Homebrew first: https://brew.sh")
+    steps+=("brew install gh")
+  elif command -v apt-get >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}mkdir -p -m 755 /etc/apt/keyrings"
+      "curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | ${sudo_cmd}tee ${keyring} >/dev/null"
+      "${sudo_cmd}chmod go+r ${keyring}"
+      "echo \"deb [arch=\$(dpkg --print-architecture) signed-by=${keyring}] https://cli.github.com/packages stable main\" | ${sudo_cmd}tee /etc/apt/sources.list.d/github-cli.list >/dev/null"
+      "${sudo_cmd}apt-get update && ${sudo_cmd}apt-get install -y gh"
+    )
+  elif command -v dnf5 >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}dnf install -y dnf5-plugins"
+      "${sudo_cmd}dnf config-manager addrepo --from-repofile=${rpm_repo}"
+      "${sudo_cmd}dnf install -y gh"
+    )
+  elif command -v dnf >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}dnf install -y 'dnf-command(config-manager)'"
+      "${sudo_cmd}dnf config-manager --add-repo ${rpm_repo}"
+      "${sudo_cmd}dnf install -y gh"
+    )
+  elif command -v yum >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}yum install -y yum-utils"
+      "${sudo_cmd}yum-config-manager --add-repo ${rpm_repo}"
+      "${sudo_cmd}yum install -y gh"
+    )
+  elif command -v zypper >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}zypper addrepo ${rpm_repo}"
+      "${sudo_cmd}zypper ref"
+      "${sudo_cmd}zypper install -y gh"
+    )
+  elif command -v pacman >/dev/null 2>&1; then
+    steps+=("${sudo_cmd}pacman -S --noconfirm github-cli")
+  elif command -v apk >/dev/null 2>&1; then
+    steps+=("${sudo_cmd}apk add github-cli")
+  fi
+
+  if [ "${#steps[@]}" -gt 0 ]; then
+    printf '  OpenSRE GitHub chat tools need it. Install it with:\n' >&2
+    printf '    %s\n' "${steps[@]}" >&2
+  else
+    printf '  OpenSRE GitHub chat tools need it.\n' >&2
+  fi
+  printf '  Other platforms and options: https://github.com/cli/cli#installation\n' >&2
 }
 
 require_prerequisites() {
@@ -1067,6 +1185,7 @@ configure_path() {
       ;;
   esac
 
+  path_rc_file="$rc_file"
   local rc_dir="${rc_file%/*}"
   [ "$rc_dir" != "$rc_file" ] && [ ! -d "$rc_dir" ] && mkdir -p "$rc_dir"
 
@@ -1086,23 +1205,79 @@ configure_path() {
 }
 
 ensure_on_path() {
-  run_with_dots "Checking PATH configuration" ensure_on_path_impl
-}
-
-ensure_on_path_impl() {
+  # Instant, so no progress animation: its dots would interleave with the
+  # result lines printed here.
   if path_has_dir "$INSTALL_DIR"; then
     muted "PATH already configured"
     return
   fi
 
   configure_path
+  if link_into_shell_path; then
+    muted "Linked ${BIN_NAME} into ${shell_path_link_dir} so it runs in this shell"
+  fi
+}
+
+link_into_shell_path() {
+  # A piped installer cannot change its parent shell's PATH, and the rc file
+  # only reaches new shells. A link in a system dir that is already on PATH
+  # makes opensre (and a gh installed beside it) run in this shell too. That
+  # dir is not user-writable (or it would have been INSTALL_DIR), so this
+  # needs passwordless sudo, as on EC2 and most cloud images; sudo is never
+  # allowed to prompt. An explicit --install-dir opts out.
+  local dir name link_dir=""
+  local old_ifs="$IFS"
+
+  [ "${INSTALL_DIR_OVERRIDE:-0}" -eq 0 ] || return 1
+  [ "${platform:-}" != "windows" ] || return 1
+  command -v sudo >/dev/null 2>&1 || return 1
+  IFS=':'
+  for dir in ${SYSTEM_INSTALL_DIR_CANDIDATES:-}; do
+    if [ -d "$dir" ] && path_has_dir "$dir"; then
+      link_dir="$dir"
+      break
+    fi
+  done
+  IFS="$old_ifs"
+  [ -n "$link_dir" ] || return 1
+  sudo -n true >/dev/null 2>&1 || return 1
+
+  for name in "$BIN_NAME" gh; do
+    [ -x "${INSTALL_DIR}/${name}" ] || continue
+    # Never replace a real binary someone else put there; links are ours.
+    if [ -e "${link_dir}/${name}" ] && [ ! -L "${link_dir}/${name}" ]; then
+      [ "$name" != "$BIN_NAME" ] || return 1
+      continue
+    fi
+    sudo -n ln -sfn "${INSTALL_DIR}/${name}" "${link_dir}/${name}" >/dev/null 2>&1 || return 1
+  done
+  shell_path_link_dir="$link_dir"
+}
+
+print_get_started() {
+  local rc_display
+
+  if path_has_dir "$INSTALL_DIR" || [ -n "${shell_path_link_dir:-}" ]; then
+    log "${COLOR_YELLOW:-}Run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
+    return
+  fi
+  if [ -n "${path_rc_file:-}" ]; then
+    case "$path_rc_file" in
+      "$HOME"/*) rc_display="~/${path_rc_file#"$HOME"/}" ;;
+      *) rc_display="$path_rc_file" ;;
+    esac
+    log "${COLOR_YELLOW:-}Run 'source ${rc_display}' (or open a new terminal), then run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
+    return
+  fi
+  log "${COLOR_YELLOW:-}Add ${INSTALL_DIR} to PATH, then run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
 }
 
 cleanup() {
-  # A failed install must not leave downloads running. The gh install is left
-  # alone: interrupting Homebrew mid-pour can leave a broken keg.
+  # A failed install must not leave downloads running. A Homebrew gh install
+  # is left alone: interrupting Homebrew mid-pour can leave a broken keg.
   stop_background_job "${archive_pid:-}"
   stop_background_job "${checksum_pid:-}"
+  [ "${gh_install_method:-}" != "release" ] || stop_background_job "${gh_install_pid:-}"
   if [ -n "${tmp_dir:-}" ] && [ -d "$tmp_dir" ]; then
     rm -rf "$tmp_dir"
   fi
@@ -1462,9 +1637,10 @@ finish_install() {
   # warm-up's signature validation.
   warm_first_launch "${INSTALL_DIR}/${BIN_NAME}"
   print_install_confirmation
-  ensure_on_path
+  # gh first: ensure_on_path links a gh installed beside opensre too.
   ensure_github_cli
-  log "${COLOR_YELLOW:-}Run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
+  ensure_on_path
+  print_get_started
   launch_setup_after_install
 }
 

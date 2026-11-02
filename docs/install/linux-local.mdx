@@ -11,7 +11,11 @@ Install OpenSRE on Linux (laptop, desktop, or a local VM), sign in to your accou
 curl -fsSL https://install.opensre.com | bash -s -- -dc
 ```
 
-You usually don't need `sudo`. If `opensre` isn't found after install, open a new terminal or add the bin directory the installer printed (often `~/.local/bin`) to your PATH.
+You don't need `sudo`. The installer puts `opensre` in `~/.local/bin` (or `/usr/local/bin` when run as root) and adds that directory to your shell rc file.
+
+- **Same terminal:** where passwordless `sudo` is available (EC2 and most cloud images), the installer also links `opensre` into `/usr/local/bin` so it runs right away. Otherwise run the `source` command it prints, or open a new terminal.
+- **GitHub CLI (`gh`):** OpenSRE's GitHub chat tools use `gh`. If it's missing, the installer downloads GitHub's official, checksum-verified build next to `opensre`. If that fails, it prints the install commands for your package manager. On Ubuntu and Debian, a plain `apt install gh` fails until GitHub's apt repository is added. Set `OPENSRE_SKIP_GH_INSTALL=1` to skip this step.
+- **`--install-dir <path>`:** installs only into that directory: no `/usr/local/bin` link.
 
 ### Binary compatibility
 
