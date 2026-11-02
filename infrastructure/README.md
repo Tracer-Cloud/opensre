@@ -46,7 +46,7 @@ junk drawer. Prefer leaf imports over re-export shims.
   display ports.
 - `logging/` — shell/third-party log handlers.
 - `analytics/` — product and runtime analytics.
-- `terminal/` — terminal theme and display helpers.
+- `terminal/` — terminal theme and display helpers, and opening links in the user's browser.
 
 ## Safety — `safety/`
 

@@ -10,7 +10,6 @@ fallback instead, or drop the parked turn.
 from __future__ import annotations
 
 import logging
-import webbrowser
 from enum import StrEnum
 
 from rich.console import Console
@@ -27,8 +26,8 @@ from config.constants.skill_prerequisites import (
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.spi.session_state import clear_setup_resume, take_setup_resume
 from core.agent_harness.tools import ActionToolScope
-from infrastructure.analytics.capture import capture_browser_open_requested
 from infrastructure.terminal import theme as ui_theme
+from infrastructure.terminal.browser import open_in_browser
 from integrations.account_integrations import account_setup_url, load_account_integrations
 from integrations.github import github_setup_url
 from surfaces.interactive_shell.command_registry.setup_resume import (
@@ -86,15 +85,11 @@ def _open_app(console: Console, service: str) -> None:
             f"Open the app, connect {label}, then continue.[/]"
         )
         return
-    opened = False
-    try:
-        opened = bool(webbrowser.open(url))
-    except (webbrowser.Error, OSError):
-        opened = False
-    finally:
-        capture_browser_open_requested(target="integration_setup", opened=opened)
-    lead = f"Opened {escape(url)}." if opened else f"Open {escape(url)}."
-    console.print(f"[{ui_theme.DIM}]{lead} Connect {label} there, then continue.[/]")
+    opened = open_in_browser(url, target="integration_setup")
+    lead = f"Opened {escape(url)}." if opened else f"Open {escape(url)} in a browser on any device."
+    console.print(
+        f"[{ui_theme.DIM}]{lead} Connect {label} there, then continue.[/]", soft_wrap=True
+    )
 
 
 def _start_fallback(session: Session, console: Console, service: str) -> MenuStep:

@@ -27,8 +27,6 @@ OPENSRE_ACCOUNT_LOGIN_PATH = "/cli/auth/start"
 #: ``mode`` query value asking the webapp to show the code for pasting instead
 #: of redirecting to the loopback listener (the browser is on another machine).
 OPENSRE_ACCOUNT_LOGIN_PASTE_MODE = "paste"
-#: Pastes accepted before a paste-code login gives up.
-OPENSRE_ACCOUNT_LOGIN_PASTE_ATTEMPTS = 3
 OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH = "/cli/auth/success"
 OPENSRE_ACCOUNT_EXCHANGE_PATH = "/api/auth/cli/exchange"
 OPENSRE_ACCOUNT_SESSION_PATH = "/api/auth/cli/session"
@@ -81,7 +79,6 @@ __all__ = [
     "OPENSRE_ACTOR_HEADER",
     "OPENSRE_ACTOR_HEADER_ENV",
     "OPENSRE_ACCOUNT_LOGIN_PATH",
-    "OPENSRE_ACCOUNT_LOGIN_PASTE_ATTEMPTS",
     "OPENSRE_ACCOUNT_LOGIN_PASTE_MODE",
     "OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH",
     "OPENSRE_ACCOUNT_EXCHANGE_PATH",

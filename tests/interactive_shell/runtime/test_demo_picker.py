@@ -17,7 +17,6 @@ import integrations.github.tools.ci_analytics.analysis as ci_analysis
 import integrations.github.tools.ci_analytics.tool as ci_tool
 import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
 import surfaces.interactive_shell.command_registry.integrations as integrations_cmds
-import surfaces.interactive_shell.command_registry.prerequisite_menu as prerequisite_menu
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import surfaces.interactive_shell.runtime.startup.analysis_prefetch as analysis_prefetch
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
@@ -917,6 +916,7 @@ def test_slack_does_not_ask_to_create_a_demo_repository(
 def test_without_slack_the_slack_demo_connects_it_in_the_app_then_resumes(
     monkeypatch: pytest.MonkeyPatch,
     onboarding_outcomes: list[tuple[str, bool | None]],
+    local_browser: list[str],
 ) -> None:
     """Connect Slack opens the organization's app home, then picks up the parked answer.
 
@@ -961,13 +961,7 @@ def test_without_slack_the_slack_demo_connects_it_in_the_app_then_resumes(
         account_integrations, "httpx", SimpleNamespace(get=app_get, HTTPError=httpx.HTTPError)
     )
     account_integrations.reset_account_integrations_cache()
-    opened: list[str] = []
-
-    def browser_open(url: str) -> bool:
-        opened.append(url)
-        return True
-
-    monkeypatch.setattr(prerequisite_menu.webbrowser, "open", browser_open)
+    opened = local_browser
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
     pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)

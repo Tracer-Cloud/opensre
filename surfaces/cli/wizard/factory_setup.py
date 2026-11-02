@@ -7,7 +7,6 @@ from rich.markup import escape
 from infrastructure.terminal.theme import ERROR, GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.account_auth import AccountAuthError, login_account
 from surfaces.cli.account_ui import AccountLoginPresenter
-from surfaces.cli.remote_browser import paste_code_by_default
 from surfaces.cli.wizard.components import Choice, choose, console, step_header
 from surfaces.cli.wizard.summaries import render_factory_setup_header
 from surfaces.shared.account_session import account_status
@@ -33,9 +32,7 @@ def _run_account_signup_step(
     presenter = AccountLoginPresenter(console)
     while True:
         try:
-            result = login_account(
-                app_url=app_url, progress=presenter, paste_code=paste_code_by_default()
-            )
+            result = login_account(app_url=app_url, progress=presenter)
         except (EOFError, KeyboardInterrupt):
             console.print()
             console.print(f"[{ERROR}]  {GLYPH_ERROR}  Setup cancelled.[/]")

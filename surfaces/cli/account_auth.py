@@ -10,9 +10,9 @@ import os
 import queue
 import re
 import secrets
+import sys
 import time
-import webbrowser
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -37,7 +37,6 @@ from config.account import (
 from config.constants.account import (
     OPENSRE_ACCOUNT_EXCHANGE_PATH,
     OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
-    OPENSRE_ACCOUNT_LOGIN_PASTE_ATTEMPTS,
     OPENSRE_ACCOUNT_LOGIN_PASTE_MODE,
     OPENSRE_ACCOUNT_LOGIN_PATH,
     OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH,
@@ -45,19 +44,18 @@ from config.constants.account import (
     OPENSRE_ACCOUNT_TOKEN_ENV,
     OPENSRE_ACCOUNT_USAGE_PATH,
 )
+from infrastructure.terminal.browser import browser_is_remote, open_in_browser
 
 
 class AccountAuthError(RuntimeError):
     """Personal account authentication could not complete safely."""
 
 
-class _CodeRejectedError(AccountAuthError):
-    """The app refused the code: expired, used, or bound to another sign-in."""
-
-
-#: Shape of a webapp-issued authorization code, checked before a pasted value
-#: is sent anywhere so a truncated paste is caught locally.
-_AUTHORIZATION_CODE_PATTERN = re.compile(r"osre_code_[A-Za-z0-9_-]{43}")
+#: A whole webapp-issued authorization code within a pasted line, so stray
+#: whitespace or bracketed-paste markers are tolerated and a truncated paste
+#: is caught here instead of being sent.
+_AUTHORIZATION_CODE_PATTERN = re.compile(r"(?<![\w-])osre_code_[A-Za-z0-9_-]{43}(?![\w-])")
+_PASTE_ATTEMPTS = 3
 
 
 class LoginProgress(Protocol):
@@ -69,11 +67,11 @@ class LoginProgress(Protocol):
     def prompt_paste_sign_in(self, url: str) -> None:
         """Show the sign-in URL to open on any device and the paste-code steps."""
 
-    def read_pasted_code(self) -> str:
-        """Return one pasted line; raise ``EOFError`` or ``KeyboardInterrupt`` to cancel."""
+    def read_pasted_code(self, *, retry: bool) -> str:
+        """Return one pasted line, first saying the last one held no code when ``retry``.
 
-    def pasted_code_rejected(self, detail: str) -> None:
-        """Explain why the pasted code was not accepted before asking again."""
+        Raise ``EOFError`` or ``KeyboardInterrupt`` to cancel.
+        """
 
     def authorization_received(self) -> None:
         """Show that the browser authorization arrived and setup continues."""
@@ -89,11 +87,9 @@ class _SilentLoginProgress:
     def prompt_paste_sign_in(self, url: str) -> None:
         _ = url
 
-    def read_pasted_code(self) -> str:
+    def read_pasted_code(self, *, retry: bool) -> str:
+        _ = retry
         raise AccountAuthError("Paste-code sign-in needs an interactive terminal.")
-
-    def pasted_code_rejected(self, detail: str) -> None:
-        _ = detail
 
     def authorization_received(self) -> None:
         return
@@ -297,24 +293,10 @@ def _exchange_code(app_url: str, code: str, verifier: str) -> _ExchangeResult:
             headers={"Accept": "application/json"},
             timeout=OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
         )
-        if (
-            response.status_code == HTTPStatus.BAD_REQUEST
-            and _error_code(response) == "invalid_grant"
-        ):
-            raise _CodeRejectedError("The OpenSRE app did not accept the login code.")
         response.raise_for_status()
         return _decode_exchange(response.json())
     except (httpx.HTTPError, json.JSONDecodeError) as exc:
         raise AccountAuthError("The OpenSRE app could not exchange the login code.") from exc
-
-
-def _error_code(response: httpx.Response) -> str:
-    try:
-        payload = response.json()
-    except json.JSONDecodeError:
-        return ""
-    error = payload.get("error") if isinstance(payload, Mapping) else None
-    return error if isinstance(error, str) else ""
 
 
 def _revoke_remote(app_url: str, token: str) -> bool:
@@ -364,22 +346,10 @@ def usage_page_url(app_url: str | None = None) -> str:
     return _app_endpoint(normalize_app_url(app_url), OPENSRE_ACCOUNT_USAGE_PATH)
 
 
-def open_usage_page(
-    *,
-    app_url: str | None = None,
-    browser_open: Callable[[str], bool] | None = None,
-) -> tuple[str, bool]:
+def open_usage_page(*, app_url: str | None = None) -> tuple[str, bool]:
     """Open the usage page in the browser; return ``(url, opened)``."""
     url = usage_page_url(app_url)
-    opener = browser_open if browser_open is not None else webbrowser.open
-    try:
-        opened = bool(opener(url))
-    except Exception:
-        opened = False
-    from infrastructure.analytics.capture import capture_browser_open_requested
-
-    capture_browser_open_requested(target="account_usage", opened=opened)
-    return url, opened
+    return url, open_in_browser(url, target="account_usage")
 
 
 def _authorize_by_loopback(
@@ -390,7 +360,6 @@ def _authorize_by_loopback(
     open_browser: bool,
     timeout_seconds: float,
     reporter: LoginProgress,
-    browser_open: Callable[[str], bool],
 ) -> str:
     """Wait for the browser to redirect the code to this machine's loopback."""
     results: queue.Queue[_CallbackResult] = queue.Queue(maxsize=1)
@@ -415,16 +384,9 @@ def _authorize_by_loopback(
             code_challenge=challenge,
             cli_auth_attempt_id=cli_auth_attempt_id,
         )
-        opened = False
-        if open_browser:
-            try:
-                opened = bool(browser_open(authorization_url))
-            finally:
-                from infrastructure.analytics.capture import capture_browser_open_requested
-
-                capture_browser_open_requested(
-                    target="account_login", opened=opened, cli_auth_attempt_id=cli_auth_attempt_id
-                )
+        opened = open_browser and open_in_browser(
+            authorization_url, target="account_login", cli_auth_attempt_id=cli_auth_attempt_id
+        )
         reporter.prompt_sign_in(authorization_url, opened=opened)
         callback = _wait_for_callback(server, results, timeout_seconds=timeout_seconds)
     finally:
@@ -435,19 +397,17 @@ def _authorize_by_loopback(
     return callback.code
 
 
-def _authorize_by_paste(
+def _read_pasted_code(
     app_url: str,
     *,
     state: str,
     challenge: str,
-    verifier: str,
     reporter: LoginProgress,
-) -> _ExchangeResult:
-    """Exchange a code the user copies from a browser on another machine.
+) -> str:
+    """Ask for the code the app shows a browser on another machine.
 
-    The code only works with this process's PKCE verifier, so one copied from
-    someone else's sign-in, or shown to someone else, cannot be exchanged here
-    or there. A malformed or refused paste is asked for again.
+    Like the loopback code, it exchanges only with this process's PKCE
+    verifier. A paste holding no whole code is asked for again, never sent.
     """
     from infrastructure.analytics.capture import begin_cli_auth_attempt
 
@@ -460,54 +420,40 @@ def _authorize_by_paste(
             cli_auth_attempt_id=begin_cli_auth_attempt(),
         )
     )
-    for attempt in range(1, OPENSRE_ACCOUNT_LOGIN_PASTE_ATTEMPTS + 1):
-        pasted = reporter.read_pasted_code().strip()
-        if _AUTHORIZATION_CODE_PATTERN.fullmatch(pasted):
-            try:
-                return _exchange_code(app_url, pasted, verifier)
-            except _CodeRejectedError:
-                detail = (
-                    "That code was not accepted. It may have expired, been used, "
-                    "or come from a different sign-in."
-                )
-        else:
-            detail = "That is not an OpenSRE sign-in code. Copy the whole code from the browser."
-        if attempt == OPENSRE_ACCOUNT_LOGIN_PASTE_ATTEMPTS:
-            raise AccountAuthError(detail)
-        reporter.pasted_code_rejected(detail)
-    raise AccountAuthError("No sign-in code was pasted.")
+    for attempt in range(_PASTE_ATTEMPTS):
+        found = _AUTHORIZATION_CODE_PATTERN.search(reporter.read_pasted_code(retry=attempt > 0))
+        if found:
+            return found.group()
+    raise AccountAuthError("No OpenSRE sign-in code was pasted. Run the sign-in again.")
 
 
 def login_account(
     *,
     app_url: str | None = None,
     open_browser: bool = True,
-    paste_code: bool = False,
+    paste_code: bool | None = None,
     timeout_seconds: float = 300.0,
     progress: LoginProgress | None = None,
-    browser_open: Callable[[str], bool] = webbrowser.open,
 ) -> AccountLoginResult:
     """Complete webapp authentication and persist the local account safely.
 
-    ``paste_code`` replaces the loopback callback with a code the user pastes,
-    for a browser on another machine; it never opens a local browser and
-    ``timeout_seconds`` does not apply to it.
+    ``paste_code`` replaces the loopback callback with a code the user pastes
+    from a browser on another machine; ``timeout_seconds`` does not apply to it.
+    ``None`` pastes when an interactive ``progress`` runs where the browser is
+    remote (SSH, or Linux with no display).
     """
     reporter = progress if progress is not None else _SilentLoginProgress()
     if timeout_seconds <= 0:
         raise AccountAuthError("Login timeout must be greater than zero.")
     resolved_app_url = normalize_app_url(app_url)
+    if paste_code is None:
+        paste_code = progress is not None and sys.stdin.isatty() and browser_is_remote()
     state = secrets.token_urlsafe(32)
     verifier, challenge = _pkce_pair()
     if paste_code:
-        exchange = _authorize_by_paste(
-            resolved_app_url,
-            state=state,
-            challenge=challenge,
-            verifier=verifier,
-            reporter=reporter,
+        code = _read_pasted_code(
+            resolved_app_url, state=state, challenge=challenge, reporter=reporter
         )
-        reporter.authorization_received()
     else:
         code = _authorize_by_loopback(
             resolved_app_url,
@@ -516,10 +462,9 @@ def login_account(
             open_browser=open_browser,
             timeout_seconds=timeout_seconds,
             reporter=reporter,
-            browser_open=browser_open,
         )
-        reporter.authorization_received()
-        exchange = _exchange_code(resolved_app_url, code, verifier)
+    reporter.authorization_received()
+    exchange = _exchange_code(resolved_app_url, code, verifier)
     previous_record = load_account_record()
     previous_token = stored_account_token()
     record = AccountRecord(

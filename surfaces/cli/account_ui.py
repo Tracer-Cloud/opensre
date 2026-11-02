@@ -121,14 +121,13 @@ class AccountLoginPresenter:
         console.print("  3  Copy the code and paste it below")
         console.print()
 
-    def read_pasted_code(self) -> str:
+    def read_pasted_code(self, *, retry: bool) -> str:
+        if retry:
+            self._console.print(
+                f"  [bold {WARNING}]{GLYPH_WARNING}[/]  [{WARNING}]That is not a whole "
+                "OpenSRE sign-in code. Copy it again from the browser.[/]"
+            )
         return self._console.input(f"  [bold {TEXT}]Code:[/] ")
-
-    def pasted_code_rejected(self, detail: str) -> None:
-        line = Text()
-        line.append(f"  {GLYPH_WARNING}  ", style=f"bold {WARNING}")
-        line.append(detail, style=WARNING)
-        self._console.print(line)
 
     def authorization_received(self) -> None:
         console = self._console

@@ -15,7 +15,6 @@ from surfaces.cli.account_ui import (
     render_account_logout,
     render_account_status,
 )
-from surfaces.cli.remote_browser import paste_code_by_default
 from surfaces.cli.telemetry import capture_account_authenticated
 from surfaces.shared.account_credits import AccountCredits, fetch_account_credits
 from surfaces.shared.account_session import AccountSessionState, AccountStatus, account_status
@@ -193,9 +192,6 @@ def account_login(
     json_output = _json_enabled(ctx)
     if json_output and paste_code:
         raise click.UsageError("--paste-code is interactive; run it without --json.")
-    use_paste_code = (
-        paste_code if paste_code is not None else not json_output and paste_code_by_default()
-    )
     presenter = AccountLoginPresenter()
     resolved_app_url = _optional_app_url(app_url=app_url, dev=_dev_enabled(ctx, dev))
     status = account_status(app_url=resolved_app_url)
@@ -214,7 +210,7 @@ def account_login(
         result = account_auth.login_account(
             app_url=resolved_app_url,
             open_browser=browser,
-            paste_code=use_paste_code,
+            paste_code=paste_code,
             timeout_seconds=timeout_seconds,
             progress=None if json_output else presenter,
         )

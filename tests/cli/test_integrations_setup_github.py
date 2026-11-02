@@ -10,9 +10,7 @@ from integrations.setup import SetupPending
 from surfaces.cli.app import cli
 
 
-def test_github_setup_only_opens_app(monkeypatch, capsys):
-    opened = Mock(return_value=True)
-    monkeypatch.setattr(cli_setup.webbrowser, "open", opened)
+def test_github_setup_only_opens_app(monkeypatch, capsys, local_browser):
     monkeypatch.setattr(cli_setup, "github_setup_url", lambda: "https://app.opensre.com/home")
     monkeypatch.setattr(cli_setup, "load_account_record", lambda: None)
     monkeypatch.setattr(
@@ -24,7 +22,7 @@ def test_github_setup_only_opens_app(monkeypatch, capsys):
         Mock(side_effect=AssertionError("upload")),
     )
     assert cmd_setup("github") == SetupPending("github", "https://app.opensre.com/home")
-    opened.assert_called_once_with("https://app.opensre.com/home")
+    assert local_browser == ["https://app.opensre.com/home"]
     text = capsys.readouterr().out
     assert "pending" in text
     assert "opensre account login" in text
@@ -32,16 +30,16 @@ def test_github_setup_only_opens_app(monkeypatch, capsys):
     assert "device" not in text
 
 
-def test_github_setup_prints_url_when_browser_unavailable(monkeypatch, capsys):
-    monkeypatch.setattr(cli_setup.webbrowser, "open", lambda _url: False)
+def test_github_setup_on_a_server_prints_the_link_without_launching_a_browser(monkeypatch, capsys):
+    monkeypatch.setattr("infrastructure.terminal.browser.browser_is_remote", lambda: True)
+    monkeypatch.setattr("webbrowser.open", Mock(side_effect=AssertionError("launched")))
     cli_setup.setup_github()
-    assert "Open https://" in capsys.readouterr().out
+    assert "in a browser on any device" in capsys.readouterr().out
 
 
-def test_pending_cli_handoff_does_not_emit_success(monkeypatch):
+def test_pending_cli_handoff_does_not_emit_success(monkeypatch, local_browser):
     completed = Mock()
     verified = Mock()
-    monkeypatch.setattr(cli_setup.webbrowser, "open", lambda _url: True)
     monkeypatch.setattr(cli_setup, "github_setup_url", lambda: "https://app.opensre.com/home")
     monkeypatch.setattr(
         "surfaces.cli.commands.integrations.capture_integration_setup_started", Mock()
