@@ -9,7 +9,10 @@ import threading
 
 import pytest
 from prompt_toolkit.application import Application, create_app_session
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
 from rich.console import Console
@@ -18,6 +21,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
+from surfaces.interactive_shell.runtime.core.prompt_builder import _transcript_scroll_bindings
 from surfaces.interactive_shell.ui.input_prompt.stdout import (
     _DEFERRED_END,
     _DEFERRED_START,
@@ -166,6 +170,94 @@ def test_view_cannot_scroll_past_the_oldest_row() -> None:
     view.scroll_to_bottom()
     content = view.create_content(width=20, height=3)
     assert "".join(text for _style, text in content.get_line(2)).rstrip() == "line 4"
+
+
+def test_new_output_bar_appears_only_once_rows_arrive_below_the_view() -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)))
+    view = TranscriptControl(store)
+    _visible(view)  # paints once at the bottom, which anchors the mark
+
+    view.scroll(4)
+    assert _visible(view)[-1] != "↓ new output"
+
+    store.append_text("line 10\n")
+    scrolled = _visible(view)
+    assert scrolled[-1] == "↓ new output"
+    assert view.shows_new_output
+
+    view.scroll_to_bottom()
+    assert _visible(view)[-1] == "line 10"
+    assert not view.shows_new_output
+
+
+def test_new_output_bar_replaces_the_last_row_and_keeps_the_reading_position() -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)))
+    view = TranscriptControl(store)
+    _visible(view)
+    view.scroll(4)
+    assert _visible(view) == ["line 3", "line 4", "line 5"]
+
+    store.append_text("line 10\n")
+    assert _visible(view) == ["line 3", "line 4", "↓ new output"]
+
+
+def test_new_output_bar_uses_the_only_row_a_one_line_view_has() -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)))
+    view = TranscriptControl(store)
+    _visible(view)
+    view.scroll(4)
+    store.append_text("line 10\n")
+
+    assert _visible(view, height=1) == ["↓ new output"]
+
+
+def test_clicking_the_new_output_bar_returns_to_the_newest_row() -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)))
+    view = TranscriptControl(store)
+    _visible(view)
+    view.scroll(4)
+    store.append_text("line 10\n")
+    _visible(view)
+
+    clicked = view.mouse_handler(
+        MouseEvent(
+            position=Point(x=0, y=2),
+            event_type=MouseEventType.MOUSE_UP,
+            button=MouseButton.LEFT,
+            modifiers=frozenset(),
+        )
+    )
+    assert clicked is None
+    assert _visible(view)[-1] == "line 10"
+
+
+def test_end_binding_returns_to_the_bottom_only_while_scrolled_back() -> None:
+    store = TranscriptStore()
+    store.append_text("".join(f"line {index}\n" for index in range(10)))
+    view = TranscriptControl(store)
+    _visible(view)
+    bindings = _transcript_scroll_bindings(view)
+
+    binding = next(
+        item for item in bindings.get_bindings_for_keys((Keys.End,)) if item.handler is not None
+    )
+    assert not binding.filter()
+
+    view.scroll(4)
+    assert binding.filter()
+
+    binding.handler(_FakeEvent())
+    assert not view.scrolled_back
+
+
+class _FakeEvent:
+    def __init__(self) -> None:
+        self.app = _FakeApp(None)
+        self.app.invalidate = lambda: None  # type: ignore[method-assign]
 
 
 class _FakeApp:

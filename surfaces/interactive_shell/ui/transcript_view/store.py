@@ -250,6 +250,13 @@ class TranscriptStore:
             self._trim_locked()
             return unflushed
 
+    def rows_since(self, mark: TranscriptMark, width: int) -> int:
+        """Rows added below ``mark`` at ``width``; 0 once the transcript is cleared."""
+        entries, pending, epoch, _seq = self._snapshot()
+        if mark.epoch != epoch:
+            return 0
+        return _rows_since(entries, _pending_rows(pending, width), mark, width)
+
     def _close_pending_line(self) -> None:
         if self._pending:
             line = _resolve_carriage_returns(self._pending)
