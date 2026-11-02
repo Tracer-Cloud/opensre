@@ -91,7 +91,10 @@ def run_connect_github_gate(
         return True
     if not repl_tty_interactive():
         console.print(f"[{ERROR}]Connect GitHub before using the interactive shell.[/]")
-        console.print(f"Connect it at {escape(dashboard_url)}, then run [bold]opensre[/bold].")
+        console.print(
+            f"Connect it at {escape(dashboard_url)}, then run [bold]opensre[/bold].",
+            soft_wrap=True,
+        )
         return False
     if on_prompted is not None:
         on_prompted()
@@ -110,7 +113,8 @@ def run_connect_github_gate(
                 return True
             console.print(
                 f"[{WARNING}]GitHub is not connected yet.[/] "
-                f"[{SECONDARY}]Connect it at {escape(dashboard_url)}, then continue.[/]"
+                f"[{SECONDARY}]Connect it at {escape(dashboard_url)}, then continue.[/]",
+                soft_wrap=True,
             )
             continue
         return False  # Exit or Esc

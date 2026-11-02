@@ -240,6 +240,22 @@ def _reset_setup_state_cache() -> None:
     clear_setup_state_cache()
 
 
+@pytest.fixture
+def local_browser(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """A browser on this machine that records each URL it is asked to open."""
+    from infrastructure.terminal import browser
+
+    opened: list[str] = []
+
+    def open_url(url: str) -> bool:
+        opened.append(url)
+        return True
+
+    monkeypatch.setattr(browser, "browser_is_remote", lambda: False)
+    monkeypatch.setattr(browser.webbrowser, "open", open_url)
+    return opened
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Fail hard when nothing was selected (pytest-xdist can still exit 0).

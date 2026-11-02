@@ -8,10 +8,11 @@ import hmac
 import json
 import os
 import queue
+import re
 import secrets
+import sys
 import time
-import webbrowser
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -36,26 +37,44 @@ from config.account import (
 from config.constants.account import (
     OPENSRE_ACCOUNT_EXCHANGE_PATH,
     OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
+    OPENSRE_ACCOUNT_LOGIN_PASTE_MODE,
     OPENSRE_ACCOUNT_LOGIN_PATH,
     OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH,
     OPENSRE_ACCOUNT_SESSION_PATH,
     OPENSRE_ACCOUNT_TOKEN_ENV,
     OPENSRE_ACCOUNT_USAGE_PATH,
 )
+from infrastructure.terminal.browser import browser_is_remote, open_in_browser
 
 
 class AccountAuthError(RuntimeError):
     """Personal account authentication could not complete safely."""
 
 
+#: A whole webapp-issued authorization code within a pasted line, so stray
+#: whitespace or bracketed-paste markers are tolerated and a truncated paste
+#: is caught here instead of being sent.
+_AUTHORIZATION_CODE_PATTERN = re.compile(r"(?<![\w-])osre_code_[A-Za-z0-9_-]{43}(?![\w-])")
+_PASTE_ATTEMPTS = 3
+
+
 class LoginProgress(Protocol):
-    """User-facing progress for OpenSRE account login."""
+    """User-facing progress and input for OpenSRE account login."""
 
     def prompt_sign_in(self, url: str, *, opened: bool) -> None:
         """Show the sign-in URL, numbered browser steps, and wait state."""
 
+    def prompt_paste_sign_in(self, url: str) -> None:
+        """Show the sign-in URL to open on any device and the paste-code steps."""
+
+    def read_pasted_code(self, *, retry: bool) -> str:
+        """Return one pasted line, first saying the last one held no code when ``retry``.
+
+        Raise ``EOFError`` or ``KeyboardInterrupt`` to cancel.
+        """
+
     def authorization_received(self) -> None:
-        """Show that the loopback callback arrived and setup continues."""
+        """Show that the browser authorization arrived and setup continues."""
 
     def setup_complete(self) -> None:
         """Show that the account and hosted model are ready."""
@@ -64,6 +83,13 @@ class LoginProgress(Protocol):
 class _SilentLoginProgress:
     def prompt_sign_in(self, url: str, *, opened: bool) -> None:
         _ = (url, opened)
+
+    def prompt_paste_sign_in(self, url: str) -> None:
+        _ = url
+
+    def read_pasted_code(self, *, retry: bool) -> str:
+        _ = retry
+        raise AccountAuthError("Paste-code sign-in needs an interactive terminal.")
 
     def authorization_received(self) -> None:
         return
@@ -128,14 +154,20 @@ def _pkce_pair() -> tuple[str, str]:
 def _login_url(
     app_url: str,
     *,
-    callback_port: int,
+    callback_port: int | None,
     state: str,
     code_challenge: str,
     cli_auth_attempt_id: str | None = None,
 ) -> str:
+    """Build the sign-in URL; no ``callback_port`` asks the app for paste mode."""
+    delivery: dict[str, str | int] = (
+        {"mode": OPENSRE_ACCOUNT_LOGIN_PASTE_MODE}
+        if callback_port is None
+        else {"callback_port": callback_port}
+    )
     query = urlencode(
         {
-            "callback_port": callback_port,
+            **delivery,
             "state": state,
             "code_challenge": code_challenge,
             **({"cli_auth_attempt_id": cli_auth_attempt_id} if cli_auth_attempt_id else {}),
@@ -314,46 +346,29 @@ def usage_page_url(app_url: str | None = None) -> str:
     return _app_endpoint(normalize_app_url(app_url), OPENSRE_ACCOUNT_USAGE_PATH)
 
 
-def open_usage_page(
-    *,
-    app_url: str | None = None,
-    browser_open: Callable[[str], bool] | None = None,
-) -> tuple[str, bool]:
+def open_usage_page(*, app_url: str | None = None) -> tuple[str, bool]:
     """Open the usage page in the browser; return ``(url, opened)``."""
     url = usage_page_url(app_url)
-    opener = browser_open if browser_open is not None else webbrowser.open
-    try:
-        opened = bool(opener(url))
-    except Exception:
-        opened = False
-    from infrastructure.analytics.capture import capture_browser_open_requested
-
-    capture_browser_open_requested(target="account_usage", opened=opened)
-    return url, opened
+    return url, open_in_browser(url, target="account_usage")
 
 
-def login_account(
+def _authorize_by_loopback(
+    app_url: str,
     *,
-    app_url: str | None = None,
-    open_browser: bool = True,
-    timeout_seconds: float = 300.0,
-    progress: LoginProgress | None = None,
-    browser_open: Callable[[str], bool] = webbrowser.open,
-) -> AccountLoginResult:
-    """Complete webapp authentication and persist the local account safely."""
-    reporter = progress if progress is not None else _SilentLoginProgress()
-    if timeout_seconds <= 0:
-        raise AccountAuthError("Login timeout must be greater than zero.")
-    resolved_app_url = normalize_app_url(app_url)
-    state = secrets.token_urlsafe(32)
-    verifier, challenge = _pkce_pair()
+    state: str,
+    challenge: str,
+    open_browser: bool,
+    timeout_seconds: float,
+    reporter: LoginProgress,
+) -> str:
+    """Wait for the browser to redirect the code to this machine's loopback."""
     results: queue.Queue[_CallbackResult] = queue.Queue(maxsize=1)
     server = HTTPServer(
         ("127.0.0.1", 0),
         partial(
             _LoopbackCallback,
             expected_state=state,
-            success_url=_app_endpoint(resolved_app_url, OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH),
+            success_url=_app_endpoint(app_url, OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH),
             results=results,
         ),
     )
@@ -363,22 +378,15 @@ def login_account(
 
         cli_auth_attempt_id = begin_cli_auth_attempt()
         authorization_url = _login_url(
-            resolved_app_url,
+            app_url,
             callback_port=callback_port,
             state=state,
             code_challenge=challenge,
             cli_auth_attempt_id=cli_auth_attempt_id,
         )
-        opened = False
-        if open_browser:
-            try:
-                opened = bool(browser_open(authorization_url))
-            finally:
-                from infrastructure.analytics.capture import capture_browser_open_requested
-
-                capture_browser_open_requested(
-                    target="account_login", opened=opened, cli_auth_attempt_id=cli_auth_attempt_id
-                )
+        opened = open_browser and open_in_browser(
+            authorization_url, target="account_login", cli_auth_attempt_id=cli_auth_attempt_id
+        )
         reporter.prompt_sign_in(authorization_url, opened=opened)
         callback = _wait_for_callback(server, results, timeout_seconds=timeout_seconds)
     finally:
@@ -386,9 +394,77 @@ def login_account(
 
     if callback.error:
         raise AccountAuthError(f"OpenSRE sign-in failed: {callback.error}")
+    return callback.code
 
+
+def _read_pasted_code(
+    app_url: str,
+    *,
+    state: str,
+    challenge: str,
+    reporter: LoginProgress,
+) -> str:
+    """Ask for the code the app shows a browser on another machine.
+
+    Like the loopback code, it exchanges only with this process's PKCE
+    verifier. A paste holding no whole code is asked for again, never sent.
+    """
+    from infrastructure.analytics.capture import begin_cli_auth_attempt
+
+    reporter.prompt_paste_sign_in(
+        _login_url(
+            app_url,
+            callback_port=None,
+            state=state,
+            code_challenge=challenge,
+            cli_auth_attempt_id=begin_cli_auth_attempt(),
+        )
+    )
+    for attempt in range(_PASTE_ATTEMPTS):
+        found = _AUTHORIZATION_CODE_PATTERN.search(reporter.read_pasted_code(retry=attempt > 0))
+        if found:
+            return found.group()
+    raise AccountAuthError("No OpenSRE sign-in code was pasted. Run the sign-in again.")
+
+
+def login_account(
+    *,
+    app_url: str | None = None,
+    open_browser: bool = True,
+    paste_code: bool | None = None,
+    timeout_seconds: float = 300.0,
+    progress: LoginProgress | None = None,
+) -> AccountLoginResult:
+    """Complete webapp authentication and persist the local account safely.
+
+    ``paste_code`` replaces the loopback callback with a code the user pastes
+    from a browser on another machine; ``timeout_seconds`` does not apply to it.
+    ``None`` pastes when an interactive ``progress`` runs where the browser is
+    remote (SSH, or Linux with no display).
+    """
+    reporter = progress if progress is not None else _SilentLoginProgress()
+    if timeout_seconds <= 0:
+        raise AccountAuthError("Login timeout must be greater than zero.")
+    resolved_app_url = normalize_app_url(app_url)
+    if paste_code is None:
+        paste_code = progress is not None and sys.stdin.isatty() and browser_is_remote()
+    state = secrets.token_urlsafe(32)
+    verifier, challenge = _pkce_pair()
+    if paste_code:
+        code = _read_pasted_code(
+            resolved_app_url, state=state, challenge=challenge, reporter=reporter
+        )
+    else:
+        code = _authorize_by_loopback(
+            resolved_app_url,
+            state=state,
+            challenge=challenge,
+            open_browser=open_browser,
+            timeout_seconds=timeout_seconds,
+            reporter=reporter,
+        )
     reporter.authorization_received()
-    exchange = _exchange_code(resolved_app_url, callback.code, verifier)
+    exchange = _exchange_code(resolved_app_url, code, verifier)
     previous_record = load_account_record()
     previous_token = stored_account_token()
     record = AccountRecord(

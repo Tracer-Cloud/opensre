@@ -11,6 +11,7 @@ from rich.console import Console
 from config.repl_config import ReplConfig
 from infrastructure.analytics import capture
 from infrastructure.analytics.events import Event
+from infrastructure.terminal import browser
 from surfaces.interactive_shell import main as main_entrypoint
 from surfaces.interactive_shell.runtime.startup import github_gate
 from surfaces.interactive_shell.ui import connect_github
@@ -117,7 +118,8 @@ def _gate(
     monkeypatch.setattr(github_gate, "is_test_run", lambda: False)
     monkeypatch.setattr(github_gate, "github_setup_url", lambda: "https://app.opensre.test/home")
     monkeypatch.setattr(github_gate, "github_gate_check", lambda **_kwargs: next(answers))
-    monkeypatch.setattr(github_gate.webbrowser, "open", lambda _url: True)
+    monkeypatch.setattr(browser, "browser_is_remote", lambda: False)
+    monkeypatch.setattr(browser.webbrowser, "open", lambda _url: True)
     monkeypatch.setattr(connect_github, "repl_tty_interactive", lambda: interactive)
     monkeypatch.setattr(connect_github, "render_connect_github_screen", lambda _console: None)
     monkeypatch.setattr(connect_github, "prompt_connect_github", lambda **_kwargs: next(menu))

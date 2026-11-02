@@ -58,7 +58,8 @@ def _print_url(console: Console, url: str) -> None:
     link = Text(url, style=f"bold {HIGHLIGHT}")
     link.stylize(f"link {url}")
     line.append_text(link)
-    console.print(line)
+    # Let the terminal wrap the URL: Rich folding inserts newlines a copy keeps.
+    console.print(line, soft_wrap=True)
 
 
 def _print_warning_banner(console: Console, title: str) -> None:
@@ -104,6 +105,29 @@ class AccountLoginPresenter:
         console.print("  2  Sign in or create your OpenSRE account")
         console.print()
         console.print(f"  [{SECONDARY}]Waiting for browser approval…[/]")
+
+    def prompt_paste_sign_in(self, url: str) -> None:
+        console = self._console
+        console.print()
+        console.print(f"[bold {TEXT}]Sign in to OpenSRE[/]")
+        console.print(
+            f"  [{SECONDARY}]This terminal's browser is on another machine, "
+            "so you'll paste a code instead.[/]"
+        )
+        console.print()
+        console.print("  1  Open this link in a browser on any device")
+        _print_url(console, url)
+        console.print("  2  Sign in, then choose Show sign-in code")
+        console.print("  3  Copy the code and paste it below")
+        console.print()
+
+    def read_pasted_code(self, *, retry: bool) -> str:
+        if retry:
+            self._console.print(
+                f"  [bold {WARNING}]{GLYPH_WARNING}[/]  [{WARNING}]That is not a whole "
+                "OpenSRE sign-in code. Copy it again from the browser.[/]"
+            )
+        return self._console.input(f"  [bold {TEXT}]Code:[/] ")
 
     def authorization_received(self) -> None:
         console = self._console

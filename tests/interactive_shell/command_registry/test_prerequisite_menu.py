@@ -171,26 +171,20 @@ def test_continue_without_a_connection_asks_again_in_the_same_turn(
 
 
 def test_the_app_row_opens_the_organization_home_and_asks_again(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, local_browser: list[str]
 ) -> None:
     _signed_in(monkeypatch)
     session = _held_demo()
     shown = _pick(monkeypatch, _OPEN_APP, _CONTINUE)
-    opened: list[str] = []
-
-    def browser_open(url: str) -> bool:
-        opened.append(url)
-        return True
 
     monkeypatch.setattr(prerequisite_menu, "github_setup_url", lambda: _APP_URL)
-    monkeypatch.setattr(prerequisite_menu.webbrowser, "open", browser_open)
     monkeypatch.setattr(prerequisite_menu, "load_account_integrations", lambda **_kw: [])
     connect_github_app(monkeypatch)
     console, buffer = _console()
 
     choice_prompt._cmd_choose(session, console, [])
 
-    assert opened == [_APP_URL]
+    assert local_browser == [_APP_URL]
     assert _APP_URL in buffer.getvalue()
     assert [menu["choices"][0][0] for menu in shown] == [_OPEN_APP, _OPEN_APP]
     assert session.terminal.pending_prompt_default == _ANSWER

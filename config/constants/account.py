@@ -24,6 +24,9 @@ OPENSRE_ACTOR_HEADER_ENV = "OPENSRE_LLM_ACTOR_ID"
 OPENSRE_ACCOUNT_LLM_MODEL_ENV = "OPENSRE_ACCOUNT_LLM_MODEL"
 OPENSRE_GATEWAY_LLM_MODEL_DEFAULT = "gpt-6.1-sol"
 OPENSRE_ACCOUNT_LOGIN_PATH = "/cli/auth/start"
+#: ``mode`` query value asking the webapp to show the code for pasting instead
+#: of redirecting to the loopback listener (the browser is on another machine).
+OPENSRE_ACCOUNT_LOGIN_PASTE_MODE = "paste"
 OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH = "/cli/auth/success"
 OPENSRE_ACCOUNT_EXCHANGE_PATH = "/api/auth/cli/exchange"
 OPENSRE_ACCOUNT_SESSION_PATH = "/api/auth/cli/session"
@@ -76,6 +79,7 @@ __all__ = [
     "OPENSRE_ACTOR_HEADER",
     "OPENSRE_ACTOR_HEADER_ENV",
     "OPENSRE_ACCOUNT_LOGIN_PATH",
+    "OPENSRE_ACCOUNT_LOGIN_PASTE_MODE",
     "OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH",
     "OPENSRE_ACCOUNT_EXCHANGE_PATH",
     "OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS",

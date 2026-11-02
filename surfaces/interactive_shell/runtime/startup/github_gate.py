@@ -7,7 +7,6 @@ the member's own — the same rule the app enforces on every hosted model call.
 
 from __future__ import annotations
 
-import webbrowser
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -16,13 +15,13 @@ from rich.markup import escape
 
 from config.constants.skill_prerequisites import GITHUB_REST_TOKEN_CHECK
 from infrastructure.analytics.capture import (
-    capture_browser_open_requested,
     capture_github_gate_exited,
     capture_github_gate_prompted,
     capture_github_gate_rechecked,
 )
 from infrastructure.analytics.source import is_test_run
 from infrastructure.harness_providers import resolve_integrations, skill_prerequisite_verdict
+from infrastructure.terminal.browser import open_in_browser
 from infrastructure.terminal.theme import DIM
 from integrations.account_integrations import load_account_integrations
 from integrations.github import github_setup_url
@@ -75,16 +74,14 @@ def github_connected(*, refresh: bool = False) -> bool:
 
 
 def open_github_dashboard(console: Console, url: str) -> None:
-    """Open the dashboard's Connect GitHub step in the browser; print the link either way."""
-    opened = False
-    try:
-        opened = bool(webbrowser.open(url))
-    except (webbrowser.Error, OSError):
-        opened = False
-    finally:
-        capture_browser_open_requested(target="integration_setup", opened=opened)
-    lead = "Opened" if opened else "Open"
-    console.print(f"[{DIM}]{lead} {escape(url)} and connect GitHub there.[/]")
+    """Open the dashboard's Connect GitHub step in the browser; print the link either way.
+
+    Over SSH or on a server nothing opens: the link works in a browser on any
+    device, since GitHub returns to the app, not to this machine.
+    """
+    opened = open_in_browser(url, target="integration_setup")
+    lead = f"Opened {escape(url)}" if opened else f"Open {escape(url)} in a browser on any device"
+    console.print(f"[{DIM}]{lead} and connect GitHub there.[/]", soft_wrap=True)
 
 
 def pass_github_gate(console: Console, *, before_screen: Callable[[], None] | None = None) -> bool:
