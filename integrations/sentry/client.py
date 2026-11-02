@@ -127,7 +127,7 @@ def list_sentry_issue_events(
         config,
         "GET",
         f"/api/0/organizations/{config.organization_slug}/issues/{issue_id}/events/",
-        params=[("limit", str(limit))],
+        params=[("per_page", str(limit))],
     )
     return payload if isinstance(payload, list) else []
 
