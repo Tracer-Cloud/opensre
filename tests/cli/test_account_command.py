@@ -5,11 +5,14 @@ import hashlib
 import json
 import os
 import stat
+from collections.abc import Callable
 from dataclasses import replace
+from http import HTTPStatus
 from io import StringIO
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
 import pytest
 from click.testing import CliRunner
 from rich.console import Console
@@ -36,11 +39,61 @@ class _RecordingProgress:
         self.urls.append(url)
         self.opened.append(opened)
 
+    def prompt_paste_sign_in(self, url: str) -> None:
+        self.events.append("paste-prompt")
+        self.urls.append(url)
+
+    def read_pasted_code(self) -> str:
+        raise AssertionError("a loopback login must not ask for a pasted code")
+
+    def pasted_code_rejected(self, detail: str) -> None:
+        self.events.append(f"rejected: {detail}")
+
     def authorization_received(self) -> None:
         self.events.append("authorized")
 
     def setup_complete(self) -> None:
         self.events.append("complete")
+
+
+class _PastingProgress(_RecordingProgress):
+    def __init__(self, pastes: list[str]) -> None:
+        super().__init__()
+        self._pastes = pastes
+
+    def read_pasted_code(self) -> str:
+        return self._pastes.pop(0)
+
+
+_WRONG_CODE = "osre_code_" + "a" * 43
+_RIGHT_CODE = "osre_code_" + "b" * 43
+_EXCHANGE_PAYLOAD = {
+    "access_token": "osre_pat_secret",
+    "expires_at": "2026-12-01T10:00:00+00:00",
+    "user": {"id": "user_123", "email": "octocat@example.com"},
+    "organization": {"id": "org_123"},
+    "llm": {"provider": "openai", "model": "gpt-5.4-mini"},
+}
+
+
+def _webapp_exchange(posted: list[dict[str, str]]) -> Callable[..., httpx.Response]:
+    """Answer ``/exchange`` like the app: only ``_RIGHT_CODE`` is a live grant."""
+
+    def post(url: str, *, json: dict[str, str], **_kwargs: object) -> httpx.Response:
+        posted.append(json)
+        request = httpx.Request("POST", url)
+        if json["code"] != _RIGHT_CODE:
+            return httpx.Response(
+                HTTPStatus.BAD_REQUEST, json={"error": "invalid_grant"}, request=request
+            )
+        return httpx.Response(HTTPStatus.OK, json=_EXCHANGE_PAYLOAD, request=request)
+
+    return post
+
+
+def _pkce_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 def _capture_console() -> tuple[Console, StringIO]:
@@ -706,3 +759,138 @@ def test_login_correlates_browser_handoff_before_authentication(
         ]
     else:
         assert launches == []
+
+
+def test_paste_login_exchanges_only_a_well_formed_code_with_this_logins_verifier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posted: list[dict[str, str]] = []
+    saved_tokens: list[str] = []
+    progress = _PastingProgress(["  osre_code_cut  ", _WRONG_CODE, f"  {_RIGHT_CODE}\n"])
+
+    def no_browser(_url: str) -> bool:
+        raise AssertionError("paste mode must not open a browser on this machine")
+
+    monkeypatch.setattr("surfaces.cli.account_auth.httpx.post", _webapp_exchange(posted))
+    monkeypatch.setattr(account_auth, "load_account_record", lambda: None)
+    monkeypatch.setattr(account_auth, "stored_account_token", lambda: "")
+    monkeypatch.setattr(account_auth, "save_account_token", saved_tokens.append)
+    monkeypatch.setattr(account_auth, "save_account_record", lambda _record: None)
+    monkeypatch.setattr("core.llm.factory.reset_llm_clients", lambda: None)
+
+    result = account_auth.login_account(
+        app_url="https://app.opensre.com",
+        paste_code=True,
+        progress=progress,
+        browser_open=no_browser,
+    )
+
+    assert result.record.user_id == "user_123"
+    assert saved_tokens == ["osre_pat_secret"]
+    # The truncated paste never leaves the machine; the refused one is asked again.
+    assert [body["code"] for body in posted] == [_WRONG_CODE, _RIGHT_CODE]
+    assert progress.events[0] == "paste-prompt"
+    assert sum(event.startswith("rejected: ") for event in progress.events) == 2
+    assert progress.events[-2:] == ["authorized", "complete"]
+    query = parse_qs(urlsplit(progress.urls[0]).query)
+    assert query["mode"] == ["paste"]
+    assert "callback_port" not in query
+    assert {body["code_verifier"] for body in posted} == {posted[-1]["code_verifier"]}
+    assert query["code_challenge"] == [_pkce_challenge(posted[-1]["code_verifier"])]
+
+
+def test_paste_login_gives_up_without_sending_malformed_codes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posted: list[dict[str, str]] = []
+    progress = _PastingProgress(["", "not a code", "osre_code_cut"])
+
+    def must_not_save(_value: object) -> None:
+        raise AssertionError("a failed paste login must not persist anything")
+
+    monkeypatch.setattr("surfaces.cli.account_auth.httpx.post", _webapp_exchange(posted))
+    monkeypatch.setattr(account_auth, "save_account_token", must_not_save)
+    monkeypatch.setattr(account_auth, "save_account_record", must_not_save)
+
+    with pytest.raises(account_auth.AccountAuthError, match="not an OpenSRE sign-in code"):
+        account_auth.login_account(
+            app_url="https://app.opensre.com", paste_code=True, progress=progress
+        )
+
+    assert posted == []
+    assert sum(event.startswith("rejected: ") for event in progress.events) == 2
+
+
+@pytest.mark.parametrize(
+    ("args", "remote_default", "expected"),
+    [
+        ((), True, True),
+        (("--no-paste-code",), True, False),
+        (("--paste-code",), False, True),
+        ((), False, False),
+    ],
+)
+def test_login_pastes_a_code_by_default_only_when_the_browser_is_remote(
+    monkeypatch: pytest.MonkeyPatch,
+    args: tuple[str, ...],
+    remote_default: bool,
+    expected: bool,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_login(**kwargs: object) -> AccountLoginResult:
+        calls.append(kwargs)
+        return AccountLoginResult(record=_record())
+
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.account_status",
+        lambda **_: AccountStatus(AccountSessionState.SIGNED_OUT, None, "signed out"),
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.paste_code_by_default", lambda: remote_default
+    )
+    monkeypatch.setattr("surfaces.cli.account_auth.login_account", fake_login)
+    monkeypatch.setattr("surfaces.cli.commands.account.capture_account_authenticated", lambda: None)
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.fetch_account_credits",
+        lambda **_: AccountCreditsStatus(AccountSessionState.UNAVAILABLE, None, "unread"),
+    )
+
+    result = _invoke_account_login("--no-browser", *args)
+
+    assert result.exit_code == 0, result.output
+    assert [call["paste_code"] for call in calls] == [expected]
+
+
+def test_login_refuses_paste_code_with_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "surfaces.cli.account_auth.login_account",
+        lambda **_: pytest.fail("login must not start"),
+    )
+
+    result = _invoke_account_login("--paste-code", json_output=True)
+
+    assert result.exit_code == 2
+    assert "--paste-code is interactive" in result.output
+
+
+def test_paste_presenter_keeps_the_sign_in_url_whole_on_a_narrow_terminal() -> None:
+    url = (
+        "https://app.opensre.com/cli/auth/start?mode=paste&state="
+        + "s" * 43
+        + "&code_challenge="
+        + "c" * 43
+    )
+    buf = StringIO()
+    console = Console(file=buf, force_terminal=False, highlight=False, width=40)
+
+    AccountLoginPresenter(console).prompt_paste_sign_in(url)
+
+    output = buf.getvalue()
+    # Folding would put newlines inside the URL a user copies from an SSH terminal.
+    assert url in [line.strip() for line in output.splitlines()]
+    prose = " ".join(output.split())
+    assert "1 Open this link in a browser on any device" in prose
+    assert "2 Sign in, then choose Show sign-in code" in prose
+    assert "3 Copy the code and paste it below" in prose
+    assert "Waiting for browser approval" not in prose

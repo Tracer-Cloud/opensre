@@ -1570,6 +1570,12 @@ if TYPE_CHECKING:
         FORCE_COLOR_ENV as FORCE_COLOR_ENV,
     )
     from config.constants.terminal_host import (
+        GRAPHICAL_DISPLAY_ENVS as GRAPHICAL_DISPLAY_ENVS,
+    )
+    from config.constants.terminal_host import (
+        SSH_SESSION_ENVS as SSH_SESSION_ENVS,
+    )
+    from config.constants.terminal_host import (
         TERM_PROGRAM_ENV as TERM_PROGRAM_ENV,
     )
     from config.constants.terminal_host import (
@@ -1583,6 +1589,9 @@ if TYPE_CHECKING:
     )
     from config.constants.terminal_host import (
         WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
+    )
+    from config.constants.terminal_host import (
+        WSL_DISTRO_ENV as WSL_DISTRO_ENV,
     )
     from config.constants.tls import (
         SSL_CERT_DIR_ENV as SSL_CERT_DIR_ENV,
