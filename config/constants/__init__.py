@@ -39,6 +39,9 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_LLM_MODEL_ENV as OPENSRE_ACCOUNT_LLM_MODEL_ENV,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_LOGIN_PASTE_MODE as OPENSRE_ACCOUNT_LOGIN_PASTE_MODE,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_METADATA_PATH_ENV as OPENSRE_ACCOUNT_METADATA_PATH_ENV,
     )
     from config.constants.account import (
