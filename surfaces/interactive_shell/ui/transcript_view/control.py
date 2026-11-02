@@ -67,7 +67,7 @@ class TranscriptControl(UIControl):
         with self._lock:
             offset, anchor = self._offset, self._mark
             self._page = max(1, height - 1)
-        bar = offset > 0 and self._new_below(width)
+        bar = offset > 0 and self._new_below()
         window = self._store.window(max(1, width), height, offset, anchor)
         with self._lock:
             # A scroll that landed during the render applies on top.
@@ -106,11 +106,11 @@ class TranscriptControl(UIControl):
         window = self._store.window(max(1, width), max(0, max_available_height), offset, anchor)
         return len(window.rows)
 
-    def _new_below(self, width: int) -> bool:
-        """Whether rows arrived below the passage this scrolled-back view holds."""
+    def _new_below(self) -> bool:
+        """Whether output changed below the passage this scrolled-back view holds."""
         with self._lock:
             mark = self._bottom_mark
-        return mark is not None and self._store.rows_since(mark, width) > 0
+        return mark is not None and self._store.has_output_since(mark)
 
     def scroll(self, rows: int) -> None:
         """Move toward older (positive) or newer (negative) rows."""
