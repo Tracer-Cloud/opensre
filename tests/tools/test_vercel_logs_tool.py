@@ -99,6 +99,35 @@ def test_run_includes_runtime_logs_by_default(tool: VercelLogsTool) -> None:
     assert mock_client.get_runtime_logs.call_args.kwargs.get("project_id") == "prj_9"
     assert result["total_runtime_logs"] == 2
     assert len(result["runtime_logs"]) == 2
+    assert result["runtime_logs_error"] == ""
+
+
+def test_run_scopes_runtime_logs_to_the_deployment_project(tool: VercelLogsTool) -> None:
+    mock_client = MagicMock()
+    mock_client.get_deployment.return_value = {
+        "success": True,
+        "deployment": {"id": "dpl_xyz", "project_id": "prj_from_deployment"},
+    }
+    mock_client.get_deployment_events.return_value = {"success": True, "events": []}
+    mock_client.get_runtime_logs.return_value = {"success": True, "logs": []}
+
+    with patch("integrations.vercel.tools.make_vercel_client", return_value=mock_client):
+        tool.run(api_token="tok_test", deployment_id="dpl_xyz")
+
+    assert mock_client.get_runtime_logs.call_args.kwargs["project_id"] == "prj_from_deployment"
+
+
+def test_run_reports_runtime_log_failure_instead_of_empty_logs(tool: VercelLogsTool) -> None:
+    mock_client = MagicMock()
+    mock_client.get_deployment.return_value = {"success": True, "deployment": {}}
+    mock_client.get_deployment_events.return_value = {"success": True, "events": []}
+    mock_client.get_runtime_logs.return_value = {"success": False, "error": "HTTP 403: forbidden"}
+
+    with patch("integrations.vercel.tools.make_vercel_client", return_value=mock_client):
+        result = tool.run(api_token="tok_test", deployment_id="dpl_xyz", project_id="prj_9")
+
+    assert result["runtime_logs"] == []
+    assert result["runtime_logs_error"] == "HTTP 403: forbidden"
 
 
 def test_run_gracefully_handles_deployment_fetch_failure(tool: VercelLogsTool) -> None:

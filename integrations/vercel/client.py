@@ -11,7 +11,6 @@ import logging
 import os
 import re
 import time
-from http import HTTPStatus
 from typing import Any
 
 import httpx
@@ -325,6 +324,7 @@ class VercelClient:
                     "id": data.get("id", ""),
                     "url": data.get("url", ""),
                     "name": data.get("name", ""),
+                    "project_id": data.get("projectId", ""),
                     "state": data.get("readyState", ""),
                     "error": data.get("errorMessage", "") or data.get("errorCode", ""),
                     "created_at": data.get("createdAt", ""),
@@ -416,6 +416,8 @@ class VercelClient:
         ``Content-Type: application/stream+json``: a **stream** of JSON objects, not one array.
         This client uses :meth:`httpx.Client.stream` and :meth:`httpx.Response.iter_lines` to read
         incrementally (line-delimited JSON) until ``limit`` rows are collected or the stream ends.
+        Runtime logs exist only under a project, so a missing ``project_id`` is looked up from
+        the deployment.
         """
         params: dict[str, Any] = {"limit": min(limit, 2000)}
         params.update(self.config.team_params)
@@ -423,13 +425,17 @@ class VercelClient:
         if not safe_deployment:
             return {"success": False, "error": "invalid deployment id"}
         cleaned_project = (project_id or "").strip()
-        if cleaned_project:
-            safe_project = _safe_vercel_path_segment(cleaned_project)
-            if not safe_project:
-                return {"success": False, "error": "invalid project id"}
-            path = f"/v1/projects/{safe_project}/deployments/{safe_deployment}/runtime-logs"
-        else:
-            path = f"/v1/deployments/{safe_deployment}/logs"
+        if not cleaned_project:
+            deployment_result = self.get_deployment(deployment_id)
+            if not deployment_result.get("success"):
+                return deployment_result
+            cleaned_project = str(deployment_result["deployment"].get("project_id") or "").strip()
+            if not cleaned_project:
+                return {"success": False, "error": "deployment has no project id"}
+        safe_project = _safe_vercel_path_segment(cleaned_project)
+        if not safe_project:
+            return {"success": False, "error": "invalid project id"}
+        path = f"/v1/projects/{safe_project}/deployments/{safe_deployment}/runtime-logs"
 
         cap = min(limit, 2000)
         stream_headers = {
@@ -485,8 +491,6 @@ class VercelClient:
                     break
                 time.sleep(min(8.0, 2.0**attempt))
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == HTTPStatus.NOT_FOUND:
-                    return {"success": True, "logs": [], "total": 0}
                 capture_service_error(
                     exc,
                     logger=logger,

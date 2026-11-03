@@ -183,6 +183,7 @@ class VercelLogsTool(BaseTool):
     outputs = {
         "events": "Build and runtime event stream for the deployment",
         "runtime_logs": "Serverless function stdout/stderr log entries",
+        "runtime_logs_error": "Why runtime logs could not be fetched; empty when they were",
         "error_events": "Subset of events containing error keywords",
         "deployment": "Deployment metadata including state and git info",
     }
@@ -236,7 +237,9 @@ class VercelLogsTool(BaseTool):
             deployment = (
                 deployment_result.get("deployment", {}) if deployment_result.get("success") else {}
             )
-            project_id = str(project_id or _kwargs.get("project_id", "")).strip()
+            project_id = str(
+                project_id or _kwargs.get("project_id", "") or deployment.get("project_id", "")
+            ).strip()
 
             events_result = client.get_deployment_events(deployment_id, limit=limit)
             events: list[dict[str, Any]] = []
@@ -244,6 +247,7 @@ class VercelLogsTool(BaseTool):
                 events = events_result.get("events", [])
 
             runtime_logs: list[dict[str, Any]] = []
+            runtime_logs_error = ""
             if include_runtime_logs:
                 logs_result = client.get_runtime_logs(
                     deployment_id,
@@ -252,6 +256,8 @@ class VercelLogsTool(BaseTool):
                 )
                 if logs_result.get("success"):
                     runtime_logs = logs_result.get("logs", [])
+                else:
+                    runtime_logs_error = str(logs_result.get("error") or "runtime logs unavailable")
 
         error_events = [
             ev
@@ -267,6 +273,7 @@ class VercelLogsTool(BaseTool):
             "events": events,
             "error_events": error_events,
             "runtime_logs": runtime_logs,
+            "runtime_logs_error": runtime_logs_error,
             "total_events": len(events),
             "total_runtime_logs": len(runtime_logs),
         }
