@@ -2073,6 +2073,26 @@ def resolve_effective_integrations(
         )
 
     if "datadog" not in effective:
+        # Prefer the *classified* config. classify_integrations() drops any
+        # instance missing api_key/app_key, so for multi-instance DD_INSTANCES
+        # it selects a complete instance instead of the first raw one — taking
+        # record_by_service's first entry would publish an incomplete instance's
+        # empty keys and fail verification even when a valid instance exists. It
+        # also merges env/store/remote, so a datadog integration configured only
+        # through the environment (DD_API_KEY/DD_APP_KEY/DD_SITE) resolves here,
+        # including a non-default DD_SITE instead of defaulting to datadoghq.com.
+        _publish_classified_effective_service(
+            effective,
+            classified_integrations,
+            source_by_service,
+            "datadog",
+        )
+    if "datadog" not in effective:
+        # Classification found no usable instance. Still surface a lone raw
+        # record (e.g. a store record with empty credentials) so verification
+        # can report a configured-but-incomplete integration rather than a
+        # missing one. This runs only when the classified path published
+        # nothing, so it never overrides a valid instance selected above.
         datadog_record = record_by_service.get("datadog")
         if isinstance(datadog_record, dict):
             datadog_credentials = _raw_credentials(datadog_record)

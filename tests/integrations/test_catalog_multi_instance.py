@@ -395,3 +395,65 @@ def test_resolve_effective_integrations_publishes_store_configured_prefect() -> 
     assert "prefect" in resolved
     assert resolved["prefect"]["source"] == "local store"
     assert resolved["prefect"]["config"]["api_url"] == "http://localhost:4200/api"
+
+
+def test_resolve_effective_integrations_publishes_env_configured_datadog() -> None:
+    """An env-only Datadog connection keeps its keys and non-default site.
+
+    datadog is not a direct_effective service, so resolve_effective_integrations()
+    resolves it through a dedicated fallback; that path must still honour an
+    integration configured purely from DD_API_KEY/DD_APP_KEY/DD_SITE."""
+    from integrations.catalog import resolve_effective_integrations
+
+    env_record = {
+        "id": "env-datadog",
+        "service": "datadog",
+        "status": "active",
+        "credentials": {
+            "api_key": "dd-api",
+            "app_key": "dd-app",
+            "site": "datadoghq.eu",
+        },
+    }
+    resolved = resolve_effective_integrations(env_integrations=[env_record])
+    assert "datadog" in resolved
+    assert resolved["datadog"]["source"] == "local env"
+    assert resolved["datadog"]["config"]["api_key"] == "dd-api"
+    assert resolved["datadog"]["config"]["site"] == "datadoghq.eu"
+
+
+def test_resolve_effective_integrations_datadog_multi_instance_skips_incomplete() -> None:
+    """A multi-instance Datadog record resolves to a complete instance even when
+    an earlier instance is missing credentials.
+
+    classify_integrations() drops the incomplete instance, and the datadog
+    fallback must honour that selection rather than publishing the first
+    instance's empty keys."""
+    from integrations.catalog import resolve_effective_integrations
+
+    env_record = {
+        "id": "env-datadog",
+        "service": "datadog",
+        "status": "active",
+        "instances": [
+            {
+                "name": "incomplete",
+                "tags": {},
+                "credentials": {"api_key": "dd-api-1", "site": "datadoghq.eu"},
+            },
+            {
+                "name": "valid",
+                "tags": {},
+                "credentials": {
+                    "api_key": "dd-api-2",
+                    "app_key": "dd-app-2",
+                    "site": "datadoghq.eu",
+                },
+            },
+        ],
+    }
+    resolved = resolve_effective_integrations(env_integrations=[env_record])
+    assert "datadog" in resolved
+    assert resolved["datadog"]["config"]["api_key"] == "dd-api-2"
+    assert resolved["datadog"]["config"]["app_key"] == "dd-app-2"
+    assert resolved["datadog"]["config"]["site"] == "datadoghq.eu"
