@@ -61,6 +61,13 @@ class _FakeStreamResponse:
     def __exit__(self, *_args: object) -> None:
         return None
 
+    @property
+    def is_error(self) -> bool:
+        return self.status_code >= 400
+
+    def read(self) -> bytes:
+        return b""
+
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
             raise httpx.HTTPStatusError(
@@ -355,18 +362,21 @@ def test_get_runtime_logs_without_project_id_uses_the_deployment_project() -> No
     assert [log["message"] for log in result["logs"]] == ["boom"]
 
 
-def test_get_runtime_logs_reports_not_found_instead_of_empty_logs() -> None:
-    """A 404 means the logs could not be read, not that the deployment logged nothing."""
+@pytest.mark.parametrize("status", [HTTPStatus.NOT_FOUND, HTTPStatus.FORBIDDEN])
+def test_get_runtime_logs_reports_streamed_error_instead_of_empty_logs(
+    status: HTTPStatus,
+) -> None:
+    """An error status means the logs could not be read, not that the deployment logged nothing."""
+    body = b'{"error":{"code":"denied"}}'
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            HTTPStatus.NOT_FOUND, json={"error": {"code": "not_found"}}, request=request
-        )
+        # An iterator body stays unread until consumed, like a real streamed response.
+        return httpx.Response(status, content=iter([body]), request=request)
 
     result = _recording_client(handler).get_runtime_logs("dpl_xyz", project_id="prj_abc")
 
     assert result["success"] is False
-    assert "HTTP 404" in result["error"]
+    assert result["error"] == f"HTTP {status.value}: {body.decode()}"
 
 
 def test_team_params_included_when_set(monkeypatch: pytest.MonkeyPatch) -> None:

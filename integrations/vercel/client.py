@@ -455,6 +455,9 @@ class VercelClient:
                     headers=stream_headers,
                     timeout=_runtime_logs_http_timeout(),
                 ) as resp:
+                    if resp.is_error:
+                        # Load the error body while the stream is open; the handler reads it.
+                        resp.read()
                     resp.raise_for_status()
                     raw_logs = _collect_runtime_logs_from_stream(resp, cap)
                 logs = [
