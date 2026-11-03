@@ -158,21 +158,26 @@ def search_code(
     try:
         client = _get_client(config)
         try:
-            url = (
-                f"/repositories/{config.workspace}/{repo_slug}/search/code"
-                if repo_slug
-                else f"/workspaces/{config.workspace}/search/code"
-            )
+            # Bitbucket has no repository-level code search; a repo is scoped with
+            # the `repo:` qualifier, and the repository is only returned on request.
+            search_query = f"{query} repo:{repo_slug}" if repo_slug else query
             response = client.get(
-                url,
-                params={"search_query": query, "pagelen": effective_limit},
+                f"/workspaces/{config.workspace}/search/code",
+                params={
+                    "search_query": search_query,
+                    "pagelen": effective_limit,
+                    "fields": "+values.file.commit.repository.full_name",
+                },
             )
             response.raise_for_status()
             data = response.json()
             results = [
                 {
                     "path": entry.get("file", {}).get("path", ""),
-                    "repo": entry.get("repository", {}).get("full_name", ""),
+                    "repo": entry.get("file", {})
+                    .get("commit", {})
+                    .get("repository", {})
+                    .get("full_name", ""),
                     "content_matches": len(entry.get("content_matches", [])),
                 }
                 for entry in data.get("values", [])
