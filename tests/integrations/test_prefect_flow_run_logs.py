@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from http import HTTPStatus
 
 import httpx
 
@@ -20,7 +21,7 @@ def test_flow_run_logs_pages_recent_entries_with_valid_page_sizes() -> None:
         offset = int(body["offset"])
         size = int(body["limit"])
         return httpx.Response(
-            200,
+            HTTPStatus.OK,
             json=[
                 {"timestamp": str(300 - index), "message": f"line {300 - index}"}
                 for index in range(offset, min(offset + size, 300))
