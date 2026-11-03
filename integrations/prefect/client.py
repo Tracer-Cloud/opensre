@@ -160,17 +160,23 @@ class PrefectClient:
         try:
             raw: list[dict[str, Any]] = []
             requested = min(limit, 1000)
+            snapshot_before: str | None = None
             while len(raw) < requested:
                 page_size = min(100, requested - len(raw))
+                log_filter: dict[str, Any] = {"flow_run_id": {"any_": [flow_run_id]}}
+                if snapshot_before is not None:
+                    log_filter["timestamp"] = {"before_": snapshot_before}
                 body: dict[str, Any] = {
                     "limit": page_size,
                     "offset": len(raw),
-                    "logs": {"flow_run_id": {"any_": [flow_run_id]}},
+                    "logs": log_filter,
                     "sort": "TIMESTAMP_DESC",
                 }
                 resp = self._get_client().post("/logs/filter", json=body)
                 resp.raise_for_status()
                 page: list[dict[str, Any]] = resp.json()
+                if not raw and page:
+                    snapshot_before = page[0]["timestamp"]
                 raw.extend(page)
                 if len(page) < page_size:
                     break
