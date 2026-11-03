@@ -10,6 +10,8 @@ updates:
     ignore:
       - dependency-name: "openai"
         versions: [">=3.0.0"]
+      - dependency-name: "huggingface-hub"
+        versions: [">=2.0.0"]
 
   - package-ecosystem: "npm"
     directory: "/docs"
