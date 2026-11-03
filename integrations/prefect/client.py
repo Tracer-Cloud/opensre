@@ -157,15 +157,23 @@ class PrefectClient:
             flow_run_id: The UUID of the flow run.
             limit: Maximum number of log lines to return.
         """
-        body: dict[str, Any] = {
-            "limit": min(limit, 1000),
-            "logs": {"flow_run_id": {"any_": [flow_run_id]}},
-            "sort": "TIMESTAMP_ASC",
-        }
         try:
-            resp = self._get_client().post("/logs/filter", json=body)
-            resp.raise_for_status()
-            raw: list[dict[str, Any]] = resp.json()
+            raw: list[dict[str, Any]] = []
+            requested = min(limit, 1000)
+            while len(raw) < requested:
+                page_size = min(100, requested - len(raw))
+                body: dict[str, Any] = {
+                    "limit": page_size,
+                    "offset": len(raw),
+                    "logs": {"flow_run_id": {"any_": [flow_run_id]}},
+                    "sort": "TIMESTAMP_DESC",
+                }
+                resp = self._get_client().post("/logs/filter", json=body)
+                resp.raise_for_status()
+                page: list[dict[str, Any]] = resp.json()
+                raw.extend(page)
+                if len(page) < page_size:
+                    break
             logs = [
                 {
                     "timestamp": entry.get("timestamp", ""),
@@ -173,7 +181,7 @@ class PrefectClient:
                     "message": entry.get("message", ""),
                     "task_run_id": entry.get("task_run_id", ""),
                 }
-                for entry in raw
+                for entry in reversed(raw)
             ]
             return {"success": True, "logs": logs, "total": len(logs)}
         except httpx.HTTPStatusError as exc:
