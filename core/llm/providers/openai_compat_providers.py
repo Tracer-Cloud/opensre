@@ -43,6 +43,10 @@ class OpenAICompatProvider:
     settings_prefix: str
     temperature: float | None = None
     api_key_default: str = ""
+    #: Env var that lets agent clients override this provider's conservative
+    #: output-token default (e.g. a local model that also bridges to a larger
+    #: served one). ``None`` keeps the configured limit.
+    agent_max_tokens_env: str | None = None
 
 
 @dataclass(frozen=True)
@@ -56,10 +60,6 @@ class ResolvedOpenAICompatProvider:
     api_key_env: str
     temperature: float | None = None
     api_key_default: str = ""
-    #: Env var that lets agent clients override this provider's conservative
-    #: output-token default (e.g. a local model that also bridges to a larger
-    #: served one). ``None`` keeps the configured limit.
-    agent_max_tokens_env: str | None = None
 
 
 OPENAI_COMPATIBLE_PROVIDERS: Final[dict[str, OpenAICompatProvider]] = {
