@@ -9,6 +9,7 @@ as a follow-up job that resumes the session.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -420,6 +421,15 @@ class PromptWorker:
         self._runner.drop_session(session_id)
 
 
+_AUTO_APPROVE_TOOLS_ENV = "OPENSRE_AUTO_APPROVE_TOOLS"
+_AUTO_APPROVE_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _auto_approve_tools() -> bool:
+    """True when tool approvals are auto-granted (self-host, no human approver)."""
+    return os.getenv(_AUTO_APPROVE_TOOLS_ENV, "").strip().lower() in _AUTO_APPROVE_TRUTHY
+
+
 class _Approvals:
     """Turns ``requires_approval`` into an Approve/Deny question the caller answers later."""
 
@@ -430,6 +440,12 @@ class _Approvals:
     def before_tool_call(self, request: ToolExecutionRequest) -> BeforeToolCallResult | None:
         tool = request.tool
         if not bool(getattr(tool, "requires_approval", False)):
+            return None
+        if _auto_approve_tools():
+            # Self-host opt-in: this gateway has no human approver (the Approve/Deny
+            # prompt would never be answered), so grant tools that require approval
+            # and let the turn run — the same autonomy the /alerts flow relies on.
+            # Upstream behavior is unchanged when the flag is unset.
             return None
         name = request.tool_call.name
         schema = getattr(tool, "input_schema", None)
