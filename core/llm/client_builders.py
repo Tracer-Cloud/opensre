@@ -107,7 +107,18 @@ def _native_sdk_agent_client(route: LLMRoute) -> AgentLLMClient:
         from core.llm.types import ModelType
 
         resolved = resolve_openai_compat_provider(settings, provider, ModelType.REASONING)
-        max_tokens = 1024 if provider == PROVIDER_OLLAMA else resolved.config.max_tokens
+        if provider == PROVIDER_OLLAMA:
+            # This provider is our bridge to LiteLLM (a full Claude model), not a
+            # small local model, so the hard 1024 cap truncates long reasoning and
+            # tool-call arguments (e.g. a long slack_send_message `message` is
+            # dropped mid-serialization). Honor LLM_MAX_TOKENS; the 1024 fallback
+            # keeps the conservative local-ollama default when it is unset.
+            try:
+                max_tokens = max(1, int(os.getenv("LLM_MAX_TOKENS", "1024")))
+            except ValueError:
+                max_tokens = 1024
+        else:
+            max_tokens = resolved.config.max_tokens
         return sdk.OpenAIAgentClient(
             model=resolved.model,
             max_tokens=max_tokens,
