@@ -18,6 +18,7 @@ from core.llm.providers.azure_openai import (
 )
 from core.llm.providers.custom_endpoints import is_custom_anthropic_provider
 from core.llm.providers.openai_compat_providers import (
+    agent_max_tokens,
     is_openai_compat_provider,
     resolve_openai_compat_provider,
 )
@@ -80,7 +81,7 @@ def build_litellm_agent_client(settings: Any, provider: str) -> AgentLLMClient:
 
     if is_openai_compat_provider(provider):
         resolved = resolve_openai_compat_provider(settings, provider, ModelType.REASONING)
-        max_tokens = resolved.config.max_tokens
+        max_tokens = agent_max_tokens(resolved)
         return LiteLLMAgentClient(
             litellm_model=_litellm_model_for_compat(resolved.model),
             max_tokens=max_tokens,

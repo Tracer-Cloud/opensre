@@ -152,6 +152,19 @@ def _ollama_max_tokens() -> int:
         return _OLLAMA_DEFAULT_MAX_TOKENS
 
 
+def agent_max_tokens(resolved: ResolvedOpenAICompatProvider) -> int:
+    """Output-token cap for a tool-calling agent client.
+
+    The ollama provider doubles as the bridge to a full LiteLLM-served model, so
+    agent clients lift its conservative default through ``LLM_MAX_TOKENS``. The
+    choice lives here, not in ``resolve_openai_compat_provider``, so non-agent
+    clients keep the provider's own configured limit.
+    """
+    if resolved.name == "ollama":
+        return _ollama_max_tokens()
+    return resolved.config.max_tokens
+
+
 def resolve_openai_compat_provider(
     settings: Any,
     provider: str,
@@ -171,13 +184,10 @@ def resolve_openai_compat_provider(
         from core.llm.providers.custom_endpoints import log_endpoint_resolution
 
         log_endpoint_resolution(provider, base_url, model, model_type)
-    config = spec.config
-    if provider == "ollama":
-        config = config.model_copy(update={"max_tokens": _ollama_max_tokens()})
     return ResolvedOpenAICompatProvider(
         name=provider,
         model=model,
-        config=config,
+        config=spec.config,
         base_url=base_url,
         api_key_env=spec.api_key_env,
         temperature=spec.temperature,

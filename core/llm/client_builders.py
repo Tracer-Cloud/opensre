@@ -94,6 +94,7 @@ def _native_sdk_agent_client(route: LLMRoute) -> AgentLLMClient:
     )
     from core.llm.providers.custom_endpoints import is_custom_anthropic_provider
     from core.llm.providers.openai_compat_providers import (
+        agent_max_tokens,
         is_openai_compat_provider,
         resolve_openai_compat_provider,
     )
@@ -108,7 +109,7 @@ def _native_sdk_agent_client(route: LLMRoute) -> AgentLLMClient:
         resolved = resolve_openai_compat_provider(settings, provider, ModelType.REASONING)
         return sdk.OpenAIAgentClient(
             model=resolved.model,
-            max_tokens=resolved.config.max_tokens,
+            max_tokens=agent_max_tokens(resolved),
             base_url=resolved.base_url,
             api_key_env=resolved.api_key_env,
             api_key_default=resolved.api_key_default,
