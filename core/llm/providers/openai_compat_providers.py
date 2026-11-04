@@ -56,6 +56,10 @@ class ResolvedOpenAICompatProvider:
     api_key_env: str
     temperature: float | None = None
     api_key_default: str = ""
+    #: Env var that lets agent clients override this provider's conservative
+    #: output-token default (e.g. a local model that also bridges to a larger
+    #: served one). ``None`` keeps the configured limit.
+    agent_max_tokens_env: str | None = None
 
 
 OPENAI_COMPATIBLE_PROVIDERS: Final[dict[str, OpenAICompatProvider]] = {
@@ -108,6 +112,7 @@ OPENAI_COMPATIBLE_PROVIDERS: Final[dict[str, OpenAICompatProvider]] = {
         "OLLAMA_API_KEY",
         "ollama",
         api_key_default="ollama",
+        agent_max_tokens_env=LLM_MAX_TOKENS_ENV,
     ),
     "custom-openai": OpenAICompatProvider(
         CUSTOM_OPENAI_LLM_CONFIG,
@@ -132,37 +137,36 @@ def select_compat_model(settings: Any, provider: str, model_type: ModelType) -> 
     return str(getattr(settings, attr))
 
 
-_OLLAMA_DEFAULT_MAX_TOKENS: Final = 1024
+_DEFAULT_AGENT_MAX_TOKENS: Final = 1024
 
 
-def _ollama_max_tokens() -> int:
-    """Ollama's output-token cap, overridable through ``LLM_MAX_TOKENS``.
+def _env_capped_max_tokens(env_name: str) -> int:
+    """Output-token cap read from ``env_name``, with a conservative default.
 
-    The ollama provider doubles as OpenSRE's bridge to a full LiteLLM-served
-    model, where the conservative 1024 default truncates long reasoning and
-    tool-call arguments. The override lifts the cap; an unset or invalid value
-    keeps the local-model default so a real local ollama is unaffected.
+    For a provider whose own default is deliberately low but may bridge to a
+    larger served model: the env override lifts the cap, an unset or invalid
+    value keeps the default.
     """
-    raw = os.getenv(LLM_MAX_TOKENS_ENV, "").strip()
+    raw = os.getenv(env_name, "").strip()
     if not raw:
-        return _OLLAMA_DEFAULT_MAX_TOKENS
+        return _DEFAULT_AGENT_MAX_TOKENS
     try:
         return max(1, int(raw))
     except ValueError:
-        return _OLLAMA_DEFAULT_MAX_TOKENS
+        return _DEFAULT_AGENT_MAX_TOKENS
 
 
 def agent_max_tokens(resolved: ResolvedOpenAICompatProvider) -> int:
     """Output-token cap for a tool-calling agent client.
 
-    The ollama provider doubles as the bridge to a full LiteLLM-served model, so
-    agent clients lift its conservative default through ``LLM_MAX_TOKENS``. The
-    choice lives here, not in ``resolve_openai_compat_provider``, so non-agent
-    clients keep the provider's own configured limit.
+    A provider whose spec names an ``agent_max_tokens_env`` lets agent clients
+    lift its conservative default through that env var; others keep their
+    configured limit. Non-agent clients never call this, so their limits stand.
     """
-    if resolved.name == "ollama":
-        return _ollama_max_tokens()
-    return resolved.config.max_tokens
+    agent_max_tokens_env = OPENAI_COMPATIBLE_PROVIDERS[resolved.name].agent_max_tokens_env
+    if agent_max_tokens_env is None:
+        return resolved.config.max_tokens
+    return _env_capped_max_tokens(agent_max_tokens_env)
 
 
 def resolve_openai_compat_provider(

@@ -13,6 +13,7 @@ from config.constants.github import (
     GITHUB_WEBAPP_ORIGIN,
     OPENSRE_GITHUB_ALLOW_LOCAL_TOKEN_ENV,
 )
+from config.llm_credentials import resolve_env_credential
 from core.tool import availability_view
 
 
@@ -37,8 +38,16 @@ def _allow_local_github_token() -> bool:
 
 
 def _env_github_token() -> str:
-    """The GitHub token from the environment (GITHUB_TOKEN, then GH_TOKEN)."""
-    return (os.getenv(GITHUB_TOKEN_ENV) or os.getenv(GH_TOKEN_ENV) or "").strip()
+    """The GitHub token for the opt-in (GITHUB_TOKEN, then GH_TOKEN).
+
+    Resolved with ``resolve_env_credential`` (environment first, then the local
+    credentials file) so a securely saved token also satisfies the opt-in.
+    """
+    return (
+        resolve_env_credential(GITHUB_TOKEN_ENV)
+        or resolve_env_credential(GH_TOKEN_ENV)
+        or ""
+    ).strip()
 
 
 def _local_github_fallback(explicit: str | None) -> str:
