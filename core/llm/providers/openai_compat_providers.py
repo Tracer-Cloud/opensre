@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Final
 
-from config.constants.llm import CUSTOM_OPENAI_API_KEY_ENV, TRUSTEDROUTER_API_KEY_ENV
+from config.constants.llm import (
+    CUSTOM_OPENAI_API_KEY_ENV,
+    LLM_MAX_TOKENS_ENV,
+    TRUSTEDROUTER_API_KEY_ENV,
+)
 from config.llm_models import (
     CUSTOM_OPENAI_LLM_CONFIG,
     DEEPSEEK_BASE_URL,
@@ -127,6 +132,26 @@ def select_compat_model(settings: Any, provider: str, model_type: ModelType) -> 
     return str(getattr(settings, attr))
 
 
+_OLLAMA_DEFAULT_MAX_TOKENS: Final = 1024
+
+
+def _ollama_max_tokens() -> int:
+    """Ollama's output-token cap, overridable through ``LLM_MAX_TOKENS``.
+
+    The ollama provider doubles as OpenSRE's bridge to a full LiteLLM-served
+    model, where the conservative 1024 default truncates long reasoning and
+    tool-call arguments. The override lifts the cap; an unset or invalid value
+    keeps the local-model default so a real local ollama is unaffected.
+    """
+    raw = os.getenv(LLM_MAX_TOKENS_ENV, "").strip()
+    if not raw:
+        return _OLLAMA_DEFAULT_MAX_TOKENS
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return _OLLAMA_DEFAULT_MAX_TOKENS
+
+
 def resolve_openai_compat_provider(
     settings: Any,
     provider: str,
@@ -146,10 +171,13 @@ def resolve_openai_compat_provider(
         from core.llm.providers.custom_endpoints import log_endpoint_resolution
 
         log_endpoint_resolution(provider, base_url, model, model_type)
+    config = spec.config
+    if provider == "ollama":
+        config = config.model_copy(update={"max_tokens": _ollama_max_tokens()})
     return ResolvedOpenAICompatProvider(
         name=provider,
         model=model,
-        config=spec.config,
+        config=config,
         base_url=base_url,
         api_key_env=spec.api_key_env,
         temperature=spec.temperature,

@@ -7,6 +7,10 @@ CREDITS_DENIED_MESSAGE = "Out of credits — top up in the OpenSRE console."
 DEFAULT_STOP_TIMEOUT_SECONDS = 8.0
 #: Overrides that budget; a hosted task sets it just under its ECS ``stopTimeout``.
 GATEWAY_STOP_TIMEOUT_SECONDS_ENV = "OPENSRE_GATEWAY_STOP_TIMEOUT_SECONDS"
+#: Opt-in: auto-grant approval-gated tools on an unattended gateway. A headless
+#: self-host has no human approver, so without this the ``/v1/prompt`` path
+#: blocks on every approval-gated tool call.
+AUTO_APPROVE_TOOLS_ENV = "OPENSRE_AUTO_APPROVE_TOOLS"
 #: Ceiling for the override: the longest ``stopTimeout`` Fargate allows.
 MAX_STOP_TIMEOUT_SECONDS = 120.0
 #: How long a health check waits for the scheduler task-store lock before counting zero.
@@ -111,6 +115,7 @@ PROMPT_FOREIGN_REFRESH_SECONDS = 2.0
 DATABASE_URL_ENV = "DATABASE_URL"
 
 __all__ = [
+    "AUTO_APPROVE_TOOLS_ENV",
     "DATABASE_URL_ENV",
     "ATTACHMENT_MAX_FILE_CHARS",
     "ATTACHMENT_MAX_TOTAL_CHARS",

@@ -19,6 +19,11 @@ from typing import Final
 
 LLM_PROVIDER_ENV: Final[str] = "LLM_PROVIDER"
 
+#: Output-token ceiling for the agent and reasoning clients. The
+#: openai-compatible provider resolver reads it to lift the conservative
+#: ollama default when that provider bridges to a full LiteLLM-served model.
+LLM_MAX_TOKENS_ENV: Final[str] = "LLM_MAX_TOKENS"
+
 # Explicit local model selection is independent of OpenSRE account identity.
 OPENSRE_LLM_CONNECTION_ENV: Final[str] = "OPENSRE_LLM_CONNECTION"
 HOSTED_MODEL_PROVIDER: Final[str] = "opensre-hosted"

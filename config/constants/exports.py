@@ -11,6 +11,7 @@ EXPORTS: dict[str, str] = {
     "REASONING_EFFORT_MODEL_PREFIXES": "llm",
     "HOSTED_MODEL_PROVIDER": "llm",
     "OPENSRE_MODEL_SETUP_RESULT_ENV": "llm",
+    "LLM_MAX_TOKENS_ENV": "llm",
     "GROK_OAUTH_CLIENT_ID": "grok",
     "GROK_OAUTH_REFERRER": "grok",
     "GROK_OAUTH_CLIENT_ID_ENV": "grok",
@@ -41,6 +42,7 @@ EXPORTS: dict[str, str] = {
     "GITHUB_INTEGRATION_SETUP_SLASH": "github",
     "GITHUB_SETUP_SLASH_INVOKE": "github",
     "GITHUB_TOKEN_CHECKLIST": "github",
+    "OPENSRE_GITHUB_ALLOW_LOCAL_TOKEN_ENV": "github",
     "CI_REPAIR_WORKER_COMMAND": "ci_repair",
     "CI_REPAIR_SECONDS": "ci_repair",
     "CI_REPAIR_FINISH_RESERVE_SECONDS": "ci_repair",
@@ -218,6 +220,7 @@ EXPORTS: dict[str, str] = {
     # gateway
     "ATTACHMENT_MAX_FILE_CHARS": "gateway",
     "ATTACHMENT_MAX_TOTAL_CHARS": "gateway",
+    "AUTO_APPROVE_TOOLS_ENV": "gateway",
     "CREDITS_DENIED_MESSAGE": "gateway",
     "DEFAULT_MAX_CONVERSATION_LOCKS": "gateway",
     "DEFAULT_STOP_TIMEOUT_SECONDS": "gateway",

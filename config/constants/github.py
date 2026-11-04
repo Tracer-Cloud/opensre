@@ -21,6 +21,11 @@ GITHUB_MCP_TOOLSETS_ENV = "GITHUB_MCP_TOOLSETS"
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 GH_TOKEN_ENV = "GH_TOKEN"
 OPENSRE_INSTALL_GITHUB_TOKEN_ENV = "OPENSRE_INSTALL_GITHUB_TOKEN"
+#: Opt-in: let a gateway that is NOT tethered to the OpenSRE app use a GitHub
+#: token from its own environment (GITHUB_TOKEN, then GH_TOKEN). A webapp-origin
+#: grant — the only kind the upstream flow accepts — can never be minted on an
+#: untethered self-host, so without this every GitHub tool is withdrawn.
+OPENSRE_GITHUB_ALLOW_LOCAL_TOKEN_ENV = "OPENSRE_GITHUB_ALLOW_LOCAL_TOKEN"
 #: Shell command that hands GitHub setup to the app.
 GITHUB_INTEGRATION_SETUP_SLASH = "/integrations setup github"
 #: Same app handoff from a terminal that is not already inside the interactive shell.
@@ -65,5 +70,6 @@ __all__ = [
     "GITHUB_MCP_TOOLSETS_ENV",
     "GITHUB_MCP_URL_ENV",
     "GITHUB_TOKEN_ENV",
+    "OPENSRE_GITHUB_ALLOW_LOCAL_TOKEN_ENV",
     "OPENSRE_INSTALL_GITHUB_TOKEN_ENV",
 ]

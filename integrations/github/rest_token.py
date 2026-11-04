@@ -11,6 +11,7 @@ from config.constants.github import (
     GITHUB_CONNECTION_ORIGIN_TAG,
     GITHUB_TOKEN_ENV,
     GITHUB_WEBAPP_ORIGIN,
+    OPENSRE_GITHUB_ALLOW_LOCAL_TOKEN_ENV,
 )
 from core.tool import availability_view
 
@@ -25,17 +26,14 @@ def github_selection_failed(sources: Mapping[str, Any]) -> bool:
     return isinstance(github, Mapping) and bool(github.get("connection_selection_error"))
 
 
-#: Opt-in: let a gateway that is NOT tethered to the OpenSRE app use a GitHub
-#: token from its own environment. A webapp-origin grant (the only kind the
-#: upstream flow accepts) can never be minted on an untethered self-host, so
-#: without this every GitHub tool is withdrawn (github_connection_required).
-_ALLOW_LOCAL_GITHUB_TOKEN_ENV = "OPENSRE_GITHUB_ALLOW_LOCAL_TOKEN"
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
 def _allow_local_github_token() -> bool:
     """True only when the local-token opt-in is explicitly set."""
-    return os.getenv(_ALLOW_LOCAL_GITHUB_TOKEN_ENV, "").strip().lower() in _TRUTHY
+    return (
+        os.getenv(OPENSRE_GITHUB_ALLOW_LOCAL_TOKEN_ENV, "").strip().lower() in _TRUTHY
+    )
 
 
 def _env_github_token() -> str:
@@ -65,7 +63,12 @@ def github_rest_token(
     requested_explicit = explicit
     if sources is not None:
         if github_selection_failed(sources):
-            return _local_github_fallback(requested_explicit)
+            # A managed connection was chosen but is unusable or ambiguous.
+            # Refuse it: the self-host env token must never stand in for a
+            # failed managed selection, or the tool would silently run as the
+            # env token's owner instead of the chosen connection. The local
+            # fallback stays scoped to the no-connection untethered case below.
+            return ""
         github = sources.get("github")
         if not isinstance(github, Mapping):
             return _local_github_fallback(requested_explicit)

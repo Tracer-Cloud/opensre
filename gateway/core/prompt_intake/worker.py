@@ -17,6 +17,7 @@ from contextlib import ExitStack
 from typing import Any, Protocol
 
 from config.constants.gateway import (
+    AUTO_APPROVE_TOOLS_ENV,
     PROMPT_CONVERSATION_NEW,
     PROMPT_HEARTBEAT_SECONDS,
     PROMPT_PROGRESS_KIND_NOTE,
@@ -421,13 +422,14 @@ class PromptWorker:
         self._runner.drop_session(session_id)
 
 
-_AUTO_APPROVE_TOOLS_ENV = "OPENSRE_AUTO_APPROVE_TOOLS"
 _AUTO_APPROVE_TRUTHY = {"1", "true", "yes", "on"}
 
 
 def _auto_approve_tools() -> bool:
     """True when tool approvals are auto-granted (self-host, no human approver)."""
-    return os.getenv(_AUTO_APPROVE_TOOLS_ENV, "").strip().lower() in _AUTO_APPROVE_TRUTHY
+    return (
+        os.getenv(AUTO_APPROVE_TOOLS_ENV, "").strip().lower() in _AUTO_APPROVE_TRUTHY
+    )
 
 
 class _Approvals:

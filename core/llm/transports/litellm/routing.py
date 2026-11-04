@@ -79,10 +79,8 @@ def build_litellm_agent_client(settings: Any, provider: str) -> AgentLLMClient:
         )
 
     if is_openai_compat_provider(provider):
-        from config.llm_settings import PROVIDER_OLLAMA
-
         resolved = resolve_openai_compat_provider(settings, provider, ModelType.REASONING)
-        max_tokens = 1024 if provider == PROVIDER_OLLAMA else resolved.config.max_tokens
+        max_tokens = resolved.config.max_tokens
         return LiteLLMAgentClient(
             litellm_model=_litellm_model_for_compat(resolved.model),
             max_tokens=max_tokens,
