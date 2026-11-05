@@ -124,6 +124,7 @@ pg_stat_statements
 prefetch
 replayable
 Supabase
+Neon
 Trendshift
 Trello
 repos

@@ -386,6 +386,13 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
     IntegrationSpec(service="trello"),
     IntegrationSpec(service="rds", setup_order=11),
     IntegrationSpec(
+        service="neon",
+        has_verifier=True,
+        direct_effective=True,
+        setup_order=60,
+        verify_order=60,
+    ),
+    IntegrationSpec(
         service="supabase",
         has_verifier=True,
         verify_order=99,

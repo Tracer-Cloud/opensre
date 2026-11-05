@@ -425,6 +425,11 @@ EXPORTS: dict[str, str] = {
     "MYSQL_PORT_ENV": "mysql",
     "MYSQL_SSL_MODE_ENV": "mysql",
     "MYSQL_USERNAME_ENV": "mysql",
+    # neon
+    "NEON_API_BASE_URL": "neon",
+    "NEON_API_KEY_ENV": "neon",
+    "NEON_BRANCH_ID_ENV": "neon",
+    "NEON_PROJECT_ID_ENV": "neon",
     # new_relic
     "NEW_RELIC_ACCOUNT_ID_ENV": "new_relic",
     "NEW_RELIC_ALLOWED_BASE_URLS": "new_relic",

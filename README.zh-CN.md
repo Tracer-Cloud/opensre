@@ -233,7 +233,7 @@ OpenSRE 可连接现代云技术栈中的 60 多种工具与服务，从 LLM 提
 | **AI / LLM 提供商** | Anthropic · OpenAI · OpenAI Codex · Ollama · Google Gemini · OpenRouter · TrustedRouter · NVIDIA NIM · Bedrock |  |
 | **可观测性** | <img src="docs/assets/icons/grafana.webp" width="16"> Grafana (Loki · Mimir · Tempo · annotations) · <img src="docs/assets/icons/datadog.svg" width="16"> Datadog · Honeycomb · Coralogix · <img src="docs/assets/icons/groundcover.webp" width="16"> groundcover · <img src="docs/assets/icons/cloudwatch.png" width="16"> CloudWatch · <img src="docs/assets/icons/sentry.png" width="16"> Sentry · Elasticsearch · Better Stack · Splunk · Victoria Logs · SignOz · OpenObserve · OpenSearch · Azure Monitor · New Relic |  |
 | **基础设施** | <img src="docs/assets/icons/kubernetes.png" width="16"> Kubernetes · <img src="docs/assets/icons/aws.png" width="16"> AWS (S3 · Lambda · EKS · EC2 · CloudTrail · Bedrock) · <img src="docs/assets/icons/azure.png" width="16"> Azure · ArgoCD · Helm |  |
-| **数据库** | MongoDB · ClickHouse · PostgreSQL · MySQL · MariaDB · MongoDB Atlas · Azure SQL · Snowflake · Redis · RDS · Supabase |  |
+| **数据库** | MongoDB · ClickHouse · PostgreSQL · MySQL · MariaDB · MongoDB Atlas · Azure SQL · Snowflake · Redis · RDS · Supabase · Neon |  |
 | **数据平台** | Apache Airflow · Apache Kafka · Prefect · RabbitMQ · Dagster · Temporal |  |
 | **开发工具** | <img src="docs/assets/icons/github.webp" width="16"> GitHub · GitHub MCP · Bitbucket · GitLab · Jenkins |  |
 | **故障管理** | <img src="docs/assets/icons/pagerduty.png" width="16"> PagerDuty · Jira · Alertmanager · incident.io · ServiceNow · Trello（仅提供客户端辅助功能） | [Linear](https://github.com/Tracer-Cloud/opensre/issues/124) |

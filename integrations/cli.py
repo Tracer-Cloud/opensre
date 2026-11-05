@@ -221,6 +221,12 @@ def _setup_vercel() -> None:
     _run_spec_setup(VERCEL_SETUP)
 
 
+def _setup_neon() -> None:
+    from integrations.neon.setup import NEON_SETUP
+
+    _run_spec_setup(NEON_SETUP)
+
+
 def _setup_railway() -> None:
     from integrations.railway.setup import RAILWAY_SETUP
 
@@ -504,6 +510,7 @@ _HANDLERS: dict[str, Any] = {
     "tracer": _setup_tracer,
     "vercel": _setup_vercel,
     "railway": _setup_railway,
+    "neon": _setup_neon,
     "github": setup_github,
     "gitlab": _setup_gitlab,
     "sentry": _setup_sentry,
