@@ -45,6 +45,9 @@ INITIAL_TOOL_CATALOG_ORDER = (
     "update_plan",
     "cli_exec",
     "shell_run",
+    # Ahead of the specialist tools the schema budget cuts: hidden, every
+    # GitHub request opened with a tool search, a model call that did no work.
+    "github_cli",
     "slash_invoke",
     "llm_set_provider",
     "task_cancel",
@@ -55,7 +58,6 @@ INITIAL_TOOL_CATALOG_ORDER = (
     "analyze_local_repositories",
     "analyze_github_ci_reliability",
     "scan_github_ci_health",
-    "github_cli",
     "fix_github_pr_ci",
     "run_ci_repair_demo",
     "schedule_ci_repair_loop",

@@ -529,3 +529,23 @@ def test_skill_guidance_attaches_to_github_cli() -> None:
     assert "summary" in tool.skill_guidance.lower()
     assert "markdown" in tool.skill_guidance.lower()
     assert not tool.skill_guidance.endswith("...")
+
+
+@pytest.mark.parametrize(
+    ("args", "runs_beside_other_reads"),
+    [
+        (["pr", "view", "12", "--json", "title"], True),
+        (["api", "repos/o/r/contents/a.py?ref=main", "--jq", ".content"], True),
+        (["search", "code", "needle", "--repo", "o/r"], True),
+        (["pr", "merge", "12"], False),
+        (["api", "--method", "PATCH", "repos/o/r/issues/1", "-f", "state=closed"], False),
+        ("pr view 12", False),
+    ],
+)
+def test_only_read_calls_may_run_beside_other_reads(
+    args: Any, runs_beside_other_reads: bool
+) -> None:
+    """A PR review reads many files: reads run together, a write still runs alone."""
+    tool = _registered(github_cli)
+
+    assert tool.call_is_concurrency_safe({"args": args}) is runs_beside_other_reads

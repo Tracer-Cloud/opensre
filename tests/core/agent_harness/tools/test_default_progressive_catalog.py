@@ -7,6 +7,7 @@ from typing import Any
 
 from rich.console import Console
 
+from config.constants.github import GITHUB_CONNECTION_ORIGIN_TAG, GITHUB_WEBAPP_ORIGIN
 from config.constants.tool_discovery import (
     INITIAL_TOOL_CATALOG_LIMIT,
     INITIAL_TOOL_CATALOG_ORDER,
@@ -44,6 +45,32 @@ def test_default_provider_initial_catalog_stays_within_count_and_schema_budgets(
         tool.description == tool.compact_description
         for tool in tools
         if tool.compact_description is not None
+    )
+
+
+def test_a_connected_github_account_gets_github_cli_without_a_tool_search() -> None:
+    """Hidden behind the schema budget, every GitHub request opened with a discovery call."""
+    # Arrange: a session whose GitHub connection came from the OpenSRE app.
+    session = SessionCore()
+    connected = {
+        "github": {
+            GITHUB_CONNECTION_ORIGIN_TAG: GITHUB_WEBAPP_ORIGIN,
+            "github_token": "app-token",
+            "connection_verified": True,
+        }
+    }
+
+    # Act
+    tools = _provider(session).action_tools(
+        confirm_fn=None,
+        is_tty=False,
+        resolved_integrations=connected,
+    )
+
+    # Assert: callable from the first request, still inside the schema budget.
+    assert "github_cli" in [tool.name for tool in tools]
+    assert system_and_tools_overhead(None, build_openai_tool_specs(tools)) <= (
+        INITIAL_TOOL_SCHEMA_TOKEN_LIMIT
     )
 
 

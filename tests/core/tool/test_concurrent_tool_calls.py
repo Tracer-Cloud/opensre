@@ -293,3 +293,84 @@ def test_only_plain_reads_may_declare_concurrency_safe(unsafe: dict[str, Any]) -
             concurrency_safe=True,
             **fields,
         )
+
+
+def test_a_mutating_tools_read_calls_overlap_and_its_write_call_runs_alone() -> None:
+    # Arrange: one tool that reads or writes by argument, like ``github_cli``.
+    # The reads rendezvous, so a serial executor would time out on the barrier.
+    both_reading = threading.Barrier(2, timeout=_RENDEZVOUS_SECONDS)
+    finished: list[str] = []
+    finished_at_write: list[str] = []
+
+    def run(value: str) -> dict[str, Any]:
+        if value.startswith("read"):
+            both_reading.wait()
+        else:
+            finished_at_write.extend(finished)
+        finished.append(value)
+        return {"ran": value}
+
+    cli = RegisteredTool(
+        name="cli",
+        description="test tool",
+        input_schema=_SCHEMA,
+        source="knowledge",
+        run=run,
+        side_effect_level=SideEffectLevel.MUTATING,
+        concurrent_read_call=lambda arguments: str(arguments["value"]).startswith("read"),
+    )
+    calls = [
+        ToolCall(id=f"call-{value}", name="cli", input={"value": value})
+        for value in ("read_a", "read_b", "write")
+    ]
+
+    # Act
+    results = execute_tool_calls(calls, [cli], {})
+
+    # Assert: both reads ran together, and the write started only after both ended.
+    assert [result.details for result in results] == [
+        {"ran": "read_a"},
+        {"ran": "read_b"},
+        {"ran": "write"},
+    ]
+    assert sorted(finished_at_write) == ["read_a", "read_b"]
+
+
+def test_a_call_whose_arguments_the_read_check_cannot_parse_runs_alone() -> None:
+    cli = RegisteredTool(
+        name="cli",
+        description="test tool",
+        input_schema=_SCHEMA,
+        source="knowledge",
+        run=lambda **_kwargs: {"ran": True},
+        side_effect_level=SideEffectLevel.MUTATING,
+        concurrent_read_call=lambda arguments: arguments["value"].startswith("read"),
+    )
+
+    assert cli.call_is_concurrency_safe({"value": "read"}) is True
+    assert cli.call_is_concurrency_safe({}) is False
+    assert cli.call_is_concurrency_safe({"value": 7}) is False
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        {"role": ToolRole.BOOKKEEPING},
+        {"requires_approval": True},
+        {"accepts_runtime_context": True},
+    ],
+)
+def test_a_per_call_read_check_is_refused_where_no_call_may_leave_the_calling_thread(
+    unsafe: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError, match="cannot declare concurrent_read_call"):
+        RegisteredTool(
+            name="unsafe_cli",
+            description="test tool",
+            input_schema=_SCHEMA,
+            source="knowledge",
+            run=lambda value: {"ran": value},
+            side_effect_level=SideEffectLevel.MUTATING,
+            concurrent_read_call=lambda _arguments: True,
+            **unsafe,
+        )
