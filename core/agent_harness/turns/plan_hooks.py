@@ -49,6 +49,9 @@ def with_task_plan_hooks(
     ``turn_user_message`` lets an Ask User answer earn the step it settles.
     ``answer_continues`` (computed once at turn start) says the turn answers
     the plan owner's question; without it only a plan written this turn moves.
+    The guard also counts work calls it let through whose results are not
+    recorded yet, so read-only calls that run at the same time still get
+    exactly one unplanned work call.
     """
     reset_plan_evidence(session)
     base_before = base.before_tool_call if base is not None else None

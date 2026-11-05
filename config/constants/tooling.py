@@ -15,6 +15,8 @@ WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS: Final[float] = 120.0
 CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS: Final[float] = 300.0
 # Background reads one prefetching tool keeps at once (one thread each).
 TOOL_PREFETCH_MAX_ENTRIES: Final[int] = 4
+# Set to 0/false/off to run every tool call of a response one after another (kill switch).
+OPENSRE_PARALLEL_TOOL_CALLS_ENV: Final[str] = "OPENSRE_PARALLEL_TOOL_CALLS"
 # Concurrency-safe calls from one model response that run at once (one thread each).
 MAX_CONCURRENT_TOOL_CALLS: Final[int] = 10
 
@@ -46,6 +48,7 @@ __all__ = [
     "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS",
     "MAX_CONCURRENT_TOOL_CALLS",
+    "OPENSRE_PARALLEL_TOOL_CALLS_ENV",
     "TOOL_PREFETCH_MAX_ENTRIES",
     "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS",
     "ToolBlockedBy",
