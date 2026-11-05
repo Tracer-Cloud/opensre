@@ -324,6 +324,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._reply_resumes = 0
         self._continues_reply = False
         self._reply_streams = True
+        # When the current model call's stream delivered its first event.
+        self._first_event_at: float | None = None
         self._operation_run_id = uuid.uuid4().hex[:12]
 
     def run(self) -> AgentRunResult:
@@ -600,6 +602,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 },
             ) as span_attrs,
         ):
+            self._first_event_at = None
+            sent_at = time.monotonic()
             try:
                 response = self._invoke_within_budget(
                     provider_request, self._text_delta_callback(iteration)
@@ -619,6 +623,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             span_attrs["has_tool_calls"] = response.has_tool_calls
             span_attrs["tool_call_count"] = len(response.tool_calls)
             span_attrs["content_chars"] = len(response.content or "")
+            if self._first_event_at is not None:
+                # The wait before anything streams back, apart from generation.
+                span_attrs["first_event_ms"] = round((self._first_event_at - sent_at) * 1000)
             _record_call_usage(span_attrs, response)
             if is_observation_sink_active():
                 generation.update(
@@ -711,12 +718,22 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         return emit
 
     def _stream_cancel_probe(self) -> CancelProbe:
-        """The host's cancel check for one request, run at most once per poll interval."""
+        """The host's cancel check for one request, run at most once per poll interval.
+
+        A client asks it before sending and again at each stream event
+        (:meth:`core.llm.types.AgentLLMClient.invoke`), so the second ask marks
+        the request's first event. A request retried before any event counts
+        that retry's send instead, which reads early.
+        """
         next_check = 0.0
+        asks = 0
 
         def should_stop() -> bool:
-            nonlocal next_check
+            nonlocal next_check, asks
             now = time.monotonic()
+            asks += 1
+            if asks == 2:
+                self._first_event_at = now
             if now < next_check:
                 return False
             next_check = now + _STREAM_CANCEL_POLL_SECONDS
