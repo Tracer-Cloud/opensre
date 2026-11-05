@@ -55,6 +55,19 @@ def build_splunk_spl_query(
     return f"search {keyword_clause} | head {limit}"
 
 
+def _as_search_command(query: str) -> str:
+    """Return ``query`` in the form the REST ``search`` parameter requires.
+
+    The parameter must begin with the ``search`` command or with a generating
+    command introduced by ``|`` (``| tstats``, ``| inputlookup``); only bare
+    search terms get the implicit ``search`` prefix.
+    """
+    stripped = query.lstrip()
+    if stripped.startswith(("search ", "|")):
+        return stripped
+    return f"search {query}"
+
+
 SplunkConfig = SplunkIntegrationConfig
 
 
@@ -88,10 +101,12 @@ class SplunkClient:
         now = datetime.now(UTC)
         earliest = now - timedelta(minutes=max(int(time_range_minutes), 1))
 
+        # Splunk parses time bounds with the default ``%FT%T.%Q%:z`` format; a
+        # value without an offset is read in the Splunk user's timezone.
         params = {
-            "search": query if query.startswith("search ") else f"search {query}",
-            "earliest_time": earliest.strftime("%Y-%m-%dT%H:%M:%S"),
-            "latest_time": now.strftime("%Y-%m-%dT%H:%M:%S"),
+            "search": _as_search_command(query),
+            "earliest_time": earliest.isoformat(timespec="milliseconds"),
+            "latest_time": now.isoformat(timespec="milliseconds"),
             "output_mode": "json",
             "count": str(limit),
         }
