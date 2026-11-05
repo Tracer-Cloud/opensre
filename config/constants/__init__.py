@@ -583,7 +583,22 @@ if TYPE_CHECKING:
         OPENSRE_COMMIT_COAUTHOR_TRAILER as OPENSRE_COMMIT_COAUTHOR_TRAILER,
     )
     from config.constants.gitee import (
+        DEFAULT_GITEE_MCP_MODE as DEFAULT_GITEE_MCP_MODE,
+    )
+    from config.constants.gitee import (
+        DEFAULT_GITEE_MCP_URL as DEFAULT_GITEE_MCP_URL,
+    )
+    from config.constants.gitee import (
+        DEFAULT_GITEE_READ_TOOLS as DEFAULT_GITEE_READ_TOOLS,
+    )
+    from config.constants.gitee import (
         GITEE_ACCESS_TOKEN_ENV as GITEE_ACCESS_TOKEN_ENV,
+    )
+    from config.constants.gitee import (
+        GITEE_API_BASE as GITEE_API_BASE,
+    )
+    from config.constants.gitee import (
+        GITEE_EXPECTED_CODE_TOOLS as GITEE_EXPECTED_CODE_TOOLS,
     )
     from config.constants.gitee import (
         GITEE_MCP_ARGS_ENV as GITEE_MCP_ARGS_ENV,

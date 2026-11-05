@@ -73,6 +73,8 @@ from config.constants.discord import (
     DISCORD_PUBLIC_KEY_ENV,
 )
 from config.constants.gitee import (
+    DEFAULT_GITEE_MCP_URL,
+    DEFAULT_GITEE_READ_TOOLS,
     GITEE_ACCESS_TOKEN_ENV,
     GITEE_MCP_ARGS_ENV,
     GITEE_MCP_AUTH_TOKEN_ENV,
@@ -296,11 +298,7 @@ from integrations.dagster import classify as _classify_dagster
 from integrations.datadog import classify as _classify_datadog
 from integrations.discord import classify as _classify_discord
 from integrations.effective_models import EffectiveIntegrations
-from integrations.gitee import (
-    DEFAULT_GITEE_MCP_URL,
-    DEFAULT_GITEE_READ_TOOLS,
-    build_gitee_mcp_config,
-)
+from integrations.gitee import build_gitee_mcp_config
 from integrations.gitee import classify as _classify_gitee_mcp
 from integrations.github.mcp import build_github_mcp_config
 from integrations.github.mcp import classify as _classify_github

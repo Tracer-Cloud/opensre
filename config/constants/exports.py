@@ -304,7 +304,12 @@ EXPORTS: dict[str, str] = {
     "GITHUB_TOKEN_ENV": "github",
     "OPENSRE_INSTALL_GITHUB_TOKEN_ENV": "github",
     # gitee
+    "DEFAULT_GITEE_MCP_MODE": "gitee",
+    "DEFAULT_GITEE_MCP_URL": "gitee",
+    "DEFAULT_GITEE_READ_TOOLS": "gitee",
     "GITEE_ACCESS_TOKEN_ENV": "gitee",
+    "GITEE_API_BASE": "gitee",
+    "GITEE_EXPECTED_CODE_TOOLS": "gitee",
     "GITEE_MCP_ARGS_ENV": "gitee",
     "GITEE_MCP_AUTH_TOKEN_ENV": "gitee",
     "GITEE_MCP_COMMAND_ENV": "gitee",

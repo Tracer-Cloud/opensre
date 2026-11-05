@@ -134,7 +134,7 @@ class TestValidation:
             {"name": "get_file_content", "description": "File", "input_schema": {}},
         ]
         with patch(
-            "integrations.gitee.list_gitee_mcp_tools",
+            "integrations.gitee.mcp.list_gitee_mcp_tools",
             return_value=fake_tools,
         ):
             result = validate_gitee_mcp_config(config)
@@ -148,7 +148,7 @@ class TestValidation:
             {"name": "search_files_by_content", "description": "Search", "input_schema": {}},
         ]
         with patch(
-            "integrations.gitee.list_gitee_mcp_tools",
+            "integrations.gitee.mcp.list_gitee_mcp_tools",
             return_value=fake_tools,
         ):
             result = validate_gitee_mcp_config(config)

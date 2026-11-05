@@ -11,17 +11,19 @@ import contextlib
 import json
 from typing import Any
 
+from config.constants.gitee import (
+    DEFAULT_GITEE_MCP_MODE,
+    DEFAULT_GITEE_MCP_URL,
+    DEFAULT_GITEE_READ_TOOLS,
+)
 from core.domain.types.evidence import record_evidence_entry, unique_evidence_source
 from core.tool import report_run_error
-from core.tool_framework.utils import first_list, first_string, unavailable_response
+from core.tool_framework.utils import first_string, unavailable_response
 from integrations.gitee import (
-    DEFAULT_GITEE_MCP_MODE,
-    DEFAULT_GITEE_READ_TOOLS,
     GiteeMCPConfig,
     build_gitee_mcp_config,
     call_gitee_mcp_tool,
     describe_gitee_mcp_error,
-    gitee_mcp_config_from_env,
     gitee_mcp_runtime_unavailable_reason,
     normalize_gitee_tool_result,
 )
@@ -29,19 +31,51 @@ from integrations.gitee import (
 COMPONENT = "integrations.gitee.tools._shared"
 
 #: Hidden connection parameters injected by ``extract_params``. Keeping them in
-#: every schema lets the tool decorator round-trip stored credentials.
+#: every schema lets the tool decorator round-trip stored credentials and hides
+#: them from the model-facing schema.
 AUTH_PROPERTIES: dict[str, dict[str, object]] = {
     "gitee_url": {"type": "string"},
     "gitee_mode": {"type": "string"},
     "gitee_token": {"type": "string"},
     "gitee_command": {"type": "string"},
     "gitee_args": {"type": "array", "items": {"type": "string"}},
+    "gitee_enabled_tools": {"type": "array", "items": {"type": "string"}},
+    "gitee_timeout_seconds": {"type": "number"},
 }
+AUTH_PARAM_NAMES: tuple[str, ...] = tuple(AUTH_PROPERTIES)
 
 
 def available(sources: dict[str, dict]) -> bool:
     """Whether the verified Gitee MCP connection is present for this turn."""
     return bool(sources.get("gitee_mcp", {}).get("connection_verified"))
+
+
+def _first_string_list(source: dict[str, object], *keys: str) -> list[str]:
+    """Read a list setting from a source that may hold a list, tuple, set, or CSV."""
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, str):
+            items = value.replace(",", " ").split()
+        elif isinstance(value, (list, tuple, set)):
+            items = [str(item) for item in value]
+        else:
+            continue
+        cleaned = [item.strip() for item in items if item.strip()]
+        if cleaned:
+            return cleaned
+    return []
+
+
+def _first_float(source: dict[str, object], *keys: str) -> float | None:
+    for key in keys:
+        value = source.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            return float(str(value))
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def extract_params(sources: dict[str, dict]) -> dict[str, object]:
@@ -54,7 +88,13 @@ def extract_params(sources: dict[str, dict]) -> dict[str, object]:
         "gitee_mode": first_string(source, "gitee_mode", "mode"),
         "gitee_token": first_string(source, "gitee_token", "auth_token"),
         "gitee_command": first_string(source, "gitee_command", "command"),
-        "gitee_args": first_list(source, "gitee_args", "args"),
+        "gitee_args": _first_string_list(source, "gitee_args", "args"),
+        "gitee_enabled_tools": _first_string_list(
+            source, "gitee_enabled_tools", "enabled_tools"
+        ),
+        "gitee_timeout_seconds": _first_float(
+            source, "gitee_timeout_seconds", "timeout_seconds"
+        ),
     }
 
 
@@ -64,29 +104,29 @@ def resolve_config(
     token: str | None = None,
     command: str | None = None,
     args: list[str] | None = None,
-) -> GiteeMCPConfig | None:
-    """Resolve a config from explicit tool arguments or the environment."""
-    env_config = gitee_mcp_config_from_env()
-    if not any((url, mode, token, command, args)):
-        return env_config
+    enabled_tools: list[str] | None = None,
+    timeout_seconds: float | None = None,
+) -> GiteeMCPConfig:
+    """Build a config from protected tool arguments, never from the process env.
+
+    Normal runtime calls pass every value through ``extract_params``. Direct
+    callers (tests, embedded use) get the documented defaults.
+    """
     inferred_mode = (
         mode
         or ("stdio" if command else "")
         or ("streamable-http" if url else "")
-        or (str(env_config.mode) if env_config else "")
-        or str(DEFAULT_GITEE_MCP_MODE)
+        or DEFAULT_GITEE_MCP_MODE
     )
     return build_gitee_mcp_config(
         {
-            "url": url or (env_config.url if env_config else ""),
+            "url": url or DEFAULT_GITEE_MCP_URL,
             "mode": inferred_mode,
-            "auth_token": token or (env_config.auth_token if env_config else ""),
-            "command": command or (env_config.command if env_config else ""),
-            "args": args or (list(env_config.args) if env_config else []),
-            "enabled_tools": (
-                list(env_config.enabled_tools) if env_config else list(DEFAULT_GITEE_READ_TOOLS)
-            ),
-            "timeout_seconds": env_config.timeout_seconds if env_config else 30.0,
+            "auth_token": token or "",
+            "command": command or "",
+            "args": args or [],
+            "enabled_tools": enabled_tools or list(DEFAULT_GITEE_READ_TOOLS),
+            "timeout_seconds": timeout_seconds or 30.0,
         }
     )
 
@@ -97,13 +137,25 @@ def config_from_args(
     token: str | None,
     command: str | None,
     args: list[str] | None,
+    enabled_tools: list[str] | None = None,
+    timeout_seconds: float | None = None,
 ) -> tuple[GiteeMCPConfig | None, dict[str, object] | None]:
     """Return ``(config, error_payload)`` for a tool invocation."""
-    config = resolve_config(url, mode, token, command, args)
-    if config is None:
+    try:
+        config = resolve_config(
+            url,
+            mode,
+            token,
+            command,
+            args,
+            enabled_tools,
+            timeout_seconds,
+        )
+    except Exception:
         return None, unavailable_response(
             "gitee_mcp",
-            "Gitee MCP integration is not configured. Run: opensre integrations setup gitee",
+            "Gitee MCP connection settings are invalid. Re-run: "
+            "opensre integrations setup gitee",
         )
     runtime_error = gitee_mcp_runtime_unavailable_reason(config)
     if runtime_error is not None:
@@ -163,7 +215,11 @@ def truncate(text: str, limit: int) -> tuple[str, bool]:
 
 
 def file_view(decoded: object, *, max_chars: int) -> dict[str, object]:
-    """Normalize a Gitee contents response into a directory or file view."""
+    """Normalize a Gitee contents response into a directory or file view.
+
+    The raw ``file`` metadata intentionally excludes ``content``: the readable
+    content is returned only through the bounded ``content`` field.
+    """
     if isinstance(decoded, list):
         return {"kind": "directory", "count": len(decoded), "entries": decoded}
     if isinstance(decoded, dict):
@@ -171,15 +227,16 @@ def file_view(decoded: object, *, max_chars: int) -> dict[str, object]:
         if isinstance(content, str) and str(decoded.get("encoding") or "").lower() == "base64":
             with contextlib.suppress(ValueError, TypeError):
                 content = base64.b64decode(content).decode("utf-8", errors="replace")
+        file_meta = {key: value for key, value in decoded.items() if key != "content"}
         if isinstance(content, str):
             content, truncated = truncate(content, max_chars)
             return {
                 "kind": str(decoded.get("type") or "file"),
-                "file": decoded,
+                "file": file_meta,
                 "content": content,
                 "truncated": truncated,
             }
-        return {"kind": str(decoded.get("type") or "file"), "file": decoded, "content": content}
+        return {"kind": str(decoded.get("type") or "file"), "file": file_meta}
     if isinstance(decoded, str):
         content, truncated = truncate(decoded, max_chars)
         return {"kind": "file", "content": content, "truncated": truncated}

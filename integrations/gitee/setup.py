@@ -7,8 +7,11 @@ the model defaults already cover the remote Streamable HTTP case.
 
 from __future__ import annotations
 
-from config.constants.gitee import GITEE_MCP_AUTH_TOKEN_ENV, GITEE_MCP_URL_ENV
-from integrations.gitee import DEFAULT_GITEE_MCP_URL
+from config.constants.gitee import (
+    DEFAULT_GITEE_MCP_URL,
+    GITEE_MCP_AUTH_TOKEN_ENV,
+    GITEE_MCP_URL_ENV,
+)
 from integrations.gitee.verifier import verify_gitee_mcp
 from integrations.setup_flow import IntegrationSetupSpec, SetupField
 
