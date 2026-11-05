@@ -153,6 +153,7 @@ def get_project_status(
         "total_branches": len(branches),
         "branches": [_branch_summary(item) for item in branches[:max_results]],
         "branches_truncated": len(branches) > max_results,
+        "total_endpoints": len(endpoint_rows),
         "endpoints": endpoint_rows[:max_results],
         "endpoints_truncated": len(endpoint_rows) > max_results,
         "active_endpoints": [

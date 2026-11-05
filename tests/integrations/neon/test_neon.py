@@ -290,6 +290,24 @@ def test_evidence_mappers_cite_incident_signals() -> None:
     assert untouched == {}
 
 
+def test_compute_counts_cover_every_endpoint_when_the_list_is_capped() -> None:
+    routes = dict(fx.ROUTES)
+    routes[f"/api/v2/projects/{fx.PROJECT_ID}/endpoints"] = {
+        "endpoints": [
+            {"id": f"ep-busy-{index}", "branch_id": fx.MAIN_BRANCH, "current_state": "active"}
+            for index in range(60)
+        ]
+    }
+    result = get_project_status(_client(_FakeNeonAPI(routes)))
+    assert len(result["endpoints"]) == 50
+    assert result["endpoints_truncated"] is True
+    assert result["total_endpoints"] == 60
+
+    evidence: dict[str, Any] = {}
+    map_neon_project_status(evidence, result, {})
+    assert evidence[CATALOG_ENTRIES_KEY][0]["summary"].startswith("60/60 computes active")
+
+
 # --------------------------------------------------------------------------- tools + runtime
 
 

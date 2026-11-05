@@ -29,10 +29,11 @@ def map_neon_project_status(
     if not output.get("available"):
         return
     project = output.get("project") or {}
-    endpoints = output.get("endpoints") or []
+    # Both counts cover every compute: ``endpoints`` is capped at max_results.
+    total = output.get("total_endpoints", len(output.get("endpoints") or []))
     active = output.get("active_endpoints") or []
     parts = [
-        f"{len(active)}/{len(endpoints)} computes active",
+        f"{len(active)}/{total} computes active",
         f"{output.get('total_branches', 0)} branches",
     ]
     failed = output.get("failed_operations") or []
@@ -101,6 +102,7 @@ class NeonProjectStatusTool(BaseTool):
     outputs = {
         "project": "Project region, Postgres version, IP allowlist, and maintenance window",
         "branches": "Branches with state, default/protected flags, and parent",
+        "total_endpoints": "Number of compute endpoints before the list is capped",
         "endpoints": "Compute endpoints with state, CU limits, and suspend timeout",
         "failed_operations": "Operations whose status is failed or error",
         "pending_operations": "Operations still running, scheduling, or cancelling",
