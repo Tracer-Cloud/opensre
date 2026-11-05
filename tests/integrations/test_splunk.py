@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -326,6 +328,51 @@ def test_search_logs_does_not_double_prepend_search_keyword() -> None:
         client.search_logs(query='search index=main "error" | head 10')
 
     assert captured["search"].count("search ") == 1
+
+
+def _capture_search_params(query: str, **kwargs: int) -> dict[str, str]:
+    client = SplunkClient(SplunkConfig(base_url="https://splunk:8089", token="tok"))
+    captured: dict[str, str] = {}
+
+    def fake_post(
+        url: str,
+        *,
+        headers: dict[str, str],
+        data: dict[str, str],
+        timeout: float,
+        verify: bool | str,
+    ) -> MagicMock:
+        captured.update(data)
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.text = ""
+        return mock_resp
+
+    with patch("integrations.splunk.client.httpx.post", side_effect=fake_post):
+        client.search_logs(query=query, **kwargs)
+    return captured
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "| tstats count where index=main by sourcetype",
+        "| inputlookup errors.csv | head 10",
+    ],
+)
+def test_search_logs_keeps_generating_command_queries_verbatim(query: str) -> None:
+    assert _capture_search_params(query)["search"] == query
+
+
+def test_search_logs_sends_time_bounds_with_utc_offset() -> None:
+    params = _capture_search_params("index=main | head 10", time_range_minutes=15)
+
+    earliest = datetime.fromisoformat(params["earliest_time"])
+    latest = datetime.fromisoformat(params["latest_time"])
+    assert earliest.utcoffset() == timedelta(0)
+    assert latest.utcoffset() == timedelta(0)
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}\+00:00", params["latest_time"])
+    assert latest - earliest == timedelta(minutes=15)
 
 
 def test_search_logs_returns_parsed_ndjson_results() -> None:
