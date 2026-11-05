@@ -334,7 +334,14 @@ def _capture_search_params(query: str, **kwargs: int) -> dict[str, str]:
     client = SplunkClient(SplunkConfig(base_url="https://splunk:8089", token="tok"))
     captured: dict[str, str] = {}
 
-    def fake_post(url, *, headers, data, timeout, verify):
+    def fake_post(
+        url: str,
+        *,
+        headers: dict[str, str],
+        data: dict[str, str],
+        timeout: float,
+        verify: bool | str,
+    ) -> MagicMock:
         captured.update(data)
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
