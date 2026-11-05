@@ -190,6 +190,7 @@
             "pages": [
               "integrations/collaboration/google-docs",
               "integrations/collaboration/jira",
+              "integrations/collaboration/pipedream",
               "integrations/collaboration/trello"
             ]
           },

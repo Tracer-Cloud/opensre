@@ -1,6 +1,6 @@
 ---
 title: "Scheduled Deliveries (Cron)"
-description: "Cron-driven recurring reports to Telegram, Slack, Discord, Rocket.Chat, and the interactive shell"
+description: "Cron-driven recurring reports to Telegram, Slack, Discord, Rocket.Chat, email, and the interactive shell"
 ---
 
 # Scheduled Deliveries
@@ -355,6 +355,30 @@ Credentials are resolved lazily at delivery time in this priority order:
 
 You do not need to pass credentials at `cron add` time — they are picked up
 from your existing integration configuration.
+
+## Email delivery
+
+A loop can email its report to a list of addresses. Set up email loops in the
+OpenSRE app. `opensre cron add` and `/loops add` cannot create one.
+
+When you create the loop, add email as a delivery channel, then set:
+
+- **Recipients:** up to 20 addresses, separated by commas, semicolons or
+  spaces. Duplicates are dropped.
+- **Mailbox to send from:** an SMTP account you added in the OpenSRE app, or a
+  Gmail account you connected through [Pipedream](/integrations/collaboration/pipedream).
+
+Mail always goes out from the **loop owner's own mailbox**, never another
+member's, even though the loop runs on a schedule with nobody signed in. The
+report arrives as formatted HTML with a plain-text copy, and its title becomes
+the subject.
+
+If the mail server refuses some recipients, the scheduler's automatic retry
+sends only to those recipients. A later `opensre cron run <task_id>
+--failed-only`, or a retry after the scheduler restarts, resends the report to
+every recipient, so some may get it twice. If you remove the SMTP account
+a loop sends from, its runs fail with `The SMTP account this loop sends from is
+no longer connected.` Choose another mailbox for the loop.
 
 ## Task Kinds
 
