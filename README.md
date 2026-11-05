@@ -90,6 +90,7 @@ For supported platforms and troubleshooting, see [Install locally](https://www.o
 - [Before you begin](#before-you-begin)
 - [Install and start opensre](#step-1-install-and-start-opensre)
 - [Why OpenSRE?](#why-opensre)
+- [What OpenSRE does](#what-opensre-does)
 - [Quick Start](#quick-start)
 - [Deployment](#deployment)
 - [How OpenSRE Works](#how-opensre-works)
@@ -97,7 +98,6 @@ For supported platforms and troubleshooting, see [Install locally](https://www.o
 - [Security](#security)
 - [Telemetry](#telemetry)
 - [License](#license)
-- [Citations](#citations)
 
 ---
 
@@ -120,6 +120,29 @@ SWE-bench<sup>1</sup> showed that agents improve fastest with realistic tasks an
 Start with the **[CI/CD overview](docs/cicd/overview.mdx)**: analyze a repository's CI reliability, fix failing checks on a PR, or set up an agent that keeps CI green.
 
 <sup>1</sup> https://arxiv.org/abs/2310.06770
+
+---
+
+## What OpenSRE does
+
+**Fix broken builds before you look.** OpenSRE reads the failing checks on a pull request or branch, traces the cause, applies a fix with a coding agent, pushes it to the PR branch (or a fresh repair branch) and waits for the new checks. You review and merge. → [Fix GitHub CI](docs/cicd/github-ci-fix.mdx)
+
+**Know exactly what CI is costing you.** A 30-day report per repository: failure rate, CI-caused versus code-caused failures, developer hours lost to unreliable CI, and how long `main` stays red. → [CI/CD analytics](docs/cicd/cicd-analytics-demo.mdx)
+
+**Keep CI green on a schedule.** A recurring reliability report, a bounded repair loop that watches one PR until it's green, or a managed gateway that runs repairs for your whole organization. → [Keep CI green with an agent](docs/cicd/ci-repair-agent.mdx)
+
+**Find every red PR.** One read-only scan across every repository your token can see: which PRs and branches are failing, and on which checks. → [CI health scan](docs/cicd/github-ci-health-scan.mdx)
+
+Try it in the shell with your own repository:
+
+```text
+analyze Tracer-Cloud/opensre CI/CD performance for the last 30 days
+how much developer time does flaky CI cost us
+fix failing checks on Tracer-Cloud/opensre#4597
+set up an agent that improves CI/CD reliability for Tracer-Cloud/opensre
+```
+
+Analysis and scans are read-only. Fixes and repair loops push commits, but never to a fork PR or directly to a protected branch like `main`. See the **[CI/CD overview](docs/cicd/overview.mdx)** for the full picture.
 
 ---
 
@@ -198,8 +221,11 @@ When a CI run fails, an alert arrives, or you ask a question, OpenSRE automatica
 2. **Masks** sensitive identifiers (optional) before external LLM calls
 3. **Reasons** across your connected systems to test hypotheses in a tool-calling loop, separating CI-caused failures from code-caused ones
 4. **Answers** with an evidence-linked response in the conversation
-5. **Fixes** the cause and pushes it to the PR branch for you to review, or suggests next steps and, optionally, executes remediation actions
-6. **Posts** a summary directly to Slack, PagerDuty, or Telegram — no context switching needed
+5. **Fixes** the cause in an isolated checkout, using your logged-in coding agent (Pi, Claude Code, Codex, Cursor) or its built-in agent on your own model, and pushes it to the PR or repair branch for you to review; alternatively, it suggests next steps and, optionally, executes remediation actions
+6. **Verifies** by waiting for the new checks to pass
+7. **Posts** a summary directly to Slack, PagerDuty, or Telegram — no context switching needed
+
+Connect your observability, code and chat tools once, and every skill runs on them.
 
 For the current code-level agent architecture after removing the old graph and chain
 framework layers, see [AGENTS.md](AGENTS.md).
@@ -276,7 +302,3 @@ export OPENSRE_NO_TELEMETRY=1
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
-
-## Citations
-
-<sup>1</sup> https://arxiv.org/abs/2310.06770
