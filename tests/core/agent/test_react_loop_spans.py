@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ import pytest
 from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
 from core.agent import Agent
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
-from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.llm.types import AgentLLMResponse, CancelProbe, SchemaDescribedTool, ToolCall
 from core.tool import RuntimeTool
 from infrastructure.observability.operations_log import read_operations
 from infrastructure.observability.trace.spans import (
@@ -224,6 +225,49 @@ def test_llm_span_records_the_calls_usage_and_omits_unreported_fields(
     }
     # A provider that reported nothing must not read as a measured 0% cache hit.
     assert not [key for key in unreported if key.endswith("_tokens")]
+
+
+_WAIT_BEFORE_FIRST_EVENT_SECONDS = 0.05
+
+
+class _StreamingLLM(_NoToolLLM):
+    """Asks whether to stop before sending and at each stream event, as real clients do."""
+
+    def invoke(
+        self,
+        _messages: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        should_stop: CancelProbe | None = None,
+    ) -> AgentLLMResponse:
+        _ = (system, tools)
+        assert should_stop is not None
+        should_stop()
+        time.sleep(_WAIT_BEFORE_FIRST_EVENT_SECONDS)
+        for _event in range(3):
+            should_stop()
+        return AgentLLMResponse(content="done", tool_calls=[], raw_content=None)
+
+
+def test_llm_span_records_the_wait_before_a_streams_first_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stalled request and a slow generation look alike without it."""
+    session_id = "sess-llm-first-event"
+    path = _activate_trace(tmp_path, monkeypatch, session_id=session_id)
+
+    for llm in (_StreamingLLM(), _NoToolLLM()):
+        agent = Agent(llm=llm, system="sys", tools=[], resolved_integrations={}, max_iterations=1)
+        with bind_session_trace(session_id):
+            agent.run([{"role": "user", "content": "hello"}])
+
+    streamed, unstreamed = [
+        s["attributes"] for s in _trace_spans(path) if s.get("span_kind") == "llm"
+    ]
+    assert streamed["first_event_ms"] >= _WAIT_BEFORE_FIRST_EVENT_SECONDS * 1000 * 0.8
+    # An unstreamed call has no first event to time.
+    assert "first_event_ms" not in unstreamed
 
 
 def test_agent_run_skips_llm_span_when_noop() -> None:

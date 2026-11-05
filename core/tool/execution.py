@@ -296,7 +296,8 @@ def execute_tool_calls(
     """Execute provider-requested tools and return structured results in provider order.
 
     A response may carry several calls; they run in provider order, except
-    that consecutive calls to ``concurrency_safe`` tools run together on up to
+    that consecutive concurrency-safe calls (a ``concurrency_safe`` tool, or a
+    call its tool's ``concurrent_read_call`` accepts) run together on up to
     ``MAX_CONCURRENT_TOOL_CALLS`` worker threads. Every other call runs alone,
     on the calling thread, once the calls before it have finished. A
     ``TURN_ENDING`` call hands control to the user; only ``BOOKKEEPING`` calls
@@ -533,8 +534,8 @@ def _serialized_hooks(hooks: ToolExecutionHooks, lock: threading.RLock) -> ToolE
     )
 
 
-def _concurrency_safe(tool: RuntimeTool | None) -> bool:
-    return isinstance(tool, RegisteredTool) and tool.concurrency_safe
+def _concurrency_safe(tool: RuntimeTool | None, tool_call: ToolCall) -> bool:
+    return isinstance(tool, RegisteredTool) and tool.call_is_concurrency_safe(tool_call.input)
 
 
 def _execution_runs(
@@ -544,7 +545,7 @@ def _execution_runs(
     runs: list[list[int]] = []
     previous_safe = False
     for index in _execution_order(tool_calls, tool_map):
-        safe = _concurrency_safe(tool_map.get(tool_calls[index].name))
+        safe = _concurrency_safe(tool_map.get(tool_calls[index].name), tool_calls[index])
         if safe and previous_safe:
             runs[-1].append(index)
         else:

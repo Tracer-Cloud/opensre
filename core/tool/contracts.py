@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import logging
 from abc import ABC
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -494,6 +494,11 @@ def _concurrency_refusal(tool: RegisteredTool) -> str | None:
     """Why ``tool`` may not declare ``concurrency_safe``, or ``None`` when it may."""
     if tool.side_effect_level not in _CONCURRENT_SIDE_EFFECT_LEVELS:
         return "it must declare side_effect_level none or read_only"
+    return _worker_thread_refusal(tool)
+
+
+def _worker_thread_refusal(tool: RegisteredTool) -> str | None:
+    """Why no call of ``tool`` may run on a worker thread, or ``None`` when one may."""
     if tool.role != ToolRole.ACTION:
         return f"a {tool.role} tool must run alone"
     if tool.requires_approval:
@@ -548,6 +553,13 @@ class RegisteredTool:
     #: or ``READ_ONLY`` side effect, the ``ACTION`` role, no approval and no
     #: runtime context; a tool that breaks one of those fails at construction.
     concurrency_safe: bool = False
+    #: Per-call opt-in for a tool whose declared level covers writes. Given one
+    #: call's arguments, it says whether that call only reads; such a call runs
+    #: beside the concurrency-safe calls of its response. Requires the
+    #: ``ACTION`` role, no approval and no runtime context.
+    concurrent_read_call: Callable[[Mapping[str, Any]], bool] | None = field(
+        default=None, repr=False
+    )
     origin_module: str = ""
     origin_name: str = ""
     skill_guidance: str = ""
@@ -601,6 +613,8 @@ class RegisteredTool:
             raise TypeError("extract_params must be callable")
         if self.concurrency_safe and (refusal := _concurrency_refusal(self)):
             raise ValueError(f"{self.name} cannot be concurrency_safe: {refusal}")
+        if self.concurrent_read_call is not None and (refusal := _worker_thread_refusal(self)):
+            raise ValueError(f"{self.name} cannot declare concurrent_read_call: {refusal}")
 
     @property
     def inputs(self) -> dict[str, str]:
@@ -636,6 +650,21 @@ class RegisteredTool:
         top-level keys without corrupting the shared cache.
         """
         return dict(self._public_input_schema)
+
+    def call_is_concurrency_safe(self, arguments: Mapping[str, Any]) -> bool:
+        """Whether one call with ``arguments`` may run beside other concurrency-safe calls.
+
+        Arguments the per-call check cannot read (the model sent another shape)
+        count as unsafe: the call runs alone, where its own validation answers.
+        """
+        if self.concurrency_safe:
+            return True
+        if self.concurrent_read_call is None:
+            return False
+        try:
+            return bool(self.concurrent_read_call(arguments))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return False
 
     def validate_public_input(self, payload: dict[str, Any]) -> str | None:
         """Validate model-provided input against this tool's public schema."""
@@ -770,6 +799,7 @@ class RegisteredTool:
         role: ToolRole | None = None,
         accepts_runtime_context: bool | None = None,
         concurrency_safe: bool | None = None,
+        concurrent_read_call: Callable[[Mapping[str, Any]], bool] | None = None,
     ) -> RegisteredTool:
         if source is None:
             raise ValueError("Function tools must declare a source.")
@@ -817,6 +847,7 @@ class RegisteredTool:
             role=ToolRole.ACTION if role is None else role,
             accepts_runtime_context=bool(accepts_runtime_context),
             concurrency_safe=bool(concurrency_safe),
+            concurrent_read_call=concurrent_read_call,
             origin_module=func.__module__,
             origin_name=func.__name__,
         )

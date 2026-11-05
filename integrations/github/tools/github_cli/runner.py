@@ -16,8 +16,11 @@ MAX_TIMEOUT_SECONDS = 120
 # is ~382k characters against a busy repo. Uncapped, that lands in the message
 # and the context budget silently trims the tail, so the agent reads a handful
 # of records and cannot tell the rest existed. Cap here instead and say so on
-# the payload, matching what ``shell_run`` already does.
-MAX_GH_OUTPUT_CHARS = 6_000
+# the payload, matching what ``shell_run`` already does. The cap sits under the
+# shared 40,000-byte tool-output budget (``core.tool.output``) so the result's
+# envelope is not cut a second time, in the middle; a smaller cap makes the
+# model page one file or diff across several calls, each a model round trip.
+MAX_GH_OUTPUT_CHARS = 30_000
 
 # Top-level ``gh`` commands that must never run under OpenSRE-injected credentials.
 # - auth: ``gh auth token`` prints GH_TOKEN to stdout (self-exfiltration)

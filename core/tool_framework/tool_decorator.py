@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, cast, overload
 
 from pydantic import BaseModel
@@ -53,6 +53,7 @@ def tool(
     role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
     concurrency_safe: bool | None = None,
+    concurrent_read_call: Callable[[Mapping[str, Any]], bool] | None = None,
 ) -> BaseTool:
     pass
 
@@ -91,6 +92,7 @@ def tool[F: Callable[..., Any]](
     role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
     concurrency_safe: bool | None = None,
+    concurrent_read_call: Callable[[Mapping[str, Any]], bool] | None = None,
 ) -> F:
     pass
 
@@ -129,6 +131,7 @@ def tool[F: Callable[..., Any]](
     role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
     concurrency_safe: bool | None = None,
+    concurrent_read_call: Callable[[Mapping[str, Any]], bool] | None = None,
 ) -> Callable[[F], F]:
     pass
 
@@ -166,6 +169,7 @@ def tool[F: Callable[..., Any]](
     role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
     concurrency_safe: bool | None = None,
+    concurrent_read_call: Callable[[Mapping[str, Any]], bool] | None = None,
 ) -> Any:
     """Register a lightweight function tool or annotate an existing BaseTool.
 
@@ -207,6 +211,7 @@ def tool[F: Callable[..., Any]](
                 role is not None,
                 accepts_runtime_context is not None,
                 concurrency_safe is not None,
+                concurrent_read_call is not None,
             ]
         )
 
@@ -281,6 +286,7 @@ def tool[F: Callable[..., Any]](
                     role=role,
                     accepts_runtime_context=accepts_runtime_context,
                     concurrency_safe=concurrency_safe,
+                    concurrent_read_call=concurrent_read_call,
                 ),
             )
         return target

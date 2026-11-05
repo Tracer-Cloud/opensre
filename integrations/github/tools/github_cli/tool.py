@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
@@ -87,6 +88,12 @@ def _normalize_args(args: list[str] | None) -> list[str]:
     return [str(a) for a in args]
 
 
+def _call_only_reads(arguments: Mapping[str, Any]) -> bool:
+    """Whether one call's ``gh`` command only reads, so it may run beside other reads."""
+    args = arguments.get("args")
+    return isinstance(args, list) and gh_call_only_reads(_normalize_args(args))
+
+
 @tool(
     name="github_cli",
     source="github",
@@ -123,6 +130,7 @@ def _normalize_args(args: list[str] | None) -> list[str]:
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
     requires_approval=False,
+    concurrent_read_call=_call_only_reads,
     input_schema=_ARGS_SCHEMA,
     is_available=github_tool_available(_github_cli_available),
     extract_params=github_tool_params(_github_cli_extract_params),
