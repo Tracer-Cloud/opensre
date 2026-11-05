@@ -412,12 +412,12 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OPENSRE_REMOTE_SYNC` |  | Enable remote sync (`1`/`true`) |
-| `OPENSRE_REMOTE_SYNC_PROVIDER` | `aws` | Store backend (`aws`, `gcs`, `vercel`, `azure`, or `s3compat`) |
+| `OPENSRE_REMOTE_SYNC_PROVIDER` | `aws` | Store backend (`aws`, `gcs`, `vercel`, `azure`, `s3compat`, or `neon`) |
 | `OPENSRE_REMOTE_SYNC_BUCKET` |  | Bucket / Blob store name (required when sync is on) |
 | `OPENSRE_REMOTE_SYNC_PREFIX` | `opensre` | Key prefix inside the store |
 | `OPENSRE_REMOTE_SYNC_REGION` |  | Region override |
 | `OPENSRE_REMOTE_SYNC_PROFILE` |  | Named credentials profile |
-| `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` |  | Custom S3 endpoint when provider is `s3compat` |
+| `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` |  | Custom S3 endpoint when provider is `s3compat` or `neon` |
 | `OPENSRE_REMOTE_SYNC_EXCLUDE` |  | Comma-separated globs to exclude from sync |
 | `OPENSRE_REMOTE_SYNC_EXCLUDE_OFF` |  | Ignore configured exclusions for one run |
 | `BLOB_READ_WRITE_TOKEN` |  | Vercel Blob token (when provider is `vercel`) |
@@ -640,6 +640,9 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | `VERCEL_API_TOKEN` |  | Vercel API token |
 | `VERCEL_TEAM_ID` |  | Vercel team ID |
 | `VERCEL_RUNTIME_LOGS_READ_TIMEOUT` | `600` | Seconds to wait per Vercel runtime-log read (minimum `30`) |
+| `NEON_API_KEY` |  | Neon API key |
+| `NEON_PROJECT_ID` |  | Neon project the Neon tools read |
+| `NEON_BRANCH_ID` |  | Branch for the Neon Object Storage tools (defaults to the project default branch) |
 | `GOOGLE_CREDENTIALS_FILE` |  | Path to Google service-account JSON for Docs export |
 | `GOOGLE_DRIVE_FOLDER_ID` |  | Google Drive folder for Docs export |
 

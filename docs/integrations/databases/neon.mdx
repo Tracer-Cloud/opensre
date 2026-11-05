@@ -1,0 +1,152 @@
+---
+title: "Neon"
+description: "Connect Neon so OpenSRE can check compute state, control-plane operations, and Object Storage buckets during incidents"
+---
+
+## Overview
+
+OpenSRE reads your Neon project through the Neon API to answer the questions that come up first in a Postgres incident: is the compute running or scaled to zero, did a restart or branch operation fail, which branch is the app pointed at, and did the expected files land in Neon Object Storage.
+
+The integration is read-only. It never starts, suspends, resets, or deletes anything.
+
+Neon also plugs into two other parts of OpenSRE:
+
+- **Postgres diagnostics** (active queries, locks, slow queries, table stats) come from the [PostgreSQL integration](/integrations/databases/postgresql) pointed at your Neon compute. See [Postgres diagnostics on Neon](#postgres-diagnostics-on-neon).
+- **Remote sync** can mirror sessions and memory to a Neon Object Storage bucket. See [Remote sync to Neon Object Storage](#remote-sync-to-neon-object-storage).
+
+## Prerequisites
+
+- A Neon project
+- A Neon API key that can read that project
+- The project ID (for example `little-lab-10567887`)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup neon
+```
+
+Provide the API key, the project ID, and optionally a branch ID when prompted. Setup verifies the key against the project before saving.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+NEON_API_KEY=your-neon-api-key
+NEON_PROJECT_ID=little-lab-10567887
+NEON_BRANCH_ID=br-summer-art-bdbz1xg2   # optional
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NEON_API_KEY` | | **Required.** Neon API key |
+| `NEON_PROJECT_ID` | | **Required.** The project OpenSRE investigates |
+| `NEON_BRANCH_ID` | project default branch | Branch the Object Storage tools read when a call does not name one |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "neon-prod",
+      "service": "neon",
+      "status": "active",
+      "credentials": {
+        "api_key": "your-neon-api-key",
+        "project_id": "little-lab-10567887",
+        "branch_id": ""
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+1. In the Neon Console, open **Organization settings** → **API keys**.
+2. Create a key and, under the project option, limit it to the project OpenSRE should read.
+3. Copy the key. It is shown once.
+4. Copy the project ID from **Project settings** → **General**, or from the URL of the project page.
+
+A personal API key (**Account settings** → **API keys**) also works but can read every project you can.
+
+<Info>
+The key is injected into each tool call by OpenSRE and hidden from the model, and the project ID is fixed to the configured one. The model can pick a branch inside that project but cannot point the key at another project.
+</Info>
+
+OpenSRE calls the Neon API at `https://console.neon.tech/api/v2`.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_neon_project_status` | Region, Postgres version, IP allowlist, branches and their state, compute endpoints (active or idle, autoscaling CU limits, scale-to-zero timeout, last active time), and recent operations with failed and in-progress ones listed separately. Optional `branch_id` narrows computes and operations to one branch. |
+| `get_neon_storage_buckets` | Whether Object Storage is enabled on a branch, its S3 endpoint and region, and every bucket with its access level. Public buckets are listed separately. |
+| `list_neon_storage_objects` | One page of objects (key, size, last modified, ETag) in a bucket, with optional `prefix`. Folders are collapsed on `/` unless `recursive` is true. Returns `next_cursor` when more objects exist. |
+
+The tools are available in both chat and investigation turns.
+
+## Postgres diagnostics on Neon
+
+Configure the [PostgreSQL integration](/integrations/databases/postgresql) with your Neon connection details to get active queries, locks, replication, server status, slow queries, and table stats:
+
+```bash
+POSTGRESQL_HOST=ep-sparkling-lake-bd31vdlv.c-8.us-east-2.aws.neon.tech
+POSTGRESQL_DATABASE=neondb
+POSTGRESQL_USERNAME=neondb_owner
+POSTGRESQL_PASSWORD=your-password
+POSTGRESQL_SSL_MODE=require
+```
+
+- Use the **direct** compute host. The pooled host (the one with `-pooler` in its name) rejects the connection, because OpenSRE sets a statement timeout at connect time and Neon's connection pooler does not accept that startup parameter.
+- Set `POSTGRESQL_SSL_MODE=require`. Neon only accepts TLS connections.
+- For slow queries, run `CREATE EXTENSION pg_stat_statements;` once in the database. Neon already preloads the library.
+- A compute that has scaled to zero starts on the first connection, so the first diagnostic call after an idle period takes a moment longer.
+
+## Remote sync to Neon Object Storage
+
+[Remote sync](/install/remote-sync) can mirror your sessions and memory to a Neon Object Storage bucket:
+
+```bash
+neon env pull   # writes AWS_ENDPOINT_URL_S3, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+opensre remote-sync setup --provider neon --bucket opensre-sync
+opensre remote-sync status
+```
+
+Keep the bucket private. `opensre remote-sync status` warns when the bucket's access level is `public_read`.
+
+## Verify
+
+```bash
+opensre integrations verify neon
+```
+
+Expected output:
+
+```
+SERVICE │ SOURCE    │ STATUS   │ DETAIL
+neon    │ local env │ ✓ passed │ Connected to Neon project opensre-neon-test (little-lab-10567887, aws-us-east-2).
+```
+
+Inside the REPL: `/integrations verify neon` or `/verify neon`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Neon rejected the API key (HTTP 401)** | The key was revoked or mistyped. Create a new one. |
+| **Neon resource not found (HTTP 404)** | Check `NEON_PROJECT_ID`. A project-scoped key also returns 404 for any other project. |
+| **Object Storage is not enabled on this branch** | Create a bucket on that branch first (Console or `neon buckets create`). |
+| **Bucket not found** | Buckets belong to a branch. Pass the branch the app uses, or set `NEON_BRANCH_ID`. |
+| **PostgreSQL tools fail with "unsupported startup parameter"** | `POSTGRESQL_HOST` points at the `-pooler` host. Use the direct host. |
+
+## Security
+
+- Prefer a project-scoped API key so OpenSRE can only read the project it investigates.
+- Store the key in `.env` or the OpenSRE credentials store, not in source code.
+- Rotate the key periodically and revoke it when you remove the integration.

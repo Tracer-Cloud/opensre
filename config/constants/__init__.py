@@ -953,6 +953,18 @@ if TYPE_CHECKING:
     from config.constants.mysql import (
         MYSQL_USERNAME_ENV as MYSQL_USERNAME_ENV,
     )
+    from config.constants.neon import (
+        NEON_API_BASE_URL as NEON_API_BASE_URL,
+    )
+    from config.constants.neon import (
+        NEON_API_KEY_ENV as NEON_API_KEY_ENV,
+    )
+    from config.constants.neon import (
+        NEON_BRANCH_ID_ENV as NEON_BRANCH_ID_ENV,
+    )
+    from config.constants.neon import (
+        NEON_PROJECT_ID_ENV as NEON_PROJECT_ID_ENV,
+    )
     from config.constants.new_relic import (
         NEW_RELIC_ACCOUNT_ID_ENV as NEW_RELIC_ACCOUNT_ID_ENV,
     )

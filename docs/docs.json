@@ -219,6 +219,7 @@
               "integrations/databases/mongodb",
               "integrations/databases/mongodb-atlas",
               "integrations/databases/mysql",
+              "integrations/databases/neon",
               "integrations/databases/opensearch",
               "integrations/databases/postgresql",
               "integrations/databases/rds",

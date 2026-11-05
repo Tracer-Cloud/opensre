@@ -1,6 +1,6 @@
 ---
 title: "Sync to your own object store"
-description: "Copy sessions and memory between machines using an S3, GCS, Azure, or Vercel Blob store you own."
+description: "Copy sessions and memory between machines using an S3, GCS, Azure, Vercel Blob, or Neon Object Storage store you own."
 ---
 
 By default OpenSRE keeps everything on your machine. Turn on remote sync to copy **conversations** and **memory** to a private store you own, so another laptop can continue where you left off.
@@ -70,7 +70,7 @@ Or set env vars yourself:
 export OPENSRE_REMOTE_SYNC=1
 export OPENSRE_REMOTE_SYNC_BUCKET=my-opensre-bucket
 # optional:
-# export OPENSRE_REMOTE_SYNC_PROVIDER=aws   # default; also gcs, vercel, azure
+# export OPENSRE_REMOTE_SYNC_PROVIDER=aws   # default; also gcs, vercel, azure, s3compat, neon
 # export OPENSRE_REMOTE_SYNC_PREFIX=opensre # default
 ```
 
@@ -79,12 +79,12 @@ A bucket name alone does nothing — you must also set `OPENSRE_REMOTE_SYNC=1` (
 | Variable | What it does |
 | --- | --- |
 | `OPENSRE_REMOTE_SYNC` | `1` / `true` turns sync on |
-| `OPENSRE_REMOTE_SYNC_PROVIDER` | `aws` (default), `gcs`, `vercel`, `azure`, or `s3compat` |
+| `OPENSRE_REMOTE_SYNC_PROVIDER` | `aws` (default), `gcs`, `vercel`, `azure`, `s3compat`, or `neon` |
 | `OPENSRE_REMOTE_SYNC_BUCKET` | Bucket, container, or Blob store name (required when on) |
 | `OPENSRE_REMOTE_SYNC_PREFIX` | Key prefix (default `opensre`). Same prefix = shared history |
 | `OPENSRE_REMOTE_SYNC_REGION` | AWS region (AWS only) |
 | `OPENSRE_REMOTE_SYNC_PROFILE` | AWS profile name, or Azure storage account name when `provider=azure` |
-| `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` | Custom S3 endpoint when `provider=s3compat` (MinIO / R2 / Spaces) |
+| `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` | Custom S3 endpoint when `provider=s3compat` (MinIO / R2 / Spaces) or `provider=neon` |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob token (Vercel only) |
 | `OPENSRE_REMOTE_SYNC_EXCLUDE` | Comma-separated paths to skip (see below) |
 | `OPENSRE_REMOTE_SYNC_EXCLUDE_OFF` | `1` ignores exclusions for one run |
@@ -129,6 +129,8 @@ Remote sync is for a **personal machine**. Org-bound Slack/Discord turns are ref
 **Azure Blob Storage** — private container. Set `OPENSRE_REMOTE_SYNC_PROVIDER=azure`, `OPENSRE_REMOTE_SYNC_BUCKET` to the container name, and `OPENSRE_REMOTE_SYNC_PROFILE` to the storage account name. Auth uses ambient Azure credentials (`az login`, Managed Identity, or `AZURE_*`). The principal needs **Storage Blob Data Contributor** on the account (plain Contributor is not enough).
 
 **S3-compatible (MinIO / R2 / Spaces)** — set `OPENSRE_REMOTE_SYNC_PROVIDER=s3compat` and `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` to the custom endpoint (or `AWS_ENDPOINT_URL_S3`). Path-style addressing is enabled for MinIO. Use the same ambient S3 credentials as AWS.
+
+**Neon Object Storage**: private bucket on a Neon branch. Set `OPENSRE_REMOTE_SYNC_PROVIDER=neon` and run `neon env pull` in the shell (or `.env`) OpenSRE uses, which sets `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` for the linked branch. Without the CLI, set `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` to the branch's `s3_endpoint` and use a key from `neon credentials create` with the `storage:read` and `storage:write` scopes. The endpoint is required: unlike `s3compat`, the `neon` provider refuses to start without one so it never falls back to AWS. Buckets belong to a branch, so every machine must use the same branch endpoint. `status` reports the bucket as public when its access level is `public_read`.
 
 ## Skip some paths
 

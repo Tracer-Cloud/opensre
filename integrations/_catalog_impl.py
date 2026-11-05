@@ -146,6 +146,7 @@ from config.constants.mysql import (
     MYSQL_SSL_MODE_ENV,
     MYSQL_USERNAME_ENV,
 )
+from config.constants.neon import NEON_API_KEY_ENV, NEON_BRANCH_ID_ENV, NEON_PROJECT_ID_ENV
 from config.constants.new_relic import (
     NEW_RELIC_ACCOUNT_ID_ENV,
     NEW_RELIC_API_KEY_ENV,
@@ -309,6 +310,8 @@ from integrations.mongodb_atlas import build_mongodb_atlas_config
 from integrations.mongodb_atlas import classify as _classify_mongodb_atlas
 from integrations.mysql import build_mysql_config
 from integrations.mysql import classify as _classify_mysql
+from integrations.neon import build_neon_config
+from integrations.neon import classify as _classify_neon
 from integrations.new_relic import classify as _classify_new_relic
 from integrations.new_relic.config import NewRelicIntegrationConfig
 from integrations.openobserve import classify as _classify_openobserve
@@ -494,6 +497,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "mongodb_atlas": _classify_mongodb_atlas,
     "mariadb": _classify_mariadb,
     "vercel": _classify_vercel,
+    "neon": _classify_neon,
     "pagerduty": _classify_pagerduty,
     "pipedream": _classify_pipedream,
     "incident_io": _classify_incident_io,
@@ -1069,6 +1073,27 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 _active_env_record(
                     "vercel",
                     vercel_config.model_dump(exclude={"integration_id"}),
+                )
+            )
+
+    neon_api_key = resolve_env_credential(NEON_API_KEY_ENV)
+    neon_project_id = os.getenv(NEON_PROJECT_ID_ENV, "").strip()
+    if neon_api_key and neon_project_id:
+        try:
+            neon_config = build_neon_config(
+                {
+                    "api_key": neon_api_key,
+                    "project_id": neon_project_id,
+                    "branch_id": os.getenv(NEON_BRANCH_ID_ENV, "").strip(),
+                }
+            )
+        except Exception as exc:
+            _report_env_loader_failure(exc, integration="neon")
+        else:
+            integrations.append(
+                _active_env_record(
+                    "neon",
+                    neon_config.model_dump(include={"api_key", "project_id", "branch_id"}),
                 )
             )
 

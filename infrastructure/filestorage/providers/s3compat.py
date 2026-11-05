@@ -50,7 +50,7 @@ class S3CompatObjectStore(S3ListingMixin):
         client: Any | None = None,
     ) -> None:
         self._config = config
-        self._endpoint_url = _resolve_endpoint_url(endpoint_url)
+        self._endpoint_url = resolve_endpoint_url(endpoint_url)
         self._client = client if client is not None else _build_client(config, self._endpoint_url)
 
     def describe(self) -> str:
@@ -67,7 +67,7 @@ class S3CompatObjectStore(S3ListingMixin):
             raise RemoteSyncUnavailableError(f"cannot write {key} — {s3_reason(exc)}") from exc
 
 
-def _resolve_endpoint_url(explicit: str | None = None) -> str | None:
+def resolve_endpoint_url(explicit: str | None = None) -> str | None:
     """The endpoint URL to use, else ``None`` for the built-in AWS endpoint.
 
     Checked in order: the ``explicit`` argument (tests / direct callers), the
@@ -135,7 +135,7 @@ def check_public_access(
     """
     return s3_check_public_access(
         config,
-        build_client=lambda cfg: _build_client(cfg, _resolve_endpoint_url()),
+        build_client=lambda cfg: _build_client(cfg, resolve_endpoint_url()),
         client=client,
         unsupported_codes=_UNSUPPORTED_POLICY_STATUS_CODES,
         no_policy_status=PublicAccessStatus(BucketExposure.UNKNOWN, "no bucket policy present"),
@@ -160,4 +160,5 @@ __all__ = [
     "PROVIDER_NAME",
     "S3CompatObjectStore",
     "check_public_access",
+    "resolve_endpoint_url",
 ]

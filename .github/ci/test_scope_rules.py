@@ -307,6 +307,10 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
+        "integrations/neon/",
+        ("tests/integrations/neon/",),
+    ),
+    PathRule(
         "integrations/supabase/",
         ("tests/integrations/test_supabase.py",),
     ),

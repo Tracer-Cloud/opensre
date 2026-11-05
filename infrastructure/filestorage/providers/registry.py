@@ -71,6 +71,7 @@ _BUILTIN_MODULES = {
     BuiltInProvider.VERCEL.value: "infrastructure.filestorage.providers.vercel",
     BuiltInProvider.AZURE.value: "infrastructure.filestorage.providers.azure",
     BuiltInProvider.S3COMPAT.value: "infrastructure.filestorage.providers.s3compat",
+    BuiltInProvider.NEON.value: "infrastructure.filestorage.providers.neon",
 }
 
 
