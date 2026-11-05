@@ -413,6 +413,12 @@ def _setup_sentry_mcp() -> None:
     _run_spec_setup(SENTRY_MCP_SETUP)
 
 
+def _setup_gitee_mcp() -> None:
+    from integrations.gitee.setup import GITEE_MCP_SETUP
+
+    _run_spec_setup(GITEE_MCP_SETUP)
+
+
 def _setup_postgresql() -> None:
     from integrations.postgresql.setup import POSTGRESQL_SETUP
 
@@ -518,6 +524,7 @@ _HANDLERS: dict[str, Any] = {
     "twilio": _setup_twilio,
     "posthog_mcp": _setup_posthog_mcp,
     "sentry_mcp": _setup_sentry_mcp,
+    "gitee_mcp": _setup_gitee_mcp,
     "postgresql": _setup_postgresql,
     "mysql": _setup_mysql,
     "redis": _setup_redis,

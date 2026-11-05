@@ -1,0 +1,119 @@
+---
+title: "Gitee (MCP)"
+description: "Read Gitee-hosted repository code, search file contents, and compare refs through the official Gitee MCP server"
+---
+
+## Overview
+
+The Gitee integration connects OpenSRE to the **official Gitee MCP server**. It is read-only by default and covers the code-investigation path: list repositories, browse a directory, read a file, search file contents, and compare two refs.
+
+Gitee does not need a custom OpenSRE API client: the MCP server already handles authentication and repository access. OpenSRE adds the tool surface, setup, verification, and evidence entries.
+
+## Prerequisites
+
+- A Gitee account and a **personal access token** with repository read scope.
+- Network access to `https://api.gitee.com/mcp` for the remote transport.
+- Optional: Node.js 18+ if you want the local `stdio` fallback via `npx`.
+
+Create a token at [Gitee personal access tokens](https://gitee.com/profile/personal_access_tokens).
+
+## Setup
+
+### Interactive CLI
+
+```bash
+opensre integrations setup gitee
+```
+
+When prompted, keep the default **Gitee MCP URL** (`https://api.gitee.com/mcp`) and paste the personal access token. Setup verifies the connection by listing the server's tools before saving.
+
+### Environment variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GITEE_MCP_MODE` | `streamable-http` | `streamable-http`, `sse`, or `stdio` |
+| `GITEE_MCP_URL` | `https://api.gitee.com/mcp` | Remote MCP endpoint |
+| `GITEE_MCP_AUTH_TOKEN` | — | Personal access token; required for remote mode and stored in the keyring |
+| `GITEE_ACCESS_TOKEN` | — | Fallback token name used by the stdio server |
+| `GITEE_MCP_COMMAND` | — | stdio executable, for example `npx` |
+| `GITEE_MCP_ARGS` | — | stdio arguments, for example `-y @gitee/mcp-gitee@latest` |
+| `GITEE_MCP_TIMEOUT_SECONDS` | `30` | Per-operation timeout |
+| `GITEE_MCP_ENABLED_TOOLS` | read-only allowlist | Comma-separated tool names; sent as `X-MCP-Enabled-Tools` for remote and `ENABLED_TOOLSETS` for stdio |
+
+Remote mode:
+
+```dotenv
+GITEE_MCP_MODE=streamable-http
+GITEE_MCP_URL=https://api.gitee.com/mcp
+GITEE_MCP_AUTH_TOKEN=your_gitee_personal_access_token
+```
+
+stdio fallback:
+
+```dotenv
+GITEE_MCP_MODE=stdio
+GITEE_MCP_COMMAND=npx
+GITEE_MCP_ARGS=-y @gitee/mcp-gitee@latest
+GITEE_MCP_AUTH_TOKEN=your_gitee_personal_access_token
+```
+
+## Tools
+
+| Tool | What it reads |
+| --- | --- |
+| `list_gitee_repos` | Repositories the token can read, to resolve `owner/repo` |
+| `list_gitee_tree` | One directory level at a branch, tag, or commit |
+| `get_gitee_file` | File content at a ref; large files are truncated to `max_chars` |
+| `search_gitee_files` | Matching file paths for a content search |
+| `compare_gitee_refs` | Changed files and commits between two refs |
+| `list_gitee_tools` | Tools exposed by the configured Gitee MCP server |
+| `call_gitee_tool` | Calls a named MCP tool not covered by the read-only surface; requires approval |
+
+## Read-only by default
+
+The default `GITEE_MCP_ENABLED_TOOLS` allowlist contains only read tools:
+
+```text
+list_user_repos, get_file_content, search_files_by_content,
+compare_branches_tags, get_diff_files, list_repo_pulls,
+list_repo_issues, get_repo_issue_detail, list_comments
+```
+
+Adding a write tool to that list widens the surface. `call_gitee_tool` still asks for approval on every call.
+
+## Verify
+
+```bash
+opensre integrations verify gitee
+```
+
+Inside the interactive shell:
+
+```text
+/integrations verify gitee
+```
+
+Expected detail is the negotiated transport, endpoint, and the number of discovered tools. Verification fails when the server is reachable but does not expose `get_file_content` or `search_files_by_content`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Authentication failed** | Check the token is valid and has repository read scope; reconnect the integration |
+| **Remote endpoint unreachable** | Switch to `GITEE_MCP_MODE=stdio` with `npx -y @gitee/mcp-gitee@latest` |
+| **Missing read tools** | Check `GITEE_MCP_ENABLED_TOOLS` includes `get_file_content` and `search_files_by_content` |
+| **`list_gitee_tree` says the path is a file** | The path is a file; use `get_gitee_file`. If the directory listing is unsupported by your server version, use `search_gitee_files` or a local clone |
+| **File content is cut off** | Raise `max_chars` on `get_gitee_file`, or search first and read a narrower file |
+
+## Security
+
+- Use a token with the least privilege that matches your work (repository read only for investigation).
+- Keep tokens out of source code and chat; enter them through setup or a secret manager.
+- Rotate tokens regularly.
+- The generic `call_gitee_tool` is approval-gated because a widened allowlist can expose write tools.
+
+## Limitations
+
+- The Gitee MCP server has no dedicated commit-log tool. Use `compare_gitee_refs` for diffs, or a local clone when you need full `git log` history.
+- Directory browsing uses the Gitee contents API through `get_file_content`; behavior depends on the server version.
+- The default allowlist is read-only; write workflows are intentionally out of scope for this integration.

@@ -303,6 +303,15 @@ EXPORTS: dict[str, str] = {
     "GITHUB_MCP_URL_ENV": "github",
     "GITHUB_TOKEN_ENV": "github",
     "OPENSRE_INSTALL_GITHUB_TOKEN_ENV": "github",
+    # gitee
+    "GITEE_ACCESS_TOKEN_ENV": "gitee",
+    "GITEE_MCP_ARGS_ENV": "gitee",
+    "GITEE_MCP_AUTH_TOKEN_ENV": "gitee",
+    "GITEE_MCP_COMMAND_ENV": "gitee",
+    "GITEE_MCP_ENABLED_TOOLS_ENV": "gitee",
+    "GITEE_MCP_MODE_ENV": "gitee",
+    "GITEE_MCP_TIMEOUT_SECONDS_ENV": "gitee",
+    "GITEE_MCP_URL_ENV": "gitee",
     # gitlab
     "GITLAB_AUTH_TOKEN_ENV": "gitlab",
     "GITLAB_BASE_URL_ENV": "gitlab",

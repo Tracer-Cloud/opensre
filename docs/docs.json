@@ -179,6 +179,7 @@
               "integrations/code/resolve-merge-conflicts",
               "integrations/code/github-workflow-tools",
               "integrations/code/github-actions",
+              "integrations/code/gitee-mcp",
               "integrations/code/gitlab",
               "integrations/code/jenkins",
               "integrations/code/pi-coding"

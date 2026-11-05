@@ -582,6 +582,30 @@ if TYPE_CHECKING:
     from config.constants.git import (
         OPENSRE_COMMIT_COAUTHOR_TRAILER as OPENSRE_COMMIT_COAUTHOR_TRAILER,
     )
+    from config.constants.gitee import (
+        GITEE_ACCESS_TOKEN_ENV as GITEE_ACCESS_TOKEN_ENV,
+    )
+    from config.constants.gitee import (
+        GITEE_MCP_ARGS_ENV as GITEE_MCP_ARGS_ENV,
+    )
+    from config.constants.gitee import (
+        GITEE_MCP_AUTH_TOKEN_ENV as GITEE_MCP_AUTH_TOKEN_ENV,
+    )
+    from config.constants.gitee import (
+        GITEE_MCP_COMMAND_ENV as GITEE_MCP_COMMAND_ENV,
+    )
+    from config.constants.gitee import (
+        GITEE_MCP_ENABLED_TOOLS_ENV as GITEE_MCP_ENABLED_TOOLS_ENV,
+    )
+    from config.constants.gitee import (
+        GITEE_MCP_MODE_ENV as GITEE_MCP_MODE_ENV,
+    )
+    from config.constants.gitee import (
+        GITEE_MCP_TIMEOUT_SECONDS_ENV as GITEE_MCP_TIMEOUT_SECONDS_ENV,
+    )
+    from config.constants.gitee import (
+        GITEE_MCP_URL_ENV as GITEE_MCP_URL_ENV,
+    )
     from config.constants.github import (
         GH_TOKEN_ENV as GH_TOKEN_ENV,
     )

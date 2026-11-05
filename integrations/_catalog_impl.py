@@ -72,6 +72,16 @@ from config.constants.discord import (
     DISCORD_DEFAULT_CHANNEL_ID_ENV,
     DISCORD_PUBLIC_KEY_ENV,
 )
+from config.constants.gitee import (
+    GITEE_ACCESS_TOKEN_ENV,
+    GITEE_MCP_ARGS_ENV,
+    GITEE_MCP_AUTH_TOKEN_ENV,
+    GITEE_MCP_COMMAND_ENV,
+    GITEE_MCP_ENABLED_TOOLS_ENV,
+    GITEE_MCP_MODE_ENV,
+    GITEE_MCP_TIMEOUT_SECONDS_ENV,
+    GITEE_MCP_URL_ENV,
+)
 from config.constants.github import (
     GITHUB_MCP_ARGS_ENV,
     GITHUB_MCP_AUTH_TOKEN_ENV,
@@ -286,6 +296,12 @@ from integrations.dagster import classify as _classify_dagster
 from integrations.datadog import classify as _classify_datadog
 from integrations.discord import classify as _classify_discord
 from integrations.effective_models import EffectiveIntegrations
+from integrations.gitee import (
+    DEFAULT_GITEE_MCP_URL,
+    DEFAULT_GITEE_READ_TOOLS,
+    build_gitee_mcp_config,
+)
+from integrations.gitee import classify as _classify_gitee_mcp
 from integrations.github.mcp import build_github_mcp_config
 from integrations.github.mcp import classify as _classify_github
 from integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
@@ -509,6 +525,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "posthog": _classify_posthog,
     "posthog_mcp": _classify_posthog_mcp,
     "sentry_mcp": _classify_sentry_mcp,
+    "gitee_mcp": _classify_gitee_mcp,
     "mysql": _classify_mysql,
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
@@ -1460,6 +1477,55 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
         except Exception as exc:
             _report_env_loader_failure(exc, integration="sentry_mcp")
+
+    gitee_mode = os.getenv(GITEE_MCP_MODE_ENV, "streamable-http").strip().lower()
+    gitee_mode = gitee_mode or "streamable-http"
+    gitee_command = os.getenv(GITEE_MCP_COMMAND_ENV, "").strip()
+    gitee_token = (
+        resolve_env_credential(GITEE_MCP_AUTH_TOKEN_ENV)
+        or resolve_env_credential(GITEE_ACCESS_TOKEN_ENV)
+    )
+    gitee_url = os.getenv(GITEE_MCP_URL_ENV, "").strip()
+    if gitee_mode != "stdio" and gitee_token and not gitee_url:
+        gitee_url = DEFAULT_GITEE_MCP_URL
+    if (gitee_mode == "stdio" and gitee_command) or (
+        gitee_mode != "stdio" and gitee_url and gitee_token
+    ):
+        try:
+            gitee_timeout_raw = os.getenv(GITEE_MCP_TIMEOUT_SECONDS_ENV, "").strip()
+            try:
+                gitee_timeout = (
+                    max(1.0, float(gitee_timeout_raw)) if gitee_timeout_raw else 30.0
+                )
+            except ValueError:
+                gitee_timeout = 30.0
+            gitee_config = build_gitee_mcp_config(
+                {
+                    "url": gitee_url,
+                    "mode": gitee_mode,
+                    "command": gitee_command,
+                    "args": [
+                        part
+                        for part in os.getenv(GITEE_MCP_ARGS_ENV, "").strip().split()
+                        if part
+                    ],
+                    "auth_token": gitee_token,
+                    "timeout_seconds": gitee_timeout,
+                    "enabled_tools": os.getenv(GITEE_MCP_ENABLED_TOOLS_ENV, "").strip()
+                    or DEFAULT_GITEE_READ_TOOLS,
+                }
+            )
+            integrations.append(
+                _active_env_record(
+                    "gitee_mcp",
+                    {
+                        **gitee_config.model_dump(exclude={"integration_id"}),
+                        "connection_verified": True,
+                    },
+                )
+            )
+        except Exception as exc:
+            _report_env_loader_failure(exc, integration="gitee_mcp")
 
     mariadb_host = os.getenv(MARIADB_HOST_ENV, "").strip()
     mariadb_database = os.getenv(MARIADB_DATABASE_ENV, "").strip()

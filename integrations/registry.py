@@ -257,6 +257,14 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=45,
     ),
     IntegrationSpec(
+        service="gitee_mcp",
+        aliases=("gitee", "gitee mcp", "gitee-mcp"),
+        has_verifier=True,
+        direct_effective=True,
+        setup_order=56,
+        verify_order=60,
+    ),
+    IntegrationSpec(
         service="mysql",
         has_verifier=True,
         direct_effective=True,
