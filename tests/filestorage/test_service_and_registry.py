@@ -67,6 +67,9 @@ class _MemStore:
     def describe(self) -> str:
         return "mem://t"
 
+    def close(self) -> None:
+        return
+
 
 @pytest.fixture(autouse=True)
 def _restore_registry() -> Iterator[None]:
@@ -334,3 +337,44 @@ def test_run_remote_sync_uses_scoped_roots(tmp_path: Path, monkeypatch: pytest.M
     report2 = run_remote_sync()
     assert report2 is not None
     assert report2 is not report
+
+
+def test_run_remote_sync_closes_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``run_remote_sync`` must close the store it built (#6989)."""
+    from infrastructure.filestorage import operations as sync_service
+
+    class _ClosingStore(_MemStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    stores: list[_ClosingStore] = []
+
+    def _factory(_cfg: RemoteSyncConfig) -> _ClosingStore:
+        store = _ClosingStore()
+        stores.append(store)
+        return store
+
+    register_object_store("close-wiring", _factory)
+    try:
+        sessions = tmp_path / "sessions"
+        memory = tmp_path / "memory"
+        sessions.mkdir()
+        memory.mkdir()
+        (sessions / "x.jsonl").write_text("{}\n", encoding="utf-8")
+        roots = (
+            SyncRoot(name=SyncRootName.SESSIONS, path=sessions),
+            SyncRoot(name=SyncRootName.MEMORY, path=memory),
+        )
+        monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
+        monkeypatch.setenv(REMOTE_SYNC_BUCKET_ENV, "b")
+        monkeypatch.setenv(REMOTE_SYNC_PROVIDER_ENV, "close-wiring")
+        monkeypatch.setattr(sync_service, "syncable_roots", lambda: roots)
+        report = run_remote_sync()
+        assert report is not None
+        assert stores and stores[0].closed is True
+    finally:
+        unregister_object_store("close-wiring")

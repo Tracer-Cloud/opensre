@@ -74,6 +74,9 @@ class FakeObjectStore:
     def describe(self) -> str:
         return "fake://bucket"
 
+    def close(self) -> None:
+        return
+
 
 @pytest.fixture
 def home(tmp_path: Path) -> Path:

@@ -138,6 +138,9 @@ class _FakeObjectStore:
     def describe(self) -> str:
         return f"{_PROVIDER_NAME}://template/{self._config.prefix}"
 
+    def close(self) -> None:
+        return
+
 
 @pytest.fixture
 def fake_provider() -> Iterator[dict[str, tuple[bytes, datetime]]]:

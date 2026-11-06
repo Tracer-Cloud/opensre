@@ -78,6 +78,9 @@ class RecordingStore:
     def describe(self) -> str:
         return "recording://bucket"
 
+    def close(self) -> None:
+        return
+
 
 class FailingStore(RecordingStore):
     """Fails the named keys, to pin which error a caller sees."""

@@ -181,3 +181,27 @@ def test_azure_sdk_errors_are_translated() -> None:
     with pytest.raises(RemoteSyncUnavailableError) as caught_put:
         store.put_object("test.json", b"data")
     assert "403" in str(caught_put.value)
+
+
+def test_close_releases_owned_httpx_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Owned clients must close; injected clients must stay open (#6989)."""
+    closed: list[httpx.Client] = []
+    real_close = httpx.Client.close
+
+    def _tracking_close(self: httpx.Client) -> None:
+        closed.append(self)
+        real_close(self)
+
+    monkeypatch.setattr(httpx.Client, "close", _tracking_close)
+    owned = AzureBlobObjectStore(_config(), token="fake")
+    owned.close()
+    assert closed == [owned._client]
+    # Idempotent: a second close must not touch the already-closed client again.
+    owned.close()
+    assert closed == [owned._client]
+
+    injected = httpx.Client(transport=_FakeTransport())
+    store = AzureBlobObjectStore(_config(), token="fake", client=injected)
+    store.close()
+    assert injected not in closed
+    injected.close()

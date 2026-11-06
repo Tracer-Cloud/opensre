@@ -76,6 +76,12 @@ class VercelBlobObjectStore:
         self._client = client if client is not None else httpx.Client(timeout=_TIMEOUT)
         self._owns_client = client is None
 
+    def close(self) -> None:
+        """Close the owned ``httpx.Client``; no-op when the caller injected one."""
+        if self._owns_client:
+            self._client.close()
+            self._owns_client = False
+
     def describe(self) -> str:
         return f"vercel-blob://{self._config.bucket}/{self._config.prefix}"
 

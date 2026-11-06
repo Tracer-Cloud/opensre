@@ -46,6 +46,9 @@ class S3ListingMixin:
         """Human-facing ``scheme://bucket/prefix`` target for error messages."""
         raise NotImplementedError
 
+    def close(self) -> None:
+        """S3-family stores do not own an ``httpx.Client``; nothing to release."""
+
     def list_objects(self, prefix: str) -> list[RemoteObject]:
         full_prefix = (
             self._config.key_for(prefix) if prefix else f"{self._config.prefix.rstrip('/')}/"

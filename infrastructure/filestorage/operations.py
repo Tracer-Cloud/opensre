@@ -173,18 +173,25 @@ def run_remote_sync(
         return None
     roots = syncable_roots()
     store = build_object_store(config)
-    return _owned_report(
-        run_sync(
-            store,
-            direction=resolved,
-            roots=roots,
-            exclusions=config.exclude,
-            dry_run=dry_run,
-            on_progress=on_progress,
-            # The backend, not the engine, knows how hard it can be pushed.
-            max_parallel_uploads=max_parallel_uploads_for_provider(config.provider),
+    try:
+        return _owned_report(
+            run_sync(
+                store,
+                direction=resolved,
+                roots=roots,
+                exclusions=config.exclude,
+                dry_run=dry_run,
+                on_progress=on_progress,
+                # The backend, not the engine, knows how hard it can be pushed.
+                max_parallel_uploads=max_parallel_uploads_for_provider(config.provider),
+            )
         )
-    )
+    finally:
+        # Protocol requires close(); getattr keeps a sync failure visible if a
+        # legacy/community store omitted the no-op method.
+        closer = getattr(store, "close", None)
+        if closer is not None:
+            closer()
 
 
 __all__ = [

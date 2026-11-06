@@ -66,6 +66,9 @@ class GCSObjectStore:
         self._config = config
         self._session = session if session is not None else _build_session()
 
+    def close(self) -> None:
+        """GCS uses a requests session managed elsewhere; nothing required here."""
+
     def describe(self) -> str:
         return f"gs://{self._config.bucket}/{self._config.prefix}"
 

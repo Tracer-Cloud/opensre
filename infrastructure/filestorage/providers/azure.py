@@ -51,6 +51,13 @@ class AzureBlobObjectStore:
             )
         self._token = token if token is not None else _get_azure_access_token()
         self._client = client if client is not None else httpx.Client(timeout=30.0)
+        self._owns_client = client is None
+
+    def close(self) -> None:
+        """Close the owned ``httpx.Client``; no-op when the caller injected one."""
+        if self._owns_client:
+            self._client.close()
+            self._owns_client = False
 
     def describe(self) -> str:
         return f"azure-blob://{self._account_name}/{self._config.bucket}/{self._config.prefix}"

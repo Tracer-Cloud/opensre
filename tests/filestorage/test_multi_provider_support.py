@@ -67,6 +67,9 @@ class _MemoryStore:
     def describe(self) -> str:
         return f"{self.label}://test"
 
+    def close(self) -> None:
+        return
+
 
 @pytest.fixture
 def roots(tmp_path: Path) -> tuple[SyncRoot, ...]:
