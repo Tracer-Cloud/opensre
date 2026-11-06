@@ -327,3 +327,26 @@ def test_engine_push_restore_via_registry(tmp_path_factory: pytest.TempPathFacto
     assert (other_memory / "fact.md").read_text(encoding="utf-8") == "remembered\n"
     # Sanity: content_tag matches Vercel etags for single-part puts.
     assert content_tag(b'{"turn": 1}\n') == _md5(b'{"turn": 1}\n')
+
+
+def test_close_releases_owned_httpx_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Owned clients must close; injected clients must stay open (#6989)."""
+    closed: list[httpx.Client] = []
+    real_close = httpx.Client.close
+
+    def _tracking_close(self: httpx.Client) -> None:
+        closed.append(self)
+        real_close(self)
+
+    monkeypatch.setattr(httpx.Client, "close", _tracking_close)
+    owned = VercelBlobObjectStore(_config(), token=_TOKEN)
+    owned.close()
+    assert closed == [owned._client]
+    owned.close()
+    assert closed == [owned._client]
+
+    injected = httpx.Client(transport=_FakeTransport())
+    store = VercelBlobObjectStore(_config(), token=_TOKEN, client=injected)
+    store.close()
+    assert injected not in closed
+    injected.close()

@@ -55,5 +55,13 @@ class ObjectStore(Protocol):
     def describe(self) -> str:
         """Short human-readable destination, for logs and CLI output."""
 
+    def close(self) -> None:
+        """Release owned network resources (for example an ``httpx.Client``).
+
+        Providers that do not own a client may no-op. Callers that build a
+        fresh store per operation should invoke this in a ``finally`` so
+        connection pools are not left to cyclic GC.
+        """
+
 
 __all__ = ["ObjectStore", "RemoteObject"]
