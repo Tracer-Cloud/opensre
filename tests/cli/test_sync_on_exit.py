@@ -46,6 +46,9 @@ class _FakeObjectStore:
     def describe(self) -> str:
         return "fake://sync-on-exit"
 
+    def close(self) -> None:
+        return
+
 
 class _FailingObjectStore(_FakeObjectStore):
     def list_objects(self, _prefix: str) -> list[RemoteObject]:

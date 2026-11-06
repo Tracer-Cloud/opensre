@@ -187,7 +187,11 @@ def run_remote_sync(
             )
         )
     finally:
-        store.close()
+        # Protocol requires close(); getattr keeps a sync failure visible if a
+        # legacy/community store omitted the no-op method.
+        closer = getattr(store, "close", None)
+        if closer is not None:
+            closer()
 
 
 __all__ = [
