@@ -1,0 +1,9 @@
+# Versions this desk was built and tested with (Python 3.13).
+csp==0.19.1
+gs-quant==2.2.5
+arcticdb==6.28.3
+pandas==2.3.3
+numpy==2.5.4
+matplotlib==3.11.2
+requests==2.34.2
+pytest==9.2.0

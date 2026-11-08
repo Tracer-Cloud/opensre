@@ -1,0 +1,5 @@
+# Inherit the repo's ruff rules; `desk` is this folder's own first-party package.
+extend = "../ruff.toml"
+
+[lint.isort]
+known-first-party = ["desk"]
