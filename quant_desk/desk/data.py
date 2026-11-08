@@ -29,7 +29,6 @@ _KLINE_COLUMNS = (
     "ignore",
 )
 _NUMERIC = ("open", "high", "low", "close", "volume", "quote_volume")
-_MINUTE_MS = 60_000
 
 
 def library() -> adb.library.Library:
@@ -39,16 +38,15 @@ def library() -> adb.library.Library:
     return arctic.get_library(config.ARCTIC_LIBRARY, create_if_missing=True)
 
 
-def fetch_1m(
-    days: int = config.LOOKBACK_DAYS, end: datetime | None = None, symbol: str = config.SYMBOL
-) -> pd.DataFrame:
-    """Download ``days`` of closed 1-minute klines ending at the last full 15m boundary."""
-    end = end or datetime.now(UTC)
-    end = end.replace(second=0, microsecond=0)
-    end -= timedelta(minutes=end.minute % 15)
-    start = end - timedelta(days=days)
-    start_ms, end_ms = int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000}
 
+
+def fetch_klines(
+    interval: str, start: datetime, end: datetime, symbol: str = config.SYMBOL
+) -> pd.DataFrame:
+    """Download closed klines in ``[start, end)``, indexed by the bar's *close* time."""
+    step = _INTERVAL_MS[interval]
+    start_ms, end_ms = int(start.timestamp() * 1000), int(end.timestamp() * 1000)
     rows: list[list[object]] = []
     session = requests.Session()
     cursor = start_ms
@@ -57,7 +55,7 @@ def fetch_1m(
             config.BINANCE_KLINES_URL,
             params={
                 "symbol": symbol,
-                "interval": config.RAW_INTERVAL,
+                "interval": interval,
                 "startTime": cursor,
                 "endTime": end_ms - 1,
                 "limit": config.BINANCE_MAX_LIMIT,
@@ -69,16 +67,78 @@ def fetch_1m(
         if not batch:
             break
         rows.extend(batch)
-        cursor = int(batch[-1][0]) + _MINUTE_MS
+        cursor = int(batch[-1][0]) + step
         time.sleep(0.05)  # stay far below the public rate limit
 
     df = pd.DataFrame(rows, columns=list(_KLINE_COLUMNS))
     df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
     df = df.drop_duplicates("open_time").set_index("open_time").sort_index()
     df = df[list(_NUMERIC)].astype(float)
-    expected = days * 24 * 60
-    logger.info("fetched %d of %d expected 1m bars (%s -> %s)", len(df), expected, start, end)
+    expected = (end_ms - start_ms) // step
+    logger.info(
+        "fetched %d of %d expected %s bars (%s -> %s)", len(df), expected, interval, start, end
+    )
     return df
+
+
+def _last_15m_boundary(now: datetime | None = None) -> datetime:
+    now = (now or datetime.now(UTC)).replace(second=0, microsecond=0)
+    return now - timedelta(minutes=now.minute % 15)
+
+
+def fetch_1m(
+    days: int = config.LOOKBACK_DAYS, end: datetime | None = None, symbol: str = config.SYMBOL
+) -> pd.DataFrame:
+    """``days`` of closed 1-minute klines ending at the last full 15m boundary (open-time index)."""
+    end = _last_15m_boundary(end)
+    return fetch_klines(config.RAW_INTERVAL, end - timedelta(days=days), end, symbol)
+
+
+def fetch_history(start: str = config.HISTORY_START, symbol: str = config.SYMBOL) -> pd.DataFrame:
+    """15m bars from ``start`` to the last full 15m boundary, stamped at bar close."""
+    begin = datetime.fromisoformat(start).replace(tzinfo=UTC)
+    raw = fetch_klines(config.HISTORY_INTERVAL, begin, _last_15m_boundary(), symbol)
+    bars = raw.copy()
+    bars.index = bars.index + pd.Timedelta(minutes=15)
+    bars.index.name = "bar_close"
+    full = pd.date_range(bars.index[0], bars.index[-1], freq="15min", name="bar_close")
+    missing = len(full) - len(bars)
+    if missing:
+        logger.warning("%d missing 15m bars (exchange outages) forward-filled", missing)
+        bars = bars.reindex(full)
+        bars["close"] = bars["close"].ffill()
+        for col in ("open", "high", "low"):
+            bars[col] = bars[col].fillna(bars["close"])
+        bars[["volume", "quote_volume"]] = bars[["volume", "quote_volume"]].fillna(0.0)
+    return bars
+
+
+def resample_closed(bars: pd.DataFrame, minutes: int) -> pd.DataFrame:
+    """Aggregate close-stamped bars into ``minutes`` bars, still stamped at close.
+
+    With close stamps, a bar at ``t`` covers ``(t - step, t]``, hence ``closed="right"``.
+    """
+    if minutes == 15:
+        return bars
+    agg = bars.resample(f"{minutes}min", label="right", closed="right").agg(
+        {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+            "quote_volume": "sum",
+        }
+    )
+    return agg.dropna(subset=["close"])
+
+
+def ingest_history(start: str = config.HISTORY_START) -> pd.DataFrame:
+    bars = fetch_history(start)
+    store(
+        bars, config.SYMBOL_HISTORY, source=config.BINANCE_KLINES_URL, interval="15m", label="close"
+    )
+    return bars
 
 
 def resample_15m(raw: pd.DataFrame) -> pd.DataFrame:

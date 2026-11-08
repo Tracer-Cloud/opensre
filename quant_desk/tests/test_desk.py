@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from desk import config, indicators, strategy, sweep
+from desk import config, data, filters, history, indicators, mean_reversion, strategy, sweep
+from desk import variants as V
 
 
 def _bars(n: int = 600, seed: int = 7) -> pd.DataFrame:
@@ -37,32 +38,128 @@ def test_csp_stream_emas_match_gs_quant_emas() -> None:
     np.testing.assert_allclose(run.fills["slow_ema"], slow, rtol=1e-12)
 
 
-def test_no_lookahead_future_bars_cannot_change_past_trades_or_returns() -> None:
-    bars = _bars()
-    cut = bars.index[400]
+def _shock_after(bars: pd.DataFrame, cut: pd.Timestamp) -> pd.DataFrame:
     shocked = bars.copy()
-    shocked.loc[shocked.index > cut, "close"] *= np.linspace(0.5, 2.0, (bars.index > cut).sum())
-    a = strategy.run(bars, [(4, 16)])[(4, 16)]
-    b = strategy.run(shocked, [(4, 16)])[(4, 16)]
-    pd.testing.assert_series_equal(a.returns.loc[:cut], b.returns.loc[:cut])
-    pd.testing.assert_frame_equal(a.fills.loc[:cut], b.fills.loc[:cut])
+    scale = np.linspace(0.5, 2.0, int((bars.index > cut).sum()))
+    for col in ("open", "high", "low", "close"):
+        shocked.loc[shocked.index > cut, col] *= scale
+    return shocked
 
 
-def test_returns_are_prior_position_times_move_minus_fee_on_flip() -> None:
-    """Position decided at bar t's close earns t->t+1; fee is 2 bps per unit of change."""
-    bars = _bars()
-    run = strategy.run(bars, [(4, 16)])[(4, 16)]
-    close = bars["close"]
-    pos = run.positions.reindex(bars.index).fillna(0)
-    fee = run.fills["fee"].reindex(bars.index, fill_value=0.0)
-    expected = pos.shift(1, fill_value=0) * close.pct_change().fillna(0.0) - fee
-    np.testing.assert_allclose(run.returns.reindex(bars.index), expected, atol=1e-15)
+@pytest.mark.parametrize("variant", V.VARIANTS, ids=lambda v: v.name)
+def test_no_lookahead_future_bars_cannot_change_past_trades_or_returns(variant: V.Variant) -> None:
+    """Filters, bands and EMAs are all causal: rewriting the future leaves the past alone."""
+    bars = _bars(900)
+    cut = bars.index[600]
+    shocked = _shock_after(bars, cut)
+    a = V.run_variant(bars, variant)
+    b = V.run_variant(shocked, variant)
+    traded = 0
+    for key in a:
+        pd.testing.assert_series_equal(a[key].returns.loc[:cut], b[key].returns.loc[:cut])
+        pd.testing.assert_frame_equal(a[key].fills.loc[:cut], b[key].fills.loc[:cut])
+        traded += len(a[key].fills.loc[:cut])
+    assert traded > 0
 
+
+def test_regime_masks_and_bands_are_causal_at_every_cut() -> None:
+    """Recomputed on history truncated at bar t, every input must equal its full-history value
+    at t. A filter that peeks even one bar ahead fails at some cut."""
+    bars = _bars(700)
+    full = filters.regime_inputs(bars)
+    full_bands = filters.bollinger_inputs(bars["close"], config.MR_WINDOWS)
+    regimes = {v.regime for v in V.VARIANTS}
+    full_masks = {r: V.regime_mask(r, full) for r in regimes}
+    for t in range(60, len(bars), 9):
+        part = bars.iloc[: t + 1]
+        inputs = filters.regime_inputs(part)
+        pd.testing.assert_series_equal(inputs.iloc[-1], full.iloc[t], check_names=False)
+        for r in regimes:
+            assert V.regime_mask(r, inputs).iloc[-1] == full_masks[r].iloc[t], (r, t)
+        bands = filters.bollinger_inputs(part["close"], config.MR_WINDOWS)
+        for w in config.MR_WINDOWS:
+            pd.testing.assert_series_equal(
+                bands[w].iloc[-1], full_bands[w].iloc[t], check_names=False
+            )
+
+
+def test_returns_timing_on_a_hand_checked_example() -> None:
+    """A fill at bar t costs its fee on t and earns from t+1, never the move into t."""
+    idx = pd.date_range("2026-01-01 00:15", periods=4, freq="15min", tz="UTC")
+    close = pd.Series([100.0, 110.0, 121.0, 108.9], index=idx)
+    fills = pd.DataFrame({"position": [1, -1], "fee": [2e-4, 4e-4]}, index=idx[[1, 2]])
+    ret, pos = strategy.returns_from_fills(close, fills)
+    np.testing.assert_allclose(ret, [0.0, -2e-4, 0.10 - 4e-4, 0.10])
+    assert pos.tolist() == [0, 1, -1, -1]
+
+
+def test_fees_are_two_bps_per_unit_of_position_change() -> None:
+    run = strategy.run(_bars(), [(4, 16)])[(4, 16)]
     flips = run.fills[run.fills["prev_position"] != 0]
     entries = run.fills[run.fills["prev_position"] == 0]
     assert np.allclose(flips["fee"], 2 * config.FEE_BPS * 1e-4)
     assert np.allclose(entries["fee"], config.FEE_BPS * 1e-4)
     assert set(run.fills["position"]) <= {-1, 1}
+
+
+def test_fee_stress_repricing_matches_a_real_run_at_that_fee() -> None:
+    bars = _bars()
+    cheap = strategy.run(bars, [(4, 16)])
+    real = strategy.run(bars, [(4, 16)], fee_bps=history.STRESS_FEE_BPS)[(4, 16)]
+    repriced = history.at_fee(cheap, history.STRESS_FEE_BPS)[(4, 16)]
+    np.testing.assert_allclose(repriced.returns, real.returns, atol=1e-15)
+
+
+def test_filtered_strategy_is_flat_outside_the_trend_regime_and_respects_cooldown() -> None:
+    bars = _bars(900)
+    never = pd.Series(False, index=bars.index)
+    assert strategy.run(bars, [(4, 16)], trend_ok=never)[(4, 16)].fills.empty
+
+    regime = pd.Series(np.arange(len(bars)) % 200 < 100, index=bars.index)
+    run = strategy.run(bars, [(4, 16)], trend_ok=regime, cooldown=6)[(4, 16)]
+    pos = run.positions
+    assert (pos[~regime] == 0).all()
+    assert set(pos.unique()) == {-1, 0, 1}
+    bar_no = pd.Series(np.arange(len(bars)), index=bars.index)
+    changes = bar_no.loc[run.fills.index].to_numpy()
+    entries = run.fills["position"].to_numpy() != 0
+    gaps = np.diff(changes)
+    assert (gaps[entries[1:]] >= 6).all()
+
+
+def test_bollinger_fade_enters_beyond_the_band_and_exits_at_the_middle() -> None:
+    idx = pd.date_range("2026-01-01 00:15", periods=40, freq="15min", tz="UTC")
+    close = pd.Series(100.0 + 0.1 * np.sin(np.arange(40)), index=idx)
+    close.iloc[25] = 97.0  # deep dip -> long
+    close.iloc[26:30] = 99.0  # still below the middle band -> hold
+    close.iloc[30:] = 101.0  # back above the middle band -> flat
+    bars = pd.DataFrame({"close": close})
+    run = mean_reversion.run(bars, [(10, 2.0)])[(10, 2.0)]
+    assert run.fills["position"].tolist() == [1, 0]
+    assert list(run.fills.index) == [idx[25], idx[30]]
+
+
+def test_hourly_bars_only_contain_the_15m_bars_that_closed_inside_the_hour() -> None:
+    idx = pd.date_range("2026-01-01 00:15", periods=8, freq="15min", tz="UTC", name="bar_close")
+    px = pd.Series(np.arange(1.0, 9.0), index=idx)
+    bars = pd.DataFrame(
+        {"open": px, "high": px, "low": px, "close": px, "volume": 1.0, "quote_volume": 1.0}
+    )
+    hourly = data.resample_closed(bars, 60)
+    assert list(hourly.index) == [idx[3], idx[7]]  # stamped 01:00 and 02:00
+    assert hourly["open"].tolist() == [1.0, 5.0]
+    assert hourly["close"].tolist() == [4.0, 8.0]
+    assert hourly["volume"].tolist() == [4.0, 4.0]
+
+
+def test_regime_filters_detect_trend_versus_chop() -> None:
+    idx = pd.date_range("2026-01-01", periods=200, freq="1h", tz="UTC")
+    trend = pd.Series(np.linspace(100, 200, 200), index=idx)
+    chop = pd.Series(100 + np.where(np.arange(200) % 2, 1.0, -1.0), index=idx)
+    assert filters.efficiency_ratio(trend).iloc[-1] > 0.99
+    assert filters.efficiency_ratio(chop).iloc[-1] < 0.05
+    ohlc = pd.DataFrame({"high": trend + 0.5, "low": trend - 0.5, "close": trend})
+    assert filters.adx(ohlc).iloc[-1] > config.ADX_TREND
 
 
 def test_agent_log_fires_on_the_same_bars_as_the_chart_markers(

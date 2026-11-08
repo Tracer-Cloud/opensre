@@ -24,6 +24,8 @@ python -m venv .venv            # ou: uv venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_desk.py              # baixa dados novos e roda tudo (~20 s)
 .venv/bin/python run_desk.py --no-fetch   # reaproveita as barras já gravadas no ArcticDB
+.venv/bin/python run_history.py           # estudo de vários anos (~4 min, ver abaixo)
+.venv/bin/python run_history.py --no-fetch
 .venv/bin/python -m pytest                # testes (dados sintéticos, sem rede)
 ```
 
@@ -42,6 +44,30 @@ Saídas em `output/`:
 
 O ArcticDB fica em `data/arctic` (símbolos `BTCUSDT_1m`, `BTCUSDT_15m`,
 `BTCUSDT_15m_ema_sweep`; cada execução grava uma nova versão).
+
+## Estudo de vários anos (`run_history.py`)
+
+Barras de 15m de BTC/USDT desde jan/2022 (bear de 2022, recuperação, bull de 2024–25 e a
+lateralização recente), reamostradas para 1h e 4h e gravadas no ArcticDB. Cada variante é
+varrida na grade inteira em cada tamanho de barra:
+
+| variante | o que faz |
+|---|---|
+| `always_in` | original: cruzamento de EMA, sempre long ou short |
+| `gap_cooldown` | só entra com distância entre EMAs ≥ 0,25 ATR e espera 4 barras entre trades; fica flat no resto |
+| `flat_er` | segue a direção das EMAs só com eficiência (ER 20) ≥ 0,30; flat no resto |
+| `flat_adx` | idem com ADX 14 ≥ 25 |
+| `flat_adx_gap_cd` | ADX + distância mínima + cooldown |
+| `mr_always` | reversão à média: compra abaixo da banda de Bollinger, vende acima, sai na média |
+| `mr_chop` | igual, mas só quando o mercado está lateral (ER < 0,30) |
+
+Os filtros usam valores de livro e **não foram otimizados**. A história é dividida em 8 janelas;
+platô exige vizinhos com ≥ 50% do Sharpe e lucro em ≥ 6 de 8 janelas. Tudo é recalculado com
+taxa de 10 bps (taker padrão da Binance) e passa por walk-forward de 7 passos.
+
+Saídas em `output/history/`: `HISTORY_REPORT.md`, `summary.csv`, `sweeps/` (uma tabela por
+variante e barra), `wf_sharpe.png`, `heatmaps_trend.png`, `heatmaps_mean_reversion.png`,
+`wf_equity.png`.
 
 ## Regras de execução (para não se enganar)
 

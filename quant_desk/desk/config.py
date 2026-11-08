@@ -47,3 +47,29 @@ VOLUME_PROFILE_BINS = 40
 PLATEAU_NEIGHBOUR_RATIO = 0.5
 PLATEAU_MIN_POSITIVE_WINDOWS = 3
 TOP_N_LABELLED = 15
+
+# --- Multi-year study (run_history.py) --------------------------------------------------------
+HISTORY_START = "2022-01-01"  # 2022 bear, 2023 recovery, 2024-25 bull, 2026 chop
+HISTORY_INTERVAL = "15m"  # fetched directly as 15m klines (same OHLCV as resampled 1m)
+SYMBOL_HISTORY = f"{SYMBOL}_15m_history"
+TIMEFRAMES = {"15m": 15, "1h": 60, "4h": 240}  # bar label -> minutes
+HISTORY_WINDOWS = 8
+HISTORY_MIN_POSITIVE_SHARE = 0.75  # plateau must be profitable in >= 6 of 8 windows
+
+# Regime filters: textbook defaults, deliberately NOT tuned (tuning them is more overfitting).
+ER_WINDOW = 20  # Kaufman efficiency ratio: |net move| / path length over N bars
+ER_TREND = 0.30  # >= trend regime, below = chop
+ADX_WINDOW = 14
+ADX_TREND = 25.0
+ATR_WINDOW = 14
+MIN_GAP_ATR = 0.25  # enter only when |EMA fast - EMA slow| >= 0.25 x ATR
+COOLDOWN_BARS = 4  # bars to wait after any position change before entering again
+
+# Mean reversion (Bollinger fade): window x width grid.
+MR_WINDOWS = (10, 14, 20, 26, 32, 40, 50, 60)
+MR_WIDTHS = (1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0)
+
+
+def annualization(bar_minutes: int) -> float:
+    """sqrt(bars per year) for a 24/7 market."""
+    return (365 * 24 * 60 / bar_minutes) ** 0.5
