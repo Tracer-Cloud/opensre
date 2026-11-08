@@ -22,6 +22,7 @@ class Variant:
     min_gap_atr: float = 0.0
     cooldown: int = 0
     description: str = ""
+    allow_short: bool = True
 
     @property
     def axes(self) -> tuple[str, str]:
@@ -63,6 +64,32 @@ VARIANTS: tuple[Variant, ...] = (
         config.MIN_GAP_ATR,
         config.COOLDOWN_BARS,
         "ADX >= 25 + gap >= 0.25 ATR + 4-bar cooldown, else flat",
+    ),
+    Variant(
+        "long_flat",
+        "trend",
+        "none",
+        True,
+        description="long while EMA fast > slow, flat otherwise (never short)",
+        allow_short=False,
+    ),
+    Variant(
+        "long_flat_gap_cd",
+        "trend",
+        "none",
+        True,
+        config.MIN_GAP_ATR,
+        config.COOLDOWN_BARS,
+        "long/flat + enter only with gap >= 0.25 ATR + 4-bar cooldown",
+        allow_short=False,
+    ),
+    Variant(
+        "long_flat_adx",
+        "trend",
+        "adx_trend",
+        True,
+        description="long only while EMA fast > slow and ADX(14) >= 25, else flat",
+        allow_short=False,
     ),
     Variant(
         "mr_always",
@@ -114,4 +141,5 @@ def run_variant(
         atr=inputs["atr"],
         min_gap_atr=variant.min_gap_atr,
         cooldown=variant.cooldown,
+        allow_short=variant.allow_short,
     )

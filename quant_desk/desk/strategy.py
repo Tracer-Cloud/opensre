@@ -98,8 +98,12 @@ def ema_filtered(
     fee_bps: float,
     min_gap_atr: float,
     cooldown: int,
+    allow_short: bool,
 ) -> ts[Fill]:
-    """EMA direction, but only in a trend regime and with a gap/cooldown; flat otherwise."""
+    """EMA direction, but only in a trend regime and with a gap/cooldown; flat otherwise.
+
+    With ``allow_short=False`` a down-trend means flat, never short (long/flat).
+    """
     with csp.state():
         s_position = 0
         s_bars = 0
@@ -112,7 +116,8 @@ def ema_filtered(
             return
         sign = _sign(fast - slow)
         gap_ok = min_gap_atr <= 0.0 or abs(fast - slow) >= min_gap_atr * atr
-        can_enter = trend_ok and sign != 0 and gap_ok and s_since_change >= cooldown
+        side_ok = sign > 0 or (sign < 0 and allow_short)
+        can_enter = trend_ok and side_ok and gap_ok and s_since_change >= cooldown
         target = s_position
         if s_position == 0:
             if can_enter:
@@ -162,6 +167,7 @@ def ema_graph(
     filtered: bool,
     min_gap_atr: float,
     cooldown: int,
+    allow_short: bool,
 ):
     """Replay the stream once and fan it out to every (fast, slow) strategy.
 
@@ -178,7 +184,16 @@ def ema_graph(
     for fast, slow in combos:
         if filtered:
             fills = ema_filtered(
-                close, emas[fast], emas[slow], regime, atr, slow, fee_bps, min_gap_atr, cooldown
+                close,
+                emas[fast],
+                emas[slow],
+                regime,
+                atr,
+                slow,
+                fee_bps,
+                min_gap_atr,
+                cooldown,
+                allow_short,
             )
         else:
             fills = ema_cross(close, emas[fast], emas[slow], warmup=slow, fee_bps=fee_bps)
@@ -247,6 +262,7 @@ def run(
     atr: pd.Series | None = None,
     min_gap_atr: float = 0.0,
     cooldown: int = 0,
+    allow_short: bool = True,
 ) -> dict[tuple[float, float], ComboRun]:
     """Stream ``bars`` through csp for every EMA combo.
 
@@ -269,6 +285,7 @@ def run(
         filtered,
         min_gap_atr,
         cooldown,
+        allow_short,
         starttime=stream[0][0],
         endtime=stream[-1][0],
     )

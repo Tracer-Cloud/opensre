@@ -48,7 +48,8 @@ O ArcticDB fica em `data/arctic` (símbolos `BTCUSDT_1m`, `BTCUSDT_15m`,
 ## Estudo de vários anos (`run_history.py`)
 
 Barras de 15m de BTC/USDT desde jan/2022 (bear de 2022, recuperação, bull de 2024–25 e a
-lateralização recente), reamostradas para 1h e 4h e gravadas no ArcticDB. Cada variante é
+lateralização recente), reamostradas para 1h, 4h, 8h e 1d e gravadas no ArcticDB. Roda em 4
+processos (~2,5 min). Cada variante é
 varrida na grade inteira em cada tamanho de barra:
 
 | variante | o que faz |
@@ -58,6 +59,9 @@ varrida na grade inteira em cada tamanho de barra:
 | `flat_er` | segue a direção das EMAs só com eficiência (ER 20) ≥ 0,30; flat no resto |
 | `flat_adx` | idem com ADX 14 ≥ 25 |
 | `flat_adx_gap_cd` | ADX + distância mínima + cooldown |
+| `long_flat` | comprado quando EMA rápida > lenta, flat no resto (nunca vendido) |
+| `long_flat_gap_cd` | long/flat + distância mínima + cooldown |
+| `long_flat_adx` | long/flat só com ADX 14 ≥ 25 |
 | `mr_always` | reversão à média: compra abaixo da banda de Bollinger, vende acima, sai na média |
 | `mr_chop` | igual, mas só quando o mercado está lateral (ER < 0,30) |
 
@@ -65,9 +69,21 @@ Os filtros usam valores de livro e **não foram otimizados**. A história é div
 platô exige vizinhos com ≥ 50% do Sharpe e lucro em ≥ 6 de 8 janelas. Tudo é recalculado com
 taxa de 10 bps (taker padrão da Binance) e passa por walk-forward de 7 passos.
 
+### Construção robusta (sem escolher parâmetro)
+
+Em vez de escolher um combo, cada variante opera **a grade inteira de uma vez**: a exposição é a
+média das posições dos 212 combos, numa única conta (taxa sobre a mudança líquida). Cada uma é
+avaliada em tamanho cheio e com **alvo de volatilidade** (exposição × min(1, 40% / vol de 30
+dias), ajustada 1×/dia, sem alavancagem). O buy & hold recebe o mesmo alvo de vol, então a
+comparação é justa.
+
+Regra definida **antes** de ver os resultados: em W2–W8 a 10 bps, Sharpe maior **e** drawdown
+máximo menor que o buy & hold equivalente. **Robusto** = passa em pelo menos dois tamanhos de
+barra vizinhos (15m → 1h → 4h → 8h → 1d).
+
 Saídas em `output/history/`: `HISTORY_REPORT.md`, `summary.csv`, `sweeps/` (uma tabela por
 variante e barra), `wf_sharpe.png`, `heatmaps_trend.png`, `heatmaps_mean_reversion.png`,
-`wf_equity.png`.
+`wf_equity.png`, `candidates.csv`, `candidates.png`.
 
 ## Regras de execução (para não se enganar)
 

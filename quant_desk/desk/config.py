@@ -52,7 +52,7 @@ TOP_N_LABELLED = 15
 HISTORY_START = "2022-01-01"  # 2022 bear, 2023 recovery, 2024-25 bull, 2026 chop
 HISTORY_INTERVAL = "15m"  # fetched directly as 15m klines (same OHLCV as resampled 1m)
 SYMBOL_HISTORY = f"{SYMBOL}_15m_history"
-TIMEFRAMES = {"15m": 15, "1h": 60, "4h": 240}  # bar label -> minutes
+TIMEFRAMES = {"15m": 15, "1h": 60, "4h": 240, "8h": 480, "1d": 1440}  # label -> minutes
 HISTORY_WINDOWS = 8
 HISTORY_MIN_POSITIVE_SHARE = 0.75  # plateau must be profitable in >= 6 of 8 windows
 
@@ -73,3 +73,10 @@ MR_WIDTHS = (1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0)
 def annualization(bar_minutes: int) -> float:
     """sqrt(bars per year) for a 24/7 market."""
     return (365 * 24 * 60 / bar_minutes) ** 0.5
+
+
+# --- Robust portfolio construction (no parameter picking) -------------------------------------
+VOL_TARGET = 0.40  # annualised; BTC's own realised vol is usually 40-80%
+VOL_WINDOW_DAYS = 30
+VOL_MAX_WEIGHT = 1.0  # never lever up, only scale down in high volatility
+STUDY_WORKERS = 4  # processes for run_history.py

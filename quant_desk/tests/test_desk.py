@@ -6,7 +6,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from desk import config, data, filters, history, indicators, mean_reversion, strategy, sweep
+from desk import (
+    config,
+    data,
+    ensemble,
+    filters,
+    history,
+    indicators,
+    mean_reversion,
+    strategy,
+    sweep,
+)
 from desk import variants as V
 
 
@@ -186,3 +196,57 @@ def test_plateau_needs_good_neighbours_and_positive_windows() -> None:
     assert labelled.loc[(20, 60), "label"] == "peak"
     assert labelled.loc[(6, 40), "label"] == "plateau"
     assert labelled.loc[(16, 60), "label"] == "loser"
+
+
+def test_long_flat_variants_never_go_short() -> None:
+    bars = _bars(900)
+    for name in ("long_flat", "long_flat_gap_cd", "long_flat_adx"):
+        runs = V.run_variant(bars, V.BY_NAME[name])
+        positions = pd.concat([r.positions for r in runs.values()])
+        assert positions.min() == 0, name
+        assert positions.max() == 1, name
+
+
+def test_exposure_accounting_matches_fill_accounting_for_whole_positions() -> None:
+    """The ensemble's fee-on-net-change maths equals the per-trade maths for one combo."""
+    bars = _bars()
+    run = strategy.run(bars, [(4, 16)])[(4, 16)]
+    via_exposure = ensemble.returns_from_exposure(
+        bars["close"], run.positions.astype(float), config.FEE_BPS
+    )
+    np.testing.assert_allclose(via_exposure, run.returns, atol=1e-15)
+
+
+def test_ensemble_exposure_is_the_average_position() -> None:
+    bars = _bars()
+    runs = strategy.run(bars, [(4, 16), (6, 24), (8, 40)])
+    exposure = ensemble.ensemble_exposure(runs, bars.index)
+    expected = sum(r.positions.astype(float) for r in runs.values()) / 3
+    np.testing.assert_allclose(exposure, expected)
+    assert exposure.between(-1, 1).all()
+
+
+def test_vol_weight_is_causal_capped_and_only_changes_at_day_start() -> None:
+    idx = pd.date_range("2026-01-01 01:00", periods=24 * 90, freq="1h", tz="UTC")
+    rng = np.random.default_rng(3)
+    vol = np.where(np.arange(len(idx)) < len(idx) // 2, 0.002, 0.03)  # calm, then wild
+    close = pd.Series(100 * np.exp(np.cumsum(rng.normal(0, vol))), index=idx)
+    w = ensemble.vol_weight(close, 60)
+    assert w.max() <= config.VOL_MAX_WEIGHT
+    assert w.iloc[-1] < 0.5  # wild regime gets scaled down
+    changes = w.index[w.diff().fillna(0) != 0]
+    assert all(t.hour == 0 for t in changes)
+    for t in range(24 * 31, len(idx), 37):
+        assert ensemble.vol_weight(close.iloc[: t + 1], 60).iloc[-1] == w.iloc[t]
+
+
+def test_robust_needs_adjacent_bar_sizes_not_just_two_passes() -> None:
+    from desk.history_report import robust_books
+
+    rows = [("ensemble a", "vol", tf, tf in {"4h", "8h"}) for tf in config.TIMEFRAMES] + [
+        ("ensemble b", "vol", tf, tf in {"1h", "1d"}) for tf in config.TIMEFRAMES
+    ]
+    stress = pd.DataFrame(rows, columns=["book", "sizing", "timeframe", "passes"])
+    verdict = robust_books(stress).set_index("book")["robust"]
+    assert bool(verdict["ensemble a"]) is True
+    assert bool(verdict["ensemble b"]) is False

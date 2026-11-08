@@ -95,7 +95,110 @@ def _windows(study: Study) -> str:
     return "| window | dates | BTC | move |\n|---|---|---|---|\n" + "\n".join(rows)
 
 
-def write(study: Study, summary: pd.DataFrame, path: Path) -> Path:
+def _candidates_table(c: pd.DataFrame) -> str:
+    head = (
+        "| bars | book | sizing | Sharpe | vs bench | CAGR | max DD | vs bench | "
+        "windows > 0 | avg exposure | turnover/yr | passes |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+    )
+    lines = [
+        f"| {r.timeframe} | {r.book} | {'vol-target' if r.sizing == 'vol' else 'full'} | "
+        f"{r.sharpe:.2f} | {r.bench_sharpe:.2f} | {_pct(r.cagr)} | {r.max_drawdown:.0%} | "
+        f"{r.bench_max_drawdown:.0%} | {r.positive_windows}/{config.HISTORY_WINDOWS - 1} | "
+        f"{r.avg_exposure:.0%} | {r.turnover_per_year:.0f}× | "
+        f"{'**YES**' if r.passes else ('bench' if r.book == 'buy & hold' else 'no')} |"
+        for r in c.itertuples()
+    ]
+    return head + "\n".join(lines)
+
+
+REPORTED_BOOKS = (
+    "buy & hold",
+    "ensemble always_in",
+    "ensemble long_flat",
+    "ensemble long_flat_gap_cd",
+    "ensemble long_flat_adx",
+)
+
+
+def robust_books(stress: pd.DataFrame) -> pd.DataFrame:
+    """Books that pass at >= 2 *adjacent* bar sizes (a lucky single bar size does not count)."""
+    order = {tf: i for i, tf in enumerate(config.TIMEFRAMES)}
+    rows = []
+    for (book, sizing), g in stress[stress["passes"]].groupby(["book", "sizing"]):
+        idx = sorted(order[tf] for tf in g["timeframe"])
+        best_run, run = 1, 1
+        for a, b in zip(idx, idx[1:], strict=False):
+            run = run + 1 if b == a + 1 else 1
+            best_run = max(best_run, run)
+        rows.append(
+            {
+                "book": book,
+                "sizing": sizing,
+                "passes_on": ", ".join(sorted(g["timeframe"], key=order.get)),
+                "adjacent": best_run,
+                "robust": best_run >= 2,
+            }
+        )
+    return pd.DataFrame(rows, columns=["book", "sizing", "passes_on", "adjacent", "robust"])
+
+
+def _robust_table(r: pd.DataFrame) -> str:
+    if r.empty:
+        return "_No book passes anywhere._"
+    lines = [
+        f"| {x.book} | {'vol-target' if x.sizing == 'vol' else 'full'} | {x.passes_on} | "
+        f"{'**robust**' if x.robust else 'single bar size only'} |"
+        for x in r.sort_values(["robust", "adjacent"], ascending=False).itertuples()
+    ]
+    return "| book | sizing | passes on | verdict |\n|---|---|---|---|\n" + "\n".join(lines)
+
+
+def _robust_section(cand: dict[float, pd.DataFrame]) -> str:
+    stress = cand[history.STRESS_FEE_BPS]
+    cheap = cand[config.FEE_BPS]
+    passed = stress[stress["passes"]]
+    passed_cheap = cheap[cheap["passes"]]
+    verdict = (
+        ", ".join(
+            f"{r.timeframe} {r.book} ({'vol-target' if r.sizing == 'vol' else 'full'}): "
+            f"Sharpe {r.sharpe:.2f} vs {r.bench_sharpe:.2f}, max DD {r.max_drawdown:.0%} vs "
+            f"{r.bench_max_drawdown:.0%}"
+            for r in passed.itertuples()
+        )
+        or "nothing"
+    )
+    return f"""## Robust construction — no parameter is picked anywhere
+
+Instead of choosing one combo, each trend variant trades its **whole grid at once**: exposure is
+the average position of all 212 combos, netted into one book (fees on the net change). Each book
+is shown at full size and **vol-targeted** (exposure × min(1, {config.VOL_TARGET:.0%} /
+{config.VOL_WINDOW_DAYS}-day realised vol), re-set daily, no leverage). Buy & hold gets the same
+vol-targeting, so every candidate is compared against the benchmark sized the same way.
+
+**Pass rule (fixed before looking at the results):** on W2–W8 at {history.STRESS_FEE_BPS:g} bps,
+Sharpe above *and* max drawdown shallower than the matching buy & hold.
+**Robust** = passes on at least two *adjacent* bar sizes
+({" → ".join(config.TIMEFRAMES)}), so one lucky bar size is not enough.
+
+**Passes at {history.STRESS_FEE_BPS:g} bps ({len(passed)}):** {verdict}.
+At {config.FEE_BPS:g} bps: {len(passed_cheap)} pass.
+
+{_robust_table(robust_books(stress))}
+
+Main books at {history.STRESS_FEE_BPS:g} bps (all {stress["book"].nunique() - 1} variants in
+`candidates.csv`):
+
+{_candidates_table(stress[stress["book"].isin(REPORTED_BOOKS)])}
+
+The choice of *which* variant to trade is still made after seeing this table; with
+{stress["book"].nunique() - 1} variants × 2 sizings × {len(config.TIMEFRAMES)} bar sizes, expect
+a few to pass by luck. The long/flat variants were also added *after* seeing that shorting
+BTC lost money, which is hindsight. The only fully clean test left is new data: paper trade.
+"""
+
+
+def write(study: Study, summary: pd.DataFrame, cand: dict[float, pd.DataFrame], path: Path) -> Path:
     any_tf = next(iter(study.bars))
     start, end = study.bars[any_tf].index[0], study.bars[any_tf].index[-1]
     found = summary[summary["plateaus"] > 0]
@@ -145,6 +248,8 @@ ADX {config.ADX_WINDOW} ≥ {config.ADX_TREND:g}, gap {config.MIN_GAP_ATR} × AT
 `trades/yr` and `time in market` are medians over the grid. Full per-combo tables are in
 `sweeps/` and in ArcticDB (`{config.SYMBOL}_<bars>_<variant>_history_sweep`).
 
+{_robust_section(cand)}
+
 ## Plateaus
 
 {_plateau_section(study)}
@@ -171,6 +276,7 @@ ADX {config.ADX_WINDOW} ≥ {config.ADX_TREND:g}, gap {config.MIN_GAP_ATR} × AT
 - `wf_sharpe.png` — out-of-sample walk-forward Sharpe per variant and bar size, 2 vs 10 bps
 - `heatmaps_trend.png` / `heatmaps_mean_reversion.png` — Sharpe over every grid, plateaus dotted
 - `wf_equity.png` — out-of-sample equity per variant vs buy & hold (log scale)
+- `candidates.png` — whole-grid ensembles (full size and vol-targeted) vs buy & hold, 10 bps
 """
     path.write_text(text)
     return path

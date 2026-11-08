@@ -10,12 +10,20 @@ import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from matplotlib.ticker import FuncFormatter, NullFormatter
 
-from desk import config
+from desk import config, ensemble, history
 from desk.chart import AXIS, INK, LONG, MUTED, NEUTRAL, SHORT
-from desk.history import Study
 
 # Reference categorical palette, fixed order (never cycled).
-CATEGORICAL = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6")
+CATEGORICAL = (
+    "#2a78d6",
+    "#eb6834",
+    "#1baf7a",
+    "#eda100",
+    "#e87ba4",
+    "#008300",
+    "#6250d6",
+    "#e34948",
+)
 TF_COLOURS = dict(zip(config.TIMEFRAMES, CATEGORICAL, strict=False))
 SHARPE_FLOOR = 3.0  # bars below -3 are clipped and labelled with their value
 
@@ -46,7 +54,7 @@ def wf_sharpe_chart(summary: pd.DataFrame, path: Path) -> Path:
                         ha="center",
                         va="bottom",
                         rotation=90,
-                        fontsize=8,
+                        fontsize=6,
                         color="#ffffff",
                         zorder=4,
                     )
@@ -62,7 +70,7 @@ def wf_sharpe_chart(summary: pd.DataFrame, path: Path) -> Path:
     return path
 
 
-def heatmaps_chart(study: Study, family: str, path: Path) -> Path:
+def heatmaps_chart(study: history.Study, family: str, path: Path) -> Path:
     """Sharpe over each grid (rows: bar size, columns: variant); dots mark plateaus."""
     cells = [c for c in study.cells if c.variant.family == family]
     tfs = list(dict.fromkeys(c.timeframe for c in cells))
@@ -126,16 +134,18 @@ def heatmaps_chart(study: Study, family: str, path: Path) -> Path:
     return path
 
 
-def wf_equity_chart(study: Study, path: Path) -> Path:
+def wf_equity_chart(study: history.Study, path: Path) -> Path:
     """Stitched out-of-sample walk-forward equity per variant (log scale), one panel per bar."""
     tfs = list(study.bars)
     fig, axes = plt.subplots(len(tfs), 1, figsize=(16, 4.2 * len(tfs)), sharex=True)
     for ax, tf in zip(np.atleast_1d(axes), tfs, strict=True):
-        cells = [c for c in study.cells if c.timeframe == tf]
+        cells = [c for c in study.cells if c.timeframe == tf and c.variant.family == "trend"]
+        if len(cells) > len(CATEGORICAL):
+            raise ValueError("more trend variants than palette slots; facet the chart")
         idx = cells[0].wf.oos_returns.index
         hold = (1 + study.buy_and_hold(tf, idx)).cumprod()
         ax.plot(hold.index, hold, color=MUTED, lw=1.2, ls="--", label="buy & hold")
-        for cell, colour in zip(cells, CATEGORICAL, strict=False):
+        for cell, colour in zip(cells, CATEGORICAL[: len(cells)], strict=True):
             eq = (1 + cell.wf.oos_returns).cumprod()
             ax.plot(eq.index, eq, color=colour, lw=1.4, label=cell.variant.name)
         ax.set_yscale("log")
@@ -150,6 +160,53 @@ def wf_equity_chart(study: Study, path: Path) -> Path:
             fontsize=11,
         )
         ax.legend(loc="upper left", ncols=4, fontsize=8)
+    fig.savefig(path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+CANDIDATE_BOOKS = (
+    ("buy & hold", "vol"),
+    ("ensemble always_in", "vol"),
+    ("ensemble long_flat", "raw"),
+    ("ensemble long_flat", "vol"),
+    ("ensemble long_flat_gap_cd", "vol"),
+)
+
+
+def candidates_chart(study: history.Study, fee_bps: float, path: Path) -> Path:
+    """Out-of-sample equity of fixed, pre-chosen grid ensembles vs both buy & holds (log)."""
+    tfs = list(study.bars)
+    fig, axes = plt.subplots(len(tfs), 1, figsize=(16, 4.2 * len(tfs)), sharex=True)
+    for ax, tf in zip(np.atleast_1d(axes), tfs, strict=True):
+        bars = study.bars[tf]
+        span = history.oos_span(bars)
+        by_key = {(n, s): e for n, s, e in history.books(study, tf)}
+        hold = (
+            1
+            + ensemble.returns_from_exposure(
+                bars["close"], by_key[("buy & hold", "raw")], fee_bps
+            ).loc[span]
+        ).cumprod()
+        ax.plot(hold.index, hold, color=MUTED, lw=1.2, ls="--", label="buy & hold")
+        for (name, sizing), colour in zip(CANDIDATE_BOOKS, CATEGORICAL, strict=False):
+            r = ensemble.returns_from_exposure(bars["close"], by_key[(name, sizing)], fee_bps)
+            eq = (1 + r.loc[span]).cumprod()
+            label = f"{name} ({'vol-targeted' if sizing == 'vol' else 'full size'})"
+            ax.plot(eq.index, eq, color=colour, lw=1.5, label=label)
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}×"))
+        ax.yaxis.set_minor_formatter(NullFormatter())
+        ax.axhline(1.0, color=AXIS, lw=0.8)
+        ax.set_ylabel("equity (×, log)")
+        ax.set_title(
+            f"{tf} bars — whole-grid ensembles (no parameter picked), W2–W8, fees {fee_bps:g} bps",
+            loc="left",
+            fontsize=11,
+        )
+    handles, labels = np.atleast_1d(axes)[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper left", ncols=3, fontsize=9, bbox_to_anchor=(0.06, 1.0))
+    fig.subplots_adjust(top=0.95)
     fig.savefig(path, dpi=130, bbox_inches="tight")
     plt.close(fig)
     return path

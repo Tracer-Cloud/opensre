@@ -10,6 +10,8 @@ import argparse
 import logging
 import warnings
 
+import pandas as pd
+
 from desk import config, data, history, history_chart, history_report
 
 warnings.filterwarnings("ignore", category=SyntaxWarning)  # gs-quant docstring escapes
@@ -37,7 +39,10 @@ def main() -> None:
     history_chart.heatmaps_chart(study, "trend", out / "heatmaps_trend.png")
     history_chart.heatmaps_chart(study, "mean_reversion", out / "heatmaps_mean_reversion.png")
     history_chart.wf_equity_chart(study, out / "wf_equity.png")
-    report = history_report.write(study, summary, out / "HISTORY_REPORT.md")
+    cand = {fee: history.candidates(study, fee) for fee in (config.FEE_BPS, history.STRESS_FEE_BPS)}
+    pd.concat(cand.values()).to_csv(out / "candidates.csv", index=False)
+    history_chart.candidates_chart(study, history.STRESS_FEE_BPS, out / "candidates.png")
+    report = history_report.write(study, summary, cand, out / "HISTORY_REPORT.md")
     logging.getLogger("desk").info("wrote %s", report)
 
 
