@@ -7,7 +7,6 @@ from pathlib import Path
 import pandas as pd
 
 from desk import config, history, sweep, variants
-from desk.history import Study
 
 
 def _pct(x: float) -> str:
@@ -40,7 +39,7 @@ def _summary_table(s: pd.DataFrame) -> str:
     return head + "\n".join(lines)
 
 
-def _plateau_section(study: Study) -> str:
+def _plateau_section(study: history.Study) -> str:
     parts = []
     for cell in study.cells:
         t = cell.table
@@ -64,7 +63,7 @@ def _plateau_section(study: Study) -> str:
     return "\n\n".join(parts) if parts else "_No plateau anywhere._"
 
 
-def _wf_steps(study: Study, summary: pd.DataFrame, top: int = 3) -> str:
+def _wf_steps(study: history.Study, summary: pd.DataFrame, top: int = 3) -> str:
     best = summary.sort_values("wf_oos_sharpe", ascending=False).head(top)
     parts = []
     for r in best.itertuples():
@@ -83,7 +82,7 @@ def _wf_steps(study: Study, summary: pd.DataFrame, top: int = 3) -> str:
     return "\n\n".join(parts)
 
 
-def _windows(study: Study) -> str:
+def _windows(study: history.Study) -> str:
     tf = next(iter(study.bars))
     idx = study.bars[tf].index
     close = study.bars[tf]["close"]
@@ -200,7 +199,9 @@ BTC lost money, which is hindsight. The only fully clean test left is new data: 
 """
 
 
-def write(study: Study, summary: pd.DataFrame, cand: dict[float, pd.DataFrame], path: Path) -> Path:
+def write(
+    study: history.Study, summary: pd.DataFrame, cand: dict[float, pd.DataFrame], path: Path
+) -> Path:
     any_tf = next(iter(study.bars))
     start, end = study.bars[any_tf].index[0], study.bars[any_tf].index[-1]
     found = summary[summary["plateaus"] > 0]

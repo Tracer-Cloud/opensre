@@ -8,7 +8,6 @@ from typing import Literal
 import pandas as pd
 
 from desk import config, filters, mean_reversion, strategy, sweep
-from desk.strategy import ComboRun
 
 Regime = Literal["none", "er_trend", "adx_trend", "er_chop"]
 
@@ -129,7 +128,7 @@ def combos_for(variant: Variant) -> list[tuple[float, float]]:
 
 def run_variant(
     bars: pd.DataFrame, variant: Variant, inputs: pd.DataFrame | None = None
-) -> dict[tuple[float, float], ComboRun]:
+) -> dict[tuple[float, float], strategy.ComboRun]:
     """Run every combo of ``variant``'s grid over ``bars``."""
     inputs = inputs if inputs is not None else filters.regime_inputs(bars)
     combos = combos_for(variant)
