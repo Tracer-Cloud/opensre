@@ -205,6 +205,35 @@ def test_plateau_needs_good_neighbours_and_positive_windows() -> None:
     assert labelled.loc[(16, 60), "label"] == "loser"
 
 
+def test_always_in_opens_right_after_warmup_without_waiting_for_a_cross() -> None:
+    """A trend that never crosses must still be traded: open on the first warmed-up bar."""
+    bars = _bars()
+    rising = 50_000 * np.exp(np.linspace(0.0, 0.3, len(bars)))
+    for col in ("open", "high", "low", "close"):
+        bars[col] = rising
+    fast, slow = 4, 16
+    run = strategy.run(bars, [(fast, slow)])[(fast, slow)]
+    assert len(run.fills) == 1
+    assert run.fills.index[0] == bars.index[slow]
+    assert run.fills["position"].iloc[0] == 1
+    assert (run.positions.iloc[:slow] == 0).all()
+    assert (run.positions.iloc[slow:] == 1).all()
+
+
+def test_long_flat_is_exactly_the_long_half_of_always_in() -> None:
+    """The long-only test scores the short side as always_in minus long_flat; that only holds
+    if the twins agree on every bar, including the first ones after warm-up."""
+    bars = _bars(900)
+    up_start = np.exp(0.003 * np.minimum(np.arange(len(bars)), 250))  # EMAs point up at warm-up
+    for col in ("open", "high", "low", "close"):
+        bars[col] = bars[col] * up_start
+    ls = V.run_variant(bars, V.BY_NAME["always_in"])
+    lf = V.run_variant(bars, V.BY_NAME["long_flat"])
+    for combo, run in ls.items():
+        long_half = run.positions.clip(lower=0)
+        pd.testing.assert_series_equal(lf[combo].positions, long_half, check_names=False)
+
+
 def test_long_flat_variants_never_go_short() -> None:
     bars = _bars(900)
     for name in ("long_flat", "long_flat_gap_cd", "long_flat_adx"):

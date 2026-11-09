@@ -7,8 +7,8 @@ Timing (no lookahead): bars are stamped at their close. A decision on bar ``t`` 
 
 Two EMA nodes:
 
-* :func:`ema_cross` -- the original stop-and-reverse crossover, always long or short after the
-  first cross.
+* :func:`ema_cross` -- the original stop-and-reverse crossover: opens on the EMAs' side as soon
+  as it is warmed up, then flips on every cross, so it is always long or short.
 * :func:`ema_filtered` -- may stay flat. It holds the EMA direction only while the regime filter
   says "trend", goes flat when the regime ends or the EMAs cross back without enough gap, and
   waits ``cooldown`` bars after any change before entering again.
@@ -70,21 +70,22 @@ def _sign(x: float) -> int:
 def ema_cross(
     close: ts[float], fast: ts[float], slow: ts[float], warmup: int, fee_bps: float
 ) -> ts[Fill]:
-    """Original stop-and-reverse: flip to the new side on every EMA cross after warm-up."""
+    """Original stop-and-reverse, always in the market once warmed up.
+
+    The first bar after warm-up opens on the side the EMAs point to (no cross needed), and
+    every later cross flips to the other side. Equal EMAs keep the current position.
+    """
     with csp.state():
         s_position = 0
-        s_prev_sign = 0
         s_bars = 0
 
     if csp.ticked(close) and csp.valid(fast, slow):
         s_bars += 1
         sign = _sign(fast - slow)
-        if s_bars > warmup and sign != 0 and s_prev_sign != 0 and sign != s_prev_sign:
+        if s_bars > warmup and sign != 0 and sign != s_position:
             fill = make_fill(close, s_position, sign, fee_bps, fast, slow)
             s_position = sign
             csp.output(fill)
-        if sign != 0:
-            s_prev_sign = sign
 
 
 @csp.node
